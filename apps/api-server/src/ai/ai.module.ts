@@ -41,6 +41,7 @@ import {
   createSettingTools,
 } from './tools/tool-definitions-extended';
 import { createSaraProductTools } from './tools/tool-definitions-sara';
+import { webSearchTool } from './tools/tool-definitions-web-search';
 import { AIController } from './ai.controller';
 
 @Module({
@@ -96,5 +97,9 @@ export class AIModule implements OnModuleInit {
     // SARA is the product ambassador — she knows the product, testimonials,
     // company info, pricing, navigation guides. She does NOT access school data.
     this.toolRegistry.registerMany(createSaraProductTools());
+
+    // ─── Web Search Tool (SARA + ORION) ───
+    // Recherche Internet en temps réel via z-ai CLI
+    this.toolRegistry.register(webSearchTool);
   }
 }

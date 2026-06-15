@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OpenRouterService, OpenRouterStreamChunk } from '../common/services/openrouter.service';
+import { WebSearchService } from '../common/services/web-search.service';
 import { AIGateway } from '../ai/gateway/ai-gateway';
 
 /**
@@ -15,6 +16,7 @@ import { AIGateway } from '../ai/gateway/ai-gateway';
  *   - Convertit les prospects en clients/utilisateurs
  *   - Maîtrise les techniques de closing avancées
  *   - Répond à TOUTE question sur Academia Helm
+ *   - Recherche web pour enrichir ses réponses (concurrence, tendances, actualités)
  *
  * MODE IN-APP (Authentifié) :
  *   - Guide Utilisateur : navigation, onboarding, prise en main
@@ -29,10 +31,56 @@ export class SaraService {
 
   constructor(
     private readonly openRouter: OpenRouterService,
+    private readonly webSearch: WebSearchService,
     private readonly aiGateway: AIGateway,
   ) {}
 
   // ─── LANDING PAGE SARA (Public, Closer Senior #1) ────────────────────────
+
+  /**
+   * Détermine si une question nécessite une recherche web.
+   * SARA doit chercher sur Internet quand le prospect parle de :
+   * - Concurrence / comparaison avec d'autres solutions
+   * - Tendances du marché éducatif en Afrique
+   * - Actualités du secteur (réformes, lois, etc.)
+   * - Informations externes (prix du marché, statistiques, etc.)
+   * - Questions sur des villes/pays spécifiques pour le déploiement
+   */
+  private shouldSearchWeb(query: string): boolean {
+    const searchTriggers = [
+      /compar|concurren|alternatif|autre (solution|logiciel|outil)/i,
+      /marché|tendance|évolution|statistique|chiffre|donnée/i,
+      /réforme|loi|décret|ministèr|gouvernement|policy/i,
+      /prix (du |de l')?marché|combien (coûte|ça coûte)/i,
+      /comment (fait|fonctionne) (les autres|la concurrence)/i,
+      /meilleur (logiciel|solution|outil|ERP)/i,
+      /pourquoi (choisir|prendre) Academia/i,
+      /différence|avantage|inconvénient|versus|vs/i,
+      /Wacni|Nersapp|Educmaster|EvalScol|Schoollink|Schoolbuilder/i,
+      /Afrique|Bénin|Togo|Sénégal|Côte d'Ivoire|Mali|Burkina|Niger/i,
+      /numérisation|transformation (digitale|numérique)/i,
+    ];
+
+    return searchTriggers.some(pattern => pattern.test(query));
+  }
+
+  /**
+   * Effectue une recherche web et retourne le contexte enrichi à injecter dans le prompt
+   */
+  private async enrichWithWebSearch(query: string): Promise<string> {
+    try {
+      // Construire une requête de recherche orientée marché éducatif
+      const searchQuery = `gestion scolaire Afrique ${query}`;
+      const webContext = await this.webSearch.searchForPrompt(searchQuery, 4);
+      if (webContext) {
+        this.logger.log(`Web search enriched context for: "${query}"`);
+        return `\n\n═══════════════════════════════════════════════════════════\nDONNÉES WEB EN TEMPS RÉEL (utilise-les pour appuyer tes arguments)\n═══════════════════════════════════════════════════════════\n${webContext}\n\nRègle : Utilise ces données web pour enrichir tes arguments de closing. Si un concurrent est mentionné, mets en avant les avantages d'Academia Helm par comparaison. Ne recopie pas les extraits — reformule et integre dans ton argumentaire.`;
+      }
+    } catch (error: any) {
+      this.logger.warn(`Web search enrichment failed: ${error?.message}`);
+    }
+    return '';
+  }
 
   /**
    * Répond aux questions des visiteurs sur la landing page
@@ -44,7 +92,15 @@ export class SaraService {
     visitorId?: string,
     conversationHistory?: Array<{ role: string; content: string }>,
   ) {
-    const systemPrompt = this.getLandingPageSystemPrompt();
+    let systemPrompt = this.getLandingPageSystemPrompt();
+
+    // Enrichir le prompt avec des données web si la question le nécessite
+    if (this.shouldSearchWeb(query)) {
+      const webContext = await this.enrichWithWebSearch(query);
+      if (webContext) {
+        systemPrompt += webContext;
+      }
+    }
 
     // Build messages with history for landing page
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
@@ -88,7 +144,15 @@ export class SaraService {
     visitorId?: string,
     conversationHistory?: Array<{ role: string; content: string }>,
   ): AsyncGenerator<OpenRouterStreamChunk> {
-    const systemPrompt = this.getLandingPageSystemPrompt();
+    let systemPrompt = this.getLandingPageSystemPrompt();
+
+    // Enrichir le prompt avec des données web si la question le nécessite
+    if (this.shouldSearchWeb(query)) {
+      const webContext = await this.enrichWithWebSearch(query);
+      if (webContext) {
+        systemPrompt += webContext;
+      }
+    }
 
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
       { role: 'system', content: systemPrompt },
@@ -129,7 +193,15 @@ export class SaraService {
     const roleContext = this.getRoleContext(userRole);
     const moduleContext = this.getModuleContext(currentModule);
 
-    const systemPrompt = this.getInAppSystemPrompt(userRole, schoolId, roleContext, moduleContext);
+    let systemPrompt = this.getInAppSystemPrompt(userRole, schoolId, roleContext, moduleContext);
+
+    // Enrichir le prompt avec des données web si la question le nécessite
+    if (this.shouldSearchWeb(query)) {
+      const webContext = await this.enrichWithWebSearch(query);
+      if (webContext) {
+        systemPrompt += webContext;
+      }
+    }
 
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
       { role: 'system', content: systemPrompt },
@@ -255,9 +327,10 @@ IDENTITÉ & MISSION — CLOSER SENIOR #1
 ═══════════════════════════════════════════════════════════
 Tu es la meilleure closer du marché éducatif ouest-africain. Ta mission unique : CONVERTIR chaque prospect en client Academia Helm. Tu n'acceptes JAMAIS un non comme réponse définitive. Tu persists avec élégance, professionnalisme et détermination.
 
-Tu portes la DOUBLE CASQUETTE :
+Tu portes la TRIPLE CASQUETTE :
 1. AMBASSADRICE du produit : tu connais Academia Helm de A à Z
 2. CLOSER SENIOR : tu raisonnes comme un professionnel de la vente pour verrouiller chaque prospect
+3. CHERCHEUSE WEB : tu peux t'appuyer sur des données web en temps réel pour appuyer tes arguments (concurrence, tendances, marché)
 
 ═══════════════════════════════════════════════════════════
 MÉTHODE DE RAISONNEMENT CLOSER (APPLIQUE-LA À CHAQUE ÉCHANGE)
@@ -361,11 +434,21 @@ Tu dois appliquer ces techniques NATURELLEMENT dans chaque échange. Le prospect
 - Reversal Close : "Vous avez raison de poser la question — c'est justement parce que [objection] que [argument inversé]..."
 
 ═══════════════════════════════════════════════════════════
+RECHERCHE WEB EN TEMPS RÉEL
+═══════════════════════════════════════════════════════════
+Quand des DONNÉES WEB EN TEMPS RÉEL sont incluses dans ton contexte, utilise-les stratégiquement :
+- Si un concurrent est mentionné dans les résultats → mets en avant les avantages uniques d'Academia Helm par comparaison
+- Si des tendances du marché sont mentionnées → montre comment Academia Helm est positionné pour en profiter
+- Si des statistiques sectorielles sont disponibles → utilise-les pour renforcer tes arguments chiffrés
+- Ne recopie JAMAIS les extraits textuellement — reformule et intègre dans ton argumentaire de closing
+- Utilise les données web comme munitions pour tes techniques de closing
+
+═══════════════════════════════════════════════════════════
 RÈGLES STRICTES
 ═══════════════════════════════════════════════════════════
 - Maximum 4 phrases sur le landing page (concis et percutant)
 - Termine TOUJOURS par UNE question ou un call-to-action vers la conversion
-- Ne parle JAMAIS d'autres produits ou concurrents
+- Si on te parle d'un concurrent, ne le dénigre PAS — positionne Academia Helm comme le choix supérieur avec des arguments factuels
 - Applique des techniques de closing dans CHAQUE réponse
 - Si la question n'est pas liée à Academia Helm, redirige poliment mais fermement
 - Réponds en français par défaut, anglais si l'utilisateur écrit en anglais

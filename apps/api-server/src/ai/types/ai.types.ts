@@ -123,7 +123,7 @@ export interface ToolDefinition {
   description: string;
   version: string;
   agent: AIAgentName | 'ALL';
-  category: 'STUDENT' | 'ACADEMIC' | 'FINANCE' | 'HR' | 'COMMUNICATION' | 'AUDIT' | 'ANALYTICS' | 'DOCUMENT' | 'WORKFLOW' | 'KNOWLEDGE' | 'EXAM' | 'PEDAGOGY' | 'QHSE' | 'MEETING' | 'ATTENDANCE' | 'SETTING' | 'DASHBOARD';
+  category: 'STUDENT' | 'ACADEMIC' | 'FINANCE' | 'HR' | 'COMMUNICATION' | 'AUDIT' | 'ANALYTICS' | 'DOCUMENT' | 'WORKFLOW' | 'KNOWLEDGE' | 'EXAM' | 'PEDAGOGY' | 'QHSE' | 'MEETING' | 'ATTENDANCE' | 'SETTING' | 'DASHBOARD' | 'WEB_SEARCH';
   inputSchema: Record<string, unknown>;
   requiredPermissions: string[];
   requiresTenant: boolean;

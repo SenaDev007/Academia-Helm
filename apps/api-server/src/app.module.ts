@@ -67,6 +67,7 @@ import { SynthesisModule } from './modules/synthesis/synthesis.module';
 import { SyncModule } from './sync/sync.module';
 import { ScolariteModule } from './modules/scolarite/scolarite.module';
 import { FinancesModule } from './modules/finances/finances.module';
+import { AIModule } from './ai/ai.module';
 import { CommonModule } from './common/common.module';
 import { SecurityModule } from './security/security.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
@@ -253,6 +254,9 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
 
     // Patronat Module
     FederisModule,
+
+    // IA Infrastructure Module (Gateway, MCP, Tool Calling)
+    AIModule,
 
     // IA ATLAS Module
     AtlasModule,

@@ -19,13 +19,14 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Image from 'next/image';
-import { Bell, RefreshCw, User as UserIcon, LogOut, Wifi, WifiOff, ChevronDown, Settings, HelpCircle, School, Globe } from 'lucide-react';
+import { Bell, RefreshCw, User as UserIcon, LogOut, Wifi, WifiOff, ChevronDown, Settings, HelpCircle, School, Globe, Star } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { clearClientSessionSync } from '@/lib/auth/client-access-token';
 import AcademicYearSelector from './AcademicYearSelector';
 import SchoolLevelSelector from './SchoolLevelSelector';
 import AcademicTrackSelector from '../dashboard/AcademicTrackSelector';
 import { useOffline, useSyncStatus } from '@/hooks/useOffline';
+import InAppReviewModal from '@/components/reviews/InAppReviewModal';
 import type { User, Tenant } from '@/types';
 
 interface SchoolIdentity {
@@ -113,6 +114,7 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
   const { isSyncing, pendingCount } = useSyncStatus();
   const [orionAlertsCount, setOrionAlertsCount] = useState(0);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
   const [schoolIdentity, setSchoolIdentity] = useState<SchoolIdentity | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -303,6 +305,21 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
               </button>
             )}
 
+            {/* Bouton Donner mon avis */}
+            <button
+              onClick={() => setReviewModalOpen(true)}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 hover:scale-105 active:scale-95 border"
+              style={{
+                background: 'linear-gradient(135deg, #FFF8E1, #FFFDF5)',
+                borderColor: '#C9A84C',
+                color: '#1E3A5F',
+              }}
+              title="Donner mon avis"
+            >
+              <Star className="w-3.5 h-3.5" fill="#C9A84C" stroke="#C9A84C" />
+              <span>Avis</span>
+            </button>
+
             {/* Profil avec Dropdown */}
             <div className="relative" ref={dropdownRef}>
               <button
@@ -339,6 +356,16 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
                   </div>
                   
                   <div className="py-1">
+                    <button
+                      onClick={() => {
+                        setReviewModalOpen(true);
+                        setProfileDropdownOpen(false);
+                      }}
+                      className="w-full flex items-center space-x-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors sm:hidden"
+                    >
+                      <Star className="w-4 h-4 text-amber-500" fill="#C9A84C" />
+                      <span>Donner mon avis</span>
+                    </button>
                     <button
                       onClick={() => {
                         router.push('/app/settings');
@@ -388,6 +415,17 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
 
       {/* Bottom border with subtle gold accent */}
       <div className="h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent" />
+
+      {/* Review Modal */}
+      <InAppReviewModal
+        isOpen={reviewModalOpen}
+        onClose={() => setReviewModalOpen(false)}
+        authorName={`${user.firstName} ${user.lastName}`}
+        authorRole={formatRoleLabel(user.role)}
+        schoolName={schoolIdentity?.schoolName || tenant.name || ''}
+        city=""
+        tenantId={tenant.id}
+      />
     </header>
   );
 }

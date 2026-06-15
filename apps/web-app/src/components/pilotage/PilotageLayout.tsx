@@ -39,6 +39,7 @@ interface PilotageLayoutProps {
 
 import OfflineIndicator from '@/components/offline/OfflineIndicator';
 import OfflineGuard from '@/components/offline/OfflineGuard';
+import ReviewAutoPopup from '@/components/reviews/ReviewAutoPopup';
 
 export default function PilotageLayout({ user, tenant, children }: PilotageLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true); // lg: expanded/collapsed
@@ -160,6 +161,15 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
           </div>
         </footer>
       </div>
+
+      {/* Auto-popup pour demande d'avis après 30 jours */}
+      <ReviewAutoPopup
+        accountCreatedAt={user.createdAt}
+        authorName={`${user.firstName} ${user.lastName}`}
+        authorRole={user.role}
+        schoolName={tenant.name || ''}
+        tenantId={tenant.id}
+      />
     </OfflineGuard>
   );
 }

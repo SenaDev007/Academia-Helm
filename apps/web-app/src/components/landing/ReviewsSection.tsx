@@ -4,7 +4,6 @@ import { DM_Sans } from 'next/font/google';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { buildReviewsPublishedUrl } from '@/lib/reviews-api-url';
-import { HELM_LANDING_REVIEWS } from '@/data/helm-reviews';
 import {
   HELM_GOLD,
   HELM_NAVY,
@@ -49,51 +48,7 @@ type ApiResponse = {
   stats: Stats;
 };
 
-function buildFallbackReviews(): PublishedReview[] {
-  return HELM_LANDING_REVIEWS.map((r) => ({
-    id: `demo-${r.id}`,
-    authorName: r.author,
-    authorRole: r.role,
-    schoolName: r.org,
-    city: '',
-    photoUrl: null,
-    rating: r.rating,
-    comment: r.quote,
-    featured: false,
-    publishedAt: null,
-    createdAt: new Date().toISOString(),
-  }));
-}
-
-function buildFallbackStats(): Stats {
-  const list = HELM_LANDING_REVIEWS;
-  const total = list.length;
-  const sum = list.reduce((s, x) => s + x.rating, 0);
-  const average = total > 0 ? Math.round((sum / total) * 10) / 10 : 5;
-  const counts: Record<1 | 2 | 3 | 4 | 5, number> = {
-    1: 0,
-    2: 0,
-    3: 0,
-    4: 0,
-    5: 0,
-  };
-  for (const x of list) {
-    const star = x.rating as 1 | 2 | 3 | 4 | 5;
-    if (star >= 1 && star <= 5) counts[star] += 1;
-  }
-  const distribution: Record<1 | 2 | 3 | 4 | 5, number> = {
-    1: 0,
-    2: 0,
-    3: 0,
-    4: 0,
-    5: 0,
-  };
-  for (let star = 1 as const; star <= 5; star++) {
-    distribution[star] =
-      total > 0 ? Math.round((counts[star] / total) * 1000) / 10 : 0;
-  }
-  return { average, total, distribution };
-}
+const EMPTY_STATS: Stats = { average: 0, total: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } };
 
 function StarRow({
   rating,
@@ -245,8 +200,8 @@ export default function ReviewsSection() {
 
   const url = useMemo(() => buildReviewsPublishedUrl(), []);
 
-  const fallbackReviews = useMemo(() => buildFallbackReviews(), []);
-  const fallbackStats = useMemo(() => buildFallbackStats(), []);
+  const fallbackReviews = useMemo(() => [] as PublishedReview[], []);
+  const fallbackStats = useMemo(() => EMPTY_STATS, []);
 
   useEffect(() => {
     if (!url) {

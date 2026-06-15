@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import Image from 'next/image';
 import { saraApi, SaraStreamChunk } from '@/lib/api/sara';
 import { cn } from '@/lib/utils';
 import { Crown } from 'lucide-react';
@@ -219,18 +220,31 @@ export default function SaraWidget() {
             />
 
             <div className="relative flex items-center gap-3">
-              {/* Couronne animée — pas de cercle */}
+              {/* Photo de Sarah avec anneau holographique */}
               <div className="relative flex items-center justify-center" style={{ animation: 'crownFloat 3s ease-in-out infinite' }}>
-                <div className="absolute inset-0"
+                <div className="absolute inset-[-3px] rounded-full"
                   style={{
-                    background: `radial-gradient(circle, rgba(0,229,255,0.15) 0%, rgba(245,179,53,0.08) 40%, transparent 65%)`,
-                    filter: 'blur(6px)',
-                    animation: 'crownGlow 3s ease-in-out infinite',
+                    background: 'conic-gradient(from 0deg, rgba(0,229,255,0.5), transparent 25%, rgba(245,179,53,0.3), transparent 50%, rgba(0,229,255,0.4), transparent 75%, rgba(245,179,53,0.2), rgba(0,229,255,0.5))',
+                    animation: 'holoBorderSpin 4s linear infinite',
+                    borderRadius: '50%',
                   }}
                 />
-                <Crown size={26} strokeWidth={1.8}
-                  className="drop-shadow-[0_0_8px_rgba(0,229,255,0.5)]"
-                  style={{ color: H.gold, animation: 'crownShimmer 4s ease-in-out infinite' }}
+                <div className="relative w-10 h-10 rounded-full overflow-hidden ring-2" style={{ ringColor: H.cyan }}>
+                  <Image
+                    src="/images/Chatbot Sara.webp"
+                    alt="Sarah"
+                    width={40}
+                    height={40}
+                    className="object-cover w-full h-full"
+                    priority
+                  />
+                </div>
+                <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 animate-pulse"
+                  style={{
+                    background: `linear-gradient(135deg, ${H.green}, ${H.greenGlow})`,
+                    borderColor: 'transparent',
+                    boxShadow: `0 0 6px ${H.green}`,
+                  }}
                 />
               </div>
 
@@ -508,12 +522,26 @@ export default function SaraWidget() {
             }}
           />
 
-          {/* Couronne animée — PAS de cercle de fond */}
+          {/* Photo de Sarah avec anneau holographique */}
           <div className="relative" style={{ animation: 'crownFloat 3s ease-in-out infinite' }}>
-            <Crown size={40} strokeWidth={1.4}
-              className="drop-shadow-[0_0_12px_rgba(0,229,255,0.5)]"
-              style={{ color: H.gold, animation: 'crownShimmer 4s ease-in-out infinite' }}
+            <div className="absolute inset-[-4px] rounded-full"
+              style={{
+                background: 'conic-gradient(from 0deg, rgba(0,229,255,0.6), transparent 20%, rgba(245,179,53,0.35), transparent 40%, rgba(0,229,255,0.45), transparent 60%, rgba(245,179,53,0.25), transparent 80%, rgba(0,229,255,0.6))',
+                animation: 'holoBorderSpin 5s linear infinite',
+                borderRadius: '50%',
+                boxShadow: `0 0 20px rgba(0,229,255,0.2)`,
+              }}
             />
+            <div className="relative w-14 h-14 rounded-full overflow-hidden ring-2 shadow-xl" style={{ ringColor: H.cyan }}>
+              <Image
+                src="/images/Chatbot Sara.webp"
+                alt="Sarah"
+                width={56}
+                height={56}
+                className="object-cover w-full h-full"
+                priority
+              />
+            </div>
           </div>
 
           {/* Ping subtil — anneau diffus */}

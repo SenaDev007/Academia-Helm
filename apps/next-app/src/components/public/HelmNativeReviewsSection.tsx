@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { Quote, Star } from 'lucide-react';
-import { HELM_LANDING_REVIEWS } from '@/data/helm-reviews';
 import type { PlatformReviewPublic } from '@/types/platform-review';
 
 const fadeUp = {
@@ -15,35 +14,38 @@ type Props = {
   initialReviews?: PlatformReviewPublic[];
 };
 
+/**
+ * Section avis avec données réelles uniquement.
+ * Si aucun avis n'est disponible, affiche un message invitant à laisser un avis.
+ */
 export default function HelmNativeReviewsSection({ initialReviews = [] }: Props) {
-  const fromApi = initialReviews.length > 0;
-  const rows = fromApi
-    ? initialReviews.map((r) => ({
-        id: r.id,
-        quote: r.quote,
-        author: r.authorLabel,
-        role: r.roleLabel,
-        org: r.organizationLabel,
-        rating: r.rating,
-      }))
-    : HELM_LANDING_REVIEWS.map((r) => ({
-        id: r.id,
-        quote: r.quote,
-        author: r.author,
-        role: r.role,
-        org: r.org,
-        rating: r.rating,
-      }));
+  if (initialReviews.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-sm text-slate-500">
+          Aucun avis pour le moment.
+        </p>
+        <Link
+          href="/avis"
+          className="mt-4 inline-flex items-center justify-center rounded-xl bg-[#0b2f73] px-6 py-3 text-sm font-semibold text-white hover:bg-[#144798] transition-colors min-h-[44px]"
+        >
+          Laisser un avis
+        </Link>
+      </div>
+    );
+  }
+
+  const rows = initialReviews.map((r) => ({
+    id: r.id,
+    quote: r.quote,
+    author: r.authorLabel,
+    role: r.roleLabel,
+    org: r.organizationLabel,
+    rating: r.rating,
+  }));
 
   return (
     <div className="space-y-8">
-      {!fromApi ? (
-        <p className="text-center text-sm text-amber-800 bg-amber-50 border border-amber-200/80 rounded-xl px-4 py-3 max-w-2xl mx-auto">
-          Mode démo : aucun avis en base ou API indisponible. Lancez la migration, le seed et l’API pour afficher
-          les témoignages persistés.
-        </p>
-      ) : null}
-
       <motion.div
         variants={{ hidden: {}, show: { transition: { staggerChildren: 0.1 } } }}
         initial="hidden"
@@ -79,23 +81,15 @@ export default function HelmNativeReviewsSection({ initialReviews = [] }: Props)
       </motion.div>
 
       <p className="text-center text-xs text-slate-500 max-w-2xl mx-auto">
-        {fromApi
-          ? 'Ces avis sont enregistrés dans notre base et publiés après contrôle. Pour témoigner ou corriger une citation, contactez-nous.'
-          : 'Témoignages issus de retours directs d’établissements partenaires (fichier de démo). Pour figurer sur cette page, contactez-nous.'}
+        Ces avis sont enregistrés dans notre base et publiés après contrôle.
       </p>
 
       <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
         <Link
-          href="/contact"
+          href="/avis"
           className="inline-flex items-center justify-center rounded-xl bg-[#0b2f73] px-6 py-3 text-sm font-semibold text-white hover:bg-[#144798] transition-colors min-h-[44px]"
         >
-          Nous contacter
-        </Link>
-        <Link
-          href="/testimonials"
-          className="inline-flex items-center justify-center rounded-xl border border-[#0b2f73]/25 bg-white px-6 py-3 text-sm font-semibold text-[#0b2f73] hover:bg-slate-50 transition-colors min-h-[44px]"
-        >
-          Voir la page témoignages
+          Laisser un avis
         </Link>
       </div>
     </div>

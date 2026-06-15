@@ -7,7 +7,7 @@
 
 'use client';
 
-import { Suspense } from 'react';
+import { Suspense, useCallback } from 'react';
 import { PostLoginFlowWrapper } from '@/components/loading/PostLoginFlowWrapper';
 import { QueryProvider } from '@/providers/QueryProvider';
 import { SettingsBootstrapPrefetch } from '@/components/settings/SettingsBootstrapPrefetch';
@@ -21,12 +21,32 @@ import { motion } from 'framer-motion';
 import { getFadeMotion } from '@/lib/motion/presets';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import type { User, Tenant } from '@/types';
-import { ReviewPromptHost } from '@/components/reviews/ReviewPromptHost';
+import { ReviewPromptHost, useReviewContext } from '@/components/reviews/ReviewPromptHost';
+import dynamic from 'next/dynamic';
+
+const PilotageLayout = dynamic(
+  () => import('@/components/pilotage/PilotageLayout'),
+  { ssr: true },
+);
 
 export interface AppLayoutClientProps {
   children: React.ReactNode;
   user: User;
   tenant: Tenant;
+}
+
+/**
+ * Composant interne qui récupère le callback review depuis le contexte
+ * et le passe au PilotageLayout
+ */
+function PilotageLayoutWithReview({ children, user, tenant }: { children: React.ReactNode; user: User; tenant: Tenant }) {
+  const { openReview } = useReviewContext();
+
+  return (
+    <PilotageLayout user={user} tenant={tenant} onReviewClick={openReview}>
+      {children}
+    </PilotageLayout>
+  );
 }
 
 /**
@@ -43,6 +63,7 @@ export default function AppLayoutClient({
 }: AppLayoutClientProps) {
   const { shouldReduceMotion } = useMotionBudget();
   const fadeMotion = getFadeMotion(shouldReduceMotion);
+
   return (
     <SessionManagerProvider>
       <motion.div
@@ -60,7 +81,9 @@ export default function AppLayoutClient({
                 <SchoolLevelProvider>
                   <ReviewPromptHost user={user} tenant={tenant}>
                     <PostLoginFlowWrapper user={user} tenant={tenant}>
-                      {children}
+                      <PilotageLayoutWithReview user={user} tenant={tenant}>
+                        {children}
+                      </PilotageLayoutWithReview>
                     </PostLoginFlowWrapper>
                   </ReviewPromptHost>
                 </SchoolLevelProvider>

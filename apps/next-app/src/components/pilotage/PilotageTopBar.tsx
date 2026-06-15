@@ -14,7 +14,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Image from 'next/image';
-import { Bell, RefreshCw, User as UserIcon, LogOut, Wifi, WifiOff, AlertCircle, ChevronDown, Settings, HelpCircle, School, Globe } from 'lucide-react';
+import { Bell, RefreshCw, User as UserIcon, LogOut, Wifi, WifiOff, AlertCircle, ChevronDown, Settings, HelpCircle, School, Globe, Star } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { clearClientSessionSync } from '@/lib/auth/client-access-token';
 import AcademicYearSelector from './AcademicYearSelector';
@@ -34,6 +34,7 @@ interface PilotageTopBarProps {
   tenant: Tenant;
   onMenuClick?: () => void;
   mobileDrawerOpen?: boolean;
+  onReviewClick?: () => void;
 }
 
 const SCHOOL_IDENTITY_UPDATED_EVENT = 'settings-school-identity-updated';
@@ -77,7 +78,7 @@ function formatRoleLabel(role?: string) {
   return labels[role] ?? role;
 }
 
-export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawerOpen }: PilotageTopBarProps) {
+export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawerOpen, onReviewClick }: PilotageTopBarProps) {
   const router = useRouter();
   const isOnline = useOffline();
   const { isSyncing, pendingCount } = useSyncStatus();
@@ -257,6 +258,17 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
                 </div>
               )}
             </div>
+
+            {/* Bouton Donner mon avis */}
+            {onReviewClick && (
+              <button
+                onClick={onReviewClick}
+                className="relative p-2 rounded-lg hover:bg-amber-50 transition-all duration-200 hover:scale-105 active:scale-95 group"
+                title="Donner mon avis"
+              >
+                <Star className="w-5 h-5 text-amber-500 group-hover:text-amber-600 transition-colors fill-amber-500" />
+              </button>
+            )}
 
             {/* Alertes ORION */}
             {orionAlertsCount > 0 && (

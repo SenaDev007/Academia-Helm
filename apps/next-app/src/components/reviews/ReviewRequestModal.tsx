@@ -9,6 +9,7 @@ import {
   HELM_NAVY_MID,
   HELM_STAR_EMPTY,
 } from '@/lib/helm-colors';
+import { markReviewSubmitted } from '@/hooks/useReviewPrompt';
 
 const NAVY = HELM_NAVY;
 const GOLD = HELM_GOLD;
@@ -143,6 +144,10 @@ export default function ReviewRequestModal({
         return;
       }
       setStep('success');
+      // Marquer l'avis comme soumis pour ce tenant (arrête les notifications automatiques)
+      if (tenantId) {
+        markReviewSubmitted(tenantId);
+      }
     } catch {
       setErr('Erreur réseau. Vérifiez votre connexion.');
     } finally {

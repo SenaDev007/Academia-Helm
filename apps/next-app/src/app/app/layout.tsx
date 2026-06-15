@@ -4,24 +4,16 @@
  * ============================================================================
  * 
  * Layout pour toutes les pages de l'application authentifiée
- * Utilise PilotageLayout pour la structure complète
+ * Le PilotageLayout est maintenant géré dans layout-client.tsx
+ * (pour avoir accès au contexte ReviewPromptHost)
  * ============================================================================
  */
 
 import { redirect } from 'next/navigation';
-import dynamic from 'next/dynamic';
 import { getServerSession } from '@/lib/auth/session';
 import { ModalProvider } from '@/components/modules/blueprint/modals/ModalProvider';
 import AppLayoutClient from './layout-client';
 import type { User, Tenant } from '@/types';
-
-// ✅ Lazy load du layout lourd pour améliorer le temps de chargement initial
-const PilotageLayout = dynamic(
-  () => import('@/components/pilotage/PilotageLayout'),
-  {
-    ssr: true, // ✅ Garder SSR pour le SEO
-  }
-);
 
 export default async function AppLayout({
   children,
@@ -58,9 +50,7 @@ export default async function AppLayout({
   return (
     <ModalProvider>
       <AppLayoutClient user={user} tenant={tenant}>
-        <PilotageLayout user={user} tenant={tenant}>
-          {children}
-        </PilotageLayout>
+        {children}
       </AppLayoutClient>
     </ModalProvider>
   );

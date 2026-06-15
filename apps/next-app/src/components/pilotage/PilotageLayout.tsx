@@ -31,12 +31,13 @@ interface PilotageLayoutProps {
   user: User;
   tenant: Tenant;
   children: React.ReactNode;
+  onReviewClick?: () => void;
 }
 
 import OfflineIndicator from '@/components/offline/OfflineIndicator';
 import OfflineGuard from '@/components/offline/OfflineGuard';
 
-export default function PilotageLayout({ user, tenant, children }: PilotageLayoutProps) {
+export default function PilotageLayout({ user, tenant, children, onReviewClick }: PilotageLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true); // lg: expanded/collapsed
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false); // mobile: drawer overlay
   const { currentLevel } = useSchoolLevel();
@@ -59,6 +60,7 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
           tenant={tenant}
           onMenuClick={handleToggleMobileDrawer}
           mobileDrawerOpen={mobileDrawerOpen}
+          onReviewClick={onReviewClick}
         />
 
         {/* Spacer pour éviter que le contenu passe sous la barre fixe (hauteur ~ barre) */}

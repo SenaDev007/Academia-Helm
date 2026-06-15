@@ -47,46 +47,158 @@ interface Particle {
   speed: number;
 }
 
-// ─── SIMPLE MARKDOWN RENDERER ──────────────────────────────────────────
-// Handles **bold**, *italic*, and `code` in chat messages
-function renderMarkdown(text: string): React.ReactNode[] {
+// ─── FULL MARKDOWN RENDERER ──────────────────────────────────────────
+// Handles paragraphs, bullet lists (-, *, •), numbered lists, **bold**, *italic*, `code`
+
+/** Global key counter for unique React keys */
+let _mdKey = 0;
+const nextKey = () => ++_mdKey;
+
+/** Apply inline formatting (**bold**, *italic*, `code`) to a string */
+function renderInline(text: string): React.ReactNode[] {
   const parts: React.ReactNode[] = [];
-  // Regex: matches **bold**, *italic*, `code` — order matters (bold before italic)
   const regex = /(\*\*(.+?)\*\*)|(\*(.+?)\*)|(`(.+?)`)/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
-  let key = 0;
 
   while ((match = regex.exec(text)) !== null) {
-    // Text before the match
     if (match.index > lastIndex) {
       parts.push(text.slice(lastIndex, match.index));
     }
-
     if (match[1]) {
-      // **bold**
-      parts.push(<strong key={key++} className="font-bold text-white">{match[2]}</strong>);
+      parts.push(<strong key={nextKey()} className="font-bold text-white">{match[2]}</strong>);
     } else if (match[3]) {
-      // *italic*
-      parts.push(<em key={key++} className="italic text-white/90">{match[4]}</em>);
+      parts.push(<em key={nextKey()} className="italic text-white/90">{match[4]}</em>);
     } else if (match[5]) {
-      // `code`
       parts.push(
-        <code key={key++} className="px-1 py-0.5 rounded text-[11px] font-mono" style={{ background: 'rgba(0,229,255,0.12)', color: H.cyan }}>
+        <code key={nextKey()} className="px-1 py-0.5 rounded text-[11px] font-mono"
+          style={{ background: 'rgba(0,229,255,0.12)', color: H.cyan }}>
           {match[6]}
         </code>
       );
     }
-
     lastIndex = regex.lastIndex;
   }
-
-  // Remaining text after last match
   if (lastIndex < text.length) {
     parts.push(text.slice(lastIndex));
   }
+  return parts;
+}
 
-  return parts.length > 0 ? parts : [text];
+type BlockType = 'paragraph' | 'bullet' | 'numbered';
+
+interface ParsedBlock {
+  type: BlockType;
+  items: string[];         // for lists: each item text; for paragraph: single element
+}
+
+/** Parse raw text into structured blocks (paragraphs, bullet lists, numbered lists) */
+function parseBlocks(text: string): ParsedBlock[] {
+  const lines = text.split('\n');
+  const blocks: ParsedBlock[] = [];
+  let currentBlock: ParsedBlock | null = null;
+
+  const bulletRegex = /^\s*[-*•]\s+(.*)$/;
+  const numberedRegex = /^\s*(\d+)[.)]\s+(.*)$/;
+
+  for (const line of lines) {
+    const trimmed = line.trimEnd();
+    const bulletMatch = trimmed.match(bulletRegex);
+    const numberedMatch = trimmed.match(numberedRegex);
+
+    if (bulletMatch) {
+      // If current block is not a bullet list, flush it
+      if (currentBlock && currentBlock.type !== 'bullet') {
+        blocks.push(currentBlock);
+        currentBlock = null;
+      }
+      if (!currentBlock) currentBlock = { type: 'bullet', items: [] };
+      currentBlock.items.push(bulletMatch[1]);
+    } else if (numberedMatch) {
+      // If current block is not a numbered list, flush it
+      if (currentBlock && currentBlock.type !== 'numbered') {
+        blocks.push(currentBlock);
+        currentBlock = null;
+      }
+      if (!currentBlock) currentBlock = { type: 'numbered', items: [] };
+      currentBlock.items.push(numberedMatch[2]);
+    } else if (trimmed === '') {
+      // Blank line = paragraph break, flush current block
+      if (currentBlock) {
+        blocks.push(currentBlock);
+        currentBlock = null;
+      }
+    } else {
+      // Regular text line
+      if (currentBlock && currentBlock.type !== 'paragraph') {
+        blocks.push(currentBlock);
+        currentBlock = null;
+      }
+      if (!currentBlock) {
+        currentBlock = { type: 'paragraph', items: [trimmed] };
+      } else {
+        // Merge consecutive text lines with a space
+        currentBlock.items[0] += ' ' + trimmed;
+      }
+    }
+  }
+
+  // Flush last block
+  if (currentBlock) blocks.push(currentBlock);
+
+  return blocks;
+}
+
+/** Render parsed blocks into React elements */
+function renderBlocks(blocks: ParsedBlock[]): React.ReactNode[] {
+  const elements: React.ReactNode[] = [];
+
+  for (const block of blocks) {
+    if (block.type === 'paragraph') {
+      elements.push(
+        <p key={nextKey()} className="mb-2 last:mb-0">
+          {renderInline(block.items[0])}
+        </p>
+      );
+    } else if (block.type === 'bullet') {
+      elements.push(
+        <ul key={nextKey()} className="mb-2 last:mb-0 ml-1 space-y-1">
+          {block.items.map((item) => (
+            <li key={nextKey()} className="flex items-start gap-2">
+              <span className="mt-[7px] w-1.5 h-1.5 rounded-full shrink-0"
+                style={{ backgroundColor: H.cyan, boxShadow: `0 0 4px ${H.cyan}` }} />
+              <span className="flex-1">{renderInline(item)}</span>
+            </li>
+          ))}
+        </ul>
+      );
+    } else if (block.type === 'numbered') {
+      elements.push(
+        <ol key={nextKey()} className="mb-2 last:mb-0 ml-1 space-y-1">
+          {block.items.map((item, idx) => (
+            <li key={nextKey()} className="flex items-start gap-2">
+              <span className="shrink-0 w-5 text-right font-semibold text-[12px]"
+                style={{ color: H.cyan }}>
+                {idx + 1}.
+              </span>
+              <span className="flex-1">{renderInline(item)}</span>
+            </li>
+          ))}
+        </ol>
+      );
+    }
+  }
+
+  return elements;
+}
+
+/** Main entry point — parse markdown text and render as structured React elements */
+function renderMarkdown(text: string): React.ReactNode[] {
+  if (!text) return [text];
+  _mdKey = 0; // reset key counter per render
+  const blocks = parseBlocks(text);
+  const rendered = renderBlocks(blocks);
+  return rendered.length > 0 ? rendered : [text];
 }
 
 function generateParticles(count: number): Particle[] {

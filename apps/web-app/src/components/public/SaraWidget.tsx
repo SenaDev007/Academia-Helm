@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { saraApi, SaraStreamChunk } from '@/lib/api/sara';
 import { cn } from '@/lib/utils';
+import { Flower2 } from 'lucide-react';
 
 /**
  * ============================================================================
@@ -61,61 +62,9 @@ function generateParticles(count: number): Particle[] {
   }));
 }
 
-// ─── FLEUR-DE-LYS SVG ICON ────────────────────────────────────────────────
-// Professional, elegant fleur-de-lys — symbol of French royalty & Sarah
-
-const FleurDeLysIcon = ({ size = 24, className = '' }: { size?: number; className?: string }) => (
-  <svg width={size} height={size} viewBox="0 0 100 130" fill="none" className={className}>
-    {/* Center petal */}
-    <path
-      d="M50 6 C53 18 60 30 60 48 C60 58 56 66 50 72 C44 66 40 58 40 48 C40 30 47 18 50 6Z"
-      fill="url(#fleurGold)"
-    />
-    {/* Left petal */}
-    <path
-      d="M40 28 C28 20 12 24 8 38 C6 46 10 54 20 56 C28 58 36 52 40 40Z"
-      fill="url(#fleurGold)"
-    />
-    {/* Right petal */}
-    <path
-      d="M60 28 C72 20 88 24 92 38 C94 46 90 54 80 56 C72 58 64 52 60 40Z"
-      fill="url(#fleurGold)"
-    />
-    {/* Horizontal crossbar */}
-    <rect x="6" y="56" width="88" height="6" rx="3" fill="url(#fleurGold)" />
-    {/* Lower left petal */}
-    <path
-      d="M28 66 C20 72 14 82 18 94 C20 100 28 102 34 97 C40 92 40 80 36 70Z"
-      fill="url(#fleurGold)"
-    />
-    {/* Lower right petal */}
-    <path
-      d="M72 66 C80 72 86 82 82 94 C80 100 72 102 66 97 C60 92 60 80 64 70Z"
-      fill="url(#fleurGold)"
-    />
-    {/* Stem */}
-    <rect x="47" y="72" width="6" height="46" rx="3" fill="url(#fleurGold)" opacity="0.85" />
-    {/* Center jewel */}
-    <circle cx="50" cy="56" r="5" fill="#fff" opacity="0.5" />
-    <circle cx="50" cy="56" r="3" fill="#fff" opacity="0.8" />
-    {/* Petal highlights */}
-    <path
-      d="M48 20 C49 28 52 36 52 46"
-      stroke="#fff"
-      strokeWidth="1"
-      opacity="0.3"
-      fill="none"
-      strokeLinecap="round"
-    />
-    <defs>
-      <linearGradient id="fleurGold" x1="0" y1="0" x2="100" y2="130" gradientUnits="userSpaceOnUse">
-        <stop offset="0%" stopColor={C.goldLight} />
-        <stop offset="40%" stopColor={C.gold} />
-        <stop offset="100%" stopColor={C.goldDark} />
-      </linearGradient>
-    </defs>
-  </svg>
-);
+// ─── FLOWER ICON ────────────────────────────────────────────────────────
+// Lucide Flower2 — icône moderne et élégante pour Sarah
+// "Sarah" = Princesse en hébreu — la fleur est le symbole de grâce et royauté
 
 // ─── SARAH WIDGET COMPONENT ──────────────────────────────────────────────
 
@@ -294,7 +243,7 @@ export default function SaraWidget() {
                   }}
                 >
                   <div style={{ animation: 'fleurFloat 3s ease-in-out infinite' }}>
-                    <FleurDeLysIcon size={22} className="drop-shadow-[0_0_4px_rgba(245,179,53,0.4)]" />
+                    <Flower2 size={22} strokeWidth={1.8} className="drop-shadow-[0_0_4px_rgba(245,179,53,0.4)]" style={{ color: C.gold }} />
                   </div>
                 </div>
               </div>
@@ -560,7 +509,7 @@ export default function SaraWidget() {
             }}
           >
             <div style={{ animation: 'fleurFloat 3s ease-in-out infinite' }}>
-              <FleurDeLysIcon size={30} className="drop-shadow-[0_0_8px_rgba(245,179,53,0.4)]" />
+              <Flower2 size={30} strokeWidth={1.6} className="drop-shadow-[0_0_8px_rgba(245,179,53,0.4)]" style={{ color: C.gold }} />
             </div>
           </div>
 

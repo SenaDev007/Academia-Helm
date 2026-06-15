@@ -244,7 +244,8 @@ RÈGLES STRICTES
 
   /**
    * Répond aux questions des utilisateurs dans l'application
-   * SARA mode In-App — guide l'utilisateur à travers les modules et l'interface
+   * SARA mode In-App — route via l'AI Gateway pour l'accès aux outils (function calling)
+   * Si le tenant n'est pas disponible, fallback sur le mode prompt-only
    */
   async handleInAppQuery(
     query: string,
@@ -254,40 +255,60 @@ RÈGLES STRICTES
     currentModule?: string,
     conversationHistory?: Array<{ role: string; content: string }>,
   ) {
-    const roleContext = this.getRoleContext(userRole);
-    const moduleContext = this.getModuleContext(currentModule);
+    // Route via l'AI Gateway pour l'accès aux outils (function calling)
+    // Le Gateway fournit le contexte MCP, les permissions RBAC et les outils
+    try {
+      const result = await this.aiGateway.processRequest({
+        agent: 'SARA',
+        userId,
+        tenantId: schoolId,
+        schoolId,
+        message: query,
+      });
 
-    const systemPrompt = this.getInAppSystemPrompt(userRole, schoolId, roleContext, moduleContext);
+      return {
+        reply: result.content,
+        isAiEnhanced: !result.isPlaceholder,
+        timestamp: new Date(),
+        model: result.model,
+        toolsUsed: result.toolsUsed?.map(t => t.toolName),
+      };
+    } catch (error: any) {
+      // Fallback : si le Gateway échoue, utiliser le mode prompt-only
+      this.logger.warn(`Gateway request failed, falling back to direct mode: ${error?.message}`);
 
-    // Build messages with history
-    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-      { role: 'system', content: systemPrompt },
-    ];
+      const roleContext = this.getRoleContext(userRole);
+      const moduleContext = this.getModuleContext(currentModule);
+      const systemPrompt = this.getInAppSystemPrompt(userRole, schoolId, roleContext, moduleContext);
 
-    // Add conversation history
-    if (conversationHistory && conversationHistory.length > 0) {
-      for (const msg of conversationHistory.slice(-10)) {
-        if (msg.role === 'user' || msg.role === 'assistant') {
-          messages.push({ role: msg.role as 'user' | 'assistant', content: msg.content });
+      const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+        { role: 'system', content: systemPrompt },
+      ];
+
+      if (conversationHistory && conversationHistory.length > 0) {
+        for (const msg of conversationHistory.slice(-10)) {
+          if (msg.role === 'user' || msg.role === 'assistant') {
+            messages.push({ role: msg.role as 'user' | 'assistant', content: msg.content });
+          }
         }
       }
+
+      messages.push({ role: 'user', content: query });
+
+      const result = await this.openRouter.chat({
+        messages,
+        temperature: 0.6,
+        maxTokens: 800,
+        persona: 'SARA',
+      });
+
+      return {
+        reply: result.content,
+        isAiEnhanced: !result.isPlaceholder,
+        timestamp: new Date(),
+        model: result.model,
+      };
     }
-
-    messages.push({ role: 'user', content: query });
-
-    const result = await this.openRouter.chat({
-      messages,
-      temperature: 0.6,
-      maxTokens: 800,
-      persona: 'SARA',
-    });
-
-    return {
-      reply: result.content,
-      isAiEnhanced: !result.isPlaceholder,
-      timestamp: new Date(),
-      model: result.model,
-    };
   }
 
   /**

@@ -29,13 +29,32 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+/** Format OpenAI Function Calling tool definition */
+export interface OpenAIToolDefinition {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
+
 /** Configuration d'un appel IA */
 export interface OpenRouterChatOptions {
-  /** Messages de la conversation (system, user, assistant) */
+  /** Messages de la conversation (system, user, assistant, tool) */
   messages: Array<{
-    role: 'system' | 'user' | 'assistant';
-    content: string;
+    role: 'system' | 'user' | 'assistant' | 'tool';
+    content: string | null;
     reasoning_details?: unknown;
+    tool_call_id?: string;
+    tool_calls?: Array<{
+      id: string;
+      type: 'function';
+      function: {
+        name: string;
+        arguments: string;
+      };
+    }>;
   }>;
   /** Température (0.0 - 2.0), défaut 0.6 */
   temperature?: number;
@@ -59,6 +78,10 @@ export interface OpenRouterChatOptions {
   maxRetries?: number;
   /** Activer le fallback de modèle automatique (défaut: true) */
   enableFallback?: boolean;
+  /** Outils disponibles pour le function calling (format OpenAI) */
+  tools?: OpenAIToolDefinition[];
+  /** Contrôle quand le modèle appelle les outils : 'auto', 'none', ou forcer un outil */
+  toolChoice?: 'auto' | 'none' | { type: 'function'; function: { name: string } };
 }
 
 /** Réponse d'un appel IA (non-streaming) */
@@ -77,6 +100,17 @@ export interface OpenRouterChatResponse {
   attempts?: number;
   /** Modèle fallback utilisé (si différent du modèle demandé) */
   fallbackModel?: string;
+  /** Tool calls demandés par le modèle (si function calling) */
+  toolCalls?: Array<{
+    id: string;
+    type: 'function';
+    function: {
+      name: string;
+      arguments: string;
+    };
+  }>;
+  /** Finish reason : 'stop', 'tool_calls', 'length', etc. */
+  finishReason?: string;
 }
 
 /** Chunk d'un appel IA (streaming) */
@@ -278,6 +312,12 @@ export class OpenRouterService {
       };
     }
 
+    // Ajouter les outils pour le function calling (format OpenAI)
+    if (options.tools && options.tools.length > 0) {
+      body.tools = options.tools;
+      body.tool_choice = options.toolChoice || 'auto';
+    }
+
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -315,6 +355,28 @@ export class OpenRouterService {
     const data = await response.json();
     const choice = data?.choices?.[0];
     const content = choice?.message?.content || '';
+    const finishReason = choice?.finish_reason || 'stop';
+
+    // Extraire les tool_calls si le modèle en a fait
+    const toolCalls = choice?.message?.tool_calls;
+
+    // Si le modèle demande un tool_call, on retourne même si content est vide
+    if (toolCalls && toolCalls.length > 0) {
+      this.logger.log(`[${persona}] Model requested ${toolCalls.length} tool call(s): ${toolCalls.map((tc: any) => tc.function.name).join(', ')}`);
+
+      return {
+        content: content || '', // Peut être vide quand tool_calls est présent
+        model: data?.model || model,
+        usage: data?.usage ? {
+          promptTokens: data.usage.prompt_tokens || 0,
+          completionTokens: data.usage.completion_tokens || 0,
+          totalTokens: data.usage.total_tokens || 0,
+        } : undefined,
+        isPlaceholder: false,
+        toolCalls,
+        finishReason,
+      };
+    }
 
     if (!content.trim()) {
       this.logger.warn(`[${persona}] Empty response from OpenRouter`);
@@ -343,6 +405,7 @@ export class OpenRouterService {
       } : undefined,
       isPlaceholder: false,
       reasoning_details: reasoningDetails,
+      finishReason,
     };
   }
 

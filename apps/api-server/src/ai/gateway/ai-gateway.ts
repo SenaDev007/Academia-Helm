@@ -27,6 +27,7 @@ import {
   AIBudgetStatus,
   AICostEntry,
   ToolCallResult,
+  ConversationTurn,
 } from '../types/ai.types';
 
 // Rate limits par plan (requêtes/heure)
@@ -167,86 +168,230 @@ export class AIGateway {
   }
 
   /**
-   * Traitement ORION — Analyse décisionnelle
+   * Boucle de function calling — exécute les tool_calls demandés par le modèle
+   * et renvoie les résultats pour que le modèle produise sa réponse finale.
+   * Maximum 5 itérations pour éviter les boucles infinies.
    */
-  private async processOrionRequest(request: AIRequest, context: MCPContext): Promise<AIResponse> {
-    const availableTools = this.toolRegistry.getOpenAIToolsFormat('ORION', context.userPermissions);
+  private async executeWithToolCalling(
+    agent: AIAgentName,
+    systemPrompt: string,
+    userMessage: string,
+    context: MCPContext,
+    options: {
+      temperature: number;
+      maxTokens: number;
+      conversationHistory?: ConversationTurn[];
+    },
+  ): Promise<{
+    content: string;
+    model: string;
+    usage?: any;
+    isPlaceholder: boolean;
+    toolsUsed: ToolCallResult[];
+  }> {
+    const availableTools = this.toolRegistry.getOpenAIToolsFormat(agent, context.userPermissions);
+    const toolsUsed: ToolCallResult[] = [];
+    const MAX_TOOL_ITERATIONS = 5;
 
-    const systemPrompt = this.buildOrionSystemPrompt(context, availableTools);
-
-    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-      { role: 'system', content: systemPrompt },
-    ];
-
-    // Ajouter l'historique de session si disponible
-    if (context.conversationHistory?.length) {
-      for (const turn of context.conversationHistory.slice(-10)) {
-        if (turn.role === 'user' || turn.role === 'assistant') {
-          messages.push({ role: turn.role, content: turn.content });
-        }
-      }
-    }
-
-    messages.push({ role: 'user', content: request.message });
-
-    const response = await this.openRouter.chat({
-      messages,
-      temperature: 0.1, // Très bas pour ORION — factual
-      maxTokens: 1500,
-      persona: 'ORION',
-    });
-
-    return {
-      agent: 'ORION',
-      content: response.content,
-      isPlaceholder: response.isPlaceholder,
-      model: response.model,
-      usage: response.usage,
-      confidence: response.isPlaceholder ? 60 : 95,
-      executionMs: 0, // sera rempli par le caller
-    };
-  }
-
-  /**
-   * Traitement SARA — Closer Senior #1 + Assistante conversationnelle
-   */
-  private async processSaraRequest(request: AIRequest, context: MCPContext): Promise<AIResponse> {
-    const availableTools = this.toolRegistry.getOpenAIToolsFormat('SARA', context.userPermissions);
-    const toolDescriptions = this.toolRegistry.getToolsDescription('SARA', context.userPermissions);
-
-    const systemPrompt = this.buildSaraSystemPrompt(context, toolDescriptions);
-
-    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+    // Construire les messages initiaux
+    const messages: Array<{
+      role: 'system' | 'user' | 'assistant' | 'tool';
+      content: string | null;
+      tool_call_id?: string;
+      tool_calls?: Array<{
+        id: string;
+        type: 'function';
+        function: { name: string; arguments: string };
+      }>;
+    }> = [
       { role: 'system', content: systemPrompt },
     ];
 
     // Ajouter l'historique de session
-    if (context.conversationHistory?.length) {
-      for (const turn of context.conversationHistory.slice(-10)) {
+    if (options.conversationHistory?.length) {
+      for (const turn of options.conversationHistory.slice(-10)) {
         if (turn.role === 'user' || turn.role === 'assistant') {
           messages.push({ role: turn.role, content: turn.content });
         }
       }
     }
 
-    messages.push({ role: 'user', content: request.message });
+    messages.push({ role: 'user', content: userMessage });
 
-    const response = await this.openRouter.chat({
+    // Boucle de function calling
+    let iteration = 0;
+    let lastResponse: any = null;
+
+    while (iteration < MAX_TOOL_ITERATIONS) {
+      iteration++;
+
+      const chatOptions: any = {
+        messages,
+        temperature: options.temperature,
+        maxTokens: options.maxTokens,
+        persona: agent,
+      };
+
+      // Ne passer les outils que s'il y en a
+      if (availableTools.length > 0) {
+        chatOptions.tools = availableTools;
+        chatOptions.toolChoice = 'auto';
+      }
+
+      const response = await this.openRouter.chat(chatOptions);
+      lastResponse = response;
+
+      // Si pas de tool_calls, c'est la réponse finale
+      if (!response.toolCalls || response.toolCalls.length === 0) {
+        return {
+          content: response.content,
+          model: response.model,
+          usage: response.usage,
+          isPlaceholder: response.isPlaceholder,
+          toolsUsed,
+        };
+      }
+
+      // Le modèle a demandé des tool_calls — ajouter le message assistant avec tool_calls
+      messages.push({
+        role: 'assistant',
+        content: response.content || null,
+        tool_calls: response.toolCalls,
+      });
+
+      // Exécuter chaque tool_call et ajouter les résultats
+      for (const toolCall of response.toolCalls) {
+        const toolName = toolCall.function.name;
+        const toolStartTime = Date.now();
+
+        try {
+          // Parser les arguments JSON
+          let toolParams: Record<string, unknown>;
+          try {
+            toolParams = JSON.parse(toolCall.function.arguments);
+          } catch {
+            toolParams = {};
+          }
+
+          this.logger.log(`[${agent}] Executing tool: ${toolName} (iteration ${iteration})`);
+
+          // Exécuter l'outil via le ToolRegistry
+          const result = await this.toolRegistry.execute(toolName, toolParams, context);
+
+          const executionMs = Date.now() - toolStartTime;
+          toolsUsed.push({
+            toolName,
+            parameters: toolParams,
+            result,
+            executionMs,
+          });
+
+          // Ajouter le résultat du tool au messages
+          const toolResultContent = result.success
+            ? JSON.stringify(result.data)
+            : `Error: ${result.error || 'Tool execution failed'}`;
+
+          messages.push({
+            role: 'tool',
+            content: toolResultContent,
+            tool_call_id: toolCall.id,
+          });
+
+          this.logger.log(`[${agent}] Tool "${toolName}" completed in ${executionMs}ms (success: ${result.success})`);
+        } catch (error: any) {
+          const executionMs = Date.now() - toolStartTime;
+          this.logger.error(`[${agent}] Tool "${toolName}" execution error: ${error?.message}`);
+
+          toolsUsed.push({
+            toolName,
+            parameters: {},
+            result: {
+              success: false,
+              data: null,
+              error: error?.message || 'Tool execution failed',
+            },
+            executionMs,
+          });
+
+          // Ajouter l'erreur comme résultat du tool
+          messages.push({
+            role: 'tool',
+            content: JSON.stringify({ error: error?.message || 'Tool execution failed' }),
+            tool_call_id: toolCall.id,
+          });
+        }
+      }
+
+      // La boucle continue — le modèle verra les résultats des outils
+      // et pourra soit faire un autre tool_call, soit produire sa réponse finale
+    }
+
+    // Si on a atteint le max d'itérations, faire un dernier appel sans outils
+    this.logger.warn(`[${agent}] Max tool iterations reached (${MAX_TOOL_ITERATIONS}), forcing final response`);
+
+    const finalResponse = await this.openRouter.chat({
       messages,
-      temperature: 0.6,
-      maxTokens: 1000,
-      persona: 'SARA',
+      temperature: options.temperature,
+      maxTokens: options.maxTokens,
+      persona: agent,
     });
 
-    // SARA peut suggérer des actions
-    const suggestedActions = this.extractSuggestedActions(response.content, context);
+    return {
+      content: finalResponse.content,
+      model: finalResponse.model,
+      usage: finalResponse.usage,
+      isPlaceholder: finalResponse.isPlaceholder,
+      toolsUsed,
+    };
+  }
+
+  /**
+   * Traitement ORION — Analyse décisionnelle avec function calling
+   */
+  private async processOrionRequest(request: AIRequest, context: MCPContext): Promise<AIResponse> {
+    const toolDescriptions = this.toolRegistry.getToolsDescription('ORION', context.userPermissions);
+    const systemPrompt = this.buildOrionSystemPrompt(context, toolDescriptions);
+
+    const result = await this.executeWithToolCalling('ORION', systemPrompt, request.message, context, {
+      temperature: 0.1,
+      maxTokens: 1500,
+      conversationHistory: context.conversationHistory,
+    });
+
+    return {
+      agent: 'ORION',
+      content: result.content,
+      isPlaceholder: result.isPlaceholder,
+      model: result.model,
+      usage: result.usage,
+      toolsUsed: result.toolsUsed,
+      confidence: result.isPlaceholder ? 60 : 95,
+      executionMs: 0,
+    };
+  }
+
+  /**
+   * Traitement SARA — Closer Senior #1 + Assistante conversationnelle avec function calling
+   */
+  private async processSaraRequest(request: AIRequest, context: MCPContext): Promise<AIResponse> {
+    const toolDescriptions = this.toolRegistry.getToolsDescription('SARA', context.userPermissions);
+    const systemPrompt = this.buildSaraSystemPrompt(context, toolDescriptions);
+
+    const result = await this.executeWithToolCalling('SARA', systemPrompt, request.message, context, {
+      temperature: 0.6,
+      maxTokens: 1000,
+      conversationHistory: context.conversationHistory,
+    });
+
+    const suggestedActions = this.extractSuggestedActions(result.content, context);
 
     return {
       agent: 'SARA',
-      content: response.content,
-      isPlaceholder: response.isPlaceholder,
-      model: response.model,
-      usage: response.usage,
+      content: result.content,
+      isPlaceholder: result.isPlaceholder,
+      model: result.model,
+      usage: result.usage,
+      toolsUsed: result.toolsUsed,
       sessionId: request.sessionId,
       suggestedActions,
       executionMs: 0,
@@ -254,51 +399,34 @@ export class AIGateway {
   }
 
   /**
-   * Traitement ATLAS — Exécutant
+   * Traitement ATLAS — Exécutant avec function calling
    */
   private async processAtlasRequest(request: AIRequest, context: MCPContext): Promise<AIResponse> {
-    const availableTools = this.toolRegistry.getOpenAIToolsFormat('ATLAS', context.userPermissions);
     const toolDescriptions = this.toolRegistry.getToolsDescription('ATLAS', context.userPermissions);
-
     const systemPrompt = this.buildAtlasSystemPrompt(context, toolDescriptions);
 
-    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-      { role: 'system', content: systemPrompt },
-    ];
-
-    // Ajouter l'historique de session
-    if (context.conversationHistory?.length) {
-      for (const turn of context.conversationHistory.slice(-10)) {
-        if (turn.role === 'user' || turn.role === 'assistant') {
-          messages.push({ role: turn.role, content: turn.content });
-        }
-      }
-    }
-
-    messages.push({ role: 'user', content: request.message });
-
-    const response = await this.openRouter.chat({
-      messages,
-      temperature: 0.4, // Modéré pour ATLAS — précision dans l'exécution
+    const result = await this.executeWithToolCalling('ATLAS', systemPrompt, request.message, context, {
+      temperature: 0.4,
       maxTokens: 1200,
-      persona: 'ATLAS',
+      conversationHistory: context.conversationHistory,
     });
 
     return {
       agent: 'ATLAS',
-      content: response.content,
-      isPlaceholder: response.isPlaceholder,
-      model: response.model,
-      usage: response.usage,
+      content: result.content,
+      isPlaceholder: result.isPlaceholder,
+      model: result.model,
+      usage: result.usage,
+      toolsUsed: result.toolsUsed,
       sessionId: request.sessionId,
-      suggestedActions: this.extractAtlasActions(response.content, context),
+      suggestedActions: this.extractAtlasActions(result.content, context),
       executionMs: 0,
     };
   }
 
   // ─── SYSTEM PROMPTS ─────────────────────────────────────────────────────
 
-  private buildOrionSystemPrompt(context: MCPContext, tools: unknown[]): string {
+  private buildOrionSystemPrompt(context: MCPContext, toolsDescription: string): string {
     return `Tu es ORION, le moteur analytique et décisionnel de Academia Helm.
 
 ═══════════════════════════════════════════════════════════
@@ -329,8 +457,8 @@ RÈGLES STRICTES
 - Tu ne génères PAS de documents (c'est le rôle d'ATLAS)
 - Tu ne parles PAS directement aux utilisateurs finaux (c'est le rôle de SARA)
 - Toutes tes réponses sont au format JSON structuré
-- Tu appelles les outils disponibles pour accéder aux données
-- Tu quantifies TOUJOURS tes affirmations avec des données réelles
+- UTILISE LES OUTILS DISPONIBLES pour accéder aux données réelles. N'invente jamais de données.
+- Tu quantifies TOUJOURS tes affirmations avec des données réelles issues des outils
 - Tu classes TOUJOURS tes alertes par priorité : CRITICAL, HIGH, MEDIUM, LOW
 
 ═══════════════════════════════════════════════════════════
@@ -342,7 +470,8 @@ CONTEXTE ACTUEL
 - Utilisateur demandeur : ${context.userRole} - ${context.userName}
 - Plan : ${context.subscriptionPlan}
 
-Outils disponibles : ${JSON.stringify(tools, null, 2)}
+Outils disponibles (utilise-les pour accéder aux données) :
+${toolsDescription}
 
 Produis une analyse complète, précise et actionnable basée exclusivement sur les données réelles.`;
   }

@@ -69,6 +69,7 @@ export class AtlasService {
 
   /**
    * Envoie un message à l'IA ATLAS
+   * Route via l'AI Gateway pour l'accès aux outils (function calling) en lecture seule
    */
   async sendMessage(tenantId: string, userId: string, message: string) {
     // 1. Sauvegarder le message de l'utilisateur
@@ -81,67 +82,91 @@ export class AtlasService {
       },
     });
 
-    // 2. Récupérer l'historique récent pour le contexte
-    const history = await this.prisma.atlasMessage.findMany({
-      where: { tenantId, userId },
-      orderBy: { createdAt: 'asc' },
-      take: 20,
-    });
-
-    // 3. Récupérer le contexte du tenant
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id: tenantId },
-      select: { id: true, name: true, slug: true },
-    });
-
-    // 4. Récupérer le rôle utilisateur pour adapter le contexte
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: { role: { select: { name: true } } },
-    });
-    const userRole = user?.role?.name || 'USER';
-
-    const systemPrompt = this.getAtlasSystemPrompt(tenantId, tenant?.name, user, userRole);
-
-    // Construire les messages avec l'historique
-    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-      { role: 'system', content: systemPrompt },
-    ];
-
-    // Ajouter l'historique (max 10 messages précédents)
-    const recentHistory = history.slice(-11, -1); // Exclure le message qu'on vient de sauvegarder
-    for (const msg of recentHistory) {
-      if (msg.role === 'user' || msg.role === 'assistant') {
-        messages.push({ role: msg.role as 'user' | 'assistant', content: msg.content });
-      }
-    }
-
-    // Ajouter le message actuel
-    messages.push({ role: 'user', content: message });
-
-    const response = await this.openRouter.chat({
-      messages,
-      temperature: 0.4, // Bas pour ATLAS — précision dans l'exécution
-      maxTokens: 1000,
-      persona: 'ATLAS',
-    });
-
-    // 4. Sauvegarder la réponse de l'IA
-    const savedResponse = await this.prisma.atlasMessage.create({
-      data: {
-        tenantId,
+    // 2. Essayer via l'AI Gateway pour l'accès aux outils
+    try {
+      const result = await this.aiGateway.processRequest({
+        agent: 'ATLAS',
         userId,
-        content: response.content,
-        role: 'assistant',
-        metadata: {
-          model: response.model,
-          isPlaceholder: response.isPlaceholder,
-          reasoningTokens: response.usage?.reasoningTokens,
-        } as any,
-      },
-    });
+        tenantId,
+        schoolId: tenantId,
+        message,
+      });
 
-    return savedResponse;
+      // 3. Sauvegarder la réponse de l'IA
+      const savedResponse = await this.prisma.atlasMessage.create({
+        data: {
+          tenantId,
+          userId,
+          content: result.content,
+          role: 'assistant',
+          metadata: {
+            model: result.model,
+            isPlaceholder: result.isPlaceholder,
+            toolsUsed: result.toolsUsed?.map(t => t.toolName),
+          } as any,
+        },
+      });
+
+      return savedResponse;
+    } catch (error: any) {
+      // Fallback : mode direct sans outils
+      this.logger.warn(`Gateway request failed, falling back to direct mode: ${error?.message}`);
+
+      const history = await this.prisma.atlasMessage.findMany({
+        where: { tenantId, userId },
+        orderBy: { createdAt: 'asc' },
+        take: 20,
+      });
+
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { id: true, name: true, slug: true },
+      });
+
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        include: { role: { select: { name: true } } },
+      });
+      const userRole = user?.role?.name || 'USER';
+
+      const systemPrompt = this.getAtlasSystemPrompt(tenantId, tenant?.name, user, userRole);
+
+      const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+        { role: 'system', content: systemPrompt },
+      ];
+
+      const recentHistory = history.slice(-11, -1);
+      for (const msg of recentHistory) {
+        if (msg.role === 'user' || msg.role === 'assistant') {
+          messages.push({ role: msg.role as 'user' | 'assistant', content: msg.content });
+        }
+      }
+
+      messages.push({ role: 'user', content: message });
+
+      const response = await this.openRouter.chat({
+        messages,
+        temperature: 0.4,
+        maxTokens: 1000,
+        persona: 'ATLAS',
+      });
+
+      const savedResponse = await this.prisma.atlasMessage.create({
+        data: {
+          tenantId,
+          userId,
+          content: response.content,
+          role: 'assistant',
+          metadata: {
+            model: response.model,
+            isPlaceholder: response.isPlaceholder,
+            reasoningTokens: response.usage?.reasoningTokens,
+          } as any,
+        },
+      });
+
+      return savedResponse;
+    }
   }
 
   /**

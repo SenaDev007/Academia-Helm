@@ -27,6 +27,19 @@ import {
   createAtlasTools,
   createKnowledgeTool,
 } from './tools/tool-definitions';
+import {
+  createExamTools,
+  createPedagogyExtendedTools,
+  createHRExtendedTools,
+  createFinanceExtendedTools,
+  createCommunicationTools,
+  createAttendanceTools,
+  createQHSETools,
+  createMeetingTools,
+  createDashboardTools,
+  createDocumentTools,
+  createSettingTools,
+} from './tools/tool-definitions-extended';
 import { AIController } from './ai.controller';
 
 @Module({
@@ -45,25 +58,37 @@ export class AIModule implements OnModuleInit {
    * Enregistre tous les outils IA au démarrage du module
    */
   onModuleInit() {
-    // Student tools
+    // ─── Core tools (from tool-definitions.ts) ───
     this.toolRegistry.registerMany(createStudentTools(this.prisma));
-
-    // Finance tools
     this.toolRegistry.registerMany(createFinanceTools(this.prisma));
-
-    // HR tools
     this.toolRegistry.registerMany(createHRTools(this.prisma));
-
-    // Orion analytics tools
     this.toolRegistry.registerMany(createOrionTools(this.prisma));
-
-    // Pedagogy tools
     this.toolRegistry.registerMany(createPedagogyTools(this.prisma));
-
-    // Atlas workflow & document tools
     this.toolRegistry.registerMany(createAtlasTools(this.prisma));
-
-    // Knowledge base tool
     this.toolRegistry.register(createKnowledgeTool());
+
+    // ─── Extended read-only tools (from tool-definitions-extended.ts) ───
+    // Exams & Grades
+    this.toolRegistry.registerMany(createExamTools(this.prisma));
+    // Pedagogy extended
+    this.toolRegistry.registerMany(createPedagogyExtendedTools(this.prisma));
+    // HR extended (staff, contracts, attendance, payroll, leaves)
+    this.toolRegistry.registerMany(createHRExtendedTools(this.prisma));
+    // Finance extended (payments, expenses, fee configs, student accounts)
+    this.toolRegistry.registerMany(createFinanceExtendedTools(this.prisma));
+    // Communication
+    this.toolRegistry.registerMany(createCommunicationTools(this.prisma));
+    // Attendance summary
+    this.toolRegistry.registerMany(createAttendanceTools(this.prisma));
+    // QHSE
+    this.toolRegistry.registerMany(createQHSETools(this.prisma));
+    // Meetings
+    this.toolRegistry.registerMany(createMeetingTools(this.prisma));
+    // Dashboard & Overview
+    this.toolRegistry.registerMany(createDashboardTools(this.prisma));
+    // Documents (read-only)
+    this.toolRegistry.registerMany(createDocumentTools(this.prisma));
+    // Settings (read-only)
+    this.toolRegistry.registerMany(createSettingTools(this.prisma));
   }
 }

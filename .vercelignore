@@ -1,30 +1,39 @@
 # =============================================================================
 # .vercelignore — Optimisé pour éviter l'OOM sur Vercel
 # =============================================================================
-# Ne garder QUE les fichiers nécessaires au build web-app
-# Tout le reste est exclu pour réduire le contexte de build (~1.2GB → ~200MB)
+# IMPORTANT : Les patterns SANS / initial sont récursifs (gitignore syntax).
+# web-app/ supprime TOUT dossier "web-app" y compris apps/web-app/
+# /web-app/ ne supprime QUE le dossier racine
+# =============================================================================
 
 # ─── Autres apps du monorepo (non nécessaires au build web-app) ───
-apps/api-server/
-apps/desktop-app/
-apps/mobile-app/
-apps/migration-tools/
-apps/next-app/
+# Ces chemins sont déjà relatifs à la racine, OK tels quels
+/apps/api-server/
+/apps/desktop-app/
+/apps/mobile-app/
+/apps/migration-tools/
+/apps/next-app/
 
 # ─── Répertoires dupliqués à la racine (miroirs de apps/) ───
-web-app/
-next-app/
-api-server/
+# / préfixé = racine uniquement, ne PAS supprimer apps/web-app/
+/web-app/
+/next-app/
+/api-server/
 
 # ─── Fichiers volumineux inutiles pour le build ───
-skills/
-download/
-upload/
-database/
-scripts/
-scratch/
-docs/
-public/videos/
+# / préfixé = racine uniquement, ne PAS supprimer apps/web-app/scripts/ etc.
+/skills/
+/download/
+/upload/
+/database/
+/scripts/
+/scratch/
+/docs/
+
+# ─── Vidéos (partout dans le repo) ───
+*.mp4
+*.avi
+*.mov
 
 # ─── Fichiers système ───
 node_modules/
@@ -40,15 +49,13 @@ tsconfig.tsbuildinfo
 .env.local
 .env*.local
 
-# ─── Fichiers volumineux (vidéos, documents) ───
-*.mp4
-*.avi
-*.mov
+# ─── Documents volumineux (partout) ───
 *.docx
-*.pdf
+
+# ─── PDFs dans public/ uniquement (les PDFs dans src/ peuvent être nécessaires) ───
+/public/**/*.pdf
 
 # ─── Docker et config locale ───
-docker-compose*.yml
-start-dev.*
-netlify.toml
-
+/docker-compose*.yml
+/start-dev.*
+/netlify.toml

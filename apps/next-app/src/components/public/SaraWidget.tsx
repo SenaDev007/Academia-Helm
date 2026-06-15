@@ -33,11 +33,11 @@ export default function SaraWidget() {
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-[1000]">
+    <div className="fixed bottom-6 right-6 z-[1000] max-md:bottom-[5.5rem] max-md:right-4">
       {isOpen ? (
-        <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-[350px] max-h-[500px] flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 duration-300">
-          {/* Header */}
-          <div className="bg-blue-600 p-4 flex items-center justify-between text-white">
+        <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-[350px] max-w-[calc(100vw-2rem)] max-h-[500px] flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 duration-300">
+          {/* Header - Fond cyan */}
+          <div className="bg-cyan-600 p-4 flex items-center justify-between text-white">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
                 <AppIcon name="cpu" size="submenu" className="text-white" />
@@ -58,7 +58,7 @@ export default function SaraWidget() {
               <div key={i} className={cn("flex", m.role === 'user' ? "justify-end" : "justify-start")}>
                 <div className={cn(
                   "max-w-[85%] p-3 rounded-xl text-xs shadow-sm",
-                  m.role === 'user' ? "bg-blue-600 text-white rounded-tr-none" : "bg-white text-gray-800 border border-gray-100 rounded-tl-none"
+                  m.role === 'user' ? "bg-cyan-600 text-white rounded-tr-none" : "bg-white text-gray-800 border border-gray-100 rounded-tl-none"
                 )}>
                   {m.content}
                 </div>
@@ -83,9 +83,9 @@ export default function SaraWidget() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="Écrivez votre message..."
-                className="w-full bg-gray-100 border-none rounded-full py-2 pl-4 pr-10 text-xs focus:ring-1 focus:ring-blue-600 outline-none"
+                className="w-full bg-gray-100 border-none rounded-full py-2 pl-4 pr-10 text-xs focus:ring-1 focus:ring-cyan-600 outline-none"
               />
-              <button type="submit" className="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 bg-blue-600 text-white rounded-full flex items-center justify-center hover:bg-blue-700 transition-colors">
+              <button type="submit" className="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 bg-cyan-600 text-white rounded-full flex items-center justify-center hover:bg-cyan-700 transition-colors">
                 <AppIcon name="arrowRight" size="submenu" />
               </button>
             </div>
@@ -94,12 +94,11 @@ export default function SaraWidget() {
       ) : (
         <button
           onClick={() => setIsOpen(true)}
-          className="w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-blue-700 hover:scale-105 transition-all duration-300 relative group"
+          className="w-14 h-14 bg-cyan-600 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-cyan-700 hover:scale-105 transition-all duration-300 relative group"
         >
           <AppIcon name="messageSquare" size="dashboard" />
-          <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>
           <div className="absolute right-full mr-3 bg-white text-gray-800 text-xs font-bold py-2 px-3 rounded-lg shadow-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none border border-gray-100">
-            Besoin d'aide ? Discutez avec SARA
+            Besoin d&apos;aide ? Discutez avec SARA
           </div>
         </button>
       )}

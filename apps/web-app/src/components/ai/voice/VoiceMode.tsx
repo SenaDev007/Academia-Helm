@@ -131,6 +131,36 @@ export function VoiceMode({ isOpen, onClose, visitorId }: VoiceModeProps) {
       );
 
       if (result.error) {
+        // Erreur partielle — on peut quand même afficher la transcription si dispo
+        if (result.transcribedText || result.saraResponse) {
+          // Afficher ce qu'on a pu obtenir
+          if (result.transcribedText) {
+            const userMsg: VoiceMessage = {
+              id: nextId(),
+              type: 'user',
+              text: result.transcribedText,
+              timestamp: new Date(),
+            };
+            setMessages((prev) => [...prev, userMsg]);
+            setConversationHistory((prev) => [
+              ...prev,
+              { role: 'user', content: result.transcribedText },
+            ]);
+          }
+          if (result.saraResponse) {
+            const assistantMsg: VoiceMessage = {
+              id: nextId(),
+              type: 'assistant',
+              text: result.saraResponse,
+              timestamp: new Date(),
+            };
+            setMessages((prev) => [...prev, assistantMsg]);
+            setConversationHistory((prev) => [
+              ...prev,
+              { role: 'assistant', content: result.saraResponse },
+            ]);
+          }
+        }
         setError(result.error);
         setState('error');
         return;

@@ -287,7 +287,13 @@ export default function SaraWidget() {
 
       for await (const chunk of stream) {
         if (chunk.type === 'delta' && chunk.text) {
+          // Accumulation progressive des deltas (streaming en temps réel)
           fullText += chunk.text;
+          setStreamingText(fullText);
+        } else if (chunk.type === 'final' && chunk.text) {
+          // Le chunk 'final' contient le texte complet de la réponse
+          // On l'utilise directement (évite la duplication si on l'accumulait)
+          fullText = chunk.text;
           setStreamingText(fullText);
         } else if (chunk.type === 'error') {
           if (!fullText) {
@@ -356,6 +362,10 @@ export default function SaraWidget() {
         if (chunk.type === 'delta' && chunk.text) {
           fullText += chunk.text;
           setStreamingText(fullText);
+        } else if (chunk.type === 'final' && chunk.text) {
+          // Le chunk 'final' contient le texte complet — on l'utilise directement
+          fullText = chunk.text;
+          setStreamingText(fullText);
         } else if (chunk.type === 'error') {
           if (!fullText) {
             fullText = "Je suis désolée, une erreur technique s'est produite.";
@@ -368,9 +378,19 @@ export default function SaraWidget() {
         setMessages(prev => [...prev, { role: 'assistant', content: fullText }]);
       }
     } catch (error: any) {
+      const errorMsg = error?.message || '';
+      let userMessage = "Erreur vocale. Essayez de taper votre question.";
+      // Message plus spécifique selon le type d'erreur
+      if (errorMsg.includes('500')) {
+        userMessage = "Le service vocal est temporairement indisponible. Veuillez taper votre question.";
+      } else if (errorMsg.includes('timeout') || errorMsg.includes('Timeout')) {
+        userMessage = "La requête vocale a pris trop de temps. Veuillez réessayer ou taper votre question.";
+      } else if (errorMsg.includes('network') || errorMsg.includes('fetch')) {
+        userMessage = "Problème de connexion. Vérifiez votre réseau et réessayez.";
+      }
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: "Erreur vocale. Essayez de taper votre question.",
+        content: userMessage,
       }]);
     } finally {
       setIsTyping(false);

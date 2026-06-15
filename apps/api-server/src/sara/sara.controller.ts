@@ -194,7 +194,14 @@ export class SaraController {
       return { text: '', error: 'audioBase64 is required' };
     }
 
-    return this.voiceService.transcribe(body.audioBase64);
+    try {
+      return await this.voiceService.transcribe(body.audioBase64);
+    } catch (error: any) {
+      return {
+        text: '',
+        error: `Transcription échouée : ${error?.message || 'Erreur ASR'}`,
+      };
+    }
   }
 
   /**
@@ -219,11 +226,19 @@ export class SaraController {
     // Nettoyer le markdown pour un rendu TTS naturel
     const cleanText = this.voiceService.cleanTextForTTS(body.text);
 
-    return this.voiceService.speak(
-      cleanText,
-      body.voice,
-      body.speed,
-    );
+    try {
+      return await this.voiceService.speak(
+        cleanText,
+        body.voice,
+        body.speed,
+      );
+    } catch (error: any) {
+      return {
+        audioBase64: '',
+        format: 'mp3',
+        error: `Synthèse vocale échouée : ${error?.message || 'Erreur TTS'}`,
+      };
+    }
   }
 
   /**
@@ -271,50 +286,85 @@ export class SaraController {
       };
     }
 
-    // 1. ASR : Audio → Texte
-    const { text: transcribedText } = await this.voiceService.transcribe(body.audioBase64);
+    try {
+      // 1. ASR : Audio → Texte
+      let transcribedText = '';
+      try {
+        const asrResult = await this.voiceService.transcribe(body.audioBase64);
+        transcribedText = asrResult.text || '';
+      } catch (asrError: any) {
+        return {
+          transcribedText: '',
+          saraResponse: '',
+          audioBase64: '',
+          format: 'mp3',
+          error: `Transcription échouée : ${asrError?.message || 'Erreur ASR'}`,
+        };
+      }
 
-    if (!transcribedText.trim()) {
+      if (!transcribedText.trim()) {
+        return {
+          transcribedText: '',
+          saraResponse: "Je n'ai pas bien compris. Pouvez-vous répéter ?",
+          audioBase64: '',
+          format: 'mp3',
+        };
+      }
+
+      // 2. SARA : Texte → Réponse
+      let saraResponse = '';
+      try {
+        const saraResult = await this.saraService.handleVisitorQuery(
+          transcribedText,
+          body.visitorId,
+          body.messages,
+        );
+        saraResponse = saraResult?.reply || saraResult?.content || '';
+      } catch (saraError: any) {
+        // Si SARA échoue, on retourne quand même la transcription
+        return {
+          transcribedText,
+          saraResponse: "Je suis temporairement indisponible. Réessayez dans un instant.",
+          audioBase64: '',
+          format: 'mp3',
+          error: `SARA indisponible : ${saraError?.message || 'Erreur'}`,
+        };
+      }
+
+      // 3. TTS : Réponse → Audio
+      const cleanResponse = this.voiceService.cleanTextForTTS(saraResponse);
+      let audioBase64 = '';
+      let format = 'mp3';
+
+      try {
+        const speakResult = await this.voiceService.speak(
+          cleanResponse,
+          body.voice,
+          body.speed,
+        );
+        audioBase64 = speakResult.audioBase64;
+        format = speakResult.format;
+      } catch (ttsError: any) {
+        // Si le TTS échoue, on retourne quand même le texte
+        // Le frontend pourra afficher la réponse textuelle
+        console.error('[VoiceChat] TTS failed:', ttsError?.message);
+      }
+
+      return {
+        transcribedText,
+        saraResponse,
+        audioBase64,
+        format,
+      };
+    } catch (error: any) {
+      // Catch-all de sécurité
       return {
         transcribedText: '',
-        saraResponse: "Je n'ai pas bien compris. Pouvez-vous répéter ?",
+        saraResponse: '',
         audioBase64: '',
         format: 'mp3',
+        error: `Erreur vocale : ${error?.message || 'Erreur inconnue'}`,
       };
     }
-
-    // 2. SARA : Texte → Réponse
-    const saraResult = await this.saraService.handleVisitorQuery(
-      transcribedText,
-      body.visitorId,
-      body.messages,
-    );
-
-    const saraResponse = saraResult?.reply || saraResult?.content || '';
-
-    // 3. TTS : Réponse → Audio
-    const cleanResponse = this.voiceService.cleanTextForTTS(saraResponse);
-    let audioBase64 = '';
-    let format = 'mp3';
-
-    try {
-      const speakResult = await this.voiceService.speak(
-        cleanResponse,
-        body.voice,
-        body.speed,
-      );
-      audioBase64 = speakResult.audioBase64;
-      format = speakResult.format;
-    } catch (ttsError: any) {
-      // Si le TTS échoue, on retourne quand même le texte
-      // Le frontend pourra afficher la réponse textuelle
-    }
-
-    return {
-      transcribedText,
-      saraResponse,
-      audioBase64,
-      format,
-    };
   }
 }

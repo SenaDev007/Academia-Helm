@@ -231,7 +231,7 @@ export default function SaraWidget() {
                 />
                 <div className="relative w-10 h-10 rounded-full overflow-hidden ring-2" style={{ ringColor: H.cyan }}>
                   <Image
-                    src="/images/Chatbot Sara.webp"
+                    src="/images/SarahAI.png"
                     alt="Sarah"
                     width={40}
                     height={40}
@@ -534,7 +534,7 @@ export default function SaraWidget() {
             />
             <div className="relative w-14 h-14 rounded-full overflow-hidden ring-2 shadow-xl" style={{ ringColor: H.cyan }}>
               <Image
-                src="/images/Chatbot Sara.webp"
+                src="/images/SarahAI.png"
                 alt="Sarah"
                 width={56}
                 height={56}

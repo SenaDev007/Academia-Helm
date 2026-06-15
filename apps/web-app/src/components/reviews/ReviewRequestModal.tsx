@@ -143,6 +143,11 @@ export default function ReviewRequestModal({
         return;
       }
       setStep('success');
+      // Marquer l'avis comme donné pour stopper les futures notifications auto
+      try {
+        localStorage.setItem('helm_review_submitted', 'true');
+        localStorage.setItem('helm_review_submitted_at', new Date().toISOString());
+      } catch {}
     } catch {
       setErr('Erreur réseau. Vérifiez votre connexion.');
     } finally {
@@ -362,7 +367,15 @@ export default function ReviewRequestModal({
         type="button"
         className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
         aria-label="Fermer"
-        onClick={onClose}
+        onClick={() => {
+          // Si l'utilisateur ferme au stade rating, c'est un refus → enregistrer pour re-rappel
+          if (step === 'rating') {
+            try {
+              localStorage.setItem('helm_review_declined_at', new Date().toISOString());
+            } catch {}
+          }
+          onClose();
+        }}
       />
       {card}
     </div>

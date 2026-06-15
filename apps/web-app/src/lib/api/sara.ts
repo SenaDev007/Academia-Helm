@@ -38,6 +38,31 @@ export interface SaraStreamChunk {
 }
 
 // ---------------------------------------------------------------------------
+// Voice Types
+// ---------------------------------------------------------------------------
+
+export interface VoiceTranscribeResponse {
+  text: string;
+  language?: string;
+  error?: string;
+}
+
+export interface VoiceSpeakResponse {
+  audioBase64: string;
+  format: string;
+  durationMs?: number;
+  error?: string;
+}
+
+export interface VoiceChatResponse {
+  transcribedText: string;
+  saraResponse: string;
+  audioBase64: string;
+  format: string;
+  error?: string;
+}
+
+// ---------------------------------------------------------------------------
 // API methods
 // ---------------------------------------------------------------------------
 
@@ -215,5 +240,99 @@ export const saraApi = {
       currentModule,
     });
     return response.data;
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // VOICE API — Mode Vocal (ASR + TTS)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Transcrire un audio en texte (ASR).
+   * Utilisé pour convertir la voix de l'utilisateur en texte.
+   *
+   * POST /sara/voice/transcribe
+   */
+  voiceTranscribe: async (
+    audioBase64: string,
+  ): Promise<VoiceTranscribeResponse> => {
+    const apiBaseUrl = getApiBaseUrl();
+    const url = `${apiBaseUrl}/sara/voice/transcribe`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audioBase64 }),
+      signal: AbortSignal.timeout(30000), // 30s for ASR
+    });
+
+    if (!response.ok) {
+      throw new Error(`ASR API error: ${response.status} ${response.statusText}`);
+    }
+
+    return response.json();
+  },
+
+  /**
+   * Convertir du texte en audio (TTS).
+   * Utilisé pour lire à voix haute la réponse de SARA.
+   *
+   * POST /sara/voice/speak
+   */
+  voiceSpeak: async (
+    text: string,
+    voice?: string,
+    speed?: number,
+  ): Promise<VoiceSpeakResponse> => {
+    const apiBaseUrl = getApiBaseUrl();
+    const url = `${apiBaseUrl}/sara/voice/speak`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice, speed }),
+      signal: AbortSignal.timeout(30000), // 30s for TTS
+    });
+
+    if (!response.ok) {
+      throw new Error(`TTS API error: ${response.status} ${response.statusText}`);
+    }
+
+    return response.json();
+  },
+
+  /**
+   * Pipeline vocal complet : Audio → ASR → SARA → TTS → Audio.
+   * Mode vocal immersif comme ChatGPT Voice.
+   *
+   * POST /sara/voice/chat
+   */
+  voiceChat: async (
+    audioBase64: string,
+    visitorId?: string,
+    conversationHistory?: Array<{ role: string; content: string }>,
+    voice?: string,
+    speed?: number,
+  ): Promise<VoiceChatResponse> => {
+    const apiBaseUrl = getApiBaseUrl();
+    const url = `${apiBaseUrl}/sara/voice/chat`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        audioBase64,
+        visitorId,
+        messages: conversationHistory,
+        voice,
+        speed,
+      }),
+      signal: AbortSignal.timeout(90000), // 90s for full pipeline
+    });
+
+    if (!response.ok) {
+      throw new Error(`Voice Chat API error: ${response.status} ${response.statusText}`);
+    }
+
+    return response.json();
   },
 };

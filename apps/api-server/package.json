@@ -96,6 +96,7 @@
     "twilio": "^5.11.2",
     "typeorm": "^0.3.17",
     "uuid": "^9.0.1",
+    "z-ai-web-dev-sdk": "^0.0.18",
     "zod": "^3.23.8"
   },
   "optionalDependencies": {

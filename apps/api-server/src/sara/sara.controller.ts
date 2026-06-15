@@ -1,12 +1,16 @@
 import { Controller, Post, Body, Res, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
 import { SaraService } from './sara.service';
+import { VoiceService } from './voice.service';
 import { Public } from '../auth/decorators/public.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('sara')
 export class SaraController {
-  constructor(private readonly saraService: SaraService) {}
+  constructor(
+    private readonly saraService: SaraService,
+    private readonly voiceService: VoiceService,
+  ) {}
 
   /**
    * Landing page SARA query (public, Closer Senior #1 mode)
@@ -165,5 +169,152 @@ export class SaraController {
     @Body() body: { userRole?: string; currentModule?: string },
   ) {
     return this.saraService.getContextualSuggestions(body.userRole, body.currentModule);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // VOICE ENDPOINTS — Mode Vocal SARA (comme ChatGPT Voice)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * VOICE TRANSCRIBE — Audio → Texte (ASR seul)
+   *
+   * POST /sara/voice/transcribe
+   * Body: { audioBase64: string }
+   * Response: { text: string, language?: string }
+   *
+   * Utilisé par le frontend pour transcrire la voix de l'utilisateur
+   * et afficher le texte dans le chat avant envoi à SARA.
+   */
+  @Public()
+  @Post('voice/transcribe')
+  async voiceTranscribe(
+    @Body() body: { audioBase64: string },
+  ) {
+    if (!body.audioBase64) {
+      return { text: '', error: 'audioBase64 is required' };
+    }
+
+    return this.voiceService.transcribe(body.audioBase64);
+  }
+
+  /**
+   * VOICE SPEAK — Texte → Audio (TTS seul)
+   *
+   * POST /sara/voice/speak
+   * Body: { text: string; voice?: string; speed?: number }
+   * Response: { audioBase64: string; format: string; durationMs?: number }
+   *
+   * Utilisé par le frontend pour lire à voix haute la réponse de SARA.
+   * Le texte est nettoyé du markdown avant TTS.
+   */
+  @Public()
+  @Post('voice/speak')
+  async voiceSpeak(
+    @Body() body: { text: string; voice?: string; speed?: number },
+  ) {
+    if (!body.text) {
+      return { audioBase64: '', format: 'mp3', error: 'text is required' };
+    }
+
+    // Nettoyer le markdown pour un rendu TTS naturel
+    const cleanText = this.voiceService.cleanTextForTTS(body.text);
+
+    return this.voiceService.speak(
+      cleanText,
+      body.voice,
+      body.speed,
+    );
+  }
+
+  /**
+   * VOICE CHAT — Pipeline complet : Audio → ASR → SARA → TTS → Audio
+   *
+   * POST /sara/voice/chat
+   * Body: {
+   *   audioBase64: string;
+   *   visitorId?: string;
+   *   messages?: Array<{ role: string; content: string }>;
+   *   voice?: string;
+   *   speed?: number;
+   * }
+   * Response: {
+   *   transcribedText: string;
+   *   saraResponse: string;
+   *   audioBase64: string;
+   *   format: string;
+   * }
+   *
+   * Pipeline complet pour le mode vocal immersif :
+   * 1. Transcrire l'audio de l'utilisateur (ASR)
+   * 2. Envoyer le texte à SARA
+   * 3. Convertir la réponse en audio (TTS)
+   * 4. Retourner le tout au frontend
+   */
+  @Public()
+  @Post('voice/chat')
+  async voiceChat(
+    @Body() body: {
+      audioBase64: string;
+      visitorId?: string;
+      messages?: Array<{ role: string; content: string }>;
+      voice?: string;
+      speed?: number;
+    },
+  ) {
+    if (!body.audioBase64) {
+      return {
+        transcribedText: '',
+        saraResponse: '',
+        audioBase64: '',
+        format: 'mp3',
+        error: 'audioBase64 is required',
+      };
+    }
+
+    // 1. ASR : Audio → Texte
+    const { text: transcribedText } = await this.voiceService.transcribe(body.audioBase64);
+
+    if (!transcribedText.trim()) {
+      return {
+        transcribedText: '',
+        saraResponse: "Je n'ai pas bien compris. Pouvez-vous répéter ?",
+        audioBase64: '',
+        format: 'mp3',
+      };
+    }
+
+    // 2. SARA : Texte → Réponse
+    const saraResult = await this.saraService.handleVisitorQuery(
+      transcribedText,
+      body.visitorId,
+      body.messages,
+    );
+
+    const saraResponse = saraResult?.reply || saraResult?.content || '';
+
+    // 3. TTS : Réponse → Audio
+    const cleanResponse = this.voiceService.cleanTextForTTS(saraResponse);
+    let audioBase64 = '';
+    let format = 'mp3';
+
+    try {
+      const speakResult = await this.voiceService.speak(
+        cleanResponse,
+        body.voice,
+        body.speed,
+      );
+      audioBase64 = speakResult.audioBase64;
+      format = speakResult.format;
+    } catch (ttsError: any) {
+      // Si le TTS échoue, on retourne quand même le texte
+      // Le frontend pourra afficher la réponse textuelle
+    }
+
+    return {
+      transcribedText,
+      saraResponse,
+      audioBase64,
+      format,
+    };
   }
 }

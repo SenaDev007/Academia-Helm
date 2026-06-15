@@ -4,7 +4,9 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { saraApi, SaraStreamChunk } from '@/lib/api/sara';
 import { cn } from '@/lib/utils';
-import { Crown } from 'lucide-react';
+import { Crown, Mic, Volume2 } from 'lucide-react';
+import { VoiceButton } from '@/components/ai/voice/VoiceButton';
+import { VoiceMode } from '@/components/ai/voice/VoiceMode';
 
 /**
  * ============================================================================
@@ -216,6 +218,7 @@ function generateParticles(count: number): Particle[] {
 
 export default function SaraWidget() {
   const [isOpen, setIsOpen] = useState(false);
+  const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
   const [messages, setMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([
     {
       role: 'assistant',
@@ -304,6 +307,60 @@ export default function SaraWidget() {
       handleSend();
     }
   };
+
+  // ─── VOICE INPUT HANDLER ──────────────────────────────────────────────
+
+  const handleVoiceInput = useCallback(async (audioBase64: string) => {
+    setIsTyping(true);
+    setStreamingText('');
+
+    try {
+      // Transcrire l'audio
+      const { text } = await saraApi.voiceTranscribe(audioBase64);
+
+      if (!text.trim()) {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: "Je n'ai pas bien compris. Pouvez-vous répéter ?",
+        }]);
+        setIsTyping(false);
+        return;
+      }
+
+      // Afficher le message utilisateur
+      setInput('');
+      setShowSuggestions(false);
+      setMessages(prev => [...prev, { role: 'user', content: text }]);
+
+      // Envoyer à SARA (streaming)
+      let fullText = '';
+      const stream = saraApi.queryStream(text, undefined, messages);
+
+      for await (const chunk of stream) {
+        if (chunk.type === 'delta' && chunk.text) {
+          fullText += chunk.text;
+          setStreamingText(fullText);
+        } else if (chunk.type === 'error') {
+          if (!fullText) {
+            fullText = "Je suis désolée, une erreur technique s'est produite.";
+          }
+          break;
+        }
+      }
+
+      if (fullText) {
+        setMessages(prev => [...prev, { role: 'assistant', content: fullText }]);
+      }
+    } catch (error: any) {
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: "Erreur vocale. Essayez de taper votre question.",
+      }]);
+    } finally {
+      setIsTyping(false);
+      setStreamingText('');
+    }
+  }, [messages]);
 
   // ─── RENDER ──────────────────────────────────────────────────────────
 
@@ -430,6 +487,29 @@ export default function SaraWidget() {
                   En ligne
                 </span>
               </div>
+              {/* Voice Mode button */}
+              <button
+                onClick={() => setIsVoiceModeOpen(true)}
+                className="p-1.5 rounded-lg transition-all"
+                style={{
+                  background: H.cyanGhost,
+                  border: `1px solid ${H.cyanFaint}`,
+                  color: H.cyanDim,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(0,229,255,0.2)';
+                  e.currentTarget.style.color = '#ffffff';
+                  e.currentTarget.style.boxShadow = '0 0 8px rgba(0,229,255,0.3)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = H.cyanGhost;
+                  e.currentTarget.style.color = H.cyanDim;
+                  e.currentTarget.style.boxShadow = 'none';
+                }}
+                title="Mode vocal"
+              >
+                <Mic size={12} />
+              </button>
               <button
                 onClick={() => setIsOpen(false)}
                 className="hover:bg-white/10 p-1.5 rounded-lg transition-colors text-white/50 hover:text-white/80"
@@ -583,50 +663,60 @@ export default function SaraWidget() {
             }}
             className="p-3 shrink-0 relative"
           >
-            <div className="relative">
-              <input
-                ref={inputRef}
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Posez votre question..."
-                className="w-full py-2.5 pl-4 pr-12 text-sm rounded-full outline-none transition-all duration-300"
-                style={{
-                  background: '#ffffff',
-                  border: `1px solid ${H.cyanFaint}`,
-                  color: '#001223',
-                  boxShadow: '0 0 0 0 transparent',
-                }}
-                onFocus={(e) => {
-                  e.currentTarget.style.borderColor = H.cyan;
-                  e.currentTarget.style.boxShadow = `0 0 20px rgba(0,229,255,0.2), 0 0 40px rgba(0,229,255,0.08)`;
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.borderColor = H.cyanFaint;
-                  e.currentTarget.style.boxShadow = '0 0 0 0 transparent';
-                }}
+            <div className="relative flex items-center gap-2">
+              {/* Voice Button (left of input) */}
+              <VoiceButton
+                onRecordingComplete={handleVoiceInput}
                 disabled={isTyping}
+                size="sm"
               />
-              <style>{`input::placeholder { color: rgba(0,18,35,0.35) !important; }`}</style>
-              <button
-                type="submit"
-                disabled={!input.trim() || isTyping}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300"
-                style={input.trim() && !isTyping ? {
-                  background: `linear-gradient(135deg, ${H.cyan}, #009bb8)`,
-                  color: '#fff',
-                  boxShadow: `0 0 12px rgba(0,229,255,0.4)`,
-                } : {
-                  background: 'rgba(0,229,255,0.1)',
-                  color: 'rgba(0,229,255,0.3)',
-                  cursor: 'not-allowed',
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M5 12h14M12 5l7 7-7 7" />
-                </svg>
-              </button>
+
+              {/* Text Input */}
+              <div className="relative flex-1">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Posez votre question..."
+                  className="w-full py-2.5 pl-4 pr-12 text-sm rounded-full outline-none transition-all duration-300"
+                  style={{
+                    background: '#ffffff',
+                    border: `1px solid ${H.cyanFaint}`,
+                    color: '#001223',
+                    boxShadow: '0 0 0 0 transparent',
+                  }}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = H.cyan;
+                    e.currentTarget.style.boxShadow = `0 0 20px rgba(0,229,255,0.2), 0 0 40px rgba(0,229,255,0.08)`;
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = H.cyanFaint;
+                    e.currentTarget.style.boxShadow = '0 0 0 0 transparent';
+                  }}
+                  disabled={isTyping}
+                />
+                <style>{`input::placeholder { color: rgba(0,18,35,0.35) !important; }`}</style>
+                <button
+                  type="submit"
+                  disabled={!input.trim() || isTyping}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300"
+                  style={input.trim() && !isTyping ? {
+                    background: `linear-gradient(135deg, ${H.cyan}, #009bb8)`,
+                    color: '#fff',
+                    boxShadow: `0 0 12px rgba(0,229,255,0.4)`,
+                  } : {
+                    background: 'rgba(0,229,255,0.1)',
+                    color: 'rgba(0,229,255,0.3)',
+                    cursor: 'not-allowed',
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M5 12h14M12 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </form>
 
@@ -823,6 +913,13 @@ export default function SaraWidget() {
           background: rgba(0,229,255,0.3);
         }
       `}</style>
+
+      {/* ─── VOICE MODE (Full-screen immersive) ──────────────────────── */}
+      <VoiceMode
+        isOpen={isVoiceModeOpen}
+        onClose={() => setIsVoiceModeOpen(false)}
+        visitorId={undefined}
+      />
     </div>
   );
 }

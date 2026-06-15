@@ -549,17 +549,6 @@ export default function SaraWidget() {
             style={{ border: `1.5px solid ${H.cyan}` }}
           />
 
-          {/* Badge "IA" */}
-          <div className="absolute -top-2 left-1/2 -translate-x-1/2 text-white text-[9px] font-bold px-2.5 py-0.5 rounded-full"
-            style={{
-              background: `linear-gradient(135deg, ${H.cyan}, #009bb8)`,
-              border: '1px solid rgba(255,255,255,0.15)',
-              boxShadow: `0 0 8px rgba(0,229,255,0.3)`,
-            }}
-          >
-            IA
-          </div>
-
           {/* Green notification dot */}
           <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full border-2 animate-pulse"
             style={{

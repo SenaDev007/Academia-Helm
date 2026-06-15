@@ -14,26 +14,19 @@ const nextConfig = {
     ? undefined
     : path.join(__dirname, '..', '..'),
 
-  // ✅ Exclure les répertoires inutiles du tracing (réduit drastiquement la mémoire build)
-  outputFileTracingExcludes: [
-    'apps/api-server',
-    'apps/mobile-app',
-    'apps/desktop-app',
-    'apps/migration-tools',
-    'apps/next-app',
-    'web-app',
-    'next-app',
-    'api-server',
-    'skills',
-    'download',
-    'upload',
-    'database',
-    'scripts',
-    'scratch',
-    'docs',
-    '.git',
-    'node_modules/.cache',
-  ],
+  // ✅ Exclure les répertoires inutiles du tracing (réduit la mémoire build)
+  // Format objet attendu par Next.js 16 : { '<path>': ['<excludes>'] }
+  // Comme outputFileTracingRoot est undefined sur Vercel, ce champ est inactif en prod Vercel
+  outputFileTracingExcludes: {
+    '*': [
+      'apps/api-server',
+      'apps/mobile-app',
+      'apps/desktop-app',
+      'apps/migration-tools',
+      'apps/next-app',
+      'node_modules/.cache',
+    ],
+  },
 
   // ⚠️ TypeScript — Temporairement ignoré pour débloquer le déploiement Vercel
   // TODO: Corriger les erreurs TS et remettre ignoreBuildErrors: false
@@ -105,13 +98,15 @@ const nextConfig = {
       '@react-pdf/renderer',
       'next-mdx-remote',
     ],
-    // ✅ Paquets natifs qui ne doivent pas être bundlés côté serveur
-    serverExternalPackages: [
-      'sharp',
-      '@react-pdf/renderer',
-      'canvas',
-    ],
   },
+
+  // ✅ Paquets natifs qui ne doivent pas être bundlés côté serveur
+  // (Propriété de premier niveau dans Next.js 14+, pas dans experimental)
+  serverExternalPackages: [
+    'sharp',
+    '@react-pdf/renderer',
+    'canvas',
+  ],
   
   // ✅ Optimisation de la compilation
   compiler: {

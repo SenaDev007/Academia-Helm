@@ -23,26 +23,41 @@ export class SaraController {
    */
   @UseGuards(JwtAuthGuard)
   @Post('chat')
-  async chat(@Req() req: any, @Body() body: { message: string; sessionId?: string }) {
-    return this.saraService.handleInAppChat(
-      req.user.tenantId,
-      req.user.id,
+  async chat(@Req() req: any, @Body() body: { message: string; userRole?: string; currentModule?: string; sessionId?: string }) {
+    return this.saraService.handleInAppQuery(
       body.message,
-      body.sessionId,
+      req.user.id,
+      req.user.tenantId,
+      body.userRole || req.user.role,
+      body.currentModule,
     );
   }
 
   /**
-   * Get conversation history
-   * GET /sara/history
+   * In-app chat via AI Gateway (mode avancé avec MCP + Tools)
+   * POST /sara/chat/advanced
    */
   @UseGuards(JwtAuthGuard)
-  @Get('history')
-  async getHistory(@Req() req: any, @Query('sessionId') sessionId?: string) {
-    return this.saraService.getSessionHistory(
-      req.user.tenantId,
+  @Post('chat/advanced')
+  async chatAdvanced(@Req() req: any, @Body() body: { message: string; schoolId?: string }) {
+    return this.saraService.handleInAppQueryViaGateway(
+      body.message,
       req.user.id,
-      sessionId,
+      req.user.tenantId,
+      body.schoolId,
+    );
+  }
+
+  /**
+   * Detect intent from user message
+   * POST /sara/intent
+   */
+  @UseGuards(JwtAuthGuard)
+  @Post('intent')
+  async detectIntent(@Req() req: any, @Body() body: { message: string }) {
+    return this.saraService.detectIntent(
+      body.message,
+      req.user.role || 'DIRECTION',
     );
   }
 

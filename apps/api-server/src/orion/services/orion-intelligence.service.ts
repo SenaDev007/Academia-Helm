@@ -1,10 +1,11 @@
 /**
  * ============================================================================
- * ORION INTELLIGENCE ENGINES — Academic / Finance / HR / Compliance / Security
+ * ORION INTELLIGENCE SERVICE — Academic / Finance / HR / Compliance / Security
  * ============================================================================
  * Moteurs d'intelligence pour ORION, le cerveau analytique de la plateforme.
  * Chaque engine produit des analyses, alertes et recommandations.
  *
+ * Modèle : z-ai/glm-5.1 via OpenRouter avec support reasoning
  * Conforme à la spécification v2.0 Tome 2
  */
 
@@ -85,7 +86,6 @@ export class OrionIntelligenceService {
    */
   private async calculateAcademicScore(tenantId: string): Promise<number> {
     try {
-      // Taux de réussite
       const totalStudents = await this.prisma.student.count({
         where: { tenantId, status: 'ACTIVE' },
       });
@@ -120,7 +120,6 @@ export class OrionIntelligenceService {
    */
   private async calculateFinanceScore(tenantId: string): Promise<number> {
     try {
-      // KPI financier
       const financeKpi = await this.prisma.kpiSnapshot.findFirst({
         where: { tenantId, definition: { category: 'FINANCIAL' } },
         orderBy: { calculatedAt: 'desc' },
@@ -176,7 +175,6 @@ export class OrionIntelligenceService {
         where: { tenantId, status: 'ACTIVE' },
       });
 
-      // Score basique basé sur le nombre d'enseignants
       if (activeTeachers >= 10) return 80;
       if (activeTeachers >= 5) return 65;
       if (activeTeachers >= 2) return 50;
@@ -193,14 +191,12 @@ export class OrionIntelligenceService {
    */
   private async calculateComplianceScore(tenantId: string): Promise<number> {
     try {
-      // Vérifier les dossiers incomplets
       const totalStudents = await this.prisma.student.count({
         where: { tenantId, status: 'ACTIVE' },
       });
 
       if (totalStudents === 0) return 70;
 
-      // Dossiers avec documents manquants
       const incompleteDossiers = await this.prisma.studentDocument.groupBy({
         by: ['studentId'],
         where: { tenantId, status: 'MISSING' },
@@ -221,15 +217,14 @@ export class OrionIntelligenceService {
    */
   private async calculateSecurityScore(tenantId: string): Promise<number> {
     try {
-      // Compter les accès refusés récents
-      const recentDenied = await this.prisma.accessDeniedLog.count({
+      const recentDenied = await this.prisma.auditLog.count({
         where: {
           tenantId,
+          action: { contains: 'ACCESS_DENIED' },
           createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
         },
       });
 
-      // Score de base dégradé par les accès refusés
       const baseScore = 90;
       const penalty = Math.min(recentDenied * 2, 50);
       return Math.max(baseScore - penalty, 20);
@@ -238,10 +233,11 @@ export class OrionIntelligenceService {
     }
   }
 
-  // ─── PREDICTION ENGINE ──────────────────────────────────────────────────
+  // ─── PREDICTION ENGINE (GLM 5.1 with reasoning) ─────────────────────────
 
   /**
-   * Analyse prédictive via l'AI Gateway
+   * Analyse prédictive via l'AI Gateway avec reasoning activé
+   * Utilise le paramètre reasoning de GLM 5.1 pour les analyses approfondies
    */
   async predict(tenantId: string, userId: string, type: string): Promise<unknown> {
     return this.aiGateway.processRequest({
@@ -256,6 +252,56 @@ Analyse les tendances historiques et produis une prédiction structurée avec :
 - Facteurs de risque
 - Recommandations d'action`,
     });
+  }
+
+  /**
+   * Prédiction avancée avec raisonnement GLM 5.1
+   * Utilise directement le service OpenRouter avec reasoning activé
+   */
+  async predictWithReasoning(tenantId: string, userId: string, type: string): Promise<unknown> {
+    const result = await this.openRouter.chatWithReasoning(
+      `Génère une prédiction de type ${type} pour l'établissement ${tenantId}.
+Analyse les tendances historiques et produis une prédiction structurée avec :
+- Prédiction chiffrée
+- Niveau de confiance (0-100%)
+- Facteurs contributeurs
+- Facteurs de risque
+- Recommandations d'action
+Réponds en JSON structuré.`,
+      `Tu es ORION, le moteur analytique de Academia Helm. Tu produces des prédictions basées sur l'analyse des données de l'établissement. Tu utilises le raisonnement étape par étape pour arriver à des conclusions précises. Réponds UNIQUEMENT en JSON valide.`,
+      'ORION',
+      {
+        temperature: 0.2,
+        maxTokens: 2000,
+        reasoningEffort: 'high',
+      },
+    );
+
+    if (result.isPlaceholder) {
+      return { prediction: 'Analyse en cours...', isPlaceholder: true };
+    }
+
+    // Essayer de parser le JSON de la réponse
+    try {
+      const jsonMatch = result.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return {
+          ...JSON.parse(jsonMatch[0]),
+          reasoningTokens: result.usage?.reasoningTokens,
+          model: result.model,
+          isPlaceholder: false,
+        };
+      }
+    } catch {
+      // Retourner le contenu brut si le parsing échoue
+    }
+
+    return {
+      prediction: result.content,
+      reasoningTokens: result.usage?.reasoningTokens,
+      model: result.model,
+      isPlaceholder: false,
+    };
   }
 
   /**

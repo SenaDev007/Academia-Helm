@@ -8,7 +8,7 @@
  * - Fallback local si réponse non conforme
  * - Journalisation de toutes les interactions
  * 
- * SUPPORT : OpenRouter (GLM 4.5 Air), OpenAI, Anthropic
+ * SUPPORT : OpenRouter (GLM 5.1), OpenAI, Anthropic
  */
 
 import type {
@@ -26,7 +26,7 @@ import { fetchWithTimeout, LLM_FETCH_TIMEOUT } from '@/lib/api/fetch-with-timeou
  */
 const LLM_CONFIG = {
   provider: (process.env.ORION_LLM_PROVIDER || 'openrouter') as 'openrouter' | 'openai' | 'anthropic' | 'local',
-  model: process.env.ORION_LLM_MODEL || 'z-ai/glm-4.5-air:free',
+  model: process.env.ORION_LLM_MODEL || 'z-ai/glm-5.1',
   temperature: 0.1, // Très basse pour des réponses factuelles
   maxTokens: 1000,
 };

@@ -194,6 +194,8 @@ export type SaraIntent =
   | 'HELP_REQUEST'
   | 'FEATURE_EXPLANATION'
   | 'PROCEDURE_QUERY'
+  | 'NAVIGATION_HELP'
+  | 'ONBOARDING_GUIDE'
   // Inconnu
   | 'UNKNOWN';
 

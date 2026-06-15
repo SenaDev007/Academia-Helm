@@ -137,7 +137,7 @@ function getAIProvider(): { provider: 'openrouter' | 'anthropic'; apiKey: string
     return {
       provider: 'openrouter',
       apiKey: openrouterKey,
-      model: process.env.OPENROUTER_MODEL || 'z-ai/glm-4.5-air:free',
+      model: process.env.OPENROUTER_MODEL || 'z-ai/glm-5.1',
     };
   }
 

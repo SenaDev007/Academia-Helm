@@ -20,6 +20,11 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+  loadChatMessages,
+  saveChatMessages,
+  type InAppGuideMessage,
+} from '@/lib/sara/chat-storage';
 
 interface Message {
   id: string;
@@ -100,7 +105,13 @@ export default function InAppSaraGuide({
   variant = 'blue',
 }: InAppSaraGuideProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    // Charger les messages sauvegardés ou utiliser un tableau vide
+    // (le message d'accueil sera ajouté par useEffect ci-dessous)
+    if (typeof window === 'undefined') return [];
+    const saved = loadChatMessages<InAppGuideMessage>('inapp-guide');
+    return saved.length > 0 ? saved : [];
+  });
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -122,6 +133,13 @@ export default function InAppSaraGuide({
       }]);
     }
   }, [userRole, currentModule]);
+
+  // Persistance : sauvegarder les messages a chaque modification
+  useEffect(() => {
+    if (messages.length > 0) {
+      saveChatMessages('inapp-guide', messages);
+    }
+  }, [messages]);
 
   // Auto-scroll
   useEffect(() => {

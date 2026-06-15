@@ -7,6 +7,11 @@ import { cn } from '@/lib/utils';
 import { Crown, Mic, Volume2 } from 'lucide-react';
 import { VoiceButton } from '@/components/ai/voice/VoiceButton';
 import { VoiceMode } from '@/components/ai/voice/VoiceMode';
+import {
+  loadChatMessages,
+  saveChatMessages,
+  type SaraWidgetMessage,
+} from '@/lib/sara/chat-storage';
 
 /**
  * ============================================================================
@@ -219,12 +224,18 @@ function generateParticles(count: number): Particle[] {
 export default function SaraWidget() {
   const [isOpen, setIsOpen] = useState(false);
   const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
-  const [messages, setMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([
-    {
-      role: 'assistant',
-      content: "Shalom ! Je suis Sarah, votre conseillère Academia Helm. Je suis là pour vous accompagner et vous montrer comment notre solution peut transformer la gestion de votre école. Que souhaitez-vous savoir ?",
-    },
-  ]);
+  // Message d'accueil par défaut
+  const WELCOME_MESSAGE: { role: 'user' | 'assistant'; content: string } = {
+    role: 'assistant',
+    content: "Shalom ! Je suis Sarah, votre conseillère Academia Helm. Je suis là pour vous accompagner et vous montrer comment notre solution peut transformer la gestion de votre école. Que souhaitez-vous savoir ?",
+  };
+
+  // Charger les messages sauvegardés ou utiliser le message d'accueil
+  const [messages, setMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>(() => {
+    if (typeof window === 'undefined') return [WELCOME_MESSAGE];
+    const saved = loadChatMessages<SaraWidgetMessage>('sara-widget');
+    return saved.length > 0 ? saved : [WELCOME_MESSAGE];
+  });
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(true);
@@ -241,6 +252,11 @@ export default function SaraWidget() {
     "Je veux une démo",
     "Comment s'inscrire ?",
   ];
+
+  // Persistance : sauvegarder les messages à chaque modification
+  useEffect(() => {
+    saveChatMessages('sara-widget', messages);
+  }, [messages]);
 
   // Auto-scroll
   useEffect(() => {

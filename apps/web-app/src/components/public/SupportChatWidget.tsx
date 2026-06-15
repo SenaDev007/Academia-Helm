@@ -18,6 +18,13 @@ import { faqData, type FAQData } from '@/data/chatbot/faq';
 import { intents, type Intent } from '@/data/sara/intents';
 import { closingResponses } from '@/data/sara/closing_responses';
 import { objections, type Objection } from '@/data/sara/objections';
+import {
+  loadChatMessages,
+  saveChatMessages,
+  serializeSupportMessages,
+  deserializeSupportMessages,
+  type SupportChatMessage,
+} from '@/lib/sara/chat-storage';
 
 interface Message {
   id: string;
@@ -61,14 +68,17 @@ Comment puis-je vous aider aujourd'hui ? 😊`;
 export default function SupportChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
   const [hideFloatingButton, setHideFloatingButton] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      type: 'bot',
-      content: WELCOME_MESSAGE,
-      timestamp: new Date(),
-    },
-  ]);
+  // Charger les messages sauvegardés ou utiliser le message d'accueil
+  const [messages, setMessages] = useState<Message[]>(() => {
+    if (typeof window === 'undefined') {
+      return [{ id: '1', type: 'bot', content: WELCOME_MESSAGE, timestamp: new Date() }];
+    }
+    const saved = loadChatMessages<SupportChatMessage>('support-chat');
+    if (saved.length > 0) {
+      return deserializeSupportMessages(saved);
+    }
+    return [{ id: '1', type: 'bot', content: WELCOME_MESSAGE, timestamp: new Date() }];
+  });
   const [inputValue, setInputValue] = useState('');
   const [showQuickReplies, setShowQuickReplies] = useState(true);
   const [showEnterpriseForm, setShowEnterpriseForm] = useState(false);
@@ -83,6 +93,11 @@ export default function SupportChatWidget() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  // Persistance : sauvegarder les messages à chaque modification
+  useEffect(() => {
+    saveChatMessages('support-chat', serializeSupportMessages(messages));
+  }, [messages]);
 
   // Vérifier l'état d'authentification
   useEffect(() => {

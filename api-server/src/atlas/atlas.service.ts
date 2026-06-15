@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { OpenRouterService } from '../common/services/openrouter.service';
+import { OpenRouterService, OpenRouterStreamChunk } from '../common/services/openrouter.service';
 import { AIGateway } from '../ai/gateway/ai-gateway';
 
 /**
@@ -28,6 +28,44 @@ export class AtlasService {
     private readonly openRouter: OpenRouterService,
     private readonly aiGateway: AIGateway,
   ) {}
+
+  /**
+   * Sauvegarde un message utilisateur (utilisé par le streaming)
+   */
+  async saveUserMessage(tenantId: string, userId: string, message: string) {
+    await this.prisma.atlasMessage.create({
+      data: {
+        tenantId,
+        userId,
+        content: message,
+        role: 'user',
+      },
+    });
+  }
+
+  /**
+   * Sauvegarde la réponse de l'assistant (utilisé par le streaming)
+   */
+  async saveAssistantMessage(
+    tenantId: string,
+    userId: string,
+    content: string,
+    usage?: { model?: string; reasoningTokens?: number },
+  ) {
+    await this.prisma.atlasMessage.create({
+      data: {
+        tenantId,
+        userId,
+        content,
+        role: 'assistant',
+        metadata: {
+          model: usage?.model || 'unknown',
+          isPlaceholder: false,
+          reasoningTokens: usage?.reasoningTokens,
+        } as any,
+      },
+    });
+  }
 
   /**
    * Envoie un message à l'IA ATLAS
@@ -63,7 +101,137 @@ export class AtlasService {
     });
     const userRole = user?.role?.name || 'USER';
 
-    const systemPrompt = `Tu es ATLAS, l'IA exécutante d'Academia Helm.
+    const systemPrompt = this.getAtlasSystemPrompt(tenantId, tenant?.name, user, userRole);
+
+    // Construire les messages avec l'historique
+    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+      { role: 'system', content: systemPrompt },
+    ];
+
+    // Ajouter l'historique (max 10 messages précédents)
+    const recentHistory = history.slice(-11, -1); // Exclure le message qu'on vient de sauvegarder
+    for (const msg of recentHistory) {
+      if (msg.role === 'user' || msg.role === 'assistant') {
+        messages.push({ role: msg.role as 'user' | 'assistant', content: msg.content });
+      }
+    }
+
+    // Ajouter le message actuel
+    messages.push({ role: 'user', content: message });
+
+    const response = await this.openRouter.chat({
+      messages,
+      temperature: 0.4, // Bas pour ATLAS — précision dans l'exécution
+      maxTokens: 1000,
+      persona: 'ATLAS',
+    });
+
+    // 4. Sauvegarder la réponse de l'IA
+    const savedResponse = await this.prisma.atlasMessage.create({
+      data: {
+        tenantId,
+        userId,
+        content: response.content,
+        role: 'assistant',
+        metadata: {
+          model: response.model,
+          isPlaceholder: response.isPlaceholder,
+          reasoningTokens: response.usage?.reasoningTokens,
+        } as any,
+      },
+    });
+
+    return savedResponse;
+  }
+
+  /**
+   * Version streaming de sendMessage — retourne un AsyncGenerator
+   * L'historique doit être sauvegardé séparément (avant/après le stream)
+   */
+  async *sendMessageStream(
+    tenantId: string,
+    userId: string,
+    message: string,
+  ): AsyncGenerator<OpenRouterStreamChunk> {
+    // Récupérer l'historique récent pour le contexte
+    const history = await this.prisma.atlasMessage.findMany({
+      where: { tenantId, userId },
+      orderBy: { createdAt: 'asc' },
+      take: 20,
+    });
+
+    // Récupérer le contexte du tenant
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, name: true, slug: true },
+    });
+
+    // Récupérer le rôle utilisateur pour adapter le contexte
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { role: { select: { name: true } } },
+    });
+    const userRole = user?.role?.name || 'USER';
+
+    const systemPrompt = this.getAtlasSystemPrompt(tenantId, tenant?.name, user, userRole);
+
+    // Construire les messages avec l'historique
+    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+      { role: 'system', content: systemPrompt },
+    ];
+
+    const recentHistory = history.slice(-10);
+    for (const msg of recentHistory) {
+      if (msg.role === 'user' || msg.role === 'assistant') {
+        messages.push({ role: msg.role as 'user' | 'assistant', content: msg.content });
+      }
+    }
+
+    messages.push({ role: 'user', content: message });
+
+    yield* this.openRouter.chatStream({
+      messages,
+      temperature: 0.4,
+      maxTokens: 1000,
+      persona: 'ATLAS',
+    });
+  }
+
+  /**
+   * Envoie un message à ATLAS via l'AI Gateway (mode avancé avec contexte MCP)
+   */
+  async sendMessageViaGateway(tenantId: string, userId: string, message: string) {
+    return this.aiGateway.processRequest({
+      agent: 'ATLAS',
+      userId,
+      tenantId,
+      message,
+    });
+  }
+
+  /**
+   * Récupère l'historique de conversation
+   */
+  async getHistory(tenantId: string, userId: string) {
+    return this.prisma.atlasMessage.findMany({
+      where: { tenantId, userId },
+      orderBy: { createdAt: 'asc' },
+      take: 50,
+    });
+  }
+
+  // ─── SYSTEM PROMPT ─────────────────────────────────────────────────────────
+
+  /**
+   * Retourne le system prompt complet pour ATLAS
+   */
+  private getAtlasSystemPrompt(
+    tenantId: string,
+    tenantName?: string,
+    user?: any,
+    userRole?: string,
+  ): string {
+    return `Tu es ATLAS, l'IA exécutante d'Academia Helm.
 
 ═══════════════════════════════════════════════════════════
 IDENTITÉ
@@ -124,7 +292,7 @@ WORKFLOWS AUTOMATISÉS
 ═══════════════════════════════════════════════════════════
 CONTEXTE ÉTABLISSEMENT
 ═══════════════════════════════════════════════════════════
-- École : ${tenant?.name || 'Établissement'}
+- École : ${tenantName || 'Établissement'}
 - Tenant ID : ${tenantId}
 - Utilisateur : ${user?.firstName || ''} ${user?.lastName || ''} (${userRole})
 
@@ -143,68 +311,5 @@ RÈGLES STRICTES
 10. Adapte ton vocabulaire au rôle de l'utilisateur (${userRole})
 11. Log chaque action dans l'audit trail
 12. En cas d'erreur partielle, continue et rapporte les éléments échoués`;
-
-    // Construire les messages avec l'historique
-    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-      { role: 'system', content: systemPrompt },
-    ];
-
-    // Ajouter l'historique (max 10 messages précédents)
-    const recentHistory = history.slice(-11, -1); // Exclure le message qu'on vient de sauvegarder
-    for (const msg of recentHistory) {
-      if (msg.role === 'user' || msg.role === 'assistant') {
-        messages.push({ role: msg.role as 'user' | 'assistant', content: msg.content });
-      }
-    }
-
-    // Ajouter le message actuel
-    messages.push({ role: 'user', content: message });
-
-    const response = await this.openRouter.chat({
-      messages,
-      temperature: 0.4, // Bas pour ATLAS — précision dans l'exécution
-      maxTokens: 1000,
-      persona: 'ATLAS',
-    });
-
-    // 4. Sauvegarder la réponse de l'IA
-    const savedResponse = await this.prisma.atlasMessage.create({
-      data: {
-        tenantId,
-        userId,
-        content: response.content,
-        role: 'assistant',
-        metadata: {
-          model: response.model,
-          isPlaceholder: response.isPlaceholder,
-          reasoningTokens: response.usage?.reasoningTokens,
-        } as any,
-      },
-    });
-
-    return savedResponse;
-  }
-
-  /**
-   * Envoie un message à ATLAS via l'AI Gateway (mode avancé avec contexte MCP)
-   */
-  async sendMessageViaGateway(tenantId: string, userId: string, message: string) {
-    return this.aiGateway.processRequest({
-      agent: 'ATLAS',
-      userId,
-      tenantId,
-      message,
-    });
-  }
-
-  /**
-   * Récupère l'historique de conversation
-   */
-  async getHistory(tenantId: string, userId: string) {
-    return this.prisma.atlasMessage.findMany({
-      where: { tenantId, userId },
-      orderBy: { createdAt: 'asc' },
-      take: 50,
-    });
   }
 }

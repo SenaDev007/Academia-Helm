@@ -8,9 +8,32 @@ const isVercel = !!process.env.VERCEL;
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  outputFileTracingRoot: isNetlify
+  // ✅ Désactiver le file tracing sur Vercel et Netlify pour éviter l'OOM
+  // Quand activé, Vercel trace TOUS les fichiers du monorepo (~1.2GB), causant un SIGKILL
+  outputFileTracingRoot: (isNetlify || isVercel)
     ? undefined
     : path.join(__dirname, '..', '..'),
+
+  // ✅ Exclure les répertoires inutiles du tracing (réduit drastiquement la mémoire build)
+  outputFileTracingExcludes: [
+    'apps/api-server',
+    'apps/mobile-app',
+    'apps/desktop-app',
+    'apps/migration-tools',
+    'apps/next-app',
+    'web-app',
+    'next-app',
+    'api-server',
+    'skills',
+    'download',
+    'upload',
+    'database',
+    'scripts',
+    'scratch',
+    'docs',
+    '.git',
+    'node_modules/.cache',
+  ],
 
   // ⚠️ TypeScript — Temporairement ignoré pour débloquer le déploiement Vercel
   // TODO: Corriger les erreurs TS et remettre ignoreBuildErrors: false
@@ -62,7 +85,32 @@ const nextConfig = {
   
   // ✅ Optimisation des bundles
   experimental: {
-    optimizePackageImports: ['lucide-react', '@base-ui/react', 'date-fns', 'framer-motion'], // Tree-shaking (packages lourds)
+    optimizePackageImports: [
+      // ✅ Tree-shaking optimisé pour réduire le bundle et la mémoire de build
+      // Ces packages sont lourds et doivent être importés de manière sélective
+      'lucide-react',
+      '@base-ui/react',
+      'date-fns',
+      'framer-motion',
+      'recharts',
+      '@aws-sdk/client-s3',
+      '@aws-sdk/s3-request-presigner',
+      '@tanstack/react-query',
+      '@clerk/nextjs',
+      'lodash',
+      'cloudinary',
+      'socket.io-client',
+      'zod',
+      '@sentry/nextjs',
+      '@react-pdf/renderer',
+      'next-mdx-remote',
+    ],
+    // ✅ Paquets natifs qui ne doivent pas être bundlés côté serveur
+    serverExternalPackages: [
+      'sharp',
+      '@react-pdf/renderer',
+      'canvas',
+    ],
   },
   
   // ✅ Optimisation de la compilation
@@ -72,12 +120,10 @@ const nextConfig = {
     } : false,
   },
   
-  // ✅ Gestion des erreurs de téléchargement de polices Google Fonts
-  // Si le téléchargement échoue (timeout, connexion), Next.js utilisera automatiquement le fallback
-  // Cette configuration permet d'ignorer les erreurs de téléchargement en développement
+  // ✅ Réduire la mémoire de build en limitant les pages compilées en parallèle
   onDemandEntries: {
-    maxInactiveAge: 25 * 1000,
-    pagesBufferLength: 2,
+    maxInactiveAge: 15 * 1000, // Libérer plus vite les pages inactives
+    pagesBufferLength: 1, // Compiler 1 page à la fois au lieu de 2
   },
   
   // ✅ Optimisation du développement (simplifiée pour éviter les conflits)

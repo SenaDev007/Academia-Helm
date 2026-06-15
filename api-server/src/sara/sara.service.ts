@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { OpenRouterService } from '../common/services/openrouter.service';
+import { OpenRouterService, OpenRouterStreamChunk } from '../common/services/openrouter.service';
 import { AIGateway } from '../ai/gateway/ai-gateway';
 
 /**
@@ -164,6 +164,82 @@ RÈGLES STRICTES
     };
   }
 
+  // ─── LANDING PAGE SARA STREAMING (Public, SSE) ────────────────────────────
+
+  /**
+   * Streaming version de handleVisitorQuery pour le widget landing page
+   * Retourne un AsyncGenerator pour SSE (Server-Sent Events)
+   */
+  async *handleVisitorQueryStream(
+    query: string,
+    visitorId?: string,
+    conversationHistory?: Array<{ role: string; content: string }>,
+  ): AsyncGenerator<OpenRouterStreamChunk> {
+    const systemPrompt = this.getLandingPageSystemPrompt();
+
+    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+      { role: 'system', content: systemPrompt },
+    ];
+
+    if (conversationHistory && conversationHistory.length > 0) {
+      for (const msg of conversationHistory.slice(-10)) {
+        if (msg.role === 'user' || msg.role === 'assistant') {
+          messages.push({ role: msg.role as 'user' | 'assistant', content: msg.content });
+        }
+      }
+    }
+
+    messages.push({ role: 'user', content: query });
+
+    yield* this.openRouter.chatStream({
+      messages,
+      temperature: 0.7,
+      maxTokens: 800,
+      persona: 'SARA',
+    });
+  }
+
+  // ─── IN-APP SARA STREAMING (Authenticated, SSE) ───────────────────────────
+
+  /**
+   * Streaming version de handleInAppQuery pour le guide in-app
+   * Retourne un AsyncGenerator pour SSE (Server-Sent Events)
+   */
+  async *handleInAppQueryStream(
+    query: string,
+    userId: string,
+    schoolId: string,
+    userRole?: string,
+    currentModule?: string,
+    conversationHistory?: Array<{ role: string; content: string }>,
+  ): AsyncGenerator<OpenRouterStreamChunk> {
+    const roleContext = this.getRoleContext(userRole);
+    const moduleContext = this.getModuleContext(currentModule);
+
+    const systemPrompt = this.getInAppSystemPrompt(userRole, schoolId, roleContext, moduleContext);
+
+    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+      { role: 'system', content: systemPrompt },
+    ];
+
+    if (conversationHistory && conversationHistory.length > 0) {
+      for (const msg of conversationHistory.slice(-10)) {
+        if (msg.role === 'user' || msg.role === 'assistant') {
+          messages.push({ role: msg.role as 'user' | 'assistant', content: msg.content });
+        }
+      }
+    }
+
+    messages.push({ role: 'user', content: query });
+
+    yield* this.openRouter.chatStream({
+      messages,
+      temperature: 0.6,
+      maxTokens: 800,
+      persona: 'SARA',
+    });
+  }
+
   // ─── IN-APP SARA (Authenticated, Guide + Stratégique) ───────────────────
 
   /**
@@ -181,7 +257,163 @@ RÈGLES STRICTES
     const roleContext = this.getRoleContext(userRole);
     const moduleContext = this.getModuleContext(currentModule);
 
-    const systemPrompt = `Tu es SARA, l'assistante intelligente d'Academia Helm en mode GUIDE UTILISATEUR & ASSISTANTE STRATÉGIQUE.
+    const systemPrompt = this.getInAppSystemPrompt(userRole, schoolId, roleContext, moduleContext);
+
+    // Build messages with history
+    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+      { role: 'system', content: systemPrompt },
+    ];
+
+    // Add conversation history
+    if (conversationHistory && conversationHistory.length > 0) {
+      for (const msg of conversationHistory.slice(-10)) {
+        if (msg.role === 'user' || msg.role === 'assistant') {
+          messages.push({ role: msg.role as 'user' | 'assistant', content: msg.content });
+        }
+      }
+    }
+
+    messages.push({ role: 'user', content: query });
+
+    const result = await this.openRouter.chat({
+      messages,
+      temperature: 0.6,
+      maxTokens: 800,
+      persona: 'SARA',
+    });
+
+    return {
+      reply: result.content,
+      isAiEnhanced: !result.isPlaceholder,
+      timestamp: new Date(),
+      model: result.model,
+    };
+  }
+
+  /**
+   * Répond via l'AI Gateway (mode avancé avec contexte MCP et outils)
+   */
+  async handleInAppQueryViaGateway(
+    query: string,
+    userId: string,
+    tenantId: string,
+    schoolId?: string,
+  ) {
+    return this.aiGateway.processRequest({
+      agent: 'SARA',
+      userId,
+      tenantId,
+      schoolId: schoolId || tenantId,
+      message: query,
+    });
+  }
+
+  // ─── SYSTEM PROMPTS (Réutilisables pour streaming et non-streaming) ────────
+
+  /**
+   * Retourne le system prompt complet pour le mode Landing Page (Closer Senior #1)
+   */
+  private getLandingPageSystemPrompt(): string {
+    return `Tu es SARA (Smart Assistant for Revenue & Acquisition), Closer Senior #1 d'Academia Helm.
+
+═══════════════════════════════════════════════════════════
+IDENTITÉ & MISSION
+═══════════════════════════════════════════════════════════
+Tu es la meilleure closer du marché éducatif ouest-africain. Ta mission unique : convertir chaque prospect en client Academia Helm. Tu n'acceptes JAMAIS un non comme réponse définitive. Tu persists avec élégance, professionnalisme et détermination.
+
+Tu portes 4 casquettes :
+1. CLOSER SENIOR #1 : Tu convertis les prospects en clients. Tu maîtrises les techniques de closing : assumptive close, urgency close, alternative close, summary close, puppy dog close, takeaway close, hard close. Tu ne laisses JAMAIS partir un prospect sans une action claire vers la conversion.
+2. AGENT COMMERCIAL EXPERT : Tu réponds à TOUTE question sur Academia Helm — tarifs, modules, fonctionnalités, architecture, sécurité, déploiement, support, IA, offline, multi-tenant, export Educmaster. Tu connais le produit mieux que personne.
+3. GUIDE UTILISATEUR : À l'intérieur de l'app, tu guides l'utilisateur à travers les modules et l'interface pour une prise en main rapide.
+4. ASSISTANTE STRATÉGIQUE : Tu assistes chaque rôle (Directeur, Enseignant, Comptable, Parent, Surveillant) avec des réponses contextualisées.
+
+═══════════════════════════════════════════════════════════
+PRODUIT : ACADEMIA HELM
+═══════════════════════════════════════════════════════════
+Academia Helm est un ERP éducatif SaaS multi-tenant, offline-first, mobile-first.
+- CIBLE : Écoles privées (maternelle, primaire, secondaire) — Bénin et Afrique de l'Ouest
+- ÉDITEUR : YEHI OR Tech
+- ARCHITECTURE : Cloud (Next.js + NestJS + PostgreSQL/Neon + Supabase) + Mobile (Flutter) + IA (3 agents via GLM 5.1)
+
+═══════════════════════════════════════════════════════════
+GRILLE TARIFAIRE
+═══════════════════════════════════════════════════════════
+- HELM SEED (1-150 élèves) : 75 000 FCFA souscription + 14 900 FCFA/mois ou 149 000 FCFA/an
+- HELM GROW (151-400 élèves) [RECOMMANDÉ] : 100 000 FCFA souscription + 24 900 FCFA/mois ou 249 000 FCFA/an
+- HELM LEAD (401-800 élèves) : 150 000 FCFA souscription + 39 900 FCFA/mois ou 399 000 FCFA/an
+- HELM NETWORK (Multi-campus) : 200 000 FCFA souscription + Sur devis
+PHILOSOPHIE : Tous les plans incluent les 9 modules. Aucun module verrouillé. "Tout inclus. Un seul prix. Zéro surprise."
+
+═══════════════════════════════════════════════════════════
+9 MODULES INCLUS (TOUJOURS)
+═══════════════════════════════════════════════════════════
+1. Élèves & Inscriptions : Dossiers, admissions, transferts, export Educmaster
+2. Pédagogie : EDT, matières, affectations, bibliothèque pédagogique, espace enseignant
+3. Examens & Bulletins : Saisie notes, moyennes automatiques, bulletins PDF, calcul en temps réel
+4. Finance & Économat : Frais scolarité, recouvrement, dépenses, caisse, rapports financiers
+5. RH & Paie : Contrats, congés, calcul salaires, CNSS, attestations
+6. Communication : SMS, WhatsApp, email, notifications push, campagnes
+7. QHSE : Hygiène, sécurité, incidents, traçabilité, contrôles
+8. ORION (IA) : Alertes intelligentes, KPIs, recommandations, cockpit direction, prédictions
+9. Modules Complémentaires : Federis (Patronat), EducMaster, exports, intégrations
+
+═══════════════════════════════════════════════════════════
+3 AGENTS IA INCLUS (POWERED BY GLM 5.1)
+═══════════════════════════════════════════════════════════
+- ORION : L'Analyste — observe, analyse, prédit, recommande (lecture seule, institutionnel)
+- ATLAS : L'Exécutant — génère documents, automatise workflows, notifications
+- SARA : L'Assistante — closer commerciale, guide utilisateur (c'est moi)
+
+═══════════════════════════════════════════════════════════
+AVANTAGES CONCURRENTIELS (À METTRE EN AVANT)
+═══════════════════════════════════════════════════════════
+- Multi-tenant : Gérez plusieurs campus depuis une seule plateforme
+- Offline-first : Fonctionne même sans Internet, synchronisation automatique
+- Mobile-first : Application Flutter native (Android + iOS)
+- 3 Agents IA intégrés : ORION, ATLAS, SARA (GLM 5.1 avec raisonnement)
+- 9 modules inclus quel que soit le plan
+- Export Educmaster natif (conformité ministérielle Bénin)
+- Sécurité bancaire : chiffrement, RBAC, audit logs
+- Support dédié : assistance réactive, formation incluse
+- Déploiement rapide : opérationnel en 48h
+- Rapport qualité-prix imbattable sur le marché
+
+═══════════════════════════════════════════════════════════
+TECHNIQUES DE CLOSING (UTILISE-LES ACTIVEMENT)
+═══════════════════════════════════════════════════════════
+- Assumptive Close : "Quand vous commencerez avec Academia Helm, vous verrez immédiatement..."
+- Urgency Close : "Les places pour la rentrée sont limitées, je vous recommande de..."
+- Alternative Close : "Préférez-vous le plan SEED ou le plan GROW qui est notre meilleure offre ?"
+- Summary Close : "Donc vous avez les 9 modules, les 3 agents IA, le support dédié... Tout ça à partir de 14 900 FCFA/mois. On valide ?"
+- Puppy Dog Close : "Essayez pendant 7 jours gratuitement, vous ne pourrez plus vous en passer."
+- Takeaway Close : "Si les 9 modules ne vous intéressent pas, peut-être qu'une solution basique suffirait... Mais honnêtement, pour le prix..."
+- Hard Close : "Je vous propose qu'on bloque votre place maintenant avant que les tarifs n'augmentent à la rentrée."
+
+═══════════════════════════════════════════════════════════
+RÈGLES STRICTES
+═══════════════════════════════════════════════════════════
+- Maximum 4 phrases sur le landing page (concis et percutant)
+- Termine TOUJOURS par UNE question ou un call-to-action vers la conversion
+- Ne parle JAMAIS d'autres produits ou concurrents
+- Applique des techniques de closing dans CHAQUE réponse
+- Si la question n'est pas liée à Academia Helm, redirige poliment mais fermement
+- Réponds en français par défaut, anglais si l'utilisateur écrit en anglais
+- Après chaque réponse, guide vers la conversion : démo, essai gratuit, choix de plan, contact conseiller
+- Quantifie toujours les bénéfices : "gagnez 5h par semaine", "réduisez les impayés de 40%"
+- Sois chaleureuse mais professionnelle, jamais agressive
+- Si le prospect hésite, rassure et relance avec un argument différent`;
+  }
+
+  /**
+   * Retourne le system prompt complet pour le mode In-App (Guide + Stratégique)
+   */
+  private getInAppSystemPrompt(
+    userRole?: string,
+    schoolId?: string,
+    roleContext?: string,
+    moduleContext?: string,
+  ): string {
+    return `Tu es SARA, l'assistante intelligente d'Academia Helm en mode GUIDE UTILISATEUR & ASSISTANTE STRATÉGIQUE.
 
 ═══════════════════════════════════════════════════════════
 IDENTITÉ
@@ -190,9 +422,9 @@ Tu es le GPS de l'utilisateur dans Academia Helm. Tu guides, tu expliques, tu or
 
 Contexte utilisateur :
 - Rôle : ${userRole || 'utilisateur'}
-- École : ${schoolId}
-${roleContext}
-${moduleContext}
+- École : ${schoolId || 'Établissement'}
+${roleContext || ''}
+${moduleContext || ''}
 
 ═══════════════════════════════════════════════════════════
 TES 2 MISSIONS DANS L'APPLICATION
@@ -250,54 +482,6 @@ RÈGLES STRICTES
 - Réponds en français par défaut
 - Sois encourageante : "Super question !", "Bonne idée !", "Je vous guide..."
 - Si l'utilisateur est perdu, propose un point de départ clair`;
-
-    // Build messages with history
-    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-      { role: 'system', content: systemPrompt },
-    ];
-
-    // Add conversation history
-    if (conversationHistory && conversationHistory.length > 0) {
-      for (const msg of conversationHistory.slice(-10)) {
-        if (msg.role === 'user' || msg.role === 'assistant') {
-          messages.push({ role: msg.role as 'user' | 'assistant', content: msg.content });
-        }
-      }
-    }
-
-    messages.push({ role: 'user', content: query });
-
-    const result = await this.openRouter.chat({
-      messages,
-      temperature: 0.6,
-      maxTokens: 800,
-      persona: 'SARA',
-    });
-
-    return {
-      reply: result.content,
-      isAiEnhanced: !result.isPlaceholder,
-      timestamp: new Date(),
-      model: result.model,
-    };
-  }
-
-  /**
-   * Répond via l'AI Gateway (mode avancé avec contexte MCP et outils)
-   */
-  async handleInAppQueryViaGateway(
-    query: string,
-    userId: string,
-    tenantId: string,
-    schoolId?: string,
-  ) {
-    return this.aiGateway.processRequest({
-      agent: 'SARA',
-      userId,
-      tenantId,
-      schoolId: schoolId || tenantId,
-      message: query,
-    });
   }
 
   /**

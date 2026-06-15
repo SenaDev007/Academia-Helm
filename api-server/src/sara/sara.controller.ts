@@ -1,6 +1,8 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import { Controller, Post, Body, Res, UseGuards } from '@nestjs/common';
+import { Response } from 'express';
 import { SaraService } from './sara.service';
 import { Public } from '../auth/decorators/public.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('sara')
 export class SaraController {
@@ -14,6 +16,48 @@ export class SaraController {
   @Post('query')
   async query(@Body() body: { query: string; visitorId?: string; messages?: Array<{ role: string; content: string }> }) {
     return this.saraService.handleVisitorQuery(body.query, body.visitorId, body.messages);
+  }
+
+  /**
+   * Landing page SARA streaming query (public, SSE)
+   * Used by the SaraWidget for real-time streaming responses
+   */
+  @Public()
+  @Post('query/stream')
+  async queryStream(
+    @Body() body: { query: string; visitorId?: string; messages?: Array<{ role: string; content: string }> },
+    @Res() res: Response,
+  ) {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // Désactiver le buffering Nginx
+
+    try {
+      const stream = this.saraService.handleVisitorQueryStream(
+        body.query,
+        body.visitorId,
+        body.messages,
+      );
+
+      for await (const chunk of stream) {
+        if (chunk.type === 'delta' && chunk.text) {
+          res.write(`data: ${JSON.stringify({ type: 'delta', text: chunk.text })}\n\n`);
+        } else if (chunk.type === 'reasoning' && chunk.reasoningText) {
+          res.write(`data: ${JSON.stringify({ type: 'reasoning', text: chunk.reasoningText })}\n\n`);
+        } else if (chunk.type === 'status') {
+          res.write(`data: ${JSON.stringify({ type: 'status', text: chunk.text })}\n\n`);
+        } else if (chunk.type === 'final') {
+          res.write(`data: ${JSON.stringify({ type: 'final', text: chunk.text, usage: chunk.usage })}\n\n`);
+        } else if (chunk.type === 'error') {
+          res.write(`data: ${JSON.stringify({ type: 'error', text: chunk.text })}\n\n`);
+        }
+      }
+    } catch (error: any) {
+      res.write(`data: ${JSON.stringify({ type: 'error', text: error?.message || 'Stream error' })}\n\n`);
+    }
+
+    res.end();
   }
 
   /**
@@ -39,6 +83,58 @@ export class SaraController {
       body.currentModule,
       body.messages,
     );
+  }
+
+  /**
+   * In-App SARA streaming query (authenticated, SSE)
+   * Used by the InAppSaraGuide for real-time streaming responses
+   */
+  @UseGuards(JwtAuthGuard)
+  @Post('inapp/stream')
+  async inappQueryStream(
+    @Body() body: {
+      query: string;
+      userId: string;
+      schoolId: string;
+      userRole?: string;
+      currentModule?: string;
+      messages?: Array<{ role: string; content: string }>;
+    },
+    @Res() res: Response,
+  ) {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+
+    try {
+      const stream = this.saraService.handleInAppQueryStream(
+        body.query,
+        body.userId,
+        body.schoolId,
+        body.userRole,
+        body.currentModule,
+        body.messages,
+      );
+
+      for await (const chunk of stream) {
+        if (chunk.type === 'delta' && chunk.text) {
+          res.write(`data: ${JSON.stringify({ type: 'delta', text: chunk.text })}\n\n`);
+        } else if (chunk.type === 'reasoning' && chunk.reasoningText) {
+          res.write(`data: ${JSON.stringify({ type: 'reasoning', text: chunk.reasoningText })}\n\n`);
+        } else if (chunk.type === 'status') {
+          res.write(`data: ${JSON.stringify({ type: 'status', text: chunk.text })}\n\n`);
+        } else if (chunk.type === 'final') {
+          res.write(`data: ${JSON.stringify({ type: 'final', text: chunk.text, usage: chunk.usage })}\n\n`);
+        } else if (chunk.type === 'error') {
+          res.write(`data: ${JSON.stringify({ type: 'error', text: chunk.text })}\n\n`);
+        }
+      }
+    } catch (error: any) {
+      res.write(`data: ${JSON.stringify({ type: 'error', text: error?.message || 'Stream error' })}\n\n`);
+    }
+
+    res.end();
   }
 
   /**

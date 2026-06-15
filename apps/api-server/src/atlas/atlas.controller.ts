@@ -1,4 +1,5 @@
-import { Controller, Post, Get, Body, Query, Param, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards, Req, Res } from '@nestjs/common';
+import { Response } from 'express';
 import { AtlasService } from './atlas.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -8,103 +9,81 @@ export class AtlasController {
   constructor(private readonly atlasService: AtlasService) {}
 
   /**
-   * Chat avec ATLAS
    * POST /atlas/chat
+   * Chat ATLAS direct (avec historique sauvegardé)
    */
   @Post('chat')
   async chat(@Req() req: any, @Body('message') message: string) {
-    return this.atlasService.sendMessage(req.user.tenantId, req.user.id, message);
+    const tenantId = req.user.tenantId;
+    const userId = req.user.id;
+    return this.atlasService.sendMessage(tenantId, userId, message);
   }
 
   /**
-   * Historique de conversation
+   * POST /atlas/chat/stream
+   * Chat ATLAS streaming (SSE) pour les réponses en temps réel
+   */
+  @Post('chat/stream')
+  async chatStream(
+    @Req() req: any,
+    @Body('message') message: string,
+    @Res() res: Response,
+  ) {
+    const tenantId = req.user.tenantId;
+    const userId = req.user.id;
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+
+    try {
+      // Sauvegarder le message utilisateur
+      await this.atlasService.saveUserMessage(tenantId, userId, message);
+
+      const stream = this.atlasService.sendMessageStream(tenantId, userId, message);
+
+      for await (const chunk of stream) {
+        if (chunk.type === 'delta' && chunk.text) {
+          res.write(`data: ${JSON.stringify({ type: 'delta', text: chunk.text })}\n\n`);
+        } else if (chunk.type === 'reasoning' && chunk.reasoningText) {
+          res.write(`data: ${JSON.stringify({ type: 'reasoning', text: chunk.reasoningText })}\n\n`);
+        } else if (chunk.type === 'status') {
+          res.write(`data: ${JSON.stringify({ type: 'status', text: chunk.text })}\n\n`);
+        } else if (chunk.type === 'final') {
+          // Sauvegarder la réponse complète dans l'historique
+          await this.atlasService.saveAssistantMessage(tenantId, userId, chunk.text || '', chunk.usage);
+          res.write(`data: ${JSON.stringify({ type: 'final', text: chunk.text, usage: chunk.usage })}\n\n`);
+        } else if (chunk.type === 'error') {
+          res.write(`data: ${JSON.stringify({ type: 'error', text: chunk.text })}\n\n`);
+        }
+      }
+    } catch (error: any) {
+      res.write(`data: ${JSON.stringify({ type: 'error', text: error?.message || 'Stream error' })}\n\n`);
+    }
+
+    res.end();
+  }
+
+  /**
+   * POST /atlas/gateway
+   * Chat ATLAS via AI Gateway (mode avancé avec contexte MCP et outils)
+   */
+  @Post('gateway')
+  async gatewayChat(@Req() req: any, @Body('message') message: string) {
+    const tenantId = req.user.tenantId;
+    const userId = req.user.id;
+    return this.atlasService.sendMessageViaGateway(tenantId, userId, message);
+  }
+
+  /**
    * GET /atlas/history
+   * Récupère l'historique de conversation
    */
   @Get('history')
   async getHistory(@Req() req: any) {
-    return this.atlasService.getHistory(req.user.tenantId, req.user.id);
-  }
-
-  /**
-   * Générer un document
-   * POST /atlas/documents/generate
-   */
-  @Post('documents/generate')
-  async generateDocument(@Req() req: any, @Body() body: {
-    documentType: string;
-    entityId: string;
-    parameters?: Record<string, unknown>;
-  }) {
-    return this.atlasService.generateDocument(
-      req.user.tenantId,
-      req.user.id,
-      body.documentType as any,
-      body.entityId,
-      body.parameters,
-    );
-  }
-
-  /**
-   * Exécuter un workflow
-   * POST /atlas/execute
-   */
-  @Post('execute')
-  async executeWorkflow(@Req() req: any, @Body() body: {
-    workflowType: string;
-    parameters?: Record<string, unknown>;
-  }) {
-    return this.atlasService.executeWorkflow(
-      req.user.tenantId,
-      req.user.id,
-      body.workflowType as any,
-      body.parameters,
-    );
-  }
-
-  /**
-   * Confirmer un workflow
-   * POST /atlas/executions/:id/confirm
-   */
-  @Post('executions/:id/confirm')
-  async confirmWorkflow(@Req() req: any, @Param('id') executionId: string) {
-    return this.atlasService.confirmWorkflow(executionId, req.user.tenantId);
-  }
-
-  /**
-   * Envoyer des notifications
-   * POST /atlas/notifications/send
-   */
-  @Post('notifications/send')
-  async sendNotification(@Req() req: any, @Body() body: {
-    type: string;
-    recipients: string[];
-    channel?: string;
-    templateParameters?: Record<string, unknown>;
-  }) {
-    return this.atlasService.sendNotification(
-      req.user.tenantId,
-      req.user.id,
-      body.type as any,
-      body.recipients,
-      (body.channel as any) || 'email',
-      body.templateParameters,
-    );
-  }
-
-  /**
-   * Générer un rapport
-   * POST /atlas/reports/generate
-   */
-  @Post('reports/generate')
-  async generateReport(@Req() req: any, @Body() body: {
-    reportType: string;
-    period?: string;
-  }) {
-    return this.atlasService.generateReport(
-      req.user.tenantId,
-      req.user.id,
-      body.reportType,
-      body.period,
-    );
+    const tenantId = req.user.tenantId;
+    const userId = req.user.id;
+    return this.atlasService.getHistory(tenantId, userId);
   }
 }

@@ -102,9 +102,10 @@ const nextConfig = {
 
   // ✅ Paquets natifs qui ne doivent pas être bundlés côté serveur
   // (Propriété de premier niveau dans Next.js 14+, pas dans experimental)
+  // ⚠️ @react-pdf/renderer retiré — conflit avec optimizePackageImports/transpilePackages
+  // C'est un package JS pur (pas de binaire natif), il peut être bundlé avec tree-shaking
   serverExternalPackages: [
     'sharp',
-    '@react-pdf/renderer',
     'canvas',
   ],
   

@@ -1,10 +1,11 @@
 /**
  * ============================================================================
- * OPENROUTER SERVICE - Shared AI Gateway for Academia Helm
+ * AI SERVICE - Shared AI Gateway for Academia Helm
  * ============================================================================
  *
  * Service partagé pour toutes les intégrations IA du système.
- * Utilise l'API OpenRouter (compatible OpenAI) avec le modèle GLM 5.1.
+ * Actuellement configuré pour utiliser l'endpoint Modal GLM-5.1 (gratuit).
+ * Compatible avec tout endpoint OpenAI-compatible (Modal, OpenRouter, etc.).
  *
  * Personnalités IA supportées :
  *   - ORION : Assistant de direction (lecture seule, institutionnel)
@@ -12,7 +13,7 @@
  *   - SARA  : Assistante commerciale (landing) + Copilote métier (modules)
  *
  * Architecture :
- *   - OpenRouter API compatible OpenAI (POST /v1/chat/completions)
+ *   - API compatible OpenAI (POST /v1/chat/completions)
  *   - Streaming SSE supporté pour les interfaces conversationnelles
  *   - Reasoning support (GLM 5.1) pour les analyses approfondies
  *   - Retry avec backoff exponentiel (3 tentatives)
@@ -20,9 +21,13 @@
  *   - Rate limiting intégré
  *
  * Variables d'environnement :
- *   - OPENROUTER_API_KEY : Clé API OpenRouter (obligatoire pour IA réelle)
- *   - OPENROUTER_MODEL   : Modèle à utiliser (défaut: z-ai/glm-5.1)
- *   - OPENROUTER_BASE_URL: URL de base (défaut: https://openrouter.ai/api/v1)
+ *   - OPENROUTER_API_KEY : Clé API (Modal ou OpenRouter, obligatoire pour IA réelle)
+ *   - OPENROUTER_MODEL   : Modèle à utiliser (défaut: zai-org/GLM-5.1-FP8)
+ *   - OPENROUTER_BASE_URL: URL de base (défaut: https://api.us-west-2.modal.direct/v1)
+ *
+ * Fournisseurs supportés :
+ *   - Modal (gratuit)   : https://api.us-west-2.modal.direct/v1
+ *   - OpenRouter (payant): https://openrouter.ai/api/v1
  * ============================================================================
  */
 
@@ -129,11 +134,14 @@ export interface OpenRouterStreamChunk {
 /**
  * Chaîne de fallback des modèles — si le modèle principal échoue,
  * on essaie le modèle suivant dans la liste.
- * Ordre : GLM 5.1 (production) → Gemini Flash (fallback rapide) → GLM 4.5 Air (fallback gratuit)
+ * Ordre : GLM-5.1-FP8 Modal (production) → GLM-5-FP8 Modal (fallback) → GLM 4.5 Air OpenRouter (fallback gratuit)
+ *
+ * NOTE : Les fallbacks OpenRouter nécessitent que OPENROUTER_FALLBACK_KEY soit configuré.
+ * Si seule la clé Modal est configurée, le fallback se limitera aux modèles Modal.
  */
 const MODEL_FALLBACK_CHAIN: string[] = [
-  'z-ai/glm-5.1',
-  'google/gemini-2.0-flash-001',
+  'zai-org/GLM-5.1-FP8',
+  'zai-org/GLM-5-FP8',
   'z-ai/glm-4.5-air:free',
 ];
 
@@ -156,8 +164,8 @@ export class OpenRouterService {
 
   constructor(private readonly configService: ConfigService) {
     this.apiKey = this.configService.get<string>('OPENROUTER_API_KEY') || '';
-    this.model = this.configService.get<string>('OPENROUTER_MODEL') || 'z-ai/glm-5.1';
-    this.baseUrl = this.configService.get<string>('OPENROUTER_BASE_URL') || 'https://openrouter.ai/api/v1';
+    this.model = this.configService.get<string>('OPENROUTER_MODEL') || 'zai-org/GLM-5.1-FP8';
+    this.baseUrl = this.configService.get<string>('OPENROUTER_BASE_URL') || 'https://api.us-west-2.modal.direct/v1';
     this.siteUrl = this.configService.get<string>('NEXT_PUBLIC_APP_URL') || 'https://academiahelm.com';
     this.siteName = 'Academia Helm';
 

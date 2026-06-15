@@ -8,7 +8,7 @@
  * - Fallback local si réponse non conforme
  * - Journalisation de toutes les interactions
  * 
- * SUPPORT : OpenRouter (GLM 4.5 Air), OpenAI, Anthropic
+ * SUPPORT : Modal GLM-5.1, OpenAI, Anthropic
  */
 
 import type {
@@ -25,7 +25,7 @@ import { validateOrionResponse } from './orion-response-validator';
  */
 const LLM_CONFIG = {
   provider: (process.env.ORION_LLM_PROVIDER || 'openrouter') as 'openrouter' | 'openai' | 'anthropic' | 'local',
-  model: process.env.ORION_LLM_MODEL || 'z-ai/glm-4.5-air:free',
+  model: process.env.ORION_LLM_MODEL || 'zai-org/GLM-5.1-FP8',
   temperature: 0.1, // Très basse pour des réponses factuelles
   maxTokens: 1000,
 };
@@ -65,13 +65,13 @@ async function callOpenRouter(prompt: string): Promise<LLMResponse> {
     throw new Error('OPENROUTER_API_KEY non configurée');
   }
 
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+  const baseUrl = process.env.OPENROUTER_BASE_URL || 'https://api.us-west-2.modal.direct/v1';
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
-      'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'https://academiahelm.com',
-      'X-Title': 'Academia Helm - ORION',
     },
     body: JSON.stringify({
       model: LLM_CONFIG.model,

@@ -46,3 +46,28 @@ Stage Summary:
 - Original orion-intelligence.service.ts import bug fixed (correct relative paths)
 - Tool definitions give AI agents real data access via PrismaService
 - Knowledge base tool for Sara (product info, pricing, modules, etc.)
+---
+Task ID: modal-migration
+Agent: Main Agent
+Task: Migrate AI service from OpenRouter to Modal GLM-5.1 endpoint
+
+Work Log:
+- Researched Modal.com GLM-5 endpoint pricing and API details
+- Explained pricing to user: Free $0, promotional endpoint, 100 req/day fast then slower, 1 concurrent request, free until April 30 2026
+- Updated api-server/src/common/services/openrouter.service.ts: Changed defaults to Modal endpoint (baseUrl, model, fallback chain)
+- Updated apps/api-server/src/common/services/openrouter.service.ts: Same changes
+- Updated apps/web-app/src/app/api/public/sara/chat/route.ts: Parameterized API URL, removed OpenRouter headers, increased timeout to 60s
+- Updated apps/web-app/src/app/api/public/sara/chat/stream/route.ts: Same pattern
+- Updated apps/web-app/src/lib/orion/orion-llm.service.ts: Parameterized URL, updated model default
+- Updated apps/next-app/ and next-app/ copies of same files (6 files total)
+- Updated all .env.example and .env.production files across all directories
+
+Stage Summary:
+- All hardcoded `https://openrouter.ai/api/v1/chat/completions` URLs replaced with configurable `baseUrl` variable
+- Default model changed from `z-ai/glm-5.1` to `zai-org/GLM-5.1-FP8`
+- Default base URL changed from `https://openrouter.ai/api/v1` to `https://api.us-west-2.modal.direct/v1`
+- Timeouts increased from 15s to 60s for Modal compatibility
+- OpenRouter-specific headers (HTTP-Referer, X-Title) removed from frontend routes
+- Fallback chain updated: GLM-5.1-FP8 → GLM-5-FP8 → GLM-4.5-Air (free)
+- Environment variables OPENROUTER_API_KEY, OPENROUTER_MODEL, OPENROUTER_BASE_URL remain the same (just values change)
+- No TypeScript compilation errors introduced

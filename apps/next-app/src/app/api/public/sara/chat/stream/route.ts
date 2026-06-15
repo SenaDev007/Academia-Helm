@@ -118,7 +118,7 @@ function sse(data: unknown) {
  * Détermine le provider IA à utiliser
  * Priorité : OPENROUTER_API_KEY > ANTHROPIC_API_KEY
  */
-function getAIProvider(): { provider: 'openrouter' | 'anthropic'; apiKey: string; model: string } {
+function getAIProvider(): { provider: 'openrouter' | 'anthropic'; apiKey: string; model: string; baseUrl: string } {
   const openrouterKey = process.env.OPENROUTER_API_KEY;
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
 
@@ -126,7 +126,8 @@ function getAIProvider(): { provider: 'openrouter' | 'anthropic'; apiKey: string
     return {
       provider: 'openrouter',
       apiKey: openrouterKey,
-      model: process.env.OPENROUTER_MODEL || 'z-ai/glm-4.5-air:free',
+      model: process.env.OPENROUTER_MODEL || 'zai-org/GLM-5.1-FP8',
+      baseUrl: process.env.OPENROUTER_BASE_URL || 'https://api.us-west-2.modal.direct/v1',
     };
   }
 
@@ -134,11 +135,12 @@ function getAIProvider(): { provider: 'openrouter' | 'anthropic'; apiKey: string
     provider: 'anthropic',
     apiKey: anthropicKey || '',
     model: process.env.ORION_LLM_MODEL || 'claude-3-5-sonnet-latest',
+    baseUrl: '',
   };
 }
 
 export async function POST(request: NextRequest) {
-  const { provider, apiKey, model } = getAIProvider();
+  const { provider, apiKey, model, baseUrl } = getAIProvider();
 
   if (!apiKey) {
     return new Response(sse({ type: 'error', message: 'OPENROUTER_API_KEY ou ANTHROPIC_API_KEY non configurée' }), {
@@ -195,13 +197,11 @@ export async function POST(request: NextRequest) {
             ...messages,
           ];
 
-          const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          const response = await fetch(`${baseUrl}/chat/completions`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${apiKey}`,
-              'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'https://academiahelm.com',
-              'X-Title': 'Academia Helm - SARA',
             },
             body: JSON.stringify({
               model,
@@ -210,7 +210,7 @@ export async function POST(request: NextRequest) {
               temperature: 0.6,
               stream: true,
             }),
-            signal: AbortSignal.timeout(30000),
+            signal: AbortSignal.timeout(60000),
           });
 
           if (!response.ok || !response.body) {

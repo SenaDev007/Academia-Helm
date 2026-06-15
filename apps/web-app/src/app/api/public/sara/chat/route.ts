@@ -69,7 +69,8 @@ function buildPolicyPrompt(outputLanguage: 'FR' | 'EN'): string {
   return (
     `POLICY (non négociable)\n` +
     `- You are SARA for Academia Helm only. Refuse topics unrelated to Academia Helm.\n` +
-    `- Never invent pricing/offers. Use only the official Helm pricing grid.\n` +
+    `- NEVER invent data: no fake testimonials, no fictional school names, no made-up statistics.\n` +
+    `- Use ONLY facts from the system prompt. If you don't have specific data, say so honestly.\n` +
     `- Reason step-by-step before answering. Think about what the prospect REALLY needs.\n` +
     `- Be conversational, warm, natural — like a real human advisor, not a script.\n` +
     `- Adapt each response to the specific question asked. Never repeat the same generic answer.\n` +
@@ -82,25 +83,20 @@ function normalizeSaraOutput(raw: string): string {
   let text = String(raw || '').trim();
   if (!text) return text;
 
-  // Remplacer les références à d'autres IA
+  // Remplacer les références à d'autres IA (sécurité)
   text = text
     .replace(/\b(ChatGPT|OpenAI|Gemini|Google|Microsoft|Bard)\b/gi, 'SARA')
-    .replace(/\bAnthropic\b/gi, 'notre IA')
-    .replace(/\s+/g, ' ')
-    .trim();
+    .replace(/\bAnthropic\b/gi, 'notre IA');
 
-  // Limiter à 6 phrases maximum (au lieu de 4 — permet un vrai raisonnement)
-  const parts = text.split(/(?<=[.!?])\s+/).filter(Boolean);
-  const limited = parts.slice(0, 6).join(' ').trim();
-  text = limited || text;
+  // Nettoyer les espaces
+  text = text.replace(/\s+/g, ' ').trim();
 
-  // Ne PAS ajouter de question figée — laisser le modèle terminer naturellement
-  // Si la réponse ne finit pas par une ponctuation, ajouter un point
-  if (!/[.!?]\s*$/.test(text)) {
+  // Ponctuation finale si manquante
+  if (!/[.!?…]\s*$/.test(text)) {
     text += '.';
   }
 
-  return text.trim();
+  return text;
 }
 
 function detectUnsafeTopic(text: string): boolean {

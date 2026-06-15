@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { saraApi, SaraStreamChunk } from '@/lib/api/sara';
 import { cn } from '@/lib/utils';
@@ -45,6 +45,48 @@ interface Particle {
   size: number;
   opacity: number;
   speed: number;
+}
+
+// ─── SIMPLE MARKDOWN RENDERER ──────────────────────────────────────────
+// Handles **bold**, *italic*, and `code` in chat messages
+function renderMarkdown(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  // Regex: matches **bold**, *italic*, `code` — order matters (bold before italic)
+  const regex = /(\*\*(.+?)\*\*)|(\*(.+?)\*)|(`(.+?)`)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+
+  while ((match = regex.exec(text)) !== null) {
+    // Text before the match
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+
+    if (match[1]) {
+      // **bold**
+      parts.push(<strong key={key++} className="font-bold text-white">{match[2]}</strong>);
+    } else if (match[3]) {
+      // *italic*
+      parts.push(<em key={key++} className="italic text-white/90">{match[4]}</em>);
+    } else if (match[5]) {
+      // `code`
+      parts.push(
+        <code key={key++} className="px-1 py-0.5 rounded text-[11px] font-mono" style={{ background: 'rgba(0,229,255,0.12)', color: H.cyan }}>
+          {match[6]}
+        </code>
+      );
+    }
+
+    lastIndex = regex.lastIndex;
+  }
+
+  // Remaining text after last match
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+
+  return parts.length > 0 ? parts : [text];
 }
 
 function generateParticles(count: number): Particle[] {
@@ -330,7 +372,7 @@ export default function SaraWidget() {
                     boxShadow: '0 0 12px rgba(0,229,255,0.04)',
                   }}
                 >
-                  {m.content}
+                  {m.role === 'assistant' ? renderMarkdown(m.content) : m.content}
                 </div>
               </div>
             ))}
@@ -347,7 +389,7 @@ export default function SaraWidget() {
                     boxShadow: '0 0 12px rgba(0,229,255,0.04)',
                   }}
                 >
-                  {streamingText}
+                  {renderMarkdown(streamingText)}
                   <span className="inline-block w-[2px] h-4 ml-0.5 animate-pulse align-middle"
                     style={{ backgroundColor: H.cyan, boxShadow: `0 0 6px ${H.cyan}` }}
                   />

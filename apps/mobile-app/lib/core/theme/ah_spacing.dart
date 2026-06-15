@@ -105,3 +105,17 @@ class AHSpacing {
   static const double dividerThickness = 1.0;
   static const double dividerThickThickness = 2.0;
 }
+
+/// Academia Helm border radius constants with semantic naming.
+///
+/// Used across the app for consistent corner radii.
+class AHRadius {
+  AHRadius._();
+
+  static const double sm = AHSpacing.r4;
+  static const double md = AHSpacing.r8;
+  static const double lg = AHSpacing.r12;
+  static const double xl = AHSpacing.r16;
+  static const double xxl = AHSpacing.r20;
+  static const double full = AHSpacing.r24;
+}

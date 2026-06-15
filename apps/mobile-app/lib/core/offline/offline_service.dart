@@ -19,10 +19,12 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
+import '../network/api_config.dart';
 import '../network/connectivity_service.dart';
 
 // ─── Types d'entités synchronisables ─────────────────────────────────────────
@@ -721,17 +723,227 @@ class OfflineService {
 
   /// Synchronise un événement individuel avec le serveur.
   Future<void> _syncEvent(OutboxEvent event) async {
-    // Cette méthode sera connectée au sync service du web app
-    // via les endpoints /sync/up, /sync/down
-    // Pour l'instant, on notifie que la sync est en attente
-    if (kDebugMode) {
-      debugPrint(
-        '[OfflineService] Sync événement : ${event.operation.value} ${event.entityType.name} ${event.entityId}',
-      );
+    // Récupérer le token d'accès pour l'authentification
+    final accessToken = await _secureStorage.read(key: 'ah_access_token');
+
+    // Construire l'endpoint API en fonction du type d'entité et de l'opération
+    final endpoint = _buildSyncEndpoint(event);
+    if (endpoint == null) {
+      throw Exception('Type d\'entité inconnu : ${event.entityType}');
     }
 
-    // TODO: Implémenter la sync réelle via apiClient.post('/sync/up', ...)
-    // En attendant, on simule un succès pour les tests
+    // Construire l'instance Dio pour les requêtes de synchronisation
+    final dio = Dio(BaseOptions(
+      baseUrl: ApiConfig.versionedBaseUrl,
+      connectTimeout: ApiConfig.connectTimeout,
+      receiveTimeout: ApiConfig.receiveTimeout,
+      headers: <String, dynamic>{
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-Tenant-Id': event.tenantId,
+        if (accessToken != null) 'Authorization': 'Bearer $accessToken',
+      },
+    ));
+
+    // Exécuter la méthode HTTP appropriée
+    switch (event.operation) {
+      case SyncOperationType.create:
+        await dio.post<dynamic>(endpoint, data: event.payload);
+        break;
+      case SyncOperationType.update:
+        await dio.patch<dynamic>(endpoint, data: event.payload);
+        break;
+      case SyncOperationType.delete:
+        await dio.delete<dynamic>(endpoint);
+        break;
+    }
+
+    // Marquer l'entité locale comme synchronisée (retirer le flag _isDirty)
+    final collection = event.entityType.collectionName;
+    final box = await _openCollectionBox(collection);
+    final localData = box.get(event.entityId);
+    if (localData is Map) {
+      final updated = Map<String, dynamic>.from(localData as Map);
+      updated['_isDirty'] = false;
+      updated['_lastSync'] = DateTime.now().toIso8601String();
+      await box.put(event.entityId, updated);
+    }
+
+    if (kDebugMode) {
+      debugPrint(
+        '[OfflineService] Sync réussi : ${event.operation.value} ${event.entityType.name} ${event.entityId}',
+      );
+    }
+  }
+
+  /// Construit l'endpoint API pour un événement de synchronisation.
+  String? _buildSyncEndpoint(OutboxEvent event) {
+    switch (event.entityType) {
+      case SyncEntityType.student:
+        return event.operation == SyncOperationType.create
+            ? '/students'
+            : '/students/${event.entityId}';
+      case SyncEntityType.teacher:
+        return event.operation == SyncOperationType.create
+            ? '/hr/staff'
+            : '/hr/staff/${event.entityId}';
+      case SyncEntityType.class$:
+        return event.operation == SyncOperationType.create
+            ? '/classes'
+            : '/classes/${event.entityId}';
+      case SyncEntityType.subject:
+        return event.operation == SyncOperationType.create
+            ? '/subjects'
+            : '/subjects/${event.entityId}';
+      case SyncEntityType.exam:
+        return event.operation == SyncOperationType.create
+            ? '/exams/evaluations'
+            : '/exams/evaluations/${event.entityId}';
+      case SyncEntityType.grade:
+        return '/exams/grades/${event.entityId}';
+      case SyncEntityType.payment:
+        return event.operation == SyncOperationType.create
+            ? '/finance/transactions'
+            : '/finance/transactions/${event.entityId}';
+      case SyncEntityType.expense:
+        return event.operation == SyncOperationType.create
+            ? '/finance/expenses'
+            : '/finance/expenses/${event.entityId}';
+      case SyncEntityType.feeStructure:
+        return event.operation == SyncOperationType.create
+            ? '/finance/fee-structures'
+            : '/finance/fee-structures/${event.entityId}';
+      case SyncEntityType.financeSetting:
+        return event.operation == SyncOperationType.create
+            ? '/finance/settings'
+            : '/finance/settings';
+      case SyncEntityType.disciplinaryIncident:
+        return event.operation == SyncOperationType.create
+            ? '/discipline'
+            : '/discipline/${event.entityId}';
+      case SyncEntityType.incident:
+        return event.operation == SyncOperationType.create
+            ? '/discipline'
+            : '/discipline/${event.entityId}';
+      case SyncEntityType.staff:
+        return event.operation == SyncOperationType.create
+            ? '/hr/staff'
+            : '/hr/staff/${event.entityId}';
+      case SyncEntityType.contract:
+        return event.operation == SyncOperationType.create
+            ? '/hr/contracts'
+            : '/hr/contracts/${event.entityId}';
+      case SyncEntityType.leave:
+        return event.operation == SyncOperationType.create
+            ? '/hr/leaves'
+            : '/hr/leaves/${event.entityId}';
+      case SyncEntityType.classDiary:
+        return event.operation == SyncOperationType.create
+            ? '/pedagogy/class-diaries'
+            : '/pedagogy/class-diaries/${event.entityId}';
+      case SyncEntityType.lessonPlan:
+        return event.operation == SyncOperationType.create
+            ? '/pedagogy/lesson-plans'
+            : '/pedagogy/lesson-plans/${event.entityId}';
+      case SyncEntityType.lessonJournal:
+        return event.operation == SyncOperationType.create
+            ? '/pedagogy/journals'
+            : '/pedagogy/journals/${event.entityId}';
+      case SyncEntityType.homeworkEntry:
+        return event.operation == SyncOperationType.create
+            ? '/pedagogy/homework'
+            : '/pedagogy/homework/${event.entityId}';
+      case SyncEntityType.pedagogicalMaterial:
+        return event.operation == SyncOperationType.create
+            ? '/pedagogy/materials'
+            : '/pedagogy/materials/${event.entityId}';
+      case SyncEntityType.materialStock:
+        return event.operation == SyncOperationType.create
+            ? '/pedagogy/materials/stock'
+            : '/pedagogy/materials/stock/${event.entityId}';
+      case SyncEntityType.teacherMaterialAssignment:
+        return event.operation == SyncOperationType.create
+            ? '/pedagogy/materials/assignments'
+            : '/pedagogy/materials/assignments/${event.entityId}';
+      case SyncEntityType.academicSeries:
+        return event.operation == SyncOperationType.create
+            ? '/pedagogy/series'
+            : '/pedagogy/series/${event.entityId}';
+      case SyncEntityType.seriesSubject:
+        return event.operation == SyncOperationType.create
+            ? '/pedagogy/series-subjects'
+            : '/pedagogy/series-subjects/${event.entityId}';
+      case SyncEntityType.teacherProfile:
+        return event.operation == SyncOperationType.create
+            ? '/pedagogy/teacher-profiles'
+            : '/pedagogy/teacher-profiles/${event.entityId}';
+      case SyncEntityType.teacherClassAssignment:
+        return event.operation == SyncOperationType.create
+            ? '/pedagogy/teacher-assignments'
+            : '/pedagogy/teacher-assignments/${event.entityId}';
+      case SyncEntityType.message:
+        return event.operation == SyncOperationType.create
+            ? '/communication/messages'
+            : '/communication/messages/${event.entityId}';
+      case SyncEntityType.announcement:
+        return event.operation == SyncOperationType.create
+            ? '/communication/announcements'
+            : '/communication/announcements/${event.entityId}';
+      case SyncEntityType.meeting:
+        return event.operation == SyncOperationType.create
+            ? '/meetings'
+            : '/meetings/${event.entityId}';
+      case SyncEntityType.campaign:
+        return event.operation == SyncOperationType.create
+            ? '/communication/campaigns'
+            : '/communication/campaigns/${event.entityId}';
+      case SyncEntityType.attendance:
+        return event.operation == SyncOperationType.create
+            ? '/attendance'
+            : '/attendance/${event.entityId}';
+      case SyncEntityType.absence:
+        return event.operation == SyncOperationType.create
+            ? '/attendance/absences'
+            : '/attendance/absences/${event.entityId}';
+      case SyncEntityType.invoice:
+        return event.operation == SyncOperationType.create
+            ? '/finance/invoices'
+            : '/finance/invoices/${event.entityId}';
+      case SyncEntityType.homework:
+        return event.operation == SyncOperationType.create
+            ? '/pedagogy/homework'
+            : '/pedagogy/homework/${event.entityId}';
+      case SyncEntityType.loan:
+        return event.operation == SyncOperationType.create
+            ? '/finance/loans'
+            : '/finance/loans/${event.entityId}';
+      case SyncEntityType.session:
+        return event.operation == SyncOperationType.create
+            ? '/sessions'
+            : '/sessions/${event.entityId}';
+      case SyncEntityType.notification:
+        return event.operation == SyncOperationType.create
+            ? '/notifications'
+            : '/notifications/${event.entityId}';
+      case SyncEntityType.alert:
+        return event.operation == SyncOperationType.create
+            ? '/alerts'
+            : '/alerts/${event.entityId}';
+      case SyncEntityType.examCandidate:
+        return event.operation == SyncOperationType.create
+            ? '/exams/candidates'
+            : '/exams/candidates/${event.entityId}';
+      case SyncEntityType.examResult:
+        return event.operation == SyncOperationType.create
+            ? '/exams/results'
+            : '/exams/results/${event.entityId}';
+      default:
+        // Pour les types d'entités inconnus, utiliser un pattern générique
+        final baseName = event.entityType.name;
+        return event.operation == SyncOperationType.create
+            ? '/$baseName'
+            : '/$baseName/${event.entityId}';
+    }
   }
 
   /// Force la synchronisation de l'outbox.

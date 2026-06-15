@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/ah_theme.dart';
 
@@ -148,7 +149,7 @@ class _LoginFormState extends State<LoginForm> {
             alignment: Alignment.centerRight,
             child: TextButton(
               onPressed: widget.isLoading ? null : () {
-                // Navigate to forgot password screen
+                context.go('/forgot-password');
               },
               child: const Text(
                 'Mot de passe oublié ?',

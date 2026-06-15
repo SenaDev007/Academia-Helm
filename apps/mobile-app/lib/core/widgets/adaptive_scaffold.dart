@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../theme/ah_theme.dart';
+import '../auth/logout_state.dart';
 
 /// A destination for the adaptive navigation.
 class AdaptiveDestination {
@@ -26,7 +29,7 @@ class AdaptiveDestination {
 /// - < 600: Phone (BottomNavigationBar)
 /// - 600–839: Tablet (NavigationRail)
 /// - ≥ 840: Desktop (NavigationDrawer / extended rail)
-class AHAdaptiveScaffold extends StatelessWidget {
+class AHAdaptiveScaffold extends ConsumerWidget {
   const AHAdaptiveScaffold({
     super.key,
     required this.destinations,
@@ -48,22 +51,22 @@ class AHAdaptiveScaffold extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return LayoutBuilder(
       builder: (context, constraints) {
         if (constraints.maxWidth >= 840) {
-          return _buildDesktopLayout(context);
+          return _buildDesktopLayout(context, ref);
         } else if (constraints.maxWidth >= 600) {
-          return _buildTabletLayout(context);
+          return _buildTabletLayout(context, ref);
         } else {
-          return _buildPhoneLayout(context);
+          return _buildPhoneLayout(context, ref);
         }
       },
     );
   }
 
   // ── Phone: Bottom Navigation ──────────────────────────────────────
-  Widget _buildPhoneLayout(BuildContext context) {
+  Widget _buildPhoneLayout(BuildContext context, WidgetRef ref) {
     return Scaffold(
       body: child,
       bottomNavigationBar: NavigationBar(
@@ -85,7 +88,7 @@ class AHAdaptiveScaffold extends StatelessWidget {
   }
 
   // ── Tablet: Navigation Rail ───────────────────────────────────────
-  Widget _buildTabletLayout(BuildContext context) {
+  Widget _buildTabletLayout(BuildContext context, WidgetRef ref) {
     return Scaffold(
       body: Row(
         children: [
@@ -103,7 +106,7 @@ class AHAdaptiveScaffold extends StatelessWidget {
             backgroundColor: Colors.white,
             indicatorColor: AHColors.navy.withValues(alpha: 0.1),
             leading: _buildRailLeading(context),
-            trailing: _buildRailTrailing(context),
+            trailing: _buildRailTrailing(context, ref),
             labelType: NavigationRailLabelType.all,
           ),
           const VerticalDivider(thickness: 1, width: 1),
@@ -114,7 +117,7 @@ class AHAdaptiveScaffold extends StatelessWidget {
   }
 
   // ── Desktop: Extended Navigation Rail ─────────────────────────────
-  Widget _buildDesktopLayout(BuildContext context) {
+  Widget _buildDesktopLayout(BuildContext context, WidgetRef ref) {
     return Scaffold(
       body: Row(
         children: [
@@ -135,6 +138,8 @@ class AHAdaptiveScaffold extends StatelessWidget {
                 selectedIcon: const Icon(Icons.settings),
                 label: const Text('Paramètres'),
               ),
+              const Divider(),
+              _buildDrawerLogoutTile(context, ref),
             ],
           ),
           const VerticalDivider(thickness: 1, width: 1),
@@ -172,17 +177,15 @@ class AHAdaptiveScaffold extends StatelessWidget {
     );
   }
 
-  Widget _buildRailTrailing(BuildContext context) {
+  Widget _buildRailTrailing(BuildContext context, WidgetRef ref) {
     return Expanded(
       child: Align(
         alignment: Alignment.bottomCenter,
         child: Padding(
           padding: const EdgeInsets.only(bottom: AHSpacing.lg),
           child: IconButton(
-            icon: const Icon(Icons.logout, color: AHColors.gray400),
-            onPressed: () {
-              // Logout handled through provider in parent
-            },
+            icon: const Icon(Icons.logout, color: AHColors.grey400),
+            onPressed: () => _showLogoutConfirmation(context),
             tooltip: 'Déconnexion',
           ),
         ),
@@ -230,7 +233,7 @@ class AHAdaptiveScaffold extends StatelessWidget {
               Text(
                 'Gestion Scolaire',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AHColors.gray500,
+                      color: AHColors.grey500,
                     ),
               ),
             ],
@@ -238,5 +241,72 @@ class AHAdaptiveScaffold extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  // ── Drawer Logout Tile ────────────────────────────────────────────
+
+  Widget _buildDrawerLogoutTile(BuildContext context, WidgetRef ref) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AHSpacing.md,
+        vertical: AHSpacing.sm,
+      ),
+      child: ListTile(
+        leading: const Icon(Icons.logout, color: AHColors.grey500),
+        title: Text(
+          'Déconnexion',
+          style: TextStyle(
+            fontFamily: 'Inter',
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: AHColors.grey700,
+          ),
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AHSpacing.r8),
+        ),
+        onTap: () {
+          // Close drawer first, then show confirmation.
+          Navigator.of(context).pop();
+          _showLogoutConfirmation(context);
+        },
+      ),
+    );
+  }
+
+  // ── Logout Confirmation Dialog ────────────────────────────────────
+
+  void _showLogoutConfirmation(BuildContext context) {
+    showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Déconnexion'),
+          content: const Text(
+            'Êtes-vous sûr de vouloir vous déconnecter ? '
+            'Vos données hors-ligne seront préservées.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Annuler'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AHColors.error,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Se déconnecter'),
+            ),
+          ],
+        );
+      },
+    ).then((confirmed) {
+      if (confirmed == true && context.mounted) {
+        // Navigate to the logout screen which handles the 5-step process.
+        context.go('/logout');
+      }
+    });
   }
 }

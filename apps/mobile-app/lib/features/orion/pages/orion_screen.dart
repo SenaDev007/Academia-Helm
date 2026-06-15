@@ -1,164 +1,157 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/enums/module_config.dart';
 import '../../../core/theme/ah_colors.dart';
-import '../../../core/theme/ah_spacing.dart';
 import '../../../core/widgets/module_page_shell.dart';
+import '../../../core/widgets/module_data_list.dart';
+import '../../../core/widgets/loading/module_loading_wrapper.dart';
 import '../../../core/widgets/sub_tab_content.dart';
+import '../providers/orion_provider.dart';
 
-class OrionScreen extends StatefulWidget {
+class OrionScreen extends ConsumerWidget {
   const OrionScreen({super.key});
 
   @override
-  State<OrionScreen> createState() => _OrionScreenState();
-}
-
-class _OrionScreenState extends State<OrionScreen> {
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final module = allModules.firstWhere((m) => m.id == 'orion');
-    final subTabs = module.subTabs;
     return StatefulModulePage(
       module: module,
-      visibleSubTabs: subTabs,
-      initialSubTabId: subTabs.first.id,
+      visibleSubTabs: module.subTabs,
+      initialSubTabId: module.subTabs.first.id,
       subTabBuilder: (subTab) {
         switch (subTab.id) {
-          case 'orion-dashboard':
-            return _buildDashboardContent(context);
-          case 'orion-analysis':
-            return _buildAnalysisContent(context);
-          case 'orion-predictions':
-            return _buildPredictionsContent(context);
-          case 'orion-reports':
-            return _buildReportsContent(context);
-          case 'orion-settings':
-            return _buildSettingsContent(context);
-          default:
-            return PlaceholderContent(title: subTab.label);
+          case 'orion-dashboard': return const _DashboardContent();
+          case 'orion-analysis': return const _AnalysisContent();
+          case 'orion-predictions': return const _PredictionsContent();
+          case 'orion-reports': return const _ReportsContent();
+          case 'orion-settings': return const _SettingsContent();
+          default: return PlaceholderContent(title: subTab.label);
         }
       },
     );
   }
+}
 
-  Widget _buildDashboardContent(BuildContext context) {
-    return SubTabContentWrapper(
-      children: [
-        const SectionHeader(title: 'Vue d\'ensemble Orion IA'),
-        GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
-          mainAxisSpacing: AHSpacing.sm,
-          crossAxisSpacing: AHSpacing.sm,
-          childAspectRatio: 1.4,
-          children: const [
-            StatCard(
-              title: 'Analyses actives',
-              value: '12',
-              icon: Icons.analytics,
-              subtitle: '+3 cette semaine',
-            ),
-            StatCard(
-              title: 'Prédictions',
-              value: '48',
-              icon: Icons.trending_up,
-              iconColor: AHColors.success,
-              subtitle: '87% précision',
-            ),
-            StatCard(
-              title: 'Alertes',
-              value: '5',
-              icon: Icons.notifications_active,
-              iconColor: AHColors.warning,
-              subtitle: '2 critiques',
-            ),
-            StatCard(
-              title: 'Rapports générés',
-              value: '23',
-              icon: Icons.description,
-              iconColor: AHColors.info,
-              subtitle: 'Ce mois',
-            ),
-          ],
+class _DashboardContent extends ConsumerWidget {
+  const _DashboardContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDashboardView(
+      dashboardAsync: ref.watch(orionMonthlySummaryProvider),
+      moduleName: 'Orion IA',
+      onRetry: () => ref.invalidate(orionMonthlySummaryProvider),
+      statCards: const [
+        StatCardConfig(title: 'Analyses actives', valueKey: 'active_analyses', defaultValue: '—', icon: Icons.analytics),
+        StatCardConfig(title: 'Prédictions', valueKey: 'predictions_count', defaultValue: '—', icon: Icons.trending_up, iconColor: AHColors.success),
+        StatCardConfig(title: 'Alertes', valueKey: 'alerts_count', defaultValue: '—', icon: Icons.notifications_active, iconColor: AHColors.warning),
+        StatCardConfig(title: 'Rapports générés', valueKey: 'reports_count', defaultValue: '—', icon: Icons.description, iconColor: AHColors.info),
+      ],
+      extraChildren: [
+        const SectionHeader(title: 'Alertes récentes'),
+        ModuleLoadingWrapper<List<Map<String, dynamic>>>(
+          value: ref.watch(orionAlertsProvider),
+          moduleName: 'Alertes',
+          onRetry: () => ref.invalidate(orionAlertsProvider),
+          builder: (alerts) {
+            if (alerts.isEmpty) return const Padding(
+              padding: EdgeInsets.all(AHSpacing.lg),
+              child: Text('Aucune alerte active', style: TextStyle(color: AHColors.muted)),
+            );
+            return Column(children: alerts.take(3).map((a) => ListItemCard(
+              title: a['title'] ?? 'Alerte',
+              subtitle: a['description'] ?? '',
+              leadingIcon: Icons.warning_amber,
+              leadingIconColor: AHColors.warning,
+            )).toList());
+          },
         ),
-        const SectionHeader(title: 'Analyses récentes'),
-        ...[
-          ListItemCard(title: 'Risque d\'abandon - 3ème B', subtitle: 'Prédiction: Élevé (78%)', leadingIcon: Icons.warning_amber, leadingIconColor: AHColors.error),
-          ListItemCard(title: 'Performance maths - 2nde A', subtitle: 'Tendance: En hausse (+12%)', leadingIcon: Icons.trending_up, leadingIconColor: AHColors.success),
-          ListItemCard(title: 'Absentéisme - 1ère S', subtitle: 'Analyse: 15% au-dessus seuil', leadingIcon: Icons.person_off, leadingIconColor: AHColors.warning),
-        ],
       ],
     );
   }
+}
 
-  Widget _buildAnalysisContent(BuildContext context) {
-    return SubTabContentWrapper(
-      children: [
-        const SectionHeader(title: 'Analyses en cours'),
-        ...[
-          ListItemCard(title: 'Analyse des résultats Q1', subtitle: 'Mathématiques - Toutes classes', leadingIcon: Icons.analytics, badge: StatusBadge(label: 'En cours', type: StatusBadgeType.info)),
-          ListItemCard(title: 'Corrélations notes/présence', subtitle: 'Cycle secondaire', leadingIcon: Icons.compare_arrows, badge: StatusBadge(label: 'Terminé', type: StatusBadgeType.success)),
-          ListItemCard(title: 'Profils d\'apprentissage', subtitle: '6ème - 3ème', leadingIcon: Icons.psychology, badge: StatusBadge(label: 'En cours', type: StatusBadgeType.info)),
-          ListItemCard(title: 'Impact pédagogique', subtitle: 'Nouveaux programmes', leadingIcon: Icons.lightbulb, badge: StatusBadge(label: 'Planifié', type: StatusBadgeType.neutral)),
-        ],
+class _AnalysisContent extends ConsumerWidget {
+  const _AnalysisContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataList(
+      itemsAsync: ref.watch(orionInsightsProvider),
+      moduleName: 'Analyses',
+      emptyTitle: 'Aucune analyse en cours',
+      emptySubtitle: 'Les analyses Orion apparaîtront ici',
+      onRetry: () => ref.invalidate(orionInsightsProvider),
+      itemBuilder: (item) => ListItemCard(
+        title: item['title'] ?? 'Analyse',
+        subtitle: item['description'] ?? '',
+        leadingIcon: Icons.analytics,
+        badge: StatusBadge(label: item['status'] ?? 'En cours', type: _st(item['status'])),
+      ),
+    );
+  }
+}
+
+class _PredictionsContent extends ConsumerWidget {
+  const _PredictionsContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDashboardView(
+      dashboardAsync: ref.watch(orionKpisProvider),
+      moduleName: 'Prédictions',
+      onRetry: () => ref.invalidate(orionKpisProvider),
+      statCards: const [
+        StatCardConfig(title: 'Taux de réussite estimé', valueKey: 'estimated_success_rate', defaultValue: '—', icon: Icons.school, iconColor: AHColors.success),
+        StatCardConfig(title: 'Risque d\'abandon', valueKey: 'dropout_risk', defaultValue: '—', icon: Icons.person_off, iconColor: AHColors.error),
+        StatCardConfig(title: 'Progression moyenne', valueKey: 'average_progression', defaultValue: '—', icon: Icons.trending_up, iconColor: AHColors.info),
+        StatCardConfig(title: 'Confiance modèle', valueKey: 'model_confidence', defaultValue: '—', icon: Icons.verified, iconColor: AHColors.gold),
       ],
     );
   }
+}
 
-  Widget _buildPredictionsContent(BuildContext context) {
-    return SubTabContentWrapper(
-      children: [
-        const SectionHeader(title: 'Prédictions IA'),
-        GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
-          mainAxisSpacing: AHSpacing.sm,
-          crossAxisSpacing: AHSpacing.sm,
-          childAspectRatio: 1.4,
-          children: const [
-            StatCard(title: 'Taux de réussite estimé', value: '82%', icon: Icons.school, iconColor: AHColors.success),
-            StatCard(title: 'Risque d\'abandon', value: '8%', icon: Icons.person_off, iconColor: AHColors.error),
-            StatCard(title: 'Progression moyenne', value: '+5.2%', icon: Icons.trending_up, iconColor: AHColors.info),
-            StatCard(title: 'Confiance modèle', value: '91%', icon: Icons.verified, iconColor: AHColors.gold),
-          ],
-        ),
-        const SectionHeader(title: 'Prédictions détaillées'),
-        ...[
-          ListItemCard(title: 'Classe 3ème B - Taux réussite', subtitle: 'Prédit: 76% | Réel: 79%', leadingIcon: Icons.trending_up, leadingIconColor: AHColors.success),
-          ListItemCard(title: 'Élève Dupont M. - Risque abandon', subtitle: 'Probabilité: 45% | Confiance: 87%', leadingIcon: Icons.warning, leadingIconColor: AHColors.warning),
-          ListItemCard(title: 'Classe 2nde A - Moyenne générale', subtitle: 'Prédit: 12.8 | Réel: 13.1', leadingIcon: Icons.show_chart, leadingIconColor: AHColors.info),
-        ],
-      ],
+class _ReportsContent extends ConsumerWidget {
+  const _ReportsContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataList(
+      itemsAsync: ref.watch(orionHistoryFilteredProvider(const OrionHistoryArgs())),
+      moduleName: 'Rapports IA',
+      emptyTitle: 'Aucun rapport IA',
+      emptySubtitle: 'Les rapports générés apparaîtront ici',
+      onRetry: () => ref.invalidate(orionHistoryFilteredProvider(const OrionHistoryArgs())),
+      itemBuilder: (item) => ListItemCard(
+        title: item['title'] ?? 'Rapport',
+        subtitle: item['date'] ?? '',
+        leadingIcon: Icons.description,
+        badge: StatusBadge(label: item['status'] ?? 'Nouveau', type: _st(item['status'])),
+      ),
     );
   }
+}
 
-  Widget _buildReportsContent(BuildContext context) {
-    return SubTabContentWrapper(
-      children: [
-        const SectionHeader(title: 'Rapports IA'),
-        ...[
-          ListItemCard(title: 'Rapport mensuel - Mars 2025', subtitle: 'Généré le 01/04/2025', leadingIcon: Icons.description, badge: StatusBadge(label: 'Nouveau', type: StatusBadgeType.gold)),
-          ListItemCard(title: 'Bilan trimestriel Q2', subtitle: 'Généré le 15/03/2025', leadingIcon: Icons.summarize, badge: StatusBadge(label: 'Complet', type: StatusBadgeType.success)),
-          ListItemCard(title: 'Analyse prédictive semestrielle', subtitle: 'Généré le 01/02/2025', leadingIcon: Icons.auto_graph, badge: StatusBadge(label: 'Complet', type: StatusBadgeType.success)),
-          ListItemCard(title: 'Rapport personnalisé - Direction', subtitle: 'Généré le 28/01/2025', leadingIcon: Icons.folder_special, badge: StatusBadge(label: 'Archivé', type: StatusBadgeType.neutral)),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildSettingsContent(BuildContext context) {
-    return SubTabContentWrapper(
-      children: [
+class _SettingsContent extends ConsumerWidget {
+  const _SettingsContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleLoadingWrapper<Map<String, dynamic>>(
+      value: ref.watch(orionConfigProvider),
+      moduleName: 'Configuration Orion',
+      onRetry: () => ref.invalidate(orionConfigProvider),
+      builder: (config) => SubTabContentWrapper(children: [
         const SectionHeader(title: 'Configuration Orion IA'),
-        ...[
-          ListItemCard(title: 'Modèles de prédiction', subtitle: '3 modèles actifs', leadingIcon: Icons.model_training),
-          ListItemCard(title: 'Sources de données', subtitle: '5 connecteurs configurés', leadingIcon: Icons.storage),
-          ListItemCard(title: 'Seuils d\'alerte', subtitle: 'Configurés pour 4 indicateurs', leadingIcon: Icons.tune),
-          ListItemCard(title: 'Planification des analyses', subtitle: 'Quotidienne à 02h00', leadingIcon: Icons.schedule),
-          ListItemCard(title: 'Historique des modifications', subtitle: '12 changements ce mois', leadingIcon: Icons.history),
-        ],
-      ],
+        ListItemCard(title: 'Modèles de prédiction', subtitle: '${config['models_count'] ?? '—'} modèles actifs', leadingIcon: Icons.model_training),
+        ListItemCard(title: 'Sources de données', subtitle: '${config['sources_count'] ?? '—'} connecteurs configurés', leadingIcon: Icons.storage),
+        ListItemCard(title: 'Seuils d\'alerte', subtitle: 'Configurés pour ${config['indicators_count'] ?? '—'} indicateurs', leadingIcon: Icons.tune),
+        ListItemCard(title: 'Planification des analyses', subtitle: config['schedule'] ?? 'Quotidienne', leadingIcon: Icons.schedule),
+      ]),
     );
   }
+}
+
+StatusBadgeType _st(dynamic s) {
+  if (s == null) return StatusBadgeType.info;
+  final v = s.toString().toLowerCase();
+  if (v.contains('actif') || v.contains('terminé') || v.contains('valid')) return StatusBadgeType.success;
+  if (v.contains('attente') || v.contains('retard')) return StatusBadgeType.warning;
+  if (v.contains('error')) return StatusBadgeType.error;
+  return StatusBadgeType.info;
 }

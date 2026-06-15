@@ -15,9 +15,10 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../auth/auth_state.dart';
-import '../../auth/token_storage.dart';
+import '../../enums/user_role.dart';
 import '../../loading/loading_messages.dart';
 import '../../loading/post_login_flow.dart';
+import '../../network/api_client.dart';
 import '../../theme/ah_colors.dart';
 import 'loading_screen.dart';
 
@@ -52,10 +53,13 @@ enum PostLoginResult {
 /// then navigates to the appropriate screen on completion.
 class PostLoginLoadingScreen extends StatefulWidget {
   /// The authenticated user.
-  final AuthUser user;
+  final User user;
 
-  /// The selected tenant (may be null for multi-tenant selection).
-  final TenantInfo? tenant;
+  /// The selected tenant data (may be null for multi-tenant selection).
+  final Map<String, dynamic>? tenant;
+
+  /// The API client for making requests.
+  final ApiClient apiClient;
 
   /// Whether this is a fresh login (vs session restore).
   final bool isFreshLogin;
@@ -69,6 +73,7 @@ class PostLoginLoadingScreen extends StatefulWidget {
   const PostLoginLoadingScreen({
     super.key,
     required this.user,
+    required this.apiClient,
     this.tenant,
     this.isFreshLogin = true,
     this.onSuccess,
@@ -93,9 +98,9 @@ class _PostLoginLoadingScreenState extends State<PostLoginLoadingScreen> {
   void initState() {
     super.initState();
     _flow = PostLoginFlow(
-      tokenStorage: TokenStorage(),
       user: widget.user,
       tenant: widget.tenant,
+      apiClient: widget.apiClient,
     );
     _startFlow();
   }
@@ -144,24 +149,7 @@ class _PostLoginLoadingScreenState extends State<PostLoginLoadingScreen> {
       widget.onSuccess?.call();
 
       // Navigate to dashboard
-      try {
-        final portal = widget.user.portal;
-        switch (portal) {
-          case PortalType.platform:
-            context.go('/platform');
-          case PortalType.school:
-            context.go('/school');
-          case PortalType.teacher:
-            context.go('/teacher');
-          case PortalType.parent:
-            context.go('/parent');
-          case PortalType.public:
-            context.go('/dashboard');
-        }
-      } catch (_) {
-        // Navigation failed — fallback
-        context.go('/dashboard');
-      }
+      context.go('/dashboard');
     });
   }
 

@@ -1,9 +1,53 @@
+// ┌──────────────────────────────────────────────────────────────────────────┐
+// │  DEPRECATED — This file is kept for backward compatibility only.        │
+// │  Use authNotifierProvider and the convenience providers from             │
+// │  core/auth/auth_providers.dart instead.                                  │
+// └──────────────────────────────────────────────────────────────────────────┘
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-// ── Models ────────────────────────────────────────────────────────────
+import '../../../core/auth/auth_notifier.dart';
+import '../../../core/auth/auth_providers.dart' as real_providers;
+import '../../../core/auth/auth_state.dart' as real_auth;
 
-/// Represents the authentication state of the app.
+// ── DEPRECATED Models ──────────────────────────────────────────────────
+
+/// @Deprecated('Use TenantBasic from core/auth/auth_state.dart instead')
+@Deprecated('Use TenantBasic from core/auth/auth_state.dart instead')
+class TenantInfo {
+  final String id;
+  final String name;
+  final String acronym;
+  final String? logoUrl;
+  final String type;
+  final String? subdomain;
+
+  const TenantInfo({
+    required this.id,
+    required this.name,
+    required this.acronym,
+    this.logoUrl,
+    required this.type,
+    this.subdomain,
+  });
+
+  /// Creates a [TenantInfo] from a [TenantBasic] (real auth model).
+  factory TenantInfo.fromTenantBasic(real_auth.TenantBasic tenant) {
+    return TenantInfo(
+      id: tenant.id,
+      name: tenant.name,
+      acronym: tenant.acronym ?? tenant.shortName,
+      logoUrl: tenant.logoUrl,
+      type: tenant.type ?? '',
+      subdomain: tenant.subdomain,
+    );
+  }
+}
+
+// ── DEPRECATED AuthState ───────────────────────────────────────────────
+
+/// @Deprecated('Use AuthState from core/auth/auth_state.dart instead')
+@Deprecated('Use AuthState from core/auth/auth_state.dart instead')
 class AuthState {
   final bool isAuthenticated;
   final String? accessToken;
@@ -35,240 +79,115 @@ class AuthState {
     this.isLoading = false,
   });
 
-  AuthState copyWith({
-    bool? isAuthenticated,
-    String? accessToken,
-    String? refreshToken,
-    String? userId,
-    String? email,
-    String? fullName,
-    String? role,
-    String? selectedTenantId,
-    String? selectedTenantName,
-    String? selectedTenantAcronym,
-    List<TenantInfo>? availableTenants,
-    String? error,
-    bool? isLoading,
-  }) {
-    return AuthState(
-      isAuthenticated: isAuthenticated ?? this.isAuthenticated,
-      accessToken: accessToken ?? this.accessToken,
-      refreshToken: refreshToken ?? this.refreshToken,
-      userId: userId ?? this.userId,
-      email: email ?? this.email,
-      fullName: fullName ?? this.fullName,
-      role: role ?? this.role,
-      selectedTenantId: selectedTenantId ?? this.selectedTenantId,
-      selectedTenantName: selectedTenantName ?? this.selectedTenantName,
-      selectedTenantAcronym:
-          selectedTenantAcronym ?? this.selectedTenantAcronym,
-      availableTenants: availableTenants ?? this.availableTenants,
-      error: error,
-      isLoading: isLoading ?? this.isLoading,
-    );
-  }
-
   /// Whether the user has selected a tenant after login.
   bool get hasTenant => selectedTenantId != null;
+
+  /// Creates a deprecated AuthState by reading from the real auth state.
+  factory AuthState.fromRealAuthState(real_auth.AuthState state) {
+    return state.when(
+      initial: () => const AuthState(),
+      authenticated: (user, accessToken, tenants, tenantId, portal) {
+        final tenant = tenantId != null
+            ? tenants.where((t) => t.id == tenantId).firstOrNull
+            : null;
+        return AuthState(
+          isAuthenticated: true,
+          accessToken: accessToken,
+          userId: user.id,
+          email: user.email,
+          fullName: user.displayName,
+          role: user.role,
+          selectedTenantId: tenantId,
+          selectedTenantName: tenant?.name,
+          selectedTenantAcronym: tenant?.acronym,
+          availableTenants: tenants.map(TenantInfo.fromTenantBasic).toList(),
+        );
+      },
+      unauthenticated: () => const AuthState(),
+      loading: () => const AuthState(isLoading: true),
+      loginLoading: () => const AuthState(isLoading: true),
+    );
+  }
 }
 
-/// Info about a tenant (school) the user has access to.
-class TenantInfo {
-  final String id;
-  final String name;
-  final String acronym;
-  final String? logoUrl;
-  final String type; // e.g. "École", "Lycée", "Collège", "Université"
-  final String? subdomain;
+// ── DEPRECATED Providers (delegate to real auth) ───────────────────────
 
-  const TenantInfo({
-    required this.id,
-    required this.name,
-    required this.acronym,
-    this.logoUrl,
-    required this.type,
-    this.subdomain,
-  });
-}
+/// @Deprecated('Use authNotifierProvider from core/auth/auth_notifier.dart instead')
+@Deprecated('Use authNotifierProvider from core/auth/auth_notifier.dart instead')
+final authStateProvider =
+    AsyncNotifierProvider<_DeprecatedAuthNotifier, AuthState>(
+  _DeprecatedAuthNotifier.new,
+);
 
-// ── Auth Notifier ─────────────────────────────────────────────────────
-
-class AuthNotifier extends AsyncNotifier<AuthState> {
-  static const _secureStorage = FlutterSecureStorage();
-
+/// Internal notifier that delegates to the real [AuthNotifier].
+class _DeprecatedAuthNotifier extends AsyncNotifier<AuthState> {
   @override
   Future<AuthState> build() async {
-    // Try to restore session from secure storage on app start.
-    final accessToken = await _secureStorage.read(key: 'access_token');
-    final refreshToken = await _secureStorage.read(key: 'refresh_token');
-    final userId = await _secureStorage.read(key: 'user_id');
-    final email = await _secureStorage.read(key: 'user_email');
-    final fullName = await _secureStorage.read(key: 'user_full_name');
-    final role = await _secureStorage.read(key: 'user_role');
-    final tenantId = await _secureStorage.read(key: 'selected_tenant_id');
-    final tenantName = await _secureStorage.read(key: 'selected_tenant_name');
-    final tenantAcronym =
-        await _secureStorage.read(key: 'selected_tenant_acronym');
-
-    if (accessToken != null && userId != null) {
-      return AuthState(
-        isAuthenticated: true,
-        accessToken: accessToken,
-        refreshToken: refreshToken,
-        userId: userId,
-        email: email,
-        fullName: fullName,
-        role: role,
-        selectedTenantId: tenantId,
-        selectedTenantName: tenantName,
-        selectedTenantAcronym: tenantAcronym,
-      );
-    }
-
-    return const AuthState();
+    final realState = await ref.watch(authNotifierProvider.future);
+    return AuthState.fromRealAuthState(realState);
   }
 
-  /// Login with email and password.
-  Future<void> login({
-    required String email,
-    required String password,
-  }) async {
-    state = const AsyncLoading();
-    try {
-      // Simulate API call — replace with real API integration.
-      await Future.delayed(const Duration(seconds: 1));
-
-      // Mock successful login response.
-      final mockTenants = [
-        const TenantInfo(
-          id: 'tenant-001',
-          name: 'École Internationale de Lomé',
-          acronym: 'EIL',
-          type: 'École',
-          logoUrl: null,
-          subdomain: 'eil',
-        ),
-        const TenantInfo(
-          id: 'tenant-002',
-          name: 'Lycée de Kpalimé',
-          acronym: 'LDK',
-          type: 'Lycée',
-          logoUrl: null,
-          subdomain: 'ldk',
-        ),
-        const TenantInfo(
-          id: 'tenant-003',
-          name: 'Collège Saint Joseph',
-          acronym: 'CSJ',
-          type: 'Collège',
-          logoUrl: null,
-          subdomain: 'csj',
-        ),
-      ];
-
-      // Store tokens securely.
-      const fakeAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.mock';
-      const fakeRefreshToken = 'mock_refresh_token';
-      const fakeUserId = 'user-001';
-      const fakeRole = 'ADMIN';
-
-      await _secureStorage.write(key: 'access_token', value: fakeAccessToken);
-      await _secureStorage.write(
-          key: 'refresh_token', value: fakeRefreshToken);
-      await _secureStorage.write(key: 'user_id', value: fakeUserId);
-      await _secureStorage.write(key: 'user_email', value: email);
-      await _secureStorage.write(key: 'user_full_name', value: 'Amadou Diallo');
-      await _secureStorage.write(key: 'user_role', value: fakeRole);
-
-      state = AsyncData(AuthState(
-        isAuthenticated: true,
-        accessToken: fakeAccessToken,
-        refreshToken: fakeRefreshToken,
-        userId: fakeUserId,
-        email: email,
-        fullName: 'Amadou Diallo',
-        role: fakeRole,
-        availableTenants: mockTenants,
-      ));
-    } catch (e) {
-      state = AsyncData(AuthState(
-        isAuthenticated: false,
-        error: e.toString(),
-      ));
-    }
+  /// @Deprecated('Use authNotifierProvider.notifier.login() instead')
+  @Deprecated('Use authNotifierProvider.notifier.login() instead')
+  Future<void> login({required String email, required String password}) async {
+    await ref.read(authNotifierProvider.notifier).login(
+          email: email,
+          password: password,
+        );
   }
 
-  /// Select a tenant after login.
+  /// @Deprecated('Use authNotifierProvider.notifier.selectTenant() instead')
+  @Deprecated('Use authNotifierProvider.notifier.selectTenant() instead')
   Future<void> selectTenant(TenantInfo tenant) async {
-    final current = state.valueOrNull;
-    if (current == null) return;
-
-    await _secureStorage.write(
-        key: 'selected_tenant_id', value: tenant.id);
-    await _secureStorage.write(
-        key: 'selected_tenant_name', value: tenant.name);
-    await _secureStorage.write(
-        key: 'selected_tenant_acronym', value: tenant.acronym);
-
-    state = AsyncData(current.copyWith(
-      selectedTenantId: tenant.id,
-      selectedTenantName: tenant.name,
-      selectedTenantAcronym: tenant.acronym,
-    ));
+    await ref.read(authNotifierProvider.notifier).selectTenant(tenant.id);
   }
 
-  /// Logout and clear all stored credentials.
+  /// @Deprecated('Use authNotifierProvider.notifier.logout() instead')
+  @Deprecated('Use authNotifierProvider.notifier.logout() instead')
   Future<void> logout() async {
-    await _secureStorage.deleteAll();
-    state = const AsyncData(AuthState());
-  }
-
-  /// Clear the error message.
-  void clearError() {
-    final current = state.valueOrNull;
-    if (current == null) return;
-    state = AsyncData(current.copyWith(error: null));
+    await ref.read(authNotifierProvider.notifier).logout();
   }
 }
 
-// ── Providers ─────────────────────────────────────────────────────────
-
-/// Main auth state provider.
-final authStateProvider =
-    AsyncNotifierProvider<AuthNotifier, AuthState>(AuthNotifier.new);
-
-/// Whether the user is currently authenticated.
+/// @Deprecated('Use isAuthenticatedProvider from core/auth/auth_providers.dart instead')
+@Deprecated('Use isAuthenticatedProvider from core/auth/auth_providers.dart instead')
 final isAuthenticatedProvider = Provider<bool>((ref) {
-  final authState = ref.watch(authStateProvider).valueOrNull;
-  return authState?.isAuthenticated ?? false;
+  return ref.watch(real_providers.isAuthenticatedProvider);
 });
 
-/// Whether the user has selected a tenant.
+/// @Deprecated('Use currentSelectedTenantIdProvider from core/auth/auth_providers.dart instead')
+@Deprecated('Use currentSelectedTenantIdProvider from core/auth/auth_providers.dart instead')
 final hasTenantProvider = Provider<bool>((ref) {
-  final authState = ref.watch(authStateProvider).valueOrNull;
-  return authState?.hasTenant ?? false;
+  return ref.watch(real_providers.currentSelectedTenantIdProvider) != null;
 });
 
-/// The current user's role.
+/// @Deprecated('Use currentUserRoleProvider from core/auth/auth_providers.dart instead')
+@Deprecated('Use currentUserRoleProvider from core/auth/auth_providers.dart instead')
 final currentUserRoleProvider = Provider<String?>((ref) {
-  final authState = ref.watch(authStateProvider).valueOrNull;
-  return authState?.role;
+  return ref.watch(real_providers.currentUserRoleProvider);
 });
 
-/// The current user's display name.
+/// @Deprecated('Use currentUserDisplayNameProvider from core/auth/auth_providers.dart instead')
+@Deprecated('Use currentUserDisplayNameProvider from core/auth/auth_providers.dart instead')
 final currentUserDisplayNameProvider = Provider<String?>((ref) {
-  final authState = ref.watch(authStateProvider).valueOrNull;
-  return authState?.fullName;
+  return ref.watch(real_providers.currentUserDisplayNameProvider);
 });
 
-/// The current tenant name.
+/// @Deprecated('Read tenant name from tenantNotifierProvider instead')
+@Deprecated('Read tenant name from tenantNotifierProvider instead')
 final currentTenantNameProvider = Provider<String?>((ref) {
-  final authState = ref.watch(authStateProvider).valueOrNull;
-  return authState?.selectedTenantName;
+  // Read from the real auth state's tenant data
+  final authState = ref.watch(authNotifierProvider).valueOrNull;
+  final tenantId = authState?.selectedTenantIdOrNull;
+  if (tenantId == null) return null;
+  final tenants = authState?.availableTenantsOrNull ?? [];
+  final tenant = tenants.where((t) => t.id == tenantId).firstOrNull;
+  return tenant?.name;
 });
 
-/// The available tenants for the current user.
+/// @Deprecated('Use availableTenantsProvider from core/auth/auth_providers.dart instead')
+@Deprecated('Use availableTenantsProvider from core/auth/auth_providers.dart instead')
 final availableTenantsProvider = Provider<List<TenantInfo>>((ref) {
-  final authState = ref.watch(authStateProvider).valueOrNull;
-  return authState?.availableTenants ?? [];
+  final tenants = ref.watch(real_providers.availableTenantsProvider);
+  return tenants.map(TenantInfo.fromTenantBasic).toList();
 });

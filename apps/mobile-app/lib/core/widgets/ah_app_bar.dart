@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../auth/auth_notifier.dart';
+import '../auth/auth_providers.dart';
+import '../auth/auth_state.dart';
 import '../theme/ah_theme.dart';
-import '../../features/auth/providers/auth_provider.dart';
 
 /// Custom AH App Bar with:
 /// - School name + acronym
@@ -20,10 +22,16 @@ class AHAppBar extends ConsumerWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tenantName = ref.watch(currentTenantNameProvider) ?? 'Academia Helm';
-    final authState = ref.watch(authStateProvider).valueOrNull;
-    final acronym = authState?.selectedTenantAcronym ?? 'AH';
-    final fullName = authState?.fullName ?? 'Utilisateur';
+    final authState = ref.watch(authNotifierProvider).valueOrNull;
+    final user = authState?.userOrNull;
+    final tenantId = authState?.selectedTenantIdOrNull;
+    final tenants = authState?.availableTenantsOrNull ?? [];
+    final tenant = tenantId != null
+        ? tenants.where((t) => t.id == tenantId).firstOrNull
+        : null;
+    final tenantName = tenant?.name ?? 'Academia Helm';
+    final acronym = tenant?.acronym ?? 'AH';
+    final fullName = user?.displayName ?? 'Utilisateur';
     final initials = _getInitials(fullName);
 
     return Container(

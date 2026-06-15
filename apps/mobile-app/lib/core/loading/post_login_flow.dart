@@ -13,9 +13,9 @@
 
 import 'dart:async';
 
-import '../api/client.dart';
 import '../auth/auth_state.dart';
 import '../auth/token_storage.dart';
+import '../network/api_client.dart';
 import 'loading_messages.dart';
 
 // ─── Flow Step Result ────────────────────────────────────────────────────────
@@ -62,18 +62,16 @@ class FlowProgress {
 /// Matches the web app's usePostLoginFlow hook.
 class PostLoginFlow {
   PostLoginFlow({
-    required TokenStorage tokenStorage,
-    required AuthUser user,
-    TenantInfo? tenant,
-  })  : _tokenStorage = tokenStorage,
-        _user = user,
+    required User user,
+    Map<String, dynamic>? tenant,
+    required ApiClient apiClient,
+  })  : _user = user,
         _tenant = tenant,
-        _dio = ApiClient.instance.dio;
+        _apiClient = apiClient;
 
-  final TokenStorage _tokenStorage;
-  final AuthUser _user;
-  final TenantInfo? _tenant;
-  final Dio _dio;
+  final User _user;
+  final Map<String, dynamic>? _tenant;
+  final ApiClient _apiClient;
 
   bool _isRunning = false;
   String? _sessionId;
@@ -99,7 +97,7 @@ class PostLoginFlow {
     if (!isFreshLogin && _lastRunTime != null) {
       final sinceLastRun = DateTime.now().difference(_lastRunTime!);
       if (sinceLastRun < _sessionDedupTtl && _sessionId != null) {
-        final storedSessionId = await _tokenStorage.getSessionId();
+        final storedSessionId = await TokenStorage.getSessionId();
         if (storedSessionId == _sessionId) {
           // Same session, skip flow
           onProgress(const FlowProgress(
@@ -140,7 +138,8 @@ class PostLoginFlow {
         if (!result.success) {
           // Non-critical failures: log but continue
           // Only auth/permission failures are critical
-          if (result.step == PostLoginStep.loadRolesPermissions && !result.success) {
+          if (result.step == PostLoginStep.loadRolesPermissions &&
+              !result.success) {
             _reportError(onProgress, result.error ?? 'Erreur de permissions');
             return false;
           }
@@ -156,7 +155,7 @@ class PostLoginFlow {
 
       // Flow complete
       _sessionId = DateTime.now().millisecondsSinceEpoch.toString();
-      await _tokenStorage.setSessionId(_sessionId!);
+      await TokenStorage.setSessionId(_sessionId!);
       _lastRunTime = DateTime.now();
 
       onProgress(FlowProgress(
@@ -183,7 +182,7 @@ class PostLoginFlow {
   Future<FlowStepResult> _initSecureContext() async {
     try {
       // Validate stored tokens
-      final isExpired = await _tokenStorage.isTokenExpired();
+      final isExpired = await TokenStorage.isTokenExpired();
       if (isExpired) {
         return FlowStepResult(
           step: PostLoginStep.initSecureContext,
@@ -193,20 +192,26 @@ class PostLoginFlow {
       }
 
       // Set up tenant header if available
-      if (_tenant != null) {
-        _dio.options.headers['X-Tenant-Id'] = _tenant!.id;
-      }
+      // Note: The AuthInterceptor handles X-Tenant-Id injection via
+      // tenantNotifierProvider. Here we just persist the session data.
 
       // Persist session
-      await _tokenStorage.persistSession(
-        user: _user,
+      await TokenStorage.persistSession(
+        user: {
+          'id': _user.id,
+          'email': _user.email,
+          'firstName': _user.firstName,
+          'lastName': _user.lastName,
+          'role': _user.role,
+          'avatarUrl': _user.avatarUrl,
+        },
         tenant: _tenant,
       );
 
       return FlowStepResult(
         step: PostLoginStep.initSecureContext,
         success: true,
-        data: {'tenantId': _tenant?.id},
+        data: {'tenantId': _tenant?['id']},
       );
     } catch (e) {
       return FlowStepResult(
@@ -220,12 +225,21 @@ class PostLoginFlow {
   /// Step 2: Verify academic year is active and current.
   Future<FlowStepResult> _verifyAcademicYear() async {
     try {
-      final response = await _dio.get('/academic-years/current');
-      final data = response.data as Map<String, dynamic>?;
-      return FlowStepResult(
-        step: PostLoginStep.verifyAcademicYear,
-        success: true,
-        data: data,
+      final result = await _apiClient.getRaw('/academic-years/current');
+      return result.when(
+        success: (data) => FlowStepResult(
+          step: PostLoginStep.verifyAcademicYear,
+          success: true,
+          data: data,
+        ),
+        failure: (_) => const FlowStepResult(
+          step: PostLoginStep.verifyAcademicYear,
+          success: true, // Non-critical
+        ),
+        loading: () => const FlowStepResult(
+          step: PostLoginStep.verifyAcademicYear,
+          success: true,
+        ),
       );
     } catch (e) {
       // Non-critical: continue without academic year data
@@ -239,12 +253,22 @@ class PostLoginFlow {
   /// Step 3: Load user roles and permissions.
   Future<FlowStepResult> _loadRolesPermissions() async {
     try {
-      final response = await _dio.get('/auth/permissions');
-      final data = response.data as Map<String, dynamic>?;
-      return FlowStepResult(
-        step: PostLoginStep.loadRolesPermissions,
-        success: true,
-        data: data,
+      final result = await _apiClient.getRaw('/auth/permissions');
+      return result.when(
+        success: (data) => FlowStepResult(
+          step: PostLoginStep.loadRolesPermissions,
+          success: true,
+          data: data,
+        ),
+        failure: (error) => FlowStepResult(
+          step: PostLoginStep.loadRolesPermissions,
+          success: false,
+          error: 'Impossible de charger les permissions',
+        ),
+        loading: () => const FlowStepResult(
+          step: PostLoginStep.loadRolesPermissions,
+          success: true,
+        ),
       );
     } catch (e) {
       return FlowStepResult(
@@ -276,12 +300,22 @@ class PostLoginFlow {
   /// Step 5: Initialize Orion AI module.
   Future<FlowStepResult> _initOrion() async {
     try {
-      final response = await _dio.get('/orion/status');
-      final data = response.data as Map<String, dynamic>?;
-      return FlowStepResult(
-        step: PostLoginStep.initOrion,
-        success: true,
-        data: data,
+      final result = await _apiClient.getRaw('/orion/status');
+      return result.when(
+        success: (data) => FlowStepResult(
+          step: PostLoginStep.initOrion,
+          success: true,
+          data: data,
+        ),
+        failure: (_) => const FlowStepResult(
+          // Orion may not be available for all tenants — non-critical
+          step: PostLoginStep.initOrion,
+          success: true,
+        ),
+        loading: () => const FlowStepResult(
+          step: PostLoginStep.initOrion,
+          success: true,
+        ),
       );
     } catch (e) {
       // Orion may not be available for all tenants — non-critical
@@ -296,7 +330,7 @@ class PostLoginFlow {
   Future<FlowStepResult> _preloadUI() async {
     try {
       // Preload dashboard data
-      await _dio.get('/dashboard/summary');
+      await _apiClient.getRaw('/dashboard/summary');
 
       return FlowStepResult(
         step: PostLoginStep.preloadUI,

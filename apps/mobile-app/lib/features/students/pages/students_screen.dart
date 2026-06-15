@@ -1,124 +1,416 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/enums/module_config.dart';
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/theme/ah_spacing.dart';
 import '../../../core/widgets/module_page_shell.dart';
+import '../../../core/widgets/module_data_list.dart';
 import '../../../core/widgets/sub_tab_content.dart';
+import '../../../core/widgets/loading/module_loading_wrapper.dart';
+import '../providers/students_provider.dart';
+import '../../orion/providers/orion_provider.dart';
+import '../../orion/widgets/orion_alert_banner.dart';
+import '../../orion/widgets/orion_kpi_card.dart';
+import '../../orion/widgets/orion_insight_section.dart';
 
-class StudentsScreen extends StatefulWidget {
+class StudentsScreen extends ConsumerWidget {
   const StudentsScreen({super.key});
 
   @override
-  State<StudentsScreen> createState() => _StudentsScreenState();
-}
-
-class _StudentsScreenState extends State<StudentsScreen> {
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final module = allModules.firstWhere((m) => m.id == 'students');
     final subTabs = module.subTabs;
-    return StatefulModulePage(
-      module: module,
-      visibleSubTabs: subTabs,
-      initialSubTabId: subTabs.first.id,
-      subTabBuilder: (subTab) {
-        switch (subTab.id) {
+    final alertsAsync = ref.watch(orionAlertsProvider);
+    return Column(
+      children: [
+        OrionAlertBanner(alertsAsync: alertsAsync),
+        Expanded(
+          child: StatefulModulePage(
+            module: module,
+            visibleSubTabs: subTabs,
+            initialSubTabId: subTabs.first.id,
+            subTabBuilder: (subTab) {
+              switch (subTab.id) {
           case 'students-dashboard':
-            return _buildDashboardContent(context);
+            return _DashboardContent();
           case 'students-list':
-            return _buildListContent(context);
+            return _ListContent();
           case 'students-enrollments':
-            return _buildEnrollmentsContent(context);
+            return _EnrollmentsContent();
           case 'students-attendance':
-            return _buildAttendanceContent(context);
+            return _AttendanceContent();
           case 'students-grades':
-            return _buildGradesContent(context);
+            return _GradesContent();
           case 'students-discipline':
-            return _buildDisciplineContent(context);
+            return _DisciplineContent();
           case 'students-health':
-            return _buildHealthContent(context);
+            return _HealthContent();
           case 'students-transports':
-            return _buildTransportsContent(context);
+            return _TransportsContent();
           case 'students-canteen':
-            return _buildCanteenContent(context);
+            return _CanteenContent();
           case 'students-documents':
-            return _buildDocumentsContent(context);
+            return _DocumentsContent();
           case 'students-communications':
-            return _buildCommunicationsContent(context);
+            return _CommunicationsContent();
           case 'students-scholarships':
-            return _buildScholarshipsContent(context);
+            return _ScholarshipsContent();
           case 'students-activities':
-            return _buildActivitiesContent(context);
+            return _ActivitiesContent();
           case 'students-alumni':
-            return _buildAlumniContent(context);
+            return _AlumniContent();
           case 'students-reports':
-            return _buildReportsContent(context);
+            return _ReportsContent();
           case 'students-archive':
-            return _buildArchiveContent(context);
+            return _ArchiveContent();
+          case 'students-orion':
+            return const _OrionContent();
           default:
             return PlaceholderContent(title: subTab.label);
         }
       },
+          ),
+        ),
+      ],
     );
   }
+}
 
-  Widget _buildDashboardContent(BuildContext context) {
-    return SubTabContentWrapper(children: [
-      const SectionHeader(title: 'Tableau de bord Élèves'),
-      GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: 2, mainAxisSpacing: AHSpacing.sm, crossAxisSpacing: AHSpacing.sm, childAspectRatio: 1.4, children: const [
-        StatCard(title: 'Élèves inscrits', value: '1 247', icon: Icons.school, subtitle: '+32 cette année'),
-        StatCard(title: 'Nouveaux inscrits', value: '89', icon: Icons.person_add, iconColor: AHColors.success, subtitle: 'Rentrée 2025'),
-        StatCard(title: 'Taux de présence', value: '94.2%', icon: Icons.event_available, iconColor: AHColors.info, subtitle: 'Ce trimestre'),
-        StatCard(title: 'Moyenne générale', value: '12.8', icon: Icons.grade, iconColor: AHColors.gold, subtitle: '/20'),
-      ]),
-    ]);
-  }
+// ─── Dashboard ──────────────────────────────────────────────────────────────
 
-  Widget _buildListContent(BuildContext context) {
-    return SubTabContentWrapper(children: [
-      const SectionHeader(title: 'Liste des élèves'),
-      ...[
-        ListItemCard(title: 'Dupont Marie', subtitle: '3ème B - Née le 15/03/2010', leadingIcon: Icons.person, badge: StatusBadge(label: 'Actif', type: StatusBadgeType.success)),
-        ListItemCard(title: 'Martin Lucas', subtitle: '2nde A - Né le 22/07/2009', leadingIcon: Icons.person, badge: StatusBadge(label: 'Actif', type: StatusBadgeType.success)),
-        ListItemCard(title: 'Ben Ahmed Youssef', subtitle: '1ère S - Né le 08/11/2008', leadingIcon: Icons.person, badge: StatusBadge(label: 'Actif', type: StatusBadgeType.success)),
-        ListItemCard(title: 'Petit Sophie', subtitle: '6ème C - Née le 03/05/2013', leadingIcon: Icons.person, badge: StatusBadge(label: 'Inactif', type: StatusBadgeType.neutral)),
+class _DashboardContent extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDashboardView(
+      dashboardAsync: ref.watch(studentsOrionKpisProvider('current')),
+      moduleName: 'Élèves',
+      onRetry: () => ref.invalidate(studentsOrionKpisProvider('current')),
+      statCards: const [
+        StatCardConfig(title: 'Élèves inscrits', valueKey: 'total_students', defaultValue: '—', icon: Icons.school, subtitle: 'Cette année'),
+        StatCardConfig(title: 'Nouveaux', valueKey: 'new_enrollments', defaultValue: '—', icon: Icons.person_add, iconColor: AHColors.success),
+        StatCardConfig(title: 'Taux présence', valueKey: 'attendance_rate', defaultValue: '—', icon: Icons.event_available, iconColor: AHColors.info),
+        StatCardConfig(title: 'Moyenne générale', valueKey: 'average_grade', defaultValue: '—', icon: Icons.grade, iconColor: AHColors.gold),
       ],
-    ]);
+    );
   }
+}
 
-  Widget _buildEnrollmentsContent(BuildContext context) {
-    return SubTabContentWrapper(children: [
-      const SectionHeader(title: 'Inscriptions'),
-      ...[
-        ListItemCard(title: 'Kone Aminata', subtitle: 'Demande: 4ème - Reçue le 02/03/2025', leadingIcon: Icons.person_add, badge: StatusBadge(label: 'En attente', type: StatusBadgeType.warning)),
-        ListItemCard(title: 'Moreau Thomas', subtitle: 'Demande: 5ème - Reçue le 28/02/2025', leadingIcon: Icons.person_add, badge: StatusBadge(label: 'Validée', type: StatusBadgeType.success)),
-        ListItemCard(title: 'Diop Fatou', subtitle: 'Demande: 3ème - Reçue le 25/02/2025', leadingIcon: Icons.person_add, badge: StatusBadge(label: 'Dossier incomplet', type: StatusBadgeType.error)),
+// ─── List ────────────────────────────────────────────────────────────────────
+
+class _ListContent extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataList(
+      itemsAsync: ref.watch(studentsProvider),
+      moduleName: 'Élèves',
+      emptyTitle: 'Aucun élève trouvé',
+      emptySubtitle: 'Appuyez sur + pour ajouter un élève',
+      onRetry: () => ref.invalidate(studentsProvider),
+      onAdd: () async {
+        final data = await showAddItemDialog(context,
+            title: 'Nouvel élève',
+            fields: const [
+              AddFieldConfig(key: 'first_name', label: 'Prénom', hint: 'Prénom de l\'élève'),
+              AddFieldConfig(key: 'last_name', label: 'Nom', hint: 'Nom de l\'élève'),
+              AddFieldConfig(key: 'class', label: 'Classe', hint: 'ex: 3ème B'),
+            ]);
+        if (data != null) {
+          ref.read(studentMutationProvider.notifier).createStudent(data);
+        }
+      },
+      addLabel: 'Ajouter un élève',
+      itemBuilder: (item) => ListItemCard(
+        title: '${item['first_name'] ?? ''} ${item['last_name'] ?? ''}'.trim(),
+        subtitle: item['class'] ?? item['classe'] ?? '',
+        leadingIcon: Icons.person,
+        badge: StatusBadge(
+          label: item['status'] ?? 'Actif',
+          type: (item['status'] ?? '') == 'Inactif'
+              ? StatusBadgeType.neutral
+              : StatusBadgeType.success,
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Enrollments ─────────────────────────────────────────────────────────────
+
+class _EnrollmentsContent extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataList(
+      itemsAsync: ref.watch(studentEnrollmentsProvider),
+      moduleName: 'Inscriptions',
+      emptyTitle: 'Aucune inscription trouvée',
+      emptySubtitle: 'Appuyez sur + pour enregistrer une inscription',
+      onRetry: () => ref.invalidate(studentEnrollmentsProvider),
+      onAdd: () async {
+        final data = await showAddItemDialog(context,
+            title: 'Nouvelle inscription',
+            fields: const [
+              AddFieldConfig(key: 'student_name', label: 'Nom de l\'élève'),
+              AddFieldConfig(key: 'class', label: 'Classe demandée'),
+              AddFieldConfig(key: 'date', label: 'Date de demande'),
+            ]);
+        if (data != null) {
+          ref.read(studentMutationProvider.notifier).createStudent(data);
+        }
+      },
+      itemBuilder: (item) => ListItemCard(
+        title: item['student_name'] ?? item['name'] ?? '',
+        subtitle: 'Demande: ${item['class'] ?? ''} - ${item['date'] ?? ''}',
+        leadingIcon: Icons.person_add,
+        badge: StatusBadge(
+          label: item['status'] ?? 'En attente',
+          type: _statusType(item['status']),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Attendance ──────────────────────────────────────────────────────────────
+
+class _AttendanceContent extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDashboardView(
+      dashboardAsync: ref.watch(studentsStatisticsProvider(
+        const StudentStatsArgs(academicYearId: 'current', schoolLevelId: 'all'),
+      )),
+      moduleName: 'Présence',
+      onRetry: () => ref.invalidate(studentsStatisticsProvider(
+        const StudentStatsArgs(academicYearId: 'current', schoolLevelId: 'all'),
+      )),
+      statCards: const [
+        StatCardConfig(title: 'Taux présence', valueKey: 'attendance_rate', defaultValue: '—', icon: Icons.check_circle, iconColor: AHColors.success),
+        StatCardConfig(title: 'Absences aujourd\'hui', valueKey: 'absences_today', defaultValue: '—', icon: Icons.person_off, iconColor: AHColors.error),
+        StatCardConfig(title: 'Retards', valueKey: 'late_count', defaultValue: '—', icon: Icons.schedule, iconColor: AHColors.warning),
+        StatCardConfig(title: 'Justifiées', valueKey: 'justified_count', defaultValue: '—', icon: Icons.verified, iconColor: AHColors.info),
       ],
+    );
+  }
+}
+
+// ─── Grades, Discipline, Health, etc. (list-based sub-tabs) ─────────────────
+
+class _GradesContent extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final itemsAsync = ref.watch(studentsProvider);
+    return ModuleDataList(
+      itemsAsync: itemsAsync,
+      moduleName: 'Notes',
+      emptyTitle: 'Aucune note disponible',
+      emptySubtitle: 'Les notes seront affichées ici',
+      onRetry: () => ref.invalidate(studentsProvider),
+      itemBuilder: (item) => ListItemCard(
+        title: '${item['first_name'] ?? ''} ${item['last_name'] ?? ''}'.trim(),
+        subtitle: 'Moyenne: ${item['average'] ?? '—'}',
+        leadingIcon: Icons.assessment,
+      ),
+    );
+  }
+}
+
+class _DisciplineContent extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final itemsAsync = ref.watch(studentsProvider);
+    return ModuleDataList(
+      itemsAsync: itemsAsync,
+      moduleName: 'Discipline',
+      emptyTitle: 'Aucun incident disciplinaire',
+      emptySubtitle: 'Aucun signalement en cours',
+      onRetry: () => ref.invalidate(studentsProvider),
+      onAdd: () async {
+        final data = await showAddItemDialog(context,
+            title: 'Signalement discipline',
+            fields: const [
+              AddFieldConfig(key: 'student_name', label: 'Élève'),
+              AddFieldConfig(key: 'type', label: 'Type (avertissement, blâme...)'),
+              AddFieldConfig(key: 'reason', label: 'Motif'),
+            ]);
+        if (data != null) {
+          ref.read(studentMutationProvider.notifier).createStudent(data);
+        }
+      },
+      itemBuilder: (item) => ListItemCard(
+        title: '${item['first_name'] ?? ''} ${item['last_name'] ?? ''}'.trim(),
+        subtitle: item['discipline_note'] ?? '',
+        leadingIcon: Icons.warning,
+        leadingIconColor: AHColors.warning,
+      ),
+    );
+  }
+}
+
+class _HealthContent extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [
+      SectionHeader(title: 'Santé'),
     ]);
   }
+}
 
-  Widget _buildAttendanceContent(BuildContext context) {
+class _TransportsContent extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [
+      SectionHeader(title: 'Transports'),
+    ]);
+  }
+}
+
+class _CanteenContent extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [
+      SectionHeader(title: 'Cantine'),
+    ]);
+  }
+}
+
+class _DocumentsContent extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [
+      SectionHeader(title: 'Documents'),
+    ]);
+  }
+}
+
+class _CommunicationsContent extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [
+      SectionHeader(title: 'Communications'),
+    ]);
+  }
+}
+
+class _ScholarshipsContent extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [
+      SectionHeader(title: 'Bourses'),
+    ]);
+  }
+}
+
+class _ActivitiesContent extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [
+      SectionHeader(title: 'Activités'),
+    ]);
+  }
+}
+
+class _AlumniContent extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [
+      SectionHeader(title: 'Anciens élèves'),
+    ]);
+  }
+}
+
+class _ReportsContent extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [
+      SectionHeader(title: 'Rapports'),
+    ]);
+  }
+}
+
+class _ArchiveContent extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [
+      SectionHeader(title: 'Archive'),
+    ]);
+  }
+}
+
+// ─── Orion ──────────────────────────────────────────────────────────────────
+
+class _OrionContent extends ConsumerWidget {
+  const _OrionContent();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final kpisAsync = ref.watch(orionKpisProvider);
+    final insightsAsync = ref.watch(orionInsightsProvider);
     return SubTabContentWrapper(children: [
-      const SectionHeader(title: 'Présence'),
-      GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: 2, mainAxisSpacing: AHSpacing.sm, crossAxisSpacing: AHSpacing.sm, childAspectRatio: 1.4, children: const [
-        StatCard(title: 'Taux présence', value: '94.2%', icon: Icons.check_circle, iconColor: AHColors.success),
-        StatCard(title: 'Absences aujourd\'hui', value: '18', icon: Icons.person_off, iconColor: AHColors.error),
-        StatCard(title: 'Retards', value: '7', icon: Icons.schedule, iconColor: AHColors.warning),
-        StatCard(title: 'Justifiées', value: '12', icon: Icons.verified, iconColor: AHColors.info),
-      ]),
+      const SectionHeader(title: 'ORION — Élèves'),
+      const SizedBox(height: AHSpacing.sm),
+      // KPI Cards
+      kpisAsync.when(
+        data: (kpis) => Wrap(
+          spacing: AHSpacing.sm,
+          runSpacing: AHSpacing.sm,
+          children: kpis.take(4).map((kpi) => SizedBox(
+            width: (MediaQuery.of(context).size.width - AHSpacing.xl * 2 - AHSpacing.sm * 3) / 4,
+            child: OrionKpiCard(
+              label: kpi['label'] ?? kpi['title'] ?? 'KPI',
+              value: kpi['value']?.toString() ?? '—',
+              trend: kpi['trend'] as String?,
+              trendValue: kpi['trendValue'] as String?,
+              icon: Icons.analytics,
+            ),
+          )).toList(),
+        ),
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (_, __) => const SizedBox.shrink(),
+      ),
+      const SizedBox(height: AHSpacing.lg),
+      // Insights Section
+      OrionInsightSection(insightsAsync: insightsAsync, moduleName: 'Élèves'),
+      const SizedBox(height: AHSpacing.lg),
+      // Alert List
+      const SectionHeader(title: 'Alertes actives'),
+      ModuleLoadingWrapper<List<Map<String, dynamic>>>(
+        value: ref.watch(orionAlertsProvider),
+        moduleName: 'Alertes',
+        onRetry: () => ref.invalidate(orionAlertsProvider),
+        builder: (alerts) {
+          if (alerts.isEmpty) return const Padding(
+            padding: EdgeInsets.all(AHSpacing.lg),
+            child: Text('Aucune alerte active', style: TextStyle(color: AHColors.gray500)),
+          );
+          return Column(children: alerts.take(5).map((a) => ListItemCard(
+            title: a['title'] ?? 'Alerte',
+            subtitle: a['description'] ?? '',
+            leadingIcon: Icons.warning_amber,
+            leadingIconColor: AHColors.warning,
+          )).toList());
+        },
+      ),
     ]);
   }
+}
 
-  Widget _buildGradesContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Notes des élèves'), ...[ListItemCard(title: 'Trimestre 2 - Résultats', subtitle: 'Moyenne générale: 12.8/20', leadingIcon: Icons.assessment, badge: StatusBadge(label: 'Publié', type: StatusBadgeType.success)), ListItemCard(title: 'Trimestre 1 - Résultats', subtitle: 'Moyenne générale: 12.3/20', leadingIcon: Icons.assessment, badge: StatusBadge(label: 'Archivé', type: StatusBadgeType.neutral))]]); }
-  Widget _buildDisciplineContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Discipline'), ...[ListItemCard(title: 'Avertissement - Martin L.', subtitle: 'Comportement en cours - 10/03/2025', leadingIcon: Icons.warning, leadingIconColor: AHColors.warning), ListItemCard(title: 'Blâme - Ben A. Y.', subtitle: 'Retards répétés - 05/03/2025', leadingIcon: Icons.gavel, leadingIconColor: AHColors.error), ListItemCard(title: 'Félicitation - Dupont M.', subtitle: 'Excellence scolaire - 01/03/2025', leadingIcon: Icons.star, leadingIconColor: AHColors.gold)]]); }
-  Widget _buildHealthContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Santé'), ...[ListItemCard(title: 'Allergies déclarées', subtitle: '23 élèves concernés', leadingIcon: Icons.health_and_safety, leadingIconColor: AHColors.error), ListItemCard(title: 'Vaccinations à jour', subtitle: '89% de conformité', leadingIcon: Icons.vaccines, leadingIconColor: AHColors.success), ListItemCard(title: 'Visites infirmerie', subtitle: '45 ce mois', leadingIcon: Icons.local_hospital, leadingIconColor: AHColors.info)]]); }
-  Widget _buildTransportsContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Transports'), ...[ListItemCard(title: 'Élèves transportés', subtitle: '312 élèves - 8 circuits', leadingIcon: Icons.bus, leadingIconColor: AHColors.info), ListItemCard(title: 'Circuit Nord', subtitle: '42 élèves - Bus #3', leadingIcon: Icons.alt_route, leadingIconColor: AHColors.navy), ListItemCard(title: 'Circuit Sud', subtitle: '38 élèves - Bus #5', leadingIcon: Icons.alt_route, leadingIconColor: AHColors.navy)]]); }
-  Widget _buildCanteenContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Cantine'), ...[ListItemCard(title: 'Inscrits cantine', subtitle: '567 élèves', leadingIcon: Icons.restaurant, leadingIconColor: AHColors.info), ListItemCard(title: 'Menu du jour', subtitle: 'Poulet rôti, légumes, fruit', leadingIcon: Icons.lunch_dining, leadingIconColor: AHColors.gold), ListItemCard(title: 'Réservations demain', subtitle: '423 repas commandés', leadingIcon: Icons.bookmark, leadingIconColor: AHColors.success)]]); }
-  Widget _buildDocumentsContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Documents élèves'), ...[ListItemCard(title: 'Certificat de scolarité', subtitle: 'Modèle disponible', leadingIcon: Icons.description), ListItemCard(title: 'Attestation d\'inscription', subtitle: 'Modèle disponible', leadingIcon: Icons.badge), ListItemCard(title: 'Dossier de bourse', subtitle: 'Formulaire en ligne', leadingIcon: Icons.folder)]]); }
-  Widget _buildCommunicationsContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Communications'), ...[ListItemCard(title: 'Message aux parents 3ème', subtitle: 'Envoyé le 10/03/2025', leadingIcon: Icons.mail, badge: StatusBadge(label: 'Envoyé', type: StatusBadgeType.success)), ListItemCard(title: 'Avis rentrée septembre', subtitle: 'Programmé le 15/06/2025', leadingIcon: Icons.campaign, badge: StatusBadge(label: 'Planifié', type: StatusBadgeType.info))]]); }
-  Widget _buildScholarshipsContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Bourses'), ...[ListItemCard(title: 'Bourses mérite', subtitle: '15 élèves bénéficiaires', leadingIcon: Icons.emoji_events, leadingIconColor: AHColors.gold), ListItemCard(title: 'Bourses sociales', subtitle: '42 dossiers en cours', leadingIcon: Icons.volunteer_activism, leadingIconColor: AHColors.info), ListItemCard(title: 'Aides exceptionnelles', subtitle: '3 demandes en attente', leadingIcon: Icons.handshake, leadingIconColor: AHColors.success)]]); }
-  Widget _buildActivitiesContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Activités'), ...[ListItemCard(title: 'Club informatique', subtitle: '28 membres - Mercredi 14h', leadingIcon: Icons.computer, leadingIconColor: AHColors.info), ListItemCard(title: 'Chorale', subtitle: '35 membres - Vendredi 16h', leadingIcon: Icons.music_note, leadingIconColor: AHColors.gold), ListItemCard(title: 'Sport scolaire', subtitle: '92 inscrits - 4 disciplines', leadingIcon: Icons.sports_soccer, leadingIconColor: AHColors.success)]]); }
-  Widget _buildAlumniContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Anciens élèves'), ...[ListItemCard(title: 'Promotion 2024', subtitle: '87 diplômés', leadingIcon: Icons.school, leadingIconColor: AHColors.navy), ListItemCard(title: 'Promotion 2023', subtitle: '92 diplômés', leadingIcon: Icons.school, leadingIconColor: AHColors.navy), ListItemCard(title: 'Réunion anciens', subtitle: 'Prévue le 20/06/2025', leadingIcon: Icons.event_available, leadingIconColor: AHColors.gold)]]); }
-  Widget _buildReportsContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Rapports élèves'), ...[ListItemCard(title: 'Rapport annuel 2024-2025', subtitle: 'En cours de rédaction', leadingIcon: Icons.assessment, badge: StatusBadge(label: 'En cours', type: StatusBadgeType.info)), ListItemCard(title: 'Statistiques inscriptions', subtitle: 'Mis à jour le 01/03/2025', leadingIcon: Icons.bar_chart, badge: StatusBadge(label: 'Disponible', type: StatusBadgeType.success))]]); }
-  Widget _buildArchiveContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Archive élèves'), ...[ListItemCard(title: 'Année 2023-2024', subtitle: '1 198 dossiers archivés', leadingIcon: Icons.archive, leadingIconColor: AHColors.muted), ListItemCard(title: 'Année 2022-2023', subtitle: '1 156 dossiers archivés', leadingIcon: Icons.archive, leadingIconColor: AHColors.muted), ListItemCard(title: 'Année 2021-2022', subtitle: '1 089 dossiers archivés', leadingIcon: Icons.archive, leadingIconColor: AHColors.muted)]]); }
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+StatusBadgeType _statusType(dynamic status) {
+  if (status == null) return StatusBadgeType.info;
+  final s = status.toString().toLowerCase();
+  if (s.contains('valid') || s.contains('actif') || s.contains('payé') || s.contains('terminé')) {
+    return StatusBadgeType.success;
+  }
+  if (s.contains('attente') || s.contains('warning') || s.contains('retard')) {
+    return StatusBadgeType.warning;
+  }
+  if (s.contains('error') || s.contains('incomplet') || s.contains('rejeté')) {
+    return StatusBadgeType.error;
+  }
+  if (s.contains('inactif') || s.contains('archivé')) {
+    return StatusBadgeType.neutral;
+  }
+  return StatusBadgeType.info;
 }

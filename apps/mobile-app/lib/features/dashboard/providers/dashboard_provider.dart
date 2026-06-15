@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../auth/providers/auth_provider.dart';
+import '../../../core/auth/auth_providers.dart';
 
 // ── Models ────────────────────────────────────────────────────────────
 

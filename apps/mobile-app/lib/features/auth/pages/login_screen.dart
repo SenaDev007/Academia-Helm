@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/auth/auth_notifier.dart';
+import '../../../core/auth/auth_state.dart';
 import '../../../core/theme/ah_theme.dart';
-import '../providers/auth_provider.dart';
 import '../widgets/login_form.dart';
 
 /// Login screen with:
@@ -15,7 +16,7 @@ import '../widgets/login_form.dart';
 /// - Error display
 /// - Loading state
 /// - Responsive layout (centered card on tablet)
-/// - Uses auth notifier provider
+/// - Uses real auth notifier provider
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -34,23 +35,42 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     });
 
     try {
-      await ref.read(authStateProvider.notifier).login(
+      await ref.read(authNotifierProvider.notifier).login(
             email: email,
             password: password,
           );
 
       if (!mounted) return;
 
-      final authState = ref.read(authStateProvider).valueOrNull;
+      final authState = ref.read(authNotifierProvider).valueOrNull;
       if (authState?.isAuthenticated == true) {
-        if (authState?.hasTenant == true) {
-          context.go('/dashboard');
-        } else {
+        final tenants = authState?.availableTenantsOrNull ?? [];
+
+        if (tenants.length == 1) {
+          // Auto-select the only tenant and go to dashboard.
+          await ref
+              .read(authNotifierProvider.notifier)
+              .selectTenant(tenants.first.id);
+          if (mounted) {
+            context.go('/dashboard');
+          }
+        } else if (tenants.length > 1) {
+          // Multiple tenants → tenant selection screen.
           context.go('/tenant-select');
+        } else {
+          // No tenants → go directly to dashboard.
+          context.go('/dashboard');
         }
       } else {
         setState(() {
-          _error = authState?.error ?? 'Identifiants incorrects';
+          _error = 'Identifiants incorrects';
+          _isLoading = false;
+        });
+      }
+    } on AuthException catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.message;
           _isLoading = false;
         });
       }

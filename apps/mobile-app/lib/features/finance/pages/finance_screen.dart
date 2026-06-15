@@ -1,79 +1,328 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/enums/module_config.dart';
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/theme/ah_spacing.dart';
 import '../../../core/widgets/module_page_shell.dart';
+import '../../../core/widgets/module_data_list.dart';
 import '../../../core/widgets/sub_tab_content.dart';
+import '../../../core/widgets/loading/module_loading_wrapper.dart';
+import '../providers/finance_provider.dart';
+import '../../orion/providers/orion_provider.dart';
+import '../../orion/widgets/orion_alert_banner.dart';
+import '../../orion/widgets/orion_kpi_card.dart';
+import '../../orion/widgets/orion_insight_section.dart';
 
-class FinanceScreen extends StatefulWidget {
+class FinanceScreen extends ConsumerWidget {
   const FinanceScreen({super.key});
 
   @override
-  State<FinanceScreen> createState() => _FinanceScreenState();
-}
-
-class _FinanceScreenState extends State<FinanceScreen> {
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final module = allModules.firstWhere((m) => m.id == 'finance');
     final subTabs = module.subTabs;
-    return StatefulModulePage(
-      module: module,
-      visibleSubTabs: subTabs,
-      initialSubTabId: subTabs.first.id,
-      subTabBuilder: (subTab) {
-        switch (subTab.id) {
-          case 'finance-dashboard':
-            return _buildDashboardContent(context);
-          case 'finance-payments':
-            return _buildPaymentsContent(context);
-          case 'finance-invoices':
-            return _buildInvoicesContent(context);
-          case 'finance-receipts':
-            return _buildReceiptsContent(context);
-          case 'finance-budget':
-            return _buildBudgetContent(context);
-          case 'finance-salary':
-            return _buildSalaryContent(context);
-          case 'finance-expenses':
-            return _buildExpensesContent(context);
-          case 'finance-reports':
-            return _buildReportsContent(context);
-          case 'finance-audit':
-            return _buildAuditContent(context);
-          case 'finance-settings':
-            return _buildSettingsContent(context);
-          default:
-            return PlaceholderContent(title: subTab.label);
+    final alertsAsync = ref.watch(orionAlertsProvider);
+    return Column(
+      children: [
+        OrionAlertBanner(alertsAsync: alertsAsync),
+        Expanded(
+          child: StatefulModulePage(
+            module: module,
+            visibleSubTabs: subTabs,
+            initialSubTabId: subTabs.first.id,
+            subTabBuilder: (subTab) {
+              switch (subTab.id) {
+          case 'finance-dashboard': return const _DashboardContent();
+          case 'finance-payments': return const _PaymentsContent();
+          case 'finance-invoices': return const _InvoicesContent();
+          case 'finance-receipts': return const _ReceiptsContent();
+          case 'finance-budget': return const _BudgetContent();
+          case 'finance-salary': return const _SalaryContent();
+          case 'finance-expenses': return const _ExpensesContent();
+          case 'finance-reports': return const _ReportsContent();
+          case 'finance-audit': return const _AuditContent();
+          case 'finance-settings': return const _SettingsContent();
+          case 'finance-orion': return const _OrionContent();
+          default: return PlaceholderContent(title: subTab.label);
         }
       },
+          ),
+        ),
+      ],
     );
   }
+}
 
-  Widget _buildDashboardContent(BuildContext context) {
-    return SubTabContentWrapper(children: [
-      const SectionHeader(title: 'Tableau de bord Finance'),
-      GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: 2, mainAxisSpacing: AHSpacing.sm, crossAxisSpacing: AHSpacing.sm, childAspectRatio: 1.4, children: const [
-        StatCard(title: 'Recettes', value: '2.4M €', icon: Icons.trending_up, iconColor: AHColors.success, subtitle: '+8% vs N-1'),
-        StatCard(title: 'Impayés', value: '185K €', icon: Icons.warning, iconColor: AHColors.error, subtitle: '42 familles'),
-        StatCard(title: 'Dépenses', value: '1.8M €', icon: Icons.trending_down, iconColor: AHColors.info, subtitle: 'Ce trimestre'),
-        StatCard(title: 'Budget restant', value: '620K €', icon: Icons.account_balance_wallet, iconColor: AHColors.gold, subtitle: 'Q3-Q4'),
-      ]),
-      const SectionHeader(title: 'Derniers paiements'),
-      ...[
-        ListItemCard(title: 'Famille Dupont', subtitle: '1 200 € - Trimestre 2', leadingIcon: Icons.payment, badge: StatusBadge(label: 'Payé', type: StatusBadgeType.success)),
-        ListItemCard(title: 'Famille Martin', subtitle: '850 € - Trimestre 2', leadingIcon: Icons.payment, badge: StatusBadge(label: 'En retard', type: StatusBadgeType.error)),
+class _DashboardContent extends ConsumerWidget {
+  const _DashboardContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDashboardView(
+      dashboardAsync: ref.watch(kpiReportsProvider),
+      moduleName: 'Finance',
+      onRetry: () => ref.invalidate(kpiReportsProvider),
+      statCards: const [
+        StatCardConfig(title: 'Recettes', valueKey: 'total_revenue', defaultValue: '—', icon: Icons.trending_up, iconColor: AHColors.success, subtitle: 'Ce trimestre'),
+        StatCardConfig(title: 'Impayés', valueKey: 'total_unpaid', defaultValue: '—', icon: Icons.warning, iconColor: AHColors.error),
+        StatCardConfig(title: 'Dépenses', valueKey: 'total_expenses', defaultValue: '—', icon: Icons.trending_down, iconColor: AHColors.info),
+        StatCardConfig(title: 'Budget restant', valueKey: 'budget_remaining', defaultValue: '—', icon: Icons.account_balance_wallet, iconColor: AHColors.gold),
       ],
+    );
+  }
+}
+
+class _PaymentsContent extends ConsumerWidget {
+  const _PaymentsContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataList(
+      itemsAsync: ref.watch(transactionsProvider),
+      moduleName: 'Paiements',
+      emptyTitle: 'Aucun paiement trouvé',
+      emptySubtitle: 'Appuyez sur + pour enregistrer un paiement',
+      onRetry: () => ref.invalidate(transactionsProvider),
+      onAdd: () async {
+        final data = await showAddItemDialog(context,
+            title: 'Nouveau paiement',
+            fields: const [
+              AddFieldConfig(key: 'student_name', label: 'Élève/Famille'),
+              AddFieldConfig(key: 'amount', label: 'Montant (€)'),
+              AddFieldConfig(key: 'description', label: 'Description'),
+            ]);
+        if (data != null) ref.read(financeMutationProvider.notifier).recordPayment(data);
+      },
+      addLabel: 'Enregistrer un paiement',
+      itemBuilder: (item) => ListItemCard(
+        title: item['student_name'] ?? item['reference'] ?? 'Paiement',
+        subtitle: '${item['amount'] ?? '—'} € - ${item['date'] ?? ''}',
+        leadingIcon: Icons.credit_card,
+        badge: StatusBadge(label: item['status'] ?? 'En attente', type: _statusType(item['status'])),
+      ),
+    );
+  }
+}
+
+class _InvoicesContent extends ConsumerWidget {
+  const _InvoicesContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataList(
+      itemsAsync: ref.watch(feeStructuresProvider),
+      moduleName: 'Factures',
+      emptyTitle: 'Aucune facture trouvée',
+      emptySubtitle: 'Les factures apparaîtront ici',
+      onRetry: () => ref.invalidate(feeStructuresProvider),
+      itemBuilder: (item) => ListItemCard(
+        title: item['label'] ?? item['reference'] ?? 'Facture',
+        subtitle: '${item['amount'] ?? '—'} €',
+        leadingIcon: Icons.receipt,
+        badge: StatusBadge(label: item['status'] ?? 'En attente', type: _statusType(item['status'])),
+      ),
+    );
+  }
+}
+
+class _ReceiptsContent extends ConsumerWidget {
+  const _ReceiptsContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataList(
+      itemsAsync: ref.watch(transactionsProvider),
+      moduleName: 'Reçus',
+      emptyTitle: 'Aucun reçu trouvé',
+      emptySubtitle: 'Les reçus apparaîtront ici',
+      onRetry: () => ref.invalidate(transactionsProvider),
+      itemBuilder: (item) => ListItemCard(
+        title: item['reference'] ?? 'Reçu',
+        subtitle: '${item['amount'] ?? '—'} € - ${item['student_name'] ?? ''}',
+        leadingIcon: Icons.receipt_long,
+        badge: StatusBadge(label: item['status'] ?? 'Émis', type: _statusType(item['status'])),
+      ),
+    );
+  }
+}
+
+class _BudgetContent extends ConsumerWidget {
+  const _BudgetContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDashboardView(
+      dashboardAsync: ref.watch(kpiReportsProvider),
+      moduleName: 'Budget',
+      onRetry: () => ref.invalidate(kpiReportsProvider),
+      statCards: const [
+        StatCardConfig(title: 'Budget total', valueKey: 'total_budget', defaultValue: '—', icon: Icons.account_balance),
+        StatCardConfig(title: 'Consommé', valueKey: 'budget_consumed_pct', defaultValue: '—', icon: Icons.pie_chart, iconColor: AHColors.warning),
+        StatCardConfig(title: 'Fonctionnement', valueKey: 'operating_budget', defaultValue: '—', icon: Icons.business),
+        StatCardConfig(title: 'Investissement', valueKey: 'investment_budget', defaultValue: '—', icon: Icons.construction),
+      ],
+    );
+  }
+}
+
+class _SalaryContent extends ConsumerWidget {
+  const _SalaryContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataList(
+      itemsAsync: ref.watch(expensesProvider),
+      moduleName: 'Paie',
+      emptyTitle: 'Aucune fiche de paie',
+      emptySubtitle: 'Les fiches de paie apparaîtront ici',
+      onRetry: () => ref.invalidate(expensesProvider),
+      itemBuilder: (item) => ListItemCard(
+        title: item['label'] ?? item['reference'] ?? 'Fiche de paie',
+        subtitle: '${item['amount'] ?? '—'} €',
+        leadingIcon: Icons.badge,
+        badge: StatusBadge(label: item['status'] ?? 'En préparation', type: _statusType(item['status'])),
+      ),
+    );
+  }
+}
+
+class _ExpensesContent extends ConsumerWidget {
+  const _ExpensesContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataList(
+      itemsAsync: ref.watch(expensesProvider),
+      moduleName: 'Dépenses',
+      emptyTitle: 'Aucune dépense trouvée',
+      emptySubtitle: 'Appuyez sur + pour ajouter une dépense',
+      onRetry: () => ref.invalidate(expensesProvider),
+      onAdd: () async {
+        final data = await showAddItemDialog(context,
+            title: 'Nouvelle dépense',
+            fields: const [
+              AddFieldConfig(key: 'label', label: 'Libellé'),
+              AddFieldConfig(key: 'amount', label: 'Montant (€)'),
+              AddFieldConfig(key: 'category', label: 'Catégorie'),
+            ]);
+        if (data != null) ref.read(financeMutationProvider.notifier).createExpense(data);
+      },
+      addLabel: 'Ajouter une dépense',
+      itemBuilder: (item) => ListItemCard(
+        title: item['label'] ?? 'Dépense',
+        subtitle: '${item['amount'] ?? '—'} € - ${item['category'] ?? ''}',
+        leadingIcon: Icons.trending_down,
+        leadingIconColor: AHColors.error,
+      ),
+    );
+  }
+}
+
+class _ReportsContent extends ConsumerWidget {
+  const _ReportsContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataList(
+      itemsAsync: ref.watch(financeAnomaliesProvider),
+      moduleName: 'Rapports financiers',
+      emptyTitle: 'Aucun rapport disponible',
+      emptySubtitle: 'Les rapports apparaîtront ici',
+      onRetry: () => ref.invalidate(financeAnomaliesProvider),
+      itemBuilder: (item) => ListItemCard(
+        title: item['label'] ?? item['title'] ?? 'Rapport',
+        subtitle: item['date'] ?? '',
+        leadingIcon: Icons.assessment,
+        badge: StatusBadge(label: item['status'] ?? 'Disponible', type: _statusType(item['status'])),
+      ),
+    );
+  }
+}
+
+class _AuditContent extends ConsumerWidget {
+  const _AuditContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataList(
+      itemsAsync: ref.watch(financeAuditLogsProvider),
+      moduleName: 'Audit financier',
+      emptyTitle: 'Aucune entrée d\'audit',
+      emptySubtitle: 'Les logs d\'audit apparaîtront ici',
+      onRetry: () => ref.invalidate(financeAuditLogsProvider),
+      itemBuilder: (item) => ListItemCard(
+        title: item['action'] ?? item['label'] ?? 'Entrée d\'audit',
+        subtitle: item['timestamp'] ?? item['date'] ?? '',
+        leadingIcon: Icons.verified_user,
+        badge: StatusBadge(label: item['status'] ?? 'Vérifié', type: _statusType(item['status'])),
+      ),
+    );
+  }
+}
+
+class _SettingsContent extends ConsumerWidget {
+  const _SettingsContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settingsAsync = ref.watch(financeSettingsProvider);
+    return ModuleLoadingWrapper<Map<String, dynamic>>(
+      value: settingsAsync,
+      moduleName: 'Paramètres finance',
+      onRetry: () => ref.invalidate(financeSettingsProvider),
+      builder: (settings) => SubTabContentWrapper(children: [
+        const SectionHeader(title: 'Paramètres finance'),
+        ListItemCard(title: 'Exercice comptable', subtitle: settings['fiscal_year'] ?? '2024-2025', leadingIcon: Icons.calendar_today),
+        ListItemCard(title: 'Plan comptable', subtitle: settings['chart_of_accounts'] ?? 'PCG adapté', leadingIcon: Icons.list_alt),
+        ListItemCard(title: 'Modes de paiement', subtitle: settings['payment_methods'] ?? 'Virement, chèque, espèces, CB', leadingIcon: Icons.payment),
+      ]),
+    );
+  }
+}
+
+// ─── Orion ──────────────────────────────────────────────────────────────────
+
+class _OrionContent extends ConsumerWidget {
+  const _OrionContent();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final kpisAsync = ref.watch(orionKpisProvider);
+    final insightsAsync = ref.watch(orionInsightsProvider);
+    return SubTabContentWrapper(children: [
+      const SectionHeader(title: 'ORION — Finance'),
+      const SizedBox(height: AHSpacing.sm),
+      kpisAsync.when(
+        data: (kpis) => Wrap(
+          spacing: AHSpacing.sm,
+          runSpacing: AHSpacing.sm,
+          children: kpis.take(4).map((kpi) => SizedBox(
+            width: (MediaQuery.of(context).size.width - AHSpacing.xl * 2 - AHSpacing.sm * 3) / 4,
+            child: OrionKpiCard(
+              label: kpi['label'] ?? kpi['title'] ?? 'KPI',
+              value: kpi['value']?.toString() ?? '—',
+              trend: kpi['trend'] as String?,
+              trendValue: kpi['trendValue'] as String?,
+              icon: Icons.account_balance,
+            ),
+          )).toList(),
+        ),
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (_, __) => const SizedBox.shrink(),
+      ),
+      const SizedBox(height: AHSpacing.lg),
+      OrionInsightSection(insightsAsync: insightsAsync, moduleName: 'Finance'),
+      const SizedBox(height: AHSpacing.lg),
+      const SectionHeader(title: 'Alertes actives'),
+      ModuleLoadingWrapper<List<Map<String, dynamic>>>(
+        value: ref.watch(orionAlertsProvider),
+        moduleName: 'Alertes',
+        onRetry: () => ref.invalidate(orionAlertsProvider),
+        builder: (alerts) {
+          if (alerts.isEmpty) return const Padding(
+            padding: EdgeInsets.all(AHSpacing.lg),
+            child: Text('Aucune alerte active', style: TextStyle(color: AHColors.gray500)),
+          );
+          return Column(children: alerts.take(5).map((a) => ListItemCard(
+            title: a['title'] ?? 'Alerte',
+            subtitle: a['description'] ?? '',
+            leadingIcon: Icons.warning_amber,
+            leadingIconColor: AHColors.warning,
+          )).toList());
+        },
+      ),
     ]);
   }
-
-  Widget _buildPaymentsContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Paiements'), ...[ListItemCard(title: 'Paiement #2025-0342', subtitle: 'Dupont M. - 1 200 € - 01/03/2025', leadingIcon: Icons.credit_card, badge: StatusBadge(label: 'Validé', type: StatusBadgeType.success)), ListItemCard(title: 'Paiement #2025-0341', subtitle: 'Ben A. Y. - 950 € - 28/02/2025', leadingIcon: Icons.credit_card, badge: StatusBadge(label: 'En attente', type: StatusBadgeType.warning)), ListItemCard(title: 'Paiement #2025-0340', subtitle: 'Petit S. - 1 100 € - 27/02/2025', leadingIcon: Icons.credit_card, badge: StatusBadge(label: 'Validé', type: StatusBadgeType.success))]]); }
-  Widget _buildInvoicesContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Factures'), ...[ListItemCard(title: 'Facture #F-2025-0189', subtitle: 'Famille Martin - 850 €', leadingIcon: Icons.receipt, badge: StatusBadge(label: 'En attente', type: StatusBadgeType.warning)), ListItemCard(title: 'Facture #F-2025-0188', subtitle: 'Famille Kone - 1 050 €', leadingIcon: Icons.receipt, badge: StatusBadge(label: 'Payée', type: StatusBadgeType.success))]]); }
-  Widget _buildReceiptsContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Reçus'), ...[ListItemCard(title: 'Reçu #R-2025-0342', subtitle: 'Dupont M. - 1 200 €', leadingIcon: Icons.receipt_long, badge: StatusBadge(label: 'Émis', type: StatusBadgeType.success)), ListItemCard(title: 'Reçu #R-2025-0341', subtitle: 'Ben A. Y. - 950 €', leadingIcon: Icons.receipt_long, badge: StatusBadge(label: 'Émis', type: StatusBadgeType.success))]]); }
-  Widget _buildBudgetContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Budget'), GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: 2, mainAxisSpacing: AHSpacing.sm, crossAxisSpacing: AHSpacing.sm, childAspectRatio: 1.4, children: const [StatCard(title: 'Budget total', value: '3.0M €', icon: Icons.account_balance), StatCard(title: 'Consommé', value: '79%', icon: Icons.pie_chart, iconColor: AHColors.warning), StatCard(title: 'Fonctionnement', value: '1.2M €', icon: Icons.business), StatCard(title: 'Investissement', value: '180K €', icon: Icons.construction)])]); }
-  Widget _buildSalaryContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Paie'), ...[ListItemCard(title: 'Fiche de paie mars 2025', subtitle: '87 fiches générées', leadingIcon: Icons.badge, badge: StatusBadge(label: 'En cours', type: StatusBadgeType.info)), ListItemCard(title: 'Virement bancaire', subtitle: 'Montant total: 245K €', leadingIcon: Icons.account_balance, badge: StatusBadge(label: 'Planifié', type: StatusBadgeType.neutral))]]); }
-  Widget _buildExpensesContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Dépenses'), ...[ListItemCard(title: 'Fournitures bureautiques', subtitle: '2 340 € - 05/03/2025', leadingIcon: Icons.shopping_bag, leadingIconColor: AHColors.error), ListItemCard(title: 'Maintenance bâtiment B', subtitle: '8 500 € - 01/03/2025', leadingIcon: Icons.build, leadingIconColor: AHColors.error), ListItemCard(title: 'Énergie - Février', subtitle: '12 200 € - 28/02/2025', leadingIcon: Icons.electric_bolt, leadingIconColor: AHColors.warning)]]); }
-  Widget _buildReportsContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Rapports financiers'), ...[ListItemCard(title: 'Rapport trimestriel Q1 2025', subtitle: 'Généré le 01/04/2025', leadingIcon: Icons.assessment, badge: StatusBadge(label: 'Nouveau', type: StatusBadgeType.gold)), ListItemCard(title: 'Bilan annuel 2024', subtitle: 'Généré le 15/01/2025', leadingIcon: Icons.summarize, badge: StatusBadge(label: 'Complet', type: StatusBadgeType.success))]]); }
-  Widget _buildAuditContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Audit financier'), ...[ListItemCard(title: 'Audit interne 2024', subtitle: 'Conforme - 3 observations', leadingIcon: Icons.verified_user, badge: StatusBadge(label: 'Clôturé', type: StatusBadgeType.success)), ListItemCard(title: 'Audit comptable en cours', subtitle: 'Phase de vérification', leadingIcon: Icons.search, badge: StatusBadge(label: 'En cours', type: StatusBadgeType.info))]]); }
-  Widget _buildSettingsContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Paramètres finance'), ...[ListItemCard(title: 'Exercice comptable', subtitle: '2024-2025 (en cours)', leadingIcon: Icons.calendar_today), ListItemCard(title: 'Plan comptable', subtitle: 'PCG adapté enseignement', leadingIcon: Icons.list_alt), ListItemCard(title: 'Modes de paiement', subtitle: 'Virement, chèque, espèces, CB', leadingIcon: Icons.payment)]]); }
 }
+
+StatusBadgeType _statusType(dynamic status) {

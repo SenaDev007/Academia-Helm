@@ -1,80 +1,281 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/enums/module_config.dart';
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/theme/ah_spacing.dart';
 import '../../../core/widgets/module_page_shell.dart';
+import '../../../core/widgets/module_data_list.dart';
 import '../../../core/widgets/sub_tab_content.dart';
+import '../../../core/widgets/loading/module_loading_wrapper.dart';
+import '../providers/pedagogy_provider.dart';
+import '../../orion/providers/orion_provider.dart';
+import '../../orion/widgets/orion_alert_banner.dart';
+import '../../orion/widgets/orion_kpi_card.dart';
+import '../../orion/widgets/orion_insight_section.dart';
 
-class PedagogyScreen extends StatefulWidget {
+// Alias for convenience — the provider is named pedagogyKpiDashboardProvider
+final _pedagogyKpisProvider = pedagogyKpiDashboardProvider;
+
+class PedagogyScreen extends ConsumerWidget {
   const PedagogyScreen({super.key});
 
   @override
-  State<PedagogyScreen> createState() => _PedagogyScreenState();
-}
-
-class _PedagogyScreenState extends State<PedagogyScreen> {
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final module = allModules.firstWhere((m) => m.id == 'pedagogy');
     final subTabs = module.subTabs;
-    return StatefulModulePage(
-      module: module,
-      visibleSubTabs: subTabs,
-      initialSubTabId: subTabs.first.id,
-      subTabBuilder: (subTab) {
-        switch (subTab.id) {
-          case 'pedagogy-dashboard':
-            return _buildDashboardContent(context);
-          case 'pedagogy-planning':
-            return _buildPlanningContent(context);
-          case 'pedagogy-lessons':
-            return _buildLessonsContent(context);
-          case 'pedagogy-homework':
-            return _buildHomeworkContent(context);
-          case 'pedagogy-resources':
-            return _buildResourcesContent(context);
-          case 'pedagogy-evaluations':
-            return _buildEvaluationsContent(context);
-          case 'pedagogy-competencies':
-            return _buildCompetenciesContent(context);
-          case 'pedagogy-projects':
-            return _buildProjectsContent(context);
-          case 'pedagogy-differentiation':
-            return _buildDifferentiationContent(context);
-          case 'pedagogy-progress':
-            return _buildProgressContent(context);
-          case 'pedagogy-reports':
-            return _buildReportsContent(context);
-          case 'pedagogy-archive':
-            return _buildArchiveContent(context);
-          default:
-            return PlaceholderContent(title: subTab.label);
+    final alertsAsync = ref.watch(orionAlertsProvider);
+    return Column(
+      children: [
+        OrionAlertBanner(alertsAsync: alertsAsync),
+        Expanded(
+          child: StatefulModulePage(
+            module: module,
+            visibleSubTabs: subTabs,
+            initialSubTabId: subTabs.first.id,
+            subTabBuilder: (subTab) {
+              switch (subTab.id) {
+          case 'pedagogy-dashboard': return const _DashboardContent();
+          case 'pedagogy-planning': return const _PlanningContent();
+          case 'pedagogy-lessons': return const _LessonsContent();
+          case 'pedagogy-homework': return const _HomeworkContent();
+          case 'pedagogy-resources': return const _ResourcesContent();
+          case 'pedagogy-evaluations': return const _EvaluationsContent();
+          case 'pedagogy-competencies': return const _CompetenciesContent();
+          case 'pedagogy-projects': return const _ProjectsContent();
+          case 'pedagogy-differentiation': return const _DifferentiationContent();
+          case 'pedagogy-progress': return const _ProgressContent();
+          case 'pedagogy-reports': return const _ReportsContent();
+          case 'pedagogy-archive': return const _ArchiveContent();
+          case 'pedagogy-orion': return const _OrionContent();
+          default: return PlaceholderContent(title: subTab.label);
         }
       },
+          ),
+        ),
+      ],
     );
   }
+}
 
-  Widget _buildDashboardContent(BuildContext context) {
+class _DashboardContent extends ConsumerWidget {
+  const _DashboardContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDashboardView(
+      dashboardAsync: ref.watch(_pedagogyKpisProvider),
+      moduleName: 'Pédagogie',
+      onRetry: () => ref.invalidate(_pedagogyKpisProvider),
+      statCards: const [
+        StatCardConfig(title: 'Leçons actives', valueKey: 'active_lessons', defaultValue: '—', icon: Icons.menu_book, subtitle: 'Enseignants actifs'),
+        StatCardConfig(title: 'Devoirs assignés', valueKey: 'assigned_homework', defaultValue: '—', icon: Icons.assignment, iconColor: AHColors.info),
+        StatCardConfig(title: 'Évaluations', valueKey: 'planned_evaluations', defaultValue: '—', icon: Icons.fact_check, iconColor: AHColors.gold),
+        StatCardConfig(title: 'Ressources', valueKey: 'shared_resources', defaultValue: '—', icon: Icons.folder_open, iconColor: AHColors.success),
+      ],
+    );
+  }
+}
+
+class _PlanningContent extends ConsumerWidget {
+  const _PlanningContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataList(
+      itemsAsync: ref.watch(classDiariesProvider),
+      moduleName: 'Progression',
+      emptyTitle: 'Aucune progression trouvée',
+      emptySubtitle: 'Appuyez sur + pour créer une progression',
+      onRetry: () => ref.invalidate(classDiariesProvider),
+      onAdd: () async {
+        final data = await showAddItemDialog(context, title: 'Nouvelle progression', fields: const [
+          AddFieldConfig(key: 'subject', label: 'Matière'),
+          AddFieldConfig(key: 'class', label: 'Classe'),
+          AddFieldConfig(key: 'chapter', label: 'Chapitre'),
+        ]);
+        if (data != null) ref.read(pedagogyMutationProvider.notifier).createClassDiary(data);
+      },
+      itemBuilder: (item) => ListItemCard(
+        title: item['subject'] ?? item['title'] ?? 'Progression',
+        subtitle: '${item['class'] ?? ''} - ${item['progress'] ?? ''}',
+        leadingIcon: Icons.calendar_month,
+        badge: StatusBadge(label: item['status'] ?? 'En cours', type: _st(item['status'])),
+      ),
+    );
+  }
+}
+
+class _LessonsContent extends ConsumerWidget {
+  const _LessonsContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataList(
+      itemsAsync: ref.watch(lessonPlansProvider),
+      moduleName: 'Leçons',
+      emptyTitle: 'Aucune leçon trouvée',
+      emptySubtitle: 'Appuyez sur + pour ajouter une leçon',
+      onRetry: () => ref.invalidate(lessonPlansProvider),
+      onAdd: () async {
+        final data = await showAddItemDialog(context, title: 'Nouvelle leçon', fields: const [
+          AddFieldConfig(key: 'title', label: 'Titre'),
+          AddFieldConfig(key: 'subject', label: 'Matière'),
+          AddFieldConfig(key: 'class', label: 'Classe'),
+        ]);
+        if (data != null) ref.read(pedagogyMutationProvider.notifier).createLessonPlan(data);
+      },
+      itemBuilder: (item) => ListItemCard(
+        title: item['title'] ?? 'Leçon',
+        subtitle: '${item['subject'] ?? ''} - ${item['class'] ?? ''}',
+        leadingIcon: Icons.auto_stories,
+      ),
+    );
+  }
+}
+
+class _HomeworkContent extends ConsumerWidget {
+  const _HomeworkContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataList(
+      itemsAsync: ref.watch(teacherAssignmentsProvider),
+      moduleName: 'Devoirs',
+      emptyTitle: 'Aucun devoir trouvé',
+      emptySubtitle: 'Appuyez sur + pour assigner un devoir',
+      onRetry: () => ref.invalidate(teacherAssignmentsProvider),
+      onAdd: () async {
+        final data = await showAddItemDialog(context, title: 'Nouveau devoir', fields: const [
+          AddFieldConfig(key: 'title', label: 'Titre'),
+          AddFieldConfig(key: 'subject', label: 'Matière'),
+          AddFieldConfig(key: 'due_date', label: 'Date limite'),
+        ]);
+        if (data != null) ref.read(pedagogyMutationProvider.notifier).createHomeworkEntry(data);
+      },
+      itemBuilder: (item) => ListItemCard(
+        title: item['title'] ?? 'Devoir',
+        subtitle: '${item['subject'] ?? ''} - Pour le ${item['due_date'] ?? ''}',
+        leadingIcon: Icons.edit_note,
+        badge: StatusBadge(label: item['status'] ?? 'À rendre', type: _st(item['status'])),
+      ),
+    );
+  }
+}
+
+class _ResourcesContent extends ConsumerWidget {
+  const _ResourcesContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [SectionHeader(title: 'Ressources')]);
+  }
+}
+class _EvaluationsContent extends ConsumerWidget {
+  const _EvaluationsContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [SectionHeader(title: 'Évaluations')]);
+  }
+}
+class _CompetenciesContent extends ConsumerWidget {
+  const _CompetenciesContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [SectionHeader(title: 'Compétences')]);
+  }
+}
+class _ProjectsContent extends ConsumerWidget {
+  const _ProjectsContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [SectionHeader(title: 'Projets')]);
+  }
+}
+class _DifferentiationContent extends ConsumerWidget {
+  const _DifferentiationContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [SectionHeader(title: 'Différenciation')]);
+  }
+}
+class _ProgressContent extends ConsumerWidget {
+  const _ProgressContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [SectionHeader(title: 'Suivi des progrès')]);
+  }
+}
+class _ReportsContent extends ConsumerWidget {
+  const _ReportsContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [SectionHeader(title: 'Rapports')]);
+  }
+}
+class _ArchiveContent extends ConsumerWidget {
+  const _ArchiveContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [SectionHeader(title: 'Archive')]);
+  }
+}
+
+// ─── Orion ──────────────────────────────────────────────────────────────────
+
+class _OrionContent extends ConsumerWidget {
+  const _OrionContent();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final kpisAsync = ref.watch(orionKpisProvider);
+    final insightsAsync = ref.watch(orionInsightsProvider);
     return SubTabContentWrapper(children: [
-      const SectionHeader(title: 'Tableau de bord Pédagogie'),
-      GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: 2, mainAxisSpacing: AHSpacing.sm, crossAxisSpacing: AHSpacing.sm, childAspectRatio: 1.4, children: const [
-        StatCard(title: 'Leçons actives', value: '156', icon: Icons.menu_book, subtitle: '18 enseignants'),
-        StatCard(title: 'Devoirs assignés', value: '42', icon: Icons.assignment, iconColor: AHColors.info, subtitle: 'Cette semaine'),
-        StatCard(title: 'Évaluations', value: '8', icon: Icons.fact_check, iconColor: AHColors.gold, subtitle: 'Planifiées'),
-        StatCard(title: 'Ressources', value: '234', icon: Icons.folder_open, iconColor: AHColors.success, subtitle: 'Partagées'),
-      ]),
+      const SectionHeader(title: 'ORION — Pédagogie'),
+      const SizedBox(height: AHSpacing.sm),
+      kpisAsync.when(
+        data: (kpis) => Wrap(
+          spacing: AHSpacing.sm,
+          runSpacing: AHSpacing.sm,
+          children: kpis.take(4).map((kpi) => SizedBox(
+            width: (MediaQuery.of(context).size.width - AHSpacing.xl * 2 - AHSpacing.sm * 3) / 4,
+            child: OrionKpiCard(
+              label: kpi['label'] ?? kpi['title'] ?? 'KPI',
+              value: kpi['value']?.toString() ?? '—',
+              trend: kpi['trend'] as String?,
+              trendValue: kpi['trendValue'] as String?,
+              icon: Icons.menu_book,
+            ),
+          )).toList(),
+        ),
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (_, __) => const SizedBox.shrink(),
+      ),
+      const SizedBox(height: AHSpacing.lg),
+      OrionInsightSection(insightsAsync: insightsAsync, moduleName: 'Pédagogie'),
+      const SizedBox(height: AHSpacing.lg),
+      const SectionHeader(title: 'Alertes actives'),
+      ModuleLoadingWrapper<List<Map<String, dynamic>>>(
+        value: ref.watch(orionAlertsProvider),
+        moduleName: 'Alertes',
+        onRetry: () => ref.invalidate(orionAlertsProvider),
+        builder: (alerts) {
+          if (alerts.isEmpty) return const Padding(
+            padding: EdgeInsets.all(AHSpacing.lg),
+            child: Text('Aucune alerte active', style: TextStyle(color: AHColors.gray500)),
+          );
+          return Column(children: alerts.take(5).map((a) => ListItemCard(
+            title: a['title'] ?? 'Alerte',
+            subtitle: a['description'] ?? '',
+            leadingIcon: Icons.warning_amber,
+            leadingIconColor: AHColors.warning,
+          )).toList());
+        },
+      ),
     ]);
   }
+}
 
-  Widget _buildPlanningContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Progression pédagogique'), ...[ListItemCard(title: 'Mathématiques - 3ème B', subtitle: 'Chapitre 5/8 - 62% avancement', leadingIcon: Icons.calendar_month, badge: StatusBadge(label: 'En cours', type: StatusBadgeType.info)), ListItemCard(title: 'Français - 2nde A', subtitle: 'Chapitre 6/10 - 60% avancement', leadingIcon: Icons.calendar_month, badge: StatusBadge(label: 'En cours', type: StatusBadgeType.info)), ListItemCard(title: 'SVT - 1ère S', subtitle: 'Chapitre 4/7 - 57% avancement', leadingIcon: Icons.calendar_month, badge: StatusBadge(label: 'En retard', type: StatusBadgeType.warning))]]); }
-  Widget _buildLessonsContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Leçons'), ...[ListItemCard(title: 'Fonctions affines', subtitle: 'Maths 3ème - M. Dubois', leadingIcon: Icons.functions), ListItemCard(title: 'Les Misérables - Analyse', subtitle: 'Français 2nde - Mme Laurent', leadingIcon: Icons.auto_stories), ListItemCard(title: 'La photosynthèse', subtitle: 'SVT 1ère - Mme Petit', leadingIcon: Icons.eco)]]); }
-  Widget _buildHomeworkContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Devoirs'), ...[ListItemCard(title: 'Exercices p.87 #1-5', subtitle: 'Maths 3ème - Pour le 15/03', leadingIcon: Icons.edit_note, badge: StatusBadge(label: 'À rendre', type: StatusBadgeType.warning)), ListItemCard(title: 'Dissertation', subtitle: 'Français 2nde - Pour le 18/03', leadingIcon: Icons.edit_note, badge: StatusBadge(label: 'À rendre', type: StatusBadgeType.warning)), ListItemCard(title: 'TP compte-rendu', subtitle: 'SVT 1ère - Pour le 14/03', leadingIcon: Icons.edit_note, badge: StatusBadge(label: 'Rendu', type: StatusBadgeType.success))]]); }
-  Widget _buildResourcesContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Ressources'), ...[ListItemCard(title: 'Banque d\'exercices maths', subtitle: '234 exercices disponibles', leadingIcon: Icons.library_books, leadingIconColor: AHColors.info), ListItemCard(title: 'Vidéos pédagogiques', subtitle: '89 vidéos classées', leadingIcon: Icons.play_circle, leadingIconColor: AHColors.error), ListItemCard(title: 'Documents partagés', subtitle: '156 fichiers', leadingIcon: Icons.folder_shared, leadingIconColor: AHColors.gold)]]); }
-  Widget _buildEvaluationsContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Évaluations'), ...[ListItemCard(title: 'Contrôle commun maths T2', subtitle: '3ème - 28/02/2025', leadingIcon: Icons.fact_check, badge: StatusBadge(label: 'Terminé', type: StatusBadgeType.success)), ListItemCard(title: 'Évaluation formative français', subtitle: '2nde - En cours', leadingIcon: Icons.fact_check, badge: StatusBadge(label: 'En cours', type: StatusBadgeType.info))]]); }
-  Widget _buildCompetenciesContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Compétences'), ...[ListItemCard(title: 'Compétences maths 3ème', subtitle: '8/12 validées en moyenne', leadingIcon: Icons.military_tech, leadingIconColor: AHColors.gold), ListItemCard(title: 'Socle commun - Cycle 4', subtitle: 'Progression: 72%', leadingIcon: Icons.verified, leadingIconColor: AHColors.success)]]); }
-  Widget _buildProjectsContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Projets'), ...[ListItemCard(title: 'Projet interdisciplinaire 3ème', subtitle: 'Sciences/Lettres - 45 élèves', leadingIcon: Icons.lightbulb, leadingIconColor: AHColors.gold, badge: StatusBadge(label: 'Actif', type: StatusBadgeType.info)), ListItemCard(title: 'Exposé groupe 2nde', subtitle: 'Histoire/Arts - 32 élèves', leadingIcon: Icons.groups, leadingIconColor: AHColors.navy, badge: StatusBadge(label: 'En cours', type: StatusBadgeType.info))]]); }
-  Widget _buildDifferentiationContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Différenciation'), ...[ListItemCard(title: 'Groupes de besoin - Maths', subtitle: '3 groupes identifiés', leadingIcon: Icons.call_split, leadingIconColor: AHColors.info), ListItemCard(title: 'Plans individualisés', subtitle: '12 PAP en cours', leadingIcon: Icons.person_pin, leadingIconColor: AHColors.success)]]); }
-  Widget _buildProgressContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Suivi des progrès'), ...[AHProgressBar(label: 'Mathématiques 3ème', valueLabel: '62%', progress: 0.62), const SizedBox(height: AHSpacing.md), AHProgressBar(label: 'Français 2nde', valueLabel: '60%', progress: 0.60, activeColor: AHColors.info), const SizedBox(height: AHSpacing.md), AHProgressBar(label: 'SVT 1ère S', valueLabel: '57%', progress: 0.57, activeColor: AHColors.warning)]]); }
-  Widget _buildReportsContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Rapports pédagogiques'), ...[ListItemCard(title: 'Bilan pédagogique T2', subtitle: 'Généré le 01/03/2025', leadingIcon: Icons.assessment, badge: StatusBadge(label: 'Disponible', type: StatusBadgeType.success)), ListItemCard(title: 'Analyse des pratiques', subtitle: 'Généré le 15/02/2025', leadingIcon: Icons.summarize, badge: StatusBadge(label: 'Complet', type: StatusBadgeType.success))]]); }
-  Widget _buildArchiveContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Archive pédagogique'), ...[ListItemCard(title: 'Année 2023-2024', subtitle: 'Toutes progressions archivées', leadingIcon: Icons.archive, leadingIconColor: AHColors.muted), ListItemCard(title: 'Année 2022-2023', subtitle: 'Toutes progressions archivées', leadingIcon: Icons.archive, leadingIconColor: AHColors.muted)]]); }
+StatusBadgeType _st(dynamic s) {
+  if (s == null) return StatusBadgeType.info;
+  final v = s.toString().toLowerCase();
+  if (v.contains('valid') || v.contains('actif') || v.contains('rendu') || v.contains('terminé')) return StatusBadgeType.success;
+  if (v.contains('attente') || v.contains('retard') || v.contains('à rendre')) return StatusBadgeType.warning;
+  if (v.contains('rejeté') || v.contains('error')) return StatusBadgeType.error;
+  return StatusBadgeType.info;
 }

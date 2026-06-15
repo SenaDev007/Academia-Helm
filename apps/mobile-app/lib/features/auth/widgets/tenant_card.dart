@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/auth/auth_state.dart';
 import '../../../core/theme/ah_theme.dart';
-import '../providers/auth_provider.dart';
 
 /// Card widget for displaying a tenant in the selection list.
 class TenantCard extends StatelessWidget {
@@ -11,7 +11,7 @@ class TenantCard extends StatelessWidget {
     required this.onTap,
   });
 
-  final TenantInfo tenant;
+  final TenantBasic tenant;
   final VoidCallback onTap;
 
   @override
@@ -76,45 +76,48 @@ class TenantCard extends StatelessWidget {
                     const SizedBox(height: AHSpacing.xs),
                     Row(
                       children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AHSpacing.sm,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AHColors.gold.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            tenant.acronym,
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: AHColors.goldDark,
+                        if (tenant.acronym != null) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AHSpacing.sm,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AHColors.gold.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              tenant.acronym!,
+                              style: const TextStyle(
+                                fontFamily: 'Inter',
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: AHColors.goldDark,
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: AHSpacing.sm),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AHSpacing.sm,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AHColors.navy.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            tenant.type,
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                              color: AHColors.navy,
+                          const SizedBox(width: AHSpacing.sm),
+                        ],
+                        if (tenant.type != null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AHSpacing.sm,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AHColors.navy.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              tenant.type!,
+                              style: const TextStyle(
+                                fontFamily: 'Inter',
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                                color: AHColors.navy,
+                              ),
                             ),
                           ),
-                        ),
                       ],
                     ),
                   ],
@@ -137,7 +140,7 @@ class TenantCard extends StatelessWidget {
   Widget _buildAcronymPlaceholder() {
     return Center(
       child: Text(
-        tenant.acronym,
+        tenant.shortName,
         style: const TextStyle(
           fontFamily: 'Inter',
           fontSize: 16,

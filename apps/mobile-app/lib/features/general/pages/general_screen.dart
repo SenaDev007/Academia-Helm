@@ -1,52 +1,65 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/enums/module_config.dart';
 import '../../../core/theme/ah_colors.dart';
-import '../../../core/theme/ah_spacing.dart';
 import '../../../core/widgets/module_page_shell.dart';
+import '../../../core/widgets/module_data_list.dart';
 import '../../../core/widgets/sub_tab_content.dart';
+import '../providers/general_provider.dart';
 
-class GeneralScreen extends StatefulWidget {
+class GeneralScreen extends ConsumerWidget {
   const GeneralScreen({super.key});
 
   @override
-  State<GeneralScreen> createState() => _GeneralScreenState();
-}
-
-class _GeneralScreenState extends State<GeneralScreen> {
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final module = allModules.firstWhere((m) => m.id == 'general');
-    final subTabs = module.subTabs;
     return StatefulModulePage(
       module: module,
-      visibleSubTabs: subTabs,
-      initialSubTabId: subTabs.first.id,
+      visibleSubTabs: module.subTabs,
+      initialSubTabId: module.subTabs.first.id,
       subTabBuilder: (subTab) {
         switch (subTab.id) {
-          case 'general-direction':
-            return _buildDirectionContent(context);
-          default:
-            return PlaceholderContent(title: subTab.label);
+          case 'general-direction': return const _DirectionContent();
+          default: return PlaceholderContent(title: subTab.label);
         }
       },
     );
   }
+}
 
-  Widget _buildDirectionContent(BuildContext context) {
-    return SubTabContentWrapper(children: [
-      const SectionHeader(title: 'Direction de l\'établissement'),
-      GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: 2, mainAxisSpacing: AHSpacing.sm, crossAxisSpacing: AHSpacing.sm, childAspectRatio: 1.4, children: const [
-        StatCard(title: 'Élèves inscrits', value: '1 247', icon: Icons.school, subtitle: 'Année 2024-2025'),
-        StatCard(title: 'Personnel', value: '87', icon: Icons.people, iconColor: AHColors.info, subtitle: 'Tous statuts'),
-        StatCard(title: 'Classes', value: '42', icon: Icons.class_, iconColor: AHColors.gold, subtitle: '6 niveaux'),
-        StatCard(title: 'Budget annuel', value: '3.0M €', icon: Icons.account_balance_wallet, iconColor: AHColors.success, subtitle: 'En cours'),
-      ]),
-      const SectionHeader(title: 'Actions de direction'),
-      ...[
-        ListItemCard(title: 'Réunion équipe de direction', subtitle: 'Aujourd\'hui, 09h00', leadingIcon: Icons.event_available, badge: StatusBadge(label: 'En cours', type: StatusBadgeType.info)),
-        ListItemCard(title: 'Validation ordre du jour CA', subtitle: 'À traiter avant le 15/03', leadingIcon: Icons.assignment, badge: StatusBadge(label: 'En attente', type: StatusBadgeType.warning)),
-        ListItemCard(title: 'Bilan T2 à valider', subtitle: 'Diffusion prévue le 28/03', leadingIcon: Icons.fact_check, badge: StatusBadge(label: 'Brouillon', type: StatusBadgeType.neutral)),
+class _DirectionContent extends ConsumerWidget {
+  const _DirectionContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDashboardView(
+      dashboardAsync: ref.watch(generalDashboardProvider),
+      moduleName: 'Direction',
+      onRetry: () => ref.invalidate(generalDashboardProvider),
+      statCards: const [
+        StatCardConfig(title: 'Élèves inscrits', valueKey: 'students_count', defaultValue: '—', icon: Icons.school),
+        StatCardConfig(title: 'Personnel', valueKey: 'staff_count', defaultValue: '—', icon: Icons.people, iconColor: AHColors.info),
+        StatCardConfig(title: 'Classes', valueKey: 'classes_count', defaultValue: '—', icon: Icons.class_, iconColor: AHColors.gold),
+        StatCardConfig(title: 'Budget annuel', valueKey: 'annual_budget', defaultValue: '—', icon: Icons.account_balance_wallet, iconColor: AHColors.success),
       ],
-    ]);
+      extraChildren: [
+        const SectionHeader(title: 'Actualités'),
+        ModuleLoadingWrapper<List<Map<String, dynamic>>>(
+          value: ref.watch(generalNewsProvider),
+          moduleName: 'Actualités',
+          onRetry: () => ref.invalidate(generalNewsProvider),
+          builder: (news) {
+            if (news.isEmpty) return const Padding(
+              padding: EdgeInsets.all(AHSpacing.lg),
+              child: Text('Aucune actualité', style: TextStyle(color: AHColors.muted)),
+            );
+            return Column(children: news.take(5).map((n) => ListItemCard(
+              title: n['title'] ?? 'Actualité',
+              subtitle: n['date'] ?? '',
+              leadingIcon: Icons.article,
+            )).toList());
+          },
+        ),
+      ],
+    );
   }
 }

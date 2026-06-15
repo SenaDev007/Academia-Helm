@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/auth/auth_notifier.dart';
+import '../../../core/auth/auth_state.dart';
 import '../../../core/theme/ah_theme.dart';
-import '../providers/auth_provider.dart';
 
 /// Splash screen with:
 /// - AH logo (shield icon placeholder)
@@ -54,7 +55,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
 
   void _navigate() {
     if (!mounted) return;
-    final authState = ref.read(authStateProvider).valueOrNull;
+    final authState = ref.read(authNotifierProvider).valueOrNull;
     final isAuthenticated = authState?.isAuthenticated ?? false;
     final hasTenant = authState?.hasTenant ?? false;
 
@@ -63,7 +64,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     } else if (isAuthenticated) {
       context.go('/tenant-select');
     } else {
-      context.go('/login');
+      context.go('/portal-select');
     }
   }
 

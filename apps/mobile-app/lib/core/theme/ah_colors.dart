@@ -12,6 +12,7 @@ class AHColors {
 
   static const Color navy = Color(0xFF0B2F73);
   static const Color navyDark = Color(0xFF071D4A);
+  static const Color navyLight = Color(0xFF1A3F8B);
   static const Color blue = Color(0xFF1D4FA5);
   static const Color gold = Color(0xFFF5B335);
   static const Color goldLight = Color(0xFFFCD779);
@@ -83,6 +84,19 @@ class AHColors {
   static const Color grey700 = Color(0xFF334155);
   static const Color grey800 = Color(0xFF1E293B);
   static const Color grey900 = Color(0xFF0F172A);
+
+  // ── Grey Aliases (American spelling) ─────────────────────────────────
+
+  static const Color gray50 = grey50;
+  static const Color gray100 = grey100;
+  static const Color gray200 = grey200;
+  static const Color gray300 = grey300;
+  static const Color gray400 = grey400;
+  static const Color gray500 = grey500;
+  static const Color gray600 = grey600;
+  static const Color gray700 = grey700;
+  static const Color gray800 = grey800;
+  static const Color gray900 = grey900;
 
   // ── Overlay & Scrim ───────────────────────────────────────────────────
 

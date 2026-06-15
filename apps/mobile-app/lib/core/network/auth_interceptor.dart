@@ -1,6 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../academic_year/academic_year_provider.dart';
+import '../academic_year/school_level_provider.dart';
 import '../auth/token_storage.dart';
 import '../tenant/tenant_notifier.dart';
 import 'api_config.dart';
@@ -11,6 +13,8 @@ import 'api_config.dart';
 /// Responsibilities:
 /// - Injects `Authorization: Bearer <accessToken>` on every request.
 /// - Injects `X-Tenant-Id` header when a tenant is selected.
+/// - Injects `x-academic-year-id` header when an academic year is selected.
+/// - Injects `x-school-level-id` header when a school level is selected.
 /// - On 401: attempts to refresh the access token, then retries the
 ///   original request.
 /// - On 401 after refresh failure: redirects to login by throwing
@@ -49,6 +53,26 @@ class AuthInterceptor extends Interceptor {
           options.headers['X-Tenant-Id'] = tenant.id;
         },
       );
+    } catch (_) {
+      // Provider may not be initialized yet; silently continue.
+    }
+
+    // Inject x-academic-year-id header when an academic year is selected.
+    try {
+      final currentYear = ref.read(currentAcademicYearProvider);
+      if (currentYear != null) {
+        options.headers['x-academic-year-id'] = currentYear.id;
+      }
+    } catch (_) {
+      // Provider may not be initialized yet; silently continue.
+    }
+
+    // Inject x-school-level-id header when a school level is selected.
+    try {
+      final currentLevel = ref.read(currentSchoolLevelProvider);
+      if (currentLevel != null) {
+        options.headers['x-school-level-id'] = currentLevel.id;
+      }
     } catch (_) {
       // Provider may not be initialized yet; silently continue.
     }

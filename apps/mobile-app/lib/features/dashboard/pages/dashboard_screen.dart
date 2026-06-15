@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/auth/auth_notifier.dart';
+import '../../../core/auth/auth_providers.dart';
+import '../../../core/auth/auth_state.dart';
 import '../../../core/theme/ah_theme.dart';
 import '../../../core/widgets/ah_app_bar.dart';
-import '../../auth/providers/auth_provider.dart';
 import '../providers/dashboard_provider.dart';
 import '../widgets/stat_card.dart';
 import '../widgets/quick_action_button.dart';
@@ -21,8 +23,13 @@ class DashboardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final userName = ref.watch(currentUserDisplayNameProvider) ?? 'Utilisateur';
-    final schoolName =
-        ref.watch(currentTenantNameProvider) ?? 'Academia Helm';
+    final authState = ref.watch(authNotifierProvider).valueOrNull;
+    final tenantId = authState?.selectedTenantIdOrNull;
+    final tenants = authState?.availableTenantsOrNull ?? [];
+    final tenant = tenantId != null
+        ? tenants.where((TenantBasic t) => t.id == tenantId).firstOrNull
+        : null;
+    final schoolName = tenant?.name ?? 'Academia Helm';
     final stats = ref.watch(dashboardStatsProvider);
     final quickActions = ref.watch(dashboardQuickActionsProvider);
     final role = ref.watch(currentUserRoleProvider) ?? '';

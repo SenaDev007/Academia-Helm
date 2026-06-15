@@ -1,71 +1,307 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/enums/module_config.dart';
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/theme/ah_spacing.dart';
 import '../../../core/widgets/module_page_shell.dart';
+import '../../../core/widgets/module_data_list.dart';
 import '../../../core/widgets/sub_tab_content.dart';
+import '../../../core/widgets/loading/module_loading_wrapper.dart';
+import '../providers/hr_provider.dart';
+import '../../orion/providers/orion_provider.dart';
+import '../../orion/widgets/orion_alert_banner.dart';
+import '../../orion/widgets/orion_kpi_card.dart';
+import '../../orion/widgets/orion_insight_section.dart';
 
-class HrScreen extends StatefulWidget {
+class HrScreen extends ConsumerWidget {
   const HrScreen({super.key});
 
   @override
-  State<HrScreen> createState() => _HrScreenState();
-}
-
-class _HrScreenState extends State<HrScreen> {
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final module = allModules.firstWhere((m) => m.id == 'hr');
     final subTabs = module.subTabs;
-    return StatefulModulePage(
-      module: module,
-      visibleSubTabs: subTabs,
-      initialSubTabId: subTabs.first.id,
-      subTabBuilder: (subTab) {
-        switch (subTab.id) {
-          case 'hr-dashboard': return _buildDashboardContent(context);
-          case 'hr-staff': return _buildStaffContent(context);
-          case 'hr-recruitment': return _buildRecruitmentContent(context);
-          case 'hr-contracts': return _buildContractsContent(context);
-          case 'hr-payroll': return _buildPayrollContent(context);
-          case 'hr-leave': return _buildLeaveContent(context);
-          case 'hr-training': return _buildTrainingContent(context);
-          case 'hr-evaluations': return _buildEvaluationsContent(context);
-          case 'hr-discipline': return _buildDisciplineContent(context);
-          case 'hr-documents': return _buildDocumentsContent(context);
-          case 'hr-orgchart': return _buildOrgchartContent(context);
-          case 'hr-policies': return _buildPoliciesContent(context);
-          case 'hr-reports': return _buildReportsContent(context);
-          case 'hr-settings': return _buildSettingsContent(context);
+    final alertsAsync = ref.watch(orionAlertsProvider);
+    return Column(
+      children: [
+        OrionAlertBanner(alertsAsync: alertsAsync),
+        Expanded(
+          child: StatefulModulePage(
+            module: module,
+            visibleSubTabs: subTabs,
+            initialSubTabId: subTabs.first.id,
+            subTabBuilder: (subTab) {
+              switch (subTab.id) {
+          case 'hr-dashboard': return const _DashboardContent();
+          case 'hr-staff': return const _StaffContent();
+          case 'hr-recruitment': return const _RecruitmentContent();
+          case 'hr-contracts': return const _ContractsContent();
+          case 'hr-payroll': return const _PayrollContent();
+          case 'hr-leave': return const _LeaveContent();
+          case 'hr-training': return const _TrainingContent();
+          case 'hr-evaluations': return const _EvaluationsContent();
+          case 'hr-discipline': return const _DisciplineContent();
+          case 'hr-documents': return const _DocumentsContent();
+          case 'hr-orgchart': return const _OrgchartContent();
+          case 'hr-policies': return const _PoliciesContent();
+          case 'hr-reports': return const _ReportsContent();
+          case 'hr-settings': return const _SettingsContent();
+          case 'hr-orion': return const _OrionContent();
           default: return PlaceholderContent(title: subTab.label);
         }
       },
+          ),
+        ),
+      ],
     );
   }
+}
 
-  Widget _buildDashboardContent(BuildContext context) {
+class _DashboardContent extends ConsumerWidget {
+  const _DashboardContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDashboardView(
+      dashboardAsync: ref.watch(staffProvider).whenData((_) => <String, dynamic>{'count': _.length}),
+      moduleName: 'Ressources Humaines',
+      onRetry: () => ref.invalidate(staffProvider),
+      statCards: const [
+        StatCardConfig(title: 'Effectif total', valueKey: 'count', defaultValue: '—', icon: Icons.people, subtitle: 'Personnel'),
+        StatCardConfig(title: 'Enseignants', valueKey: 'teachers_count', defaultValue: '—', icon: Icons.school, iconColor: AHColors.info),
+        StatCardConfig(title: 'Congés en cours', valueKey: 'active_leaves', defaultValue: '—', icon: Icons.beach_access, iconColor: AHColors.success),
+        StatCardConfig(title: 'Recrutement', valueKey: 'open_positions', defaultValue: '—', icon: Icons.person_add, iconColor: AHColors.gold),
+      ],
+    );
+  }
+}
+
+class _StaffContent extends ConsumerWidget {
+  const _StaffContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataList(
+      itemsAsync: ref.watch(staffProvider),
+      moduleName: 'Personnel',
+      emptyTitle: 'Aucun membre du personnel',
+      emptySubtitle: 'Appuyez sur + pour ajouter',
+      onRetry: () => ref.invalidate(staffProvider),
+      onAdd: () async {
+        final data = await showAddItemDialog(context, title: 'Nouveau personnel', fields: const [
+          AddFieldConfig(key: 'first_name', label: 'Prénom'),
+          AddFieldConfig(key: 'last_name', label: 'Nom'),
+          AddFieldConfig(key: 'role', label: 'Poste'),
+        ]);
+        if (data != null) ref.read(hrMutationProvider.notifier).createStaff(data);
+      },
+      addLabel: 'Ajouter du personnel',
+      itemBuilder: (item) => ListItemCard(
+        title: '${item['first_name'] ?? ''} ${item['last_name'] ?? ''}'.trim(),
+        subtitle: item['role'] ?? item['position'] ?? '',
+        leadingIcon: Icons.person,
+        badge: StatusBadge(label: item['status'] ?? 'Actif', type: _st(item['status'])),
+      ),
+    );
+  }
+}
+
+class _RecruitmentContent extends ConsumerWidget {
+  const _RecruitmentContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [SectionHeader(title: 'Recrutement'), PlaceholderContent(title: 'Recrutement', icon: Icons.work, description: 'Gestion des offres d\'emploi et candidatures')]);
+  }
+}
+class _ContractsContent extends ConsumerWidget {
+  const _ContractsContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataList(
+      itemsAsync: ref.watch(contractsProvider),
+      moduleName: 'Contrats',
+      emptyTitle: 'Aucun contrat trouvé',
+      emptySubtitle: 'Appuyez sur + pour ajouter',
+      onRetry: () => ref.invalidate(contractsProvider),
+      onAdd: () async {
+        final data = await showAddItemDialog(context, title: 'Nouveau contrat', fields: const [
+          AddFieldConfig(key: 'staff_name', label: 'Employé'),
+          AddFieldConfig(key: 'type', label: 'Type (CDI, CDD...)'),
+          AddFieldConfig(key: 'start_date', label: 'Date de début'),
+        ]);
+        if (data != null) ref.read(hrMutationProvider.notifier).createContract(data);
+      },
+      itemBuilder: (item) => ListItemCard(
+        title: item['staff_name'] ?? item['reference'] ?? 'Contrat',
+        subtitle: item['type'] ?? '',
+        leadingIcon: Icons.description,
+        badge: StatusBadge(label: item['status'] ?? 'Actif', type: _st(item['status'])),
+      ),
+    );
+  }
+}
+class _PayrollContent extends ConsumerWidget {
+  const _PayrollContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataList(
+      itemsAsync: ref.watch(payrollProvider),
+      moduleName: 'Paie',
+      emptyTitle: 'Aucune fiche de paie',
+      emptySubtitle: 'Les fiches apparaîtront ici',
+      onRetry: () => ref.invalidate(payrollProvider),
+      itemBuilder: (item) => ListItemCard(
+        title: item['label'] ?? item['reference'] ?? 'Fiche de paie',
+        subtitle: '${item['amount'] ?? '—'} €',
+        leadingIcon: Icons.payments,
+        badge: StatusBadge(label: item['status'] ?? 'En préparation', type: _st(item['status'])),
+      ),
+    );
+  }
+}
+class _LeaveContent extends ConsumerWidget {
+  const _LeaveContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataList(
+      itemsAsync: ref.watch(leavesProvider),
+      moduleName: 'Congés',
+      emptyTitle: 'Aucune demande de congé',
+      emptySubtitle: 'Appuyez sur + pour faire une demande',
+      onRetry: () => ref.invalidate(leavesProvider),
+      onAdd: () async {
+        final data = await showAddItemDialog(context, title: 'Demande de congé', fields: const [
+          AddFieldConfig(key: 'staff_name', label: 'Employé'),
+          AddFieldConfig(key: 'dates', label: 'Dates'),
+          AddFieldConfig(key: 'type', label: 'Type (CP, RTT...)'),
+        ]);
+        if (data != null) ref.read(hrMutationProvider.notifier).createLeave(data);
+      },
+      itemBuilder: (item) => ListItemCard(
+        title: item['staff_name'] ?? 'Demande de congé',
+        subtitle: item['dates'] ?? '',
+        leadingIcon: Icons.event_busy,
+        badge: StatusBadge(label: item['status'] ?? 'En attente', type: _st(item['status'])),
+      ),
+    );
+  }
+}
+class _TrainingContent extends ConsumerWidget {
+  const _TrainingContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [SectionHeader(title: 'Formation')]);
+  }
+}
+class _EvaluationsContent extends ConsumerWidget {
+  const _EvaluationsContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [SectionHeader(title: 'Évaluations')]);
+  }
+}
+class _DisciplineContent extends ConsumerWidget {
+  const _DisciplineContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [SectionHeader(title: 'Discipline')]);
+  }
+}
+class _DocumentsContent extends ConsumerWidget {
+  const _DocumentsContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [SectionHeader(title: 'Documents RH')]);
+  }
+}
+class _OrgchartContent extends ConsumerWidget {
+  const _OrgchartContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [SectionHeader(title: 'Organigramme')]);
+  }
+}
+class _PoliciesContent extends ConsumerWidget {
+  const _PoliciesContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [SectionHeader(title: 'Politiques RH')]);
+  }
+}
+class _ReportsContent extends ConsumerWidget {
+  const _ReportsContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [SectionHeader(title: 'Rapports RH')]);
+  }
+}
+class _SettingsContent extends ConsumerWidget {
+  const _SettingsContent();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SubTabContentWrapper(children: const [SectionHeader(title: 'Paramètres RH')]);
+  }
+}
+
+// ─── Orion ──────────────────────────────────────────────────────────────────
+
+class _OrionContent extends ConsumerWidget {
+  const _OrionContent();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final kpisAsync = ref.watch(orionKpisProvider);
+    final insightsAsync = ref.watch(orionInsightsProvider);
     return SubTabContentWrapper(children: [
-      const SectionHeader(title: 'Tableau de bord RH'),
-      GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: 2, mainAxisSpacing: AHSpacing.sm, crossAxisSpacing: AHSpacing.sm, childAspectRatio: 1.4, children: const [
-        StatCard(title: 'Effectif total', value: '87', icon: Icons.people, subtitle: '+3 cette année'),
-        StatCard(title: 'Enseignants', value: '52', icon: Icons.school, iconColor: AHColors.info, subtitle: '60%'),
-        StatCard(title: 'Congés en cours', value: '4', icon: Icons.beach_access, iconColor: AHColors.success, subtitle: 'Ce mois'),
-        StatCard(title: 'Recrutement', value: '2', icon: Icons.person_add, iconColor: AHColors.gold, subtitle: 'Postes ouverts'),
-      ]),
+      const SectionHeader(title: 'ORION — RH'),
+      const SizedBox(height: AHSpacing.sm),
+      kpisAsync.when(
+        data: (kpis) => Wrap(
+          spacing: AHSpacing.sm,
+          runSpacing: AHSpacing.sm,
+          children: kpis.take(4).map((kpi) => SizedBox(
+            width: (MediaQuery.of(context).size.width - AHSpacing.xl * 2 - AHSpacing.sm * 3) / 4,
+            child: OrionKpiCard(
+              label: kpi['label'] ?? kpi['title'] ?? 'KPI',
+              value: kpi['value']?.toString() ?? '—',
+              trend: kpi['trend'] as String?,
+              trendValue: kpi['trendValue'] as String?,
+              icon: Icons.people,
+            ),
+          )).toList(),
+        ),
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (_, __) => const SizedBox.shrink(),
+      ),
+      const SizedBox(height: AHSpacing.lg),
+      OrionInsightSection(insightsAsync: insightsAsync, moduleName: 'RH'),
+      const SizedBox(height: AHSpacing.lg),
+      const SectionHeader(title: 'Alertes actives'),
+      ModuleLoadingWrapper<List<Map<String, dynamic>>>(
+        value: ref.watch(orionAlertsProvider),
+        moduleName: 'Alertes',
+        onRetry: () => ref.invalidate(orionAlertsProvider),
+        builder: (alerts) {
+          if (alerts.isEmpty) return const Padding(
+            padding: EdgeInsets.all(AHSpacing.lg),
+            child: Text('Aucune alerte active', style: TextStyle(color: AHColors.gray500)),
+          );
+          return Column(children: alerts.take(5).map((a) => ListItemCard(
+            title: a['title'] ?? 'Alerte',
+            subtitle: a['description'] ?? '',
+            leadingIcon: Icons.warning_amber,
+            leadingIconColor: AHColors.warning,
+          )).toList());
+        },
+      ),
     ]);
   }
+}
 
-  Widget _buildStaffContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Personnel'), ...[ListItemCard(title: 'Dubois Pierre', subtitle: 'Professeur maths - CDI', leadingIcon: Icons.person, badge: StatusBadge(label: 'Actif', type: StatusBadgeType.success)), ListItemCard(title: 'Laurent Marie', subtitle: 'Professeure français - CDI', leadingIcon: Icons.person, badge: StatusBadge(label: 'Actif', type: StatusBadgeType.success)), ListItemCard(title: 'Nguyen Thi', subtitle: 'Documentaliste - CDD', leadingIcon: Icons.person, badge: StatusBadge(label: 'CDD', type: StatusBadgeType.warning))]]); }
-  Widget _buildRecruitmentContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Recrutement'), ...[ListItemCard(title: 'Professeur d\'anglais', subtitle: 'Candidatures: 12 - Clôture: 20/03', leadingIcon: Icons.work, badge: StatusBadge(label: 'Ouvert', type: StatusBadgeType.info)), ListItemCard(title: 'Surveillant', subtitle: 'Candidatures: 5 - Entretiens en cours', leadingIcon: Icons.work, badge: StatusBadge(label: 'En cours', type: StatusBadgeType.warning))]]); }
-  Widget _buildContractsContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Contrats'), ...[ListItemCard(title: 'CDI actifs', subtitle: '68 contrats', leadingIcon: Icons.description, badge: StatusBadge(label: 'Stable', type: StatusBadgeType.success)), ListItemCard(title: 'CDD en cours', subtitle: '12 contrats - 3 arrivent à échéance', leadingIcon: Icons.description, badge: StatusBadge(label: 'Attention', type: StatusBadgeType.warning)), ListItemCard(title: 'Stagiaires', subtitle: '7 conventions', leadingIcon: Icons.school, badge: StatusBadge(label: 'En cours', type: StatusBadgeType.info))]]); }
-  Widget _buildPayrollContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Paie'), ...[ListItemCard(title: 'Fiches de paie mars 2025', subtitle: '87 fiches à générer', leadingIcon: Icons.payments, badge: StatusBadge(label: 'En préparation', type: StatusBadgeType.info)), ListItemCard(title: 'Virements février', subtitle: 'Exécutés le 28/02/2025', leadingIcon: Icons.account_balance, badge: StatusBadge(label: 'Traité', type: StatusBadgeType.success))]]); }
-  Widget _buildLeaveContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Congés'), ...[ListItemCard(title: 'Demande: Martin S.', subtitle: '24-28 mars 2025 - CP', leadingIcon: Icons.event_busy, badge: StatusBadge(label: 'En attente', type: StatusBadgeType.warning)), ListItemCard(title: 'Demande: Petit C.', subtitle: '14-18 avril 2025 - CP', leadingIcon: Icons.event_busy, badge: StatusBadge(label: 'Validé', type: StatusBadgeType.success))]]); }
-  Widget _buildTrainingContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Formation'), ...[ListItemCard(title: 'Numérique éducatif', subtitle: '15 inscrits - 20/03/2025', leadingIcon: Icons.computer, badge: StatusBadge(label: 'Planifié', type: StatusBadgeType.info)), ListItemCard(title: 'Premiers secours', subtitle: '8 inscrits - 25/03/2025', leadingIcon: Icons.health_and_safety, badge: StatusBadge(label: 'Planifié', type: StatusBadgeType.info))]]); }
-  Widget _buildEvaluationsContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Évaluations'), ...[ListItemCard(title: 'Évaluation annuelle 2024', subtitle: '78/87 complétées', leadingIcon: Icons.star, badge: StatusBadge(label: 'En cours', type: StatusBadgeType.info)), ListItemCard(title: 'Visite médicale', subtitle: '12 planifiées', leadingIcon: Icons.local_hospital, badge: StatusBadge(label: 'Planifié', type: StatusBadgeType.neutral))]]); }
-  Widget _buildDisciplineContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Discipline'), ...[ListItemCard(title: 'Avertissement - Agent X', subtitle: 'Retards répétés - 05/03/2025', leadingIcon: Icons.warning, leadingIconColor: AHColors.warning), ListItemCard(title: 'Sanction - Surveillant Y', subtitle: 'Absence injustifiée - 01/03/2025', leadingIcon: Icons.gavel, leadingIconColor: AHColors.error)]]); }
-  Widget _buildDocumentsContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Documents RH'), ...[ListItemCard(title: 'Modèle contrat CDI', subtitle: 'Dernière MAJ: 01/01/2025', leadingIcon: Icons.description), ListItemCard(title: 'Règlement intérieur personnel', subtitle: 'Version 2025', leadingIcon: Icons.gavel), ListItemCard(title: 'Modèle attestation employeur', subtitle: 'Disponible', leadingIcon: Icons.badge)]]); }
-  Widget _buildOrgchartContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Organigramme'), ...[ListItemCard(title: 'Direction', subtitle: 'Directeur + 2 adjoints', leadingIcon: Icons.account_balance, leadingIconColor: AHColors.navy), ListItemCard(title: 'Pédagogie', subtitle: '52 enseignants + 5 coord.', leadingIcon: Icons.school, leadingIconColor: AHColors.info), ListItemCard(title: 'Administration', subtitle: '18 agents', leadingIcon: Icons.business, leadingIconColor: AHColors.gold), ListItemCard(title: 'Services', subtitle: '14 personnels', leadingIcon: Icons.miscellaneous_services, leadingIconColor: AHColors.success)]]); }
-  Widget _buildPoliciesContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Politiques RH'), ...[ListItemCard(title: 'Politique congés', subtitle: 'Version 2025 - Approuvée', leadingIcon: Icons.policy, badge: StatusBadge(label: 'Active', type: StatusBadgeType.success)), ListItemCard(title: 'Politique recrutement', subtitle: 'Version 2024', leadingIcon: Icons.policy, badge: StatusBadge(label: 'Active', type: StatusBadgeType.success)), ListItemCard(title: 'Politique formation', subtitle: 'En révision', leadingIcon: Icons.policy, badge: StatusBadge(label: 'Brouillon', type: StatusBadgeType.neutral))]]); }
-  Widget _buildReportsContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Rapports RH'), ...[ListItemCard(title: 'Bilan social 2024', subtitle: 'Publié le 15/01/2025', leadingIcon: Icons.assessment, badge: StatusBadge(label: 'Disponible', type: StatusBadgeType.success)), ListItemCard(title: 'Statistiques absentéisme', subtitle: 'Mis à jour mars 2025', leadingIcon: Icons.bar_chart, badge: StatusBadge(label: 'Nouveau', type: StatusBadgeType.gold))]]); }
-  Widget _buildSettingsContent(BuildContext context) { return SubTabContentWrapper(children: [const SectionHeader(title: 'Paramètres RH'), ...[ListItemCard(title: 'Types de congés', subtitle: '7 types configurés', leadingIcon: Icons.settings), ListItemCard(title: 'Grilles salariales', subtitle: '3 grilles actives', leadingIcon: Icons.settings), ListItemCard(title: 'Notifications RH', subtitle: 'Configurées', leadingIcon: Icons.notifications_active)]]); }
+StatusBadgeType _st(dynamic s) {
+  if (s == null) return StatusBadgeType.info;
+  final v = s.toString().toLowerCase();
+  if (v.contains('valid') || v.contains('actif') || v.contains('payé')) return StatusBadgeType.success;
+  if (v.contains('attente') || v.contains('retard')) return StatusBadgeType.warning;
+  if (v.contains('rejeté') || v.contains('error')) return StatusBadgeType.error;
+  if (v.contains('inactif') || v.contains('archivé')) return StatusBadgeType.neutral;
+  return StatusBadgeType.info;
 }

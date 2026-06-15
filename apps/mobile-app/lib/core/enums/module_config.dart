@@ -130,6 +130,7 @@ const studentsModule = ModuleConfig(
     SubTab(id: 'students-alumni', label: 'Anciens', icon: 'graduation-cap', route: '/students/alumni'),
     SubTab(id: 'students-reports', label: 'Rapports', icon: 'bar-chart', route: '/students/reports'),
     SubTab(id: 'students-archive', label: 'Archive', icon: 'archive', route: '/students/archive'),
+    SubTab(id: 'students-orion', label: 'Orion', icon: 'sparkles', route: '/students/orion'),
   ],
 );
 
@@ -172,6 +173,7 @@ const financeModule = ModuleConfig(
     SubTab(id: 'finance-reports', label: 'Rapports', icon: 'bar-chart', route: '/finance/reports'),
     SubTab(id: 'finance-audit', label: 'Audit', icon: 'shield-check', route: '/finance/audit'),
     SubTab(id: 'finance-settings', label: 'Paramètres', icon: 'settings', route: '/finance/settings'),
+    SubTab(id: 'finance-orion', label: 'Orion', icon: 'sparkles', route: '/finance/orion'),
   ],
 );
 
@@ -198,6 +200,7 @@ const pedagogyModule = ModuleConfig(
     SubTab(id: 'pedagogy-progress', label: 'Suivi', icon: 'trending-up', route: '/pedagogy/progress'),
     SubTab(id: 'pedagogy-reports', label: 'Rapports', icon: 'bar-chart', route: '/pedagogy/reports'),
     SubTab(id: 'pedagogy-archive', label: 'Archive', icon: 'archive', route: '/pedagogy/archive'),
+    SubTab(id: 'pedagogy-orion', label: 'Orion', icon: 'sparkles', route: '/pedagogy/orion'),
   ],
 );
 
@@ -257,6 +260,7 @@ const examsModule = ModuleConfig(
     SubTab(id: 'exams-rooms', label: 'Salles', icon: 'door-open', route: '/exams/rooms'),
     SubTab(id: 'exams-supervision', label: 'Surveillance', icon: 'eye', route: '/exams/supervision'),
     SubTab(id: 'exams-archive', label: 'Archive', icon: 'archive', route: '/exams/archive'),
+    SubTab(id: 'exams-orion', label: 'Orion', icon: 'sparkles', route: '/exams/orion'),
   ],
 );
 
@@ -301,6 +305,7 @@ const hrModule = ModuleConfig(
     SubTab(id: 'hr-policies', label: 'Politiques', icon: 'scroll', route: '/hr/policies'),
     SubTab(id: 'hr-reports', label: 'Rapports', icon: 'bar-chart', route: '/hr/reports'),
     SubTab(id: 'hr-settings', label: 'Paramètres', icon: 'settings', route: '/hr/settings'),
+    SubTab(id: 'hr-orion', label: 'Orion', icon: 'sparkles', route: '/hr/orion'),
   ],
 );
 
@@ -435,6 +440,7 @@ const communicationModule = ModuleConfig(
     SubTab(id: 'communication-calendar', label: 'Calendrier', icon: 'calendar', route: '/communication/calendar'),
     SubTab(id: 'communication-media', label: 'Médias', icon: 'image', route: '/communication/media'),
     SubTab(id: 'communication-settings', label: 'Paramètres', icon: 'settings', route: '/communication/settings'),
+    SubTab(id: 'communication-orion', label: 'Orion', icon: 'sparkles', route: '/communication/orion'),
   ],
 );
 

@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/auth/auth_notifier.dart';
+import '../../../core/auth/auth_providers.dart';
+import '../../../core/auth/auth_state.dart';
 import '../../../core/theme/ah_theme.dart';
 import '../../../core/widgets/loading_widget.dart';
-import '../providers/auth_provider.dart';
 import '../widgets/tenant_card.dart';
 
 /// Tenant selection screen:
@@ -13,7 +15,7 @@ import '../widgets/tenant_card.dart';
 /// - Search bar for filtering
 /// - Select a tenant to proceed
 /// - AH branding header
-/// - Uses tenant notifier
+/// - Uses real auth notifier
 class TenantSelectScreen extends ConsumerStatefulWidget {
   const TenantSelectScreen({super.key});
 
@@ -32,18 +34,18 @@ class _TenantSelectScreenState extends ConsumerState<TenantSelectScreen> {
     super.dispose();
   }
 
-  List<TenantInfo> _filterTenants(List<TenantInfo> tenants) {
+  List<TenantBasic> _filterTenants(List<TenantBasic> tenants) {
     if (_searchQuery.isEmpty) return tenants;
     final query = _searchQuery.toLowerCase();
     return tenants.where((t) {
       return t.name.toLowerCase().contains(query) ||
-          t.acronym.toLowerCase().contains(query) ||
-          t.type.toLowerCase().contains(query);
+          (t.acronym?.toLowerCase().contains(query) ?? false) ||
+          (t.type?.toLowerCase().contains(query) ?? false);
     }).toList();
   }
 
-  Future<void> _selectTenant(TenantInfo tenant) async {
-    await ref.read(authStateProvider.notifier).selectTenant(tenant);
+  Future<void> _selectTenant(TenantBasic tenant) async {
+    await ref.read(authNotifierProvider.notifier).selectTenant(tenant.id);
     if (mounted) {
       context.go('/dashboard');
     }
@@ -51,7 +53,7 @@ class _TenantSelectScreenState extends ConsumerState<TenantSelectScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final authState = ref.watch(authStateProvider);
+    final authState = ref.watch(authNotifierProvider);
     final tenants = ref.watch(availableTenantsProvider);
     final screenWidth = MediaQuery.of(context).size.width;
     final isTablet = screenWidth >= 600;
@@ -179,7 +181,7 @@ class _TenantSelectScreenState extends ConsumerState<TenantSelectScreen> {
     );
   }
 
-  Widget _buildTenantList(List<TenantInfo> tenants, bool isTablet) {
+  Widget _buildTenantList(List<TenantBasic> tenants, bool isTablet) {
     final filtered = _filterTenants(tenants);
 
     if (filtered.isEmpty) {
@@ -242,7 +244,7 @@ class _TenantSelectScreenState extends ConsumerState<TenantSelectScreen> {
     );
   }
 
-  Widget _buildTenantGridItem(TenantInfo tenant) {
+  Widget _buildTenantGridItem(TenantBasic tenant) {
     return Card(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AHRadius.lg),
@@ -265,7 +267,7 @@ class _TenantSelectScreenState extends ConsumerState<TenantSelectScreen> {
                 ),
                 child: Center(
                   child: Text(
-                    tenant.acronym,
+                    tenant.shortName,
                     style: const TextStyle(
                       fontFamily: 'Inter',
                       fontSize: 13,
@@ -292,14 +294,15 @@ class _TenantSelectScreenState extends ConsumerState<TenantSelectScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    Text(
-                      tenant.type,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
-                        fontSize: 12,
-                        color: AHColors.gray500,
+                    if (tenant.type != null)
+                      Text(
+                        tenant.type!,
+                        style: const TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: 12,
+                          color: AHColors.gray500,
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),

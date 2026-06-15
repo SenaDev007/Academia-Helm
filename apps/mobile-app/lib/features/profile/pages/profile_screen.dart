@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/auth/auth_notifier.dart';
+import '../../../core/auth/auth_providers.dart';
+import '../../../core/auth/auth_state.dart';
 import '../../../core/theme/ah_theme.dart';
 import '../../../core/widgets/ah_app_bar.dart';
-import '../../auth/providers/auth_provider.dart';
 
 /// Profile screen with:
 /// - User avatar
@@ -18,12 +20,18 @@ class ProfileScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final authState = ref.watch(authStateProvider).valueOrNull;
-    final fullName = authState?.fullName ?? 'Utilisateur';
-    final email = authState?.email ?? 'email@exemple.com';
-    final role = authState?.role ?? '';
-    final tenantName = authState?.selectedTenantName ?? 'Aucun établissement';
-    final tenantAcronym = authState?.selectedTenantAcronym ?? '';
+    final authState = ref.watch(authNotifierProvider).valueOrNull;
+    final user = authState?.userOrNull;
+    final fullName = user?.displayName ?? 'Utilisateur';
+    final email = user?.email ?? 'email@exemple.com';
+    final role = user?.role ?? '';
+    final tenantId = authState?.selectedTenantIdOrNull;
+    final tenants = authState?.availableTenantsOrNull ?? [];
+    final tenant = tenantId != null
+        ? tenants.where((t) => t.id == tenantId).firstOrNull
+        : null;
+    final tenantName = tenant?.name ?? 'Aucun établissement';
+    final tenantAcronym = tenant?.acronym ?? '';
     final initials = _getInitials(fullName);
 
     return Scaffold(
@@ -204,7 +212,7 @@ class ProfileScreen extends ConsumerWidget {
                   onPressed: () async {
                     final confirmed = await _showLogoutConfirmation(context);
                     if (confirmed == true) {
-                      await ref.read(authStateProvider.notifier).logout();
+                      await ref.read(authNotifierProvider.notifier).logout();
                       if (context.mounted) {
                         context.go('/login');
                       }

@@ -41,7 +41,7 @@ export function createExamTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_exams',
       description: 'Récupère la liste des examens avec filtres optionnels par classe, matière, période ou type.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'EXAM',
       inputSchema: {
         type: 'object',
@@ -80,7 +80,7 @@ export function createExamTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_exam_statistics',
       description: 'Récupère les statistiques d\'un examen (moyenne, min, max, distribution des notes, taux de réussite).',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'EXAM',
       inputSchema: {
         type: 'object',
@@ -133,7 +133,7 @@ export function createExamTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_report_cards',
       description: 'Récupère les bulletins de notes d\'un élève ou d\'une classe.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'EXAM',
       inputSchema: {
         type: 'object',
@@ -169,7 +169,7 @@ export function createExamTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_honor_roll',
       description: 'Récupère le tableau d\'honneur pour une classe ou une période donnée.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'EXAM',
       inputSchema: {
         type: 'object',
@@ -211,7 +211,7 @@ export function createPedagogyExtendedTools(prisma: PrismaService): ToolDefiniti
       name: 'get_teaching_assignments',
       description: 'Récupère les affectations d\'enseignement (quel prof enseigne quelle matière dans quelle classe).',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'PEDAGOGY',
       inputSchema: {
         type: 'object',
@@ -248,7 +248,7 @@ export function createPedagogyExtendedTools(prisma: PrismaService): ToolDefiniti
       name: 'get_timetable',
       description: 'Récupère l\'emploi du temps d\'une classe ou d\'un enseignant.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'PEDAGOGY',
       inputSchema: {
         type: 'object',
@@ -288,7 +288,7 @@ export function createPedagogyExtendedTools(prisma: PrismaService): ToolDefiniti
       name: 'get_class_logs',
       description: 'Récupère les cahiers de texte / journaux de classe.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'PEDAGOGY',
       inputSchema: {
         type: 'object',
@@ -320,7 +320,7 @@ export function createPedagogyExtendedTools(prisma: PrismaService): ToolDefiniti
       name: 'get_lesson_plans',
       description: 'Récupère les fiches de préparation / leçons planifiées.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'PEDAGOGY',
       inputSchema: {
         type: 'object',
@@ -359,7 +359,7 @@ export function createHRExtendedTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_staff_list',
       description: 'Récupère la liste du personnel avec filtres par département, statut ou recherche.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'HR',
       inputSchema: {
         type: 'object',
@@ -407,7 +407,7 @@ export function createHRExtendedTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_staff_contracts',
       description: 'Récupère les contrats du personnel.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'HR',
       inputSchema: {
         type: 'object',
@@ -441,7 +441,7 @@ export function createHRExtendedTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_staff_attendance',
       description: 'Récupère les présences/absences du personnel.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'HR',
       inputSchema: {
         type: 'object',
@@ -477,7 +477,7 @@ export function createHRExtendedTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_payroll_summary',
       description: 'Récupère le résumé de la paie pour une période donnée.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'HR',
       inputSchema: {
         type: 'object',
@@ -522,7 +522,7 @@ export function createHRExtendedTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_leave_requests',
       description: 'Récupère les demandes de congé.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'HR',
       inputSchema: {
         type: 'object',
@@ -563,7 +563,7 @@ export function createFinanceExtendedTools(prisma: PrismaService): ToolDefinitio
       name: 'get_payments',
       description: 'Récupère la liste des paiements avec filtres.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'FINANCE',
       inputSchema: {
         type: 'object',
@@ -602,7 +602,7 @@ export function createFinanceExtendedTools(prisma: PrismaService): ToolDefinitio
       name: 'get_expenses',
       description: 'Récupère la liste des dépenses avec filtres.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'FINANCE',
       inputSchema: {
         type: 'object',
@@ -639,7 +639,7 @@ export function createFinanceExtendedTools(prisma: PrismaService): ToolDefinitio
       name: 'get_fee_configurations',
       description: 'Récupère la structure des frais de scolarité (montants, échéances par classe/niveau).',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'FINANCE',
       inputSchema: {
         type: 'object',
@@ -672,7 +672,7 @@ export function createFinanceExtendedTools(prisma: PrismaService): ToolDefinitio
       name: 'get_student_account',
       description: 'Récupère le compte financier d\'un élève (solde, historique paiements, impayés).',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'FINANCE',
       inputSchema: {
         type: 'object',
@@ -718,7 +718,7 @@ export function createCommunicationTools(prisma: PrismaService): ToolDefinition[
       name: 'get_announcements',
       description: 'Récupère les annonces publiées.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'COMMUNICATION',
       inputSchema: {
         type: 'object',
@@ -744,7 +744,7 @@ export function createCommunicationTools(prisma: PrismaService): ToolDefinition[
       name: 'get_messages',
       description: 'Récupère les messages/notifications envoyés.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'COMMUNICATION',
       inputSchema: {
         type: 'object',
@@ -783,7 +783,7 @@ export function createAttendanceTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_attendance_summary',
       description: 'Récupère le résumé des absences pour une classe ou l\'ensemble de l\'école.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'ATTENDANCE',
       inputSchema: {
         type: 'object',
@@ -853,7 +853,7 @@ export function createQHSETools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_qhse_incidents',
       description: 'Récupère les incidents QHSE (qualité, hygiène, sécurité, environnement).',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'QHSE',
       inputSchema: {
         type: 'object',
@@ -885,7 +885,7 @@ export function createQHSETools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_qhse_inspections',
       description: 'Récupère les inspections d\'hygiène et contrôles de sécurité.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'QHSE',
       inputSchema: {
         type: 'object',
@@ -937,7 +937,7 @@ export function createMeetingTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_meetings',
       description: 'Récupère les réunions programmées ou passées.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'MEETING',
       inputSchema: {
         type: 'object',
@@ -978,7 +978,7 @@ export function createDashboardTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_school_overview',
       description: 'Récupère un aperçu global de l\'école : nombre d\'élèves, classes, enseignants, finances, absences.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'DASHBOARD',
       inputSchema: {
         type: 'object',
@@ -1052,7 +1052,7 @@ export function createDashboardTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_class_list',
       description: 'Récupère la liste des classes avec le nombre d\'élèves par classe.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'DASHBOARD',
       inputSchema: {
         type: 'object',
@@ -1085,7 +1085,7 @@ export function createDashboardTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_subjects',
       description: 'Récupère la liste des matières enseignées.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'DASHBOARD',
       inputSchema: {
         type: 'object',
@@ -1116,7 +1116,7 @@ export function createDocumentTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_student_documents',
       description: 'Récupère les documents d\'un élève (certificats, attestations, etc.).',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'DOCUMENT',
       inputSchema: {
         type: 'object',
@@ -1148,7 +1148,7 @@ export function createDocumentTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_document_templates',
       description: 'Récupère les modèles de documents disponibles.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'DOCUMENT',
       inputSchema: {
         type: 'object',
@@ -1183,7 +1183,7 @@ export function createSettingTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_tenant_settings',
       description: 'Récupère les paramètres de l\'établissement (identité, fonctionnalités activées, limites du plan).',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'SETTING',
       inputSchema: {
         type: 'object',
@@ -1216,7 +1216,7 @@ export function createSettingTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_academic_years',
       description: 'Récupère les années académiques configurées.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'SETTING',
       inputSchema: {
         type: 'object',

@@ -40,6 +40,7 @@ import {
   createDocumentTools,
   createSettingTools,
 } from './tools/tool-definitions-extended';
+import { createSaraProductTools } from './tools/tool-definitions-sara';
 import { AIController } from './ai.controller';
 
 @Module({
@@ -90,5 +91,10 @@ export class AIModule implements OnModuleInit {
     this.toolRegistry.registerMany(createDocumentTools(this.prisma));
     // Settings (read-only)
     this.toolRegistry.registerMany(createSettingTools(this.prisma));
+
+    // ─── SARA Product Knowledge Tools (no tenant required) ───
+    // SARA is the product ambassador — she knows the product, testimonials,
+    // company info, pricing, navigation guides. She does NOT access school data.
+    this.toolRegistry.registerMany(createSaraProductTools());
   }
 }

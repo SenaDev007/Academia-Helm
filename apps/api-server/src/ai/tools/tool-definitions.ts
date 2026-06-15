@@ -35,7 +35,7 @@ export function createStudentTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_students',
       description: 'Récupère la liste des élèves avec filtres optionnels.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'STUDENT',
       inputSchema: {
         type: 'object',
@@ -82,7 +82,7 @@ export function createStudentTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_student_grades',
       description: 'Récupère les notes d\'un élève pour une période donnée.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'ACADEMIC',
       inputSchema: {
         type: 'object',
@@ -119,7 +119,7 @@ export function createStudentTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_student_attendance',
       description: 'Récupère les absences d\'un élève.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'ACADEMIC',
       inputSchema: {
         type: 'object',
@@ -160,7 +160,7 @@ export function createFinanceTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_finance_unpaid',
       description: 'Récupère la liste des impayés avec filtres.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'FINANCE',
       inputSchema: {
         type: 'object',
@@ -197,7 +197,7 @@ export function createFinanceTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_finance_summary',
       description: 'Récupère le résumé financier de l\'école (recettes, dépenses, solde).',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'FINANCE',
       inputSchema: {
         type: 'object',
@@ -258,7 +258,7 @@ export function createHRTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_teacher_attendance',
       description: 'Récupère les absences enseignant.',
       version: '1.0.0',
-      agent: 'ALL',
+      agent: 'ORION',
       category: 'HR',
       inputSchema: {
         type: 'object',
@@ -336,7 +336,7 @@ export function createOrionTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_orion_analysis',
       description: 'Récupère une analyse ORION existante par domaine.',
       version: '1.0.0',
-      agent: 'SARA',
+      agent: 'ORION',
       category: 'ANALYTICS',
       inputSchema: {
         type: 'object',
@@ -374,7 +374,7 @@ export function createOrionTools(prisma: PrismaService): ToolDefinition[] {
       name: 'get_orion_score',
       description: 'Récupère le score ORION de l\'établissement (santé globale).',
       version: '1.0.0',
-      agent: 'SARA',
+      agent: 'ORION',
       category: 'ANALYTICS',
       inputSchema: {
         type: 'object',
@@ -447,7 +447,7 @@ export function createPedagogyTools(prisma: PrismaService): ToolDefinition[] {
       name: 'search_pedagogy_library',
       description: 'Recherche dans la bibliothèque pédagogique.',
       version: '1.0.0',
-      agent: 'SARA',
+      agent: 'ORION',
       category: 'ACADEMIC',
       inputSchema: {
         type: 'object',
@@ -492,7 +492,7 @@ export function createAtlasTools(prisma: PrismaService): ToolDefinition[] {
       name: 'trigger_atlas_workflow',
       description: 'Déclenche un workflow ATLAS (nécessite confirmation humaine).',
       version: '1.0.0',
-      agent: 'SARA',
+      agent: 'ATLAS',
       category: 'WORKFLOW',
       inputSchema: {
         type: 'object',

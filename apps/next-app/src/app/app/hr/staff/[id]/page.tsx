@@ -1,0 +1,1245 @@
+/**
+ * ============================================================================
+ * HR MODULE - STAFF DETAIL PAGE (v2 — Photo + Matricules + Structured Docs)
+ * ============================================================================
+ */
+
+'use client';
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { 
+  ArrowLeft, 
+  Mail, 
+  MapPin, 
+  Shield, 
+  FileText, 
+  Plus, 
+  Edit3, 
+  CheckCircle2, 
+  AlertCircle,
+  Briefcase,
+  User,
+  Fingerprint,
+  X,
+  Upload,
+  Loader2,
+  GraduationCap,
+  Award,
+  Camera,
+  Trash2,
+  Eye,
+  Clock,
+  BadgeCheck,
+  XCircle,
+  ChevronDown,
+  ChevronRight,
+  FolderOpen,
+  Globe,
+  Building2,
+  UserX,
+  UserCheck,
+  Package,
+  DollarSign,
+} from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
+import { formatCurrency } from '@/lib/utils';
+import { toast } from '@/components/ui/toast';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { motion, AnimatePresence } from 'framer-motion';
+import { StaffTerminationModal } from '../../_components/modals/StaffTerminationModal';
+
+const PRIMARY = '#1A2BA6';
+
+const inputClass =
+  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 ' +
+  'focus:outline-none focus:border-[#1A2BA6] focus:ring-2 focus:ring-[#1A2BA6]/10 transition';
+
+const labelClass = 'block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5';
+
+// Document categories configuration
+const DOC_CATEGORIES: Record<string, { label: string; icon: any; color: string; order: number }> = {
+  IDENTITE:      { label: 'Pièces d\'identité',          icon: Shield,         color: 'blue',   order: 1 },
+  DIPLOMES:      { label: 'Diplômes & Certificats',      icon: GraduationCap,  color: 'purple', order: 2 },
+  EXPERIENCE:    { label: 'Expérience professionnelle',   icon: Briefcase,      color: 'emerald',order: 3 },
+  ADMINISTRATIF: { label: 'Documents administratifs',     icon: FileText,       color: 'amber',  order: 4 },
+  MEDICAL:       { label: 'Documents médicaux',           icon: Award,          color: 'red',    order: 5 },
+  GENERAL:       { label: 'Autres documents',             icon: FolderOpen,     color: 'slate',  order: 6 },
+};
+
+const DOC_TYPE_OPTIONS = [
+  { value: 'CV',                    label: 'CV / Curriculum Vitae',   category: 'EXPERIENCE' },
+  { value: 'CNI',                   label: 'Carte d\'identité',       category: 'IDENTITE' },
+  { value: 'PASSPORT',              label: 'Passeport',               category: 'IDENTITE' },
+  { value: 'BIRTH_CERTIFICATE',     label: 'Acte de naissance',      category: 'IDENTITE' },
+  { value: 'DIPLOMA',               label: 'Diplôme',                category: 'DIPLOMES' },
+  { value: 'CERTIFICATE',           label: 'Certificat / Attestation',category: 'DIPLOMES' },
+  { value: 'TRANSCRIPT',            label: 'Relevé de notes',        category: 'DIPLOMES' },
+  { value: 'CONTRACT',              label: 'Contrat de travail',      category: 'ADMINISTRATIF' },
+  { value: 'CNSS_CERTIFICATE',      label: 'Attestation CNSS',       category: 'ADMINISTRATIF' },
+  { value: 'WORK_PERMIT',           label: 'Autorisation de travail', category: 'ADMINISTRATIF' },
+  { value: 'MEDICAL_CERTIFICATE',   label: 'Certificat médical',     category: 'MEDICAL' },
+  { value: 'OTHER',                 label: 'Autre document',         category: 'GENERAL' },
+];
+
+const VALIDATION_STATUS: Record<string, { label: string; className: string; icon: any }> = {
+  PENDING:   { label: 'En attente', className: 'bg-amber-50 text-amber-700 border-amber-200', icon: Clock },
+  VALIDATED: { label: 'Validé',     className: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: BadgeCheck },
+  REJECTED:  { label: 'Rejeté',     className: 'bg-red-50 text-red-700 border-red-200', icon: XCircle },
+};
+
+function formatEmergencyContact(contact: any): string {
+  if (!contact) return 'Non renseigné';
+  if (typeof contact === 'string') return contact;
+  if (typeof contact === 'object') {
+    const parts: string[] = [];
+    if (contact.name) parts.push(contact.name);
+    if (contact.phone) parts.push(contact.phone);
+    if (contact.relationship) parts.push(`(${contact.relationship})`);
+    return parts.length > 0 ? parts.join(' — ') : JSON.stringify(contact);
+  }
+  return String(contact);
+}
+
+function computeSeniority(hireDate: string | null | undefined): string {
+  if (!hireDate) return 'Non renseignée';
+  const start = new Date(hireDate);
+  const now = new Date();
+  let years = now.getFullYear() - start.getFullYear();
+  let months = now.getMonth() - start.getMonth();
+  if (months < 0) { years--; months += 12; }
+  if (years === 0 && months === 0) return 'Moins d\'un mois';
+  const parts: string[] = [];
+  if (years > 0) parts.push(`${years} an${years > 1 ? 's' : ''}`);
+  if (months > 0) parts.push(`${months} moi${months > 1 ? 's' : ''}`);
+  return parts.join(', ');
+}
+
+const STATUS_LABELS: Record<string, { label: string; className: string }> = {
+  ACTIVE:    { label: 'Actif',      className: 'text-emerald-600' },
+  INACTIVE:  { label: 'Inactif',    className: 'text-slate-500' },
+  SUSPENDED: { label: 'Suspendu',   className: 'text-amber-600' },
+  ON_LEAVE:  { label: 'En congé',   className: 'text-blue-600' },
+};
+
+const TERMINATION_TYPE_LABELS: Record<string, string> = {
+  RESIGNATION: 'Démission',
+  DISMISSAL: 'Licenciement',
+  MUTUAL_AGREEMENT: 'Rupture conventionnelle',
+  END_OF_CONTRACT: 'Fin de contrat',
+  RETIREMENT: 'Retraite',
+  DEATH: 'Décès',
+  ABANDONMENT: 'Abandon de poste',
+  OTHER: 'Autre',
+};
+
+export default function StaffDetailPage() {
+  const { id } = useParams();
+  const router = useRouter();
+  const { tenant } = useModuleContext();
+  const [member, setMember] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [evaluations, setEvaluations] = useState<any[]>([]);
+  const [trainings, setTrainings] = useState<any[]>([]);
+  const [contracts, setContracts] = useState<any[]>([]);
+  const [documentsGrouped, setDocumentsGrouped] = useState<Record<string, any[]>>({});
+
+  // Edit modal
+  const [editOpen, setEditOpen] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editForm, setEditForm] = useState<any>({});
+
+  // Document upload modal
+  const [docOpen, setDocOpen] = useState(false);
+  const [docLoading, setDocLoading] = useState(false);
+  const [docForm, setDocForm] = useState({ 
+    documentType: 'CV', 
+    description: '',
+    expiresAt: '',
+  });
+  const [docFile, setDocFile] = useState<File | null>(null);
+
+  // Photo upload
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  // Expanded document categories
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+
+  // Termination modal
+  const [terminationModalOpen, setTerminationModalOpen] = useState(false);
+  const [reactivateLoading, setReactivateLoading] = useState(false);
+
+  const fetchMember = useCallback(async () => {
+    if (!tenant?.id || !id) return;
+    try {
+      setLoading(true);
+      const result = await hrFetch<any>(hrUrl(`staff/${id}`, { tenantId: tenant.id }));
+      setMember(result);
+      setContracts(result.contracts || []);
+      setEvaluations(result.evaluations || []);
+      setTrainings(result.trainings || []);
+
+      // Fetch documents grouped
+      try {
+        const docsResult = await hrFetch<any>(hrUrl(`staff/${id}/documents`, { tenantId: tenant.id }));
+        if (docsResult?.grouped) {
+          setDocumentsGrouped(docsResult.grouped);
+          // Auto-expand all categories that have documents
+          setExpandedCategories(new Set(Object.keys(docsResult.grouped)));
+        } else if (Array.isArray(result.documents)) {
+          // Fallback: group client-side
+          const grouped: Record<string, any[]> = {};
+          for (const doc of result.documents) {
+            const cat = doc.category || 'GENERAL';
+            if (!grouped[cat]) grouped[cat] = [];
+            grouped[cat].push(doc);
+          }
+          setDocumentsGrouped(grouped);
+          setExpandedCategories(new Set(Object.keys(grouped)));
+        }
+      } catch {
+        // Fallback to member.documents
+        if (Array.isArray(result.documents)) {
+          const grouped: Record<string, any[]> = {};
+          for (const doc of result.documents) {
+            const cat = doc.category || 'GENERAL';
+            if (!grouped[cat]) grouped[cat] = [];
+            grouped[cat].push(doc);
+          }
+          setDocumentsGrouped(grouped);
+          setExpandedCategories(new Set(Object.keys(grouped)));
+        }
+      }
+
+      // Try to fetch trainings from dedicated endpoint
+      try {
+        const trainingsData = await hrFetch<any[]>(hrUrl(`evaluations/trainings/staff/${id}`, { tenantId: tenant.id }));
+        if (trainingsData && trainingsData.length > 0) setTrainings(trainingsData);
+      } catch {}
+    } catch (error) {
+      console.error('Error fetching staff detail:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [tenant?.id, id]);
+
+  useEffect(() => { fetchMember(); }, [fetchMember]);
+
+  // ─── Photo Upload ───────────────────────────────────────────────────────────
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !tenant?.id) return;
+
+    // Validate
+    if (!file.type.startsWith('image/')) {
+      toast({ variant: 'error', title: 'Format invalide. Utilisez JPEG, PNG ou WebP.' });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ variant: 'error', title: 'Fichier trop volumineux (max 5 Mo).' });
+      return;
+    }
+
+    try {
+      setPhotoUploading(true);
+      const formData = new FormData();
+      formData.append('photo', file);
+
+      await hrFetch<any>(hrUrl(`staff/${id}/photo`, { tenantId: tenant.id }), {
+        method: 'POST',
+        body: formData,
+      });
+      toast({ variant: 'success', title: 'Photo mise à jour avec succès' });
+      fetchMember();
+    } catch (err: any) {
+      toast({ variant: 'error', title: err.message || 'Erreur lors du téléchargement de la photo' });
+    } finally {
+      setPhotoUploading(false);
+      // Reset input
+      if (photoInputRef.current) photoInputRef.current.value = '';
+    }
+  };
+
+  const handlePhotoDelete = async () => {
+    if (!tenant?.id) return;
+    try {
+      await hrFetch<any>(hrUrl(`staff/${id}/photo`, { tenantId: tenant.id }), {
+        method: 'DELETE',
+      });
+      toast({ variant: 'success', title: 'Photo supprimée' });
+      fetchMember();
+    } catch (err: any) {
+      toast({ variant: 'error', title: 'Erreur lors de la suppression de la photo' });
+    }
+  };
+
+  // ─── Edit Modal ─────────────────────────────────────────────────────────────
+  const openEditModal = () => {
+    if (!member) return;
+    setEditForm({
+      firstName: member.firstName || '',
+      lastName: member.lastName || '',
+      email: member.email || '',
+      phone: member.phone || '',
+      position: member.position || '',
+      category: member.category || 'ADMIN',
+      gender: member.gender || 'MALE',
+      dateOfBirth: member.dateOfBirth ? new Date(member.dateOfBirth).toISOString().split('T')[0] : '',
+      birthDate: member.birthDate ? new Date(member.birthDate).toISOString().split('T')[0] : '',
+      address: member.address || '',
+      emergencyContact: typeof member.emergencyContact === 'object' && member.emergencyContact ? JSON.stringify(member.emergencyContact) : (member.emergencyContact || ''),
+      qualifications: member.qualifications || '',
+      department: member.department || '',
+      notes: member.notes || '',
+    });
+    setEditOpen(true);
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setEditLoading(true);
+      const submitData: any = { ...editForm };
+
+      // Clean up empty date strings → send null instead (backend converts to null)
+      for (const dateField of ['birthDate', 'dateOfBirth', 'hireDate']) {
+        if (submitData[dateField] === '') {
+          submitData[dateField] = null;
+        }
+      }
+
+      // Handle emergencyContact — try to parse as JSON, else wrap as object
+      if (typeof submitData.emergencyContact === 'string' && submitData.emergencyContact.trim()) {
+        try {
+          submitData.emergencyContact = JSON.parse(submitData.emergencyContact);
+        } catch {
+          // Wrap free-form text as structured object for backend compatibility
+          submitData.emergencyContact = { note: submitData.emergencyContact };
+        }
+      } else if (!submitData.emergencyContact || (typeof submitData.emergencyContact === 'string' && !submitData.emergencyContact.trim())) {
+        submitData.emergencyContact = null;
+      }
+
+      // Remove category from direct submission — it's mapped to roleType server-side
+      // (keep it in the payload so the backend can map it)
+
+      await hrFetch<any>(hrUrl(`staff/${id}`, { tenantId: tenant.id }), {
+        method: 'PUT',
+        body: submitData,
+      });
+      toast({ variant: 'success', title: 'Fiche collaborateur mise à jour' });
+      setEditOpen(false);
+      fetchMember();
+    } catch (err: any) {
+      toast({ variant: 'error', title: err.message || 'Erreur lors de la mise à jour' });
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  // ─── Document Upload ────────────────────────────────────────────────────────
+  const handleDocSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!docFile || !tenant?.id) return;
+    try {
+      setDocLoading(true);
+      const formData = new FormData();
+      formData.append('file', docFile);
+      formData.append('documentType', docForm.documentType);
+      if (docForm.description) formData.append('description', docForm.description);
+      if (docForm.expiresAt) formData.append('expiresAt', docForm.expiresAt);
+
+      await hrFetch<any>(hrUrl(`staff/${id}/documents`, { tenantId: tenant.id }), {
+        method: 'POST',
+        body: formData,
+      });
+      toast({ variant: 'success', title: 'Document ajouté avec succès' });
+      setDocOpen(false);
+      setDocForm({ documentType: 'CV', description: '', expiresAt: '' });
+      setDocFile(null);
+      fetchMember();
+    } catch (err: any) {
+      toast({ variant: 'error', title: err.message || 'Erreur lors de l\'ajout du document' });
+    } finally {
+      setDocLoading(false);
+    }
+  };
+
+  const handleDocDelete = async (docId: string) => {
+    if (!tenant?.id) return;
+    try {
+      await hrFetch<any>(hrUrl(`staff/${id}/documents/${docId}`, { tenantId: tenant.id }), {
+        method: 'DELETE',
+      });
+      toast({ variant: 'success', title: 'Document supprimé' });
+      fetchMember();
+    } catch (err: any) {
+      toast({ variant: 'error', title: err.message || 'Erreur lors de la suppression du document' });
+    }
+  };
+
+  const handleDocValidate = async (docId: string, status: 'VALIDATED' | 'REJECTED') => {
+    if (!tenant?.id) return;
+    try {
+      await hrFetch<any>(hrUrl(`staff/${id}/documents/${docId}/validate`, { tenantId: tenant.id }), {
+        method: 'PUT',
+        body: { status },
+      });
+      toast({ variant: 'success', title: status === 'VALIDATED' ? 'Document validé' : 'Document rejeté' });
+      fetchMember();
+    } catch (err: any) {
+      toast({ variant: 'error', title: 'Erreur lors de la validation' });
+    }
+  };
+
+  const toggleCategory = (cat: string) => {
+    setExpandedCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat); else next.add(cat);
+      return next;
+    });
+  };
+
+  // ─── Reactivate Staff ─────────────────────────────────────────────────────
+  const handleReactivate = async () => {
+    if (!tenant?.id || !id) return;
+    try {
+      setReactivateLoading(true);
+      await hrFetch<any>(hrUrl(`staff/${id}/reactivate`, { tenantId: tenant.id }), {
+        method: 'POST',
+        body: { reason: 'Réintégration du collaborateur' },
+      });
+      toast({ variant: 'success', title: 'Collaborateur réactivé avec succès' });
+      fetchMember();
+    } catch (err: any) {
+      toast({ variant: 'error', title: err.message || 'Erreur lors de la réactivation' });
+    } finally {
+      setReactivateLoading(false);
+    }
+  };
+
+  if (loading) {
+    return <div className="p-8 animate-pulse text-center">Chargement de la fiche...</div>;
+  }
+
+  if (!member) {
+    return (
+      <div className="p-8 text-center">
+        <h3 className="text-xl font-bold">Collaborateur non trouvé</h3>
+        <button onClick={() => router.back()} className="mt-4 text-blue-600 font-bold flex items-center gap-2 mx-auto">
+          <ArrowLeft size={16} /> Retour à la liste
+        </button>
+      </div>
+    );
+  }
+
+  const statusInfo = STATUS_LABELS[member.status] || STATUS_LABELS.INACTIVE;
+  const hireDate = member.contracts?.[0]?.startDate || member.hireDate || null;
+  const isTerminated = member.status === 'INACTIVE' && member.terminationType;
+  const terminationLabel = TERMINATION_TYPE_LABELS[member.terminationType] || member.terminationType;
+  const terminationDetails = (typeof member.terminationDetails === 'object' && member.terminationDetails) ? member.terminationDetails : null;
+
+  // Sort categories by order
+  const sortedCategories = Object.entries(DOC_CATEGORIES).sort(([,a], [,b]) => a.order - b.order);
+
+  // Compute total documents count
+  const totalDocs = Object.values(documentsGrouped).reduce((acc: number, docs: any[]) => acc + docs.length, 0);
+
+  return (
+    <div className="space-y-6 pb-20">
+      {/* Hidden photo input */}
+      <input
+        ref={photoInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        className="hidden"
+        onChange={handlePhotoUpload}
+      />
+
+      {/* ─── Edit Modal ──────────────────────────────────────────────────── */}
+      {editOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between px-6 py-5 text-white" style={{ background: PRIMARY }}>
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-white/15 p-2"><Edit3 className="h-5 w-5" /></div>
+                <div>
+                  <h3 className="text-base font-bold">Modifier la fiche</h3>
+                  <p className="text-xs text-white/70">{member.firstName} {member.lastName}</p>
+                </div>
+              </div>
+              <button onClick={() => setEditOpen(false)} className="rounded-lg p-1.5 hover:bg-white/15 transition-colors"><X className="h-5 w-5" /></button>
+            </div>
+            <form onSubmit={handleEditSubmit} className="p-6 space-y-4 max-h-[65vh] overflow-y-auto">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Prénom</label>
+                  <input required type="text" className={inputClass} value={editForm.firstName} onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })} />
+                </div>
+                <div>
+                  <label className={labelClass}>Nom</label>
+                  <input required type="text" className={inputClass} value={editForm.lastName} onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })} />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Email</label>
+                  <input type="email" className={inputClass} value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
+                </div>
+                <div>
+                  <label className={labelClass}>Téléphone</label>
+                  <input type="tel" className={inputClass} value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Poste</label>
+                  <input type="text" className={inputClass} value={editForm.position} onChange={(e) => setEditForm({ ...editForm, position: e.target.value })} />
+                </div>
+                <div>
+                  <label className={labelClass}>Département</label>
+                  <input type="text" className={inputClass} value={editForm.department} onChange={(e) => setEditForm({ ...editForm, department: e.target.value })} />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Catégorie</label>
+                  <select className={inputClass} value={editForm.category} onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}>
+                    <option value="PEDAGOGICAL">Corps Enseignant</option>
+                    <option value="ADMIN">Administration</option>
+                    <option value="SUPPORT">Personnel d&apos;appui</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass}>Genre</label>
+                  <select className={inputClass} value={editForm.gender} onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}>
+                    <option value="MALE">Masculin</option>
+                    <option value="FEMALE">Féminin</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Date de naissance</label>
+                  <input type="date" className={inputClass} value={editForm.birthDate} onChange={(e) => setEditForm({ ...editForm, birthDate: e.target.value })} />
+                </div>
+                <div>
+                  <label className={labelClass}>Adresse</label>
+                  <input type="text" className={inputClass} value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Contact d&apos;urgence</label>
+                  <input type="text" className={inputClass} value={editForm.emergencyContact} onChange={(e) => setEditForm({ ...editForm, emergencyContact: e.target.value })} placeholder='Nom — Tél — Lien' />
+                </div>
+                <div>
+                  <label className={labelClass}>Qualifications</label>
+                  <input type="text" className={inputClass} value={editForm.qualifications} onChange={(e) => setEditForm({ ...editForm, qualifications: e.target.value })} />
+                </div>
+              </div>
+              <div>
+                <label className={labelClass}>Notes</label>
+                <textarea className={inputClass + ' min-h-[80px]'} value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
+              </div>
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                <button type="button" onClick={() => setEditOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-50 transition">Annuler</button>
+                <button type="submit" disabled={editLoading} className="flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-sm font-bold shadow-sm hover:opacity-90 disabled:opacity-50 transition" style={{ backgroundColor: PRIMARY }}>
+                  {editLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Enregistrer
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Document Upload Modal ───────────────────────────────────────── */}
+      {docOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between px-6 py-5 text-white" style={{ background: PRIMARY }}>
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-white/15 p-2"><Upload className="h-5 w-5" /></div>
+                <div>
+                  <h3 className="text-base font-bold">Ajouter un document</h3>
+                  <p className="text-xs text-white/70">{member.firstName} {member.lastName}</p>
+                </div>
+              </div>
+              <button onClick={() => setDocOpen(false)} className="rounded-lg p-1.5 hover:bg-white/15 transition-colors"><X className="h-5 w-5" /></button>
+            </div>
+            <form onSubmit={handleDocSubmit} className="p-6 space-y-4">
+              <div>
+                <label className={labelClass}>Type de document</label>
+                <select className={inputClass} value={docForm.documentType} onChange={(e) => setDocForm({ ...docForm, documentType: e.target.value })}>
+                  {DOC_TYPE_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={labelClass}>Description (optionnelle)</label>
+                <input type="text" className={inputClass} value={docForm.description} onChange={(e) => setDocForm({ ...docForm, description: e.target.value })} placeholder="Ex: Diplôme de licence 2020" />
+              </div>
+              <div>
+                <label className={labelClass}>Date d&apos;expiration (optionnelle)</label>
+                <input type="date" className={inputClass} value={docForm.expiresAt} onChange={(e) => setDocForm({ ...docForm, expiresAt: e.target.value })} />
+              </div>
+              <div>
+                <label className={labelClass}>Fichier</label>
+                <div className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm">
+                  {docFile ? (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 bg-blue-50 border border-blue-100 rounded-lg text-blue-600"><FileText className="h-5 w-5" /></div>
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">{docFile.name}</p>
+                          <p className="text-xs text-slate-400">{(docFile.size / 1024).toFixed(1)} Ko</p>
+                        </div>
+                      </div>
+                      <button type="button" onClick={() => setDocFile(null)} className="p-1 text-slate-400 hover:text-red-500"><X size={16} /></button>
+                    </div>
+                  ) : (
+                    <label className="flex flex-col items-center justify-center cursor-pointer py-4 hover:bg-slate-50 rounded-lg transition">
+                      <Upload className="h-8 w-8 text-slate-300 mb-2" />
+                      <p className="text-sm text-slate-500">Cliquez pour choisir un fichier</p>
+                      <p className="text-xs text-slate-400 mt-1">PDF, PNG, JPG — Max 20 Mo</p>
+                      <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) setDocFile(file);
+                      }} />
+                    </label>
+                  )}
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                <button type="button" onClick={() => { setDocOpen(false); setDocFile(null); }} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-50 transition">Annuler</button>
+                <button type="submit" disabled={docLoading || !docFile} className="flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-sm font-bold shadow-sm hover:opacity-90 disabled:opacity-50 transition" style={{ backgroundColor: PRIMARY }}>
+                  {docLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Ajouter
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Back Button ──────────────────────────────────────────────────── */}
+      <div className="px-6 pt-4">
+        <button 
+          onClick={() => router.back()}
+          className="flex items-center gap-2 text-sm font-bold text-gray-500 hover:text-blue-600 transition-colors"
+        >
+          <ArrowLeft size={16} /> Retour à l'effectif
+        </button>
+      </div>
+
+      <div className="px-6 flex flex-col lg:flex-row gap-6">
+        {/* ─── Left Column: Profile Card ─────────────────────────────────── */}
+        <div className="lg:w-1/3 space-y-6">
+          <Card className="border-none shadow-sm rounded-3xl overflow-hidden bg-white">
+            <CardContent className="p-0">
+              {/* Banner + Photo */}
+              <div className="h-28 bg-gradient-to-r from-[#1A2BA6] to-[#2D3FC7] relative">
+                <div className="absolute -bottom-12 left-6">
+                  <div className="relative group">
+                    {/* Photo or Initials */}
+                    {member.photoUrl ? (
+                      <div className="w-24 h-24 rounded-3xl bg-white p-1 shadow-lg overflow-hidden">
+                        <img 
+                          src={member.photoUrl} 
+                          alt={`${member.firstName} ${member.lastName}`}
+                          className="w-full h-full rounded-[20px] object-cover"
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-24 h-24 rounded-3xl bg-white p-1 shadow-lg">
+                        <div className="w-full h-full rounded-[20px] bg-blue-50 flex items-center justify-center text-blue-600 text-3xl font-bold">
+                          {member.firstName?.[0]}{member.lastName?.[0]}
+                        </div>
+                      </div>
+                    )}
+                    {/* Photo overlay on hover */}
+                    <div 
+                      className="absolute inset-0 rounded-3xl bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                      onClick={() => photoInputRef.current?.click()}
+                    >
+                      {photoUploading ? (
+                        <Loader2 className="h-6 w-6 text-white animate-spin" />
+                      ) : (
+                        <Camera className="h-6 w-6 text-white" />
+                      )}
+                    </div>
+                  </div>
+                </div>
+                {/* Delete photo button */}
+                {member.photoUrl && (
+                  <button 
+                    onClick={handlePhotoDelete}
+                    className="absolute top-2 right-2 p-1.5 bg-white/20 hover:bg-white/40 rounded-lg transition-colors"
+                    title="Supprimer la photo"
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-white" />
+                  </button>
+                )}
+              </div>
+
+              <div className="px-6 pb-6 mt-14">
+                <h2 className="text-2xl font-bold text-gray-900">{member.firstName} {member.lastName}</h2>
+                
+                {/* Dual Matricules */}
+                <div className="mt-2 space-y-1.5">
+                  {member.globalMatricule && (
+                    <div className="flex items-center gap-2">
+                      <Globe className="h-3.5 w-3.5 text-blue-500 flex-shrink-0" />
+                      <span className="text-xs font-bold text-blue-600 tracking-widest uppercase">{member.globalMatricule}</span>
+                      <span className="text-[9px] text-slate-400 font-semibold uppercase">Global</span>
+                    </div>
+                  )}
+                  {member.tenantMatricule && (
+                    <div className="flex items-center gap-2">
+                      <Building2 className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />
+                      <span className="text-xs font-bold text-emerald-600 tracking-widest uppercase">{member.tenantMatricule}</span>
+                      <span className="text-[9px] text-slate-400 font-semibold uppercase">École</span>
+                    </div>
+                  )}
+                  {!member.globalMatricule && !member.tenantMatricule && (
+                    <p className="text-blue-600 font-bold tracking-widest uppercase text-xs">
+                      {member.staffCode || 'MAT-PENDING'}
+                    </p>
+                  )}
+                </div>
+
+                <div className="mt-6 space-y-3">
+                  <div className="flex items-center gap-3 text-sm text-gray-600">
+                    <Briefcase size={18} className="text-gray-400" />
+                    <span>{member.position || 'Poste non défini'}</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-sm text-gray-600">
+                    <Shield size={18} className="text-gray-400" />
+                    <span>{member.category === 'PEDAGOGICAL' ? 'Corps Enseignant' : member.category === 'ADMIN' ? 'Administration' : 'Personnel d\'appui'}</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-sm text-gray-600">
+                    <CheckCircle2 size={18} className="text-emerald-500" />
+                    <span className="font-medium text-emerald-700">Contrat {member.contracts?.[0]?.contractType || member.contracts?.[0]?.type || 'N/A'}</span>
+                  </div>
+                </div>
+
+                <div className="mt-8 flex gap-2">
+                  {member.status === 'ACTIVE' ? (
+                    <button
+                      onClick={() => setTerminationModalOpen(true)}
+                      className="flex-1 py-2.5 bg-rose-600 text-white rounded-xl font-bold text-sm hover:bg-rose-700 transition-all flex items-center justify-center gap-2"
+                    >
+                      <UserX size={16} /> Débauche
+                    </button>
+                  ) : isTerminated ? (
+                    <button
+                      onClick={handleReactivate}
+                      disabled={reactivateLoading}
+                      className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-sm hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {reactivateLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserCheck size={16} />} Réactiver
+                    </button>
+                  ) : null}
+                  <button onClick={openEditModal} className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
+                    <Edit3 size={16} /> Modifier
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (member.email) {
+                        window.open(`mailto:${member.email}`, '_blank');
+                      } else {
+                        toast({ variant: 'error', title: 'Aucune adresse email renseignée.' });
+                      }
+                    }}
+                    className="p-2.5 bg-gray-50 text-gray-400 rounded-xl hover:bg-gray-100 transition-all border border-gray-100"
+                    title={member.email ? `Envoyer un email à ${member.email}` : 'Aucun email renseigné'}
+                  >
+                    <Mail size={20} />
+                  </button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-none shadow-sm rounded-3xl bg-white p-6">
+            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Statut Administratif</h4>
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-500">Matricule Global</span>
+                <span className="text-xs font-bold text-blue-600">{member.globalMatricule || '—'}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-500">Matricule École</span>
+                <span className="text-xs font-bold text-emerald-600">{member.tenantMatricule || '—'}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-500">Immatriculation CNSS</span>
+                <Badge className={member.cnssNumber ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}>
+                  {member.cnssNumber ? 'Déclaré' : 'Non déclaré'}
+                </Badge>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-500">Ancienneté</span>
+                <span className="text-sm font-bold text-gray-900">{computeSeniority(hireDate)}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-500">Situation</span>
+                <span className={`text-sm font-bold ${statusInfo.className}`}>{statusInfo.label}</span>
+              </div>
+            </div>
+          </Card>
+
+          {/* Termination Details Card */}
+          {isTerminated && (
+            <Card className="border-none shadow-sm rounded-3xl bg-white p-6">
+              <h4 className="text-xs font-bold text-rose-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                <UserX size={14} /> Détails du départ
+              </h4>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-500">Type</span>
+                  <span className="text-sm font-bold text-rose-600">{terminationLabel}</span>
+                </div>
+                {member.terminatedAt && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-500">Date d'effet</span>
+                    <span className="text-sm font-bold text-gray-900">{new Date(member.terminatedAt).toLocaleDateString('fr-FR')}</span>
+                  </div>
+                )}
+                {member.lastWorkingDate && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-500">Dernier jour travaillé</span>
+                    <span className="text-sm font-bold text-gray-900">{new Date(member.lastWorkingDate).toLocaleDateString('fr-FR')}</span>
+                  </div>
+                )}
+                {member.noticePeriodDays != null && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-500">Préavis</span>
+                    <span className="text-sm font-bold text-gray-900">{member.noticePeriodDays} jour(s)</span>
+                  </div>
+                )}
+                {terminationDetails?.reason && (
+                  <div className="flex justify-between items-start">
+                    <span className="text-sm text-gray-500 shrink-0">Motif</span>
+                    <span className="text-sm font-bold text-gray-900 text-right max-w-[200px]">{terminationDetails.reason}</span>
+                  </div>
+                )}
+                {terminationDetails?.detailedReason && (
+                  <div className="mt-2 p-3 bg-slate-50 rounded-xl">
+                    <p className="text-xs font-semibold text-slate-400 mb-1">Motif détaillé</p>
+                    <p className="text-sm text-slate-700">{terminationDetails.detailedReason}</p>
+                  </div>
+                )}
+                {/* Exit Checklist Summary */}
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Checklist de sortie</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { label: 'Entretien de sortie', value: terminationDetails?.exitInterviewConducted, icon: FileText },
+                      { label: 'Matériel restitué', value: terminationDetails?.equipmentReturned, icon: Package },
+                      { label: 'Documents fournis', value: terminationDetails?.exitDocumentsProvided, icon: FileText },
+                      { label: 'Solde réglé', value: terminationDetails?.finalSettlementPaid, icon: DollarSign },
+                    ].map(({ label, value, icon: Icon }) => (
+                      <div
+                        key={label}
+                        className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-semibold ${
+                          value ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-50 text-slate-400'
+                        }`}
+                      >
+                        <Icon className="h-3 w-3" />
+                        {label}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {terminationDetails?.authorizedBy && (
+                  <div className="flex justify-between items-center mt-2">
+                    <span className="text-sm text-gray-500">Autorisé par</span>
+                    <span className="text-sm font-bold text-gray-900">{terminationDetails.authorizedBy}</span>
+                  </div>
+                )}
+                {terminationDetails?.terminationLetterRef && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-500">Réf. lettre</span>
+                    <span className="text-xs font-bold text-blue-600">{terminationDetails.terminationLetterRef}</span>
+                  </div>
+                )}
+              </div>
+            </Card>
+          )}
+        </div>
+
+        {/* ─── Right Column: Tabs Content ────────────────────────────────── */}
+        <div className="lg:w-2/3">
+          <Tabs defaultValue="infos" className="w-full">
+            <TabsList className="bg-white p-1 rounded-2xl shadow-sm mb-6 border border-gray-50 h-14 w-full justify-start overflow-x-auto no-scrollbar">
+              <TabsTrigger value="infos" className="rounded-xl px-8 h-full data-[state=active]:bg-blue-50 data-[state=active]:text-blue-600 font-bold text-sm">
+                Informations
+              </TabsTrigger>
+              <TabsTrigger value="docs" className="rounded-xl px-8 h-full data-[state=active]:bg-blue-50 data-[state=active]:text-blue-600 font-bold text-sm">
+                Documents {totalDocs > 0 && <span className="ml-1.5 px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded-full text-[10px] font-bold">{totalDocs}</span>}
+              </TabsTrigger>
+              <TabsTrigger value="contracts" className="rounded-xl px-8 h-full data-[state=active]:bg-blue-50 data-[state=active]:text-blue-600 font-bold text-sm">
+                Contrats
+              </TabsTrigger>
+              <TabsTrigger value="career" className="rounded-xl px-8 h-full data-[state=active]:bg-blue-50 data-[state=active]:text-blue-600 font-bold text-sm">
+                Carrière
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="infos">
+              <Card className="border-none shadow-sm rounded-3xl bg-white p-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                  <section>
+                    <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
+                      <User size={20} className="text-blue-500" />
+                      État Civil
+                    </h3>
+                    <div className="space-y-6">
+                      <InfoField label="Genre" value={member.gender === 'M' || member.gender === 'MALE' ? 'Masculin' : 'Féminin'} />
+                      <InfoField label="Date de naissance" value={member.birthDate ? new Date(member.birthDate).toLocaleDateString('fr-FR') : member.dateOfBirth ? new Date(member.dateOfBirth).toLocaleDateString('fr-FR') : 'Non renseignée'} />
+                      <InfoField label="Nationalité" value={member.nationality || 'Béninoise'} />
+                      <InfoField label="Situation Matrimoniale" value={member.maritalStatus || 'Célibataire'} />
+                      <InfoField label="Nombre d'enfants" value={member.numberOfChildren?.toString() || '0'} />
+                    </div>
+                  </section>
+
+                  <section>
+                    <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
+                      <MapPin size={20} className="text-blue-500" />
+                      Contact & Localisation
+                    </h3>
+                    <div className="space-y-6">
+                      <InfoField label="Email" value={member.email || 'Non renseigné'} />
+                      <InfoField label="Téléphone" value={member.phone || 'Non renseigné'} />
+                      <InfoField label="Adresse" value={member.address || 'Non renseignée'} />
+                      <InfoField label="Numéro d'urgence" value={formatEmergencyContact(member.emergencyContact)} />
+                    </div>
+                  </section>
+
+                  <section className="md:col-span-2 pt-6 border-t border-gray-50">
+                    <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
+                      <Fingerprint size={20} className="text-blue-500" />
+                      Identifiants Officiels
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <InfoField label="Matricule Global (AH)" value={member.globalMatricule || 'Non assigné'} />
+                      <InfoField label="Matricule École" value={member.tenantMatricule || 'Non assigné'} />
+                      <InfoField label="N° Employé (interne)" value={member.employeeNumber || '—'} />
+                      <InfoField label="Numéro CNI / Passeport" value={member.nationalId || 'Non renseigné'} />
+                      <InfoField label="Numéro CNSS" value={member.cnssNumber || 'Non renseigné'} />
+                      <InfoField label="Numéro IFU" value={member.ifuNumber || 'N/A'} />
+                    </div>
+                  </section>
+                </div>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="docs">
+              <Card className="border-none shadow-sm rounded-3xl bg-white p-8">
+                <div className="flex justify-between items-center mb-8">
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900">Dossier Numérique</h3>
+                    <p className="text-sm text-gray-500">Documents classés par catégorie — {totalDocs} document(s)</p>
+                  </div>
+                  <button onClick={() => setDocOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-xl font-bold text-sm hover:bg-blue-100 transition-all border border-blue-100">
+                    <Plus size={18} /> Ajouter un document
+                  </button>
+                </div>
+
+                {/* Structured Document Categories */}
+                <div className="space-y-3">
+                  {sortedCategories.map(([catKey, catConfig]) => {
+                    const docs = documentsGrouped[catKey] || [];
+                    const isExpanded = expandedCategories.has(catKey);
+                    const CatIcon = catConfig.icon;
+
+                    return (
+                      <div key={catKey} className="rounded-2xl border border-slate-200 overflow-hidden">
+                        {/* Category Header */}
+                        <button
+                          onClick={() => toggleCategory(catKey)}
+                          className="w-full flex items-center justify-between px-5 py-3.5 bg-slate-50 hover:bg-slate-100 transition-colors"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                              catConfig.color === 'blue' ? 'bg-blue-100 text-blue-600' :
+                              catConfig.color === 'purple' ? 'bg-purple-100 text-purple-600' :
+                              catConfig.color === 'emerald' ? 'bg-emerald-100 text-emerald-600' :
+                              catConfig.color === 'amber' ? 'bg-amber-100 text-amber-600' :
+                              catConfig.color === 'red' ? 'bg-red-100 text-red-600' :
+                              'bg-slate-100 text-slate-600'
+                            }`}>
+                              <CatIcon className="h-4 w-4" />
+                            </div>
+                            <span className="text-sm font-bold text-slate-800">{catConfig.label}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge className={
+                              docs.length > 0
+                                ? 'bg-blue-50 text-blue-600 border-blue-100'
+                                : 'bg-slate-50 text-slate-400 border-slate-100'
+                            }>
+                              {docs.length}
+                            </Badge>
+                            {isExpanded ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronRight className="h-4 w-4 text-slate-400" />}
+                          </div>
+                        </button>
+
+                        {/* Category Documents */}
+                        <AnimatePresence>
+                          {isExpanded && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: 0.2 }}
+                              className="overflow-hidden"
+                            >
+                              {docs.length > 0 ? (
+                                <div className="divide-y divide-slate-50">
+                                  {docs.map((doc: any) => {
+                                    const validationInfo = VALIDATION_STATUS[doc.validationStatus] || VALIDATION_STATUS.PENDING;
+                                    const ValidationIcon = validationInfo.icon;
+                                    return (
+                                      <div key={doc.id} className="px-5 py-3 flex items-center justify-between hover:bg-slate-50/50 transition-colors group">
+                                        <div className="flex items-center gap-3 min-w-0">
+                                          <div className="p-2 bg-white border border-slate-100 rounded-lg text-slate-400 group-hover:text-blue-500 transition-colors flex-shrink-0">
+                                            <FileText className="h-4 w-4" />
+                                          </div>
+                                          <div className="min-w-0">
+                                            <p className="font-semibold text-slate-900 text-sm truncate">{doc.fileName || doc.type || doc.documentType}</p>
+                                            <div className="flex items-center gap-2 mt-0.5">
+                                              <span className="text-[10px] text-slate-400 font-semibold uppercase">{doc.documentType}</span>
+                                              {doc.version > 1 && <span className="text-[10px] text-blue-500 font-semibold">v{doc.version}</span>}
+                                              <span className="text-[10px] text-slate-300">•</span>
+                                              <span className="text-[10px] text-slate-400">{new Date(doc.createdAt).toLocaleDateString('fr-FR')}</span>
+                                              {doc.fileSize && <span className="text-[10px] text-slate-400">• {(doc.fileSize / 1024).toFixed(0)} Ko</span>}
+                                            </div>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center gap-2 flex-shrink-0">
+                                          {/* Validation badge */}
+                                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold border ${validationInfo.className}`}>
+                                            <ValidationIcon className="h-2.5 w-2.5" />
+                                            {validationInfo.label}
+                                          </span>
+                                          {/* Actions */}
+                                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            {doc.validationStatus === 'PENDING' && (
+                                              <>
+                                                <button 
+                                                  onClick={() => handleDocValidate(doc.id, 'VALIDATED')}
+                                                  className="p-1 text-emerald-500 hover:bg-emerald-50 rounded transition-colors"
+                                                  title="Valider"
+                                                >
+                                                  <BadgeCheck className="h-3.5 w-3.5" />
+                                                </button>
+                                                <button 
+                                                  onClick={() => handleDocValidate(doc.id, 'REJECTED')}
+                                                  className="p-1 text-amber-500 hover:bg-amber-50 rounded transition-colors"
+                                                  title="Rejeter"
+                                                >
+                                                  <XCircle className="h-3.5 w-3.5" />
+                                                </button>
+                                              </>
+                                            )}
+                                            <button 
+                                              onClick={() => handleDocDelete(doc.id)}
+                                              className="p-1 text-red-400 hover:bg-red-50 rounded transition-colors"
+                                              title="Supprimer"
+                                            >
+                                              <Trash2 className="h-3.5 w-3.5" />
+                                            </button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <div className="px-5 py-6 text-center">
+                                  <p className="text-sm text-slate-400">Aucun document dans cette catégorie</p>
+                                </div>
+                              )}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {totalDocs === 0 && (
+                  <div className="mt-4 py-10 text-center bg-gray-50 rounded-2xl border-2 border-dashed border-gray-100">
+                    <AlertCircle className="mx-auto text-gray-300 mb-2" size={32} />
+                    <p className="text-gray-400 font-medium">Aucun document numérisé pour le moment.</p>
+                    <button
+                      onClick={() => setDocOpen(true)}
+                      className="mt-4 flex items-center gap-2 mx-auto px-4 py-2 bg-blue-50 text-blue-600 rounded-xl font-bold text-sm hover:bg-blue-100 transition-all border border-blue-100"
+                    >
+                      <Plus size={16} /> Ajouter le premier document
+                    </button>
+                  </div>
+                )}
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="contracts">
+              <Card className="border-none shadow-sm rounded-3xl bg-white p-8">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-lg font-bold text-gray-900">Contrats</h3>
+                  <Badge className="bg-slate-100 text-slate-600">{contracts.length} contrat(s)</Badge>
+                </div>
+                {contracts.length > 0 ? (
+                  <div className="space-y-4">
+                    {contracts.map((contract: any) => (
+                      <div key={contract.id} className="p-5 border border-slate-100 rounded-2xl hover:bg-slate-50/50 transition-colors">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm">
+                              {contract.contractType?.[0] || 'C'}
+                            </div>
+                            <div>
+                              <p className="font-bold text-slate-900 text-sm">{contract.contractType || 'Contrat'}</p>
+                              <p className="text-xs text-slate-400 mt-0.5">
+                                Du {new Date(contract.startDate).toLocaleDateString('fr-FR')} au {contract.endDate ? new Date(contract.endDate).toLocaleDateString('fr-FR') : 'Indéfini'}
+                              </p>
+                            </div>
+                          </div>
+                          <Badge className={contract.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}>
+                            {contract.status === 'ACTIVE' ? 'En vigueur' : contract.status === 'EXPIRED' ? 'Expiré' : contract.status}
+                          </Badge>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 mt-4 pt-3 border-t border-slate-50">
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Salaire de base</p>
+                            <p className="text-sm font-bold text-emerald-600">{formatCurrency(contract.baseSalary)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Mode de paiement</p>
+                            <p className="text-sm font-medium text-slate-700">{contract.paymentMode || 'N/A'}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="py-10 text-center bg-gray-50 rounded-2xl border-2 border-dashed border-gray-100">
+                    <AlertCircle className="mx-auto text-gray-300 mb-2" size={32} />
+                    <p className="text-gray-400 font-medium">Aucun contrat enregistré.</p>
+                  </div>
+                )}
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="career">
+              <Card className="border-none shadow-sm rounded-3xl bg-white p-8">
+                <div className="space-y-8">
+                  {/* Evaluations */}
+                  <section>
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                        <Award size={20} className="text-blue-500" />
+                        Évaluations
+                      </h3>
+                      <Badge className="bg-slate-100 text-slate-600">{evaluations.length}</Badge>
+                    </div>
+                    {evaluations.length > 0 ? (
+                      <div className="space-y-3">
+                        {evaluations.map((evalItem: any) => (
+                          <div key={evalItem.id} className="p-4 border border-slate-100 rounded-xl hover:bg-slate-50/50 transition-colors">
+                            <div className="flex items-start justify-between">
+                              <div>
+                                <p className="font-bold text-slate-900 text-sm">{evalItem.title || evalItem.type || 'Évaluation'}</p>
+                                <p className="text-xs text-slate-400 mt-1">{evalItem.comments || 'Pas de commentaire'}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-sm font-bold text-blue-600">{evalItem.score || evalItem.rating || '—'}</p>
+                                <p className="text-[10px] text-slate-400">{new Date(evalItem.evaluatedAt || evalItem.createdAt).toLocaleDateString('fr-FR')}</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="py-8 text-center bg-slate-50 rounded-xl border border-slate-100">
+                        <p className="text-sm text-slate-400">Aucune évaluation enregistrée.</p>
+                      </div>
+                    )}
+                  </section>
+
+                  {/* Trainings */}
+                  <section>
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                        <GraduationCap size={20} className="text-blue-500" />
+                        Formations
+                      </h3>
+                      <Badge className="bg-slate-100 text-slate-600">{trainings.length}</Badge>
+                    </div>
+                    {trainings.length > 0 ? (
+                      <div className="space-y-3">
+                        {trainings.map((training: any) => (
+                          <div key={training.id} className="p-4 border border-slate-100 rounded-xl hover:bg-slate-50/50 transition-colors">
+                            <div className="flex items-start justify-between">
+                              <div>
+                                <p className="font-bold text-slate-900 text-sm">{training.title || training.topic || 'Formation'}</p>
+                                <p className="text-xs text-slate-400 mt-1">{training.provider || training.organizer || ''}</p>
+                              </div>
+                              <div className="text-right">
+                                <Badge className={training.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}>
+                                  {training.status === 'COMPLETED' ? 'Terminée' : training.status || 'En cours'}
+                                </Badge>
+                                <p className="text-[10px] text-slate-400 mt-1">{training.completedAt || training.startDate ? new Date(training.completedAt || training.startDate).toLocaleDateString('fr-FR') : ''}</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="py-8 text-center bg-slate-50 rounded-xl border border-slate-100">
+                        <p className="text-sm text-slate-400">Aucune formation enregistrée.</p>
+                      </div>
+                    )}
+                  </section>
+                </div>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        </div>
+      </div>
+
+      {/* Staff Termination Modal */}
+      <StaffTerminationModal
+        isOpen={terminationModalOpen}
+        onClose={() => setTerminationModalOpen(false)}
+        onSuccess={fetchMember}
+        staff={{
+          id: member.id,
+          firstName: member.firstName,
+          lastName: member.lastName,
+          position: member.position,
+          employeeNumber: member.employeeNumber,
+          tenantMatricule: member.tenantMatricule,
+          globalMatricule: member.globalMatricule,
+          status: member.status,
+        }}
+        tenantId={tenant?.id || ''}
+      />
+    </div>
+  );
+}
+
+function InfoField({ label, value }: { label: string, value: string }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">{label}</p>
+      <p className="font-semibold text-gray-900">{value}</p>
+    </div>
+  );
+}

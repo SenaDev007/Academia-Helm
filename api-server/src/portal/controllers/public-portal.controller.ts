@@ -1,0 +1,75 @@
+/**
+ * ============================================================================
+ * PUBLIC PORTAL CONTROLLER - API PUBLIQUE POUR RECHERCHE D'ÉCOLES
+ * ============================================================================
+ */
+
+import { Controller, Get, Query, Req } from '@nestjs/common';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
+import { Public } from '../../auth/decorators/public.decorator';
+import { SchoolSearchService } from '../services/school-search.service';
+import { MapStatsService } from '../services/map-stats.service';
+
+@Controller('public/schools')
+@Public()
+export class PublicPortalController {
+  constructor(
+    private readonly schoolSearchService: SchoolSearchService,
+    private readonly mapStatsService: MapStatsService,
+  ) {}
+
+  /**
+   * Liste tous les établissements actifs (pour sélecteur)
+   * SkipThrottle : le front appelle via le BFF Next (Vercel) → Nest voit peu d'IPs sortantes ;
+   * un plafond strict (ex. 10/min) faisait partager le quota entre tous les utilisateurs (portail vide / erreurs).
+   */
+  @Public() // ✅ Décorateur au niveau méthode pour garantir la détection
+  @Get('list')
+  @SkipThrottle()
+  async listAllSchools() {
+    console.log('[PublicPortalController] listAllSchools called - Route is public');
+    return this.schoolSearchService.listAllSchools();
+  }
+
+  /**
+   * Recherche publique d'établissements
+   * Rate-limited, sécurisé
+   */
+  @Public() // ✅ Décorateur au niveau méthode pour garantir la détection
+  @Get('search')
+  @Throttle({ medium: { limit: 120, ttl: 60000 } })
+  async searchSchools(
+    @Query('q') searchTerm: string,
+    @Req() request: any,
+  ) {
+    const ipAddress =
+      request.ip ||
+      request.headers['x-forwarded-for'] ||
+      request.connection.remoteAddress;
+
+    return this.schoolSearchService.searchSchools(searchTerm, ipAddress);
+  }
+
+  /**
+   * Statistiques de la carte du Bénin — écoles Academia Helm par département.
+   * Données temps réel groupées par département géographique.
+   */
+  @Public()
+  @Get('map-stats')
+  @SkipThrottle()
+  async getMapStats() {
+    return this.mapStatsService.getMapStats();
+  }
+
+  /**
+   * Liste tous les établissements avec le nombre d'offres d'emploi publiées.
+   * Single-query endpoint for the public careers page (/jobs).
+   * Replaces the old N+1 pattern (fetch schools → fetch jobs per school).
+   */
+  @Public()
+  @Get('with-jobs')
+  @SkipThrottle()
+  async listSchoolsWithJobs() {
+    return this.schoolSearchService.listSchoolsWithJobs();
+  }
+}

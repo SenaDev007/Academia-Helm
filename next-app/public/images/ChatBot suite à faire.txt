@@ -1,0 +1,4 @@
+Intégrer l'API backend pour soumettre les demandes de devis Enterprise
+Configurer le système d'authentification réel (remplacer la vérification localStorage)
+Ajouter les numéros de contact (WhatsApp, email) dans les réponses
+Intégrer ATLAS dans l'app pour prendre le relais après authentification

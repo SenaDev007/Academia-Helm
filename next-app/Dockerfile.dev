@@ -1,0 +1,28 @@
+# ============================================================================
+# DOCKERFILE DEV - FRONTEND
+# ============================================================================
+# Dockerfile pour le développement du Frontend
+# ============================================================================
+
+FROM node:20-alpine
+
+# Installer les dépendances système
+RUN apk add --no-cache curl
+
+# Définir le répertoire de travail
+WORKDIR /app
+
+# Copier les fichiers de dépendances
+COPY package*.json ./
+
+# Installer les dépendances
+RUN npm ci
+
+# Copier le reste du code
+COPY . .
+
+# Exposer le port
+EXPOSE 3001
+
+# Commande par défaut (peut être surchargée dans docker-compose)
+CMD ["npm", "run", "dev"]

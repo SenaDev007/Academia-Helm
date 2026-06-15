@@ -1,0 +1,25 @@
+/**
+ * ============================================================================
+ * MODULE ENUM - FRONTEND
+ * ============================================================================
+ */
+
+export enum Module {
+  ELEVES = 'ELEVES',
+  INSCRIPTIONS = 'INSCRIPTIONS',
+  DOCUMENTS_SCOLAIRES = 'DOCUMENTS_SCOLAIRES',
+  ORGANISATION_PEDAGOGIQUE = 'ORGANISATION_PEDAGOGIQUE',
+  MATERIEL_PEDAGOGIQUE = 'MATERIEL_PEDAGOGIQUE',
+  EXAMENS = 'EXAMENS',
+  BULLETINS = 'BULLETINS',
+  FINANCES = 'FINANCES',
+  RECOUVREMENT = 'RECOUVREMENT',
+  DEPENSES = 'DEPENSES',
+  RH = 'RH',
+  PAIE = 'PAIE',
+  COMMUNICATION = 'COMMUNICATION',
+  PARAMETRES = 'PARAMETRES',
+  ANNEES_SCOLAIRES = 'ANNEES_SCOLAIRES',
+  ORION = 'ORION',
+  QHSE = 'QHSE',
+}

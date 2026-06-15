@@ -1,0 +1,841 @@
+
+> academia-hub-api@1.0.0 build
+> nest build
+
+[96msrc/common/guards/school-level-isolation.guard.ts[0m:[93m34[0m:[93m40[0m - [91merror[0m[90m TS2304: [0mCannot find name 'AuditLogsService'.
+
+[7m34[0m     private readonly auditLogsService: AuditLogsService,
+[7m  [0m [91m                                       ~~~~~~~~~~~~~~~~[0m
+[96msrc/communication/communication.controller.ts[0m:[93m19[0m:[93m10[0m - [91merror[0m[90m TS2305: [0mModule '"../users/entities/user.entity"' has no exported member 'UserRole'.
+
+[7m19[0m import { UserRole } from '../users/entities/user.entity';
+[7m  [0m [91m         ~~~~~~~~[0m
+[96msrc/compliance/compliance.service.ts[0m:[93m167[0m:[93m21[0m - [91merror[0m[90m TS2322: [0mType 'Date' is not assignable to type '(() => string) | _QueryDeepPartialEntity<unknown>[] | readonly _QueryDeepPartialEntity<unknown>[] | _QueryDeepPartialEntity<any>'.
+  Type 'Date' is not assignable to type '_QueryDeepPartialEntity<any>'.
+    Index signature for type 'string' is missing in type 'Date'.
+
+[7m167[0m         metadata: { exportedAt: new Date(), recordCount: Object.keys(exportData).length },
+[7m   [0m [91m                    ~~~~~~~~~~[0m
+[96msrc/compliance/compliance.service.ts[0m:[93m167[0m:[93m45[0m - [91merror[0m[90m TS2322: [0mType 'number' is not assignable to type '(() => string) | _QueryDeepPartialEntity<unknown>[] | readonly _QueryDeepPartialEntity<unknown>[] | _QueryDeepPartialEntity<any>'.
+
+[7m167[0m         metadata: { exportedAt: new Date(), recordCount: Object.keys(exportData).length },
+[7m   [0m [91m                                            ~~~~~~~~~~~[0m
+[96msrc/expenses/expenses.service.ts[0m:[93m12[0m:[93m43[0m - [91merror[0m[90m TS2345: [0mArgument of type '{ tenantId: string; createdBy: string; category: string; description: string; amount: number; expenseDate: string; paymentMethod?: string; reference?: string; status?: string; attachmentUrl?: string; }' is not assignable to parameter of type 'Partial<Expense>'.
+  Types of property 'expenseDate' are incompatible.
+    Type 'string' is not assignable to type 'Date'.
+
+[7m 12[0m     return this.expensesRepository.create({
+[7m   [0m [91m                                          ~[0m
+[7m 13[0m       ...createExpenseDto,
+[7m   [0m [91m~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m...[0m 
+[7m 15[0m       createdBy,
+[7m   [0m [91m~~~~~~~~~~~~~~~~[0m
+[7m 16[0m     });
+[7m   [0m [91m~~~~~[0m
+[96msrc/expenses/expenses.service.ts[0m:[93m33[0m:[93m57[0m - [91merror[0m[90m TS2345: [0mArgument of type 'UpdateExpenseDto' is not assignable to parameter of type 'Partial<Expense>'.
+  Types of property 'expenseDate' are incompatible.
+    Type 'string' is not assignable to type 'Date'.
+
+[7m33[0m     return this.expensesRepository.update(id, tenantId, updateExpenseDto);
+[7m  [0m [91m                                                        ~~~~~~~~~~~~~~~~[0m
+[96msrc/fee-configurations/fee-configurations.service.ts[0m:[93m12[0m:[93m52[0m - [91merror[0m[90m TS2345: [0mArgument of type '{ tenantId: string; createdBy: string; name: string; feeType: string; level?: string; classId?: string; academicYearId?: string; amount: number; isRequired?: boolean; dueDate?: string; }' is not assignable to parameter of type 'Partial<FeeConfiguration>'.
+  Types of property 'dueDate' are incompatible.
+    Type 'string' is not assignable to type 'Date'.
+
+[7m 12[0m     return this.feeConfigurationsRepository.create({
+[7m   [0m [91m                                                   ~[0m
+[7m 13[0m       ...createFeeConfigurationDto,
+[7m   [0m [91m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m...[0m 
+[7m 15[0m       createdBy,
+[7m   [0m [91m~~~~~~~~~~~~~~~~[0m
+[7m 16[0m     });
+[7m   [0m [91m~~~~~[0m
+[96msrc/fee-configurations/fee-configurations.service.ts[0m:[93m33[0m:[93m66[0m - [91merror[0m[90m TS2345: [0mArgument of type 'UpdateFeeConfigurationDto' is not assignable to parameter of type 'Partial<FeeConfiguration>'.
+  Types of property 'dueDate' are incompatible.
+    Type 'string' is not assignable to type 'Date'.
+
+[7m33[0m     return this.feeConfigurationsRepository.update(id, tenantId, updateFeeConfigurationDto);
+[7m  [0m [91m                                                                 ~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/finance/collection-case.service.ts[0m:[93m13[0m:[93m31[0m - [91merror[0m[90m TS2307: [0mCannot find module '@/prisma/prisma.service' or its corresponding type declarations.
+
+[7m13[0m import { PrismaService } from '@/prisma/prisma.service';
+[7m  [0m [91m                              ~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/finance/fee-installment.service.ts[0m:[93m12[0m:[93m31[0m - [91merror[0m[90m TS2307: [0mCannot find module '@/prisma/prisma.service' or its corresponding type declarations.
+
+[7m12[0m import { PrismaService } from '@/prisma/prisma.service';
+[7m  [0m [91m                              ~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/finance/fee-regime.controller.ts[0m:[93m10[0m:[93m29[0m - [91merror[0m[90m TS2307: [0mCannot find module '@/auth/decorators/current-user.decorator' or its corresponding type declarations.
+
+[7m10[0m import { CurrentUser } from '@/auth/decorators/current-user.decorator';
+[7m  [0m [91m                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/finance/finance-orion.controller.ts[0m:[93m14[0m:[93m29[0m - [91merror[0m[90m TS2307: [0mCannot find module '@/auth/decorators/current-user.decorator' or its corresponding type declarations.
+
+[7m14[0m import { CurrentUser } from '@/auth/decorators/current-user.decorator';
+[7m  [0m [91m                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/finance/finance-orion.service.ts[0m:[93m116[0m:[93m17[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'parents' does not exist in type 'StudentInclude<DefaultArgs>'.
+
+[7m116[0m                 parents: {
+[7m   [0m [91m                ~~~~~~~[0m
+[96msrc/finance/finance-orion.service.ts[0m:[93m250[0m:[93m13[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'parents' does not exist in type 'StudentInclude<DefaultArgs>'.
+
+[7m250[0m             parents: {
+[7m   [0m [91m            ~~~~~~~[0m
+[96msrc/finance/finance-orion.service.ts[0m:[93m273[0m:[93m31[0m - [91merror[0m[90m TS2551: [0mProperty 'student' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; status: string; tenantId: string; academicYearId: string; createdBy: string; schoolLevelId: string; notes: string; studentId: string; ... 7 more ...; studentFeeId: string; }'. Did you mean 'studentId'?
+
+[7m273[0m             studentName: `${p.student.firstName} ${p.student.lastName}`,
+[7m   [0m [91m                              ~~~~~~~[0m
+[96msrc/finance/finance-orion.service.ts[0m:[93m273[0m:[93m54[0m - [91merror[0m[90m TS2551: [0mProperty 'student' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; status: string; tenantId: string; academicYearId: string; createdBy: string; schoolLevelId: string; notes: string; studentId: string; ... 7 more ...; studentFeeId: string; }'. Did you mean 'studentId'?
+
+[7m273[0m             studentName: `${p.student.firstName} ${p.student.lastName}`,
+[7m   [0m [91m                                                     ~~~~~~~[0m
+[96msrc/finance/payment-allocation.controller.ts[0m:[93m24[0m:[93m31[0m - [91merror[0m[90m TS2307: [0mCannot find module '@/prisma/prisma.service' or its corresponding type declarations.
+
+[7m24[0m import { PrismaService } from '@/prisma/prisma.service';
+[7m  [0m [91m                              ~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/finance/payment-allocation.service.ts[0m:[93m180[0m:[93m11[0m - [91merror[0m[90m TS2552: [0mCannot find name 'studentFee'. Did you mean 'studentFees'?
+
+[7m180[0m           studentFee,
+[7m   [0m [91m          ~~~~~~~~~~[0m
+
+  [96msrc/finance/payment-allocation.service.ts[0m:[93m96[0m:[93m11[0m
+    [7m96[0m     const studentFees = await this.prisma.studentFee.findMany({
+    [7m  [0m [96m          ~~~~~~~~~~~[0m
+    'studentFees' is declared here.
+[96msrc/finance/payments-prisma-enhanced.service.ts[0m:[93m12[0m:[93m31[0m - [91merror[0m[90m TS2307: [0mCannot find module '@/prisma/prisma.service' or its corresponding type declarations.
+
+[7m12[0m import { PrismaService } from '@/prisma/prisma.service';
+[7m  [0m [91m                              ~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/finance/receipt-generation.controller.ts[0m:[93m34[0m:[93m30[0m - [91merror[0m[90m TS2304: [0mCannot find name 'PrismaService'.
+
+[7m34[0m     private readonly prisma: PrismaService,
+[7m  [0m [91m                             ~~~~~~~~~~~~~[0m
+[96msrc/finance/receipt-notification.controller.ts[0m:[93m14[0m:[93m29[0m - [91merror[0m[90m TS2307: [0mCannot find module '@/auth/decorators/current-user.decorator' or its corresponding type declarations.
+
+[7m14[0m import { CurrentUser } from '@/auth/decorators/current-user.decorator';
+[7m  [0m [91m                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/finance/receipt-notification.service.ts[0m:[93m78[0m:[93m13[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'parents' does not exist in type 'StudentInclude<DefaultArgs>'.
+
+[7m78[0m             parents: {
+[7m  [0m [91m            ~~~~~~~[0m
+[96msrc/finance/receipt-notification.service.ts[0m:[93m116[0m:[93m28[0m - [91merror[0m[90m TS2551: [0mProperty 'student' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; status: string; tenantId: string; academicYearId: string; createdBy: string; schoolLevelId: string; notes: string; studentId: string; ... 7 more ...; studentFeeId: string; }'. Did you mean 'studentId'?
+
+[7m116[0m     const parent = payment.student.parents?.[0];
+[7m   [0m [91m                           ~~~~~~~[0m
+[96msrc/finance/receipt-notification.service.ts[0m:[93m122[0m:[93m32[0m - [91merror[0m[90m TS2551: [0mProperty 'student' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; status: string; tenantId: string; academicYearId: string; createdBy: string; schoolLevelId: string; notes: string; studentId: string; ... 7 more ...; studentFeeId: string; }'. Did you mean 'studentId'?
+
+[7m122[0m     const enrollment = payment.student.studentEnrollments?.[0];
+[7m   [0m [91m                               ~~~~~~~[0m
+[96msrc/finance/receipt-notification.service.ts[0m:[93m123[0m:[93m33[0m - [91merror[0m[90m TS2551: [0mProperty 'student' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; status: string; tenantId: string; academicYearId: string; createdBy: string; schoolLevelId: string; notes: string; studentId: string; ... 7 more ...; studentFeeId: string; }'. Did you mean 'studentId'?
+
+[7m123[0m     const institution = payment.student.tenant.schools?.[0]?.name || payment.student.tenant.name;
+[7m   [0m [91m                                ~~~~~~~[0m
+[96msrc/finance/receipt-notification.service.ts[0m:[93m123[0m:[93m78[0m - [91merror[0m[90m TS2551: [0mProperty 'student' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; status: string; tenantId: string; academicYearId: string; createdBy: string; schoolLevelId: string; notes: string; studentId: string; ... 7 more ...; studentFeeId: string; }'. Did you mean 'studentId'?
+
+[7m123[0m     const institution = payment.student.tenant.schools?.[0]?.name || payment.student.tenant.name;
+[7m   [0m [91m                                                                             ~~~~~~~[0m
+[96msrc/finance/receipt-notification.service.ts[0m:[93m124[0m:[93m36[0m - [91merror[0m[90m TS2551: [0mProperty 'student' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; status: string; tenantId: string; academicYearId: string; createdBy: string; schoolLevelId: string; notes: string; studentId: string; ... 7 more ...; studentFeeId: string; }'. Did you mean 'studentId'?
+
+[7m124[0m     const studentName = `${payment.student.firstName} ${payment.student.lastName}`;
+[7m   [0m [91m                                   ~~~~~~~[0m
+[96msrc/finance/receipt-notification.service.ts[0m:[93m124[0m:[93m65[0m - [91merror[0m[90m TS2551: [0mProperty 'student' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; status: string; tenantId: string; academicYearId: string; createdBy: string; schoolLevelId: string; notes: string; studentId: string; ... 7 more ...; studentFeeId: string; }'. Did you mean 'studentId'?
+
+[7m124[0m     const studentName = `${payment.student.firstName} ${payment.student.lastName}`;
+[7m   [0m [91m                                                                ~~~~~~~[0m
+[96msrc/finance/receipt-notification.service.ts[0m:[93m127[0m:[93m31[0m - [91merror[0m[90m TS2551: [0mProperty 'student' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; status: string; tenantId: string; academicYearId: string; createdBy: string; schoolLevelId: string; notes: string; studentId: string; ... 7 more ...; studentFeeId: string; }'. Did you mean 'studentId'?
+
+[7m127[0m     const matricule = payment.student.identifier?.globalMatricule || 'N/A';
+[7m   [0m [91m                              ~~~~~~~[0m
+[96msrc/finance/receipt-notification.service.ts[0m:[93m130[0m:[93m30[0m - [91merror[0m[90m TS2339: [0mProperty 'receipt' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; status: string; tenantId: string; academicYearId: string; createdBy: string; schoolLevelId: string; notes: string; studentId: string; ... 7 more ...; studentFeeId: string; }'.
+
+[7m130[0m     const totalDue = payment.receipt.payment.paymentAllocations.reduce(
+[7m   [0m [91m                             ~~~~~~~[0m
+[96msrc/finance/receipt-notification.service.ts[0m:[93m144[0m:[93m46[0m - [91merror[0m[90m TS2339: [0mProperty 'receipt' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; status: string; tenantId: string; academicYearId: string; createdBy: string; schoolLevelId: string; notes: string; studentId: string; ... 7 more ...; studentFeeId: string; }'.
+
+[7m144[0m       fee_type: this.getFeeTypeLabel(payment.receipt.payment.paymentAllocations),
+[7m   [0m [91m                                             ~~~~~~~[0m
+[96msrc/finance/receipt-notification.service.ts[0m:[93m146[0m:[93m31[0m - [91merror[0m[90m TS2339: [0mProperty 'receipt' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; status: string; tenantId: string; academicYearId: string; createdBy: string; schoolLevelId: string; notes: string; studentId: string; ... 7 more ...; studentFeeId: string; }'.
+
+[7m146[0m       receipt_number: payment.receipt.receiptNumber,
+[7m   [0m [91m                              ~~~~~~~[0m
+[96msrc/finance/receipt-notification.service.ts[0m:[93m170[0m:[93m72[0m - [91merror[0m[90m TS2339: [0mProperty 'receipt' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; status: string; tenantId: string; academicYearId: string; createdBy: string; schoolLevelId: string; notes: string; studentId: string; ... 7 more ...; studentFeeId: string; }'.
+
+[7m170[0m       const receiptImagePath = await this.generateReceiptImage(payment.receipt, payment);
+[7m   [0m [91m                                                                       ~~~~~~~[0m
+[96msrc/finance/student-arrear.controller.ts[0m:[93m10[0m:[93m29[0m - [91merror[0m[90m TS2307: [0mCannot find module '@/auth/decorators/current-user.decorator' or its corresponding type declarations.
+
+[7m10[0m import { CurrentUser } from '@/auth/decorators/current-user.decorator';
+[7m  [0m [91m                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/finance/student-arrear.controller.ts[0m:[93m45[0m:[93m20[0m - [91merror[0m[90m TS1016: [0mA required parameter cannot follow an optional parameter.
+
+[7m45[0m     @CurrentUser() user: User,
+[7m  [0m [91m                   ~~~~[0m
+[96msrc/finance/student-fee-profile.controller.ts[0m:[93m10[0m:[93m29[0m - [91merror[0m[90m TS2307: [0mCannot find module '@/auth/decorators/current-user.decorator' or its corresponding type declarations.
+
+[7m10[0m import { CurrentUser } from '@/auth/decorators/current-user.decorator';
+[7m  [0m [91m                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/hr/attendance-prisma.controller.ts[0m:[93m11[0m:[93m27[0m - [91merror[0m[90m TS2307: [0mCannot find module '../common/decorators/get-tenant.decorator' or its corresponding type declarations.
+
+[7m11[0m import { GetTenant } from '../common/decorators/get-tenant.decorator';
+[7m  [0m [91m                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/hr/cnss-prisma.controller.ts[0m:[93m11[0m:[93m27[0m - [91merror[0m[90m TS2307: [0mCannot find module '../common/decorators/get-tenant.decorator' or its corresponding type declarations.
+
+[7m11[0m import { GetTenant } from '../common/decorators/get-tenant.decorator';
+[7m  [0m [91m                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/hr/contracts-prisma.controller.ts[0m:[93m11[0m:[93m27[0m - [91merror[0m[90m TS2307: [0mCannot find module '../common/decorators/get-tenant.decorator' or its corresponding type declarations.
+
+[7m11[0m import { GetTenant } from '../common/decorators/get-tenant.decorator';
+[7m  [0m [91m                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/hr/evaluations-prisma.controller.ts[0m:[93m11[0m:[93m27[0m - [91merror[0m[90m TS2307: [0mCannot find module '../common/decorators/get-tenant.decorator' or its corresponding type declarations.
+
+[7m11[0m import { GetTenant } from '../common/decorators/get-tenant.decorator';
+[7m  [0m [91m                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/hr/payroll-prisma.controller.ts[0m:[93m16[0m:[93m27[0m - [91merror[0m[90m TS2307: [0mCannot find module '../common/decorators/get-tenant.decorator' or its corresponding type declarations.
+
+[7m16[0m import { GetTenant } from '../common/decorators/get-tenant.decorator';
+[7m  [0m [91m                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/hr/payroll-prisma.controller.ts[0m:[93m17[0m:[93m29[0m - [91merror[0m[90m TS2307: [0mCannot find module '../auth/decorators/current-user.decorator' or its corresponding type declarations.
+
+[7m17[0m import { CurrentUser } from '../auth/decorators/current-user.decorator';
+[7m  [0m [91m                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/hr/payroll-prisma.service.ts[0m:[93m158[0m:[93m9[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'deductions' does not exist in type '(Without<PayrollItemCreateInput, PayrollItemUncheckedCreateInput> & PayrollItemUncheckedCreateInput) | (Without<...> & PayrollItemCreateInput)'.
+
+[7m158[0m         deductions,
+[7m   [0m [91m        ~~~~~~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m170894[0m:[93m5[0m
+    [7m170894[0m     data: XOR<PayrollItemCreateInput, PayrollItemUncheckedCreateInput>
+    [7m      [0m [96m    ~~~~[0m
+    The expected type comes from property 'data' which is declared here on type '{ select?: PayrollItemSelect<DefaultArgs>; include?: PayrollItemInclude<DefaultArgs>; data: (Without<PayrollItemCreateInput, PayrollItemUncheckedCreateInput> & PayrollItemUncheckedCreateInput) | (Without<...> & PayrollItemCreateInput); }'
+[96msrc/hr/payroll-prisma.service.ts[0m:[93m253[0m:[93m7[0m - [91merror[0m[90m TS2322: [0mType '{ payrollItemId: string; receiptNumber: string; issuedBy: string; issuedAt: Date; }' is not assignable to type '(Without<SalarySlipCreateInput, SalarySlipUncheckedCreateInput> & SalarySlipUncheckedCreateInput) | (Without<...> & SalarySlipCreateInput)'.
+  Type '{ payrollItemId: string; receiptNumber: string; issuedBy: string; issuedAt: Date; }' is not assignable to type 'Without<SalarySlipUncheckedCreateInput, SalarySlipCreateInput> & SalarySlipCreateInput'.
+    Type '{ payrollItemId: string; receiptNumber: string; issuedBy: string; issuedAt: Date; }' is not assignable to type 'Without<SalarySlipUncheckedCreateInput, SalarySlipCreateInput>'.
+      Types of property 'issuedBy' are incompatible.
+        Type 'string' is not assignable to type 'never'.
+
+[7m253[0m       data: {
+[7m   [0m [91m      ~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m175301[0m:[93m5[0m
+    [7m175301[0m     data: XOR<SalarySlipCreateInput, SalarySlipUncheckedCreateInput>
+    [7m      [0m [96m    ~~~~[0m
+    The expected type comes from property 'data' which is declared here on type '{ select?: SalarySlipSelect<DefaultArgs>; include?: SalarySlipInclude<DefaultArgs>; data: (Without<SalarySlipCreateInput, SalarySlipUncheckedCreateInput> & SalarySlipUncheckedCreateInput) | (Without<...> & SalarySlipCreateInput); }'
+[96msrc/hr/services/payroll-pdf.service.ts[0m:[93m82[0m:[93m9[0m - [91merror[0m[90m TS2322: [0mType '{ payrollItemId: string; receiptNumber: string; period: string; issuedBy: string; }' is not assignable to type '(Without<SalarySlipCreateInput, SalarySlipUncheckedCreateInput> & SalarySlipUncheckedCreateInput) | (Without<...> & SalarySlipCreateInput)'.
+  Type '{ payrollItemId: string; receiptNumber: string; period: string; issuedBy: string; }' is not assignable to type 'Without<SalarySlipUncheckedCreateInput, SalarySlipCreateInput> & SalarySlipCreateInput'.
+    Type '{ payrollItemId: string; receiptNumber: string; period: string; issuedBy: string; }' is not assignable to type 'Without<SalarySlipUncheckedCreateInput, SalarySlipCreateInput>'.
+      Types of property 'issuedBy' are incompatible.
+        Type 'string' is not assignable to type 'never'.
+
+[7m82[0m         data: {
+[7m  [0m [91m        ~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m175301[0m:[93m5[0m
+    [7m175301[0m     data: XOR<SalarySlipCreateInput, SalarySlipUncheckedCreateInput>
+    [7m      [0m [96m    ~~~~[0m
+    The expected type comes from property 'data' which is declared here on type '{ select?: SalarySlipSelect<DefaultArgs>; include?: SalarySlipInclude<DefaultArgs>; data: (Without<SalarySlipCreateInput, SalarySlipUncheckedCreateInput> & SalarySlipUncheckedCreateInput) | (Without<...> & SalarySlipCreateInput); }'
+[96msrc/hr/services/payroll-tax.service.ts[0m:[93m93[0m:[93m48[0m - [91merror[0m[90m TS2339: [0mProperty 'deductions' does not exist on type '{ staff: { department: string; id: string; createdAt: Date; updatedAt: Date; status: string; tenantId: string; email: string; firstName: string; lastName: string; academicYearId: string; ... 15 more ...; roleType: string; }; payroll: { ...; }; } & { ...; }'.
+
+[7m93[0m     const otherDeductions = Number(payrollItem.deductions || 0);
+[7m  [0m [91m                                               ~~~~~~~~~~[0m
+[96msrc/hr/staff-prisma.controller.ts[0m:[93m11[0m:[93m27[0m - [91merror[0m[90m TS2307: [0mCannot find module '../common/decorators/get-tenant.decorator' or its corresponding type declarations.
+
+[7m11[0m import { GetTenant } from '../common/decorators/get-tenant.decorator';
+[7m  [0m [91m                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/kpi-objectives/kpi-objectives.service.ts[0m:[93m182[0m:[93m13[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'calculatedAt' does not exist in type 'KpiSnapshotOrderByWithRelationInput | KpiSnapshotOrderByWithRelationInput[]'.
+
+[7m182[0m             calculatedAt: 'desc',
+[7m   [0m [91m            ~~~~~~~~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m266603[0m:[93m5[0m
+    [7m266603[0m     orderBy?: KpiSnapshotOrderByWithRelationInput | KpiSnapshotOrderByWithRelationInput[]
+    [7m      [0m [96m    ~~~~~~~[0m
+    The expected type comes from property 'orderBy' which is declared here on type '{ select?: KpiSnapshotSelect<DefaultArgs>; include?: KpiSnapshotInclude<DefaultArgs>; where?: KpiSnapshotWhereInput; ... 4 more ...; distinct?: KpiSnapshotScalarFieldEnum | KpiSnapshotScalarFieldEnum[]; }'
+[96msrc/meetings/services/meeting-minutes-generation.service.ts[0m:[93m25[0m:[93m5[0m - [91merror[0m[90m TS1016: [0mA required parameter cannot follow an optional parameter.
+
+[7m25[0m     recordedBy: string,
+[7m  [0m [91m    ~~~~~~~~~~[0m
+[96msrc/modules-complementaires/services/lab.service.ts[0m:[93m30[0m:[93m7[0m - [91merror[0m[90m TS2322: [0mType '{ labId: string; name: any; equipmentType: any; manufacturer: any; model: any; serialNumber: any; quantity: any; condition: any; lastMaintenance: Date; nextMaintenance: Date; }' is not assignable to type '(Without<LabEquipmentCreateInput, LabEquipmentUncheckedCreateInput> & LabEquipmentUncheckedCreateInput) | (Without<...> & LabEquipmentCreateInput)'.
+  Type '{ labId: string; name: any; equipmentType: any; manufacturer: any; model: any; serialNumber: any; quantity: any; condition: any; lastMaintenance: Date; nextMaintenance: Date; }' is not assignable to type 'Without<LabEquipmentUncheckedCreateInput, LabEquipmentCreateInput> & LabEquipmentCreateInput'.
+    Type '{ labId: string; name: any; equipmentType: any; manufacturer: any; model: any; serialNumber: any; quantity: any; condition: any; lastMaintenance: Date; nextMaintenance: Date; }' is not assignable to type 'Without<LabEquipmentUncheckedCreateInput, LabEquipmentCreateInput>'.
+      Types of property 'labId' are incompatible.
+        Type 'string' is not assignable to type 'never'.
+
+[7m30[0m       data: {
+[7m  [0m [91m      ~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m334760[0m:[93m5[0m
+    [7m334760[0m     data: XOR<LabEquipmentCreateInput, LabEquipmentUncheckedCreateInput>
+    [7m      [0m [96m    ~~~~[0m
+    The expected type comes from property 'data' which is declared here on type '{ select?: LabEquipmentSelect<DefaultArgs>; include?: LabEquipmentInclude<DefaultArgs>; data: (Without<LabEquipmentCreateInput, LabEquipmentUncheckedCreateInput> & LabEquipmentUncheckedCreateInput) | (Without<...> & LabEquipmentCreateInput); }'
+[96msrc/modules-complementaires/services/lab.service.ts[0m:[93m73[0m:[93m7[0m - [91merror[0m[90m TS2322: [0mType '{ labId: string; reservedBy: string; reservationDate: Date; startTime: any; endTime: any; purpose: any; status: string; }' is not assignable to type '(Without<LabReservationCreateInput, LabReservationUncheckedCreateInput> & LabReservationUncheckedCreateInput) | (Without<...> & LabReservationCreateInput)'.
+  Type '{ labId: string; reservedBy: string; reservationDate: Date; startTime: any; endTime: any; purpose: any; status: string; }' is not assignable to type 'Without<LabReservationUncheckedCreateInput, LabReservationCreateInput> & LabReservationCreateInput'.
+    Type '{ labId: string; reservedBy: string; reservationDate: Date; startTime: any; endTime: any; purpose: any; status: string; }' is not assignable to type 'Without<LabReservationUncheckedCreateInput, LabReservationCreateInput>'.
+      Types of property 'labId' are incompatible.
+        Type 'string' is not assignable to type 'never'.
+
+[7m73[0m       data: {
+[7m  [0m [91m      ~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m335817[0m:[93m5[0m
+    [7m335817[0m     data: XOR<LabReservationCreateInput, LabReservationUncheckedCreateInput>
+    [7m      [0m [96m    ~~~~[0m
+    The expected type comes from property 'data' which is declared here on type '{ select?: LabReservationSelect<DefaultArgs>; include?: LabReservationInclude<DefaultArgs>; data: (Without<...> & LabReservationUncheckedCreateInput) | (Without<...> & LabReservationCreateInput); }'
+[96msrc/modules-complementaires/services/medical.service.ts[0m:[93m54[0m:[93m7[0m - [91merror[0m[90m TS2322: [0mType '{ recordId: string; visitDate: Date; visitTime: any; reason: any; diagnosis: any; treatment: any; medicationId: any; temperature: any; bloodPressure: any; notes: any; performedBy: string; }' is not assignable to type '(Without<MedicalVisitCreateInput, MedicalVisitUncheckedCreateInput> & MedicalVisitUncheckedCreateInput) | (Without<...> & MedicalVisitCreateInput)'.
+  Type '{ recordId: string; visitDate: Date; visitTime: any; reason: any; diagnosis: any; treatment: any; medicationId: any; temperature: any; bloodPressure: any; notes: any; performedBy: string; }' is not assignable to type 'Without<MedicalVisitUncheckedCreateInput, MedicalVisitCreateInput> & MedicalVisitCreateInput'.
+    Type '{ recordId: string; visitDate: Date; visitTime: any; reason: any; diagnosis: any; treatment: any; medicationId: any; temperature: any; bloodPressure: any; notes: any; performedBy: string; }' is not assignable to type 'Without<MedicalVisitUncheckedCreateInput, MedicalVisitCreateInput>'.
+      Types of property 'performedBy' are incompatible.
+        Type 'string' is not assignable to type 'never'.
+
+[7m54[0m       data: {
+[7m  [0m [91m      ~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m340069[0m:[93m5[0m
+    [7m340069[0m     data: XOR<MedicalVisitCreateInput, MedicalVisitUncheckedCreateInput>
+    [7m      [0m [96m    ~~~~[0m
+    The expected type comes from property 'data' which is declared here on type '{ select?: MedicalVisitSelect<DefaultArgs>; include?: MedicalVisitInclude<DefaultArgs>; data: (Without<MedicalVisitCreateInput, MedicalVisitUncheckedCreateInput> & MedicalVisitUncheckedCreateInput) | (Without<...> & MedicalVisitCreateInput); }'
+[96msrc/modules-complementaires/services/modules-complementaires-orion.service.ts[0m:[93m159[0m:[93m57[0m - [91merror[0m[90m TS2339: [0mProperty 'engagementRate' does not exist on type '{ totalContents: number; totalAccesses: number; totalViews: number; completedViews: number; completionRate: number; }'.
+
+[7m159[0m     if (educastStats.totalContents > 10 && educastStats.engagementRate < 30) {
+[7m   [0m [91m                                                        ~~~~~~~~~~~~~~[0m
+[96msrc/modules-complementaires/services/modules-complementaires-orion.service.ts[0m:[93m164[0m:[93m66[0m - [91merror[0m[90m TS2339: [0mProperty 'engagementRate' does not exist on type '{ totalContents: number; totalAccesses: number; totalViews: number; completedViews: number; completionRate: number; }'.
+
+[7m164[0m         description: `Le taux d'engagement est de ${educastStats.engagementRate.toFixed(1)}%.`,
+[7m   [0m [91m                                                                 ~~~~~~~~~~~~~~[0m
+[96msrc/modules/general/general.controller.ts[0m:[93m29[0m:[93m10[0m - [91merror[0m[90m TS2305: [0mModule '"../../users/entities/user.entity"' has no exported member 'UserRole'.
+
+[7m29[0m import { UserRole } from '../../users/entities/user.entity';
+[7m  [0m [91m         ~~~~~~~~[0m
+[96msrc/modules/general/general.service.ts[0m:[93m107[0m:[93m9[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'academicYearId' does not exist in type '{ calculationDate: Date; levelsIncluded: string[]; calculationMethod: string; }'.
+
+[7m107[0m         academicYearId,
+[7m   [0m [91m        ~~~~~~~~~~~~~~[0m
+
+  [96msrc/modules/general/general.service.ts[0m:[93m37[0m:[93m3[0m
+    [7m37[0m   metadata: {
+    [7m  [0m [96m  ~~~~~~~~[0m
+    The expected type comes from property 'metadata' which is declared here on type 'CrossLevelAggregation'
+[96msrc/modules/general/general.service.ts[0m:[93m139[0m:[93m9[0m - [91merror[0m[90m TS2554: [0mExpected 2-6 arguments, but got 7.
+
+[7m139[0m         endDate,
+[7m   [0m [91m        ~~~~~~~[0m
+[96msrc/modules/general/general.service.ts[0m:[93m172[0m:[93m9[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'academicYearId' does not exist in type '{ calculationDate: Date; levelsIncluded: string[]; calculationMethod: string; }'.
+
+[7m172[0m         academicYearId,
+[7m   [0m [91m        ~~~~~~~~~~~~~~[0m
+
+  [96msrc/modules/general/general.service.ts[0m:[93m37[0m:[93m3[0m
+    [7m37[0m   metadata: {
+    [7m  [0m [96m  ~~~~~~~~[0m
+    The expected type comes from property 'metadata' which is declared here on type 'CrossLevelAggregation'
+[96msrc/modules/general/general.service.ts[0m:[93m215[0m:[93m9[0m - [91merror[0m[90m TS2554: [0mExpected 1-6 arguments, but got 7.
+
+[7m215[0m         academicYearId,
+[7m   [0m [91m        ~~~~~~~~~~~~~~[0m
+[96msrc/modules/modules.controller.ts[0m:[93m111[0m:[93m8[0m - [91merror[0m[90m TS1308: [0m'await' expressions are only allowed within async functions and at the top levels of modules.
+
+[7m111[0m       (await module).type,
+[7m   [0m [91m       ~~~~~[0m
+
+  [96msrc/modules/modules.controller.ts[0m:[93m103[0m:[93m3[0m
+    [7m103[0m   checkDependencies(
+    [7m   [0m [96m  ~~~~~~~~~~~~~~~~~[0m
+    Did you mean to mark this function as 'async'?
+[96msrc/modules/scolarite/services/scolarite-calculation.service.ts[0m:[93m59[0m:[93m41[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'enrollmentStatus' does not exist in type 'FindOptionsWhere<Student> | FindOptionsWhere<Student>[]'.
+
+[7m59[0m       where: { tenantId, schoolLevelId, enrollmentStatus: 'active' },
+[7m  [0m [91m                                        ~~~~~~~~~~~~~~~~[0m
+
+  [96mnode_modules/typeorm/find-options/FindOneOptions.d.ts[0m:[93m23[0m:[93m5[0m
+    [7m23[0m     where?: FindOptionsWhere<Entity>[] | FindOptionsWhere<Entity>;
+    [7m  [0m [96m    ~~~~~[0m
+    The expected type comes from property 'where' which is declared here on type 'FindManyOptions<Student>'
+[96msrc/modules/scolarite/services/scolarite-calculation.service.ts[0m:[93m134[0m:[93m41[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'classId' does not exist in type 'FindOptionsWhere<Student> | FindOptionsWhere<Student>[]'.
+
+[7m134[0m       where: { tenantId, schoolLevelId, classId },
+[7m   [0m [91m                                        ~~~~~~~[0m
+
+  [96mnode_modules/typeorm/find-options/FindOneOptions.d.ts[0m:[93m23[0m:[93m5[0m
+    [7m23[0m     where?: FindOptionsWhere<Entity>[] | FindOptionsWhere<Entity>;
+    [7m  [0m [96m    ~~~~~[0m
+    The expected type comes from property 'where' which is declared here on type 'FindManyOptions<Student>'
+[96msrc/modules/scolarite/services/scolarite-calculation.service.ts[0m:[93m138[0m:[93m41[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'classId' does not exist in type 'FindOptionsWhere<Student> | FindOptionsWhere<Student>[]'.
+
+[7m138[0m       where: { tenantId, schoolLevelId, classId, enrollmentStatus: 'active' },
+[7m   [0m [91m                                        ~~~~~~~[0m
+
+  [96mnode_modules/typeorm/find-options/FindOneOptions.d.ts[0m:[93m23[0m:[93m5[0m
+    [7m23[0m     where?: FindOptionsWhere<Entity>[] | FindOptionsWhere<Entity>;
+    [7m  [0m [96m    ~~~~~[0m
+    The expected type comes from property 'where' which is declared here on type 'FindManyOptions<Student>'
+[96msrc/orion/orion-alerts.controller.ts[0m:[93m11[0m:[93m27[0m - [91merror[0m[90m TS2307: [0mCannot find module '../common/decorators/get-tenant.decorator' or its corresponding type declarations.
+
+[7m11[0m import { GetTenant } from '../common/decorators/get-tenant.decorator';
+[7m  [0m [91m                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/orion/orion-alerts.controller.ts[0m:[93m48[0m:[93m6[0m - [91merror[0m[90m TS2693: [0m'Body' only refers to a type, but is being used as a value here.
+
+[7m48[0m     @Body() body: { userId?: string },
+[7m  [0m [91m     ~~~~[0m
+[96msrc/orion/orion-audit.controller.ts[0m:[93m11[0m:[93m27[0m - [91merror[0m[90m TS2307: [0mCannot find module '../common/decorators/get-tenant.decorator' or its corresponding type declarations.
+
+[7m11[0m import { GetTenant } from '../common/decorators/get-tenant.decorator';
+[7m  [0m [91m                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/orion/orion-bilingual.controller.ts[0m:[93m6[0m:[93m10[0m - [91merror[0m[90m TS2305: [0mModule '"../users/entities/user.entity"' has no exported member 'UserRole'.
+
+[7m6[0m import { UserRole } from '../users/entities/user.entity';
+[7m [0m [91m         ~~~~~~~~[0m
+[96msrc/orion/orion-dashboard.controller.ts[0m:[93m11[0m:[93m27[0m - [91merror[0m[90m TS2307: [0mCannot find module '../common/decorators/get-tenant.decorator' or its corresponding type declarations.
+
+[7m11[0m import { GetTenant } from '../common/decorators/get-tenant.decorator';
+[7m  [0m [91m                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/orion/orion-insights.controller.ts[0m:[93m11[0m:[93m27[0m - [91merror[0m[90m TS2307: [0mCannot find module '../common/decorators/get-tenant.decorator' or its corresponding type declarations.
+
+[7m11[0m import { GetTenant } from '../common/decorators/get-tenant.decorator';
+[7m  [0m [91m                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/orion/orion-kpi.controller.ts[0m:[93m11[0m:[93m27[0m - [91merror[0m[90m TS2307: [0mCannot find module '../common/decorators/get-tenant.decorator' or its corresponding type declarations.
+
+[7m11[0m import { GetTenant } from '../common/decorators/get-tenant.decorator';
+[7m  [0m [91m                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/orion/services/bilingual-analysis.service.ts[0m:[93m118[0m:[93m16[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'tenantId' does not exist in type 'FindOptionsWhere<StudentAcademicTrack> | FindOptionsWhere<StudentAcademicTrack>[]'.
+
+[7m118[0m       where: { tenantId, academicTrack: { id: track.id } },
+[7m   [0m [91m               ~~~~~~~~[0m
+
+  [96mnode_modules/typeorm/find-options/FindOneOptions.d.ts[0m:[93m23[0m:[93m5[0m
+    [7m23[0m     where?: FindOptionsWhere<Entity>[] | FindOptionsWhere<Entity>;
+    [7m  [0m [96m    ~~~~~[0m
+    The expected type comes from property 'where' which is declared here on type 'FindManyOptions<StudentAcademicTrack>'
+[96msrc/orion/services/kpi-calculation.service.ts[0m:[93m39[0m:[93m11[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'academicYearId' does not exist in type 'AbsenceWhereInput'.
+
+[7m39[0m           academicYearId,
+[7m  [0m [91m          ~~~~~~~~~~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m79135[0m:[93m5[0m
+    [7m79135[0m     where?: AbsenceWhereInput
+    [7m     [0m [96m    ~~~~~[0m
+    The expected type comes from property 'where' which is declared here on type 'Subset<AbsenceCountArgs<DefaultArgs>, AbsenceCountArgs<DefaultArgs>>'
+[96msrc/orion/services/kpi-calculation.service.ts[0m:[93m63[0m:[93m11[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'classId' does not exist in type 'GradeWhereInput'.
+
+[7m63[0m           classId: { in: classIds },
+[7m  [0m [91m          ~~~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m74235[0m:[93m5[0m
+    [7m74235[0m     where?: GradeWhereInput
+    [7m     [0m [96m    ~~~~~[0m
+    The expected type comes from property 'where' which is declared here on type 'Subset<GradeCountArgs<DefaultArgs>, GradeCountArgs<DefaultArgs>>'
+[96msrc/orion/services/kpi-calculation.service.ts[0m:[93m72[0m:[93m11[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'classId' does not exist in type 'GradeWhereInput'.
+
+[7m72[0m           classId: { in: classIds },
+[7m  [0m [91m          ~~~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m74235[0m:[93m5[0m
+    [7m74235[0m     where?: GradeWhereInput
+    [7m     [0m [96m    ~~~~~[0m
+    The expected type comes from property 'where' which is declared here on type 'Subset<GradeCountArgs<DefaultArgs>, GradeCountArgs<DefaultArgs>>'
+[96msrc/orion/services/kpi-calculation.service.ts[0m:[93m92[0m:[93m17[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'amount' does not exist in type 'StudentFeeSumAggregateInputType'.
+
+[7m92[0m         _sum: { amount: true },
+[7m  [0m [91m                ~~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m304996[0m:[93m5[0m
+    [7m304996[0m     _sum?: StudentFeeSumAggregateInputType
+    [7m      [0m [96m    ~~~~[0m
+    The expected type comes from property '_sum' which is declared here on type 'Subset<StudentFeeAggregateArgs<DefaultArgs>, StudentFeeAggregateArgs<DefaultArgs>>'
+[96msrc/orion/services/kpi-calculation.service.ts[0m:[93m104[0m:[93m49[0m - [91merror[0m[90m TS2339: [0mProperty 'amount' does not exist on type '{ totalAmount?: Decimal; }'.
+
+[7m104[0m       const totalAmount = Number(totalFees._sum.amount || 0);
+[7m   [0m [91m                                                ~~~~~~[0m
+[96msrc/orion/services/kpi-calculation.service.ts[0m:[93m122[0m:[93m11[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'status' does not exist in type 'DailyClosureWhereInput'.
+
+[7m122[0m           status: 'VALIDATED',
+[7m   [0m [91m          ~~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m310410[0m:[93m5[0m
+    [7m310410[0m     where?: DailyClosureWhereInput
+    [7m      [0m [96m    ~~~~~[0m
+    The expected type comes from property 'where' which is declared here on type 'Subset<DailyClosureAggregateArgs<DefaultArgs>, DailyClosureAggregateArgs<DefaultArgs>>'
+[96msrc/orion/services/kpi-calculation.service.ts[0m:[93m124[0m:[93m17[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'balance' does not exist in type 'DailyClosureSumAggregateInputType'.
+
+[7m124[0m         _sum: { balance: true },
+[7m   [0m [91m                ~~~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m310452[0m:[93m5[0m
+    [7m310452[0m     _sum?: DailyClosureSumAggregateInputType
+    [7m      [0m [96m    ~~~~[0m
+    The expected type comes from property '_sum' which is declared here on type 'Subset<DailyClosureAggregateArgs<DefaultArgs>, DailyClosureAggregateArgs<DefaultArgs>>'
+[96msrc/orion/services/kpi-calculation.service.ts[0m:[93m132[0m:[93m43[0m - [91merror[0m[90m TS2339: [0mProperty 'balance' does not exist on type '{ totalCollected?: Decimal; totalSpent?: Decimal; openingBalance?: Decimal; closingBalance?: Decimal; discrepancy?: Decimal; }'.
+
+[7m132[0m         value: Number(currentBalance._sum.balance || 0),
+[7m   [0m [91m                                          ~~~~~~~[0m
+[96msrc/orion/services/kpi-calculation.service.ts[0m:[93m153[0m:[93m9[0m - [91merror[0m[90m TS2322: [0mType 'string[]' is not assignable to type 'never'.
+
+[7m153[0m         distinct: ['staffId'],
+[7m   [0m [91m        ~~~~~~~~[0m
+
+  [96msrc/orion/services/kpi-calculation.service.ts[0m:[93m153[0m:[93m9[0m
+    [7m153[0m         distinct: ['staffId'],
+    [7m   [0m [96m        ~~~~~~~~~~~~~~~~~~~~~[0m
+    The expected type comes from property 'distinct' which is declared here on type 'Subset<{ where: { tenantId: string; academicYearId: string; status: string; date: { gte: Date; }; }; distinct: string[]; }, StaffAttendanceCountArgs<DefaultArgs>>'
+[96msrc/orion/services/orion-alerts.service.ts[0m:[93m62[0m:[93m37[0m - [91merror[0m[90m TS2615: [0mType of property 'AND' circularly references itself in mapped type '{ [K in keyof { AND?: QhsIncidentScalarWhereWithAggregatesInput | QhsIncidentScalarWhereWithAggregatesInput[]; ... 21 more ...; updatedAt?: string | ... 1 more ... | DateTimeWithAggregatesFilter<...>; }]: Or<...> extends 1 ? { ...; }[K] extends infer TK ? GetHavingFields<...> : never : {} extends FieldPaths<...> ? n...'.
+
+[7m 62[0m     const repeatedIncidents = await this.prisma.qhsIncident.groupBy({
+[7m   [0m [91m                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m 63[0m       by: ['type', 'category'],
+[7m   [0m [91m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m...[0m 
+[7m 74[0m       },
+[7m   [0m [91m~~~~~~~~[0m
+[7m 75[0m     });
+[7m   [0m [91m~~~~~~[0m
+[96msrc/orion/services/orion-alerts.service.ts[0m:[93m62[0m:[93m37[0m - [91merror[0m[90m TS2615: [0mType of property 'NOT' circularly references itself in mapped type '{ [K in keyof { AND?: QhsIncidentScalarWhereWithAggregatesInput | QhsIncidentScalarWhereWithAggregatesInput[]; ... 21 more ...; updatedAt?: string | ... 1 more ... | DateTimeWithAggregatesFilter<...>; }]: Or<...> extends 1 ? { ...; }[K] extends infer TK ? GetHavingFields<...> : never : {} extends FieldPaths<...> ? n...'.
+
+[7m 62[0m     const repeatedIncidents = await this.prisma.qhsIncident.groupBy({
+[7m   [0m [91m                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m 63[0m       by: ['type', 'category'],
+[7m   [0m [91m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m...[0m 
+[7m 74[0m       },
+[7m   [0m [91m~~~~~~~~[0m
+[7m 75[0m     });
+[7m   [0m [91m~~~~~~[0m
+[96msrc/orion/services/orion-alerts.service.ts[0m:[93m62[0m:[93m37[0m - [91merror[0m[90m TS2615: [0mType of property 'OR' circularly references itself in mapped type '{ [K in keyof { AND?: QhsIncidentScalarWhereWithAggregatesInput | QhsIncidentScalarWhereWithAggregatesInput[]; ... 21 more ...; updatedAt?: string | ... 1 more ... | DateTimeWithAggregatesFilter<...>; }]: Or<...> extends 1 ? { ...; }[K] extends infer TK ? GetHavingFields<...> : never : {} extends FieldPaths<...> ? n...'.
+
+[7m 62[0m     const repeatedIncidents = await this.prisma.qhsIncident.groupBy({
+[7m   [0m [91m                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m 63[0m       by: ['type', 'category'],
+[7m   [0m [91m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m...[0m 
+[7m 74[0m       },
+[7m   [0m [91m~~~~~~~~[0m
+[7m 75[0m     });
+[7m   [0m [91m~~~~~~[0m
+[96msrc/orion/services/orion-alerts.service.ts[0m:[93m204[0m:[93m20[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'calculatedAt' does not exist in type 'KpiSnapshotOrderByWithRelationInput | KpiSnapshotOrderByWithRelationInput[]'.
+
+[7m204[0m         orderBy: { calculatedAt: 'desc' },
+[7m   [0m [91m                   ~~~~~~~~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m266603[0m:[93m5[0m
+    [7m266603[0m     orderBy?: KpiSnapshotOrderByWithRelationInput | KpiSnapshotOrderByWithRelationInput[]
+    [7m      [0m [96m    ~~~~~~~[0m
+    The expected type comes from property 'orderBy' which is declared here on type '{ select?: KpiSnapshotSelect<DefaultArgs>; include?: KpiSnapshotInclude<DefaultArgs>; where?: KpiSnapshotWhereInput; ... 4 more ...; distinct?: KpiSnapshotScalarFieldEnum | KpiSnapshotScalarFieldEnum[]; }'
+[96msrc/orion/services/orion-dashboard.service.ts[0m:[93m118[0m:[93m18[0m - [91merror[0m[90m TS2339: [0mProperty 'length' does not exist on type 'unknown'.
+
+[7m118[0m       if (values.length >= 2) {
+[7m   [0m [91m                 ~~~~~~[0m
+[96msrc/orion/services/orion-dashboard.service.ts[0m:[93m119[0m:[93m31[0m - [91merror[0m[90m TS2339: [0mProperty 'sort' does not exist on type 'unknown'.
+
+[7m119[0m         const sorted = values.sort((a, b) =>
+[7m   [0m [91m                              ~~~~[0m
+[96msrc/orion/services/orion-insights.service.ts[0m:[93m35[0m:[93m15[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'amount' does not exist in type 'FeeArrearSumAggregateInputType'.
+
+[7m35[0m       _sum: { amount: true },
+[7m  [0m [91m              ~~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m311595[0m:[93m5[0m
+    [7m311595[0m     _sum?: FeeArrearSumAggregateInputType
+    [7m      [0m [96m    ~~~~[0m
+    The expected type comes from property '_sum' which is declared here on type 'Subset<FeeArrearAggregateArgs<DefaultArgs>, FeeArrearAggregateArgs<DefaultArgs>>'
+[96msrc/orion/services/orion-insights.service.ts[0m:[93m39[0m:[93m9[0m - [91merror[0m[90m TS2365: [0mOperator '>' cannot be applied to types 'boolean | { id?: number; tenantId?: number; academicYearId?: number; studentId?: number; studentFeeId?: number; totalDue?: number; totalPaid?: number; balanceDue?: number; arrearsLevel?: number; lastPaymentDate?: number; createdAt?: number; updatedAt?: number; _all?: number; }' and 'number'.
+
+[7m39[0m     if (unpaidFees._count > 0 && Number(unpaidFees._sum.amount) > 1000000) {
+[7m  [0m [91m        ~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/orion/services/orion-insights.service.ts[0m:[93m39[0m:[93m57[0m - [91merror[0m[90m TS2339: [0mProperty 'amount' does not exist on type '{ totalDue?: Decimal; totalPaid?: Decimal; balanceDue?: Decimal; }'.
+
+[7m39[0m     if (unpaidFees._count > 0 && Number(unpaidFees._sum.amount) > 1000000) {
+[7m  [0m [91m                                                        ~~~~~~[0m
+[96msrc/orion/services/orion-insights.service.ts[0m:[93m43[0m:[93m101[0m - [91merror[0m[90m TS2339: [0mProperty 'amount' does not exist on type '{ totalDue?: Decimal; totalPaid?: Decimal; balanceDue?: Decimal; }'.
+
+[7m43[0m         content: `${unpaidFees._count} élève(s) ont des impayés totaux de ${(Number(unpaidFees._sum.amount) / 1000000).toFixed(1)}M XOF. Il est recommandé de mettre en place un plan de recouvrement actif.`,
+[7m  [0m [91m                                                                                                    ~~~~~~[0m
+[96msrc/orion/services/orion-insights.service.ts[0m:[93m44[0m:[93m42[0m - [91merror[0m[90m TS2339: [0mProperty 'amount' does not exist on type '{ totalDue?: Decimal; totalPaid?: Decimal; balanceDue?: Decimal; }'.
+
+[7m44[0m         priority: Number(unpaidFees._sum.amount) > 5000000 ? 'HIGH' : 'MEDIUM',
+[7m  [0m [91m                                         ~~~~~~[0m
+[96msrc/orion/services/orion-insights.service.ts[0m:[93m58[0m:[93m39[0m - [91merror[0m[90m TS2615: [0mType of property 'AND' circularly references itself in mapped type '{ [K in keyof { AND?: GradeScalarWhereWithAggregatesInput | GradeScalarWhereWithAggregatesInput[]; OR?: GradeScalarWhereWithAggregatesInput[]; ... 13 more ...; updatedAt?: string | ... 1 more ... | DateTimeWithAggregatesFilter<...>; }]: Or<...> extends 1 ? { ...; }[K] extends infer TK ? GetHavingFields<...> : never ...'.
+
+[7m 58[0m         const failingStudents = await this.prisma.grade.groupBy({
+[7m   [0m [91m                                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m 59[0m           by: ['studentId'],
+[7m   [0m [91m~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m...[0m 
+[7m 71[0m           },
+[7m   [0m [91m~~~~~~~~~~~~[0m
+[7m 72[0m         });
+[7m   [0m [91m~~~~~~~~~~[0m
+[96msrc/orion/services/orion-insights.service.ts[0m:[93m58[0m:[93m39[0m - [91merror[0m[90m TS2615: [0mType of property 'NOT' circularly references itself in mapped type '{ [K in keyof { AND?: GradeScalarWhereWithAggregatesInput | GradeScalarWhereWithAggregatesInput[]; OR?: GradeScalarWhereWithAggregatesInput[]; ... 13 more ...; updatedAt?: string | ... 1 more ... | DateTimeWithAggregatesFilter<...>; }]: Or<...> extends 1 ? { ...; }[K] extends infer TK ? GetHavingFields<...> : never ...'.
+
+[7m 58[0m         const failingStudents = await this.prisma.grade.groupBy({
+[7m   [0m [91m                                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m 59[0m           by: ['studentId'],
+[7m   [0m [91m~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m...[0m 
+[7m 71[0m           },
+[7m   [0m [91m~~~~~~~~~~~~[0m
+[7m 72[0m         });
+[7m   [0m [91m~~~~~~~~~~[0m
+[96msrc/orion/services/orion-insights.service.ts[0m:[93m58[0m:[93m39[0m - [91merror[0m[90m TS2615: [0mType of property 'OR' circularly references itself in mapped type '{ [K in keyof { AND?: GradeScalarWhereWithAggregatesInput | GradeScalarWhereWithAggregatesInput[]; OR?: GradeScalarWhereWithAggregatesInput[]; ... 13 more ...; updatedAt?: string | ... 1 more ... | DateTimeWithAggregatesFilter<...>; }]: Or<...> extends 1 ? { ...; }[K] extends infer TK ? GetHavingFields<...> : never ...'.
+
+[7m 58[0m         const failingStudents = await this.prisma.grade.groupBy({
+[7m   [0m [91m                                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m 59[0m           by: ['studentId'],
+[7m   [0m [91m~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m...[0m 
+[7m 71[0m           },
+[7m   [0m [91m~~~~~~~~~~~~[0m
+[7m 72[0m         });
+[7m   [0m [91m~~~~~~~~~~[0m
+[96msrc/payment-flows/payment-flows.controller.ts[0m:[93m19[0m:[93m10[0m - [91merror[0m[90m TS2305: [0mModule '"../users/entities/user.entity"' has no exported member 'UserRole'.
+
+[7m19[0m import { UserRole } from '../users/entities/user.entity';
+[7m  [0m [91m         ~~~~~~~~[0m
+[96msrc/payment-flows/payment-flows.repository.ts[0m:[93m16[0m:[93m41[0m - [91merror[0m[90m TS2769: [0mNo overload matches this call.
+  Overload 1 of 3, '(entityLikeArray: DeepPartial<PaymentFlow>[]): PaymentFlow[]', gave the following error.
+    Argument of type 'CreatePaymentFlowDto & { tenantId: string; destination: string; initiatedBy?: string; }' is not assignable to parameter of type 'DeepPartial<PaymentFlow>[]'.
+      Type 'CreatePaymentFlowDto & { tenantId: string; destination: string; initiatedBy?: string; }' is missing the following properties from type 'DeepPartial<PaymentFlow>[]': length, pop, push, concat, and 29 more.
+  Overload 2 of 3, '(entityLike: DeepPartial<PaymentFlow>): PaymentFlow', gave the following error.
+    Argument of type 'CreatePaymentFlowDto & { tenantId: string; destination: string; initiatedBy?: string; }' is not assignable to parameter of type 'DeepPartial<PaymentFlow>'.
+      Type 'CreatePaymentFlowDto & { tenantId: string; destination: string; initiatedBy?: string; }' is not assignable to type '{ id?: string; tenantId?: string; tenant?: DeepPartial<Tenant>; flowType?: DeepPartial<PaymentFlowType>; destination?: DeepPartial<PaymentDestination>; ... 17 more ...; updatedAt?: DeepPartial<...>; }'.
+        Types of property 'destination' are incompatible.
+          Type 'string' is not assignable to type 'DeepPartial<PaymentDestination>'.
+
+[7m16[0m     const flow = this.repository.create(data);
+[7m  [0m [91m                                        ~~~~[0m
+
+[96msrc/payment-flows/payment-flows.repository.ts[0m:[93m17[0m:[93m5[0m - [91merror[0m[90m TS2740: [0mType 'PaymentFlow[]' is missing the following properties from type 'PaymentFlow': id, tenantId, tenant, flowType, and 19 more.
+
+[7m17[0m     return this.repository.save(flow);
+[7m  [0m [91m    ~~~~~~[0m
+[96msrc/payment-flows/payment-flows.service.ts[0m:[93m67[0m:[93m7[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'status' does not exist in type 'CreatePaymentFlowDto & { tenantId: string; destination: string; initiatedBy?: string; }'.
+
+[7m67[0m       status: PaymentFlowStatus.INITIATED,
+[7m  [0m [91m      ~~~~~~[0m
+[96msrc/payments/payments.service.ts[0m:[93m17[0m:[93m43[0m - [91merror[0m[90m TS2345: [0mArgument of type '{ tenantId: string; schoolLevelId: string; createdBy: string; studentId: string; feeConfigurationId?: string; amount: number; paymentMethod?: string; paymentDate: string; reference?: string; receiptNumber?: string; status?: string; notes?: string; }' is not assignable to parameter of type 'Partial<Payment>'.
+  Types of property 'paymentDate' are incompatible.
+    Type 'string' is not assignable to type 'Date'.
+
+[7m 17[0m     return this.paymentsRepository.create({
+[7m   [0m [91m                                          ~[0m
+[7m 18[0m       ...createPaymentDto,
+[7m   [0m [91m~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m...[0m 
+[7m 21[0m       createdBy,
+[7m   [0m [91m~~~~~~~~~~~~~~~~[0m
+[7m 22[0m     });
+[7m   [0m [91m~~~~~[0m
+[96msrc/payments/payments.service.ts[0m:[93m58[0m:[93m72[0m - [91merror[0m[90m TS2345: [0mArgument of type 'UpdatePaymentDto' is not assignable to parameter of type 'Partial<Payment>'.
+  Types of property 'paymentDate' are incompatible.
+    Type 'string' is not assignable to type 'Date'.
+
+[7m58[0m     return this.paymentsRepository.update(id, tenantId, schoolLevelId, updatePaymentDto);
+[7m  [0m [91m                                                                       ~~~~~~~~~~~~~~~~[0m
+[96msrc/pedagogy/controllers/pedagogical-teacher.controller.ts[0m:[93m25[0m:[93m27[0m - [91merror[0m[90m TS2307: [0mCannot find module '../../common/decorators/get-tenant.decorator' or its corresponding type declarations.
+
+[7m25[0m import { GetTenant } from '../../common/decorators/get-tenant.decorator';
+[7m  [0m [91m                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/pedagogy/controllers/pedagogical-teacher.controller.ts[0m:[93m26[0m:[93m29[0m - [91merror[0m[90m TS2307: [0mCannot find module '../../auth/decorators/current-user.decorator' or its corresponding type declarations.
+
+[7m26[0m import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+[7m  [0m [91m                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/pedagogy/controllers/pedagogy-orion.controller.ts[0m:[93m16[0m:[93m27[0m - [91merror[0m[90m TS2307: [0mCannot find module '../../common/decorators/get-tenant.decorator' or its corresponding type declarations.
+
+[7m16[0m import { GetTenant } from '../../common/decorators/get-tenant.decorator';
+[7m  [0m [91m                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/pedagogy/services/pedagogical-notification.service.ts[0m:[93m59[0m:[93m11[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'isActive' does not exist in type 'UserWhereInput'.
+
+[7m59[0m           isActive: true,
+[7m  [0m [91m          ~~~~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m53702[0m:[93m5[0m
+    [7m53702[0m     where?: UserWhereInput
+    [7m     [0m [96m    ~~~~~[0m
+    The expected type comes from property 'where' which is declared here on type '{ select?: UserSelect<DefaultArgs>; include?: UserInclude<DefaultArgs>; where?: UserWhereInput; orderBy?: UserOrderByWithRelationInput | UserOrderByWithRelationInput[]; cursor?: UserWhereUniqueInput; take?: number; skip?: number; distinct?: UserScalarFieldEnum | UserScalarFieldEnum[]; }'
+[96msrc/pedagogy/services/pedagogical-notification.service.ts[0m:[93m66[0m:[93m11[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'phone' does not exist in type 'UserSelect<DefaultArgs>'.
+
+[7m66[0m           phone: true,
+[7m  [0m [91m          ~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m53694[0m:[93m5[0m
+    [7m53694[0m     select?: UserSelect<ExtArgs> | null
+    [7m     [0m [96m    ~~~~~~[0m
+    The expected type comes from property 'select' which is declared here on type '{ select?: UserSelect<DefaultArgs>; include?: UserInclude<DefaultArgs>; where?: UserWhereInput; orderBy?: UserOrderByWithRelationInput | UserOrderByWithRelationInput[]; cursor?: UserWhereUniqueInput; take?: number; skip?: number; distinct?: UserScalarFieldEnum | UserScalarFieldEnum[]; }'
+[96msrc/pedagogy/services/pedagogical-notification.service.ts[0m:[93m112[0m:[93m24[0m - [91merror[0m[90m TS2339: [0mProperty 'phone' does not exist on type '{ role: string; id: string; createdAt: Date; updatedAt: Date; status: string; tenantId: string; email: string; passwordHash: string; firstName: string; lastName: string; isSuperAdmin: boolean; lastLogin: Date; }'.
+
+[7m112[0m           if (director.phone) {
+[7m   [0m [91m                       ~~~~~[0m
+[96msrc/pedagogy/services/pedagogical-notification.service.ts[0m:[93m114[0m:[93m43[0m - [91merror[0m[90m TS2339: [0mProperty 'phone' does not exist on type '{ role: string; id: string; createdAt: Date; updatedAt: Date; status: string; tenantId: string; email: string; passwordHash: string; firstName: string; lastName: string; isSuperAdmin: boolean; lastLogin: Date; }'.
+
+[7m114[0m               await this.sendSMS(director.phone, message);
+[7m   [0m [91m                                          ~~~~~[0m
+[96msrc/pedagogy/services/pedagogical-notification.service.ts[0m:[93m123[0m:[93m67[0m - [91merror[0m[90m TS2339: [0mProperty 'phone' does not exist on type '{ role: string; id: string; createdAt: Date; updatedAt: Date; status: string; tenantId: string; email: string; passwordHash: string; firstName: string; lastName: string; isSuperAdmin: boolean; lastLogin: Date; }'.
+
+[7m123[0m               this.logger.error(`Failed to send SMS to ${director.phone}:`, error);
+[7m   [0m [91m                                                                  ~~~~~[0m
+[96msrc/pedagogy/services/pedagogical-notification.service.ts[0m:[93m128[0m:[93m24[0m - [91merror[0m[90m TS2339: [0mProperty 'phone' does not exist on type '{ role: string; id: string; createdAt: Date; updatedAt: Date; status: string; tenantId: string; email: string; passwordHash: string; firstName: string; lastName: string; isSuperAdmin: boolean; lastLogin: Date; }'.
+
+[7m128[0m           if (director.phone) {
+[7m   [0m [91m                       ~~~~~[0m
+[96msrc/pedagogy/services/pedagogical-notification.service.ts[0m:[93m130[0m:[93m48[0m - [91merror[0m[90m TS2339: [0mProperty 'phone' does not exist on type '{ role: string; id: string; createdAt: Date; updatedAt: Date; status: string; tenantId: string; email: string; passwordHash: string; firstName: string; lastName: string; isSuperAdmin: boolean; lastLogin: Date; }'.
+
+[7m130[0m               await this.sendWhatsApp(director.phone, message);
+[7m   [0m [91m                                               ~~~~~[0m
+[96msrc/pedagogy/services/pedagogical-notification.service.ts[0m:[93m139[0m:[93m72[0m - [91merror[0m[90m TS2339: [0mProperty 'phone' does not exist on type '{ role: string; id: string; createdAt: Date; updatedAt: Date; status: string; tenantId: string; email: string; passwordHash: string; firstName: string; lastName: string; isSuperAdmin: boolean; lastLogin: Date; }'.
+
+[7m139[0m               this.logger.error(`Failed to send WhatsApp to ${director.phone}:`, error);
+[7m   [0m [91m                                                                       ~~~~~[0m
+[96msrc/pedagogy/services/pedagogical-notification.service.ts[0m:[93m362[0m:[93m13[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'isActive' does not exist in type 'UserWhereInput'.
+
+[7m362[0m             isActive: true,
+[7m   [0m [91m            ~~~~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m53702[0m:[93m5[0m
+    [7m53702[0m     where?: UserWhereInput
+    [7m     [0m [96m    ~~~~~[0m
+    The expected type comes from property 'where' which is declared here on type '{ select?: UserSelect<DefaultArgs>; include?: UserInclude<DefaultArgs>; where?: UserWhereInput; orderBy?: UserOrderByWithRelationInput | UserOrderByWithRelationInput[]; cursor?: UserWhereUniqueInput; take?: number; skip?: number; distinct?: UserScalarFieldEnum | UserScalarFieldEnum[]; }'
+[96msrc/pedagogy/services/pedagogical-notification.service.ts[0m:[93m384[0m:[93m11[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'phone' does not exist in type 'UserSelect<DefaultArgs>'.
+
+[7m384[0m           phone: true,
+[7m   [0m [91m          ~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m53562[0m:[93m5[0m
+    [7m53562[0m     select?: UserSelect<ExtArgs> | null
+    [7m     [0m [96m    ~~~~~~[0m
+    The expected type comes from property 'select' which is declared here on type '{ select?: UserSelect<DefaultArgs>; include?: UserInclude<DefaultArgs>; where: UserWhereUniqueInput; }'
+[96msrc/pedagogy/services/pedagogical-notification.service.ts[0m:[93m411[0m:[93m21[0m - [91merror[0m[90m TS2339: [0mProperty 'phone' does not exist on type '{ role: string; id: string; createdAt: Date; updatedAt: Date; status: string; tenantId: string; email: string; passwordHash: string; firstName: string; lastName: string; isSuperAdmin: boolean; lastLogin: Date; }'.
+
+[7m411[0m       if (recipient.phone) {
+[7m   [0m [91m                    ~~~~~[0m
+[96msrc/pedagogy/services/pedagogical-notification.service.ts[0m:[93m413[0m:[93m45[0m - [91merror[0m[90m TS2339: [0mProperty 'phone' does not exist on type '{ role: string; id: string; createdAt: Date; updatedAt: Date; status: string; tenantId: string; email: string; passwordHash: string; firstName: string; lastName: string; isSuperAdmin: boolean; lastLogin: Date; }'.
+
+[7m413[0m           await this.sendWhatsApp(recipient.phone, message);
+[7m   [0m [91m                                            ~~~~~[0m
+[96msrc/pedagogy/subjects-prisma.service.ts[0m:[93m118[0m:[93m13[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'teacher' does not exist in type 'TeacherInclude<DefaultArgs>'.
+
+[7m118[0m             teacher: true,
+[7m   [0m [91m            ~~~~~~~[0m
+[96msrc/portal/controllers/portal-log.controller.ts[0m:[93m33[0m:[93m11[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'entityType' does not exist in type '(Without<AuditLogCreateInput, AuditLogUncheckedCreateInput> & AuditLogUncheckedCreateInput) | (Without<...> & AuditLogCreateInput)'.
+
+[7m33[0m           entityType: 'TENANT',
+[7m  [0m [91m          ~~~~~~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m99094[0m:[93m5[0m
+    [7m99094[0m     data: XOR<AuditLogCreateInput, AuditLogUncheckedCreateInput>
+    [7m     [0m [96m    ~~~~[0m
+    The expected type comes from property 'data' which is declared here on type '{ select?: AuditLogSelect<DefaultArgs>; include?: AuditLogInclude<DefaultArgs>; data: (Without<AuditLogCreateInput, AuditLogUncheckedCreateInput> & AuditLogUncheckedCreateInput) | (Without<...> & AuditLogCreateInput); }'
+[96msrc/portal/controllers/portal-log.controller.ts[0m:[93m73[0m:[93m11[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'entityType' does not exist in type '(Without<AuditLogCreateInput, AuditLogUncheckedCreateInput> & AuditLogUncheckedCreateInput) | (Without<...> & AuditLogCreateInput)'.
+
+[7m73[0m           entityType: 'TENANT',
+[7m  [0m [91m          ~~~~~~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m99094[0m:[93m5[0m
+    [7m99094[0m     data: XOR<AuditLogCreateInput, AuditLogUncheckedCreateInput>
+    [7m     [0m [96m    ~~~~[0m
+    The expected type comes from property 'data' which is declared here on type '{ select?: AuditLogSelect<DefaultArgs>; include?: AuditLogInclude<DefaultArgs>; data: (Without<AuditLogCreateInput, AuditLogUncheckedCreateInput> & AuditLogUncheckedCreateInput) | (Without<...> & AuditLogCreateInput); }'
+[96msrc/portal/services/portal-auth.service.ts[0m:[93m68[0m:[93m17[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'permissions' does not exist in type 'RoleInclude<DefaultArgs>'.
+
+[7m68[0m                 permissions: {
+[7m  [0m [91m                ~~~~~~~~~~~[0m
+[96msrc/portal/services/portal-auth.service.ts[0m:[93m182[0m:[93m17[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'permissions' does not exist in type 'RoleInclude<DefaultArgs>'.
+
+[7m182[0m                 permissions: {
+[7m   [0m [91m                ~~~~~~~~~~~[0m
+[96msrc/settings/services/administrative-seals.service.ts[0m:[93m81[0m:[93m13[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'usages' does not exist in type 'AdministrativeSealCountOutputTypeSelect<DefaultArgs>'.
+
+[7m81[0m             usages: true,
+[7m  [0m [91m            ~~~~~~[0m
+[96msrc/settings/settings.controller.ts[0m:[93m502[0m:[93m44[0m - [91merror[0m[90m TS2339: [0mProperty 'checkExpiringSeals' does not exist on type 'AdministrativeSealsService'.
+
+[7m502[0m     return this.administrativeSealsService.checkExpiringSeals(
+[7m   [0m [91m                                           ~~~~~~~~~~~~~~~~~~[0m
+[96msrc/students/services/student-dossier.service.ts[0m:[93m111[0m:[93m9[0m - [91merror[0m[90m TS2561: [0mObject literal may only specify known properties, but 'quarters' does not exist in type 'ReportCardInclude<DefaultArgs>'. Did you mean to write 'quarter'?
+
+[7m111[0m         quarters: true,
+[7m   [0m [91m        ~~~~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m221206[0m:[93m5[0m
+    [7m221206[0m     include?: ReportCardInclude<ExtArgs> | null
+    [7m      [0m [96m    ~~~~~~~[0m
+    The expected type comes from property 'include' which is declared here on type '{ select?: ReportCardSelect<DefaultArgs>; include?: ReportCardInclude<DefaultArgs>; where?: ReportCardWhereInput; ... 4 more ...; distinct?: ReportCardScalarFieldEnum | ReportCardScalarFieldEnum[]; }'
+[96msrc/students/services/student-dossier.service.ts[0m:[93m127[0m:[93m9[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'academicYear' does not exist in type 'AbsenceInclude<DefaultArgs>'.
+
+[7m127[0m         academicYear: true,
+[7m   [0m [91m        ~~~~~~~~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m79131[0m:[93m5[0m
+    [7m79131[0m     include?: AbsenceInclude<ExtArgs> | null
+    [7m     [0m [96m    ~~~~~~~[0m
+    The expected type comes from property 'include' which is declared here on type '{ select?: AbsenceSelect<DefaultArgs>; include?: AbsenceInclude<DefaultArgs>; where?: AbsenceWhereInput; ... 4 more ...; distinct?: AbsenceScalarFieldEnum | AbsenceScalarFieldEnum[]; }'
+[96msrc/students/services/student-dossier.service.ts[0m:[93m145[0m:[93m9[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'date' does not exist in type 'DisciplinaryActionOrderByWithRelationInput | DisciplinaryActionOrderByWithRelationInput[]'.
+
+[7m145[0m         date: 'desc',
+[7m   [0m [91m        ~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m142693[0m:[93m5[0m
+    [7m142693[0m     orderBy?: DisciplinaryActionOrderByWithRelationInput | DisciplinaryActionOrderByWithRelationInput[]
+    [7m      [0m [96m    ~~~~~~~[0m
+    The expected type comes from property 'orderBy' which is declared here on type '{ select?: DisciplinaryActionSelect<DefaultArgs>; include?: DisciplinaryActionInclude<DefaultArgs>; ... 5 more ...; distinct?: DisciplinaryActionScalarFieldEnum | DisciplinaryActionScalarFieldEnum[]; }'
+[96msrc/students/services/student-dossier.service.ts[0m:[93m341[0m:[93m9[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'academicYearId' does not exist in type 'AbsenceWhereInput'.
+
+[7m341[0m         academicYearId,
+[7m   [0m [91m        ~~~~~~~~~~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m79135[0m:[93m5[0m
+    [7m79135[0m     where?: AbsenceWhereInput
+    [7m     [0m [96m    ~~~~~[0m
+    The expected type comes from property 'where' which is declared here on type '{ select?: AbsenceSelect<DefaultArgs>; include?: AbsenceInclude<DefaultArgs>; where?: AbsenceWhereInput; ... 4 more ...; distinct?: AbsenceScalarFieldEnum | AbsenceScalarFieldEnum[]; }'
+[96msrc/students/services/student-dossier.service.ts[0m:[93m358[0m:[93m62[0m - [91merror[0m[90m TS2339: [0mProperty 'severity' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; status: string; description: string; tenantId: string; academicYearId: string; schoolLevelId: string; studentId: string; actionDate: Date; disciplineId: string; actionType: string; duration: number; decidedBy: string; }'.
+
+[7m358[0m     const minorIncidents = disciplinaryActions.filter(a => a.severity === 'MINOR').length;
+[7m   [0m [91m                                                             ~~~~~~~~[0m
+[96msrc/students/services/student-dossier.service.ts[0m:[93m359[0m:[93m62[0m - [91merror[0m[90m TS2339: [0mProperty 'severity' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; status: string; description: string; tenantId: string; academicYearId: string; schoolLevelId: string; studentId: string; actionDate: Date; disciplineId: string; actionType: string; duration: number; decidedBy: string; }'.
+
+[7m359[0m     const majorIncidents = disciplinaryActions.filter(a => a.severity === 'MAJOR').length;
+[7m   [0m [91m                                                             ~~~~~~~~[0m
+[96msrc/students/services/student-dossier.service.ts[0m:[93m367[0m:[93m55[0m - [91merror[0m[90m TS2339: [0mProperty 'date' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; status: string; description: string; tenantId: string; academicYearId: string; schoolLevelId: string; studentId: string; actionDate: Date; disciplineId: string; actionType: string; duration: number; decidedBy: string; }'.
+
+[7m367[0m       ? disciplinaryActions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
+[7m   [0m [91m                                                      ~~~~[0m
+[96msrc/students/services/student-dossier.service.ts[0m:[93m367[0m:[93m84[0m - [91merror[0m[90m TS2339: [0mProperty 'date' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; status: string; description: string; tenantId: string; academicYearId: string; schoolLevelId: string; studentId: string; actionDate: Date; disciplineId: string; actionType: string; duration: number; decidedBy: string; }'.
+
+[7m367[0m       ? disciplinaryActions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
+[7m   [0m [91m                                                                                   ~~~~[0m
+[96msrc/students/services/student-dossier.service.ts[0m:[93m381[0m:[93m39[0m - [91merror[0m[90m TS2339: [0mProperty 'date' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; status: string; description: string; tenantId: string; academicYearId: string; schoolLevelId: string; studentId: string; actionDate: Date; disciplineId: string; actionType: string; duration: number; decidedBy: string; }'.
+
+[7m381[0m       lastIncidentDate: lastIncident?.date || null,
+[7m   [0m [91m                                      ~~~~[0m
+[96msrc/students/services/student-dossier.service.ts[0m:[93m382[0m:[93m39[0m - [91merror[0m[90m TS2339: [0mProperty 'date' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; status: string; description: string; tenantId: string; academicYearId: string; schoolLevelId: string; studentId: string; actionDate: Date; disciplineId: string; actionType: string; duration: number; decidedBy: string; }'.
+
+[7m382[0m       lastSanctionDate: lastIncident?.date || null,
+[7m   [0m [91m                                      ~~~~[0m
+[96msrc/students/services/student-identifier.service.ts[0m:[93m335[0m:[93m11[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'where' does not exist in type 'StudentDefaultArgs<DefaultArgs>'.
+
+[7m335[0m           where: academicYearId ? { academicYearId } : undefined,
+[7m   [0m [91m          ~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m132134[0m:[93m5[0m
+    [7m132134[0m     student?: boolean | StudentDefaultArgs<ExtArgs>
+    [7m      [0m [96m    ~~~~~~~[0m
+    The expected type comes from property 'student' which is declared here on type 'StudentIdentifierInclude<DefaultArgs>'
+[96msrc/students/transfers-prisma.service.ts[0m:[93m200[0m:[93m9[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'exitReason' does not exist in type '(Without<TransferRequestUpdateInput, TransferRequestUncheckedUpdateInput> & TransferRequestUncheckedUpdateInput) | (Without<...> & TransferRequestUpdateInput)'.
+
+[7m200[0m         exitReason: reason,
+[7m   [0m [91m        ~~~~~~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m139564[0m:[93m5[0m
+    [7m139564[0m     data: XOR<TransferRequestUpdateInput, TransferRequestUncheckedUpdateInput>
+    [7m      [0m [96m    ~~~~[0m
+    The expected type comes from property 'data' which is declared here on type '{ select?: TransferRequestSelect<DefaultArgs>; include?: TransferRequestInclude<DefaultArgs>; data: (Without<...> & TransferRequestUncheckedUpdateInput) | (Without<...> & TransferRequestUpdateInput); where: TransferRequestWhereUniqueInput; }'
+[96msrc/sync/services/offline-sync.service.ts[0m:[93m59[0m:[93m84[0m - [91merror[0m[90m TS2339: [0mProperty 'reason' does not exist on type 'SchemaValidationResult'.
+
+[7m59[0m       this.logger.warn(`[${syncId}] Schéma SQLite incompatible: ${schemaValidation.reason}`);
+[7m  [0m [91m                                                                                   ~~~~~~[0m
+[96msrc/sync/services/offline-sync.service.ts[0m:[93m61[0m:[93m57[0m - [91merror[0m[90m TS2339: [0mProperty 'reason' does not exist on type 'SchemaValidationResult'.
+
+[7m61[0m         `Schéma SQLite incompatible: ${schemaValidation.reason}. Mise à jour de l'application requise.`,
+[7m  [0m [91m                                                        ~~~~~~[0m
+[96msrc/tenant-features/tenant-features.controller.ts[0m:[93m82[0m:[93m39[0m - [91merror[0m[90m TS2341: [0mProperty 'repository' is private and only accessible within class 'TenantFeaturesService'.
+
+[7m82[0m     return this.tenantFeaturesService.repository.update(id, tenantId, {
+[7m  [0m [91m                                      ~~~~~~~~~~[0m
+
+Found 137 error(s).
+

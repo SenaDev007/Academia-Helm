@@ -1,0 +1,62 @@
+{
+  "version": "1.0",
+  "description": "Règles officielles ORION – Assistant de direction",
+  "rules": [
+    {
+      "id": "FIN_REV_DROP",
+      "domain": "FINANCE",
+      "severity": "CRITICAL",
+      "condition": {
+        "metric": "variation_percent",
+        "operator": "<=",
+        "value": -10
+      },
+      "message": "Baisse des recettes supérieure à 10 % sur la période."
+    },
+    {
+      "id": "FIN_COLLECTION_LOW",
+      "domain": "FINANCE",
+      "severity": "WARNING",
+      "condition": {
+        "metric": "collection_rate",
+        "operator": "<",
+        "value": 70
+      },
+      "message": "Taux de recouvrement inférieur au seuil recommandé."
+    },
+    {
+      "id": "RH_ABSENCE_HIGH",
+      "domain": "RH",
+      "severity": "ALERT",
+      "condition": {
+        "metric": "absence_rate",
+        "operator": ">",
+        "value": 10
+      },
+      "message": "Taux d'absence des enseignants supérieur au seuil."
+    },
+    {
+      "id": "PED_SUCCESS_LOW",
+      "domain": "PEDAGOGY",
+      "severity": "WARNING",
+      "condition": {
+        "metric": "success_rate",
+        "operator": "<",
+        "value": 60
+      },
+      "message": "Taux de réussite pédagogique faible."
+    },
+    {
+      "id": "SYS_DATA_MISSING",
+      "domain": "SYSTEM",
+      "severity": "INFO",
+      "condition": {
+        "metric": "missing_kpi_count",
+        "operator": ">",
+        "value": 0
+      },
+      "message": "Certaines données nécessaires à l'analyse sont manquantes."
+    }
+  ]
+}
+

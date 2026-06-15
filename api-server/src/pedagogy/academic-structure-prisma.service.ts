@@ -1,0 +1,1077 @@
+/**
+ * ACADEMIC STRUCTURE PRISMA SERVICE - MODULE 2
+ * Structure académique : Niveaux → Cycles → Classes (par année scolaire).
+ */
+
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { PrismaService } from '../database/prisma.service';
+import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
+
+export interface DuplicateStructureResult {
+  fromAcademicYearId: string;
+  toAcademicYearId: string;
+  levelsCopied: number;
+  cyclesCopied: number;
+  classesCopied: number;
+  seriesCopied: number;
+  seriesSubjectsCopied: number;
+}
+
+/**
+ * Niveaux Paramètres (education_levels.name) → libellés Module 2 (pedagogy_academic_levels.name).
+ * Doit rester aligné avec EducationStructureService (MATERNELLE, PRIMAIRE, SECONDAIRE).
+ */
+const EDUCATION_CODE_TO_PEDAGOGY: Record<string, { name: string; orderIndex: number }> = {
+  MATERNELLE: { name: 'Maternelle', orderIndex: 0 },
+  PRIMAIRE: { name: 'Primaire', orderIndex: 1 },
+  SECONDAIRE: { name: 'Secondaire', orderIndex: 2 },
+};
+
+/**
+ * Ordre d’affichage global (tous niveaux) : Maternelle → Primaire → Secondaire (réf. Bénin / Educmaster).
+ * Les `orderIndex` des cycles pédagogiques alignés sur les paramètres reprennent ces positions pour un tri unique.
+ */
+const CANONICAL_CYCLE_GLOBAL_ORDER: readonly string[] = [
+  'maternelle 1',
+  'maternelle 2',
+  'ci',
+  'cp',
+  'ce1',
+  'ce2',
+  'cm1',
+  'cm2',
+  '1er cycle',
+  '2nd cycle',
+];
+
+function normalizeCycleNameKey(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/** Index 0..9 pour l’ordre global, ou null si le libellé n’est pas reconnu comme cycle canonique. */
+function globalOrderIndexForCanonicalCycleName(name: string): number | null {
+  const key = normalizeCycleNameKey(name);
+  const direct = CANONICAL_CYCLE_GLOBAL_ORDER.indexOf(key);
+  if (direct >= 0) return direct;
+
+  const compact = key.replace(/\s/g, '');
+  const compactOrder = CANONICAL_CYCLE_GLOBAL_ORDER.map((c) => c.replace(/\s/g, ''));
+  const ci = compactOrder.indexOf(compact);
+  if (ci >= 0) return ci;
+
+  if (compact === 'maternelle1' || key === 'mat1' || key === 'ps' || key === 'ms' || key.includes('petite section') || key.includes('moyenne section')) return 0;
+  if (compact === 'maternelle2' || key === 'mat2' || key === 'gs' || key.includes('grande section')) return 1;
+  if (key.includes('1er') && key.includes('cycle')) return 8;
+  if (
+    (key.includes('2nd') || key.includes('2eme') || key.includes('2ème')) &&
+    key.includes('cycle')
+  ) {
+    return 9;
+  }
+
+  return null;
+}
+
+function normalizeCycleNameForProduction(name: string): string {
+  const key = normalizeCycleNameKey(name);
+  if (key === 'ps' || key === 'ms' || key.includes('petite section') || key.includes('moyenne section') || key === 'maternelle 1' || key === 'maternelle1') {
+    return 'Maternelle 1';
+  }
+  if (key === 'gs' || key.includes('grande section') || key === 'maternelle 2' || key === 'maternelle2') {
+    return 'Maternelle 2';
+  }
+  return name.trim();
+}
+
+
+/** Cycles hors liste canonique : placer après 0–9, par niveau puis ordre paramètres. */
+function fallbackGlobalOrderIndexForCycle(
+  educationLevelCode: string,
+  intraLevelOrder: number,
+): number {
+  const levelOrder = EDUCATION_CODE_TO_PEDAGOGY[educationLevelCode]?.orderIndex ?? 0;
+  return 100 + levelOrder * 20 + intraLevelOrder;
+}
+
+@Injectable()
+export class AcademicStructurePrismaService {
+  private readonly logger = new Logger(AcademicStructurePrismaService.name);
+
+  constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Recopie l’activation des niveaux depuis Paramètres (EducationLevel.isEnabled)
+   * vers les niveaux pédagogiques de l’année (AcademicLevel.isActive).
+   * Idempotent — appelée à chaque lecture des niveaux.
+   */
+  private async syncAcademicLevelsFromEducationSettings(
+    tenantId: string,
+    academicYearId: string,
+  ): Promise<void> {
+    try {
+      const eduLevels = await this.prisma.educationLevel.findMany({
+        where: { tenantId },
+        orderBy: { order: 'asc' },
+      });
+      if (eduLevels.length === 0) return;
+
+      const year = await this.prisma.academicYear.findFirst({
+        where: { id: academicYearId, tenantId },
+      });
+      if (!year) return;
+
+      await this.prisma.$transaction(async (tx) => {
+        for (const el of eduLevels) {
+          const mapped = EDUCATION_CODE_TO_PEDAGOGY[el.name];
+          if (!mapped) continue;
+
+          const existing = await tx.academicLevel.findFirst({
+            where: {
+              tenantId,
+              academicYearId,
+              name: mapped.name,
+            },
+          });
+
+          if (existing) {
+            await tx.academicLevel.update({
+              where: { id: existing.id },
+              data: {
+                ...prismaUpdateDefaults(),
+                isActive: el.isEnabled,
+                orderIndex: mapped.orderIndex,
+              },
+            });
+          } else {
+            await tx.academicLevel.create({
+              data: {
+                ...prismaCreateDefaults(),
+                tenantId,
+                academicYearId,
+                name: mapped.name,
+                orderIndex: mapped.orderIndex,
+                isActive: el.isEnabled,
+              },
+            });
+          }
+        }
+
+        const activeCount = await tx.academicLevel.count({
+          where: { tenantId, academicYearId, isActive: true },
+        });
+        if (activeCount === 0) {
+          const first = await tx.academicLevel.findFirst({
+            where: { tenantId, academicYearId },
+            orderBy: { orderIndex: 'asc' },
+          });
+          if (first) {
+            await tx.academicLevel.update({
+              where: { id: first.id },
+              data: { ...prismaUpdateDefaults(), isActive: true },
+            });
+          }
+        }
+      });
+    } catch (e) {
+      this.logger.warn(
+        `syncAcademicLevelsFromEducationSettings: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+
+  /**
+   * Recopie les cycles depuis Paramètres (EducationCycle sous EducationLevel)
+   * vers les cycles pédagogiques de l’année (AcademicCycle), alignés sur le niveau
+   * Module 2 (Maternelle / Primaire / Secondaire).
+   * Idempotent — appelée à chaque lecture des cycles.
+   */
+  private async syncAcademicCyclesFromEducationSettings(
+    tenantId: string,
+    academicYearId: string,
+  ): Promise<void> {
+    try {
+      await this.syncAcademicLevelsFromEducationSettings(tenantId, academicYearId);
+
+      const eduLevels = await this.prisma.educationLevel.findMany({
+        where: { tenantId },
+        include: { cycles: { orderBy: { order: 'asc' } } },
+        orderBy: { order: 'asc' },
+      });
+      if (eduLevels.length === 0) return;
+
+      const year = await this.prisma.academicYear.findFirst({
+        where: { id: academicYearId, tenantId },
+      });
+      if (!year) return;
+
+      await this.prisma.$transaction(async (tx) => {
+        for (const el of eduLevels) {
+          const mapped = EDUCATION_CODE_TO_PEDAGOGY[el.name];
+          if (!mapped) continue;
+
+          const academicLevel = await tx.academicLevel.findFirst({
+            where: {
+              tenantId,
+              academicYearId,
+              name: mapped.name,
+            },
+          });
+          if (!academicLevel) continue;
+
+          for (const ec of el.cycles) {
+            const normalizedName = normalizeCycleNameForProduction(ec.name);
+            const existing = await tx.academicCycle.findFirst({
+              where: {
+                tenantId,
+                academicYearId,
+                levelId: academicLevel.id,
+                name: normalizedName,
+              },
+            });
+            const canonical = globalOrderIndexForCanonicalCycleName(normalizedName);
+            const orderIndex =
+              canonical !== null
+                ? canonical
+                : fallbackGlobalOrderIndexForCycle(el.name, ec.order);
+            const cyclePayload = {
+              name: normalizedName,
+              orderIndex,
+              isActive: el.isEnabled,
+            };
+            if (existing) {
+              await tx.academicCycle.update({
+                where: { id: existing.id },
+                data: { ...prismaUpdateDefaults(), ...cyclePayload },
+              });
+            } else {
+              await tx.academicCycle.create({
+                data: {
+                  ...prismaCreateDefaults(),
+                  tenantId,
+                  academicYearId,
+                  levelId: academicLevel.id,
+                  name: normalizedName,
+                  orderIndex,
+                  isActive: el.isEnabled,
+                },
+              });
+            }
+          }
+
+        }
+
+        const activeCount = await tx.academicCycle.count({
+          where: { tenantId, academicYearId, isActive: true },
+        });
+        if (activeCount === 0) {
+          const firstUnderActiveLevel = await tx.academicCycle.findFirst({
+            where: {
+              tenantId,
+              academicYearId,
+              level: { isActive: true },
+            },
+            orderBy: [{ level: { orderIndex: 'asc' } }, { orderIndex: 'asc' }],
+          });
+          if (firstUnderActiveLevel) {
+            await tx.academicCycle.update({
+              where: { id: firstUnderActiveLevel.id },
+              data: { ...prismaUpdateDefaults(), isActive: true },
+            });
+          }
+        }
+      });
+    } catch (e) {
+      this.logger.warn(
+        `syncAcademicCyclesFromEducationSettings: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+
+  /** Aligné sur `createClass` : code unique par année. */
+  private normalizePedagogyClassCode(code: string): string {
+    return code.trim().toUpperCase().replace(/\s/g, '');
+  }
+
+  /**
+   * Capacités : somme des capacités des classes physiques (paramètres → Classroom) pour ce grade et cette année.
+   * Si aucune classe physique n’existe, on ne modifie pas la capacité existante en pédagogie (update).
+   */
+  private capacityFromEducationClassrooms(
+    physicalClassrooms: { capacity: number | null }[],
+  ): number | null | undefined {
+    if (physicalClassrooms.length === 0) return undefined;
+    if (physicalClassrooms.every((r) => r.capacity == null)) return null;
+    return physicalClassrooms.reduce((s, r) => s + (r.capacity ?? 0), 0);
+  }
+
+  /**
+   * Recopie les classes pédagogiques depuis Paramètres (EducationGrade sous EducationCycle)
+   * vers AcademicClass (libellé + code + rattachement niveau/cycle + actif + capacité depuis les classes physiques).
+   * Ne supprime pas les classes créées manuellement en pédagogie (codes absents des paramètres).
+   * Idempotent — appelée à chaque lecture des classes.
+   */
+  private async syncAcademicClassesFromEducationSettings(
+    tenantId: string,
+    academicYearId: string,
+  ): Promise<void> {
+    try {
+      await this.syncAcademicCyclesFromEducationSettings(tenantId, academicYearId);
+      await this.syncAcademicSeriesFromEducationSettings(tenantId, academicYearId);
+
+      const eduLevels = await this.prisma.educationLevel.findMany({
+        where: { tenantId },
+        include: {
+          cycles: {
+            orderBy: { order: 'asc' },
+            include: {
+              grades: {
+                orderBy: { order: 'asc' },
+                include: { series: true }
+              },
+            },
+          },
+        },
+        orderBy: { order: 'asc' },
+      });
+      if (eduLevels.length === 0) return;
+
+      const year = await this.prisma.academicYear.findFirst({
+        where: { id: academicYearId, tenantId },
+      });
+      if (!year) return;
+
+      await this.prisma.$transaction(async (tx) => {
+        for (const el of eduLevels) {
+          const mapped = EDUCATION_CODE_TO_PEDAGOGY[el.name];
+          if (!mapped) continue;
+
+          const academicLevel = await tx.academicLevel.findFirst({
+            where: {
+              tenantId,
+              academicYearId,
+              name: mapped.name,
+            },
+          });
+          if (!academicLevel) continue;
+
+          for (const ec of el.cycles) {
+            const academicCycle = await tx.academicCycle.findFirst({
+              where: {
+                tenantId,
+                academicYearId,
+                levelId: academicLevel.id,
+                name: ec.name,
+              },
+            });
+            if (!academicCycle) continue;
+
+            for (const eg of ec.grades) {
+              const code = this.normalizePedagogyClassCode(eg.code);
+              if (!code) continue;
+
+              const className = eg.name.trim();
+              const isActive = el.isEnabled && academicCycle.isActive;
+
+              const physicalClassrooms = await tx.classroom.findMany({
+                where: {
+                  tenantId,
+                  academicYearId,
+                  gradeId: eg.id,
+                  isArchived: false,
+                  isActive: true,
+                },
+                select: { capacity: true },
+              });
+              const capacitySync = this.capacityFromEducationClassrooms(physicalClassrooms);
+
+              let seriesId: string | null = null;
+              if (eg.seriesId && eg.series?.code) {
+                const academicSeries = await tx.academicSeries.findFirst({
+                  where: {
+                    tenantId,
+                    academicYearId,
+                    levelId: academicLevel.id,
+                    name: eg.series.code,
+                  },
+                });
+                if (academicSeries) {
+                  seriesId = academicSeries.id;
+                }
+              }
+
+              const existing = await tx.academicClass.findFirst({
+                where: { tenantId, academicYearId, code },
+              });
+
+              if (existing) {
+                await tx.academicClass.update({
+                  where: { id: existing.id },
+                  data: {
+                    ...prismaUpdateDefaults(),
+                    levelId: academicLevel.id,
+                    cycleId: academicCycle.id,
+                    name: className,
+                    isActive,
+                    seriesId,
+                    ...(capacitySync !== undefined ? { capacity: capacitySync } : {}),
+                  },
+                });
+              } else {
+                await tx.academicClass.create({
+                  data: {
+                    ...prismaCreateDefaults(),
+                    tenantId,
+                    academicYearId,
+                    levelId: academicLevel.id,
+                    cycleId: academicCycle.id,
+                    name: className,
+                    code,
+                    isActive,
+                    seriesId,
+                    ...(capacitySync !== undefined ? { capacity: capacitySync } : {}),
+                  },
+                });
+              }
+            }
+          }
+        }
+      });
+    } catch (e) {
+      this.logger.warn(
+        `syncAcademicClassesFromEducationSettings: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+
+  private normalizeDefaultLanguageTrack(defaultLanguage: string | null | undefined): 'FR' | 'EN' {
+    const u = (defaultLanguage ?? 'FR').trim().toUpperCase();
+    return u === 'EN' ? 'EN' : 'FR';
+  }
+
+  /**
+   * Aligne `languageTrack` (piste FR/EN) sur Paramètres → Option bilingue.
+   * - Bilingue désactivé : toutes les classes → langue par défaut (souvent FR).
+   * - Bilingue activé : seules les pistes vides reçoivent la langue par défaut.
+   */
+  private async syncAcademicClassLanguageTracksFromBilingualSettings(
+    tenantId: string,
+    academicYearId: string,
+  ): Promise<void> {
+    try {
+      const settings = await this.prisma.settingsBilingual.findUnique({
+        where: { tenantId },
+      });
+      if (!settings) return;
+
+      const defaultLang = this.normalizeDefaultLanguageTrack(settings.defaultLanguage);
+      const classes = await this.prisma.academicClass.findMany({
+        where: { tenantId, academicYearId },
+        select: { id: true, languageTrack: true },
+      });
+      if (classes.length === 0) return;
+
+      await this.prisma.$transaction(async (tx) => {
+        for (const c of classes) {
+          const empty = c.languageTrack == null || String(c.languageTrack).trim() === '';
+          if (!settings.isEnabled) {
+            await tx.academicClass.update({
+              where: { id: c.id },
+              data: { ...prismaUpdateDefaults(), languageTrack: defaultLang },
+            });
+          } else if (empty) {
+            await tx.academicClass.update({
+              where: { id: c.id },
+              data: { ...prismaUpdateDefaults(), languageTrack: defaultLang },
+            });
+          }
+        }
+      });
+    } catch (e) {
+      this.logger.warn(
+        `syncAcademicClassLanguageTracksFromBilingualSettings: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+
+  /** 2nd cycle du secondaire (Paramètres) : libellés type « 2nd cycle », « 2ème cycle ». */
+  private isEducationSecondCycleCycleName(cycleName: string): boolean {
+    const key = normalizeCycleNameKey(cycleName);
+    if (key.includes('2nd') && key.includes('cycle')) return true;
+    if (key.includes('2ème') && key.includes('cycle')) return true;
+    if (key.includes('2eme') && key.includes('cycle')) return true;
+    const compact = key.replace(/\s/g, '');
+    return (
+      compact === '2ndcycle' ||
+      compact === '2èmecycle' ||
+      compact === '2emecycle' ||
+      globalOrderIndexForCanonicalCycleName(cycleName) === 9
+    );
+  }
+
+  /**
+   * Recopie les séries Paramètres (EducationSeries référencées par les grades du 2nd cycle secondaire)
+   * vers pedagogy_academic_series pour l’année. Création / mise à jour du libellé (description) ; ne supprime pas
+   * les séries pédagogiques existantes (préservation des liens matières). Idempotent — à appeler avant lecture des séries.
+   */
+  async syncAcademicSeriesFromEducationSettings(
+    tenantId: string,
+    academicYearId: string,
+  ): Promise<void> {
+    try {
+      await this.syncAcademicLevelsFromEducationSettings(tenantId, academicYearId);
+
+      const secondaryLevel = await this.prisma.academicLevel.findFirst({
+        where: { tenantId, academicYearId, name: 'Secondaire' },
+      });
+      if (!secondaryLevel) return;
+
+      const eduSecondary = await this.prisma.educationLevel.findFirst({
+        where: { tenantId, name: 'SECONDAIRE' },
+        include: {
+          cycles: {
+            orderBy: { order: 'asc' },
+            include: {
+              grades: {
+                orderBy: { order: 'asc' },
+                include: { series: true },
+              },
+            },
+          },
+        },
+      });
+      if (!eduSecondary) return;
+
+      const year = await this.prisma.academicYear.findFirst({
+        where: { id: academicYearId, tenantId },
+      });
+      if (!year) return;
+
+      const byCode = new Map<string, { code: string; label: string | null }>();
+      for (const ec of eduSecondary.cycles) {
+        if (!this.isEducationSecondCycleCycleName(ec.name)) continue;
+        for (const eg of ec.grades) {
+          const s = eg.series;
+          if (!s?.code) continue;
+          const code = s.code.trim();
+          if (!code) continue;
+          byCode.set(code, { code, label: s.name ?? null });
+        }
+      }
+
+      await this.prisma.$transaction(async (tx) => {
+        for (const { code, label } of byCode.values()) {
+          const existing = await tx.academicSeries.findFirst({
+            where: {
+              tenantId,
+              academicYearId,
+              levelId: secondaryLevel.id,
+              name: code,
+            },
+          });
+          if (existing) {
+            if (label != null && existing.description !== label) {
+              await tx.academicSeries.update({
+                where: { id: existing.id },
+                data: { ...prismaUpdateDefaults(), description: label },
+              });
+            }
+          } else {
+            await tx.academicSeries.create({
+              data: {
+                ...prismaCreateDefaults(),
+                tenantId,
+                academicYearId,
+                levelId: secondaryLevel.id,
+                name: code,
+                description: label,
+                isActive: true,
+              },
+            });
+          }
+        }
+      });
+    } catch (e) {
+      this.logger.warn(
+        `syncAcademicSeriesFromEducationSettings: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+
+  private async assertEnglishTrackAllowedIfNeeded(
+    tenantId: string,
+    languageTrack: string | null | undefined,
+  ): Promise<void> {
+    const raw = (languageTrack ?? '').trim().toUpperCase();
+    if (raw !== 'EN') return;
+    const settings = await this.prisma.settingsBilingual.findUnique({
+      where: { tenantId },
+      select: { isEnabled: true },
+    });
+    if (!settings?.isEnabled) {
+      throw new BadRequestException(
+        "La piste anglaise (EN) nécessite l'option bilingue activée dans Paramètres.",
+      );
+    }
+  }
+
+  async findAllLevels(tenantId: string, academicYearId: string) {
+    await this.syncAcademicLevelsFromEducationSettings(tenantId, academicYearId);
+    return this.prisma.academicLevel.findMany({
+      where: { tenantId, academicYearId },
+      include: { cycles: { orderBy: { orderIndex: 'asc' } } },
+      orderBy: { orderIndex: 'asc' },
+    });
+  }
+
+  async createLevel(data: {
+    tenantId: string;
+    academicYearId: string;
+    name: string;
+    orderIndex?: number;
+  }) {
+    const existing = await this.prisma.academicLevel.findFirst({
+      where: {
+        tenantId: data.tenantId,
+        academicYearId: data.academicYearId,
+        name: data.name,
+      },
+    });
+    if (existing) {
+      throw new BadRequestException(`Le niveau "${data.name}" existe déjà pour cette année.`);
+    }
+    return this.prisma.academicLevel.create({
+      data: {
+        ...prismaCreateDefaults(),
+        tenantId: data.tenantId,
+        academicYearId: data.academicYearId,
+        name: data.name,
+        orderIndex: data.orderIndex ?? 0,
+      },
+    });
+  }
+
+  async updateLevel(id: string, tenantId: string, data: { name?: string; orderIndex?: number; isActive?: boolean }) {
+    await this.getLevelOrThrow(id, tenantId);
+    return this.prisma.academicLevel.update({ where: { id }, data: { ...prismaUpdateDefaults(), ...data } });
+  }
+
+  async getLevelOrThrow(id: string, tenantId: string) {
+    const level = await this.prisma.academicLevel.findFirst({
+      where: { id, tenantId },
+      include: { cycles: { orderBy: { orderIndex: 'asc' } } },
+    });
+    if (!level) throw new NotFoundException('Niveau non trouvé.');
+    return level;
+  }
+
+  async findAllCycles(tenantId: string, academicYearId: string, levelId?: string) {
+    await this.syncAcademicCyclesFromEducationSettings(tenantId, academicYearId);
+    const where: Record<string, unknown> = { tenantId, academicYearId };
+    if (levelId) where.levelId = levelId;
+    return this.prisma.academicCycle.findMany({
+      where,
+      include: { level: true, classes: { where: { isActive: true } } },
+      orderBy: [{ orderIndex: 'asc' }, { name: 'asc' }],
+    });
+  }
+
+  async createCycle(data: {
+    tenantId: string;
+    academicYearId: string;
+    levelId: string;
+    name: string;
+    orderIndex?: number;
+    isActive?: boolean;
+  }) {
+    const existing = await this.prisma.academicCycle.findFirst({
+      where: {
+        tenantId: data.tenantId,
+        academicYearId: data.academicYearId,
+        levelId: data.levelId,
+        name: data.name,
+      },
+    });
+    if (existing) {
+      throw new BadRequestException(`Le cycle "${data.name}" existe déjà pour ce niveau.`);
+    }
+    return this.prisma.academicCycle.create({
+      data: {
+        ...prismaCreateDefaults(),
+        tenantId: data.tenantId,
+        academicYearId: data.academicYearId,
+        levelId: data.levelId,
+        name: data.name,
+        orderIndex: data.orderIndex ?? 0,
+        isActive: data.isActive ?? true,
+      },
+      include: { level: true },
+    });
+  }
+
+  async updateCycle(id: string, tenantId: string, data: { name?: string; orderIndex?: number; isActive?: boolean }) {
+    await this.getCycleOrThrow(id, tenantId);
+    return this.prisma.academicCycle.update({
+      where: { id },
+      data: { ...prismaUpdateDefaults(), ...data },
+      include: { level: true },
+    });
+  }
+
+  async getCycleOrThrow(id: string, tenantId: string) {
+    const cycle = await this.prisma.academicCycle.findFirst({
+      where: { id, tenantId },
+      include: { level: true, classes: true },
+    });
+    if (!cycle) throw new NotFoundException('Cycle non trouvé.');
+    return cycle;
+  }
+
+  async findAllClasses(
+    tenantId: string,
+    academicYearId: string,
+    filters?: { levelId?: string; cycleId?: string; isActive?: boolean }
+  ) {
+    await this.syncAcademicClassesFromEducationSettings(tenantId, academicYearId);
+    await this.syncAcademicClassLanguageTracksFromBilingualSettings(tenantId, academicYearId);
+    const where: Record<string, unknown> = { tenantId, academicYearId };
+    if (filters?.levelId) where.levelId = filters.levelId;
+    if (filters?.cycleId) where.cycleId = filters.cycleId;
+    if (filters?.isActive !== undefined) where.isActive = filters.isActive;
+    return this.prisma.academicClass.findMany({
+      where,
+      include: {
+        level: true,
+        cycle: true,
+        room: true,
+        series: true,
+        mainTeacher: { select: { id: true, firstName: true, lastName: true, matricule: true } },
+      },
+      orderBy: [{ cycle: { orderIndex: 'asc' } }, { name: 'asc' }],
+    });
+  }
+
+  async createClass(data: {
+    tenantId: string;
+    academicYearId: string;
+    levelId: string;
+    cycleId?: string;
+    name: string;
+    code: string;
+    capacity?: number;
+    roomId?: string;
+    mainTeacherId?: string;
+    languageTrack?: string;
+  }) {
+    // If no cycleId provided, find or create the default cycle for this level
+    let cycleId = data.cycleId;
+    if (!cycleId) {
+      const defaultCycle = await this.prisma.academicCycle.findFirst({
+        where: { tenantId: data.tenantId, academicYearId: data.academicYearId, levelId: data.levelId },
+        orderBy: { orderIndex: 'asc' },
+      });
+      if (defaultCycle) {
+        cycleId = defaultCycle.id;
+      } else {
+        // Auto-create a default cycle
+        const newCycle = await this.prisma.academicCycle.create({
+          data: {
+            ...prismaCreateDefaults(),
+            tenantId: data.tenantId,
+            academicYearId: data.academicYearId,
+            levelId: data.levelId,
+            name: `Cycle ${data.name}`,
+            orderIndex: 0,
+          },
+        });
+        cycleId = newCycle.id;
+      }
+    }
+    const code = data.code.trim().toUpperCase().replace(/\s/g, '');
+    const existing = await this.prisma.academicClass.findFirst({
+      where: { tenantId: data.tenantId, academicYearId: data.academicYearId, code },
+    });
+    if (existing) {
+      throw new BadRequestException(`Une classe avec le code "${data.code}" existe déjà pour cette année.`);
+    }
+    await this.assertEnglishTrackAllowedIfNeeded(data.tenantId, data.languageTrack);
+    return this.prisma.academicClass.create({
+      data: {
+        ...prismaCreateDefaults(),
+        tenantId: data.tenantId,
+        academicYearId: data.academicYearId,
+        levelId: data.levelId,
+        cycleId,
+        name: data.name,
+        code,
+        capacity: data.capacity,
+        roomId: data.roomId || null,
+        mainTeacherId: data.mainTeacherId || null,
+        languageTrack: data.languageTrack || null,
+      },
+      include: {
+        level: true,
+        cycle: true,
+        room: true,
+        mainTeacher: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+  }
+
+  async updateClass(
+    id: string,
+    tenantId: string,
+    data: {
+      name?: string;
+      code?: string;
+      capacity?: number;
+      roomId?: string | null;
+      mainTeacherId?: string | null;
+      languageTrack?: string | null;
+      isActive?: boolean;
+    }
+  ) {
+    const existing = await this.prisma.academicClass.findFirst({ where: { id, tenantId } });
+    if (!existing) throw new NotFoundException('Classe non trouvée.');
+    if (data.languageTrack !== undefined) {
+      await this.assertEnglishTrackAllowedIfNeeded(tenantId, data.languageTrack);
+    }
+    if (data.code && data.code !== existing.code) {
+      const code = data.code.trim().toUpperCase().replace(/\s/g, '');
+      const duplicate = await this.prisma.academicClass.findFirst({
+        where: { tenantId, academicYearId: existing.academicYearId, code },
+      });
+      if (duplicate) throw new BadRequestException(`Le code "${data.code}" est déjà utilisé.`);
+    }
+    const updateData: Record<string, unknown> = { ...data };
+    if (data.code) (updateData as { code: string }).code = data.code.trim().toUpperCase().replace(/\s/g, '');
+    return this.prisma.academicClass.update({
+      where: { id },
+      data: { ...prismaUpdateDefaults(), ...updateData },
+      include: {
+        level: true,
+        cycle: true,
+        room: true,
+        mainTeacher: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+  }
+
+  async getClassOrThrow(id: string, tenantId: string) {
+    const cls = await this.prisma.academicClass.findFirst({
+      where: { id, tenantId },
+      include: { level: true, cycle: true, room: true, series: true, mainTeacher: true },
+    });
+    if (!cls) throw new NotFoundException('Classe non trouvée.');
+    return cls;
+  }
+
+  async deactivateClass(id: string, tenantId: string) {
+    return this.updateClass(id, tenantId, { isActive: false });
+  }
+
+  /**
+   * Copie la structure pédagogique (niveaux, cycles, classes, séries, matières par série)
+   * d'une année source vers une année cible. Les salles et responsables de classe ne sont pas recopiés.
+   */
+  async duplicateStructure(
+    tenantId: string,
+    fromAcademicYearId: string,
+    toAcademicYearId: string,
+    userId?: string | null,
+  ): Promise<DuplicateStructureResult> {
+    if (fromAcademicYearId === toAcademicYearId) {
+      throw new BadRequestException("L'année source et l'année cible doivent être différentes.");
+    }
+
+    const [fromYear, toYear] = await Promise.all([
+      this.prisma.academicYear.findFirst({ where: { id: fromAcademicYearId, tenantId } }),
+      this.prisma.academicYear.findFirst({ where: { id: toAcademicYearId, tenantId } }),
+    ]);
+    if (!fromYear) {
+      throw new NotFoundException('Année source introuvable pour ce tenant.');
+    }
+    if (!toYear) {
+      throw new NotFoundException('Année cible introuvable pour ce tenant.');
+    }
+
+    const existingTargetLevels = await this.prisma.academicLevel.count({
+      where: { tenantId, academicYearId: toAcademicYearId },
+    });
+    if (existingTargetLevels > 0) {
+      throw new BadRequestException(
+        "L'année cible contient déjà une structure pédagogique. Supprimez ou videz-la avant duplication.",
+      );
+    }
+
+    const sourceLevels = await this.prisma.academicLevel.findMany({
+      where: { tenantId, academicYearId: fromAcademicYearId },
+      orderBy: { orderIndex: 'asc' },
+    });
+    if (sourceLevels.length === 0) {
+      throw new BadRequestException("L'année source ne contient aucun niveau à copier.");
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const levelMap = new Map<string, string>();
+      for (const l of sourceLevels) {
+        const created = await tx.academicLevel.create({
+          data: {
+            ...prismaCreateDefaults(),
+            tenantId,
+            academicYearId: toAcademicYearId,
+            name: l.name,
+            orderIndex: l.orderIndex,
+            isActive: l.isActive,
+          },
+        });
+        levelMap.set(l.id, created.id);
+      }
+
+      const sourceCycles = await tx.academicCycle.findMany({
+        where: { tenantId, academicYearId: fromAcademicYearId },
+        orderBy: { orderIndex: 'asc' },
+      });
+      const cycleMap = new Map<string, string>();
+      for (const c of sourceCycles) {
+        const newLevelId = levelMap.get(c.levelId);
+        if (!newLevelId) {
+          throw new BadRequestException(
+            `Cycle "${c.name}" : niveau source introuvable (données incohérentes).`,
+          );
+        }
+        const created = await tx.academicCycle.create({
+          data: {
+            ...prismaCreateDefaults(),
+            tenantId,
+            academicYearId: toAcademicYearId,
+            levelId: newLevelId,
+            name: c.name,
+            orderIndex: c.orderIndex,
+            isActive: c.isActive,
+          },
+        });
+        cycleMap.set(c.id, created.id);
+      }
+
+      const sourceSeries = await tx.academicSeries.findMany({
+        where: { tenantId, academicYearId: fromAcademicYearId },
+        orderBy: { name: 'asc' },
+      });
+      const seriesMap = new Map<string, string>();
+      for (const s of sourceSeries) {
+        const newLevelId = levelMap.get(s.levelId);
+        if (!newLevelId) {
+          throw new BadRequestException(
+            `Série "${s.name}" : niveau source introuvable (données incohérentes).`,
+          );
+        }
+        const created = await tx.academicSeries.create({
+          data: {
+            ...prismaCreateDefaults(),
+            tenantId,
+            academicYearId: toAcademicYearId,
+            levelId: newLevelId,
+            name: s.name,
+            description: s.description,
+            isActive: s.isActive,
+          },
+        });
+        seriesMap.set(s.id, created.id);
+      }
+
+      const sourceSeriesSubjects = await tx.seriesSubject.findMany({
+        where: { tenantId, academicYearId: fromAcademicYearId },
+      });
+      let seriesSubjectsCopied = 0;
+      for (const ss of sourceSeriesSubjects) {
+        const newSeriesId = seriesMap.get(ss.seriesId);
+        if (!newSeriesId) continue;
+        await tx.seriesSubject.create({
+          data: {
+            ...prismaCreateDefaults(),
+            tenantId,
+            academicYearId: toAcademicYearId,
+            seriesId: newSeriesId,
+            subjectId: ss.subjectId,
+            coefficient: ss.coefficient,
+            weeklyHours: ss.weeklyHours,
+          },
+        });
+        seriesSubjectsCopied += 1;
+      }
+
+      const sourceClasses = await tx.academicClass.findMany({
+        where: { tenantId, academicYearId: fromAcademicYearId },
+        orderBy: [{ cycle: { orderIndex: 'asc' } }, { name: 'asc' }],
+      });
+      for (const cl of sourceClasses) {
+        const newLevelId = levelMap.get(cl.levelId);
+        const newCycleId = cycleMap.get(cl.cycleId);
+        if (!newLevelId || !newCycleId) {
+          throw new BadRequestException(
+            `Classe "${cl.name}" : niveau ou cycle source introuvable (données incohérentes).`,
+          );
+        }
+        await tx.academicClass.create({
+          data: {
+            ...prismaCreateDefaults(),
+            tenantId,
+            academicYearId: toAcademicYearId,
+            levelId: newLevelId,
+            cycleId: newCycleId,
+            name: cl.name,
+            code: cl.code,
+            capacity: cl.capacity,
+            roomId: null,
+            mainTeacherId: null,
+            languageTrack: cl.languageTrack,
+            isActive: cl.isActive,
+          },
+        });
+      }
+
+      return {
+        levelsCopied: sourceLevels.length,
+        cyclesCopied: sourceCycles.length,
+        classesCopied: sourceClasses.length,
+        seriesCopied: sourceSeries.length,
+        seriesSubjectsCopied,
+      };
+    });
+
+    await this.syncAcademicLevelsFromEducationSettings(tenantId, toAcademicYearId);
+    await this.syncAcademicCyclesFromEducationSettings(tenantId, toAcademicYearId);
+    await this.syncAcademicClassesFromEducationSettings(tenantId, toAcademicYearId);
+    await this.syncAcademicClassLanguageTracksFromBilingualSettings(tenantId, toAcademicYearId);
+
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          ...prismaCreateDefaults(),
+          tenantId,
+          userId: userId ?? null,
+          action: 'DUPLICATE',
+          resource: 'pedagogy/academic-structure',
+          resourceId: toAcademicYearId,
+          tableName: 'pedagogy_structure_duplicate',
+          recordId: toAcademicYearId,
+          changes: {
+            fromAcademicYearId,
+            toAcademicYearId,
+            ...result,
+          },
+        },
+      });
+    } catch (e) {
+      this.logger.warn(
+        `Audit log duplicate structure failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+
+    return {
+      fromAcademicYearId,
+      toAcademicYearId,
+      ...result,
+    };
+  }
+}

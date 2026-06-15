@@ -1,0 +1,544 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Fluid typography base — responsive (spec Academia Helm) */
+@layer base {
+  html {
+    font-size: clamp(14px, 1.5vw, 16px);
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    @apply font-sans;
+  }
+  body {
+    @apply text-sm md:text-base leading-relaxed bg-background text-foreground;
+    overflow-x: hidden;
+  }
+  h1 {
+    @apply text-2xl md:text-4xl lg:text-5xl font-black leading-tight;
+  }
+  h2 {
+    @apply text-xl md:text-3xl lg:text-4xl font-bold leading-snug;
+  }
+  h3 {
+    @apply text-lg md:text-xl lg:text-2xl font-bold leading-snug;
+  }
+  h4 {
+    @apply text-base md:text-lg lg:text-xl font-semibold;
+  }
+  p {
+    @apply text-sm md:text-base leading-relaxed;
+  }
+  .theme {
+    --font-heading: var(--font-sans);
+    --font-sans: var(--font-sans);
+  }
+  :root {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.205 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --destructive-foreground: oklch(0.985 0 0);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --radius: 0.625rem;
+    --radius-md: var(--radius);
+    --sidebar: oklch(0.985 0 0);
+    --sidebar-foreground: oklch(0.145 0 0);
+    --sidebar-primary: oklch(0.205 0 0);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.97 0 0);
+    --sidebar-accent-foreground: oklch(0.205 0 0);
+    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-ring: oklch(0.708 0 0);
+  }
+  .dark {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --destructive-foreground: oklch(0.985 0 0);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.556 0 0);
+  }
+  * {
+    @apply border-border;
+  }
+}
+
+:root {
+  --royal-blue-900: #0A2A5E;
+  --royal-blue-800: #0D3B85;
+  --royal-blue-700: #114FC4;
+  --royal-blue-600: #1C6FE8;
+  --living-gold-600: #CFA63A;
+  --living-gold-500: #F2C94C;
+  --living-gold-400: #FFE08A;
+  --graphite-900: #0F172A;
+  --graphite-700: #334155;
+  --graphite-500: #64748B;
+  --cloud: #F7F9FC;
+  --mist: #EEF2F8;
+  --crimson-600: #B91C1C;
+  --crimson-500: #DC2626;
+  /* Fallback pour Dancing Script (désactivé temporairement) */
+  --font-dancing-script: 'Brush Script MT', 'Lucida Handwriting', cursive;
+}
+
+/* body base styles (couleur) — overflow-x déjà dans @layer base */
+body {
+  @apply bg-white text-blue-900;
+}
+
+/* Utilities */
+@layer utilities {
+  .btn-primary-crimson {
+    @apply bg-crimson-600 text-white px-6 py-3 rounded-md font-semibold hover:bg-crimson-500 transition-colors;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-200 text-gray-900 px-6 py-3 rounded-md font-semibold hover:bg-gray-300 transition-colors;
+  }
+
+  .card-institutional {
+    @apply bg-white rounded-lg p-6 border border-gray-200 shadow-sm;
+  }
+
+  .icon-card-primary {
+    @apply w-8 h-8 text-blue-900 mb-4;
+  }
+
+  /* Safe area utilities for notched phones (iPhone X+) */
+  .safe-area-inset-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  .safe-area-inset-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .safe-area-inset-left {
+    padding-left: env(safe-area-inset-left);
+  }
+  .safe-area-inset-right {
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Academia Helm branded animations */
+@keyframes academiaShimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+@keyframes academiaBounce {
+  0%, 80%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-6px); }
+}
+
+/* ── Premium inline loading animations ── */
+
+/* Branded wave: gradient wave sweeping left-to-right with brand colors */
+@keyframes academiaWave {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* Orbital ring rotation for ORION */
+@keyframes academiaOrbit {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Reverse orbital for double-ring effect */
+@keyframes academiaOrbitReverse {
+  0% { transform: rotate(360deg); }
+  100% { transform: rotate(0deg); }
+}
+
+/* Branded pulse with color transition (navy → gold → navy) */
+@keyframes academiaPulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.95); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+/* Core glow effect for spinner center */
+@keyframes academiaGlow {
+  0%, 100% {
+    box-shadow: 0 0 4px 1px rgba(245,179,53,0.3);
+    opacity: 0.6;
+  }
+  50% {
+    box-shadow: 0 0 10px 3px rgba(245,179,53,0.6);
+    opacity: 1;
+  }
+}
+
+/* Wave dot: smooth scale with color shift */
+@keyframes academiaWaveDot {
+  0%, 100% {
+    transform: scale(0.6);
+    opacity: 0.3;
+  }
+  50% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Slide up fade for skeleton blocks */
+@keyframes academiaSlideUp {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Branded shimmer with color wave (enhanced) */
+@keyframes academiaShimmerWave {
+  0% {
+    transform: translateX(-100%);
+    opacity: 0.6;
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(200%);
+    opacity: 0.6;
+  }
+}
+
+/* Flowing progress bar for linear indicators */
+@keyframes academiaFlow {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Gentle float for mobile skeletons */
+@keyframes academiaFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+/* Ring dash for orbital spinners */
+@keyframes academiaRingDash {
+  0% { stroke-dashoffset: 100; }
+  100% { stroke-dashoffset: 0; }
+}
+
+@keyframes shake-interval {
+  0%, 95%, 100% { transform: translateX(0) rotate(0deg); }
+  1% { transform: translateX(-8px) rotate(-2deg); }
+  2% { transform: translateX(8px) rotate(2deg); }
+  3% { transform: translateX(-8px) rotate(-2deg); }
+  4% { transform: translateX(8px) rotate(2deg); }
+  5% { transform: translateX(-6px) rotate(-1.5deg); }
+  6% { transform: translateX(6px) rotate(1.5deg); }
+  7% { transform: translateX(-6px) rotate(-1.5deg); }
+  8% { transform: translateX(6px) rotate(1.5deg); }
+  9% { transform: translateX(-4px) rotate(-1deg); }
+  10% { transform: translateX(4px) rotate(1deg); }
+  11% { transform: translateX(-4px) rotate(-1deg); }
+  12% { transform: translateX(4px) rotate(1deg); }
+  13% { transform: translateX(-2px) rotate(-0.5deg); }
+  14% { transform: translateX(2px) rotate(0.5deg); }
+  15% { transform: translateX(-2px) rotate(-0.5deg); }
+  16% { transform: translateX(2px) rotate(0.5deg); }
+  17% { transform: translateX(0) rotate(0deg); }
+}
+
+/* Educational Particles Animations */
+@keyframes particleFloat {
+  0% {
+    left: var(--start-x, 0%);
+    top: var(--start-y, 0%);
+    transform: rotate(0deg);
+  }
+  100% {
+    left: var(--end-x, 100%);
+    top: var(--end-y, 100%);
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes particleRotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.particle-float {
+  animation: particleFloat var(--duration, 30s) ease-in-out infinite;
+  animation-delay: var(--delay, 0s);
+}
+
+.particle-rotate {
+  animation: particleRotate var(--rotation-duration, 60s) linear infinite;
+}
+
+/* ORION Particles Animation */
+@keyframes orionPulse {
+  0%, 100% {
+    opacity: 0.4;
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.3);
+  }
+}
+
+.orion-particle {
+  animation: orionPulse var(--duration, 2s) ease-in-out infinite;
+  animation-delay: var(--delay, 0s);
+}
+
+/* ORION Background Particles Animation - Flowing from bottom to top */
+@keyframes orionFlowUp {
+  0% {
+    transform: translateY(224px) translateX(0px) scale(0.7);
+    opacity: 0.6;
+  }
+  10% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(0px) translateX(var(--drift-x, 0px)) scale(1.2);
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-224px) translateX(var(--drift-x, 0px)) scale(0.7);
+    opacity: 0.6;
+  }
+}
+
+.orion-background-particle {
+  animation: orionFlowUp var(--flow-duration, 8s) linear infinite;
+  animation-delay: var(--flow-delay, 0s);
+  will-change: transform, opacity;
+}
+
+/* Security Particles Animations */
+@keyframes securityParticleFloat {
+  0%, 100% {
+    transform: translate(-50%, -50%) translateY(0px) scale(1);
+    opacity: 0.3;
+  }
+  50% {
+    transform: translate(-50%, -50%) translateY(-20px) scale(1.1);
+    opacity: 0.6;
+  }
+}
+
+@keyframes securityParticlePulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.4;
+  }
+  50% {
+    transform: scale(1.3);
+    opacity: 0.8;
+  }
+}
+
+@keyframes securityParticleRipple {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+@keyframes securityParticleRotate {
+  0% {
+    transform: rotate(0deg) scale(1);
+    opacity: 0.4;
+  }
+  50% {
+    transform: rotate(180deg) scale(1.2);
+    opacity: 0.7;
+  }
+  100% {
+    transform: rotate(360deg) scale(1);
+    opacity: 0.4;
+  }
+}
+
+.security-particle-wifi {
+  animation: securityParticleFloat var(--particle-duration, 5s) ease-in-out infinite;
+  animation-delay: var(--particle-delay, 0s);
+}
+
+.security-particle-shield {
+  animation: securityParticleFloat var(--particle-duration, 6s) ease-in-out infinite;
+  animation-delay: var(--particle-delay, 0s);
+}
+
+.security-particle-pulse {
+  animation: securityParticlePulse 2s ease-in-out infinite;
+}
+
+.security-particle-ripple {
+  animation: securityParticleRipple 3s ease-out infinite;
+}
+
+.security-particle-rotate {
+  animation: securityParticleRotate 4s linear infinite;
+}
+
+/* Highlight Text Animations */
+@keyframes highlightPulse {
+  0%, 100% {
+    opacity: 0.25;
+    transform: scaleY(1) rotate(-1deg);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scaleY(1.1) rotate(-1deg);
+  }
+}
+
+@keyframes highlightShine {
+  0% {
+    background-position: -100% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes textGlow {
+  0%, 100% {
+    text-shadow: 0 0 10px rgba(37, 99, 235, 0.3), 0 0 20px rgba(37, 99, 235, 0.2);
+  }
+  50% {
+    text-shadow: 0 0 20px rgba(37, 99, 235, 0.5), 0 0 30px rgba(37, 99, 235, 0.3), 0 0 40px rgba(37, 99, 235, 0.2);
+  }
+}
+
+@keyframes textGlowGreen {
+  0%, 100% {
+    text-shadow: 0 0 10px rgba(22, 163, 74, 0.3), 0 0 20px rgba(22, 163, 74, 0.2);
+  }
+  50% {
+    text-shadow: 0 0 20px rgba(22, 163, 74, 0.5), 0 0 30px rgba(22, 163, 74, 0.3), 0 0 40px rgba(22, 163, 74, 0.2);
+  }
+}
+
+.highlight-animated {
+  animation: highlightPulse 2s ease-in-out infinite;
+}
+
+.highlight-shine {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.3) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: highlightShine 3s ease-in-out infinite;
+}
+
+.text-glow-blue {
+  animation: textGlow 2s ease-in-out infinite;
+}
+
+.text-glow-green {
+  animation: textGlowGreen 2s ease-in-out infinite;
+  animation-delay: 0.5s;
+}
+
+/* Pricing Card Recommended Animation */
+@keyframes recommendedCardFloat {
+  0%, 100% {
+    transform: translateY(-24px) scale(1.05);
+    box-shadow: 0 25px 50px -12px rgba(30, 64, 175, 0.25), 0 0 0 2px rgba(56, 189, 248, 0.6), 0 0 30px rgba(56, 189, 248, 0.4);
+    border-color: rgba(56, 189, 248, 0.9);
+  }
+  50% {
+    transform: translateY(-28px) scale(1.06);
+    box-shadow: 0 30px 60px -12px rgba(30, 64, 175, 0.35), 0 0 0 2px rgba(56, 189, 248, 0.8), 0 0 40px rgba(56, 189, 248, 0.5);
+    border-color: rgba(56, 189, 248, 1);
+  }
+}
+
+.animate-recommended-card {
+  animation: recommendedCardFloat 3s ease-in-out infinite;
+}

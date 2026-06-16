@@ -1,7 +1,7 @@
 'use client';
 
 import { DM_Sans } from 'next/font/google';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { buildReviewsPublishedUrl } from '@/lib/reviews-api-url';
 import {
@@ -25,6 +25,13 @@ const NAVY_MID = HELM_NAVY_MID;
 const GOLD = HELM_GOLD;
 const GOLD_LIGHT = HELM_GOLD_LIGHT;
 const SECTION_BG = HELM_SECTION_BG;
+
+/** Couleurs vertes pour badge "École vérifiée" */
+const GREEN_BG = '#dcfce7'; // emerald-50
+const GREEN_FG = '#15803d'; // green-700
+
+/** Longueur à partir de laquelle on tronque le témoignage */
+const COMMENT_COLLAPSED_LIMIT = 180;
 
 type PublishedReview = {
   id: string;
@@ -90,6 +97,40 @@ function StarRow({
   );
 }
 
+/** Icône couronne — remplace le "✓" pour le badge "École vérifiée". */
+function CrownIcon({ size = 12, color = 'currentColor' }: { size?: number; color?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill={color}
+      stroke="none"
+      aria-hidden
+    >
+      <path d="M2.5 6.5l4.5 4L12 4l5 6.5 4.5-4-1.7 11.5H4.2L2.5 6.5zm2 13h15v2h-15v-2z" />
+    </svg>
+  );
+}
+
+/** Icône goupil (localisation) pour afficher la ville sur sa propre ligne. */
+function LocationIcon({ size = 11 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden
+    >
+      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z" />
+      <circle cx="12" cy="10" r="3" />
+    </svg>
+  );
+}
+
 function initialsFromName(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return '?';
@@ -135,7 +176,7 @@ function timeAgo(iso: string | null): string {
  * Avatar : logo école si l'avis provient d'un tenant authentifié,
  * sinon photo fournie par l'utilisateur, sinon initiales colorées.
  */
-function Avatar({ r, size = 48 }: { r: PublishedReview; size?: number }) {
+function Avatar({ r, size = 44 }: { r: PublishedReview; size?: number }) {
   // 1) Avis déposé depuis l'application par une école → logo de l'école
   if (r.tenantId && r.tenantLogoUrl) {
     // eslint-disable-next-line @next/next/no-img-element
@@ -181,105 +222,215 @@ function Avatar({ r, size = 48 }: { r: PublishedReview; size?: number }) {
   );
 }
 
-function TrustpilotCard({ r }: { r: PublishedReview }) {
-  const isSchoolReview = Boolean(r.tenantId);
+/**
+ * Commentaire tronqué avec "Lire plus" / "Lire moins".
+ * Garantit des cartes de hauteur uniforme en mode replié.
+ */
+function ReviewComment({ comment }: { comment: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = comment.length > COMMENT_COLLAPSED_LIMIT;
+  const displayed =
+    expanded || !isLong
+      ? comment
+      : comment.slice(0, COMMENT_COLLAPSED_LIMIT).trimEnd() + '…';
+
   return (
-    <article
-      className="flex flex-col rounded-2xl bg-white p-6 transition-all duration-200 ease-out hover:-translate-y-[3px] hover:shadow-xl"
+    <div className="mt-3 flex-1">
+      <p
+        className="text-[14px] leading-relaxed text-slate-700"
+        style={{
+          fontFamily: 'Georgia, serif',
+          textAlign: 'justify',
+          hyphens: 'auto',
+        }}
+      >
+        “{displayed}”
+      </p>
+      {isLong ? (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-2 inline-flex items-center gap-1 text-xs font-semibold transition hover:opacity-70"
+          style={{ color: NAVY }}
+          aria-expanded={expanded}
+        >
+          {expanded ? 'Lire moins' : 'Lire plus'}
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            style={{
+              transform: expanded ? 'rotate(-90deg)' : 'rotate(90deg)',
+              transition: 'transform 0.2s ease',
+            }}
+          >
+            <path d="M9 18l6-6-6-6" />
+          </svg>
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function TrustpilotCard({
+  r,
+  index,
+}: {
+  r: PublishedReview;
+  index: number;
+}) {
+  const isSchoolReview = Boolean(r.tenantId);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    // Si l'IntersectionObserver n'est pas disponible, on affiche directement.
+    if (typeof IntersectionObserver === 'undefined') {
+      setVisible(true);
+      return;
+    }
+    const obs = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((e) => {
+          if (e.isIntersecting) {
+            setVisible(true);
+            obs.unobserve(e.target);
+          }
+        });
+      },
+      { threshold: 0.12, rootMargin: '0px 0px -40px 0px' },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  return (
+    <div
+      ref={wrapRef}
+      className="w-full sm:w-[400px]"
       style={{
-        boxShadow: '0 6px 22px rgba(30, 58, 95, 0.07)',
-        border: '1px solid #E2E8F0',
+        opacity: visible ? 1 : 0,
+        transform: visible ? 'translateY(0)' : 'translateY(28px)',
+        transition:
+          'opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1), transform 0.6s cubic-bezier(0.22, 1, 0.36, 1)',
+        transitionDelay: `${Math.min(index * 90, 540)}ms`,
       }}
     >
-      {/* En-tête : avatar + nom + badge source */}
-      <div className="flex items-start gap-3">
-        <Avatar r={r} size={48} />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <p
-              className="truncate text-[15px] font-bold"
-              style={{ color: NAVY }}
-            >
-              {r.authorName}
-            </p>
-            {isSchoolReview ? (
-              <span
-                className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-                style={{
-                  background: `linear-gradient(90deg, ${GOLD}22, ${GOLD}44)`,
-                  color: NAVY,
-                }}
-                title="Avis vérifié déposé depuis l'application Academia Helm"
-              >
-                ✓ École vérifiée
-              </span>
-            ) : (
-              <span
-                className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700"
-                title="Avis soumis depuis le formulaire public"
-              >
-                ✓ Avis vérifié
-              </span>
-            )}
-          </div>
-          <p className="mt-0.5 truncate text-xs text-slate-500">
-            {[r.authorRole, r.schoolName, r.city].filter(Boolean).join(' · ')}
-          </p>
-        </div>
-      </div>
-
-      {/* Étoiles + date */}
-      <div className="mt-4 flex items-center justify-between">
-        <StarRow rating={r.rating} size={18} />
-        <span className="text-xs text-slate-400">
-          {timeAgo(r.publishedAt ?? r.createdAt)}
-        </span>
-      </div>
-
-      {/* Commentaire */}
-      <p
-        className="mt-3 flex-1 text-[14.5px] leading-relaxed text-slate-700"
-        style={{ fontFamily: 'Georgia, serif' }}
+      <article
+        className="flex h-full flex-col rounded-2xl bg-white p-5 transition-shadow duration-200 ease-out hover:shadow-xl"
+        style={{
+          boxShadow: '0 6px 22px rgba(30, 58, 95, 0.07)',
+          border: '1px solid #E2E8F0',
+        }}
       >
-        “{r.comment}”
-      </p>
-
-      {/* Pied : mention "Mis en avant" si featured */}
-      {r.featured ? (
-        <div
-          className="mt-4 inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold"
-          style={{
-            background: `linear-gradient(90deg, ${GOLD}22, ${GOLD}44)`,
-            color: NAVY,
-          }}
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill={GOLD}>
-            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-          </svg>
-          Mis en avant
+        {/* En-tête : avatar + nom + badge source */}
+        <div className="flex items-start gap-3">
+          <Avatar r={r} size={44} />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <p
+                className="truncate text-[14.5px] font-bold"
+                style={{ color: NAVY }}
+              >
+                {r.authorName}
+              </p>
+              {isSchoolReview ? (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                  style={{
+                    background: GREEN_BG,
+                    color: GREEN_FG,
+                  }}
+                  title="Avis vérifié déposé depuis l'application Academia Helm"
+                >
+                  <CrownIcon size={11} color={GREEN_FG} />
+                  École vérifiée
+                </span>
+              ) : (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700"
+                  title="Avis soumis depuis le formulaire public"
+                >
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                  >
+                    <path d="M5 12l5 5L20 7" />
+                  </svg>
+                  Avis vérifié
+                </span>
+              )}
+            </div>
+            {/* Rôle + école sur une ligne, ville sur sa propre ligne */}
+            <p className="mt-0.5 truncate text-xs text-slate-500">
+              {[r.authorRole, r.schoolName].filter(Boolean).join(' · ')}
+            </p>
+            {r.city ? (
+              <p className="flex items-center gap-1 text-xs text-slate-500">
+                <LocationIcon size={11} />
+                <span>{r.city}</span>
+              </p>
+            ) : null}
+          </div>
         </div>
-      ) : null}
-    </article>
+
+        {/* Étoiles + date */}
+        <div className="mt-3 flex items-center justify-between">
+          <StarRow rating={r.rating} size={16} />
+          <span className="text-[11px] text-slate-400">
+            {timeAgo(r.publishedAt ?? r.createdAt)}
+          </span>
+        </div>
+
+        {/* Commentaire tronqué + Lire plus */}
+        <ReviewComment comment={r.comment} />
+
+        {/* Pied : mention "Mis en avant" si featured */}
+        {r.featured ? (
+          <div
+            className="mt-4 inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold"
+            style={{
+              background: `linear-gradient(90deg, ${GOLD}22, ${GOLD}44)`,
+              color: NAVY,
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill={GOLD}>
+              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+            </svg>
+            Mis en avant
+          </div>
+        ) : null}
+      </article>
+    </div>
   );
 }
 
 function SkeletonCards() {
   return (
-    <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+    <div className="flex flex-wrap justify-center gap-5">
       {Array.from({ length: 6 }).map((_, i) => (
         <div
           key={i}
-          className="animate-pulse overflow-hidden rounded-2xl border border-slate-200 bg-white p-6"
+          className="w-full animate-pulse overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 sm:w-[400px]"
         >
           <div className="flex gap-3">
-            <div className="h-12 w-12 rounded-full bg-slate-200" />
+            <div className="h-11 w-11 rounded-full bg-slate-200" />
             <div className="flex-1 space-y-2 pt-1">
               <div className="h-3 w-1/2 rounded bg-slate-200" />
               <div className="h-3 w-3/4 rounded bg-slate-100" />
             </div>
           </div>
-          <div className="mt-4 h-4 w-24 rounded bg-slate-100" />
-          <div className="mt-4 h-20 rounded bg-slate-100" />
+          <div className="mt-3 h-4 w-24 rounded bg-slate-100" />
+          <div className="mt-3 h-16 rounded bg-slate-100" />
         </div>
       ))}
     </div>
@@ -376,11 +527,11 @@ export default function ReviewsSection() {
 
   return (
     <section
-      className={`${dmSans.className} py-16 md:py-24`}
+      className={`${dmSans.className} py-14 md:py-20`}
       style={{ background: SECTION_BG }}
     >
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <header className="mx-auto mb-12 max-w-3xl text-center">
+        <header className="mx-auto mb-10 max-w-3xl text-center">
           <span
             className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-semibold"
             style={{
@@ -394,12 +545,12 @@ export default function ReviewsSection() {
             Avis vérifiés
           </span>
           <h2
-            className="mt-5 text-3xl font-extrabold tracking-tight md:text-4xl"
+            className="mt-4 text-2xl font-extrabold tracking-tight md:text-3xl"
             style={{ color: NAVY }}
           >
             Ce que disent nos établissements
           </h2>
-          <p className="mt-3 text-lg" style={{ color: HELM_TEXT_MUTED }}>
+          <p className="mt-2 text-base" style={{ color: HELM_TEXT_MUTED }}>
             Directeurs, enseignants, parents et élèves partagent leur expérience
             avec Academia Helm.
           </p>
@@ -409,82 +560,90 @@ export default function ReviewsSection() {
           <SkeletonCards />
         ) : hasReviews ? (
           <>
-            {/* Bandeau résumé façon Trustpilot */}
+            {/* Bandeau résumé compact façon Trustpilot */}
             <div
-              className="mb-12 overflow-hidden rounded-2xl border border-slate-200/80 bg-white"
-              style={{ boxShadow: '0 12px 40px rgba(30, 58, 95, 0.06)' }}
+              className="mb-10 overflow-hidden rounded-2xl border border-slate-200/80 bg-white"
+              style={{ boxShadow: '0 8px 28px rgba(30, 58, 95, 0.05)' }}
             >
-              <div className="grid grid-cols-1 md:grid-cols-12">
-                {/* Score global */}
+              <div className="flex flex-col md:flex-row md:items-stretch">
+                {/* Score compact à gauche */}
                 <div
-                  className="flex flex-col items-center justify-center gap-3 p-8 md:col-span-4"
+                  className="flex items-center gap-4 px-5 py-4 md:w-[300px] md:shrink-0"
                   style={{
-                    background: `linear-gradient(145deg, ${NAVY}, ${NAVY_MID})`,
+                    background: `linear-gradient(135deg, ${NAVY}, ${NAVY_MID})`,
                     color: '#fff',
                   }}
                 >
-                  <div className="flex items-end gap-2">
-                    <span className="text-5xl font-bold tabular-nums md:text-6xl">
+                  <div className="flex items-end gap-1">
+                    <span className="text-3xl font-bold tabular-nums md:text-4xl">
                       {stats.average.toFixed(1)}
                     </span>
-                    <span className="pb-2 text-lg opacity-80">/ 5</span>
+                    <span className="pb-1 text-sm opacity-80">/ 5</span>
                   </div>
-                  <StarRow rating={Math.round(stats.average)} size={22} gold={GOLD_LIGHT} />
-                  <p className="text-sm font-medium opacity-90">
-                    {scoreLabel(stats.average)}
-                  </p>
-                  <p className="text-xs opacity-75">
-                    Basé sur {stats.total} avis vérifié{stats.total > 1 ? 's' : ''}
-                  </p>
+                  <div className="flex flex-col gap-1">
+                    <StarRow
+                      rating={Math.round(stats.average)}
+                      size={15}
+                      gold={GOLD_LIGHT}
+                    />
+                    <p className="text-[11px] font-medium opacity-90">
+                      {scoreLabel(stats.average)}
+                    </p>
+                    <p className="text-[11px] opacity-75">
+                      {stats.total} avis vérifié{stats.total > 1 ? 's' : ''}
+                    </p>
+                  </div>
                 </div>
 
-                {/* Répartition */}
-                <div className="flex flex-1 flex-col justify-center gap-2.5 p-6 md:col-span-8 md:p-8">
+                {/* Répartition compacte à droite */}
+                <div className="flex-1 px-5 py-4">
                   <p
-                    className="mb-1 text-sm font-semibold"
+                    className="mb-2 text-xs font-semibold uppercase tracking-wide"
                     style={{ color: NAVY }}
                   >
                     Répartition des notes
                   </p>
-                  {[5, 4, 3, 2, 1].map((star) => {
-                    const pct =
-                      stats.distribution[star as 1 | 2 | 3 | 4 | 5] ?? 0;
-                    return (
-                      <div
-                        key={star}
-                        className="flex items-center gap-3 text-sm text-slate-600"
-                      >
-                        <span className="w-12 text-right font-medium">
-                          {star} étoile{star > 1 ? 's' : ''}
-                        </span>
-                        <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100">
-                          <div
-                            className="h-full rounded-full transition-all"
-                            style={{
-                              width: `${Math.min(100, pct)}%`,
-                              background: `linear-gradient(90deg, ${GOLD}, ${NAVY})`,
-                            }}
-                          />
+                  <div className="flex flex-col gap-1.5">
+                    {[5, 4, 3, 2, 1].map((star) => {
+                      const pct =
+                        stats.distribution[star as 1 | 2 | 3 | 4 | 5] ?? 0;
+                      return (
+                        <div
+                          key={star}
+                          className="flex items-center gap-2 text-xs text-slate-600"
+                        >
+                          <span className="w-8 text-right font-medium">
+                            {star}★
+                          </span>
+                          <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className="h-full rounded-full transition-all duration-700 ease-out"
+                              style={{
+                                width: `${Math.min(100, pct)}%`,
+                                background: `linear-gradient(90deg, ${GOLD}, ${NAVY})`,
+                              }}
+                            />
+                          </div>
+                          <span className="w-12 text-right tabular-nums text-slate-500">
+                            {pct.toFixed(1)}%
+                          </span>
                         </div>
-                        <span className="w-14 text-right tabular-nums text-slate-500">
-                          {pct.toFixed(1)}%
-                        </span>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Grille des avis */}
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-              {reviews.map((r) => (
-                <TrustpilotCard key={r.id} r={r} />
+            {/* Grille des avis — flexbox centrée pour 1, 2 ou 3+ cartes */}
+            <div className="flex flex-wrap justify-center gap-5">
+              {reviews.map((r, i) => (
+                <TrustpilotCard key={r.id} r={r} index={i} />
               ))}
             </div>
 
             {/* Appel à l'action — laisser un avis */}
-            <div className="mt-12 flex flex-col items-center gap-4 text-center">
+            <div className="mt-10 flex flex-col items-center gap-3 text-center">
               <p className="text-sm text-slate-600">
                 Vous utilisez Academia Helm ? Partagez votre expérience.
               </p>
@@ -496,12 +655,20 @@ export default function ReviewsSection() {
                 }}
               >
                 Laisser un avis
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <path d="M5 12h14M13 5l7 7-7 7" />
                 </svg>
               </Link>
               <p className="text-xs text-slate-400">
-                Avis collectés directement auprès des utilisateurs d'Academia Helm.
+                Avis collectés directement auprès des utilisateurs d'Academia
+                Helm.
               </p>
             </div>
           </>

@@ -523,3 +523,45 @@ Stage Summary:
   * Platform admins can moderate (approve/reject/archive/feature/delete) all reviews from admin.academiahelm.com/app/platform/reviews
 - Files modified: 8 + 3 new files (reviews page, loading, workspace component) + 1 new syntax-check script
 - All changes are syntax-clean (Babel parser verified)
+
+---
+Task ID: ah-reviews-ui-refinements
+Agent: Main Agent
+Task: Refinements UI de la section "avis & témoignages" sur la landing page (ReviewsSection.tsx)
+
+Work Log:
+- Lu /home/z/my-project/worklog.md → infrastructure reviews déjà complète (task précédente ah-reviews-and-build-oom).
+- Lu apps/web-app/src/components/landing/ReviewsSection.tsx (519 lignes, version Trustpilot précédente).
+- Lu apps/web-app/src/lib/helm-colors.ts pour la palette officielle.
+- Identifié les 6 demandes utilisateur :
+  1. Réduire le panneau stats du haut (trop large)
+  2. Badge "École vérifiée" en VERT avec icône COURONNE (au lieu du "✓") + texte justifié
+  3. Tronquer les témoignages longs avec "Lire plus" / "Lire moins" → cartes uniformes
+  4. Animer les cartes témoignages (apparition au scroll)
+  5. Centrer 1 carte comme 2 cartes (pas d'alignement à gauche)
+  6. Localisation (ville) sur sa propre ligne, plus tronquée
+
+- Réécrit apps/web-app/src/components/landing/ReviewsSection.tsx avec :
+  * Panneau stats compact : layout horizontal flex, score à gauche (300px max, plus 4-col/8-col grid), padding p-5/p-4 au lieu de p-8, font 3xl/4xl au lieu de 5xl/6xl, libellés en 11px
+  * Badge "École vérifiée" : background #dcfce7 (emerald-50) + texte #15803d (green-700) + icône couronne SVG (remplace "✓")
+  * Badge "Avis vérifié" (soumissions publiques) : conserve le vert existant avec icône coche SVG
+  * ReviewComment component : état expanded, COMMENT_COLLAPSED_LIMIT=180 caractères, "…" + bouton "Lire plus"/"Lire moins" avec icône chevron rotatif, texte justifié (textAlign: 'justify', hyphens: 'auto'), police Georgia
+  * TrustpilotCard : IntersectionObserver pour animation entrée (opacity 0→1, translateY 28px→0, cubic-bezier(0.22, 1, 0.36, 1), délai échelonné 90ms/carte plafonné à 540ms), wrapper div séparé pour éviter conflit avec hover
+  * Grille avis : flex flex-wrap justify-center gap-5 + cartes w-full sm:w-[400px] → 1 carte centrée, 2 cartes centrées, 3+ cartes en ligne(s) centrée(s)
+  * Localisation : ville extraite du join et affichée sur sa propre ligne avec icône goupil (LocationIcon), plus de truncate sur la ville
+  * Avatar : taille réduite 48→44px pour équilibrer avec la carte plus compacte
+  * Padding carte : p-6→p-5, étoiles 18→16px, marges réduites (mt-4→mt-3, mt-3→mt-2)
+  * Section padding : py-16 md:py-24 → py-14 md:py-20
+  * Header : text-3xl/4xl → text-2xl/3xl, marges réduites
+  * SkeletonCards : passé en flex-wrap justify-center avec w-full sm:w-[400px] pour cohérence
+
+- Vérifié syntaxe avec @babel/parser (typescript + jsx plugins) → OK, 0 erreur.
+
+Stage Summary:
+- 6 demandes utilisateur traitées en une seule réécriture de ReviewsSection.tsx
+- Cartes plus compactes et uniformes grâce au truncation "Lire plus"
+- Animations staggered au scroll (IntersectionObserver, pas de dépendance ajoutée)
+- Centrage parfait pour 1, 2 ou 3+ cartes via flexbox au lieu de grid CSS
+- Badge "École vérifiée" maintenant vert avec couronne — cohérent avec le badge "Avis vérifié" public
+- Ville toujours visible (plus jamais tronquée) sur sa propre ligne avec icône localisation
+- Aucune dépendance ajoutée, aucun fichier backend touché

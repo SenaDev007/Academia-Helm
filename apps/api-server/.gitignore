@@ -39,3 +39,6 @@ lerna-debug.log*
 .env.local
 .env.*.local
 
+# z-ai-web-dev-sdk config (contains API keys)
+.z-ai-config
+

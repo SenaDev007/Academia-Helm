@@ -523,7 +523,7 @@ export default function SaraWidget() {
                   En ligne
                 </span>
               </div>
-              {/* Voice Mode button */}
+              {/* Voice Mode button (ChatGPT-style: waveform icon) */}
               <button
                 onClick={() => setIsVoiceModeOpen(true)}
                 className="p-1.5 rounded-lg transition-all"
@@ -544,7 +544,11 @@ export default function SaraWidget() {
                 }}
                 title="Mode vocal"
               >
-                <Mic size={12} />
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="22" />
+                </svg>
               </button>
               <button
                 onClick={() => setIsOpen(false)}
@@ -700,7 +704,7 @@ export default function SaraWidget() {
             className="p-3 shrink-0 relative"
           >
             <div className="relative flex items-center gap-2">
-              {/* Voice Button (left of input) */}
+              {/* Voice Button (left of input — ChatGPT-style) */}
               <VoiceButton
                 onRecordingComplete={handleVoiceInput}
                 disabled={isTyping}
@@ -753,6 +757,35 @@ export default function SaraWidget() {
                   </svg>
                 </button>
               </div>
+
+              {/* Voice Mode button (right of input — ChatGPT-style waveform) */}
+              <button
+                type="button"
+                onClick={() => setIsVoiceModeOpen(true)}
+                className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition-all"
+                style={{
+                  background: H.cyanGhost,
+                  border: `1px solid ${H.cyanFaint}`,
+                  color: H.cyanDim,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(0,229,255,0.2)';
+                  e.currentTarget.style.color = '#ffffff';
+                  e.currentTarget.style.boxShadow = '0 0 12px rgba(0,229,255,0.3)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = H.cyanGhost;
+                  e.currentTarget.style.color = H.cyanDim;
+                  e.currentTarget.style.boxShadow = 'none';
+                }}
+                title="Mode vocal"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="22" />
+                </svg>
+              </button>
             </div>
           </form>
 

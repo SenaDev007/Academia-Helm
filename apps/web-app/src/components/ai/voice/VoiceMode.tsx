@@ -3,44 +3,66 @@
  * VOICE MODE — Mode vocal immersif pour SARA (style ChatGPT Voice)
  * ============================================================================
  *
- * Plein écran avec :
- *   - Orbe animée qui réagit à la voix (audio level visualization)
- *   - Enregistrement automatique : parler → transcrire → SARA → TTS → parler
- *   - Affichage du texte en temps réel (transcription + réponse)
- *   - Bouton pour quitter le mode vocal
- *   - Design holographique cohérent avec SaraWidget
+ * Design identique au mode vocal ChatGPT :
+ *   - Fond blanc épuré, minimaliste
+ *   - Orbe bleue au centre avec dégradé et animations
+ *   - Barre de saisie en bas avec micro + champ texte + fermer
+ *   - Messages affichés en overlay discret
+ *   - Animations fluides (pulsation, respiration)
  *
  * Flux :
- *   1. L'utilisateur ouvre le Voice Mode
- *   2. L'orbe est en état "listening" — l'utilisateur parle
- *   3. Quand l'utilisateur clique stop → ASR → SARA → TTS
- *   4. L'orbe passe en mode "speaking" pendant la lecture TTS
- *   5. Retour à l'état "listening" pour la prochaine question
+ *   1. L'utilisateur ouvre le Voice Mode → orbe bleue au centre
+ *   2. Clic sur l'orbe ou le micro → enregistrement commence
+ *   3. L'orbe devient animée avec le niveau audio
+ *   4. Clic stop → ASR → SARA → TTS → lecture
+ *   5. L'orbe pulse verte pendant la lecture
+ *   6. Retour à l'état initial
  * ============================================================================
  */
 
 'use client';
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { X, Mic, MicOff, Volume2, Loader2, MessageCircle } from 'lucide-react';
+import { X, Mic, MicOff, Volume2, Loader2, MessageCircle, Plus, Send, Pause } from 'lucide-react';
 import { saraApi, VoiceChatResponse } from '@/lib/api/sara';
 import { useVoiceRecorder } from '@/hooks/useVoiceRecorder';
 import { useVoicePlayback } from '@/hooks/useVoicePlayback';
 
-// ─── HOLO COLORS ────────────────────────────────────────────────────────────
+// ─── CHATGPT-STYLE PALETTE ────────────────────────────────────────────────
 
-const H = {
-  cyan: '#00e5ff',
-  cyanDim: 'rgba(0,229,255,0.7)',
-  cyanFaint: 'rgba(0,229,255,0.3)',
-  cyanGhost: 'rgba(0,229,255,0.1)',
-  cyanBorder: 'rgba(0,229,255,0.85)',
-  darkBg: 'rgba(0,12,28,0.98)',
-  darkBg90: 'rgba(0,12,28,0.90)',
-  gold: '#f5b335',
-  green: '#22c55e',
-  red: '#ef4444',
-  redGlow: 'rgba(239,68,68,0.4)',
+const Colors = {
+  // Background
+  bg: '#FFFFFF',
+  bgSubtle: '#F7F7F8',
+
+  // Text
+  textPrimary: '#1A1A2E',
+  textSecondary: '#6B6B80',
+  textMuted: '#9999AA',
+
+  // Orb
+  orbBlue: '#10A37F',       // ChatGPT green-teal
+  orbBlueLight: '#1DB9A0',
+  orbBlueDark: '#0D8C6F',
+  orbGlow: 'rgba(16,163,127,0.15)',
+  orbGlowActive: 'rgba(16,163,127,0.30)',
+
+  // States
+  listening: '#EF4444',
+  listeningGlow: 'rgba(239,68,68,0.25)',
+  processing: '#F59E0B',
+  processingGlow: 'rgba(245,158,11,0.20)',
+  speaking: '#10A37F',
+  speakingGlow: 'rgba(16,163,127,0.25)',
+  error: '#EF4444',
+  errorGlow: 'rgba(239,68,68,0.15)',
+
+  // Borders
+  border: '#E5E5EA',
+  borderFocus: '#10A37F',
+
+  // Input
+  inputBg: '#F7F7F8',
 } as const;
 
 // ─── TYPES ──────────────────────────────────────────────────────────────────
@@ -76,11 +98,14 @@ export function VoiceMode({ isOpen, onClose, visitorId }: VoiceModeProps) {
   const [currentResponse, setCurrentResponse] = useState('');
   const [conversationHistory, setConversationHistory] = useState<Array<{ role: string; content: string }>>([]);
   const [error, setError] = useState<string | null>(null);
+  const [textInput, setTextInput] = useState('');
+  const [showMessages, setShowMessages] = useState(false);
 
   const recorder = useVoiceRecorder();
   const playback = useVoicePlayback();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastMessageIdRef = useRef(0);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // ─── HELPERS ──────────────────────────────────────────────────────────
 
@@ -89,13 +114,14 @@ export function VoiceMode({ isOpen, onClose, visitorId }: VoiceModeProps) {
   // Scroll vers le bas quand de nouveaux messages arrivent
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, currentTranscription, currentResponse]);
+  }, [messages]);
 
   // Reset quand le mode s'ouvre
   useEffect(() => {
     if (isOpen) {
       setState('idle');
       setError(null);
+      setShowMessages(false);
     }
   }, [isOpen]);
 
@@ -131,34 +157,17 @@ export function VoiceMode({ isOpen, onClose, visitorId }: VoiceModeProps) {
       );
 
       if (result.error) {
-        // Erreur partielle — on peut quand même afficher la transcription si dispo
+        // Erreur partielle — afficher ce qu'on a pu obtenir
         if (result.transcribedText || result.saraResponse) {
-          // Afficher ce qu'on a pu obtenir
           if (result.transcribedText) {
-            const userMsg: VoiceMessage = {
-              id: nextId(),
-              type: 'user',
-              text: result.transcribedText,
-              timestamp: new Date(),
-            };
+            const userMsg: VoiceMessage = { id: nextId(), type: 'user', text: result.transcribedText, timestamp: new Date() };
             setMessages((prev) => [...prev, userMsg]);
-            setConversationHistory((prev) => [
-              ...prev,
-              { role: 'user', content: result.transcribedText },
-            ]);
+            setConversationHistory((prev) => [...prev, { role: 'user', content: result.transcribedText }]);
           }
           if (result.saraResponse) {
-            const assistantMsg: VoiceMessage = {
-              id: nextId(),
-              type: 'assistant',
-              text: result.saraResponse,
-              timestamp: new Date(),
-            };
+            const assistantMsg: VoiceMessage = { id: nextId(), type: 'assistant', text: result.saraResponse, timestamp: new Date() };
             setMessages((prev) => [...prev, assistantMsg]);
-            setConversationHistory((prev) => [
-              ...prev,
-              { role: 'assistant', content: result.saraResponse },
-            ]);
+            setConversationHistory((prev) => [...prev, { role: 'assistant', content: result.saraResponse }]);
           }
         }
         setError(result.error);
@@ -167,24 +176,10 @@ export function VoiceMode({ isOpen, onClose, visitorId }: VoiceModeProps) {
       }
 
       // Ajouter le message utilisateur
-      const userMsg: VoiceMessage = {
-        id: nextId(),
-        type: 'user',
-        text: result.transcribedText,
-        timestamp: new Date(),
-      };
-
-      // Ajouter la réponse SARA
-      const assistantMsg: VoiceMessage = {
-        id: nextId(),
-        type: 'assistant',
-        text: result.saraResponse,
-        timestamp: new Date(),
-      };
+      const userMsg: VoiceMessage = { id: nextId(), type: 'user', text: result.transcribedText, timestamp: new Date() };
+      const assistantMsg: VoiceMessage = { id: nextId(), type: 'assistant', text: result.saraResponse, timestamp: new Date() };
 
       setMessages((prev) => [...prev, userMsg, assistantMsg]);
-
-      // Mettre à jour l'historique de conversation
       setConversationHistory((prev) => [
         ...prev,
         { role: 'user', content: result.transcribedText },
@@ -208,7 +203,6 @@ export function VoiceMode({ isOpen, onClose, visitorId }: VoiceModeProps) {
 
   useEffect(() => {
     if (state === 'speaking' && !playback.isPlaying && !playback.isLoading) {
-      // La lecture est terminée, retour à l'état d'écoute
       setState('idle');
     }
   }, [state, playback.isPlaying, playback.isLoading]);
@@ -217,69 +211,104 @@ export function VoiceMode({ isOpen, onClose, visitorId }: VoiceModeProps) {
 
   const handleMicClick = useCallback(async () => {
     if (state === 'idle' || state === 'error') {
-      // Démarrer l'enregistrement
       await recorder.startRecording();
       setState('listening');
       setCurrentTranscription('');
       setCurrentResponse('');
+      setError(null);
     } else if (state === 'listening') {
-      // Arrêter l'enregistrement et lancer le pipeline
       await handleVoiceChat();
     } else if (state === 'speaking') {
-      // Interrompre la lecture et réécouter
       playback.stopAudio();
       await recorder.startRecording();
       setState('listening');
     }
   }, [state, recorder, handleVoiceChat, playback]);
 
-  // ─── ORB VISUALIZATION ────────────────────────────────────────────────
+  // ─── TEXT INPUT HANDLER ──────────────────────────────────────────────
+
+  const handleTextSend = useCallback(async () => {
+    const text = textInput.trim();
+    if (!text) return;
+
+    setTextInput('');
+    setState('processing');
+    setError(null);
+
+    // Ajouter le message utilisateur
+    const userMsg: VoiceMessage = { id: nextId(), type: 'user', text, timestamp: new Date() };
+    setMessages((prev) => [...prev, userMsg]);
+
+    try {
+      const result = await saraApi.query(text, visitorId, conversationHistory);
+      const responseText = result?.reply || result?.content || '';
+
+      const assistantMsg: VoiceMessage = { id: nextId(), type: 'assistant', text: responseText, timestamp: new Date() };
+      setMessages((prev) => [...prev, assistantMsg]);
+      setConversationHistory((prev) => [
+        ...prev,
+        { role: 'user', content: text },
+        { role: 'assistant', content: responseText },
+      ]);
+
+      // TTS pour lire la réponse
+      if (responseText) {
+        try {
+          const speakResult = await saraApi.voiceSpeak(responseText);
+          if (speakResult.audioBase64) {
+            setState('speaking');
+            playback.playAudio(speakResult.audioBase64, speakResult.format);
+          } else {
+            setState('idle');
+          }
+        } catch {
+          setState('idle');
+        }
+      } else {
+        setState('idle');
+      }
+    } catch (err: any) {
+      setError('Erreur de connexion. Réessayez.');
+      setState('error');
+    }
+  }, [textInput, visitorId, conversationHistory, playback]);
+
+  // ─── ORB CONFIG ──────────────────────────────────────────────────────
 
   const orbConfig = {
     idle: {
-      color: H.cyan,
-      glowColor: 'rgba(0,229,255,0.2)',
-      size: 120,
-      scale: 1,
+      color: Colors.orbBlue,
+      glowColor: Colors.orbGlow,
       label: 'Appuyez pour parler',
-      icon: Mic,
+      animation: 'orb-breathe 3s ease-in-out infinite',
     },
     listening: {
-      color: H.red,
-      glowColor: H.redGlow,
-      size: 120 + recorder.audioLevel * 40,
-      scale: 1 + recorder.audioLevel * 0.15,
-      label: 'Enregistrement en cours...',
-      icon: MicOff,
+      color: Colors.listening,
+      glowColor: Colors.listeningGlow,
+      label: 'Enregistrement en cours…',
+      animation: `orb-listen 1.2s ease-in-out infinite`,
     },
     processing: {
-      color: H.gold,
-      glowColor: 'rgba(245,179,53,0.3)',
-      size: 120,
-      scale: 1,
-      label: 'Sarah réfléchit...',
-      icon: Loader2,
+      color: Colors.processing,
+      glowColor: Colors.processingGlow,
+      label: 'Sarah réfléchit…',
+      animation: 'orb-think 2s ease-in-out infinite',
     },
     speaking: {
-      color: H.green,
-      glowColor: 'rgba(34,197,94,0.3)',
-      size: 120 + (playback.isPlaying ? 15 : 0),
-      scale: 1 + (playback.isPlaying ? 0.05 : 0),
-      label: 'Sarah parle...',
-      icon: Volume2,
+      color: Colors.speaking,
+      glowColor: Colors.speakingGlow,
+      label: 'Sarah parle…',
+      animation: 'orb-speak 2.5s ease-in-out infinite',
     },
     error: {
-      color: H.red,
-      glowColor: H.redGlow,
-      size: 120,
-      scale: 1,
+      color: Colors.error,
+      glowColor: Colors.errorGlow,
       label: 'Erreur — Réessayez',
-      icon: MessageCircle,
+      animation: 'none',
     },
   };
 
   const currentOrb = orbConfig[state];
-  const OrbIcon = currentOrb.icon;
 
   // ─── NOT OPEN ─────────────────────────────────────────────────────────
 
@@ -288,224 +317,124 @@ export function VoiceMode({ isOpen, onClose, visitorId }: VoiceModeProps) {
   // ─── RENDER ───────────────────────────────────────────────────────────
 
   return (
-    <div
-      className="fixed inset-0 z-[9999] flex flex-col"
-      style={{ background: H.darkBg }}
-    >
-      {/* ─── HEADER ──────────────────────────────────────────────────── */}
-      <div
-        className="flex items-center justify-between px-4 py-3 shrink-0"
-        style={{
-          borderBottom: `1px solid ${H.cyanFaint}`,
-          background: H.darkBg90,
-          backdropFilter: 'blur(20px)',
-        }}
+    <div className="fixed inset-0 z-[9999] flex flex-col" style={{ background: Colors.bg }}>
+      {/* ─── HEADER (ChatGPT-style) ──────────────────────────────────── */}
+      <div className="flex items-center justify-between px-4 py-3 shrink-0 border-b"
+        style={{ borderColor: Colors.border, background: Colors.bg }}
       >
-        <div className="flex items-center gap-3">
-          <div
-            className="w-8 h-8 rounded-full flex items-center justify-center"
-            style={{
-              background: `linear-gradient(135deg, ${H.cyan}, #009bb8)`,
-              boxShadow: `0 0 12px rgba(0,229,255,0.3)`,
-            }}
-          >
-            <Crown size={16} className="text-white" />
-          </div>
-          <div>
-            <h2 className="text-sm font-bold" style={{ color: '#ffffff' }}>
-              Mode Vocal — Sarah
-            </h2>
-            <p className="text-[10px]" style={{ color: H.cyanDim }}>
-              Academia Helm
-            </p>
-          </div>
+        <div className="w-9 h-9 rounded-full flex items-center justify-center"
+          style={{ background: Colors.bgSubtle }}
+        >
+          <Plus size={18} style={{ color: Colors.textSecondary }} />
         </div>
+
+        <h2 className="text-sm font-semibold" style={{ color: Colors.textPrimary }}>
+          Sarah Mode vocal
+        </h2>
 
         <button
           onClick={onClose}
-          className="w-8 h-8 rounded-full flex items-center justify-center transition-all"
-          style={{
-            background: H.cyanGhost,
-            border: `1px solid ${H.cyanFaint}`,
-            color: H.cyanDim,
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'rgba(0,229,255,0.2)';
-            e.currentTarget.style.color = '#ffffff';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = H.cyanGhost;
-            e.currentTarget.style.color = H.cyanDim;
-          }}
+          className="w-9 h-9 rounded-full flex items-center justify-center transition-all"
+          style={{ background: Colors.textPrimary }}
         >
-          <X size={16} />
+          <X size={16} style={{ color: '#FFFFFF' }} />
         </button>
       </div>
 
-      {/* ─── MESSAGES (scrollable) ─────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 voice-mode-scroll">
-        {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full opacity-50">
-            <p className="text-sm" style={{ color: H.cyanDim }}>
-              Parlez à Sarah — elle vous répondra à voix haute
-            </p>
-          </div>
-        )}
-
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
-            <div
-              className="max-w-[80%] px-3 py-2 rounded-xl text-sm"
-              style={
-                msg.type === 'user'
-                  ? {
-                      background: 'rgba(0,229,255,0.15)',
-                      border: `1px solid ${H.cyanFaint}`,
-                      color: '#ffffff',
-                    }
-                  : {
-                      background: 'rgba(34,197,94,0.1)',
-                      border: '1px solid rgba(34,197,94,0.2)',
-                      color: '#e0e0e0',
-                    }
-              }
-            >
-              <p className="text-[9px] font-semibold mb-1" style={{
-                color: msg.type === 'user' ? H.cyan : H.green,
-              }}>
-                {msg.type === 'user' ? 'Vous' : 'Sarah'}
-              </p>
-              {msg.text}
-            </div>
-          </div>
-        ))}
-
-        {/* Message en cours de transcription */}
-        {state === 'listening' && (
-          <div className="flex justify-end">
-            <div
-              className="max-w-[80%] px-3 py-2 rounded-xl text-sm"
-              style={{
-                background: 'rgba(239,68,68,0.1)',
-                border: '1px solid rgba(239,68,68,0.2)',
-                color: '#ffffff',
-              }}
-            >
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: H.red }} />
-                <span className="text-[9px]" style={{ color: H.red }}>
-                  Enregistrement {recorder.duration}s
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Processing indicator */}
-        {state === 'processing' && (
-          <div className="flex justify-start">
-            <div
-              className="px-3 py-2 rounded-xl text-sm"
-              style={{
-                background: 'rgba(245,179,53,0.1)',
-                border: '1px solid rgba(245,179,53,0.2)',
-                color: H.gold,
-              }}
-            >
-              <div className="flex items-center gap-2">
-                <Loader2 size={12} className="animate-spin" />
-                <span className="text-[9px]">Sarah réfléchit...</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* ─── ORB + CONTROLS ────────────────────────────────────────────── */}
-      <div
-        className="shrink-0 flex flex-col items-center py-8 px-4"
-        style={{
-          background: `linear-gradient(to top, ${H.darkBg}, transparent)`,
-        }}
-      >
-        {/* Error message */}
-        {error && (
-          <div
-            className="mb-4 px-4 py-2 rounded-lg text-xs max-w-md text-center"
-            style={{
-              background: 'rgba(239,68,68,0.1)',
-              border: '1px solid rgba(239,68,68,0.2)',
-              color: H.red,
-            }}
-          >
-            {error}
-          </div>
-        )}
-
-        {/* ORB */}
-        <div className="relative flex items-center justify-center mb-6">
-          {/* Outer glow */}
-          <div
-            className="absolute rounded-full transition-all duration-300"
-            style={{
-              width: currentOrb.size + 60,
-              height: currentOrb.size + 60,
-              background: `radial-gradient(circle, ${currentOrb.glowColor} 0%, transparent 70%)`,
-              transform: `scale(${currentOrb.scale})`,
-            }}
-          />
-
-          {/* Middle ring */}
-          <div
-            className="absolute rounded-full transition-all duration-300"
-            style={{
-              width: currentOrb.size + 20,
-              height: currentOrb.size + 20,
-              border: `1.5px solid ${currentOrb.color}`,
-              opacity: 0.3,
-              transform: `scale(${currentOrb.scale})`,
-            }}
-          />
-
-          {/* Inner orb */}
+      {/* ─── MESSAGES OVERLAY (discret, en haut) ──────────────────────── */}
+      {messages.length > 0 && (
+        <div className="px-4 pt-2">
           <button
-            onClick={handleMicClick}
-            className="relative rounded-full flex items-center justify-center transition-all duration-300 cursor-pointer"
-            style={{
-              width: currentOrb.size,
-              height: currentOrb.size,
-              background: `radial-gradient(circle at 30% 30%, ${currentOrb.color}, rgba(0,0,0,0.8))`,
-              boxShadow: `0 0 ${20 + recorder.audioLevel * 30}px ${currentOrb.glowColor}, inset 0 0 30px rgba(0,0,0,0.5)`,
-              transform: `scale(${currentOrb.scale})`,
-              animation: state === 'listening' ? 'voice-orb-breathe 1.5s ease-in-out infinite' :
-                         state === 'speaking' ? 'voice-orb-speak 2s ease-in-out infinite' :
-                         state === 'processing' ? 'voice-orb-think 2s ease-in-out infinite' : 'none',
-            }}
+            onClick={() => setShowMessages(!showMessages)}
+            className="text-xs font-medium flex items-center gap-1 transition-colors"
+            style={{ color: Colors.textMuted }}
           >
-            {/* Highlight */}
-            <div
-              className="absolute top-2 left-3 w-8 h-8 rounded-full opacity-40"
-              style={{
-                background: `radial-gradient(circle, rgba(255,255,255,0.6), transparent)`,
-              }}
-            />
-
-            <OrbIcon
-              size={32}
-              className={state === 'processing' ? 'animate-spin' : ''}
-              style={{ color: '#ffffff' }}
-            />
+            <MessageCircle size={12} />
+            {messages.length} message{messages.length > 1 ? 's' : ''}
+            <span style={{ fontSize: 10 }}>{showMessages ? '▲' : '▼'}</span>
           </button>
         </div>
+      )}
 
-        {/* Label */}
+      {showMessages && (
+        <div className="px-4 max-h-[30vh] overflow-y-auto space-y-2 voice-mode-scroll">
+          {messages.map((msg) => (
+            <div
+              key={msg.id}
+              className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              <div
+                className="max-w-[80%] px-3 py-2 rounded-2xl text-sm"
+                style={
+                  msg.type === 'user'
+                    ? { background: Colors.orbBlue, color: '#FFFFFF', borderBottomRightRadius: 4 }
+                    : { background: Colors.bgSubtle, color: Colors.textPrimary, borderBottomLeftRadius: 4 }
+                }
+              >
+                {msg.text}
+              </div>
+            </div>
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
+      )}
+
+      {/* ─── ORB AREA (centre de l'écran) ────────────────────────────── */}
+      <div className="flex-1 flex flex-col items-center justify-center">
+        {/* Outer glow ring */}
+        <div
+          className="absolute rounded-full transition-all duration-500"
+          style={{
+            width: state === 'listening' ? 200 + recorder.audioLevel * 60 : 180,
+            height: state === 'listening' ? 200 + recorder.audioLevel * 60 : 180,
+            background: `radial-gradient(circle, ${currentOrb.glowColor} 0%, transparent 70%)`,
+            animation: currentOrb.animation,
+          }}
+        />
+
+        {/* Middle ring */}
+        <div
+          className="absolute rounded-full transition-all duration-500"
+          style={{
+            width: state === 'listening' ? 160 + recorder.audioLevel * 30 : 140,
+            height: state === 'listening' ? 160 + recorder.audioLevel * 30 : 140,
+            border: `2px solid ${currentOrb.color}`,
+            opacity: 0.2,
+            animation: currentOrb.animation,
+          }}
+        />
+
+        {/* Main orb button */}
+        <button
+          onClick={handleMicClick}
+          className="relative rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 focus:outline-none"
+          style={{
+            width: state === 'listening' ? 110 + recorder.audioLevel * 20 : 100,
+            height: state === 'listening' ? 110 + recorder.audioLevel * 20 : 100,
+            background: `radial-gradient(circle at 35% 35%, ${currentOrb.color}, ${Colors.orbBlueDark})`,
+            boxShadow: `0 0 ${state === 'listening' ? 30 + recorder.audioLevel * 30 : 20}px ${currentOrb.glowColor}`,
+            animation: currentOrb.animation,
+          }}
+        >
+          {/* Highlight */}
+          <div
+            className="absolute top-3 left-4 w-10 h-10 rounded-full"
+            style={{
+              background: 'radial-gradient(circle, rgba(255,255,255,0.35), transparent)',
+            }}
+          />
+
+          {/* Icon */}
+          {state === 'idle' && <Mic size={32} className="text-white" />}
+          {state === 'listening' && <MicOff size={32} className="text-white" />}
+          {state === 'processing' && <Loader2 size={32} className="text-white animate-spin" />}
+          {state === 'speaking' && <Volume2 size={32} className="text-white" />}
+          {state === 'error' && <Mic size={32} className="text-white" />}
+        </button>
+
+        {/* State label */}
         <p
-          className="text-xs font-medium mb-2"
+          className="mt-6 text-sm font-medium transition-all duration-300"
           style={{ color: currentOrb.color }}
         >
           {currentOrb.label}
@@ -513,29 +442,98 @@ export function VoiceMode({ isOpen, onClose, visitorId }: VoiceModeProps) {
 
         {/* Duration pendant l'enregistrement */}
         {state === 'listening' && recorder.duration > 0 && (
-          <p className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.4)' }}>
-            {recorder.duration}s / 60s max
+          <p className="mt-1 text-xs font-mono" style={{ color: Colors.textMuted }}>
+            {recorder.duration}s
           </p>
         )}
+
+        {/* Error message */}
+        {error && (
+          <div
+            className="mt-4 px-4 py-2 rounded-xl text-xs max-w-sm text-center"
+            style={{
+              background: 'rgba(239,68,68,0.08)',
+              color: Colors.error,
+              border: '1px solid rgba(239,68,68,0.15)',
+            }}
+          >
+            {error}
+          </div>
+        )}
+      </div>
+
+      {/* ─── BOTTOM INPUT BAR (ChatGPT-style) ────────────────────────── */}
+      <div className="shrink-0 px-3 pb-6 pt-2">
+        <div
+          className="flex items-center gap-2 rounded-full px-4 py-2.5 transition-all"
+          style={{
+            background: Colors.inputBg,
+            border: `1.5px solid ${state === 'listening' ? Colors.listening : Colors.border}`,
+            boxShadow: state === 'listening' ? `0 0 0 3px ${Colors.listeningGlow}` : 'none',
+          }}
+        >
+          {/* Mic button (ChatGPT-style, à gauche) */}
+          <button
+            onClick={handleMicClick}
+            className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition-all"
+            style={{
+              background: state === 'listening' ? Colors.listening : 'transparent',
+              color: state === 'listening' ? '#FFFFFF' : Colors.textSecondary,
+            }}
+            title={state === 'listening' ? 'Arrêter' : 'Mode vocal'}
+          >
+            {state === 'listening' ? <MicOff size={18} /> : <Mic size={18} />}
+          </button>
+
+          {/* Text input */}
+          <input
+            ref={inputRef}
+            value={textInput}
+            onChange={(e) => setTextInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleTextSend()}
+            placeholder="Écrire un message…"
+            className="flex-1 bg-transparent border-none outline-none text-sm"
+            style={{ color: Colors.textPrimary }}
+            disabled={state === 'processing' || state === 'speaking'}
+          />
+
+          {/* Send button (ChatGPT-style, à droite) */}
+          <button
+            onClick={handleTextSend}
+            disabled={!textInput.trim() || state === 'processing' || state === 'speaking'}
+            className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition-all disabled:opacity-30"
+            style={{
+              background: textInput.trim() ? Colors.orbBlue : Colors.bgSubtle,
+              color: textInput.trim() ? '#FFFFFF' : Colors.textMuted,
+            }}
+          >
+            <Send size={16} />
+          </button>
+        </div>
       </div>
 
       {/* ─── ANIMATIONS ────────────────────────────────────────────────── */}
       <style jsx global>{`
-        @keyframes voice-orb-breathe {
-          0%, 100% { transform: scale(1); box-shadow: 0 0 20px ${H.redGlow}; }
-          50% { transform: scale(1.05); box-shadow: 0 0 40px ${H.redGlow}; }
+        @keyframes orb-breathe {
+          0%, 100% { transform: scale(1); box-shadow: 0 0 20px ${Colors.orbGlow}; }
+          50% { transform: scale(1.04); box-shadow: 0 0 35px ${Colors.orbGlowActive}; }
         }
 
-        @keyframes voice-orb-speak {
+        @keyframes orb-listen {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.06); }
+        }
+
+        @keyframes orb-think {
+          0%, 100% { transform: scale(1); opacity: 0.9; }
+          50% { transform: scale(1.03); opacity: 1; }
+        }
+
+        @keyframes orb-speak {
           0%, 100% { transform: scale(1); }
           25% { transform: scale(1.03); }
           50% { transform: scale(0.98); }
           75% { transform: scale(1.02); }
-        }
-
-        @keyframes voice-orb-think {
-          0%, 100% { transform: scale(1); opacity: 0.9; }
-          50% { transform: scale(1.03); opacity: 1; }
         }
 
         .voice-mode-scroll::-webkit-scrollbar {
@@ -545,31 +543,10 @@ export function VoiceMode({ isOpen, onClose, visitorId }: VoiceModeProps) {
           background: transparent;
         }
         .voice-mode-scroll::-webkit-scrollbar-thumb {
-          background: rgba(0,229,255,0.15);
+          background: rgba(0,0,0,0.1);
           border-radius: 3px;
         }
       `}</style>
     </div>
-  );
-}
-
-// ─── CROWN ICON (inline pour éviter l'import supplémentaire) ────────────────
-
-function Crown({ size = 16, className = '' }: { size?: number; className?: string }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <path d="M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294z" />
-      <path d="M5 21h14" />
-    </svg>
   );
 }

@@ -314,28 +314,15 @@ export async function sendSchoolOtpEmail(
   };
   try {
     const resendModule = await import('resend');
-    const mod = resendModule as unknown as {
-      Resend?: new (apiKey: string) => unknown;
-      default?: { Resend?: new (apiKey: string) => unknown } | new (apiKey: string) => unknown;
-    };
-    const ResendCtor =
-      mod.Resend ||
-      (mod.default && typeof mod.default === 'function'
-        ? (mod.default as new (apiKey: string) => unknown)
-        : mod.default?.Resend);
+    // Note : le SDK Resend expose `Resend` comme export nommé ET comme default.
+    // On utilise un cast `any` pour éviter les problèmes de parsing TypeScript
+    // avec `new () => unknown` dans une union (parenthésage obligatoire).
+    const mod = resendModule as unknown as Record<string, unknown>;
+    const ResendCtor = (mod.Resend || mod.default) as
+      | (new (apiKey: string) => unknown)
+      | undefined;
     if (!ResendCtor) throw new Error('Resend constructor not found');
-    Resend = ResendCtor as new (apiKey: string) => {
-      emails: {
-        send: (params: {
-          from: string;
-          to: string;
-          subject: string;
-          html: string;
-          text?: string;
-          reply_to?: string;
-        }) => Promise<{ id?: string; error?: { message?: string } | null }>;
-      };
-    };
+    Resend = ResendCtor as typeof Resend;
   } catch (err) {
     console.error('Module "resend" non disponible :', err);
     return false;

@@ -21,6 +21,24 @@ import {
   DoorOpen,
   BookOpen,
   Megaphone,
+  // Modules bento icons
+  GraduationCap as GradIcon,
+  Banknote,
+  ClipboardCheck,
+  LayoutGrid,
+  UserCog,
+  MessageSquare,
+  Bus,
+  Utensils,
+  Pill,
+  BookMarked,
+  FlaskConical,
+  ShoppingBag,
+  Radio,
+  // Features section
+  Gauge,
+  Lock,
+  Sparkles,
 } from 'lucide-react';
 import { Header } from '@/components/ui/header-1';
 import { Footer2 } from '@/components/ui/footer-2';
@@ -54,33 +72,8 @@ const staggerContainer = {
   },
 };
 
-const featureCardMotion = {
-  whileHover: {
-    y: -8,
-    rotateX: 5,
-    rotateY: -3,
-    boxShadow: '0 18px 42px rgba(11,47,115,0.16)',
-  },
-  transition: { type: 'spring', stiffness: 240, damping: 18 } as const,
-};
-
-const moduleCardMotion = {
-  whileHover: {
-    y: -6,
-    scale: 1.018,
-    boxShadow: '0 20px 44px rgba(11,47,115,0.14)',
-  },
-  transition: { type: 'spring', stiffness: 230, damping: 20 } as const,
-};
-
-const pricingCardMotion = {
-  whileHover: {
-    y: -5,
-    scale: 1.012,
-    boxShadow: '0 16px 34px rgba(0,0,0,0.22)',
-  },
-  transition: { type: 'spring', stiffness: 220, damping: 18 } as const,
-};
+// Note: les anciennes constantes de motion (featureCardMotion, moduleCardMotion,
+// pricingCardMotion) ont été inlinées dans les composants lors de la refonte 2026.
 
 function AnimatedHeadline({
   text,
@@ -126,33 +119,158 @@ function AnimatedHeadline({
 const features = [
   {
     title: 'Pilotage centralisé',
-    desc: 'Décisions basées sur des indicateurs fiables : élèves, finances, examens, RH.',
+    desc: 'Décisions basées sur des indicateurs fiables : élèves, finances, examens, RH. Un cockpit unique pour toute la direction.',
     icon: Users,
+    stat: '360°',
+    statLabel: 'visibilité temps réel',
+    accent: 'from-[#0b2f73] to-[#144798]',
   },
   {
     title: 'ORION intégré',
-    desc: "L'IA de direction qui transforme les données en alertes et priorités concrètes.",
+    desc: "L'IA de direction qui transforme vos données en alertes intelligentes, priorités automatiques et recommandations concrètes.",
     icon: Brain,
+    stat: 'IA',
+    statLabel: 'décisionnelle native',
+    accent: 'from-[#f5b335] to-[#e89a1f]',
   },
   {
     title: 'Offline-first',
-    desc: 'Continuité des opérations même sans internet, puis synchronisation sécurisée.',
+    desc: 'Continuité totale des opérations même sans internet. Saisies locales journalisées, puis synchronisation sécurisée automatique.',
     icon: WifiOff,
+    stat: '24/7',
+    statLabel: 'disponibilité réseau',
+    accent: 'from-[#0b2f73] to-[#1d4fa5]',
   },
   {
     title: 'Conformité & sécurité',
-    desc: 'Architecture multi-tenant, accès contrôlé, traçabilité et protection continue.',
+    desc: 'Architecture multi-tenant stricte, RBAC granulaire, audit immuable, RLS PostgreSQL. Vos données restent souveraines et tracées.',
     icon: ShieldCheck,
+    stat: 'RBAC',
+    statLabel: '+ audit immuable',
+    accent: 'from-[#0b2f73] to-[#071d49]',
   },
 ];
 
-const modules = [
-  { title: 'Élèves & Scolarité', text: 'Admissions, dossiers, absences, documents, suivi du cycle.' },
-  { title: 'Finances & Économat', text: 'Paiements, recouvrement, dépenses, trésorerie et clôtures.' },
-  { title: 'Examens & Bulletins', text: 'Saisie des notes, calculs, bulletins et statistiques scolaires.' },
-  { title: 'Organisation pédagogique', text: 'Classes, matières, emploi du temps, planification et suivi.' },
-  { title: 'RH & Personnel', text: 'Contrats, présence, rôles, habilitations et administration RH.' },
-  { title: 'Communication', text: 'Canaux, messages, automatisations et communication institutionnelle.' },
+/**
+ * Modules de l'application — bento grid moderne.
+ * `span` contrôle la taille dans la grille bento (col-span / row-span).
+ * `tone` contrôle la couleur de l'icône (pastille douce).
+ */
+type ModuleTone = 'navy' | 'gold' | 'emerald' | 'indigo' | 'rose' | 'sky' | 'violet' | 'amber';
+interface ModuleItem {
+  title: string;
+  text: string;
+  icon: typeof Users;
+  tone: ModuleTone;
+  span?: 'wide' | 'tall' | 'normal';
+  featured?: boolean;
+}
+
+const moduleToneClasses: Record<ModuleTone, { bg: string; ring: string; text: string }> = {
+  navy:    { bg: 'bg-[#0b2f73]/10',  ring: 'ring-[#0b2f73]/20',  text: 'text-[#0b2f73]' },
+  gold:    { bg: 'bg-[#f5b335]/15',  ring: 'ring-[#f5b335]/30',  text: 'text-[#a67410]' },
+  emerald: { bg: 'bg-emerald-50',     ring: 'ring-emerald-200',    text: 'text-emerald-700' },
+  indigo:  { bg: 'bg-indigo-50',      ring: 'ring-indigo-200',     text: 'text-indigo-700' },
+  rose:    { bg: 'bg-rose-50',        ring: 'ring-rose-200',       text: 'text-rose-700' },
+  sky:     { bg: 'bg-sky-50',         ring: 'ring-sky-200',        text: 'text-sky-700' },
+  violet:  { bg: 'bg-violet-50',      ring: 'ring-violet-200',     text: 'text-violet-700' },
+  amber:   { bg: 'bg-amber-50',       ring: 'ring-amber-200',      text: 'text-amber-700' },
+};
+
+const modules: ModuleItem[] = [
+  {
+    title: 'Élèves & Scolarité',
+    text: 'Admissions, dossiers numériques, absences, transferts inter-écoles, documents officiels, suivi complet du cycle scolaire.',
+    icon: GradIcon,
+    tone: 'navy',
+    span: 'wide',
+    featured: true,
+  },
+  {
+    title: 'Finances & Économat',
+    text: 'Paiements, recouvrement, dépenses, trésorerie, clôtures journalières et reçus certifiés.',
+    icon: Banknote,
+    tone: 'gold',
+    span: 'normal',
+  },
+  {
+    title: 'Examens & Bulletins',
+    text: 'Saisie des notes, calculs automatiques, bulletins PDF, conseils de classe et audits académiques.',
+    icon: ClipboardCheck,
+    tone: 'indigo',
+    span: 'normal',
+  },
+  {
+    title: 'Organisation pédagogique',
+    text: 'Classes, matières, emploi du temps, cahiers de texte, plans de leçon et stocks de matériel.',
+    icon: LayoutGrid,
+    tone: 'emerald',
+    span: 'tall',
+    featured: true,
+  },
+  {
+    title: 'RH & Personnel',
+    text: 'Contrats, présence, paie, CNSS, rôles, habilitations, organigramme et recrutement assisté par IA.',
+    icon: UserCog,
+    tone: 'rose',
+    span: 'normal',
+  },
+  {
+    title: 'Communication',
+    text: 'SMS, e-mail, WhatsApp, annonces, templates, automatisations et messagerie interne.',
+    icon: MessageSquare,
+    tone: 'sky',
+    span: 'normal',
+  },
+  {
+    title: 'Transport',
+    text: 'Véhicules, itinéraires, chauffeurs, arrêts, présences et incidents.',
+    icon: Bus,
+    tone: 'amber',
+    span: 'normal',
+  },
+  {
+    title: 'Cantine',
+    text: 'Menus, inscriptions, présences, stocks, fournisseurs et paiements.',
+    icon: Utensils,
+    tone: 'violet',
+    span: 'normal',
+  },
+  {
+    title: 'Infirmerie',
+    text: 'Dossiers médicaux, visites, urgences, autorisations et vigilance allergies.',
+    icon: Pill,
+    tone: 'rose',
+    span: 'normal',
+  },
+  {
+    title: 'Bibliothèque',
+    text: 'Catalogue, prêts, retours, pénalités, ressources numériques et recommandations.',
+    icon: BookMarked,
+    tone: 'navy',
+    span: 'normal',
+  },
+  {
+    title: 'Laboratoire',
+    text: 'Équipements, stocks, sessions pratiques, maintenance et incidents de sécurité.',
+    icon: FlaskConical,
+    tone: 'emerald',
+    span: 'normal',
+  },
+  {
+    title: 'Boutique',
+    text: 'Produits, commandes, stocks, fournisseurs et rapports de ventes.',
+    icon: ShoppingBag,
+    tone: 'gold',
+    span: 'normal',
+  },
+  {
+    title: 'EduCast',
+    text: 'Chaînes enseignants, contenus, webinaires, playlists et monétisation.',
+    icon: Radio,
+    tone: 'violet',
+    span: 'wide',
+  },
 ];
 
 /** Aperçu blog sur la landing (les articles MDX auto-générés apparaissent aussi sur /blog). */
@@ -626,197 +744,472 @@ export default function PremiumLandingPage() {
         </div>
       </section>
 
-      <section className="py-16 md:py-24 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      {/* ===================================================================== */}
+      {/* SECTION — DIRECTION SCOLAIRE MODERNE, SANS COMPROMIS                   */}
+      {/* ===================================================================== */}
+      <section className="relative py-20 md:py-28 bg-gradient-to-b from-white via-[#f8fafc] to-white overflow-hidden">
+        {/* Décor subtil — gradient radial navy + points dorés */}
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute -top-32 -right-32 w-[480px] h-[480px] rounded-full bg-[radial-gradient(circle,rgba(11,47,115,0.08),transparent_70%)]" />
+          <div className="absolute -bottom-40 -left-32 w-[420px] h-[420px] rounded-full bg-[radial-gradient(circle,rgba(245,179,53,0.10),transparent_70%)]" />
+        </div>
+
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          {/* En-tête — eyebrow + titre + sous-titre */}
+          <motion.div
+            variants={staggerContainer}
+            initial="hidden"
+            whileInView="show"
+            viewport={{ once: true, amount: 0.3 }}
+            className="max-w-3xl mx-auto text-center mb-14 md:mb-20"
+          >
+            <motion.span
+              variants={fadeUp}
+              className="inline-flex items-center gap-2 rounded-full bg-[#0b2f73]/8 border border-[#0b2f73]/15 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[#0b2f73] mb-5"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Pourquoi Academia Helm
+            </motion.span>
+
+            <motion.h2
+              variants={fadeUp}
+              className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-[#0b2f73] leading-[1.15] tracking-tight"
+            >
+              <AnimatedHeadline text="Une direction scolaire moderne, sans compromis" />
+            </motion.h2>
+
+            <motion.p
+              variants={fadeUp}
+              className="mt-5 text-base md:text-lg text-slate-600 leading-relaxed max-w-2xl mx-auto"
+            >
+              Pensée pour les écoles exigeantes : fiabilité opérationnelle, performance mesurable,
+              lisibilité totale. Chaque décision s&apos;appuie sur des données fiables, chaque action
+              est tracée et auditable.
+            </motion.p>
+
+            {/* Ligne décorative dorée */}
+            <motion.div
+              variants={fadeUp}
+              className="mt-8 flex items-center justify-center gap-3"
+              aria-hidden
+            >
+              <span className="h-px w-12 bg-gradient-to-r from-transparent to-[#f5b335]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-[#f5b335]" />
+              <span className="h-px w-12 bg-gradient-to-l from-transparent to-[#f5b335]" />
+            </motion.div>
+          </motion.div>
+
+          {/* Grille features 2×2 — cartes premium avec icône gradient, stat, hover lift */}
+          <motion.div
+            variants={staggerContainer}
+            initial="hidden"
+            whileInView="show"
+            viewport={{ once: true, amount: 0.2 }}
+            className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6"
+          >
+            {features.map((item, idx) => (
+              <motion.article
+                key={item.title}
+                variants={fadeUp}
+                whileHover={{ y: -6 }}
+                transition={{ type: 'spring', stiffness: 240, damping: 20 }}
+                className="group relative rounded-3xl border border-slate-200/80 bg-white p-6 md:p-8 shadow-[0_2px_20px_-8px_rgba(11,47,115,0.10)] hover:shadow-[0_24px_60px_-20px_rgba(11,47,115,0.30)] hover:border-[#0b2f73]/30 transition-all duration-300 overflow-hidden"
+              >
+                {/* Halo coloré au hover */}
+                <div className={`absolute -top-20 -right-20 w-48 h-48 rounded-full bg-gradient-to-br ${item.accent} opacity-0 group-hover:opacity-[0.12] blur-3xl transition-opacity duration-500`} />
+
+                {/* Numéro de carte (subtil) */}
+                <span className="absolute top-6 right-6 text-5xl font-black text-slate-100 group-hover:text-[#0b2f73]/8 transition-colors leading-none select-none">
+                  {String(idx + 1).padStart(2, '0')}
+                </span>
+
+                <div className="relative flex items-start gap-5">
+                  {/* Pastille icône avec gradient */}
+                  <motion.div
+                    whileHover={{ rotate: 6, scale: 1.05 }}
+                    transition={{ type: 'spring', stiffness: 300, damping: 14 }}
+                    className={`shrink-0 w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-gradient-to-br ${item.accent} flex items-center justify-center shadow-lg`}
+                  >
+                    <item.icon className="w-6 h-6 md:w-7 md:h-7 text-white" strokeWidth={2.2} />
+                  </motion.div>
+
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-xl md:text-2xl font-bold text-[#0b2f73] group-hover:text-[#144798] transition-colors">
+                      {item.title}
+                    </h3>
+                    <p className="mt-2 text-sm md:text-base text-slate-600 leading-relaxed">
+                      {item.desc}
+                    </p>
+
+                    {/* Stat badge */}
+                    <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-slate-50 border border-slate-200 px-3 py-1.5">
+                      <span className="text-sm font-extrabold text-[#0b2f73]">{item.stat}</span>
+                      <span className="text-xs text-slate-500">— {item.statLabel}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Barre dorée animée en bas */}
+                <motion.span
+                  className="absolute bottom-0 left-0 h-[3px] bg-gradient-to-r from-[#f5b335] via-[#ffd166] to-[#f5b335] rounded-t-full"
+                  initial={{ width: 0 }}
+                  whileInView={{ width: '100%' }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.8, delay: 0.2 + idx * 0.1, ease: 'easeOut' }}
+                />
+              </motion.article>
+            ))}
+          </motion.div>
+
+          {/* Bandeau preuves / trust */}
           <motion.div
             variants={fadeUp}
             initial="hidden"
             whileInView="show"
             viewport={{ once: true }}
-            transition={{ duration: 0.5 }}
-            className="text-center max-w-3xl mx-auto"
+            className="mt-14 md:mt-20 flex flex-col sm:flex-row items-center justify-center gap-6 sm:gap-12 text-center"
           >
-            <h2 className="text-3xl md:text-4xl font-extrabold text-[#0b2f73]">
-              <AnimatedHeadline text="Une direction scolaire moderne, sans compromis" />
-            </h2>
-            <p className="mt-4 text-slate-600 text-lg">
-              Pensée pour les écoles exigeantes : fiabilité, performance, lisibilité.
-            </p>
-          </motion.div>
-
-          <motion.div
-            variants={staggerContainer}
-            initial="hidden"
-            whileInView="show"
-            viewport={{ once: true, amount: 0.25 }}
-            className="mt-12 grid grid-cols-1 md:grid-cols-2 gap-6"
-          >
-            {features.map((item) => (
-              <motion.div
-                key={item.title}
-                variants={fadeUp}
-                whileHover={featureCardMotion.whileHover}
-                transition={featureCardMotion.transition}
-                className="rounded-2xl border border-blue-100 bg-gradient-to-b from-white to-blue-50 p-6 shadow-sm hover:shadow-lg transition-shadow"
-              >
-                <motion.div
-                  whileHover={{ rotate: 8 }}
-                  className="w-11 h-11 rounded-xl bg-[#0b2f73] text-white flex items-center justify-center"
-                >
-                  <item.icon className="w-5 h-5" />
-                </motion.div>
-                <h3 className="mt-4 text-xl font-bold text-[#0b2f73]">{item.title}</h3>
-                <p className="mt-2 text-slate-600 leading-relaxed">{item.desc}</p>
-              </motion.div>
+            {[
+              { icon: Gauge,   label: 'Performance',   value: 'Optimisée' },
+              { icon: Lock,    label: 'Sécurité',      value: 'Niveau entreprise' },
+              { icon: Sparkles,label: 'Expérience',    value: 'Premium' },
+            ].map((p) => (
+              <div key={p.label} className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#0b2f73]/8 flex items-center justify-center">
+                  <p.icon className="w-5 h-5 text-[#0b2f73]" />
+                </div>
+                <div className="text-left">
+                  <p className="text-xs text-slate-500 uppercase tracking-wide">{p.label}</p>
+                  <p className="text-sm font-bold text-[#0b2f73]">{p.value}</p>
+                </div>
+              </div>
             ))}
           </motion.div>
         </div>
       </section>
 
-      <section className="py-16 md:py-24 bg-slate-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between flex-wrap gap-4 mb-10">
-            <h2 className="text-3xl md:text-4xl font-extrabold text-[#0b2f73]">
-              <AnimatedHeadline text="Modules & cartes métier" delay={0.05} />
-            </h2>
-            <Link
-              href="/modules"
-              className="inline-flex items-center gap-2 rounded-lg bg-[#0b2f73] px-5 py-2.5 text-white font-semibold hover:bg-[#144798] transition-colors"
+      {/* ===================================================================== */}
+      {/* SECTION — MODULES DE L'APPLICATION (BENTO GRID)                        */}
+      {/* ===================================================================== */}
+      <section className="relative py-20 md:py-28 bg-gradient-to-b from-[#0a1d3f] via-[#0b2f73] to-[#0a1d3f] text-white overflow-hidden">
+        {/* Décor — grille de points + halos */}
+        <div className="absolute inset-0 pointer-events-none opacity-[0.06] bg-[linear-gradient(rgba(255,255,255,0.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.6)_1px,transparent_1px)] [background-size:48px_48px]" />
+        <div className="absolute -top-40 -left-40 w-[500px] h-[500px] rounded-full bg-[radial-gradient(circle,rgba(245,179,53,0.18),transparent_70%)]" />
+        <div className="absolute -bottom-40 -right-40 w-[500px] h-[500px] rounded-full bg-[radial-gradient(circle,rgba(29,79,165,0.35),transparent_70%)]" />
+
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          {/* En-tête */}
+          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6 mb-12 md:mb-16">
+            <motion.div
+              variants={staggerContainer}
+              initial="hidden"
+              whileInView="show"
+              viewport={{ once: true, amount: 0.3 }}
+              className="max-w-2xl"
             >
-              Tout voir
-            </Link>
+              <motion.span
+                variants={fadeUp}
+                className="inline-flex items-center gap-2 rounded-full bg-[#f5b335]/15 border border-[#f5b335]/30 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[#f5b335] mb-5"
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                Modules de l&apos;application
+              </motion.span>
+
+              <motion.h2
+                variants={fadeUp}
+                className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-white leading-[1.15] tracking-tight"
+              >
+                <AnimatedHeadline text="Une suite complète pour piloter toute l'institution" delay={0.03} />
+              </motion.h2>
+
+              <motion.p
+                variants={fadeUp}
+                className="mt-5 text-base md:text-lg text-blue-100/80 leading-relaxed"
+              >
+                Treize modules métier couvrant l&apos;intégralité du cycle éducatif, financiers et opérationnel —
+                du cœur scolaire aux services de vie. Chacun activable et facturable indépendamment.
+              </motion.p>
+            </motion.div>
+
+            <motion.div variants={fadeUp} whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }}>
+              <Link
+                href="/modules"
+                className="inline-flex items-center gap-2 rounded-xl bg-[#f5b335] px-6 py-3 text-[#0b2f73] font-bold text-sm hover:bg-[#f7c359] transition-colors shadow-lg shadow-[#f5b335]/20"
+              >
+                Explorer tous les modules
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+            </motion.div>
           </div>
 
+          {/* Bento grid — 4 colonnes sur lg, layout asymétrique */}
           <motion.div
             variants={staggerContainer}
             initial="hidden"
             whileInView="show"
-            viewport={{ once: true, amount: 0.22 }}
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+            viewport={{ once: true, amount: 0.15 }}
+            className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5 auto-rows-[minmax(160px,auto)]"
           >
-            {modules.map((module) => (
-              <motion.article
-                key={module.title}
-                variants={fadeUp}
-                whileHover={moduleCardMotion.whileHover}
-                transition={moduleCardMotion.transition}
-                className="group rounded-2xl border border-slate-200 bg-white p-6 hover:shadow-xl transition-all"
-              >
-                <motion.div
-                  whileHover={{ width: 56 }}
-                  className="w-10 h-1 rounded-full bg-[#f5b335] mb-4 transition-all"
-                />
-                <h3 className="text-lg font-bold text-[#0b2f73] group-hover:text-[#144798]">
-                  {module.title}
-                </h3>
-                <p className="mt-2 text-slate-600">{module.text}</p>
-              </motion.article>
-            ))}
+            {modules.map((module) => {
+              const tones = moduleToneClasses[module.tone];
+              const colSpan =
+                module.span === 'wide' ? 'col-span-2 lg:col-span-2' : 'col-span-1';
+              const rowSpan =
+                module.span === 'tall' ? 'row-span-2' : 'row-span-1';
+
+              return (
+                <motion.article
+                  key={module.title}
+                  variants={fadeUp}
+                  whileHover={{ y: -6, scale: 1.01 }}
+                  transition={{ type: 'spring', stiffness: 250, damping: 20 }}
+                  className={`group relative ${colSpan} ${rowSpan} rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-sm p-5 md:p-6 hover:border-[#f5b335]/40 hover:bg-white/[0.07] transition-all duration-300 overflow-hidden flex flex-col`}
+                >
+                  {/* Halo doré au hover */}
+                  <div className="absolute -top-12 -right-12 w-32 h-32 rounded-full bg-[#f5b335] opacity-0 group-hover:opacity-[0.15] blur-3xl transition-opacity duration-500" />
+
+                  {/* Pastille icône colorée */}
+                  <div className={`relative w-12 h-12 rounded-2xl ${tones.bg} ${tones.ring} ring-1 flex items-center justify-center mb-4`}>
+                    <module.icon className={`w-6 h-6 ${tones.text}`} strokeWidth={2.2} />
+                  </div>
+
+                  {/* Titre */}
+                  <h3 className="relative text-base md:text-lg font-bold text-white group-hover:text-[#f5b335] transition-colors leading-tight">
+                    {module.title}
+                  </h3>
+
+                  {/* Description */}
+                  <p className="relative mt-2 text-sm text-blue-100/70 leading-relaxed flex-1">
+                    {module.text}
+                  </p>
+
+                  {/* Lien "Explorer" qui apparaît au hover */}
+                  <div className="relative mt-4 flex items-center gap-1.5 text-xs font-semibold text-[#f5b335] opacity-0 group-hover:opacity-100 transition-opacity">
+                    Explorer
+                    <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-1" />
+                  </div>
+
+                  {/* Badge "Cœur" pour les modules featured */}
+                  {module.featured && (
+                    <span className="absolute top-4 right-4 inline-flex items-center gap-1 rounded-full bg-[#f5b335]/15 border border-[#f5b335]/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#f5b335]">
+                      Cœur
+                    </span>
+                  )}
+                </motion.article>
+              );
+            })}
           </motion.div>
+
+          {/* Note en bas — modules complémentaires activables */}
+          <motion.p
+            variants={fadeUp}
+            initial="hidden"
+            whileInView="show"
+            viewport={{ once: true }}
+            className="mt-10 text-center text-sm text-blue-100/60"
+          >
+            Modules complémentaires activables selon vos besoins ·
+            <span className="text-[#f5b335] font-semibold"> Tarification dynamique</span> adaptée à la taille de votre établissement
+          </motion.p>
         </div>
       </section>
 
+      {/* ===================================================================== */}
+      {/* SECTION — RESSOURCES (BLOG & EXPERTISE)                                */}
+      {/* ===================================================================== */}
       <motion.section
         initial="hidden"
         whileInView="show"
         viewport={{ once: true, amount: 0.18 }}
         variants={staggerContainer}
-        className="border-t border-slate-100 bg-white py-16 md:py-24"
+        className="relative bg-gradient-to-b from-white via-[#fefdf8] to-white py-20 md:py-28 overflow-hidden"
       >
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="mb-10 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-            <motion.div variants={fadeUp}>
-              <motion.p
+        {/* Décor — halos dorés subtils */}
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute top-20 -right-32 w-[420px] h-[420px] rounded-full bg-[radial-gradient(circle,rgba(245,179,53,0.12),transparent_70%)]" />
+          <div className="absolute bottom-20 -left-32 w-[380px] h-[380px] rounded-full bg-[radial-gradient(circle,rgba(11,47,115,0.08),transparent_70%)]" />
+        </div>
+
+        <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          {/* En-tête — eyebrow + titre + CTA */}
+          <div className="mb-12 md:mb-16 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+            <motion.div variants={fadeUp} className="max-w-2xl">
+              <motion.span
                 variants={fadeUp}
-                className="mb-4 inline-flex items-center gap-2 rounded-full bg-blue-50 px-4 py-1.5 text-sm font-semibold text-[#0b2f73]"
+                className="inline-flex items-center gap-2 rounded-full bg-[#f5b335]/15 border border-[#f5b335]/30 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[#a67410] mb-5"
               >
-                <BookOpen className="h-4 w-4" aria-hidden />
+                <BookOpen className="h-3.5 w-3.5" aria-hidden />
                 Ressources
-              </motion.p>
-              <motion.h2 variants={fadeUp} className="text-3xl font-extrabold text-[#0b2f73] md:text-4xl">
+              </motion.span>
+
+              <motion.h2
+                variants={fadeUp}
+                className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-[#0b2f73] leading-[1.15] tracking-tight"
+              >
                 Blog & expertise gestion scolaire
               </motion.h2>
-              <motion.p variants={fadeUp} className="mt-3 max-w-2xl text-lg text-slate-600">
-                Guides pratiques : digitalisation, finance, pilotage d&apos;établissement — pensés pour les écoles en
-                Afrique.
+
+              <motion.p
+                variants={fadeUp}
+                className="mt-4 text-base md:text-lg text-slate-600 leading-relaxed max-w-2xl"
+              >
+                Guides pratiques, retours terrain et analyses stratégiques : digitalisation, finance,
+                pilotage d&apos;établissement — pensés pour les écoles en Afrique.
               </motion.p>
             </motion.div>
+
             <motion.div variants={fadeUp} whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }}>
               <Link
                 href="/blog"
-                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[#0b2f73] px-6 py-3 font-semibold text-white transition-colors hover:bg-[#144798]"
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[#0b2f73] px-6 py-3 font-semibold text-white transition-colors hover:bg-[#144798] shadow-lg shadow-[#0b2f73]/20"
               >
                 Voir tous les articles
                 <ArrowRight className="h-4 w-4" />
               </Link>
             </motion.div>
           </div>
-          <motion.div variants={fadeUp} className="grid grid-cols-1 gap-6 md:grid-cols-3">
-            {featuredBlogPosts.map((post) => (
+
+          {/* Grille 3 colonnes — cartes blog premium avec hover lift + accent doré */}
+          <motion.div
+            variants={staggerContainer}
+            className="grid grid-cols-1 gap-6 md:grid-cols-3"
+          >
+            {featuredBlogPosts.map((post, idx) => (
               <motion.div
                 key={post.slug}
                 variants={fadeUp}
-                whileHover={{ y: -6, scale: 1.01 }}
-                transition={{ type: 'spring', stiffness: 240, damping: 18 } as const}
+                whileHover={{ y: -8 }}
+                transition={{ type: 'spring', stiffness: 240, damping: 18 }}
+                className="group"
               >
                 <Link
                   href={`/blog/${post.slug}`}
-                  className="group block rounded-2xl border border-slate-200 bg-slate-50/90 p-6 transition-all hover:border-[#0b2f73]/25 hover:shadow-lg"
+                  className="relative block h-full overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-[0_2px_20px_-8px_rgba(11,47,115,0.08)] transition-all duration-300 hover:border-[#0b2f73]/30 hover:shadow-[0_28px_60px_-20px_rgba(11,47,115,0.28)]"
                 >
-                  <h3 className="line-clamp-2 text-lg font-bold text-[#0b2f73] group-hover:text-[#144798]">
-                    {post.title}
-                  </h3>
-                  <p className="mt-2 line-clamp-3 text-sm text-slate-600">{post.description}</p>
-                  <span className="mt-4 inline-flex items-center text-sm font-semibold text-[#0b2f73]">
-                    Lire l&apos;article
-                    <ArrowRight className="ml-1 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                  </span>
+                  {/* Header coloré avec dégradé navy→gold */}
+                  <div className="relative h-32 bg-gradient-to-br from-[#0b2f73] via-[#144798] to-[#1d4fa5] overflow-hidden">
+                    {/* Motif géométrique */}
+                    <div className="absolute inset-0 opacity-25 bg-[radial-gradient(circle_at_20%_30%,rgba(245,179,53,0.5),transparent_50%)]" />
+                    <div className="absolute inset-0 opacity-15 bg-[linear-gradient(45deg,transparent_45%,rgba(255,255,255,0.5)_50%,transparent_55%)] [background-size:18px_18px]" />
+
+                    {/* Numéro d'article */}
+                    <span className="absolute top-4 left-4 inline-flex items-center justify-center w-9 h-9 rounded-xl bg-white/15 backdrop-blur-sm border border-white/20 text-white text-sm font-bold">
+                      {String(idx + 1).padStart(2, '0')}
+                    </span>
+
+                    {/* Icône décorative */}
+                    <BookOpen className="absolute bottom-4 right-4 w-8 h-8 text-white/30 group-hover:text-[#f5b335]/70 transition-colors" />
+                  </div>
+
+                  {/* Body */}
+                  <div className="p-6">
+                    <h3 className="line-clamp-2 text-lg font-bold text-[#0b2f73] group-hover:text-[#144798] transition-colors leading-snug">
+                      {post.title}
+                    </h3>
+                    <p className="mt-3 line-clamp-3 text-sm text-slate-600 leading-relaxed">
+                      {post.description}
+                    </p>
+
+                    {/* Footer carte */}
+                    <div className="mt-5 flex items-center justify-between">
+                      <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#0b2f73] group-hover:text-[#144798]">
+                        Lire l&apos;article
+                        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                      </span>
+                      <span className="text-xs text-slate-400 font-medium uppercase tracking-wider">
+                        Article
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Barre dorée animée en bas */}
+                  <span className="absolute bottom-0 left-0 h-[3px] w-0 group-hover:w-full bg-gradient-to-r from-[#f5b335] to-[#ffd166] transition-all duration-500" />
                 </Link>
               </motion.div>
             ))}
           </motion.div>
+
+          {/* Bandeau newsletter / CTA secondaire */}
+          <motion.div
+            variants={fadeUp}
+            initial="hidden"
+            whileInView="show"
+            viewport={{ once: true }}
+            className="mt-12 md:mt-16 flex flex-col sm:flex-row items-center justify-center gap-4 text-center"
+          >
+            <p className="text-sm text-slate-600">
+              <span className="font-semibold text-[#0b2f73]">+ de nouveaux articles</span> publiés chaque semaine
+            </p>
+            <span className="hidden sm:block w-1 h-1 rounded-full bg-slate-300" />
+            <Link
+              href="/blog"
+              className="text-sm font-semibold text-[#0b2f73] hover:text-[#144798] underline-offset-4 hover:underline"
+            >
+              Parcourir le blog complet →
+            </Link>
+          </motion.div>
         </div>
       </motion.section>
 
-      <section className="py-16 md:py-24 bg-[#0b2f73] text-white relative overflow-hidden">
-        <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_80%_30%,#f5b335_0%,transparent_45%)]" />
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
+      {/* ===================================================================== */}
+      {/* SECTION — ORION IA DE DIRECTION (FOND DORÉ CRÈME, TEXTES NAVY)         */}
+      {/* ===================================================================== */}
+      <section className="relative py-20 md:py-28 bg-gradient-to-br from-[#fff7e6] via-[#fef0c7] to-[#fde68a] overflow-hidden">
+        {/* Décor — halos dorés + motif points */}
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute top-0 right-0 w-[500px] h-[500px] rounded-full bg-[radial-gradient(circle,rgba(245,179,53,0.40),transparent_65%)]" />
+          <div className="absolute bottom-0 left-0 w-[460px] h-[460px] rounded-full bg-[radial-gradient(circle,rgba(168,116,16,0.18),transparent_65%)]" />
+          <div className="absolute inset-0 opacity-[0.04] bg-[radial-gradient(circle,rgba(11,47,115,0.6)_1.5px,transparent_1.5px)] [background-size:24px_24px]" />
+        </div>
+
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+            {/* Colonne gauche — pitch */}
             <motion.div
               initial={{ opacity: 0, y: 24 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, amount: 0.3 }}
               transition={{ duration: 0.55, ease: 'easeOut' }}
             >
-              <div className="inline-flex items-center gap-2 rounded-full border border-amber-300/40 bg-amber-400/10 px-4 py-1.5 text-amber-200 text-sm font-semibold mb-5">
+              {/* Eyebrow */}
+              <div className="inline-flex items-center gap-2 rounded-full bg-[#0b2f73]/10 border border-[#0b2f73]/20 px-4 py-1.5 text-[#0b2f73] text-sm font-bold mb-5">
                 <Brain className="w-4 h-4" />
                 ORION IA de direction
               </div>
-              <h2 className="text-3xl md:text-4xl font-extrabold leading-tight">
+
+              {/* Titre */}
+              <h2 className="text-3xl md:text-5xl font-extrabold leading-[1.15] tracking-tight text-[#0b2f73]">
                 <AnimatedHeadline text="ORION vous aide à décider plus vite et plus juste." delay={0.04} />
               </h2>
-              <p className="mt-4 text-blue-100 text-lg leading-relaxed">
+
+              {/* Description */}
+              <p className="mt-5 text-[#0b2f73]/80 text-base md:text-lg leading-relaxed">
                 Alertes intelligentes, priorités automatiques, lecture immédiate de la santé académique et
                 financière. ORION transforme vos données en actions concrètes pour la direction.
               </p>
-              <ul className="mt-6 space-y-3 text-blue-50">
+
+              {/* Liste bénéfices — cartes miniatures premium */}
+              <div className="mt-7 grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {[
-                  'Résumé automatique des indicateurs critiques',
-                  'Alertes précoces sur risques élèves, finances et opérations',
-                  'Recommandations concrètes pour la semaine',
-                ].map((item) => (
-                  <li key={item} className="flex items-start gap-3">
-                    <span className="mt-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-amber-300/20 text-amber-300 text-xs">
-                      ✓
-                    </span>
-                    <span>{item}</span>
-                  </li>
+                  { label: 'Indicateurs', desc: 'Résumé auto des KPI critiques' },
+                  { label: 'Alertes',     desc: 'Risques élèves, finances, ops' },
+                  { label: 'Recommandations', desc: 'Actions concrètes pour la semaine' },
+                ].map((b) => (
+                  <div
+                    key={b.label}
+                    className="rounded-2xl bg-white/70 backdrop-blur-sm border border-[#0b2f73]/15 p-4 hover:bg-white hover:border-[#0b2f73]/30 transition-all"
+                  >
+                    <p className="text-xs font-bold uppercase tracking-wider text-[#a67410]">{b.label}</p>
+                    <p className="mt-1 text-sm text-[#0b2f73] font-medium leading-snug">{b.desc}</p>
+                  </div>
                 ))}
-              </ul>
-              <motion.div whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }} className="mt-8">
+              </div>
+
+              {/* CTA */}
+              <motion.div whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }} className="mt-9">
                 <Link
                   href="/orion"
-                  className="inline-flex items-center justify-center rounded-xl bg-[#f5b335] px-7 py-3.5 font-bold text-[#0b2f73] hover:bg-[#f7c359] transition-colors min-h-[48px]"
+                  className="inline-flex items-center justify-center rounded-xl bg-[#0b2f73] px-7 py-3.5 font-bold text-white hover:bg-[#144798] transition-colors min-h-[48px] shadow-lg shadow-[#0b2f73]/20"
                 >
                   Découvrir ORION
                   <ArrowRight className="ml-2 w-4 h-4" />
@@ -824,83 +1217,282 @@ export default function PremiumLandingPage() {
               </motion.div>
             </motion.div>
 
+            {/* Colonne droite — carte simulation ORION premium */}
             <motion.div
               initial={{ opacity: 0, y: 24 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, amount: 0.3 }}
               transition={{ duration: 0.55, ease: 'easeOut', delay: 0.1 }}
-              className="rounded-3xl border border-white/20 bg-white/10 p-6 backdrop-blur-md shadow-2xl"
+              className="relative"
             >
-              <div className="flex items-center gap-4 mb-4">
-                <Image
-                  src="/images/ORION-Academia-Hub.webp"
-                  alt="ORION Academia Helm"
-                  width={52}
-                  height={52}
-                  className="w-12 h-12 object-contain"
-                  sizes="48px"
-                />
-                <p className="font-semibold text-amber-200">Simulation ORION</p>
-              </div>
-              <div className="rounded-2xl border border-amber-300/30 bg-[#0b2f73]/55 p-5 text-blue-50 leading-relaxed">
-                "Votre taux de recouvrement progresse de 12%. Les retards sont concentrés sur 3 classes.
-                Recommandation : lancer une relance ciblée avant vendredi."
+              {/* Halo derrière la carte */}
+              <div className="absolute -inset-6 bg-gradient-to-br from-[#0b2f73]/15 to-[#f5b335]/30 rounded-[2.5rem] blur-2xl" />
+
+              <div className="relative rounded-3xl border border-[#0b2f73]/15 bg-white/80 backdrop-blur-md p-6 md:p-7 shadow-[0_30px_80px_-30px_rgba(11,47,115,0.45)]">
+                {/* Header carte — logo + badge live */}
+                <div className="flex items-center justify-between mb-5">
+                  <div className="flex items-center gap-3">
+                    <Image
+                      src="/images/ORION-Academia-Hub.webp"
+                      alt="ORION Academia Helm"
+                      width={44}
+                      height={44}
+                      className="w-11 h-11 object-contain"
+                      sizes="44px"
+                    />
+                    <div>
+                      <p className="font-bold text-[#0b2f73] text-sm leading-tight">Simulation ORION</p>
+                      <p className="text-xs text-slate-500">Analyse hebdomadaire</p>
+                    </div>
+                  </div>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Live
+                  </span>
+                </div>
+
+                {/* KPIs miniatures */}
+                <div className="grid grid-cols-3 gap-2.5 mb-5">
+                  {[
+                    { label: 'Recouvrement', value: '+12%', tone: 'text-emerald-600' },
+                    { label: 'Absentéisme',  value: '-8%',  tone: 'text-emerald-600' },
+                    { label: 'Retards',      value: '3 classes', tone: 'text-amber-600' },
+                  ].map((kpi) => (
+                    <div
+                      key={kpi.label}
+                      className="rounded-xl bg-[#f8fafc] border border-slate-200 p-3"
+                    >
+                      <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">{kpi.label}</p>
+                      <p className={`text-base md:text-lg font-extrabold ${kpi.tone} mt-0.5`}>{kpi.value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Bulle de recommandation ORION */}
+                <div className="relative rounded-2xl bg-gradient-to-br from-[#0b2f73] to-[#144798] p-5 text-white overflow-hidden">
+                  <div className="absolute -top-8 -right-8 w-24 h-24 rounded-full bg-[#f5b335]/20 blur-2xl" />
+                  <div className="relative flex items-start gap-3">
+                    <div className="shrink-0 w-8 h-8 rounded-lg bg-[#f5b335]/20 border border-[#f5b335]/40 flex items-center justify-center">
+                      <Sparkles className="w-4 h-4 text-[#f5b335]" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-[#f5b335] mb-1.5">
+                        Recommandation ORION
+                      </p>
+                      <p className="text-sm leading-relaxed text-blue-50">
+                        &laquo;Votre taux de recouvrement progresse de 12%. Les retards sont concentrés sur
+                        3 classes. Recommandation : lancer une relance ciblée avant vendredi.&raquo;
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer carte */}
+                <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Brain className="w-3.5 h-3.5 text-[#0b2f73]" />
+                    IA GLM-5.1
+                  </span>
+                  <span>Mis à jour il y a 2 min</span>
+                </div>
               </div>
             </motion.div>
           </div>
         </div>
       </section>
 
-      <section id="tarification" className="py-16 md:py-24 bg-[#0b2f73] text-white">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <div className="inline-flex items-center gap-2 rounded-full border border-amber-300/40 bg-amber-400/10 px-4 py-1.5 text-amber-300 font-semibold text-sm mb-6">
-            <Wallet className="w-4 h-4" />
-            Tarification transparente
-          </div>
-          <h2 className="text-3xl md:text-5xl font-extrabold leading-tight">
-            <AnimatedHeadline text="Une offre claire, évolutive et institutionnelle" delay={0.03} />
-          </h2>
-          <p className="mt-4 text-blue-100 text-lg">
-            Tous les modules essentiels sont inclus. Vous choisissez selon la taille de votre établissement.
-          </p>
+      {/* ===================================================================== */}
+      {/* SECTION — TARIFICATION (FOND NAVY FONCÉ, CARTES PREMIUM)               */}
+      {/* ===================================================================== */}
+      <section id="tarification" className="relative py-20 md:py-28 bg-gradient-to-b from-[#0a1d3f] via-[#0b2f73] to-[#0a1d3f] text-white overflow-hidden">
+        {/* Décor — halos + grille */}
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] rounded-full bg-[radial-gradient(circle,rgba(245,179,53,0.18),transparent_70%)]" />
+          <div className="absolute bottom-0 left-0 w-[400px] h-[400px] rounded-full bg-[radial-gradient(circle,rgba(29,79,165,0.35),transparent_70%)]" />
+          <div className="absolute inset-0 opacity-[0.04] bg-[linear-gradient(rgba(255,255,255,0.5)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.5)_1px,transparent_1px)] [background-size:48px_48px]" />
+        </div>
 
+        <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          {/* En-tête centré */}
           <motion.div
             variants={staggerContainer}
             initial="hidden"
             whileInView="show"
-            viewport={{ once: true, amount: 0.22 }}
-            className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-5 text-left"
+            viewport={{ once: true, amount: 0.3 }}
+            className="max-w-3xl mx-auto text-center mb-14 md:mb-16"
+          >
+            <motion.span
+              variants={fadeUp}
+              className="inline-flex items-center gap-2 rounded-full bg-[#f5b335]/15 border border-[#f5b335]/30 px-4 py-1.5 text-[#f5b335] font-bold text-xs uppercase tracking-wider mb-5"
+            >
+              <Wallet className="w-3.5 h-3.5" />
+              Tarification transparente
+            </motion.span>
+
+            <motion.h2
+              variants={fadeUp}
+              className="text-3xl sm:text-4xl md:text-5xl font-extrabold leading-[1.15] tracking-tight"
+            >
+              <AnimatedHeadline text="Une offre claire, évolutive et institutionnelle" delay={0.03} />
+            </motion.h2>
+
+            <motion.p
+              variants={fadeUp}
+              className="mt-5 text-base md:text-lg text-blue-100/80 leading-relaxed max-w-2xl mx-auto"
+            >
+              Tous les modules essentiels sont inclus. Vous choisissez selon la taille de votre établissement,
+              puis vous activez les options dont vous avez besoin — sans surprise, sans frais cachés.
+            </motion.p>
+          </motion.div>
+
+          {/* Grille 3 plans — carte centrale mise en avant */}
+          <motion.div
+            variants={staggerContainer}
+            initial="hidden"
+            whileInView="show"
+            viewport={{ once: true, amount: 0.2 }}
+            className="grid grid-cols-1 md:grid-cols-3 gap-5 md:gap-6 items-stretch"
           >
             {[
-              { name: 'SEED', badge: '1 à 150 élèves' },
-              { name: 'GROW', badge: '151 à 400 élèves' },
-              { name: 'LEAD', badge: '401+ élèves' },
+              {
+                name: 'SEED',
+                badge: '1 à 150 élèves',
+                tagline: 'Pour démarrer',
+                desc: 'Idéal pour les petites structures : tous les modules essentiels inclus, sans engagement long terme.',
+                featured: false,
+                features: ['Modules cœur inclus', 'Support standard', 'Offline-first', '1 établissement'],
+              },
+              {
+                name: 'GROW',
+                badge: '151 à 400 élèves',
+                tagline: 'Pour croître',
+                desc: 'Pour les établissements en croissance : modules avancés, ORION IA, et options de personnalisation.',
+                featured: true,
+                features: ['Tous modules cœur + avancés', 'ORION IA inclus', 'Support prioritaire', 'Options activables', 'Multi-niveaux'],
+              },
+              {
+                name: 'LEAD',
+                badge: '401+ élèves',
+                tagline: 'Pour leader',
+                desc: 'Pour les grandes institutions et groupes scolaires : tarifs dégressifs, accompagnement dédié.',
+                featured: false,
+                features: ['Tous modules + EduCast', 'ORION + ATLAS', 'Account manager dédié', 'Groupe scolaire', 'SLA sur-mesure'],
+              },
             ].map((plan) => (
               <motion.div
                 key={plan.name}
                 variants={fadeUp}
-                whileHover={pricingCardMotion.whileHover}
-                transition={pricingCardMotion.transition}
-                className="rounded-2xl border border-white/20 bg-white/10 p-5"
+                whileHover={{ y: -8 }}
+                transition={{ type: 'spring', stiffness: 240, damping: 20 }}
+                className={`relative rounded-3xl p-6 md:p-7 flex flex-col overflow-hidden transition-all duration-300 ${
+                  plan.featured
+                    ? 'bg-gradient-to-br from-[#f5b335]/15 to-[#f5b335]/5 border-2 border-[#f5b335]/50 shadow-[0_30px_80px_-30px_rgba(245,179,53,0.45)] md:scale-105'
+                    : 'bg-white/[0.05] border border-white/15 hover:border-[#f5b335]/30 backdrop-blur-sm'
+                }`}
               >
-                <span className="inline-flex rounded-full bg-amber-400/20 border border-amber-300/40 px-3 py-1 text-xs text-amber-200 font-semibold">
-                  {plan.badge}
-                </span>
-                <h3 className="mt-3 text-xl font-bold">{plan.name}</h3>
-                <p className="mt-2 text-blue-100 text-sm">
-                  Souscription initiale + abonnement adapté à la croissance de votre structure.
+                {/* Badge "Recommandé" pour le plan central */}
+                {plan.featured && (
+                  <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-[#f5b335] px-3.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#0b2f73] shadow-lg">
+                      <Sparkles className="w-3 h-3" />
+                      Recommandé
+                    </span>
+                  </div>
+                )}
+
+                {/* Tagline + badge taille */}
+                <div className="flex items-center justify-between mb-4 mt-2">
+                  <span className={`inline-flex rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${
+                    plan.featured
+                      ? 'bg-[#0b2f73] text-[#f5b335]'
+                      : 'bg-white/10 text-blue-100 border border-white/20'
+                  }`}>
+                    {plan.badge}
+                  </span>
+                  <span className={`text-xs font-semibold ${plan.featured ? 'text-[#f5b335]' : 'text-blue-200/60'}`}>
+                    {plan.tagline}
+                  </span>
+                </div>
+
+                {/* Nom du plan */}
+                <h3 className={`text-3xl font-extrabold tracking-tight ${plan.featured ? 'text-[#f5b335]' : 'text-white'}`}>
+                  {plan.name}
+                </h3>
+
+                {/* Description */}
+                <p className="mt-3 text-sm text-blue-100/75 leading-relaxed min-h-[60px]">
+                  {plan.desc}
                 </p>
+
+                {/* Liste features */}
+                <ul className="mt-5 space-y-2.5 flex-1">
+                  {plan.features.map((f) => (
+                    <li key={f} className="flex items-start gap-2.5 text-sm text-blue-50/90">
+                      <span className={`mt-0.5 inline-flex shrink-0 w-4 h-4 items-center justify-center rounded-full ${
+                        plan.featured ? 'bg-[#f5b335]/20 text-[#f5b335]' : 'bg-white/10 text-blue-200'
+                      }`}>
+                        <svg viewBox="0 0 16 16" className="w-2.5 h-2.5" fill="currentColor" aria-hidden>
+                          <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.5 7.5a.75.75 0 0 1-1.06 0l-3.5-3.5a.75.75 0 0 1 1.06-1.06l2.97 2.97 6.97-6.97a.75.75 0 0 1 1.06 0Z"/>
+                        </svg>
+                      </span>
+                      <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                {/* CTA */}
+                <motion.div
+                  whileHover={{ y: -2 }}
+                  whileTap={{ scale: 0.98 }}
+                  className="mt-6"
+                >
+                  <Link
+                    href="/pricing"
+                    className={`w-full inline-flex items-center justify-center rounded-xl px-5 py-3 font-bold text-sm transition-colors min-h-[44px] ${
+                      plan.featured
+                        ? 'bg-[#f5b335] text-[#0b2f73] hover:bg-[#f7c359]'
+                        : 'bg-white/10 border border-white/30 text-white hover:bg-white/20'
+                    }`}
+                  >
+                    Choisir {plan.name}
+                  </Link>
+                </motion.div>
               </motion.div>
             ))}
           </motion.div>
 
-          <motion.div whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }}>
-            <Link
-              href="/pricing"
-              className="mt-8 inline-flex items-center justify-center rounded-xl bg-[#f5b335] px-8 py-3.5 font-bold text-[#0b2f73] hover:bg-[#f7c359] transition-colors min-h-[48px]"
-            >
-              Voir la grille complète
-            </Link>
+          {/* CTA secondaire + rassurance */}
+          <motion.div
+            variants={fadeUp}
+            initial="hidden"
+            whileInView="show"
+            viewport={{ once: true }}
+            className="mt-12 md:mt-14 flex flex-col items-center gap-5 text-center"
+          >
+            <motion.div whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }}>
+              <Link
+                href="/pricing"
+                className="inline-flex items-center justify-center rounded-xl bg-[#f5b335] px-8 py-3.5 font-bold text-[#0b2f73] hover:bg-[#f7c359] transition-colors min-h-[48px] shadow-lg shadow-[#f5b335]/20"
+              >
+                Voir la grille complète
+                <ArrowRight className="ml-2 w-4 h-4" />
+              </Link>
+            </motion.div>
+
+            <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-blue-100/60">
+              <span className="inline-flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-[#f5b335]" />
+                Sans engagement caché
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <Wallet className="w-3.5 h-3.5 text-[#f5b335]" />
+                Paiement Mobile Money & carte
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-[#f5b335]" />
+                Souscription initiale + abonnement évolutif
+              </span>
+            </div>
           </motion.div>
         </div>
       </section>

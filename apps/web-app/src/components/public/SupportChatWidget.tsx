@@ -842,12 +842,12 @@ Ou reformulez votre question, je ferai de mon mieux pour vous aider ! 😊`;
               <div className="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center bg-white/10">
                 <img 
                   src="/images/Chatbot Sara.webp" 
-                  alt="Sara - Assistant support" 
+                  alt="Sarah - Assistant support" 
                   className="w-full h-full object-cover"
                 />
               </div>
               <div>
-                <h3 className="font-semibold text-sm">Sara - Assistante Support Academia Helm</h3>
+                <h3 className="font-semibold text-sm">Sarah - Assistante Support Academia Helm</h3>
                 <p className="text-xs text-white/80 flex items-center gap-1.5">
                   <span className="relative flex h-2 w-2">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
@@ -905,7 +905,7 @@ Ou reformulez votre question, je ferai de mon mieux pour vous aider ! 😊`;
                       <span className="w-2 h-2 bg-white/80 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
                       <span className="w-2 h-2 bg-white/80 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
                     </div>
-                    <span className="text-xs text-white/80 ml-2">Sara écrit...</span>
+                    <span className="text-xs text-white/80 ml-2">Sarah écrit...</span>
                   </div>
                 </div>
               </div>

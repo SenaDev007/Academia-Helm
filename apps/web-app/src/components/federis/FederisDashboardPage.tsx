@@ -40,7 +40,7 @@ const MODULES = [
     { name: 'Archives & Diplômes', icon: 'document', desc: 'Registres historiques', href: '/federis/archives' },
   ]},
   { category: 'SYSTÈME', items: [
-    { name: 'Sara AI', icon: 'sparkles', desc: 'Assistance intelligente', href: '/federis/sara' },
+    { name: 'Sarah AI', icon: 'sparkles', desc: 'Assistance intelligente', href: '/federis/sara' },
     { name: 'ORION', icon: 'sparkles', desc: 'Vigilance & Audit', href: '/federis/orion' },
     { name: 'Paramètres', icon: 'settings', desc: 'Config plateforme', href: '/federis/settings' },
   ]}

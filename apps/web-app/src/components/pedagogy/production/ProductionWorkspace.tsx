@@ -538,10 +538,10 @@ export default function ProductionWorkspace() {
                     <div className="p-6 bg-indigo-900 rounded-3xl shadow-xl text-white">
                        <div className="flex items-center gap-2 mb-4 text-indigo-300">
                           <Sparkles className="w-5 h-5" />
-                          <span className="text-xs font-bold uppercase">Assistant Sara AI</span>
+                          <span className="text-xs font-bold uppercase">Assistant Sarah AI</span>
                        </div>
                        <p className="text-sm font-medium leading-relaxed mb-4">Générez vos fiches pédagogiques en un clic ou demandez une correction automatique selon les retours de la direction.</p>
-                       <button className="w-full py-2 bg-indigo-600 rounded-xl text-xs font-bold hover:bg-indigo-500 transition-colors">Ouvrir Sara AI</button>
+                       <button className="w-full py-2 bg-indigo-600 rounded-xl text-xs font-bold hover:bg-indigo-500 transition-colors">Ouvrir Sarah AI</button>
                     </div>
                  </div>
               </div>
@@ -938,7 +938,7 @@ export default function ProductionWorkspace() {
                           </div>
                           <div className="mt-4 flex gap-2">
                              <button className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-colors">Corriger le document</button>
-                             <button className="px-4 py-2 bg-gray-100 text-gray-600 rounded-xl text-xs font-bold hover:bg-gray-200 transition-colors">Demander aide à Sara AI</button>
+                             <button className="px-4 py-2 bg-gray-100 text-gray-600 rounded-xl text-xs font-bold hover:bg-gray-200 transition-colors">Demander aide à Sarah AI</button>
                           </div>
                        </div>
                     </div>
@@ -1030,14 +1030,14 @@ export default function ProductionWorkspace() {
           },
           {
              name: 'preAi',
-             label: 'Assistance Sara AI',
+             label: 'Assistance Sarah AI',
              type: 'custom',
              render: () => (
                <div className="p-4 bg-indigo-900 rounded-2xl text-white mb-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <Sparkles className="w-5 h-5 text-indigo-300" />
                     <div>
-                      <p className="text-xs font-bold">Sara AI Assistant</p>
+                      <p className="text-xs font-bold">Sarah AI Assistant</p>
                       <p className="text-[10px] text-indigo-300">Générer une structure de cours basée sur le titre</p>
                     </div>
                   </div>

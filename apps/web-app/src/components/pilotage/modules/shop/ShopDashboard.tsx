@@ -76,7 +76,7 @@ export default function ShopDashboard() {
           </div>
         </div>
 
-        {/* ORION / Sara AI Insights */}
+        {/* ORION / Sarah AI Insights */}
         <div className="space-y-6">
           <div className="bg-navy-900 rounded-3xl p-8 text-white shadow-2xl relative overflow-hidden group">
             <div className="absolute -right-4 -top-4 w-24 h-24 bg-navy-800 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700"></div>
@@ -85,7 +85,7 @@ export default function ShopDashboard() {
                 <div className="p-2 bg-navy-800 rounded-xl">
                   <Zap className="w-5 h-5 text-amber-400 fill-amber-400" />
                 </div>
-                <h3 className="font-black text-lg uppercase tracking-tight">Sara AI Insights</h3>
+                <h3 className="font-black text-lg uppercase tracking-tight">Sarah AI Insights</h3>
               </div>
               <p className="text-navy-100 text-sm leading-relaxed mb-6 font-medium">
                 "Le kit scolaire <span className="text-white font-bold">CP1</span> est en forte demande cette semaine (+60%). Prévoyez un stock tampon de 50 unités supplémentaires pour le pic de lundi."

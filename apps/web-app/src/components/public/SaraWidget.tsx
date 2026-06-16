@@ -280,10 +280,10 @@ export default function SaraWidget() {
     let hadError = false;
 
     try {
-      // On envoie l'historique à jour (incluant le message qu'on vient d'ajouter)
-      // Note: on utilise prev => pour avoir la valeur la plus récente
-      const currentMessages = [...messages, { role: 'user' as const, content: userMsg }];
-      const stream = saraApi.queryStream(userMsg, undefined, currentMessages);
+      // On envoie l'historique SANS le message actuel (le backend l'ajoute via le paramètre query)
+      // Éviter la duplication : si on inclut le message actuel dans l'historique,
+      // le backend l'ajoute aussi à la fin → le message apparaît 2 fois
+      const stream = saraApi.queryStream(userMsg, undefined, messages);
 
       for await (const chunk of stream) {
         if (chunk.type === 'delta' && chunk.text) {

@@ -97,7 +97,7 @@ export const PEDAGOGY_SUBMODULE_TABS = [
   },
   {
     id: 'sara-compose',
-    label: 'Sara Compose (IA)',
+    label: 'Sarah Compose (IA)',
     path: '/app/pedagogy/sara-compose',
     icon: Sparkles,
     roles: ['TEACHER', 'TEACHER_RESP', 'SUPER_DIRECTOR', 'director', 'admin'],

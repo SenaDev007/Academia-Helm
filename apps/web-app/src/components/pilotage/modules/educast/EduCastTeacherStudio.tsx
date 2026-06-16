@@ -124,7 +124,7 @@ export default function EduCastTeacherStudio() {
           <div className="bg-amber-50 border border-amber-100 rounded-3xl p-6 flex items-start gap-4">
             <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-1" />
             <div>
-              <p className="text-sm font-black text-amber-900 uppercase tracking-tight">Conseil Sara AI</p>
+              <p className="text-sm font-black text-amber-900 uppercase tracking-tight">Conseil Sarah AI</p>
               <p className="text-xs text-amber-800/70 font-medium leading-relaxed">Vos capsules sur les "Fonctions Dérivées" génèrent 40% plus d'intérêt que la moyenne. Pensez à créer un pack premium.</p>
             </div>
           </div>

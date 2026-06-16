@@ -12,7 +12,7 @@ import { BarChart3, PieChart, FileText, Download, Calendar, Printer, Share2, Tre
 export default function LibraryReports() {
   const reports = [
     { title: 'Rapport Annuel de Fréquentation', type: 'COMPLET', date: '01/01/2026', size: '2.4 MB', author: 'Logiciel System' },
-    { title: 'Analyse des Retards et Pénalités', type: 'FINANCE', date: '12/05/2026', size: '1.1 MB', author: 'Sara AI' },
+    { title: 'Analyse des Retards et Pénalités', type: 'FINANCE', date: '12/05/2026', size: '1.1 MB', author: 'Sarah AI' },
     { title: 'Inventaire Physique - Section Littérature', type: 'INVENTAIRE', date: '10/05/2026', size: '850 KB', author: 'Admin' },
   ];
 

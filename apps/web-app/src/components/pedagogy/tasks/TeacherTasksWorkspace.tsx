@@ -434,7 +434,7 @@ function TasksDashboard({ homeworks }: TasksDashboardProps) {
           <div className="p-6 bg-emerald-50 border border-emerald-100 rounded-3xl">
              <div className="flex items-center gap-2 text-emerald-700 mb-3">
                <MessageSquare className="w-4 h-4" />
-               <span className="text-xs font-bold uppercase">Sara AI Assist</span>
+               <span className="text-xs font-bold uppercase">Sarah AI Assist</span>
              </div>
              <p className="text-xs text-emerald-600 leading-relaxed mb-4 italic">
                &quot;Voulez-vous que je génère 5 exercices de calcul de fractions adaptés pour le groupe de remédiation ?&quot;

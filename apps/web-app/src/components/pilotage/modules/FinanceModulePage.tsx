@@ -7,7 +7,7 @@
  * Configuration des frais, Encaissements & Inscriptions, Facturation & Recouvrement,
  * Dépenses & Engagements, Boutique & Économat, Cantine & Restauration,
  * Paie & RH (Finance), Banques & Trésorerie, Reporting & Audit,
- * ORION Vigilance, Sara AI Finance, Paramètres Financiers, Archives,
+ * ORION Vigilance, Sarah AI Finance, Paramètres Financiers, Archives,
  * Simulation & Prévision.
  * ============================================================================
  */

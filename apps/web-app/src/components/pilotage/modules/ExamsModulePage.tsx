@@ -129,7 +129,7 @@ export default function ExamsModulePage() {
             <ExamsDashboard />
         }}
       />
-      {/* Sara AI floating assistant */}
+      {/* Sarah AI floating assistant */}
       <ExamSaraAssistant />
     </>
   );

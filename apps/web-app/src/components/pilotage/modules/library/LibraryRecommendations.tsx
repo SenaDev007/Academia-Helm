@@ -29,7 +29,7 @@ export default function LibraryRecommendations() {
               <Sparkles className="w-8 h-8" />
             </div>
             <div>
-              <h3 className="text-2xl font-black uppercase tracking-tighter">Sara AI Suggestion</h3>
+              <h3 className="text-2xl font-black uppercase tracking-tighter">Sarah AI Suggestion</h3>
               <p className="text-white/60 text-sm font-medium">Basé sur les performances de la classe 3ème B</p>
             </div>
           </div>

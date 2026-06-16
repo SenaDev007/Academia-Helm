@@ -47,7 +47,7 @@ const PLANS = [
     price: '150,000',
     cycle: 'mois',
     students: 'Illimité',
-    modules: ['STANDARD +', 'ORION AI', 'Sara AI Assistant', 'Multi-établissement'],
+    modules: ['STANDARD +', 'ORION AI', 'Sarah AI Assistant', 'Multi-établissement'],
     color: 'border-amber-200',
     text: 'text-amber-600',
     bg: 'bg-amber-50/50',
@@ -144,7 +144,7 @@ export default function SubscriptionsWorkspace() {
               {[
                 { label: 'Stockage Cloud', icon: HardDrive, value: '5 TB', total: '10 TB', color: 'bg-blue-500' },
                 { label: 'Tokens ORION', icon: Target, value: '2.5M', total: '5M', color: 'bg-violet-500' },
-                { label: 'Requêtes Sara AI', icon: Zap, value: '850K', total: '1M', color: 'bg-amber-500' },
+                { label: 'Requêtes Sarah AI', icon: Zap, value: '850K', total: '1M', color: 'bg-amber-500' },
                 { label: 'SMS / WhatsApp', icon: CreditCard, value: '150K', total: '500K', color: 'bg-emerald-500' },
               ].map((quota) => {
                 const Icon = quota.icon;

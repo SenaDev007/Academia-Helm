@@ -33,7 +33,7 @@ export function IaWorkspace() {
 
   // Copilot States
   const [messages, setMessages] = useState<Array<{ sender: 'user' | 'bot'; text: string }>>([
-    { sender: 'bot', text: 'Bonjour ! Je suis Sara, votre Copilote RH augmenté d\'Academia Helm. Je peux analyser des CV, comparer les candidats ou générer des questions d\'entretien.' },
+    { sender: 'bot', text: 'Bonjour ! Je suis Sarah, votre Copilote RH augmenté d\'Academia Helm. Je peux analyser des CV, comparer les candidats ou générer des questions d\'entretien.' },
   ]);
   const [inputText, setInputText] = useState('');
   const [copilotLoading, setCopilotLoading] = useState(false);
@@ -593,7 +593,7 @@ export function IaWorkspace() {
                   <Brain className="h-5 w-5" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-white text-xs leading-none">Sara — Assistant RH</h4>
+                  <h4 className="font-bold text-white text-xs leading-none">Sarah — Assistant RH</h4>
                   <p className="text-[9px] text-emerald-400 mt-1 font-semibold flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> {copilotLoading ? 'Analyse en cours…' : 'IA active'}
                   </p>
@@ -645,7 +645,7 @@ export function IaWorkspace() {
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                placeholder="Posez une question à Sara..."
+                placeholder="Posez une question à Sarah..."
                 disabled={copilotLoading}
                 className="flex-grow bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-[#1A2BA6] transition disabled:opacity-50"
               />

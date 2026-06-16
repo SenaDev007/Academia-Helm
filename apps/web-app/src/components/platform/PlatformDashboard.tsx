@@ -189,7 +189,7 @@ export default function PlatformDashboard() {
         <div className="p-6 bg-slate-900 rounded-2xl shadow-xl text-white">
           <div className="flex items-center gap-2 mb-6 text-indigo-400">
             <Zap className="w-5 h-5" />
-            <h3 className="font-bold">Sara AI Platform Assistant</h3>
+            <h3 className="font-bold">Sarah AI Platform Assistant</h3>
           </div>
           <p className="text-sm text-slate-300 leading-relaxed">
             "Bonjour. J'ai analysé les tendances de ce mois. Le taux de churn est en baisse de 2%. Cependant, la consommation API sur la zone Ouest a augmenté de 40%."

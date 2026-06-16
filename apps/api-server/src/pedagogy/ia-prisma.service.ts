@@ -1245,7 +1245,7 @@ RÈGLES :
     }
 
     if (textLower.includes('bonjour') || textLower.includes('salut') || textLower.includes('hello') || textLower.includes('hey')) {
-      return `Bonjour ! Je suis Sara, votre Copilote Pédagogique. Je peux vous aider avec :\n- La génération d'épreuves et devoirs (Sara Compose)\n- L'analyse de vos documents pédagogiques\n- Le suivi de la couverture des programmes\n- La gestion des cahiers journal\n- Les insights pédagogiques\n\nQue puis-je faire pour vous ?`;
+      return `Bonjour ! Je suis Sarah, votre Copilote Pédagogique. Je peux vous aider avec :\n- La génération d'épreuves et devoirs (Sarah Compose)\n- L'analyse de vos documents pédagogiques\n- Le suivi de la couverture des programmes\n- La gestion des cahiers journal\n- Les insights pédagogiques\n\nQue puis-je faire pour vous ?`;
     }
 
     // Réponse par défaut

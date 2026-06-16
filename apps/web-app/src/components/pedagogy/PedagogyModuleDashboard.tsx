@@ -432,7 +432,7 @@ export function PedagogyModuleDashboard() {
 
             <div className="flex items-center gap-2 mb-6">
               <div className="h-2 w-2 rounded-full bg-blue-400 animate-pulse" />
-              <h2 className="text-lg font-bold">{isTeacher ? 'Sara AI Pédagogie' : 'Cockpit ORION'}</h2>
+              <h2 className="text-lg font-bold">{isTeacher ? 'Sarah AI Pédagogie' : 'Cockpit ORION'}</h2>
             </div>
 
             <div className="space-y-4">

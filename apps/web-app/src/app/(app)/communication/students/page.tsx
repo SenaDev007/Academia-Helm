@@ -73,7 +73,7 @@ export default function StudentCommunicationPage() {
               <Sparkles className="absolute top-4 right-4 text-violet-400 opacity-50" size={24} />
               <h5 className="text-xl font-black mb-4 tracking-tight">Ciblage Intelligent</h5>
               <p className="text-slate-400 text-sm font-medium mb-8 leading-relaxed">
-                Utilisez Sara AI pour segmenter les élèves selon leurs performances ou leurs besoins spécifiques.
+                Utilisez Sarah AI pour segmenter les élèves selon leurs performances ou leurs besoins spécifiques.
               </p>
               <button className="w-full bg-violet-600 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-violet-700 transition-all shadow-lg shadow-violet-900/50">
                 Lancer une recommandation

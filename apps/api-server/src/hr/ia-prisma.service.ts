@@ -610,7 +610,7 @@ RÈGLES :
     }
 
     if (textLower.includes('bonjour') || textLower.includes('salut') || textLower.includes('hello') || textLower.includes('hey')) {
-      return `Bonjour ! Je suis Sara, votre Copilote RH. Je peux vous aider avec :\n- L'analyse des candidats et CV\n- Les données d'effectif et de paie\n- La préparation d'entretiens\n- Le suivi des congés\n\nQue puis-je faire pour vous ?`;
+      return `Bonjour ! Je suis Sarah, votre Copilote RH. Je peux vous aider avec :\n- L'analyse des candidats et CV\n- Les données d'effectif et de paie\n- La préparation d'entretiens\n- Le suivi des congés\n\nQue puis-je faire pour vous ?`;
     }
 
     // Réponse par défaut

@@ -92,7 +92,7 @@ export default function CanteenReports() {
         <div className="bg-navy-900 rounded-3xl p-8 text-white shadow-2xl h-fit relative overflow-hidden group">
           <div className="absolute top-0 right-0 -mt-12 -mr-12 w-48 h-48 bg-white/5 rounded-full blur-3xl group-hover:bg-white/10 transition-all duration-700"></div>
           <div className="relative z-10">
-            <h4 className="text-xl font-black mb-2 tracking-tight">Sara AI Report Builder</h4>
+            <h4 className="text-xl font-black mb-2 tracking-tight">Sarah AI Report Builder</h4>
             <p className="text-xs text-navy-200 leading-relaxed mb-8">Générez des rapports personnalisés en demandant simplement à l'IA.</p>
             
             <div className="space-y-4 mb-8">

@@ -24,7 +24,7 @@ const GLOBAL_MODULES = [
   { id: 'EXAMS', name: 'Examens & Notes', icon: BookOpen, status: 'ACTIVE', category: 'PEDAGOGY', description: 'Gestion des évaluations et des bulletins.' },
   { id: 'COMMUNICATION', name: 'Communication', icon: MessageSquare, status: 'ACTIVE', category: 'SYSTEM', description: 'SMS, Emails et Notifications multi-canal.' },
   { id: 'ORION', name: 'ORION AI', icon: Zap, status: 'PREMIUM', category: 'AI', description: 'Vigilance institutionnelle et aide à la décision.' },
-  { id: 'SARA', name: 'Sara AI Assistant', icon: Zap, status: 'PREMIUM', category: 'AI', description: 'Assistant pédagogique et administratif.' },
+  { id: 'SARA', name: 'Sarah AI Assistant', icon: Zap, status: 'PREMIUM', category: 'AI', description: 'Assistant pédagogique et administratif.' },
 ];
 
 export default function ModulesWorkspace() {

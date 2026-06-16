@@ -4,7 +4,7 @@
  * ============================================================================
  * 
  * Hub stratégique pour la gestion du capital humain :
- * Dossiers, Contrats, Paie, Présences, Performance, ORION RH, Sara AI.
+ * Dossiers, Contrats, Paie, Présences, Performance, ORION RH, Sarah AI.
  * ============================================================================
  */
 

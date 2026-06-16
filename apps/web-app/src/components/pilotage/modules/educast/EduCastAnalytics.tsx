@@ -44,7 +44,7 @@ export default function EduCastAnalytics() {
             <MousePointer2 className="w-5 h-5 text-blue-500" />
           </div>
           <div className="text-4xl font-black text-slate-900 mb-2">8.5/10</div>
-          <p className="text-[10px] font-bold text-blue-600 bg-blue-50 w-fit px-2 py-0.5 rounded-lg">Score Sara AI</p>
+          <p className="text-[10px] font-bold text-blue-600 bg-blue-50 w-fit px-2 py-0.5 rounded-lg">Score Sarah AI</p>
         </div>
       </div>
 

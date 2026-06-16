@@ -100,7 +100,7 @@ export default function OrionPilotageWorkspace() {
                   <Zap className="w-8 h-8 text-indigo-400" />
                 </div>
                 <h3 className="text-lg font-bold text-slate-900">Analyse en cours...</h3>
-                <p className="text-slate-500 mt-2">Sara AI croise les données agrégées pour générer vos insights {TABS.find(t => t.id === activeTab)?.label.toLowerCase()}.</p>
+                <p className="text-slate-500 mt-2">Sarah AI croise les données agrégées pour générer vos insights {TABS.find(t => t.id === activeTab)?.label.toLowerCase()}.</p>
               </div>
             )}
           </motion.div>

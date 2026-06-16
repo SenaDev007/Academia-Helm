@@ -5,7 +5,7 @@
  * 
  * Hub stratégique pour l'excellence académique :
  * Cahier de textes, Avancement Curriculum, Évaluations, Bulletins, 
- * ORION Pédagogie, Sara AI, Emploi du Temps.
+ * ORION Pédagogie, Sarah AI, Emploi du Temps.
  * ============================================================================
  */
 

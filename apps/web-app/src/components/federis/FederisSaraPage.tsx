@@ -41,7 +41,7 @@ export default function FederisSaraPage() {
            </div>
            <div className="hidden md:flex items-center space-x-3 bg-black/20 px-4 py-2 rounded-xl backdrop-blur-md border border-white/5">
               <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-              <span className="text-[10px] font-black uppercase tracking-widest text-blue-200">Sara Engine v4.2 Active</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-blue-200">Sarah Engine v4.2 Active</span>
            </div>
         </div>
       </div>
@@ -101,7 +101,7 @@ export default function FederisSaraPage() {
                   <div className="w-8 h-8 bg-purple-900 rounded-lg flex items-center justify-center">
                      <AppIcon name="sparkles" size="menu" className="text-white" />
                   </div>
-                  <h4 className="text-xs font-black text-purple-900 uppercase">Capacités Sara</h4>
+                  <h4 className="text-xs font-black text-purple-900 uppercase">Capacités Sarah</h4>
                </div>
                <ul className="space-y-3">
                   {[

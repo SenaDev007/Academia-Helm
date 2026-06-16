@@ -75,7 +75,7 @@ const federisNavItems = [
   {
     category: 'SYSTÈME',
     items: [
-      { name: 'Sara AI', subPath: '/sara', icon: 'sparkles' as const },
+      { name: 'Sarah AI', subPath: '/sara', icon: 'sparkles' as const },
       { name: 'ORION', subPath: '/orion', icon: 'sparkles' as const },
       { name: 'Gestion des Conflits', subPath: '/conflicts', icon: 'warning' as const },
       { name: 'Paramètres', subPath: '/settings', icon: 'settings' as const },

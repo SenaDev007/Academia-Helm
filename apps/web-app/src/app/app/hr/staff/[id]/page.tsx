@@ -51,6 +51,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { motion, AnimatePresence } from 'framer-motion';
+import Link from 'next/link';
 import { StaffTerminationModal } from '../../_components/modals/StaffTerminationModal';
 import { HRShell } from '../../_components/HRShell';
 
@@ -1291,36 +1292,51 @@ export default function StaffDetailPage() {
                 </div>
                 {contracts.length > 0 ? (
                   <div className="space-y-4">
-                    {contracts.map((contract: any) => (
-                      <div key={contract.id} className="p-5 border border-slate-100 rounded-2xl hover:bg-slate-50/50 transition-colors">
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm">
-                              {contract.contractType?.[0] || 'C'}
+                    {contracts.map((contract: any) => {
+                      // Mapping lisible des statuts de contrat (≠ raw 'PENDING' / 'DRAFT' qui s'affichait avant)
+                      const statusMap: Record<string, { label: string; className: string }> = {
+                        ACTIVE:     { label: 'En vigueur',                className: 'bg-emerald-50 text-emerald-700' },
+                        PENDING:    { label: 'En attente de signature',   className: 'bg-amber-50 text-amber-600' },
+                        DRAFT:      { label: 'En attente de signature',   className: 'bg-amber-50 text-amber-600' },
+                        EXPIRED:    { label: 'Expiré',                    className: 'bg-slate-100 text-slate-500' },
+                        TERMINATED: { label: 'Résilié',                   className: 'bg-rose-50 text-rose-600' },
+                        DELETED:    { label: 'Supprimé',                  className: 'bg-slate-100 text-slate-400' },
+                      };
+                      const st = statusMap[contract.status] || { label: contract.status, className: 'bg-slate-100 text-slate-500' };
+                      return (
+                        <Link
+                          key={contract.id}
+                          href={`/app/hr/contracts/${contract.id}`}
+                          className="block p-5 border border-slate-100 rounded-2xl hover:bg-slate-50/50 hover:border-blue-200 transition-colors group"
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm">
+                                {contract.contractType?.[0] || 'C'}
+                              </div>
+                              <div>
+                                <p className="font-bold text-slate-900 text-sm group-hover:text-blue-600 transition-colors">
+                                  {contract.contractType || 'Contrat'} {!contract.signedAt && <span className="text-[10px] text-amber-600 font-semibold ml-1">(non signé)</span>}
+                                </p>
+                                <p className="text-xs text-slate-400 mt-0.5">
+                                  Du {new Date(contract.startDate).toLocaleDateString('fr-FR')} au {contract.endDate ? new Date(contract.endDate).toLocaleDateString('fr-FR') : 'Indéfini'}
+                                </p>
+                              </div>
                             </div>
+                            <Badge className={st.className}>{st.label}</Badge>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4 mt-4 pt-3 border-t border-slate-50">
                             <div>
-                              <p className="font-bold text-slate-900 text-sm">{contract.contractType || 'Contrat'}</p>
-                              <p className="text-xs text-slate-400 mt-0.5">
-                                Du {new Date(contract.startDate).toLocaleDateString('fr-FR')} au {contract.endDate ? new Date(contract.endDate).toLocaleDateString('fr-FR') : 'Indéfini'}
-                              </p>
+                              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Salaire de base</p>
+                              <p className="text-sm font-bold text-emerald-600">{formatCurrency(contract.baseSalary)}</p>
+                            </div>
+                            <div className="flex items-end justify-end">
+                              <span className="text-xs font-bold text-blue-600 group-hover:underline">Ouvrir le contrat →</span>
                             </div>
                           </div>
-                          <Badge className={contract.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}>
-                            {contract.status === 'ACTIVE' ? 'En vigueur' : contract.status === 'EXPIRED' ? 'Expiré' : contract.status}
-                          </Badge>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4 mt-4 pt-3 border-t border-slate-50">
-                          <div>
-                            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Salaire de base</p>
-                            <p className="text-sm font-bold text-emerald-600">{formatCurrency(contract.baseSalary)}</p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Mode de paiement</p>
-                            <p className="text-sm font-medium text-slate-700">{contract.paymentMode || 'N/A'}</p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                        </Link>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="py-10 text-center bg-gray-50 rounded-2xl border-2 border-dashed border-gray-100">

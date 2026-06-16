@@ -463,7 +463,8 @@ Si une information n'est pas présente dans le document, mets une chaîne vide, 
       if (c.email) {
         const key = c.email.toLowerCase();
         if (!emailMap.has(key)) emailMap.set(key, []);
-        emailMap.get(key)!.push(`${c.firstName} ${c.lastName} (${c.id})`);
+        // Afficher uniquement le nom lisible — pas d'ID technique côté UI
+        emailMap.get(key)!.push(`${c.firstName} ${c.lastName}`);
       }
     }
     for (const [email, names] of emailMap) {
@@ -484,7 +485,8 @@ Si une information n'est pas présente dans le document, mets une chaîne vide, 
       if (c.phone) {
         const key = c.phone.replace(/\s/g, '');
         if (!phoneMap.has(key)) phoneMap.set(key, []);
-        phoneMap.get(key)!.push(`${c.firstName} ${c.lastName} (${c.id})`);
+        // Afficher uniquement le nom lisible — pas d'ID technique côté UI
+        phoneMap.get(key)!.push(`${c.firstName} ${c.lastName}`);
       }
     }
     for (const [phone, names] of phoneMap) {

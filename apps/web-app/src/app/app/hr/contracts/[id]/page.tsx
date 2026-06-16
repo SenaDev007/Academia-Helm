@@ -6,6 +6,7 @@ import {
   ArrowLeft, FileText, Download, PenTool, Calendar, DollarSign,
   User, CheckCircle, Clock, AlertCircle, FileCheck, Loader2,
   RefreshCw, Shield, Hash, Briefcase, Building2, ExternalLink,
+  Pencil, Eye, RotateCcw,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -14,6 +15,8 @@ import { toast } from '@/components/ui/toast';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { ContractSignModal } from '../../_components/modals/ContractSignModal';
+import { ContractEditModal } from '../../_components/modals/ContractEditModal';
+import { ContractDocumentEditor } from '../../_components/modals/ContractDocumentEditor';
 import { formatCurrency } from '@/lib/utils';
 import { HRShell } from '../../_components/HRShell';
 
@@ -54,7 +57,12 @@ export default function ContractDetailPage() {
   const [contract, setContract] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [reactivating, setReactivating] = useState(false);
   const [signModalOpen, setSignModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [docEditorOpen, setDocEditorOpen] = useState(false);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
 
   useEffect(() => {
     if (tenant?.id && contractId) fetchContract();
@@ -65,11 +73,67 @@ export default function ContractDetailPage() {
       setLoading(true);
       const data = await hrFetch<any>(hrUrl(`contracts/${contractId}`, { tenantId: tenant.id }));
       setContract(data);
+      // Reset PDF preview so it's re-fetched with fresh data
+      if (pdfPreviewUrl) {
+        URL.revokeObjectURL(pdfPreviewUrl);
+        setPdfPreviewUrl(null);
+      }
     } catch (err) {
       console.error(err);
       toast({ variant: 'error', title: 'Impossible de charger le contrat.' });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadPdfPreview() {
+    if (!tenant?.id || !contractId) return;
+    try {
+      setLoadingPreview(true);
+      let response = await fetch(`/api/hr/contracts/${contractId}/pdf?tenantId=${tenant.id}`, {
+        method: 'GET',
+        headers: { ...getClientAuthorizationHeader() },
+        credentials: 'include',
+        cache: 'no-store',
+      });
+
+      // On 401, attempt token refresh once before giving up
+      if (response.status === 401) {
+        const refreshed = await tryRefreshAccessToken();
+        if (refreshed) {
+          response = await fetch(`/api/hr/contracts/${contractId}/pdf?tenantId=${tenant.id}`, {
+            method: 'GET',
+            headers: { ...getClientAuthorizationHeader() },
+            credentials: 'include',
+            cache: 'no-store',
+          });
+        }
+      }
+
+      if (!response.ok) {
+        // Try generating first, then retry
+        await hrFetch<any>(hrUrl(`contracts/${contractId}/generate-pdf`, { tenantId: tenant.id }), { method: 'POST' });
+        const retryResponse = await fetch(`/api/hr/contracts/${contractId}/pdf?tenantId=${tenant.id}`, {
+          method: 'GET',
+          headers: { ...getClientAuthorizationHeader() },
+          credentials: 'include',
+          cache: 'no-store',
+        });
+        if (!retryResponse.ok) throw new Error('Impossible de charger l\'aperçu.');
+        const blob = await retryResponse.blob();
+        if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
+        setPdfPreviewUrl(URL.createObjectURL(blob));
+      } else {
+        const blob = await response.blob();
+        if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
+        setPdfPreviewUrl(URL.createObjectURL(blob));
+      }
+      toast({ variant: 'success', title: 'Aperçu chargé.' });
+    } catch (err) {
+      console.error(err);
+      toast({ variant: 'error', title: 'Impossible de charger l\'aperçu du PDF.' });
+    } finally {
+      setLoadingPreview(false);
     }
   }
 
@@ -155,6 +219,25 @@ export default function ContractDetailPage() {
     }
   }
 
+  /**
+   * Réactive un contrat EXPIRED non signé → PENDING pour qu'il puisse être signé.
+   * Appelle le backend PUT /hr/contracts/:id/reactivate.
+   */
+  async function handleReactivate() {
+    if (!contract) return;
+    try {
+      setReactivating(true);
+      await hrFetch<any>(hrUrl(`contracts/${contractId}/reactivate`, { tenantId: tenant.id }), { method: 'PUT' });
+      toast({ variant: 'success', title: 'Contrat réactivé. Vous pouvez maintenant le signer.' });
+      fetchContract();
+    } catch (err) {
+      console.error(err);
+      toast({ variant: 'error', title: 'Erreur lors de la réactivation du contrat.' });
+    } finally {
+      setReactivating(false);
+    }
+  }
+
   if (loading) {
     return (
       <HRShell activeId="contracts" title="Contrats" description="Suivi des contrats, avenants, échéances et historique contractuel.">
@@ -182,12 +265,17 @@ export default function ContractDetailPage() {
     );
   }
 
-  const status = STATUS_CONFIG[contract.status] || STATUS_CONFIG.PENDING || STATUS_FALLBACK;
+  const status = STATUS_CONFIG[contract.status] || STATUS_FALLBACK;
   const StatusIcon = status?.icon || AlertCircle;
   const pdfUrl = (contract.terms as any)?.pdfUrl;
   const isSigned = !!contract.signedAt;
   const contractTypeLabel = CONTRACT_TYPE_LABELS[contract.contractType] || contract.contractType;
   const signatureData = (contract.terms as any)?.signatureData;
+  // Un contrat non signé peut être signé qu'il soit PENDING ou ACTIVE (la plupart sont PENDING avant signature).
+  // On exclut uniquement les statuts finaux (EXPIRED, TERMINATED, DELETED) qui nécessitent une réactivation.
+  const canSign = !isSigned && (contract.status === 'PENDING' || contract.status === 'ACTIVE' || contract.status === 'DRAFT');
+  // Un contrat EXPIRED non signé peut être réactivé → repasse en PENDING
+  const canReactivate = !isSigned && contract.status === 'EXPIRED';
 
   const daysUntilExpiry = contract.endDate
     ? Math.ceil((new Date(contract.endDate).getTime() - Date.now()) / 86400000)
@@ -199,6 +287,18 @@ export default function ContractDetailPage() {
         <ContractSignModal
           isOpen={signModalOpen}
           onClose={() => setSignModalOpen(false)}
+          onSuccess={fetchContract}
+          contract={contract}
+        />
+        <ContractEditModal
+          isOpen={editModalOpen}
+          onClose={() => setEditModalOpen(false)}
+          onSuccess={fetchContract}
+          contract={contract}
+        />
+        <ContractDocumentEditor
+          isOpen={docEditorOpen}
+          onClose={() => setDocEditorOpen(false)}
           onSuccess={fetchContract}
           contract={contract}
         />
@@ -285,7 +385,38 @@ export default function ContractDetailPage() {
             <RefreshCw className={`h-4 w-4 ${generating ? 'animate-spin' : ''}`} />
             Régénérer
           </button>
-          {!isSigned && contract.status === 'ACTIVE' && (
+          {!isSigned && (
+            <button
+              onClick={() => setDocEditorOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 rounded-xl shadow-sm transition"
+              title="Modifier l'intégralité du document (articles, clauses…)"
+            >
+              <Pencil className="h-4 w-4" />
+              Éditer le document
+            </button>
+          )}
+          {!isSigned && (
+            <button
+              onClick={() => setEditModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100 rounded-xl transition"
+              title="Modifier les informations du contrat (dates, salaire, mode de règlement…)"
+            >
+              <FileText className="h-4 w-4" />
+              Modifier les infos
+            </button>
+          )}
+          {canReactivate && (
+            <button
+              onClick={handleReactivate}
+              disabled={reactivating}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 rounded-xl transition"
+              title="Réactiver ce contrat expiré pour le signer"
+            >
+              {reactivating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+              Réactiver
+            </button>
+          )}
+          {canSign && (
             <button
               onClick={() => setSignModalOpen(true)}
               className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 shadow-sm transition"
@@ -296,6 +427,25 @@ export default function ContractDetailPage() {
           )}
         </div>
       </motion.div>
+
+      {/* Reactivation helper banner for unsigned EXPIRED contracts */}
+      {canReactivate && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="flex items-start gap-3 p-4 rounded-xl bg-blue-50 border border-blue-200 text-blue-800"
+        >
+          <RotateCcw className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-bold">Contrat expiré non signé</p>
+            <p className="text-xs mt-0.5">
+              Ce contrat a été marqué « Expiré » automatiquement (probablement car un nouveau contrat a été créé pour
+              ce même employé). Si vous souhaitez malgré tout le signer, cliquez sur <strong>Réactiver</strong> ci-dessus :
+              le contrat repassera en <strong>attente de signature</strong> et le bouton « Signer le contrat » apparaîtra.
+            </p>
+          </div>
+        </motion.div>
+      )}
 
       {/* Expiry warning */}
       {daysUntilExpiry !== null && daysUntilExpiry > 0 && daysUntilExpiry <= 30 && (
@@ -421,7 +571,7 @@ export default function ContractDetailPage() {
                       Le contrat doit être signé par l'employé(e) pour être pleinement exécutoire.
                     </p>
                   </div>
-                  {contract.status === 'ACTIVE' && (
+                  {canSign && (
                     <button
                       onClick={() => setSignModalOpen(true)}
                       className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white rounded-xl shadow-sm hover:opacity-90 transition mt-2"
@@ -429,6 +579,16 @@ export default function ContractDetailPage() {
                     >
                       <PenTool className="h-4 w-4" />
                       Procéder à la signature
+                    </button>
+                  )}
+                  {canReactivate && (
+                    <button
+                      onClick={handleReactivate}
+                      disabled={reactivating}
+                      className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white rounded-xl shadow-sm hover:opacity-90 disabled:opacity-60 transition mt-2 bg-blue-600 hover:bg-blue-700"
+                    >
+                      {reactivating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                      Réactiver le contrat
                     </button>
                   )}
                 </div>
@@ -546,6 +706,66 @@ export default function ContractDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* PDF Preview Section — In-app visualization */}
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"
+      >
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Eye className="h-4 w-4" style={{ color: PRIMARY }} />
+            <h2 className="text-sm font-bold text-slate-900">Aperçu du Contrat</h2>
+          </div>
+          <div className="flex items-center gap-2">
+            {pdfPreviewUrl && (
+              <button
+                onClick={loadPdfPreview}
+                disabled={loadingPreview}
+                className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
+                title="Recharger l'aperçu"
+              >
+                {loadingPreview ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                Actualiser
+              </button>
+            )}
+            {!pdfPreviewUrl && (
+              <button
+                onClick={loadPdfPreview}
+                disabled={loadingPreview}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white rounded-xl hover:opacity-90 disabled:opacity-60 transition"
+                style={{ backgroundColor: PRIMARY }}
+              >
+                {loadingPreview ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+                Charger l&apos;aperçu
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="p-5">
+          {pdfPreviewUrl ? (
+            <iframe
+              src={pdfPreviewUrl}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50"
+              style={{ height: '600px' }}
+              title="Aperçu du contrat PDF"
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
+              <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center">
+                <FileText className="h-7 w-7 text-slate-300" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-slate-700">Aperçu non chargé</p>
+                <p className="text-xs text-slate-400 mt-1 max-w-sm">
+                  Cliquez sur le bouton &quot;Charger l&apos;aperçu&quot; ci-dessus pour visualiser le contrat au format PDF directement dans l&apos;application.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </motion.div>
       </div>
     </HRShell>
   );

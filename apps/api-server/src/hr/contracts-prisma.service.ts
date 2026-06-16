@@ -39,11 +39,14 @@ export class ContractsPrismaService {
       // Désactiver l'éventuel contrat actif existant
       // IMPORTANT: On n'expire PAS les CDI (sans date de fin) — ils restent en vigueur
       // On n'expire que les contrats à durée déterminée (CDD, VACATAIRE, STAGE, CONSULTANT)
+      // IMPORTANT: On n'expire PAS les contrats PENDING (non signés) — l'utilisateur peut
+      // vouloir conserver plusieurs brouillons en parallèle. Seuls les contrats ACTIVE
+      // (déjà en vigueur) sont expirés automatiquement lorsqu'un nouveau contrat est créé.
       const contractsToExpire = await tx.contract.findMany({
         where: {
           staffId: data.staffId,
           tenantId: data.tenantId,
-          status: { in: ['ACTIVE', 'PENDING'] },
+          status: 'ACTIVE',
           contractType: { in: ['CDD', 'VACATAIRE', 'STAGE', 'CONSULTANT'] },
         },
         select: { id: true },
@@ -341,6 +344,41 @@ export class ContractsPrismaService {
       data: {
         ...prismaUpdateDefaults(),
         status: 'DELETED',
+      },
+    });
+  }
+
+  /**
+   * Réactive un contrat expiré non signé.
+   * Permet à l'utilisateur de remettre un contrat en PENDING pour le signer
+   * s'il a été automatiquement expiré à tort (ou par erreur de manipulation).
+   *
+   * Conditions :
+   * - Le contrat ne doit pas être déjà signé (signedAt null)
+   * - Le statut actuel doit être EXPIRED (on ne réactive pas un TERMINATED ou DELETED)
+   *
+   * Après réactivation, le contrat repasse en PENDING et peut être signé.
+   */
+  async reactivateContract(id: string, tenantId: string) {
+    const contract = await this.findContractById(id, tenantId);
+
+    if (contract.signedAt) {
+      throw new BadRequestException(
+        'Impossible de réactiver un contrat déjà signé. Créez un avenant ou un nouveau contrat.',
+      );
+    }
+
+    if (contract.status !== 'EXPIRED') {
+      throw new BadRequestException(
+        `Seuls les contrats expirés peuvent être réactivés (statut actuel: ${contract.status}).`,
+      );
+    }
+
+    return this.prisma.contract.update({
+      where: { id },
+      data: {
+        ...prismaUpdateDefaults(),
+        status: 'PENDING',
       },
     });
   }

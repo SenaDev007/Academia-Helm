@@ -194,6 +194,25 @@ export class ContractsPrismaController {
     return this.contractsService.deleteContract(id, tid);
   }
 
+  /**
+   * PUT /hr/contracts/:id/reactivate
+   * Réactive un contrat EXPIRED non signé → PENDING pour qu'il puisse être signé.
+   * Utile quand un contrat a été expiré par erreur ou qu'on veut le récupérer
+   * au lieu d'en créer un nouveau.
+   */
+  @Put(':id/reactivate')
+  async reactivateContract(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.contractsService.reactivateContract(id, tid);
+  }
+
   @Post(':id/amendments')
   async createAmendment(
     @GetTenant() tenant: any,

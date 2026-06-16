@@ -24,6 +24,14 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   DELETED:    { label: 'Supprimé',                  className: 'bg-slate-100 text-slate-400 border border-slate-200' },
 };
 
+// Fallback neutre — on n'utilise PLUS 'EXPIRED' comme défaut pour éviter qu'un
+// contrat avec un statut inattendu (ou un nouveau statut backend non mappé) soit
+// affiché à tort comme « Expiré ».
+const STATUS_FALLBACK = {
+  label: 'En attente',
+  className: 'bg-amber-50 text-amber-600 border border-amber-200',
+};
+
 const inputClass =
   'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 ' +
   'focus:outline-none focus:border-[#1A2BA6] focus:ring-2 focus:ring-[#1A2BA6]/10 transition';
@@ -292,7 +300,7 @@ function ContractRow({ contract, index, tenantId, onTerminate }: { contract: any
     const diff = (new Date(contract.endDate).getTime() - Date.now()) / 86400000;
     return diff > 0 && diff <= 30;
   };
-  const status = STATUS_CONFIG[contract.status] || STATUS_CONFIG.EXPIRED;
+  const status = STATUS_CONFIG[contract.status] || STATUS_FALLBACK;
   const isSigned = !!contract.signedAt;
 
   async function handleGeneratePdf() {

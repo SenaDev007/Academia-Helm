@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Image from 'next/image';
 import {
@@ -25,9 +25,39 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
+import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 import { useModuleContext } from '@/hooks/useModuleContext';
 
 const PRIMARY = '#1A2BA6';
+
+/**
+ * Générateur de réponse local (rule-based) utilisé en fallback lorsque le
+ * backend streaming est indisponible ou renvoie une erreur. Sarah reste
+ * utile même sans IA, en s'appuyant sur les données déjà chargées côté client.
+ */
+function generateLocalFallback(message: string, candidates: any[]): string {
+  const textLower = message.toLowerCase();
+
+  if (textLower.includes('candidat') || textLower.includes('meilleur')) {
+    const best = [...candidates].sort((a, b) => (b.applications?.[0]?.score || 0) - (a.applications?.[0]?.score || 0));
+    return best.length > 0
+      ? `Le meilleur candidat est **${best[0].firstName} ${best[0].lastName}** avec un score de **${best[0].applications?.[0]?.score || 0}%**.`
+      : "Aucun candidat dans la base pour l'instant. Vous pouvez enregistrer des candidats via le module Recrutement.";
+  }
+  if (textLower.includes('congé') || textLower.includes('absence')) {
+    return "Pour les demandes de congé, consultez l'onglet « Congés & Absences ». Je peux vous aider à préparer un modèle de politique de congés si vous le souhaitez.";
+  }
+  if (textLower.includes('contrat') || textLower.includes('cdi') || textLower.includes('cdd')) {
+    return "Pour les contrats (CDI, CDD, vacation, stage), consultez l'onglet « Contrats ». Je peux vous aider à rédiger des clauses spécifiques ou à vérifier la conformité d'un contrat.";
+  }
+  if (textLower.includes('paie') || textLower.includes('salaire')) {
+    return "Pour la paie et les charges sociales (CNSS Bénin), consultez les onglets « Paie » et « CNSS ». Je peux vous expliquer le calcul des charges ou préparer une simulation.";
+  }
+  if (textLower.includes('entretien')) {
+    return "Voici une grille d'entretien RH structurée :\n\n1. Présentation du candidat (parcours, motivations)\n2. Expérience pédagogique (méthodes, outils, gestion de classe)\n3. Compétences techniques (discipline, didactique)\n4. Savoir-être (collaboration, communication)\n5. Questions situationnelles (cas pratiques)\n6. Prétentions salariales et disponibilité\n\nSouhaitez-vous que je détaille une section ?";
+  }
+  return "Je suis Sarah, votre Assistante RH. Le service IA rencontre temporairement un problème de connexion.\n\nEn attendant, je peux vous orienter vers les modules RH disponibles : Recrutement, Contrats, Personnel, Congés, Paie, CNSS, ou IA RH. Que souhaitez-vous faire ?";
+}
 
 export function IaWorkspace() {
   const { tenant } = useModuleContext();
@@ -42,6 +72,10 @@ export function IaWorkspace() {
   ]);
   const [inputText, setInputText] = useState('');
   const [copilotLoading, setCopilotLoading] = useState(false);
+  // Texte en cours de streaming (affichage temps réel pendant que Sarah répond)
+  const [streamingText, setStreamingText] = useState('');
+  // Référence vers le contrôleur AbortController pour pouvoir annuler le stream
+  const abortRef = useRef<AbortController | null>(null);
 
   // CV Parsing States
   const [fileUploaded, setFileUploaded] = useState(false);
@@ -254,60 +288,141 @@ export function IaWorkspace() {
   };
 
   const handleSendMessage = async (textToSend: string) => {
-    if (!textToSend.trim()) return;
+    if (!textToSend.trim() || copilotLoading) return;
 
     setMessages((prev) => [...prev, { sender: 'user', text: textToSend }]);
     setInputText('');
     setCopilotLoading(true);
+    setStreamingText('');
+
+    // Annuler tout stream précédent encore en cours (sécurité)
+    if (abortRef.current) {
+      try { abortRef.current.abort(); } catch { /* noop */ }
+    }
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    // Construire l'historique de conversation pour Sarah (les 10 derniers messages)
+    // SANS le message courant qui sera envoyé dans le body.
+    const conversationHistory = messages
+      .slice(-10)
+      .map((m) => ({
+        role: m.sender === 'user' ? 'user' : 'assistant',
+        content: m.text,
+      }));
+
+    let fullText = '';
 
     try {
-      // Construire l'historique de conversation pour Sarah (les 10 derniers messages)
-      // Permet à Sarah d'avoir un contexte multi-tours et de répondre de façon cohérente.
-      const conversationHistory = messages
-        .slice(-10)
-        .map((m) => ({
-          role: m.sender === 'user' ? 'user' : 'assistant',
-          content: m.text,
-        }));
-
-      // Use the backend copilot endpoint — Sarah AI (Assistante RH)
-      const result = await hrFetch<any>(hrUrl('ia/copilot', { tenantId: tenant.id }), {
+      // ─── Appel SSE au endpoint streaming du Copilote RH ──────────────
+      // On utilise fetch natif (pas hrFetch qui parse en JSON) pour lire
+      // le flux SSE chunk par chunk.
+      const res = await fetch(hrUrl('ia/copilot/stream', { tenantId: tenant.id }), {
         method: 'POST',
-        body: {
+        headers: {
+          'Content-Type': 'application/json',
+          ...getClientAuthorizationHeader(),
+        },
+        credentials: 'include',
+        cache: 'no-store',
+        body: JSON.stringify({
           tenantId: tenant?.id,
           message: textToSend,
           conversationHistory,
-        },
+        }),
+        signal: controller.signal,
       });
 
-      setMessages((prev) => [...prev, { sender: 'bot', text: result.reply || result.message || 'Je n\'ai pas pu traiter votre demande.' }]);
-    } catch (err) {
-      // Fallback: client-side rule engine si le backend est indisponible
-      // Sarah reste utile même en cas de panne réseau, en s'appuyant sur les données déjà chargées.
-      let reply = '';
-      const textLower = textToSend.toLowerCase();
-
-      if (textLower.includes('candidat') || textLower.includes('meilleur')) {
-        const best = [...candidates].sort((a, b) => (b.applications?.[0]?.score || 0) - (a.applications?.[0]?.score || 0));
-        reply = best.length > 0
-          ? `Le meilleur candidat est **${best[0].firstName} ${best[0].lastName}** avec un score de **${best[0].applications?.[0]?.score || 0}%**.`
-          : "Aucun candidat dans la base pour l'instant. Vous pouvez enregistrer des candidats via le module Recrutement.";
-      } else if (textLower.includes('congé') || textLower.includes('absence')) {
-        reply = "Pour les demandes de congé, consultez l'onglet « Congés & Absences ». Je peux vous aider à préparer un modèle de politique de congés si vous le souhaitez.";
-      } else if (textLower.includes('contrat') || textLower.includes('cdi') || textLower.includes('cdd')) {
-        reply = "Pour les contrats (CDI, CDD, vacation, stage), consultez l'onglet « Contrats ». Je peux vous aider à rédiger des clauses spécifiques ou à vérifier la conformité d'un contrat.";
-      } else if (textLower.includes('paie') || textLower.includes('salaire')) {
-        reply = "Pour la paie et les charges sociales (CNSS Bénin), consultez les onglets « Paie » et « CNSS ». Je peux vous expliquer le calcul des charges ou préparer une simulation.";
-      } else if (textLower.includes('entretien')) {
-        reply = "Voici une grille d'entretien RH structurée :\n\n1. Présentation du candidat (parcours, motivations)\n2. Expérience pédagogique (méthodes, outils, gestion de classe)\n3. Compétences techniques (discipline, didactique)\n4. Savoir-être (collaboration, communication)\n5. Questions situationnelles (cas pratiques)\n6. Prétentions salariales et disponibilité\n\nSouhaitez-vous que je détaille une section ?";
-      } else {
-        reply = "Je suis Sarah, votre Assistante RH. Le service IA rencontre temporairement un problème de connexion.\n\nEn attendant, je peux vous orienter vers les modules RH disponibles : Recrutement, Contrats, Personnel, Congés, Paie, CNSS, ou IA RH. Que souhaitez-vous faire ?";
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status} ${res.statusText}`);
       }
-      setMessages((prev) => [...prev, { sender: 'bot', text: reply }]);
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        throw new Error('Aucun flux de réponse reçu du serveur');
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Parser les lignes SSE : `data: {...}\n\n`
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data:')) continue;
+
+          const jsonStr = trimmed.replace(/^data:\s*/, '');
+          if (!jsonStr || jsonStr === '[DONE]') continue;
+
+          try {
+            const chunk = JSON.parse(jsonStr);
+            if (chunk.type === 'delta' && chunk.text) {
+              fullText += chunk.text;
+              setStreamingText(fullText);
+            } else if (chunk.type === 'final' && chunk.text) {
+              // Si on n'a pas reçu de deltas (rare), on prend le texte final
+              if (!fullText) {
+                fullText = chunk.text;
+                setStreamingText(fullText);
+              }
+            } else if (chunk.type === 'error') {
+              if (!fullText) {
+                fullText = chunk.text || 'Une erreur est survenue pendant le streaming.';
+                setStreamingText(fullText);
+              }
+              break;
+            }
+            // status / reasoning : ignorés côté UI pour l'instant
+          } catch {
+            // Ignore malformed SSE chunks
+          }
+        }
+      }
+
+      // ─── Finaliser : ajouter le message complet à l'historique ────────
+      if (fullText.trim()) {
+        setMessages((prev) => [...prev, { sender: 'bot', text: fullText }]);
+      } else {
+        // Aucun texte reçu — fallback rule-based
+        const fallbackReply = generateLocalFallback(textToSend, candidates);
+        setMessages((prev) => [...prev, { sender: 'bot', text: fallbackReply }]);
+      }
+    } catch (err: any) {
+      // Si c'est un abort volontaire, on ne montre pas d'erreur
+      if (err?.name === 'AbortError') {
+        if (fullText.trim()) {
+          setMessages((prev) => [...prev, { sender: 'bot', text: fullText }]);
+        }
+      } else {
+        console.error('[HR Copilot Stream] Error:', err?.message);
+        // Fallback: client-side rule engine si le backend streaming est indisponible
+        const fallbackReply = generateLocalFallback(textToSend, candidates);
+        setMessages((prev) => [...prev, { sender: 'bot', text: fallbackReply }]);
+      }
     } finally {
       setCopilotLoading(false);
+      setStreamingText('');
+      abortRef.current = null;
     }
   };
+
+  // Référence vers le conteneur de messages pour auto-scroll pendant le streaming
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto-scroll vers le bas pendant le streaming
+  useEffect(() => {
+    if (activeTab === 'copilot' && (copilotLoading || streamingText)) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [streamingText, copilotLoading, activeTab]);
 
   // Helper: render matching breakdown from backend XAI data
   const renderMatchingContent = () => {
@@ -1076,7 +1191,10 @@ export function IaWorkspace() {
                     <span className="text-[9px] font-bold text-blue-300 bg-blue-500/15 border border-blue-500/30 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Assistante RH</span>
                   </h4>
                   <p className="text-[10px] text-emerald-400 mt-1 font-semibold flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> {copilotLoading ? 'Analyse RH en cours…' : 'En ligne — prête à vous aider'}
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    {copilotLoading
+                      ? (streamingText ? 'Sarah répond en temps réel…' : 'Analyse RH en cours…')
+                      : 'En ligne — prête à vous aider'}
                   </p>
                 </div>
               </div>
@@ -1126,11 +1244,21 @@ export function IaWorkspace() {
                       className="object-cover"
                     />
                   </div>
-                  <div className="p-3 rounded-xl bg-slate-900 text-slate-400 border border-slate-800 text-xs rounded-tl-sm">
-                    <Loader2 className="h-4 w-4 animate-spin inline mr-1" /> Sarah analyse votre demande…
+                  <div className="p-3 rounded-xl bg-slate-900 text-slate-100 border border-slate-800 text-xs rounded-tl-sm min-w-[120px]">
+                    {streamingText ? (
+                      <div className="whitespace-pre-line leading-relaxed">
+                        {streamingText}
+                        <span className="inline-block w-1.5 h-3 ml-0.5 bg-blue-400 animate-pulse align-middle" aria-hidden="true" />
+                      </div>
+                    ) : (
+                      <span className="text-slate-400">
+                        <Loader2 className="h-4 w-4 animate-spin inline mr-1" /> Sarah analyse votre demande…
+                      </span>
+                    )}
                   </div>
                 </div>
               )}
+              <div ref={messagesEndRef} />
             </div>
 
             {/* Presets / Suggestions RH professionnelles */}

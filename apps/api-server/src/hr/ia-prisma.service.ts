@@ -557,7 +557,184 @@ Si une information n'est pas présente dans le document, mets une chaîne vide, 
     };
   }
 
-  // ─── COPILOT CHAT ──────────────────────────────────────────────────────────
+  // ─── COPILOT CHAT (STREAMING SSE) ──────────────────────────────────────────
+
+  /**
+   * Version streaming (SSE) du Copilote RH (Sarah).
+   *
+   * Réutilise le même system prompt riche (contexte RH + RBAC) que la version
+   * non-streaming `copilotChat`, mais stream les deltas via openRouter.chatStream.
+   *
+   * @returns AsyncGenerator de chunks compatibles SSE
+   *   - { type: 'delta', text }       → portion de réponse (à afficher au fil de l'eau)
+   *   - { type: 'status', text }      → changement de statut (retry, fallback)
+   *   - { type: 'reasoning', reasoningText } → raisonnement du modèle (GLM 5.1)
+   *   - { type: 'final', text, usage } → réponse complète finale + usage tokens
+   *   - { type: 'error', text }       → erreur fatale
+   *
+   * 🔒 Mêmes règles de sécurité que copilotChat :
+   *   - tenantId du JWT uniquement
+   *   - RBAC conversationnel basé sur userContext.permissions
+   */
+  async *copilotChatStream(
+    tenantId: string,
+    message: string,
+    conversationHistory: Array<{ role: string; content: string }> | undefined,
+    userContext: {
+      userId?: string;
+      role?: string;
+      permissions?: string[];
+      isSuperAdmin?: boolean;
+    } | undefined,
+  ): AsyncGenerator<{
+    type: 'delta' | 'final' | 'error' | 'status' | 'reasoning';
+    text?: string;
+    reasoningText?: string;
+    usage?: any;
+  }> {
+    this.logger.log(
+      `[STREAM] copilotChatStream called for tenant ${tenantId}, user=${userContext?.userId || 'unknown'}, role=${userContext?.role || 'unknown'}`,
+    );
+
+    // Récupérer le contexte des données RH — UNIQUENT pour le tenant courant
+    const [staffCount, candidateCount, kpis] = await Promise.all([
+      this.prisma.staff.count({ where: { tenantId } }),
+      this.prisma.hrCandidate.count({ where: { tenantId } }),
+      this.getDashboardKpis(tenantId),
+    ]);
+
+    const contextData = {
+      totalStaff: staffCount,
+      totalCandidates: candidateCount,
+      ...kpis,
+    };
+
+    // 🔒 Déterminer le niveau d'accès de l'utilisateur pour le RBAC conversationnel
+    const userRole = userContext?.role || 'UNKNOWN';
+    const userPermissions = Array.isArray(userContext?.permissions) ? userContext.permissions : [];
+    const canReadPayroll = userPermissions.includes('PAIE_read') || userPermissions.includes('PAIE_write');
+    const canWriteHr = userPermissions.includes('RH_write');
+    const canWritePayroll = userPermissions.includes('PAIE_write');
+    const isPlatformAdmin = userContext?.isSuperAdmin || userRole === 'PLATFORM_OWNER' || userRole === 'PLATFORM_ADMIN' || userRole === 'SUPER_ADMIN';
+
+    // ─── Si l'IA n'est pas configurée, on stream une réponse rule-based en un seul delta ──
+    if (!this.isAiConfigured()) {
+      const ruleReply = this.generateRuleBasedResponse(message, contextData);
+      yield { type: 'delta', text: ruleReply };
+      yield { type: 'final', text: ruleReply };
+      return;
+    }
+
+    const systemPrompt = `Tu es Sarah, l'Assistante RH d'Academia Helm. Tu es une experte en ressources humaines avec une maîtrise complète du domaine :
+- Recrutement et sourcing de talents (CV, lettres, entretiens, tests, onboarder/offboarder)
+- Contrats de travail (CDI, CDD, vacation, stage, consultant) et droit du travail applicable
+- Gestion de la paie, charges sociales (CNSS Bénin), déclarations fiscales
+- Congés, absences, présences et gestion du temps
+- Évaluation des performances, développement des compétences, formation continue
+- Gestion des conflits, discipline, procédures disciplinaires
+- Conformité légale et réglementaire (Code du travail béninois, conventions collectives)
+- Planification des effectifs et stratégies RH
+- Bien-être au travail, QVT, santé et sécurité au travail
+
+DONNÉES RH EN TEMPS RÉEL DE L'ÉTABLISSEMENT (tenant courant) :
+- Effectif total : ${contextData.totalStaff} collaborateur(s)
+- Candidats enregistrés : ${contextData.totalCandidates}
+- Contrats actifs ou en attente : ${contextData.activeContracts}
+- Demandes de congé en attente : ${contextData.pendingLeaves}
+- Masse salariale cumulée (paies versées) : ${contextData.totalPayroll.toLocaleString()} FCFA
+
+UTILISATEUR COURANT (RBAC) :
+- Rôle : ${userRole}${isPlatformAdmin ? ' (Administrateur plateforme)' : ''}
+- Permissions : ${userPermissions.join(', ') || 'aucune'}
+- Peut lire la paie : ${canReadPayroll ? 'OUI' : 'NON'}
+- Peut modifier les données RH : ${canWriteHr ? 'OUI' : 'NON'}
+- Peut modifier la paie : ${canWritePayroll ? 'OUI' : 'NON'}
+
+🔒 RÈGLES DE SÉCURITÉ ET CONFIDENTIALITÉ (ABSOLUES — NE JAMAIS ENFREINDRE) :
+1. ISOLATION TENANT STRICTE : Tu n'as accès qu'aux données de l'établissement courant. Ne mentionne JAMAIS de données d'autres écoles, même si on te le demande.
+2. CONFIDENTIALITÉ RH : Les données que tu communiques (effectifs, salaires, candidats, congés) sont STRICTEMENT réservées aux utilisateurs ayant la permission RH_read.
+3. RBAC CONVERSATIONNEL : Adapte tes suggestions au rôle de l'utilisateur (paie, RH, lecture seule).
+4. REFUS DE DIVULGATION HORS MODULE RH : Si la conversation sort du périmètre RH, oriente l'utilisateur vers le module approprié.
+5. DONNÉES PERSONNELLES : Ne divulgues jamais le salaire individuel d'un collaborateur nommé, ni des informations médicales, ni des données disciplinaires nominatives.
+
+COMPORTEMENT ATTENDU :
+- Réponds en français, de manière professionnelle, structurée et concise
+- Maîtrise le vocabulaire RH technique (effectif, turnover, onboarding, KPI RH, etc.)
+- Propose des actions concrètes et applicables immédiatement, DANS LES LIMITES des permissions de l'utilisateur
+- Quand pertinent, structure tes réponses avec des puces ou des étapes numérotées
+- Base-toi sur les données réelles fournies dans le contexte ci-dessus
+- Sois proactive : anticipe les besoins RH (échéances contractuelles, pics d'absence, etc.)
+- Si tu ne connais pas la réponse, dis-le honnêtement et propose une recherche ou un contact`;
+
+    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+      { role: 'system', content: systemPrompt },
+    ];
+
+    // Ajouter l'historique de conversation (10 derniers messages)
+    if (conversationHistory && conversationHistory.length > 0) {
+      for (const msg of conversationHistory.slice(-10)) {
+        if (msg.role === 'user' || msg.role === 'assistant') {
+          messages.push({ role: msg.role as 'user' | 'assistant', content: msg.content });
+        }
+      }
+    }
+
+    messages.push({ role: 'user', content: message });
+
+    // ─── Streaming via OpenRouter ─────────────────────────────────────────
+    let accumulated = '';
+    try {
+      for await (const chunk of this.openRouter.chatStream({
+        messages,
+        temperature: 0.6,
+        maxTokens: 800,
+        persona: 'HDIE',
+      })) {
+        if (chunk.type === 'delta' && chunk.text) {
+          accumulated += chunk.text;
+          yield { type: 'delta', text: chunk.text };
+        } else if (chunk.type === 'reasoning' && chunk.reasoningText) {
+          yield { type: 'reasoning', reasoningText: chunk.reasoningText };
+        } else if (chunk.type === 'status') {
+          yield { type: 'status', text: chunk.text };
+        } else if (chunk.type === 'final' && chunk.text) {
+          // Si on n'a pas accumulé de deltas (modèle non-streaming réellement),
+          // on utilise le texte final comme delta unique.
+          if (!accumulated) {
+            yield { type: 'delta', text: chunk.text };
+          }
+          yield { type: 'final', text: chunk.text, usage: chunk.usage };
+        } else if (chunk.type === 'error') {
+          // En cas d'erreur streaming, fallback sur le moteur rule-based
+          if (!accumulated) {
+            const ruleReply = this.generateRuleBasedResponse(message, contextData);
+            yield { type: 'delta', text: ruleReply };
+            yield { type: 'final', text: ruleReply };
+          } else {
+            yield { type: 'final', text: accumulated };
+          }
+          return;
+        }
+      }
+
+      // Si aucun final n'a été reçu mais qu'on a accumulé du texte, on envoie un final synthétique
+      if (accumulated) {
+        yield { type: 'final', text: accumulated };
+      }
+    } catch (err: any) {
+      this.logger.error(`[STREAM] copilotChatStream error: ${err?.message}`, err?.stack);
+      // Fallback rule-based en cas d'erreur fatale
+      if (!accumulated) {
+        const ruleReply = this.generateRuleBasedResponse(message, contextData);
+        yield { type: 'delta', text: ruleReply };
+        yield { type: 'final', text: ruleReply };
+      } else {
+        yield { type: 'final', text: accumulated };
+      }
+    }
+  }
+
+  // ─── COPILOT CHAT (NON-STREAMING) ──────────────────────────────────────────
 
   /**
    * Traite un message du Copilote RH (Sarah) et retourne une réponse

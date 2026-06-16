@@ -28,9 +28,10 @@
 
 import {
   Controller, Get, Post, Body, Query,
-  UseGuards, BadRequestException, ForbiddenException, Req,
+  UseGuards, BadRequestException, ForbiddenException, Req, Res,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import type { Response } from 'express';
 import { IaPrismaService } from './ia-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
@@ -172,6 +173,93 @@ export class IaPrismaController {
       body.conversationHistory,
       userContext,
     );
+  }
+
+  // ─── Copilote RH — STREAMING SSE ───────────────────────────────────────────
+
+  /**
+   * POST /api/hr/ia/copilot/stream
+   *
+   * Version streaming (Server-Sent Events) du Copilote RH (Sarah).
+   * Réponse identique à /copilot mais diffusée en temps réel via SSE,
+   * comme sur la landing page (/sara/query/stream).
+   *
+   * Format SSE : `data: {"type":"delta","text":"..."}\n\n`
+   *
+   * 🔒 Mêmes règles de sécurité que /copilot :
+   *   - JwtAuthGuard + TenantGuard + PermissionsGuard (@Permissions('RH_read'))
+   *   - tenantId résolu UNIQUEMENT depuis le JWT
+   *   - RBAC conversationnel via userContext
+   */
+  @Post('copilot/stream')
+  async copilotChatStream(
+    @GetTenant() tenant: any,
+    @Req() req: Request,
+    @Res() res: Response,
+    @Body() body: {
+      message: string;
+      conversationHistory?: Array<{ role: string; content: string }>;
+    },
+  ) {
+    // Headers SSE — doit être défini AVANT tout write
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // Désactiver le buffering Nginx
+
+    // Validation : message vide → on renvoie un delta unique + final
+    if (!body.message || !body.message.trim()) {
+      const reply = 'Veuillez poser une question pour que je puisse vous aider.';
+      res.write(`data: ${JSON.stringify({ type: 'delta', text: reply })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'final', text: reply })}\n\n`);
+      res.end();
+      return;
+    }
+
+    // 🔒 Isolation tenant stricte — AUCUN fallback via query param
+    const tid = tenant?.id;
+    if (!tid) {
+      const errMsg = 'Tenant ID requis pour cette opération';
+      res.write(`data: ${JSON.stringify({ type: 'error', text: errMsg })}\n\n`);
+      res.end();
+      return;
+    }
+
+    // 🔒 Contexte utilisateur pour le RBAC conversationnel de Sarah.
+    const user = req['user'] as any;
+    const userContext = {
+      userId: user?.id,
+      role: user?.role || 'UNKNOWN',
+      permissions: Array.isArray(user?.permissions) ? user.permissions : [],
+      isSuperAdmin: !!user?.isSuperAdmin,
+    };
+
+    try {
+      const stream = this.iaService.copilotChatStream(
+        tid,
+        body.message,
+        body.conversationHistory,
+        userContext,
+      );
+
+      for await (const chunk of stream) {
+        if (chunk.type === 'delta' && chunk.text) {
+          res.write(`data: ${JSON.stringify({ type: 'delta', text: chunk.text })}\n\n`);
+        } else if (chunk.type === 'reasoning' && chunk.reasoningText) {
+          res.write(`data: ${JSON.stringify({ type: 'reasoning', text: chunk.reasoningText })}\n\n`);
+        } else if (chunk.type === 'status') {
+          res.write(`data: ${JSON.stringify({ type: 'status', text: chunk.text })}\n\n`);
+        } else if (chunk.type === 'final') {
+          res.write(`data: ${JSON.stringify({ type: 'final', text: chunk.text, usage: chunk.usage })}\n\n`);
+        } else if (chunk.type === 'error') {
+          res.write(`data: ${JSON.stringify({ type: 'error', text: chunk.text })}\n\n`);
+        }
+      }
+    } catch (error: any) {
+      res.write(`data: ${JSON.stringify({ type: 'error', text: error?.message || 'Stream error' })}\n\n`);
+    }
+
+    res.end();
   }
 
   // ─── IA Status ──────────────────────────────────────────────────────────────

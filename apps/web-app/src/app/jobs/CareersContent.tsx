@@ -195,6 +195,7 @@ export function CareersContent({
 
   // Step 5: Document Uploads
   const [cvFile, setCvFile] = useState<File | null>(null);
+  const [applicationLetterFile, setApplicationLetterFile] = useState<File | null>(null);
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [recoFile, setRecoFile] = useState<File | null>(null);
 

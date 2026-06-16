@@ -99,29 +99,88 @@ export class IaPrismaService {
       if (supportedMimeTypes.includes(data.mimeType.toLowerCase())) {
         const systemPrompt = `Tu es le moteur HDIE (Helm Document Intelligence Engine) d'Academia Helm, spécialisé en analyse de CV et lettres de motivation pour le secteur de l'éducation.
 
-Ta mission : analyser le document fourni (CV ou lettre de motivation) et en extraire les informations clés de manière structurée, factuelle et professionnelle.
+Ta mission : analyser le document fourni et produire une analyse RH PROFESSIONNELLE CONFORME AUX STANDARDS DU DOMAINE, structurée, factuelle et exploitable immédiatement par un recruteur ou un responsable RH.
 
-RÈGLES D'ANALYSE :
-- Identifie le nom complet du candidat (prénom + nom)
-- Liste toutes les compétences techniques, pédagogiques et comportementales mentionnées (tableau de chaînes)
-- Résume l'expérience professionnelle pertinente (postes, durées, établissements)
-- Indique le niveau de formation le plus élevé et les diplômes clés
-- Identifie 2-3 forces majeures du candidat (points forts)
-- Identifie 1-2 axes d'amélioration ou points de vigilance (faiblesses)
+ÉTAPE 1 — IDENTIFICATION DU TYPE DE DOCUMENT
+Détermine s'il s'agit d'un CV (curriculum vitae) ou d'une LETTRE DE MOTIVATION. Cette information est obligatoire dans la réponse (champ "documentType").
 
-FORMAT DE RÉPONSE : Réponds UNIQUEMENT avec du JSON valide, sans markdown, sans commentaires, sans texte avant ou après. Le JSON doit avoir exactement cette structure :
+ÉTAPE 2 — ANALYSE STRUCTURÉE SELON LE TYPE
+
+▼ Si CV — extraire :
+- Identité : prénom + nom complet
+- Résumé professionnel (2-3 phrases situant le profil)
+- Années d'expérience (entier ; -1 si non déterminable)
+- Niveau de formation le plus élevé
+- Compétences catégorisées :
+  * technical : compétences techniques/métier (pédagogie, didactique, outils numériques, etc.)
+  * soft : compétences comportementales (leadership, communication, etc.)
+  * pedagogical : disciplines enseignables, niveaux, méthodes
+- Langues : [{language, level}] où level ∈ {A1,A2,B1,B2,C1,C2,Natif}
+- Certifications : [{name, issuer, year}]
+- Chronologie des expériences : [{company, position, startDate, endDate, description}]
+- Forces (points forts — 2-3)
+- Axes d'amélioration (1-2)
+- Red flags RH : [] (trous dans les chronologies, changements fréquents, incohérences de dates, etc.)
+- Recommandation : RECOMMENDED | NEUTRAL | NOT_RECOMMENDED | INSUFFICIENT_INFO
+- Raison de la recommandation (1 phrase)
+
+▼ Si LETTRE DE MOTIVATION — extraire :
+- Candidat (prénom + nom si identifiable)
+- Poste visé (si mentionné)
+- Structure : { hasIntroduction, hasBody, hasConclusion } (booléens)
+- Ton : PROFESSIONNEL | FAMILIER | TROP_FAMILIER | NEUTRE
+- Score de personnalisation (0-100) : à quel point la lettre est adaptée au poste/établissement visé
+- Arguments clés (3-5 puces) : les principaux atouts mis en avant par le candidat
+- Forces de la lettre
+- Faiblesses de la lettre
+- Recommandation : RECOMMENDED | NEUTRAL | NOT_RECOMMENDED | INSUFFICIENT_INFO
+- Raison de la recommandation
+
+ÉTAPE 3 — FORMAT DE RÉPONSE
+Réponds UNIQUEMENT avec du JSON valide, sans markdown, sans commentaires, sans texte avant ou après.
+
+Schéma pour un CV :
 {
+  "documentType": "CV",
   "name": "Prénom Nom",
-  "skills": ["compétence1", "compétence2", ...],
-  "experience": "Résumé de l'expérience (2-3 phrases)",
-  "education": "Niveau de formation et diplômes",
-  "strengths": "Forces principales du candidat",
-  "weaknesses": "Axes d'amélioration"
+  "summary": "Résumé professionnel en 2-3 phrases",
+  "yearsOfExperience": 7,
+  "educationLevel": "Master 2",
+  "skills": {
+    "technical": ["..."],
+    "soft": ["..."],
+    "pedagogical": ["..."]
+  },
+  "languages": [{"language":"Français","level":"Natif"},{"language":"Anglais","level":"B2"}],
+  "certifications": [{"name":"...","issuer":"...","year":"2020"}],
+  "experienceTimeline": [{"company":"...","position":"...","startDate":"2018","endDate":"2021","description":"..."}],
+  "strengths": "Forces principales",
+  "weaknesses": "Axes d'amélioration",
+  "redFlags": ["trou de 2 ans entre 2015 et 2017"],
+  "recommendation": "RECOMMENDED",
+  "recommendationReason": "Profil solide avec 7 ans d'expérience pertinente",
+  "confidence": 92
 }
 
-Si une information n'est pas présente dans le document, mets une chaîne vide ou un tableau vide.`;
+Schéma pour une LETTRE :
+{
+  "documentType": "LETTRE",
+  "name": "Prénom Nom",
+  "targetPosition": "Enseignant Mathématiques",
+  "structure": {"hasIntroduction": true, "hasBody": true, "hasConclusion": true},
+  "tone": "PROFESSIONNEL",
+  "customizationScore": 75,
+  "keyArguments": ["arg1", "arg2", "arg3"],
+  "strengths": "...",
+  "weaknesses": "...",
+  "recommendation": "RECOMMENDED",
+  "recommendationReason": "...",
+  "confidence": 88
+}
 
-        const userPrompt = `Analyse ce document (${data.fileName || 'CV/Lettre'}) et extrais les informations structurées demandées.`;
+Si une information n'est pas présente dans le document, mets une chaîne vide, un tableau vide, ou null selon le type de champ. Ne JAMAIS inventer d'informations.`;
+
+        const userPrompt = `Analyse ce document (${data.fileName || 'CV/Lettre'}) et produis l'analyse RH structurée demandée. Réponds UNIQUEMENT en JSON valide.`;
 
         try {
           const aiResponse = await this.openRouter.chatWithDocument(
@@ -130,7 +189,7 @@ Si une information n'est pas présente dans le document, mets une chaîne vide o
             data.mimeType,
             systemPrompt,
             'HDIE',
-            { temperature: 0.2, maxTokens: 1200 },
+            { temperature: 0.15, maxTokens: 2200 },
           );
 
           if (!aiResponse.isPlaceholder && aiResponse.content) {
@@ -139,37 +198,77 @@ Si une information n'est pas présente dans le document, mets une chaîne vide o
             if (jsonMatch) {
               try {
                 const parsed = JSON.parse(jsonMatch[0]);
+                const docType: string = parsed.documentType || 'CV';
+                const isLetter = docType === 'LETTRE';
+
+                // Construire la réponse enrichie selon le type de document
                 return {
-                  name: parsed.name || (existingCandidate ? `${existingCandidate.firstName} ${existingCandidate.lastName}` : 'Candidat'),
-                  skills: Array.isArray(parsed.skills) && parsed.skills.length > 0
-                    ? parsed.skills.filter((s: any) => typeof s === 'string' && s.trim())
-                    : (existingCandidate ? this.extractSkillsFromCandidate(existingCandidate) : ['Non spécifié']),
-                  experience: parsed.experience || 'Non spécifié dans le document',
-                  education: parsed.education || 'Non spécifié dans le document',
+                  documentType: docType,
+                  name: parsed.name
+                    || (existingCandidate ? `${existingCandidate.firstName} ${existingCandidate.lastName}` : 'Candidat'),
+                  summary: parsed.summary || '',
+                  yearsOfExperience: typeof parsed.yearsOfExperience === 'number' ? parsed.yearsOfExperience : null,
+                  educationLevel: parsed.educationLevel || (existingCandidate?.academicProfile?.teachingLevel) || '',
+                  // Pour la rétrocompatibilité avec l'ancien affichage : on merge toutes les compétences dans un tableau
+                  skills: isLetter
+                    ? (Array.isArray(parsed.keyArguments) ? parsed.keyArguments : [])
+                    : this._flattenSkills(parsed.skills, existingCandidate),
+                  // Compétences catégorisées (CV uniquement)
+                  categorizedSkills: !isLetter && parsed.skills ? {
+                    technical: Array.isArray(parsed.skills.technical) ? parsed.skills.technical : [],
+                    soft: Array.isArray(parsed.skills.soft) ? parsed.skills.soft : [],
+                    pedagogical: Array.isArray(parsed.skills.pedagogical) ? parsed.skills.pedagogical : [],
+                  } : null,
+                  languages: Array.isArray(parsed.languages) ? parsed.languages : [],
+                  certifications: Array.isArray(parsed.certifications) ? parsed.certifications : [],
+                  experienceTimeline: Array.isArray(parsed.experienceTimeline) ? parsed.experienceTimeline : [],
+                  // Champs spécifiques lettre de motivation
+                  targetPosition: parsed.targetPosition || null,
+                  structure: parsed.structure || null,
+                  tone: parsed.tone || null,
+                  customizationScore: typeof parsed.customizationScore === 'number' ? parsed.customizationScore : null,
+                  keyArguments: Array.isArray(parsed.keyArguments) ? parsed.keyArguments : [],
+                  // Champs génériques (rétrocompatibles)
+                  experience: parsed.summary
+                    || (parsed.experienceTimeline && parsed.experienceTimeline.length > 0
+                      ? parsed.experienceTimeline.map((e: any) => `${e.position || ''} @ ${e.company || ''} (${e.startDate || '?'} → ${e.endDate || 'present'})`).join(' · ')
+                      : 'Non spécifié'),
+                  education: parsed.educationLevel
+                    || (Array.isArray(parsed.certifications) && parsed.certifications.length > 0
+                      ? parsed.certifications.map((c: any) => `${c.name}${c.issuer ? ' — ' + c.issuer : ''}${c.year ? ' (' + c.year + ')' : ''}`).join(' · ')
+                      : 'Non spécifié'),
                   strengths: parsed.strengths || 'Non identifié',
                   weaknesses: parsed.weaknesses || 'Non identifié',
+                  redFlags: Array.isArray(parsed.redFlags) ? parsed.redFlags : [],
+                  recommendation: parsed.recommendation || 'INSUFFICIENT_INFO',
+                  recommendationReason: parsed.recommendationReason || '',
                   isPlaceholder: false,
-                  confidence: 92,
+                  confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 90,
                   candidateId: existingCandidate?.id,
                   fileName: data.fileName,
                   modelUsed: aiResponse.model,
                 };
               } catch (parseErr) {
                 this.logger.warn('[HDIE] JSON parse failed, using raw content as experience');
-                // Si le JSON échoue, on utilise le texte brut comme experience
+                // Si le JSON échoue, on utilise le texte brut comme summary
                 return {
+                  documentType: 'UNKNOWN',
                   name: existingCandidate
                     ? `${existingCandidate.firstName} ${existingCandidate.lastName}`
                     : 'Candidat',
+                  summary: aiResponse.content.substring(0, 600),
                   skills: existingCandidate
                     ? this.extractSkillsFromCandidate(existingCandidate)
                     : ['Voir analyse complète ci-dessous'],
-                  experience: aiResponse.content.substring(0, 800),
+                  experience: aiResponse.content.substring(0, 1200),
                   education: 'Voir analyse',
                   strengths: 'Analyse IA fournie (format non structuré)',
                   weaknesses: 'Voir analyse complète',
+                  redFlags: [],
+                  recommendation: 'INSUFFICIENT_INFO',
+                  recommendationReason: 'Format de réponse IA non structuré — analyse à valider manuellement',
                   isPlaceholder: false,
-                  confidence: 65,
+                  confidence: 55,
                   candidateId: existingCandidate?.id,
                   fileName: data.fileName,
                   modelUsed: aiResponse.model,
@@ -190,8 +289,16 @@ Si une information n'est pas présente dans le document, mets une chaîne vide o
     if (existingCandidate) {
       const aiConfigured = this.isAiConfigured();
       return {
+        documentType: 'UNKNOWN',
         name: `${existingCandidate.firstName} ${existingCandidate.lastName}`,
+        summary: '',
+        yearsOfExperience: null,
+        educationLevel: existingCandidate.academicProfile?.teachingLevel || '',
         skills: this.extractSkillsFromCandidate(existingCandidate),
+        categorizedSkills: null,
+        languages: [],
+        certifications: [],
+        experienceTimeline: [],
         experience: existingCandidate.academicProfile?.pedagogicalExperience
           || (aiConfigured
             ? 'L\'analyse du document a échoué. Vérifiez le format du fichier (PDF, PNG, JPG).'
@@ -203,6 +310,11 @@ Si une information n'est pas présente dans le document, mets une chaîne vide o
         weaknesses: aiConfigured
           ? 'Vérifiez la qualité et le format du fichier téléversé'
           : 'L\'analyse sémantique avancée sera activée ultérieurement',
+        redFlags: [],
+        recommendation: 'INSUFFICIENT_INFO',
+        recommendationReason: aiConfigured
+          ? 'Échec de l\'analyse IA — vérifier le document'
+          : 'IA non configurée — analyse manuelle requise',
         isPlaceholder: !aiConfigured,
         confidence: 0,
         candidateId: existingCandidate.id,
@@ -213,10 +325,18 @@ Si une information n'est pas présente dans le document, mets une chaîne vide o
     // Aucun candidat, aucune IA — placeholder générique
     const aiConfigured = this.isAiConfigured();
     return {
+      documentType: 'UNKNOWN',
       name: aiConfigured ? 'Analyse en cours…' : '— (IA non configurée)',
+      summary: '',
+      yearsOfExperience: null,
+      educationLevel: '',
       skills: aiConfigured
         ? ['L\'analyse n\'a pas pu aboutir']
         : ['Analyse sémantique non disponible'],
+      categorizedSkills: null,
+      languages: [],
+      certifications: [],
+      experienceTimeline: [],
       experience: aiConfigured
         ? 'L\'analyse du document a échoué. Vérifiez le format (PDF, PNG, JPG acceptés) et réessayez.'
         : 'L\'analyse IA n\'est pas encore activée. Contactez votre administrateur.',
@@ -229,6 +349,11 @@ Si une information n'est pas présente dans le document, mets une chaîne vide o
       weaknesses: aiConfigured
         ? 'Si le problème persiste, contactez l\'administrateur'
         : 'L\'analyse sémantique avancée sera disponible une fois le service activé',
+      redFlags: [],
+      recommendation: 'INSUFFICIENT_INFO',
+      recommendationReason: aiConfigured
+        ? 'Échec de l\'analyse IA — vérifier le document'
+        : 'IA non configurée — activez OpenRouter pour activer l\'analyse',
       isPlaceholder: true,
       confidence: 0,
       fileName: data.fileName,
@@ -600,6 +725,28 @@ COMPORTEMENT ATTENDU :
     }
 
     return [...new Set(skills)]; // Déduplication
+  }
+
+  /**
+   * Aplatit l'objet skills catégorisé {technical, soft, pedagogical} en un
+   * tableau unique de chaînes (rétrocompatibilité avec l'ancien affichage).
+   * Si l'IA n'a pas renvoyé d'objet structuré, retombe sur les compétences
+   * du candidat existant ou un placeholder.
+   */
+  private _flattenSkills(skills: any, existingCandidate: any): string[] {
+    if (!skills || typeof skills !== 'object') {
+      return existingCandidate ? this.extractSkillsFromCandidate(existingCandidate) : ['Non spécifié'];
+    }
+    const out: string[] = [];
+    for (const k of ['technical', 'soft', 'pedagogical']) {
+      if (Array.isArray(skills[k])) {
+        out.push(...skills[k].filter((s: any) => typeof s === 'string' && s.trim()));
+      }
+    }
+    if (out.length === 0) {
+      return existingCandidate ? this.extractSkillsFromCandidate(existingCandidate) : ['Non spécifié'];
+    }
+    return [...new Set(out)];
   }
 
   /**

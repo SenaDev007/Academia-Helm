@@ -52,6 +52,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { motion, AnimatePresence } from 'framer-motion';
 import { StaffTerminationModal } from '../../_components/modals/StaffTerminationModal';
+import { HRShell } from '../../_components/HRShell';
 
 const PRIMARY = '#1A2BA6';
 
@@ -463,17 +464,23 @@ export default function StaffDetailPage() {
   };
 
   if (loading) {
-    return <div className="p-8 animate-pulse text-center">Chargement de la fiche...</div>;
+    return (
+      <HRShell activeId="staff" title="Personnel" description="Fiches détaillées des collaborateurs, contrats et documents.">
+        <div className="p-8 animate-pulse text-center">Chargement de la fiche...</div>
+      </HRShell>
+    );
   }
 
   if (!member) {
     return (
-      <div className="p-8 text-center">
-        <h3 className="text-xl font-bold">Collaborateur non trouvé</h3>
-        <button onClick={() => router.push('/app/hr/staff')} className="mt-4 text-blue-600 font-bold flex items-center gap-2 mx-auto">
-          <ArrowLeft size={16} /> Retour à la liste
-        </button>
-      </div>
+      <HRShell activeId="staff" title="Personnel" description="Fiches détaillées des collaborateurs, contrats et documents.">
+        <div className="p-8 text-center">
+          <h3 className="text-xl font-bold">Collaborateur non trouvé</h3>
+          <button onClick={() => router.push('/app/hr/staff')} className="mt-4 text-blue-600 font-bold flex items-center gap-2 mx-auto">
+            <ArrowLeft size={16} /> Retour à la liste
+          </button>
+        </div>
+      </HRShell>
     );
   }
 
@@ -490,6 +497,7 @@ export default function StaffDetailPage() {
   const totalDocs = Object.values(documentsGrouped).reduce((acc: number, docs: any[]) => acc + docs.length, 0);
 
   return (
+    <HRShell activeId="staff" title="Personnel" description="Fiches détaillées des collaborateurs, contrats et documents.">
     <div className="space-y-6 pb-20">
       {/* Hidden photo input */}
       <input
@@ -1298,7 +1306,7 @@ export default function StaffDetailPage() {
                             </div>
                           </div>
                           <Badge className={contract.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}>
-                            {contract.status === 'ACTIVE' ? 'En vigueur' : contract.status === 'PENDING' || contract.status === 'DRAFT' ? 'En attente' : contract.status === 'EXPIRED' ? 'Expiré' : contract.status === 'TERMINATED' ? 'Résilié' : contract.status || 'Inconnu'}
+                            {contract.status === 'ACTIVE' ? 'En vigueur' : contract.status === 'EXPIRED' ? 'Expiré' : contract.status}
                           </Badge>
                         </div>
                         <div className="grid grid-cols-2 gap-4 mt-4 pt-3 border-t border-slate-50">
@@ -1418,6 +1426,7 @@ export default function StaffDetailPage() {
         tenantId={tenant?.id || ''}
       />
     </div>
+    </HRShell>
   );
 }
 

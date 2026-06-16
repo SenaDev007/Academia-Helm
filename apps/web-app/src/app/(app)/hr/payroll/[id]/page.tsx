@@ -28,6 +28,7 @@ import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { toast } from '@/components/ui/toast';
+import { HRShell } from '../../_components/HRShell';
 
 export default function PayrollDetailPage() {
   const { id } = useParams();
@@ -170,12 +171,25 @@ export default function PayrollDetailPage() {
     }
   };
 
-  if (loading) return <div className="p-8 text-center animate-pulse">Chargement de la période de paie...</div>;
-  if (!period) return <div className="p-8 text-center text-red-500">Période introuvable.</div>;
+  if (loading) {
+    return (
+      <HRShell activeId="payroll" title="Paie" description="Périodes de paie, calculs fiscaux et bulletins.">
+        <div className="p-8 text-center animate-pulse">Chargement de la période de paie...</div>
+      </HRShell>
+    );
+  }
+  if (!period) {
+    return (
+      <HRShell activeId="payroll" title="Paie" description="Périodes de paie, calculs fiscaux et bulletins.">
+        <div className="p-8 text-center text-red-500">Période introuvable.</div>
+      </HRShell>
+    );
+  }
 
   const totalNet = period.payrolls?.reduce((acc: number, p: any) => acc + Number(p.netSalary), 0) || 0;
 
   return (
+    <HRShell activeId="payroll" title="Paie" description="Périodes de paie, calculs fiscaux et bulletins.">
     <div className="space-y-6 pb-20">
       <div className="px-6 pt-4">
         <Link href="/app/hr/payroll" className="flex items-center gap-2 text-gray-500 hover:text-blue-600 font-bold transition-all group">
@@ -325,5 +339,6 @@ export default function PayrollDetailPage() {
         </Card>
       </div>
     </div>
+    </HRShell>
   );
 }

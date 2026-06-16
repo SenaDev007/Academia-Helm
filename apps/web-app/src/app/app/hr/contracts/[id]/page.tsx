@@ -15,6 +15,7 @@ import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { ContractSignModal } from '../../_components/modals/ContractSignModal';
 import { formatCurrency } from '@/lib/utils';
+import { HRShell } from '../../_components/HRShell';
 
 const PRIMARY = '#1A2BA6';
 
@@ -156,24 +157,28 @@ export default function ContractDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center space-y-3">
-          <Loader2 className="h-10 w-10 animate-spin mx-auto" style={{ color: PRIMARY }} />
-          <p className="text-sm text-slate-500 font-medium">Chargement du contrat…</p>
+      <HRShell activeId="contracts" title="Contrats" description="Suivi des contrats, avenants, échéances et historique contractuel.">
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <div className="text-center space-y-3">
+            <Loader2 className="h-10 w-10 animate-spin mx-auto" style={{ color: PRIMARY }} />
+            <p className="text-sm text-slate-500 font-medium">Chargement du contrat…</p>
+          </div>
         </div>
-      </div>
+      </HRShell>
     );
   }
 
   if (!contract) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-        <AlertCircle className="h-12 w-12 text-rose-400" />
-        <p className="text-slate-600 font-medium">Contrat introuvable.</p>
-        <button onClick={() => router.push('/app/hr/contracts')} className="text-sm font-semibold" style={{ color: PRIMARY }}>
-          ← Retour aux contrats
-        </button>
-      </div>
+      <HRShell activeId="contracts" title="Contrats" description="Suivi des contrats, avenants, échéances et historique contractuel.">
+        <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+          <AlertCircle className="h-12 w-12 text-rose-400" />
+          <p className="text-slate-600 font-medium">Contrat introuvable.</p>
+          <button onClick={() => router.push('/app/hr/contracts')} className="text-sm font-semibold" style={{ color: PRIMARY }}>
+            ← Retour aux contrats
+          </button>
+        </div>
+      </HRShell>
     );
   }
 
@@ -189,13 +194,14 @@ export default function ContractDetailPage() {
     : null;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 pb-16">
-      <ContractSignModal
-        isOpen={signModalOpen}
-        onClose={() => setSignModalOpen(false)}
-        onSuccess={fetchContract}
-        contract={contract}
-      />
+    <HRShell activeId="contracts" title="Contrats" description="Suivi des contrats, avenants, échéances et historique contractuel.">
+      <div className="max-w-4xl mx-auto space-y-6 pb-16">
+        <ContractSignModal
+          isOpen={signModalOpen}
+          onClose={() => setSignModalOpen(false)}
+          onSuccess={fetchContract}
+          contract={contract}
+        />
 
       {/* Breadcrumb & Back */}
       <div className="flex items-center gap-3">
@@ -540,6 +546,7 @@ export default function ContractDetailPage() {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </HRShell>
   );
 }

@@ -120,6 +120,83 @@ function getLandingPageUrlFromApp(): string {
 }
 
 /**
+ * Modules racines qui possèdent des sous-onglets (HR, Pedagogy, Students, etc.).
+ * Pour ces modules, le clic sur l'entrée sidebar navigue vers le DERNIER sous-onglet
+ * visité plutôt que vers la racine du module. Évite que l'utilisateur "perde" son
+ * onglet courant en cliquant sur le logo du module dans la sidebar.
+ */
+const MODULE_ROOTS_WITH_SUBTABS = [
+  '/app/hr',
+  '/app/pedagogy',
+  '/app/students',
+  '/app/finance',
+  '/app/communication',
+  '/app/exams',
+  '/app/aggregation',
+  '/app/meetings',
+  '/app/general',
+];
+
+/**
+ * Clé localStorage pour mémoriser le dernier sous-onglet visité d'un module.
+ */
+function moduleLastPathKey(moduleRoot: string): string {
+  return `pilotage:lastPath:${moduleRoot}`;
+}
+
+/**
+ * Lit le dernier sous-onglet visité pour un module racine.
+ * Retourne null si rien n'est mémorisé ou si la valeur n'est pas valide.
+ */
+function readModuleLastPath(moduleRoot: string): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const v = window.localStorage.getItem(moduleLastPathKey(moduleRoot));
+    if (!v) return null;
+    // Validation : doit commencer par le moduleRoot et avoir au moins un segment supérieur
+    if (!v.startsWith(moduleRoot + '/')) return null;
+    return v;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Mémorise le dernier sous-onglet visité pour un module racine.
+ */
+function writeModuleLastPath(moduleRoot: string, path: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    // Ne mémoriser que les chemins qui sont bien des sous-chemins du module
+    if (!path.startsWith(moduleRoot + '/')) return;
+    // Ignorer les chemins de détail (avec [id]) — on garde seulement les sous-onglets
+    // Heuristique : un sous-onglet a exactement 1 segment après le moduleRoot
+    // ex: /app/hr/ia → OK ; /app/hr/staff/123 → on garde /app/hr/staff
+    const tail = path.slice(moduleRoot.length + 1); // tout ce qui suit "/app/hr/"
+    const firstSeg = tail.split('/')[0];
+    if (!firstSeg) return;
+    const candidate = `${moduleRoot}/${firstSeg}`;
+    window.localStorage.setItem(moduleLastPathKey(moduleRoot), candidate);
+  } catch {
+    /* noop */
+  }
+}
+
+/**
+ * Détermine l'URL cible lorsqu'on clique sur l'entrée sidebar d'un module.
+ * - Pour les modules à sous-onglets : renvoie le dernier sous-onglet visité,
+ *   ou la racine du module si rien n'est mémorisé.
+ * - Pour les autres modules : renvoie le path tel quel.
+ */
+function resolveSidebarHref(itemPath: string): string {
+  if (typeof window === 'undefined') return itemPath;
+  const isModuleWithSubtabs = MODULE_ROOTS_WITH_SUBTABS.includes(itemPath);
+  if (!isModuleWithSubtabs) return itemPath;
+  const remembered = readModuleLastPath(itemPath);
+  return remembered || itemPath;
+}
+
+/**
  * Filtre un module en fonction de sa visibilité par accréditation.
  * Mapping chemin → catégorie de visibilité.
  */
@@ -318,6 +395,18 @@ export default function PilotageSidebar({
     onCloseMobileDrawer?.();
   }, [pathname, onCloseMobileDrawer]);
 
+  // ── Mémoriser le dernier sous-onglet visité pour chaque module racine ──
+  // Permet au clic sur l'entrée sidebar du module de revenir à l'onglet courant
+  // plutôt que de sauter sur le tableau de bord du module.
+  useEffect(() => {
+    if (!pathname) return;
+    for (const root of MODULE_ROOTS_WITH_SUBTABS) {
+      if (pathname.startsWith(root + '/')) {
+        writeModuleLastPath(root, pathname);
+      }
+    }
+  }, [pathname]);
+
   // Sur mobile drawer ou PC étendu : afficher les libellés
   const effectiveOpen = mobileDrawerOpen || isOpen;
 
@@ -342,7 +431,10 @@ export default function PilotageSidebar({
   const renderNavItem = (item: { path: string; label: string; icon: any }, isGeneral = false) => {
     const Icon = item.icon;
     const active = isActive(item.path);
-    const href = tenantParam ? `${item.path}?tenant=${tenantParam}` : item.path;
+    // Pour les modules à sous-onglets, on navigue vers le dernier sous-onglet visité
+    // (ou la racine du module si première visite) — cf. resolveSidebarHref.
+    const resolvedPath = resolveSidebarHref(item.path);
+    const href = tenantParam ? `${resolvedPath}?tenant=${tenantParam}` : resolvedPath;
 
     return (
       <Link
@@ -383,7 +475,9 @@ export default function PilotageSidebar({
   const renderIconItem = (item: { path: string; label: string; icon: any }) => {
     const Icon = item.icon;
     const active = isActive(item.path);
-    const href = tenantParam ? `${item.path}?tenant=${tenantParam}` : item.path;
+    // Cohérent avec renderNavItem : navigue vers le dernier sous-onglet visité.
+    const resolvedPath = resolveSidebarHref(item.path);
+    const href = tenantParam ? `${resolvedPath}?tenant=${tenantParam}` : resolvedPath;
 
     return (
       <Link

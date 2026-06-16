@@ -57,22 +57,32 @@ export interface RedirectLog {
 
 /**
  * Construit l'URL de redirection vers un tenant
- * 
+ *
+ * Stratégie :
+ *   - En local : toujours query params (pas de wildcard DNS en local)
+ *   - En production/preview/test :
+ *     - Si NEXT_PUBLIC_USE_SUBDOMAIN_TENANTS=true → sous-domaine (ex: school.academiahelm.com)
+ *     - Sinon → query params sur le domaine principal (academiahelm.com?tenant=school)
+ *
+ * Le mode "query params" en production est plus robuste quand le wildcard DNS
+ * *.academiahelm.com n'est pas configuré. Le middleware résout quand même le
+ * tenant via le paramètre ?tenant= ou ?tenant_id=.
+ *
  * @param config - Configuration de la redirection
  * @returns URL complète vers le tenant
- * 
+ *
  * @example
  * ```ts
  * // Local : http://localhost:3001/login?tenant=college-x&portal=school
- * getTenantRedirectUrl({ tenantSlug: 'college-x', path: '/login', portalType: 'SCHOOL' })
- * 
- * // Production : https://college-x.academia-hub.com/login?portal=school
+ * // Prod avec wildcard : https://college-x.academiahelm.com/login?portal=school
+ * // Prod sans wildcard : https://academiahelm.com/login?tenant=college-x&portal=school
  * getTenantRedirectUrl({ tenantSlug: 'college-x', path: '/login', portalType: 'SCHOOL' })
  * ```
  */
 export function getTenantRedirectUrl(config: TenantRedirectConfig): string {
   const {
     tenantSlug,
+    tenantId,
     path = '/app',
     queryParams = {},
     portalType,
@@ -99,41 +109,12 @@ export function getTenantRedirectUrl(config: TenantRedirectConfig): string {
     }
   }
 
-  // En local : utiliser les query params par défaut, 
-  // SAUF si l'utilisateur a configuré un domaine de base autre que localhost
-  if (env === 'local') {
-    const isLocalhostOnly = !baseDomain || baseDomain.includes('localhost') || baseDomain.includes('127.0.0.1');
-    
-    if (isLocalhostOnly) {
-      const baseUrl = getAppBaseUrl();
-      const url = new URL(path, baseUrl);
-
-      url.searchParams.set('tenant', tenantSlug);
-      if (config.tenantId) {
-        url.searchParams.set('tenant_id', config.tenantId);
-      }
-      if (portalType) {
-        url.searchParams.set('portal', portalType.toLowerCase());
-      }
-      Object.entries(queryParams).forEach(([key, value]) => {
-        url.searchParams.set(key, value);
-      });
-
-      return url.toString();
-    }
-    // Sinon on laisse couler vers la logique de sous-domaine (ex: school.localhost)
-  }
-
-  // En preview/production/test : utiliser le sous-domaine professionnel
-  if (!baseDomain) {
-    console.warn('NEXT_PUBLIC_BASE_DOMAIN not set, falling back to query params');
-    const baseUrl = typeof window !== 'undefined' 
-      ? `${window.location.protocol}//${window.location.host}`
-      : 'https://academiahelm.com'; // Fallback vers le domaine par défaut
+  // ── Helper : construit l'URL avec query params sur le domaine courant ──
+  const buildQueryUrl = (baseUrl: string): string => {
     const url = new URL(path, baseUrl);
     url.searchParams.set('tenant', tenantSlug);
-    if (config.tenantId) {
-      url.searchParams.set('tenant_id', config.tenantId);
+    if (tenantId) {
+      url.searchParams.set('tenant_id', tenantId);
     }
     if (portalType) {
       url.searchParams.set('portal', portalType.toLowerCase());
@@ -142,34 +123,72 @@ export function getTenantRedirectUrl(config: TenantRedirectConfig): string {
       url.searchParams.set(key, value);
     });
     return url.toString();
+  };
+
+  // ── Helper : construit l'URL avec sous-domaine ──
+  const buildSubdomainUrl = (): string => {
+    const protocol = env === 'local' && baseDomain?.includes('localhost') ? 'http' : 'https';
+    let domain = `${tenantSlug}.${baseDomain}`;
+    if (domain.startsWith('www.')) domain = domain.substring(4);
+    const url = new URL(path, `${protocol}://${domain}`);
+    if (portalType) {
+      url.searchParams.set('portal', portalType.toLowerCase());
+    }
+    Object.entries(queryParams).forEach(([key, value]) => {
+      url.searchParams.set(key, value);
+    });
+    return url.toString();
+  };
+
+  // En local : utiliser les query params par défaut,
+  // SAUF si l'utilisateur a configuré un domaine de base autre que localhost
+  if (env === 'local') {
+    const isLocalhostOnly = !baseDomain || baseDomain.includes('localhost') || baseDomain.includes('127.0.0.1');
+
+    if (isLocalhostOnly) {
+      const baseUrl = getAppBaseUrl();
+      return buildQueryUrl(baseUrl);
+    }
+    // Sinon on laisse couler vers la logique de sous-domaine (ex: school.localhost)
   }
 
-  const protocol = (env === 'local' && baseDomain.includes('localhost')) ? 'http' : 'https';
-  
-  // Format professionnel : https://tenant.academiahelm.com/path
-  // On évite d'ajouter tenant_id ou tenant dans la query string si on est en sous-domaine
-  // car le middleware s'occupe de la résolution.
-  let domain = `${tenantSlug}.${baseDomain}`;
-  
-  // Si le baseDomain contient déjà www., on l'enlève pour le sous-domaine
-  if (domain.startsWith('www.')) {
-    domain = domain.substring(4);
+  // ── En production/preview/test : décider entre sous-domaine et query params ──
+  //
+  // IMPORTANT : Si NEXT_PUBLIC_USE_SUBDOMAIN_TENANTS n'est pas explicitement "true",
+  // on utilise les query params sur le domaine principal. C'est plus robuste :
+  //   - Pas besoin de wildcard DNS *.academiahelm.com
+  //   - Pas besoin de configurer chaque sous-domaine dans Vercel
+  //   - Le middleware résout quand même le tenant via ?tenant=
+  //
+  // Pour activer le mode sous-domaine (multi-tenant strict par sous-domaine) :
+  //   NEXT_PUBLIC_USE_SUBDOMAIN_TENANTS=true
+  //
+  const useSubdomain = process.env.NEXT_PUBLIC_USE_SUBDOMAIN_TENANTS === 'true';
+
+  if (!useSubdomain) {
+    // Mode query params — utiliser le domaine principal ou le domaine courant
+    const baseUrl =
+      typeof window !== 'undefined'
+        ? `${window.location.protocol}//${window.location.host}`
+        : baseDomain
+          ? `https://${baseDomain}`
+          : 'https://academiahelm.com';
+    return buildQueryUrl(baseUrl);
   }
 
-  const url = new URL(path, `${protocol}://${domain}`);
-
-  // On ajoute uniquement le type de portail et les queryParams additionnels
-  if (portalType) {
-    url.searchParams.set('portal', portalType.toLowerCase());
+  // Mode sous-domaine activé — vérifier qu'on a un baseDomain
+  if (!baseDomain) {
+    console.warn(
+      'NEXT_PUBLIC_USE_SUBDOMAIN_TENANTS=true mais NEXT_PUBLIC_BASE_DOMAIN non défini — fallback sur query params',
+    );
+    const baseUrl =
+      typeof window !== 'undefined'
+        ? `${window.location.protocol}//${window.location.host}`
+        : 'https://academiahelm.com';
+    return buildQueryUrl(baseUrl);
   }
-  
-  Object.entries(queryParams).forEach(([key, value]) => {
-    // Éviter de rajouter tenant_id s'il est déjà dans le sous-domaine (slug)
-    // Sauf si explicitement demandé dans queryParams
-    url.searchParams.set(key, value);
-  });
 
-  return url.toString();
+  return buildSubdomainUrl();
 }
 
 /**

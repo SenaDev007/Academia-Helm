@@ -22,7 +22,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -316,6 +316,14 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
 
   const [parentOtpSent, setParentOtpSent] = useState(false);
   const [parentOtpCode, setParentOtpCode] = useState<string>('');
+
+  // ── School Google OAuth + 2FA OTP state ──
+  // Uniquement pour le portail SCHOOL (pas TEACHER, pas PARENT, pas PLATFORM)
+  const [schoolGooglePending, setSchoolGooglePending] = useState(false);
+  const [schoolGooglePendingToken, setSchoolGooglePendingToken] = useState<string | null>(null);
+  const [schoolGoogleEmail, setSchoolGoogleEmail] = useState<string>('');
+  const [schoolOtp, setSchoolOtp] = useState(['', '', '', '', '', '']);
+  const schoolOtpRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // ── Public portal: pre-enrollment state ──
   const [preEnrollment, setPreEnrollment] = useState<PreEnrollmentData>({
@@ -937,6 +945,161 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     }
 
     setPreEnrollmentSubmitted(true);
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  SCHOOL GOOGLE OAUTH + 2FA OTP — Uniquement pour le portail ÉCOLE
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /** Initie le flow Google OAuth pour le portail SCHOOL. */
+  const handleSchoolGoogleLogin = async () => {
+    if (!tenantIdForApi) {
+      setError("Identifiant de l'établissement manquant");
+      return;
+    }
+    setError(null);
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/school-auth/google/init', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenantId: tenantIdFromUrl,
+          tenantSlug: tenantSlug || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erreur init Google OAuth');
+      // Redirige vers Google
+      window.location.href = data.authUrl;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur Google OAuth');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  /**
+   * Hook : si on revient de Google avec ?google_callback=school&code=...&state=...,
+   * on appelle automatiquement le callback pour envoyer l'OTP.
+   */
+  useEffect(() => {
+    const googleCallback = searchParams?.get('google_callback');
+    const code = searchParams?.get('code');
+    const state = searchParams?.get('state');
+    if (googleCallback === 'school' && code && state && !schoolGooglePending) {
+      setIsLoading(true);
+      fetch('/api/school-auth/google/callback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, state }),
+      })
+        .then(async (res) => {
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Erreur callback Google');
+          setSchoolGooglePendingToken(data.pendingToken);
+          setSchoolGoogleEmail(data.email);
+          setSchoolGooglePending(true);
+          setError(null);
+          // Focus premier input OTP
+          setTimeout(() => schoolOtpRefs.current[0]?.focus(), 100);
+        })
+        .catch((err) => {
+          setError(err instanceof Error ? err.message : 'Erreur callback Google');
+        })
+        .finally(() => setIsLoading(false));
+    }
+  }, [searchParams, schoolGooglePending]);
+
+  /** Change un chiffre OTP SCHOOL. */
+  const handleSchoolOtpChange = (index: number, value: string) => {
+    const digit = value.replace(/\D/g, '').slice(-1);
+    const newOtp = [...schoolOtp];
+    newOtp[index] = digit;
+    setSchoolOtp(newOtp);
+    if (digit && index < 5) {
+      schoolOtpRefs.current[index + 1]?.focus();
+    }
+  };
+
+  /** Navigation backspace dans les inputs OTP SCHOOL. */
+  const handleSchoolOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !schoolOtp[index] && index > 0) {
+      schoolOtpRefs.current[index - 1]?.focus();
+    }
+  };
+
+  /** Paste OTP SCHOOL. */
+  const handleSchoolOtpPaste = (e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+    if (pasted.length) {
+      const newOtp = ['', '', '', '', '', ''];
+      for (let i = 0; i < pasted.length; i++) newOtp[i] = pasted[i];
+      setSchoolOtp(newOtp);
+      schoolOtpRefs.current[Math.min(pasted.length, 5)]?.focus();
+    }
+  };
+
+  /** Vérifie l'OTP SCHOOL et finalise la connexion. */
+  const handleSchoolVerifyOtp = async () => {
+    const otpCode = schoolOtp.join('');
+    if (otpCode.length !== 6) {
+      setError('Veuillez saisir les 6 chiffres du code');
+      return;
+    }
+    if (!schoolGooglePendingToken) {
+      setError('Session invalide. Veuillez recommencer.');
+      setSchoolGooglePending(false);
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/school-auth/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pendingToken: schoolGooglePendingToken,
+          otp: otpCode,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Code OTP invalide');
+      // Persiste la session (compatible avec le système existant)
+      persistClientSession({
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        serverSessionId: data.serverSessionId,
+        user: data.user,
+        tenant: data.tenant,
+        portalType: 'SCHOOL',
+        expiresAt: data.expiresAt,
+      });
+      markFreshLogin();
+      // Redirige vers /app
+      const redirectUrl = getTenantRedirectUrl({
+        tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,
+        tenantId: tenantIdFromUrl || data.tenant?.id,
+        path: redirectPath,
+        portalType: 'SCHOOL',
+      });
+      window.location.href = redirectUrl;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur vérification OTP');
+      setSchoolOtp(['', '', '', '', '', '']);
+      schoolOtpRefs.current[0]?.focus();
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  /** Annule le flow Google SCHOOL et revient au formulaire classique. */
+  const handleSchoolGoogleCancel = () => {
+    setSchoolGooglePending(false);
+    setSchoolGooglePendingToken(null);
+    setSchoolGoogleEmail('');
+    setSchoolOtp(['', '', '', '', '', '']);
+    setError(null);
   };
 
   const formBlockKey = portalType || 'standard';
@@ -1778,7 +1941,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             )}
 
             {/* ── Submit button — palette Helm unifiée ── */}
-            {!(portalType === 'public' && preEnrollmentSubmitted) && (
+            {!(portalType === 'public' && preEnrollmentSubmitted) && !schoolGooglePending && (
               <motion.button
                 type="submit"
                 disabled={isLoading}
@@ -1811,6 +1974,132 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                   'Se connecter'
                 )}
               </motion.button>
+            )}
+
+            {/* ── Bouton Google Sign-In — UNIQUEMENT pour le portail ÉCOLE ── */}
+            {portalType === 'school' && !schoolGooglePending && (
+              <>
+                <div className="relative my-2">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-slate-200" />
+                  </div>
+                  <div className="relative flex justify-center text-xs">
+                    <span className="bg-white px-3 text-slate-500 uppercase tracking-wider">
+                      ou
+                    </span>
+                  </div>
+                </div>
+                <motion.button
+                  type="button"
+                  onClick={handleSchoolGoogleLogin}
+                  disabled={isLoading}
+                  whileHover={shouldReduceMotion ? undefined : { scale: 1.01 }}
+                  whileTap={shouldReduceMotion ? undefined : { scale: 0.99 }}
+                  className="flex w-full items-center justify-center gap-3 rounded-xl border-2 border-slate-200 bg-white px-4 py-3 font-semibold text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 min-h-[44px]"
+                >
+                  {isLoading ? (
+                    <Loader className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <svg className="h-5 w-5" viewBox="0 0 24 24">
+                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                    </svg>
+                  )}
+                  Continuer avec Google
+                </motion.button>
+                <p className="text-center text-xs text-slate-500 mt-1">
+                  Code OTP de vérification envoyé par email après authentification Google
+                </p>
+              </>
+            )}
+
+            {/* ── Écran OTP SCHOOL (après Google) — UNIQUEMENT portail ÉCOLE ── */}
+            {portalType === 'school' && schoolGooglePending && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-4"
+              >
+                <div className="text-center">
+                  <div
+                    className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl"
+                    style={{ background: `${GOLD}22` }}
+                  >
+                    <KeyRound className="h-7 w-7" style={{ color: NAVY }} />
+                  </div>
+                  <h3 className="text-lg font-bold" style={{ color: NAVY }}>
+                    Vérification 2 facteurs
+                  </h3>
+                  <p className="mt-1 text-xs text-slate-600">
+                    Code à 6 chiffres envoyé par email à
+                    <br />
+                    <span className="font-semibold" style={{ color: NAVY }}>
+                      {schoolGoogleEmail}
+                    </span>
+                  </p>
+                </div>
+
+                {/* 6 inputs OTP */}
+                <div className="flex justify-center gap-2" onPaste={handleSchoolOtpPaste}>
+                  {schoolOtp.map((digit, i) => (
+                    <input
+                      key={i}
+                      ref={(el) => { schoolOtpRefs.current[i] = el; }}
+                      type="text"
+                      inputMode="numeric"
+                      pattern="\d*"
+                      maxLength={1}
+                      value={digit}
+                      onChange={(e) => handleSchoolOtpChange(i, e.target.value)}
+                      onKeyDown={(e) => handleSchoolOtpKeyDown(i, e)}
+                      className="h-14 w-11 rounded-xl border-2 border-slate-200 text-center text-2xl font-bold transition-all focus:ring-2 min-h-[44px]"
+                      style={{
+                        '--tw-ring-color': `${GOLD}40`,
+                        color: NAVY,
+                      } as React.CSSProperties}
+                      aria-label={`Chiffre ${i + 1}`}
+                    />
+                  ))}
+                </div>
+
+                <motion.button
+                  type="button"
+                  onClick={handleSchoolVerifyOtp}
+                  disabled={isLoading || schoolOtp.join('').length !== 6}
+                  whileHover={shouldReduceMotion ? undefined : { scale: 1.01 }}
+                  whileTap={shouldReduceMotion ? undefined : { scale: 0.99 }}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3.5 font-semibold text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-50 min-h-[44px]"
+                  style={{
+                    background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
+                  }}
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader className="h-5 w-5 animate-spin" />
+                      Vérification...
+                    </>
+                  ) : (
+                    <>
+                      Vérifier le code
+                      <ArrowRight className="h-5 w-5" />
+                    </>
+                  )}
+                </motion.button>
+
+                <button
+                  type="button"
+                  onClick={handleSchoolGoogleCancel}
+                  className="w-full text-center text-xs font-medium text-slate-500 hover:text-slate-700 transition-colors min-h-[44px]"
+                >
+                  ← Retour
+                </button>
+
+                <p className="text-center text-xs text-slate-500">
+                  Le code est valide 10 minutes. Vérifiez vos spams si vous ne le recevez pas.
+                </p>
+              </motion.div>
             )}
           </form>
 

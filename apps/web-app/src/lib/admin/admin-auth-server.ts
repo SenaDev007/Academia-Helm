@@ -298,34 +298,99 @@ export async function exchangeGoogleCode(code: string): Promise<{
   }
 }
 
-// ─── Email OTP sender ───────────────────────────────────────────────────────
+// ─── Email OTP sender (Resend) ──────────────────────────────────────────────
 
 /**
- * Envoie l'OTP par email.
- * Utilise l'API backend NestJS si NEXT_PUBLIC_API_URL est défini,
- * sinon fallback à console.log en développement.
+ * Envoie l'OTP par email via Resend.
+ *
+ * - Expéditeur : Academia Helm <noreply@academiahelm.com>
+ *   (configurable via ADMIN_EMAIL_FROM)
+ * - Template HTML professionnel (palette navy + or) — voir email-templates.ts
+ * - En dev sans RESEND_API_KEY : log dans la console
+ * - En prod : utilise Resend (clé déjà configurée sur Vercel + Railway)
+ *
+ * @returns true si envoyé avec succès, false sinon
  */
-export async function sendOtpEmail(email: string, otp: string, name?: string): Promise<boolean> {
-  // En dev : juste log
-  if (process.env.NODE_ENV === 'development' && !process.env.ADMIN_EMAIL_TRANSPORT) {
-    console.log(`\n[ADMIN OTP] Email: ${email} — Code: ${otp}\n`);
+export async function sendOtpEmail(
+  email: string,
+  otp: string,
+  name?: string,
+): Promise<boolean> {
+  // Import dynamique pour éviter de casser le build si Resend n'est pas installé
+  // et pour ne pas le charger si on est en dev sans clé.
+  const resendApiKey = process.env.RESEND_API_KEY;
+
+  // En dev sans clé Resend → log dans la console
+  if (process.env.NODE_ENV === 'development' && !resendApiKey) {
+    console.log('\n╔════════════════════════════════════════════════╗');
+    console.log('║  [ADMIN OTP] — Mode développement (pas de Resend)');
+    console.log('╠════════════════════════════════════════════════╣');
+    console.log(`║  Destinataire : ${email.padEnd(34)}║`);
+    console.log(`║  Code OTP     : ${otp.padEnd(34)}║`);
+    console.log('╚════════════════════════════════════════════════╝\n');
     return true;
   }
-  // En prod : appeler l'API backend NestJS qui a déjà nodemailer configuré
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || process.env.API_URL;
-  if (!apiUrl) {
-    console.error('No API URL configured for sending admin OTP email');
+
+  if (!resendApiKey) {
+    console.error(
+      'RESEND_API_KEY manquant — impossible d\'envoyer l\'email OTP. ' +
+        'Configurez la variable ou passez en NODE_ENV=development.',
+    );
     return false;
   }
+
+  // Import dynamique du SDK Resend (déjà dans apps/web-app/package.json)
+  let Resend: new (apiKey: string) => {
+    emails: {
+      send: (params: {
+        from: string;
+        to: string;
+        subject: string;
+        html: string;
+        text?: string;
+        reply_to?: string;
+      }) => Promise<{ id?: string; error?: { message?: string } | null }>;
+    };
+  };
   try {
-    const res = await fetch(`${apiUrl.replace(/\/$/, '')}/admin-auth/send-otp`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, otp, name }),
-    });
-    return res.ok;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const resendModule = require('resend');
+    Resend = resendModule.Resend || resendModule.default?.Resend || resendModule.default;
   } catch (err) {
-    console.error('Failed to send admin OTP email:', err);
+    console.error('Module "resend" non disponible :', err);
+    return false;
+  }
+
+  // Construction du contenu email
+  const { renderOtpEmailHtml, renderOtpEmailText } = require('./email-templates');
+  const html = renderOtpEmailHtml({ name, otp, validityMinutes: OTP_VALIDITY_MINUTES });
+  const text = renderOtpEmailText({ name, otp, validityMinutes: OTP_VALIDITY_MINUTES });
+
+  const fromEmail =
+    process.env.ADMIN_EMAIL_FROM ||
+    'Academia Helm <noreply@academiahelm.com>';
+  const replyTo = process.env.ADMIN_EMAIL_REPLY_TO || 'support@academiahelm.com';
+
+  try {
+    const resend = new Resend(resendApiKey);
+    const result = await resend.emails.send({
+      from: fromEmail,
+      to: email,
+      subject: 'Votre code de vérification — Academia Helm Back-office',
+      html,
+      text,
+      reply_to: replyTo,
+    });
+
+    if (result.error) {
+      console.error('Resend a retourné une erreur :', result.error);
+      return false;
+    }
+
+    console.log(`[ADMIN OTP] Email envoyé à ${email} — ID Resend: ${result.id || 'N/A'}`);
+    return true;
+  } catch (err) {
+    console.error('Erreur lors de l\'envoi de l\'email OTP via Resend :', err);
     return false;
   }
 }

@@ -12,13 +12,17 @@
  *   2. POST /sara/voice/speak       — Texte → Audio (TTS seul)
  *   3. POST /sara/voice/chat        — Audio → ASR → SARA → TTS → Audio (pipeline complet)
  *
+ * ⚠️ IMPORTANT : z-ai-web-dev-sdk est importé dynamiquement (lazy require).
+ * Si le package n'est pas installé, le service se charge quand même sans crasher,
+ * mais les opérations vocales renverront une erreur propre.
+ * Cela garantit que le SaraModule reste fonctionnel même sans le SDK vocal.
+ *
  * Limites TTS : 1024 caractères max par requête (chunking automatique)
  * Voix par défaut : 'tongtong' (chaude et amicale — idéale pour Sarah)
  * ============================================================================
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import ZAI from 'z-ai-web-dev-sdk';
 
 // ─── TYPES ──────────────────────────────────────────────────────────────────
 
@@ -41,12 +45,37 @@ export interface VoiceChatResult {
   format: string;
 }
 
+// ─── LAZY SDK LOADER ────────────────────────────────────────────────────────
+
+/**
+ * Charge z-ai-web-dev-sdk dynamiquement.
+ * Retourne null si le package n'est pas installé (pas de crash).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _ZAI: any = null;
+let _zaiLoadAttempted = false;
+
+function loadZAISdk(): any {
+  if (_zaiLoadAttempted) return _ZAI;
+  _zaiLoadAttempted = true;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    _ZAI = require('z-ai-web-dev-sdk').default || require('z-ai-web-dev-sdk');
+    return _ZAI;
+  } catch {
+    // Package non installé — le service vocal sera indisponible
+    // mais le reste du SaraModule (chat, streaming) fonctionnera normalement
+    return null;
+  }
+}
+
 // ─── SERVICE ────────────────────────────────────────────────────────────────
 
 @Injectable()
 export class VoiceService {
   private readonly logger = new Logger(VoiceService.name);
-  private zai: ZAI | null = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private zaiInstance: any = null;
 
   /** Voix par défaut pour Sarah — chaude et amicale */
   private readonly DEFAULT_VOICE = 'tongtong';
@@ -62,12 +91,22 @@ export class VoiceService {
 
   // ─── INITIALISATION LAZY ──────────────────────────────────────────────
 
-  private async getZAI(): Promise<ZAI> {
-    if (!this.zai) {
-      this.zai = await ZAI.create();
-      this.logger.log('✅ z-ai-web-dev-sdk initialized for VoiceService');
+  /**
+   * Initialise le SDK vocal à la demande.
+   * Retourne null si le SDK n'est pas installé.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async getZAI(): Promise<any> {
+    if (this.zaiInstance) return this.zaiInstance;
+
+    const ZAISdk = loadZAISdk();
+    if (!ZAISdk) {
+      throw new Error('z-ai-web-dev-sdk n\'est pas installé. Le mode vocal est indisponible. Les fonctions chat restent opérationnelles.');
     }
-    return this.zai;
+
+    this.zaiInstance = await ZAISdk.create();
+    this.logger.log('✅ z-ai-web-dev-sdk initialized for VoiceService');
+    return this.zaiInstance;
   }
 
   // ─── ASR : SPEECH → TEXT ──────────────────────────────────────────────
@@ -84,15 +123,13 @@ export class VoiceService {
       const zai = await this.getZAI();
 
       // Ensure the base64 data has a proper data URI prefix for the ASR engine
-      // The SDK may need it to detect the audio format
       let fileBase64 = audioBase64;
       if (!audioBase64.startsWith('data:')) {
-        // Detect format from base64 header bytes
         const prefix = this.detectAudioFormat(audioBase64);
         fileBase64 = `${prefix}${audioBase64}`;
       }
 
-      this.logger.log(`🎤 ASR request — audio data length: ${audioBase64.length} chars, prefix: ${fileBase64.substring(0, 50)}...`);
+      this.logger.log(`🎤 ASR request — audio data length: ${audioBase64.length} chars`);
 
       const response = await zai.audio.asr.create({
         file_base64: fileBase64,
@@ -101,11 +138,11 @@ export class VoiceService {
       const text = response.text || '';
       const durationMs = Date.now() - startTime;
 
-      this.logger.log(`🎤 ASR completed in ${durationMs}ms — ${text.length} chars, text: "${text.substring(0, 100)}"`);
+      this.logger.log(`🎤 ASR completed in ${durationMs}ms — ${text.length} chars`);
 
       return {
         text,
-        language: 'fr', // SARA parle principalement français
+        language: 'fr',
       };
     } catch (error: any) {
       this.logger.error(`ASR failed: ${error?.message}`, error?.stack);
@@ -155,11 +192,6 @@ export class VoiceService {
   /**
    * Convertit du texte en audio via TTS.
    * Gère automatiquement le chunking pour les textes > 1024 caractères.
-   *
-   * @param text Texte à convertir en parole
-   * @param voice Voix à utiliser (défaut: tongtong)
-   * @param speed Vitesse de parole 0.5-2.0 (défaut: 1.05)
-   * @returns Audio encodé en base64 (MP3)
    */
   async speak(
     text: string,
@@ -175,12 +207,10 @@ export class VoiceService {
     try {
       const zai = await this.getZAI();
 
-      // Découper le texte en chunks si nécessaire
       const chunks = this.splitTextIntoChunks(text, this.TTS_CHUNK_SIZE);
 
       if (chunks.length === 1) {
-        // Texte court — une seule requête TTS
-        const audioBase64 = await this.generateTTSChunk(chunks[0], voice, speed);
+        const audioBase64 = await this.generateTTSChunk(zai, chunks[0], voice, speed);
         const durationMs = Date.now() - startTime;
 
         this.logger.log(`🔊 TTS completed in ${durationMs}ms — ${text.length} chars`);
@@ -192,11 +222,9 @@ export class VoiceService {
         };
       }
 
-      // Texte long — plusieurs chunks TTS, on retourne le premier chunk
-      // (Le frontend fera les requêtes suivantes pour les chunks restants)
       this.logger.log(`🔊 TTS chunking: ${chunks.length} chunks for ${text.length} chars`);
 
-      const audioBase64 = await this.generateTTSChunk(chunks[0], voice, speed);
+      const audioBase64 = await this.generateTTSChunk(zai, chunks[0], voice, speed);
       const durationMs = Date.now() - startTime;
 
       return {
@@ -210,40 +238,14 @@ export class VoiceService {
     }
   }
 
-  /**
-   * Génère l'audio pour un texte complet (tous les chunks).
-   * Retourne un tableau d'audios base64, un par chunk.
-   */
-  async speakAllChunks(
-    text: string,
-    voice: string = this.DEFAULT_VOICE,
-    speed: number = this.DEFAULT_SPEED,
-  ): Promise<{ chunks: string[]; format: string }> {
-    const chunks = this.splitTextIntoChunks(text, this.TTS_CHUNK_SIZE);
-    const zai = await this.getZAI();
-    const audioChunks: string[] = [];
-
-    for (const chunk of chunks) {
-      const audioBase64 = await this.generateTTSChunkDirect(zai, chunk, voice, speed);
-      audioChunks.push(audioBase64);
-    }
-
-    return { chunks: audioChunks, format: this.DEFAULT_FORMAT };
-  }
-
   // ─── HELPERS ──────────────────────────────────────────────────────────
 
-  /**
-   * Découpe un texte en chunks de taille maximale, en respectant
-   * les fins de phrases pour un rendu TTS naturel.
-   */
   private splitTextIntoChunks(text: string, maxLength: number): string[] {
     if (text.length <= maxLength) {
       return [text];
     }
 
     const chunks: string[] = [];
-    // Découper par phrases (., !, ?, …)
     const sentences = text.match(/[^.!?…]+[.!?…]+/g) || [text];
 
     let currentChunk = '';
@@ -252,7 +254,6 @@ export class VoiceService {
         currentChunk += sentence;
       } else {
         if (currentChunk) chunks.push(currentChunk.trim());
-        // Si une phrase est plus longue que maxLength, la couper
         if (sentence.length > maxLength) {
           const words = sentence.split(' ');
           currentChunk = '';
@@ -274,27 +275,8 @@ export class VoiceService {
     return chunks;
   }
 
-  /**
-   * Génère un chunk TTS unique et retourne le base64 du buffer audio.
-   */
-  private async generateTTSChunk(
-    text: string,
-    voice: string,
-    speed: number,
-  ): Promise<string> {
-    const zai = await this.getZAI();
-    return this.generateTTSChunkDirect(zai, text, voice, speed);
-  }
-
-  /**
-   * Génère un chunk TTS avec une instance ZAI déjà initialisée.
-   */
-  private async generateTTSChunkDirect(
-    zai: ZAI,
-    text: string,
-    voice: string,
-    speed: number,
-  ): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async generateTTSChunk(zai: any, text: string, voice: string, speed: number): Promise<string> {
     const response = await zai.audio.tts.create({
       input: text.trim(),
       voice,
@@ -312,21 +294,18 @@ export class VoiceService {
    * Nettoie le texte SARA pour le TTS :
    * - Supprime le markdown (**, *, `, etc.)
    * - Supprime les emojis
-   * - Développe les abréviations courantes
    */
   cleanTextForTTS(text: string): string {
     let cleaned = text;
 
-    // Supprimer les symboles markdown
-    cleaned = cleaned.replace(/\*\*/g, ''); // bold
-    cleaned = cleaned.replace(/\*/g, '');   // italic
-    cleaned = cleaned.replace(/`{1,3}[^`]*`{1,3}/g, ''); // inline code
-    cleaned = cleaned.replace(/#{1,6}\s/g, ''); // headings
-    cleaned = cleaned.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1'); // links → text
-    cleaned = cleaned.replace(/^[-*+]\s/gm, ''); // bullet points
-    cleaned = cleaned.replace(/^\d+\.\s/gm, ''); // numbered lists
+    cleaned = cleaned.replace(/\*\*/g, '');
+    cleaned = cleaned.replace(/\*/g, '');
+    cleaned = cleaned.replace(/`{1,3}[^`]*`{1,3}/g, '');
+    cleaned = cleaned.replace(/#{1,6}\s/g, '');
+    cleaned = cleaned.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+    cleaned = cleaned.replace(/^[-*+]\s/gm, '');
+    cleaned = cleaned.replace(/^\d+\.\s/gm, '');
 
-    // Supprimer les emojis
     cleaned = cleaned.replace(/[\u{1F600}-\u{1F64F}]/gu, '');
     cleaned = cleaned.replace(/[\u{1F300}-\u{1F5FF}]/gu, '');
     cleaned = cleaned.replace(/[\u{1F680}-\u{1F6FF}]/gu, '');
@@ -335,7 +314,6 @@ export class VoiceService {
     cleaned = cleaned.replace(/[\u{2700}-\u{27BF}]/gu, '');
     cleaned = cleaned.replace(/✅|⚠️|🗑️|🎤|🔊|📦|🚀/g, '');
 
-    // Nettoyer les espaces multiples
     cleaned = cleaned.replace(/\s+/g, ' ').trim();
 
     return cleaned;

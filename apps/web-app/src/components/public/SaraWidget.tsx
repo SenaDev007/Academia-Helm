@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import {
   loadChatMessages,
   saveChatMessages,
+  clearChatMessages,
   type SaraWidgetMessage,
 } from '@/lib/sara/chat-storage';
 
@@ -226,9 +227,26 @@ export default function SaraWidget() {
     content: "Shalom ! Je suis Sarah, votre conseillère Academia Helm. Je suis là pour vous accompagner et vous montrer comment notre solution peut transformer la gestion de votre école. Que souhaitez-vous savoir ?",
   };
 
+  // Version du chat — si on change cette version, les anciens messages sont purgés
+  // Ceci empêche les anciens messages placeholder de polluer le contexte de l'IA
+  const SARA_CHAT_VERSION = 'v2-2025-06';
+
   // Charger les messages sauvegardés ou utiliser le message d'accueil
   const [messages, setMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>(() => {
     if (typeof window === 'undefined') return [WELCOME_MESSAGE];
+
+    // Vérifier la version du chat — purger si la version a changé
+    try {
+      const storedVersion = localStorage.getItem('sara_chat_version');
+      if (storedVersion !== SARA_CHAT_VERSION) {
+        // Version différente → purger les anciens messages (probablement des placeholders)
+        clearChatMessages('sara-widget');
+        localStorage.setItem('sara_chat_version', SARA_CHAT_VERSION);
+      }
+    } catch {
+      // Ignore localStorage errors
+    }
+
     const saved = loadChatMessages<SaraWidgetMessage>('sara-widget');
     return saved.length > 0 ? saved : [WELCOME_MESSAGE];
   });
@@ -277,12 +295,10 @@ export default function SaraWidget() {
     setStreamingText('');
 
     let fullText = '';
-    let hadError = false;
 
     try {
-      // On envoie l'historique SANS le message actuel (le backend l'ajoute via le paramètre query)
-      // Éviter la duplication : si on inclut le message actuel dans l'historique,
-      // le backend l'ajoute aussi à la fin → le message apparaît 2 fois
+      // On envoie l'historique SANS le message actuel
+      // Le backend ajoute le message via le paramètre query
       const stream = saraApi.queryStream(userMsg, undefined, messages);
 
       for await (const chunk of stream) {
@@ -290,12 +306,15 @@ export default function SaraWidget() {
           fullText += chunk.text;
           setStreamingText(fullText);
         } else if (chunk.type === 'final' && chunk.text) {
-          fullText = chunk.text;
-          setStreamingText(fullText);
-        } else if (chunk.type === 'error') {
-          hadError = true;
+          // Final chunk = texte complet (même que les deltas accumulés)
+          // On l'utilise uniquement si on n'a pas encore reçu de deltas
           if (!fullText) {
-            fullText = `Shalom ! Je suis Sarah, votre conseillère Academia Helm. Je suis temporairement indisponible pour répondre à votre question sur "${userMsg.substring(0, 50)}${userMsg.length > 50 ? '...' : ''}". Souhaitez-vous qu'un conseiller vous contacte directement ? C'est gratuit et sans engagement.`;
+            fullText = chunk.text;
+            setStreamingText(fullText);
+          }
+        } else if (chunk.type === 'error') {
+          if (!fullText) {
+            fullText = "Je suis désolée, une erreur technique s'est produite. Souhaitez-vous qu'un conseiller vous contacte directement ? C'est gratuit et sans engagement.";
           }
           break;
         }
@@ -306,14 +325,14 @@ export default function SaraWidget() {
       } else {
         setMessages(prev => [...prev, {
           role: 'assistant',
-          content: `Je suis temporairement indisponible. Votre question sur "${userMsg.substring(0, 50)}${userMsg.length > 50 ? '...' : ''}" est bien notée. Souhaitez-vous qu'un conseiller vous contacte ?`,
+          content: "Je suis temporairement indisponible. Souhaitez-vous qu'un conseiller vous contacte directement ? C'est gratuit et sans engagement.",
         }]);
       }
     } catch (error: any) {
       console.error('[SaraWidget] Error:', error?.message);
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: `Je suis désolée, une erreur de connexion s'est produite. Votre question : "${userMsg.substring(0, 50)}${userMsg.length > 50 ? '...' : ''}". Souhaitez-vous qu'un conseiller vous contacte ?`,
+        content: "Je suis désolée, une erreur de connexion s'est produite. Souhaitez-vous qu'un conseiller vous contacte directement ? C'est gratuit et sans engagement.",
       }]);
     } finally {
       setIsTyping(false);

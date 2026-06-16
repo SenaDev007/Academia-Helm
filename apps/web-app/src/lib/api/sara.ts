@@ -132,11 +132,14 @@ export const saraApi = {
       }
     } catch (error: any) {
       console.error('[SARA Stream Error]', error?.message);
-      // Fallback to non-streaming
+      // Fallback to non-streaming — yield both delta AND final like in the working commit 1f7fbfa
+      // The delta gives immediate feedback, the final signals completion
       try {
         const result = await saraApi.query(query, visitorId, conversationHistory);
-        // En fallback, on envoie le texte complet en un seul chunk 'final'
-        // Pas de 'delta' pour éviter la duplication (le texte est déjà complet)
+        yield {
+          type: 'delta',
+          text: result.reply,
+        };
         yield {
           type: 'final',
           text: result.reply,

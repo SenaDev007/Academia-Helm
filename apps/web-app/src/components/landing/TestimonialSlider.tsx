@@ -25,7 +25,7 @@
 import * as React from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, ArrowRight } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Crown, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   HELM_GOLD,
@@ -372,8 +372,9 @@ export function TestimonialSlider({
                     opacity: 0.65,
                     borderRadius: '8px',
                     overflow: 'hidden',
+                    // Carré (au lieu de portrait) pour préserver les logos
                     width: 'clamp(56px, 18%, 80px)',
-                    height: 'clamp(72px, 22%, 96px)',
+                    height: 'clamp(56px, 18%, 80px)',
                     boxShadow: '0 2px 8px rgba(30, 58, 95, 0.08)',
                   }}
                   aria-label={`Voir le témoignage de ${r.name}`}
@@ -384,7 +385,7 @@ export function TestimonialSlider({
                     alt={r.name}
                     loading={enableLazyLoad ? 'lazy' : 'eager'}
                     decoding="async"
-                    className="h-full w-full object-cover"
+                    className="h-full w-full object-contain bg-slate-50 p-1"
                   />
                 </button>
               ))}
@@ -392,8 +393,10 @@ export function TestimonialSlider({
           )}
         </div>
 
-        {/* === Colonne centre : image principale === */}
-        <div className="relative order-1 h-72 min-h-[300px] md:order-2 md:col-span-4 md:h-auto md:min-h-[440px]">
+        {/* === Colonne centre : image principale (ZONE CARRÉE) ===
+            Carrée pour préserver les logos d'écoles et photos de profil —
+            object-contain pour ne pas tronquer (vs object-cover qui crop). */}
+        <div className="relative order-1 aspect-square w-full max-w-[360px] mx-auto md:order-2 md:col-span-4 md:max-w-none">
           <AnimatePresence initial={false} custom={direction}>
             <motion.img
               key={currentIndex}
@@ -408,7 +411,7 @@ export function TestimonialSlider({
               animate="center"
               exit="exit"
               transition={{ duration: 0.55, ease: [0.4, 0, 0.2, 1] }}
-              className="absolute inset-0 h-full w-full rounded-xl object-cover"
+              className="absolute inset-0 h-full w-full rounded-xl object-contain bg-slate-50 p-2"
               style={{
                 boxShadow: `0 18px 50px rgba(30, 58, 95, 0.18)`,
               }}
@@ -439,17 +442,21 @@ export function TestimonialSlider({
                 exit="exit"
                 transition={{ duration: 0.55, ease: [0.4, 0, 0.2, 1] }}
               >
-                {/* Badge "École vérifiée" / "Avis vérifié" */}
+                {/* Badge "École vérifiée" / "Avis vérifié" — icônes Lucide modernes */}
                 {activeReview.badge && (
                   <span
-                    className="mb-3 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide"
+                    className="mb-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide"
                     style={
                       activeReview.badge.variant === 'school'
                         ? { background: '#dcfce7', color: '#15803d' }
                         : { background: '#fef3c7', color: '#92400e' }
                     }
                   >
-                    {activeReview.badge.variant === 'school' ? '👑' : '✓'}
+                    {activeReview.badge.variant === 'school' ? (
+                      <Crown className="w-3 h-3" strokeWidth={2.5} />
+                    ) : (
+                      <Check className="w-3 h-3" strokeWidth={3} />
+                    )}
                     {activeReview.badge.label}
                   </span>
                 )}

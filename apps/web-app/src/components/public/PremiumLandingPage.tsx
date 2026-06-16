@@ -28,13 +28,6 @@ import {
   LayoutGrid,
   UserCog,
   MessageSquare,
-  Bus,
-  Utensils,
-  Pill,
-  BookMarked,
-  FlaskConical,
-  ShoppingBag,
-  Radio,
   // Features section
   Gauge,
   Lock,
@@ -153,6 +146,11 @@ const features = [
 
 /**
  * Modules de l'application — bento grid moderne.
+ *
+ * IMPORTANT : Seuls les modules ESSENTIELS sont affichés sur la landing.
+ * L'utilisateur clique sur "Explorer tous les modules" pour voir les 13 modules
+ * complets sur /modules. Évite la surcharge visuelle de la landing.
+ *
  * `span` contrôle la taille dans la grille bento (col-span / row-span).
  * `tone` contrôle la couleur de l'icône (pastille douce).
  */
@@ -222,55 +220,9 @@ const modules: ModuleItem[] = [
     tone: 'sky',
     span: 'normal',
   },
-  {
-    title: 'Transport',
-    text: 'Véhicules, itinéraires, chauffeurs, arrêts, présences et incidents.',
-    icon: Bus,
-    tone: 'amber',
-    span: 'normal',
-  },
-  {
-    title: 'Cantine',
-    text: 'Menus, inscriptions, présences, stocks, fournisseurs et paiements.',
-    icon: Utensils,
-    tone: 'violet',
-    span: 'normal',
-  },
-  {
-    title: 'Infirmerie',
-    text: 'Dossiers médicaux, visites, urgences, autorisations et vigilance allergies.',
-    icon: Pill,
-    tone: 'rose',
-    span: 'normal',
-  },
-  {
-    title: 'Bibliothèque',
-    text: 'Catalogue, prêts, retours, pénalités, ressources numériques et recommandations.',
-    icon: BookMarked,
-    tone: 'navy',
-    span: 'normal',
-  },
-  {
-    title: 'Laboratoire',
-    text: 'Équipements, stocks, sessions pratiques, maintenance et incidents de sécurité.',
-    icon: FlaskConical,
-    tone: 'emerald',
-    span: 'normal',
-  },
-  {
-    title: 'Boutique',
-    text: 'Produits, commandes, stocks, fournisseurs et rapports de ventes.',
-    icon: ShoppingBag,
-    tone: 'gold',
-    span: 'normal',
-  },
-  {
-    title: 'EduCast',
-    text: 'Chaînes enseignants, contenus, webinaires, playlists et monétisation.',
-    icon: Radio,
-    tone: 'violet',
-    span: 'wide',
-  },
+  // ─── Modules complémentaires (visibles sur /modules) ───
+  // Transport, Cantine, Infirmerie, Bibliothèque, Laboratoire, Boutique, EduCast
+  // → Non affichés sur la landing pour éviter la surcharge visuelle.
 ];
 
 /** Aperçu blog sur la landing (les articles MDX auto-générés apparaissent aussi sur /blog). */
@@ -926,8 +878,8 @@ export default function PremiumLandingPage() {
                 variants={fadeUp}
                 className="mt-5 text-base md:text-lg text-blue-100/80 leading-relaxed"
               >
-                Treize modules métier couvrant l&apos;intégralité du cycle éducatif, financiers et opérationnel —
-                du cœur scolaire aux services de vie. Chacun activable et facturable indépendamment.
+                Six modules essentiels couvrant le cœur du pilotage éducatif — scolarité,
+                finances, pédagogie, RH et communication. Et bien plus encore à découvrir.
               </motion.p>
             </motion.div>
 
@@ -936,7 +888,7 @@ export default function PremiumLandingPage() {
                 href="/modules"
                 className="inline-flex items-center gap-2 rounded-xl bg-[#f5b335] px-6 py-3 text-[#0b2f73] font-bold text-sm hover:bg-[#f7c359] transition-colors shadow-lg shadow-[#f5b335]/20"
               >
-                Explorer tous les modules
+                Explorer les 13 modules
                 <ArrowRight className="w-4 h-4" />
               </Link>
             </motion.div>
@@ -1008,7 +960,8 @@ export default function PremiumLandingPage() {
             viewport={{ once: true }}
             className="mt-10 text-center text-sm text-blue-100/60"
           >
-            Modules complémentaires activables selon vos besoins ·
+            + 7 modules complémentaires à découvrir : Transport, Cantine, Infirmerie,
+            Bibliothèque, Laboratoire, Boutique, EduCast ·
             <span className="text-[#f5b335] font-semibold"> Tarification dynamique</span> adaptée à la taille de votre établissement
           </motion.p>
         </div>
@@ -1384,16 +1337,17 @@ export default function PremiumLandingPage() {
                 variants={fadeUp}
                 whileHover={{ y: -8 }}
                 transition={{ type: 'spring', stiffness: 240, damping: 20 }}
-                className={`relative rounded-3xl p-6 md:p-7 flex flex-col overflow-hidden transition-all duration-300 ${
+                className={`relative rounded-3xl p-6 md:p-7 flex flex-col overflow-visible transition-all duration-300 ${
                   plan.featured
-                    ? 'bg-gradient-to-br from-[#f5b335]/15 to-[#f5b335]/5 border-2 border-[#f5b335]/50 shadow-[0_30px_80px_-30px_rgba(245,179,53,0.45)] md:scale-105'
+                    ? 'bg-gradient-to-br from-[#f5b335]/15 to-[#f5b335]/5 border-2 border-[#f5b335]/50 shadow-[0_30px_80px_-30px_rgba(245,179,53,0.45)] md:scale-105 mt-6 md:mt-8'
                     : 'bg-white/[0.05] border border-white/15 hover:border-[#f5b335]/30 backdrop-blur-sm'
                 }`}
               >
-                {/* Badge "Recommandé" pour le plan central */}
+                {/* Badge "Recommandé" pour le plan central — POSITIONNÉ À L'EXTÉRIEUR
+                    (translate-y négatif + margin-top sur la carte pour éviter le chevauchement) */}
                 {plan.featured && (
-                  <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2">
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-[#f5b335] px-3.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#0b2f73] shadow-lg">
+                  <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-[#f5b335] px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider text-[#0b2f73] shadow-lg whitespace-nowrap">
                       <Sparkles className="w-3 h-3" />
                       Recommandé
                     </span>

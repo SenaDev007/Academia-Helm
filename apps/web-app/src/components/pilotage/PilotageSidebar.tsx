@@ -55,12 +55,16 @@ import {
   BarChart3,
   School,
   Shield,
+  Star,
+  Sparkles,
 } from 'lucide-react';
 import type { User } from '@/types';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { useEnabledFeatureCodes } from '@/hooks/useEnabledFeatureCodes';
 import { useAdminSubdomain, getAdminBackOfficeUrl } from '@/hooks/useAdminSubdomain';
 import { getPortalForRole, getVisibleModulesForRole } from '@/lib/auth/role-portal-map';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import InAppReviewModal from '@/components/reviews/InAppReviewModal';
 
 interface SidebarSchoolIdentity {
   schoolName: string;
@@ -266,6 +270,7 @@ const PLATFORM_MODULES = [
   { path: '/app/platform/monitoring', label: 'Incidents & Monitoring', icon: ShieldAlert },
   { path: '/app/platform/orion', label: 'ORION Global', icon: Brain },
   { path: '/app/platform/audit', label: 'Audit & Logs', icon: History },
+  { path: '/app/platform/reviews', label: 'Avis & Témoignages', icon: Star },
   { path: '/app/platform/settings', label: 'Paramètres plateforme', icon: Settings },
 ];
 
@@ -333,6 +338,15 @@ export default function PilotageSidebar({
     user?.role === 'director';
   const [mainModulesOpen, setMainModulesOpen] = useState(true);
   const [supplementaryModulesOpen, setSupplementaryModulesOpen] = useState(true);
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
+
+  // ── Tenant context for in-app review modal ──
+  const { tenant } = useModuleContext();
+  const tenantId = tenant?.id;
+  const tenantName = tenant?.name || schoolIdentity?.schoolName || '';
+  const userFullName = user
+    ? `${user.firstName || ''} ${user.lastName || ''}`.trim()
+    : '';
 
   // ── Accreditation-based module visibility ──
   const moduleVisibility = useMemo(
@@ -650,6 +664,30 @@ export default function PilotageSidebar({
 
         {/* ── Bottom Links ── */}
         <div className="mt-auto pt-3 border-t border-white/[0.06]">
+          {/* Donner mon avis — visible pour tous les utilisateurs tenant
+              connectés (sauf sur le sous-domaine admin qui est réservé au
+              back-office plateforme). Ouvre le modal InAppReviewModal qui
+              soumet l'avis avec tenantId → auto-approuvé → visible immédiatement
+              sur la landing page publique. */}
+          {!isAdminSubdomain && tenantId && (
+            <button
+              type="button"
+              onClick={() => {
+                setReviewModalOpen(true);
+                onCloseMobileDrawer?.();
+              }}
+              className="group w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-gold-300/90 hover:bg-gold-500/10 hover:text-gold-200 border border-gold-500/20 mb-1"
+              title={!effectiveOpen ? 'Donner mon avis' : undefined}
+            >
+              <Star className="w-[18px] h-[18px] flex-shrink-0 transition-transform duration-200 group-hover:scale-110" />
+              {effectiveOpen && (
+                <div className="flex-1 min-w-0 text-left">
+                  <div className="text-[13px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">Donner mon avis</div>
+                  <div className="text-[9px] text-gold-400/60 uppercase tracking-wider">Partagez votre expérience</div>
+                </div>
+              )}
+            </button>
+          )}
           {/* Back-Office Academia Helm (admin.academiahelm.com) — visible uniquement
               pour les platform owners qui ne sont PAS déjà sur le sous-domaine admin. */}
           {isPlatformOwner && !isAdminSubdomain && (
@@ -823,6 +861,19 @@ export default function PilotageSidebar({
           {sidebarContent}
         </div>
       </aside>
+
+      {/* Modal "Donner mon avis" — visible pour tous les utilisateurs tenant.
+          Passe tenantId au backend → auto-APPROVED → visible immédiatement
+          sur la landing page publique. */}
+      {!isAdminSubdomain && tenantId && (
+        <InAppReviewModal
+          isOpen={reviewModalOpen}
+          onClose={() => setReviewModalOpen(false)}
+          authorName={userFullName}
+          schoolName={tenantName}
+          tenantId={tenantId}
+        />
+      )}
     </>
   );
 }

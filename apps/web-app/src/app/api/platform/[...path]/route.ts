@@ -102,3 +102,68 @@ export async function POST(
     );
   }
 }
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { path: string[] } },
+) {
+  const url = new URL(buildBackendUrl(params.path));
+  request.nextUrl.searchParams.forEach((value, key) => {
+    url.searchParams.append(key, value);
+  });
+
+  const headers = await getProxyAuthHeaders(request);
+  let body: any = undefined;
+  try {
+    body = await request.text();
+  } catch {
+    /* no body */
+  }
+
+  try {
+    const response = await fetch(url.toString(), {
+      method: 'PATCH',
+      headers,
+      body,
+      cache: 'no-store',
+    });
+
+    const data = await parseBackendJson(response);
+    return NextResponse.json(data, { status: response.status });
+  } catch (error: any) {
+    console.error('[platform/proxy] PATCH error:', error);
+    return NextResponse.json(
+      { error: error?.message || 'Erreur interne du proxy platform' },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { path: string[] } },
+) {
+  const url = new URL(buildBackendUrl(params.path));
+  request.nextUrl.searchParams.forEach((value, key) => {
+    url.searchParams.append(key, value);
+  });
+
+  const headers = await getProxyAuthHeaders(request);
+
+  try {
+    const response = await fetch(url.toString(), {
+      method: 'DELETE',
+      headers,
+      cache: 'no-store',
+    });
+
+    const data = await parseBackendJson(response);
+    return NextResponse.json(data, { status: response.status });
+  } catch (error: any) {
+    console.error('[platform/proxy] DELETE error:', error);
+    return NextResponse.json(
+      { error: error?.message || 'Erreur interne du proxy platform' },
+      { status: 500 },
+    );
+  }
+}

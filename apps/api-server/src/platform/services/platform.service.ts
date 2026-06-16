@@ -655,4 +655,112 @@ export class PlatformService {
       note: "L'analyse prédictive ORION (churn, expansion, anomalies) sera disponible prochainement. En attendant, seules les alertes sécurité réelles sont affichées.",
     };
   }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 13. MODÉRATION DES AVIS (back-office reviews)
+  // ─────────────────────────────────────────────────────────────────────────
+  // Permet aux administrateurs plateforme (admin.academiahelm.com) de modérer
+  // les avis déposés depuis le formulaire public (sans tenantId → PENDING).
+  // Les avis déposés depuis l'app tenant (avec tenantId valide) sont auto-
+  // approuvés et n'apparaissent pas dans la file de modération.
+
+  /** Liste les avis en attente de modération. */
+  async getReviewsPending() {
+    const reviews = await this.prisma.review.findMany({
+      where: { status: 'PENDING' },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        authorName: true,
+        authorRole: true,
+        schoolName: true,
+        city: true,
+        photoUrl: true,
+        rating: true,
+        comment: true,
+        createdAt: true,
+        tenantId: true,
+        source: true,
+      },
+    });
+    return reviews;
+  }
+
+  /** Liste tous les avis (tous statuts confondus) — page de gestion globale. */
+  async getReviewsAll(status?: string) {
+    const where = status && status !== 'ALL' ? { status: status as any } : {};
+    const reviews = await this.prisma.review.findMany({
+      where,
+      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+      select: {
+        id: true,
+        authorName: true,
+        authorRole: true,
+        schoolName: true,
+        city: true,
+        photoUrl: true,
+        rating: true,
+        comment: true,
+        status: true,
+        featured: true,
+        source: true,
+        createdAt: true,
+        publishedAt: true,
+        tenantId: true,
+      },
+      take: 200,
+    });
+    return reviews;
+  }
+
+  /** Modère un avis (approuver / rejeter / archiver / mettre en avant). */
+  async updateReviewStatus(
+    id: string,
+    dto: { status: 'APPROVED' | 'REJECTED' | 'ARCHIVED' | 'PENDING'; featured?: boolean },
+  ) {
+    const existing = await this.prisma.review.findUnique({ where: { id } });
+    if (!existing) {
+      throw new BadRequestException('Avis introuvable');
+    }
+    const publishedAt =
+      dto.status === 'APPROVED'
+        ? existing.publishedAt ?? new Date()
+        : null;
+    return this.prisma.review.update({
+      where: { id },
+      data: {
+        status: dto.status,
+        ...(dto.featured !== undefined ? { featured: dto.featured } : {}),
+        publishedAt,
+      },
+    });
+  }
+
+  /** Supprime définitivement un avis. */
+  async deleteReview(id: string) {
+    const existing = await this.prisma.review.findUnique({ where: { id } });
+    if (!existing) {
+      throw new BadRequestException('Avis introuvable');
+    }
+    await this.prisma.review.delete({ where: { id } });
+    return { ok: true };
+  }
+
+  /** Statistiques de modération (compteurs par statut). */
+  async getReviewsStats() {
+    const grouped = await this.prisma.review.groupBy({
+      by: ['status'],
+      _count: true,
+    });
+    const stats: Record<string, number> = {
+      PENDING: 0,
+      APPROVED: 0,
+      REJECTED: 0,
+      ARCHIVED: 0,
+    };
+    for (const row of grouped) {
+      stats[row.status] = row._count;
+    }
+    return stats;
+  }
 }

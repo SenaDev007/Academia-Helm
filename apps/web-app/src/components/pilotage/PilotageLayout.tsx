@@ -162,9 +162,11 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
         </footer>
       </div>
 
-      {/* Auto-popup pour demande d'avis après 30 jours */}
+      {/* Auto-popup pour demande d'avis après 30 jours d'existence du tenant.
+          On utilise tenant.createdAt (pas user.createdAt) pour être cohérent
+          avec ReviewPromptHost qui apparaît dans layout-client.tsx. */}
       <ReviewAutoPopup
-        accountCreatedAt={user.createdAt}
+        accountCreatedAt={tenant.createdAt || user.createdAt}
         authorName={`${user.firstName} ${user.lastName}`}
         authorRole={user.role}
         schoolName={tenant.name || ''}

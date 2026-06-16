@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev -p 3001 --webpack",
     "dev:turbo": "next dev -p 3001",
-    "build": "cross-env NODE_OPTIONS=\"--max-old-space-size=6144\" next build --webpack",
+    "build": "cross-env NODE_OPTIONS=\"--max-old-space-size=4096\" next build",
+    "build:webpack": "cross-env NODE_OPTIONS=\"--max-old-space-size=6144\" next build --webpack",
     "analyze": "cross-env ANALYZE=true NODE_OPTIONS=\"--max-old-space-size=6144\" next build --webpack",
     "start": "next start -p 3001",
     "lint": "next lint",

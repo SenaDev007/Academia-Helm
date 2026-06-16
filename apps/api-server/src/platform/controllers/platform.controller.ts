@@ -19,6 +19,11 @@
 import {
   Controller,
   Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
   Query,
   UseGuards,
   Req,
@@ -154,5 +159,52 @@ export class PlatformController {
   async getOrionGlobal(@Req() req: any) {
     this.platformService.assertPlatformRole(req.user);
     return this.platformService.getOrionGlobal();
+  }
+
+  // ─── MODÉRATION DES AVIS ────────────────────────────────────────────────
+  // Permet aux administrateurs plateforme de modérer les avis déposés depuis
+  // le formulaire public (sans tenantId → PENDING). Les avis déposés depuis
+  // l'app tenant sont auto-approuvés et n'apparaissent pas dans la file.
+
+  /** GET /platform/reviews/pending — Avis en attente de modération */
+  @Get('reviews/pending')
+  async getReviewsPending(@Req() req: any) {
+    this.platformService.assertPlatformRole(req.user);
+    return this.platformService.getReviewsPending();
+  }
+
+  /** GET /platform/reviews/all — Tous les avis (filtre optionnel par statut) */
+  @Get('reviews/all')
+  async getReviewsAll(@Req() req: any, @Query('status') status?: string) {
+    this.platformService.assertPlatformRole(req.user);
+    return this.platformService.getReviewsAll(status);
+  }
+
+  /** GET /platform/reviews/stats — Compteurs par statut */
+  @Get('reviews/stats')
+  async getReviewsStats(@Req() req: any) {
+    this.platformService.assertPlatformRole(req.user);
+    return this.platformService.getReviewsStats();
+  }
+
+  /** PATCH /platform/reviews/:id/status — Modérer un avis */
+  @Patch('reviews/:id/status')
+  async updateReviewStatus(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: { status: 'APPROVED' | 'REJECTED' | 'ARCHIVED' | 'PENDING'; featured?: boolean },
+  ) {
+    this.platformService.assertPlatformRole(req.user);
+    if (!body?.status) {
+      throw new BadRequestException('Le champ "status" est requis');
+    }
+    return this.platformService.updateReviewStatus(id, body);
+  }
+
+  /** DELETE /platform/reviews/:id — Supprimer un avis */
+  @Delete('reviews/:id')
+  async deleteReview(@Req() req: any, @Param('id') id: string) {
+    this.platformService.assertPlatformRole(req.user);
+    return this.platformService.deleteReview(id);
   }
 }

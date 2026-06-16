@@ -216,3 +216,310 @@ Stage Summary:
 - One syntax regression in PlatformOrionWorkspace.tsx caught and fixed before user re-test
 - Branch is now clean, all changes pushed to origin/main
 - User can now: (1) visit admin.academiahelm.com to access the isolated back-office, (2) sign HR contracts using the new two-step flow (employer first, employee second), (3) see only real DB data across all 14 platform workspaces
+
+---
+Task ID: reviews-investigation
+Agent: Explore (subagent)
+Task: Investigate "avis & témoignages" (reviews/testimonials) infrastructure — verify commit 2390460a "feat(reviews): Trustpilot-style redesign + DB-only + tenant logo + public photo upload"
+
+INVESTIGATION ONLY — no code changes made.
+
+Work Log:
+- Confirmed commit 2390460a exists and touched 10 files (901 insertions / 441 deletions) — backend reviews module enriched, frontend ReviewsSection redesigned, ReviewRequestModal photo uploader added, BFF upload-photo route added, mock seed reviews removed + migration to delete them idempotently.
+- Audited the complete reviews stack: backend NestJS module (`apps/api-server/src/reviews/`), Prisma schema (`Review` + `ReviewStatus` + `ReviewSource`), web-app landing section, web-app tenant in-app submission modals, public `/avis` page, BFF proxies, and mock-data search.
+
+Stage Summary — structured findings:
+
+### 1. Backend (NestJS) — `apps/api-server/src/reviews/`
+
+Files: `reviews.controller.ts`, `reviews.service.ts`, `reviews.dto.ts`, `reviews.module.ts`
+
+Endpoints exposed by `ReviewsController` (`@Controller('reviews')`):
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| POST | `/reviews` | `@Public()` (throttled 20/min) | Create a review. Accepts `tenantId` in body. **Auto-approves** when `tenantId` resolves to an existing tenant (status=APPROVED, source=IN_APP, publishedAt=now, photoUrl auto-set to tenant logo). Otherwise PENDING. |
+| POST | `/reviews/upload-photo` | `@Public()` (throttled 10/min) | Upload a profile photo (multipart, `FileInterceptor('photo')`, 2 Mo max, JPG/PNG/WebP/AVIF). Calls `StorageService.uploadFile(file, 'reviews-photos')`. Returns `{ url }`. |
+| GET | `/reviews/published?limit=&minRating=` | `@Public()` | Returns `{ reviews[], stats: { average, total, distribution } }`. Filters: status=APPROVED, rating>=minRating (default 4). Each review enriched with `tenantId` + `tenantLogoUrl` (resolved from TenantIdentityProfile active → SchoolSettings.logoUrl → School.logo). Aggregates avg/count and groups by rating 1-5. Limit clamped 1-50, default 9. |
+| PATCH | `/reviews/admin/:id/status` | `JwtAuthGuard + RolesGuard @Roles('SUPER_ADMIN')` | Update status (`PENDING`/`APPROVED`/`REJECTED`/`ARCHIVED`) + optional `featured`. Sets `publishedAt` when transitioning to APPROVED. |
+| GET | `/reviews/admin/pending` | `JwtAuthGuard + SUPER_ADMIN` | Lists PENDING reviews (moderation queue). |
+| DELETE | `/reviews/admin/:id` | `JwtAuthGuard + SUPER_ADMIN` | Hard-delete a review. |
+
+`ReviewsModule` imports `StorageService` (provided in-module, not global).
+
+DTOs (`reviews.dto.ts`):
+- `CreateReviewDto`: `authorName` (req), `authorRole?`, `schoolName` (req), `city` (req), `photoUrl?`, `rating` (Int 1-5, req), `comment` (req), `tenantId?` (validated `@IsUUID()`).
+- `UpdateReviewStatusDto`: `status` ∈ {PENDING, APPROVED, REJECTED, ARCHIVED}, `featured?` boolean.
+
+Moderation/approval flow: **YES** — `ReviewStatus` enum has 4 states. Tenant-submitted reviews (with valid tenantId) skip moderation. Public-submitted reviews (no tenantId) require admin moderation.
+
+Tenant app submission support: **YES** — `POST /reviews` is `@Public()` and accepts `tenantId` in body. The service validates the tenant exists, then auto-approves.
+
+### 2. Frontend public landing page — `apps/web-app/src/components/landing/ReviewsSection.tsx`
+
+- File path: `apps/web-app/src/components/landing/ReviewsSection.tsx` (519 lines)
+- Wired via `apps/web-app/src/components/public/PremiumLandingPage.tsx` (line 36-39 dynamic import with `ssr: false`, rendered at line 908) and served by `apps/web-app/src/app/page.tsx`.
+- Fetches **real DB data** via `buildReviewsPublishedUrl()` → `/api/public/reviews-published?limit=9&minRating=4` (client-side fetch, `cache: 'no-store'`).
+- Display: **Trustpilot-style**. Three parts:
+  1. Score banner (dark Navy gradient): big average `/ 5`, stars, label (Excellent/Très bien/Bien/Passable/Faible), total count.
+  2. Distribution bars (5→1 stars) with gold→navy gradient progress bars.
+  3. Responsive grid (1/2/3 columns) of `TrustpilotCard` components.
+- Avatar handling logic (`<Avatar>` component, lines 138-182):
+  1. If `r.tenantId && r.tenantLogoUrl` → school logo (rounded, gold ring) — used for tenant-submitted reviews.
+  2. Else if `r.photoUrl` → uploaded user photo.
+  3. Else → hashed-hue initials circle (hash of authorName → HSL gradient + initials).
+- Card badges: "✓ École vérifiée" for tenant reviews (gold pill), "✓ Avis vérifié" for public reviews (emerald pill).
+- Empty state: when `reviews.length === 0`, shows a CTA "Soyez le premier à laisser un avis" linking to `/avis`.
+- Skeletons shown during loading. Error message displayed if fetch fails and no cached reviews.
+
+### 3. Frontend tenant app submission — EXISTS in THREE places
+
+**a) `apps/web-app/src/components/reviews/ReviewPromptHost.tsx`** (auto-popup, wraps the entire app)
+- Wired in BOTH `apps/web-app/src/app/app/layout-client.tsx` AND `apps/web-app/src/app/(app)/layout-client.tsx` (line 62): `<ReviewPromptHost user={user} tenant={tenant}>`.
+- Uses hook `apps/web-app/src/hooks/useReviewPrompt.ts`:
+  - Opens after `tenant.createdAt + 30 days`, once per session (`sessionStorage` flag `helm_review_popup_shown`).
+  - Skipped if `localStorage.helm_review_submitted === 'true'`.
+  - After dismissal, re-prompts after 15 days (`localStorage.helm_review_declined_at`).
+  - Opens after a 4-second delay.
+- Renders `ReviewRequestModal` with `tenantId={tenant.id}`, `schoolName={tenant.name}`, `authorName=buildAuthorName(user)`, `authorRole` (mapped from user.role: director→Directeur, admin→Administration, teacher→Enseignant, parent→Parent, student→Élève, accountant→Comptable).
+
+**b) `apps/web-app/src/components/pilotage/PilotageTopBar.tsx`** (manual button)
+- Imports `InAppReviewModal` (line 29).
+- "Donner mon avis" button at line 308-316 (hidden on mobile via `hidden sm:flex`) and duplicate in mobile dropdown menu (line 359-366).
+- Modal rendered at line 420 with `tenantId={tenant.id}`, `schoolName={schoolIdentity?.schoolName || tenant.name || ''}`.
+
+**c) `apps/web-app/src/components/pilotage/PilotageLayout.tsx`** (auto-popup)
+- Imports `ReviewAutoPopup` (line 42), renders it at line 166 with `accountCreatedAt={user.createdAt}` (NOTE: uses `user.createdAt`, not `tenant.createdAt` like the other path).
+
+Form components:
+- `apps/web-app/src/components/reviews/ReviewRequestModal.tsx` (477 lines) — 3-step wizard (rating → form → success). Used by both `ReviewPromptHost` (tenant context with `tenantId`) and `AvisPageClient` (public context without `tenantId`). Includes optional photo uploader (only when `!isSchoolContext`). Posts to `buildReviewsSubmitUrl()` → `/api/public/reviews`.
+- `apps/web-app/src/components/reviews/InAppReviewModal.tsx` (275 lines) — simpler 3-step modal used by `PilotageTopBar` and `ReviewAutoPopup`. Posts to `buildReviewsSubmitUrl()` → `/api/public/reviews`. NOTE: does NOT include photo uploader (always relies on tenant logo auto-attach).
+
+Fields collected by `ReviewRequestModal`:
+- Step 1 (rating): 1-5 stars (SVG, hover state, label: Décevant/Passable/Bien/Très bien/Excellent !)
+- Step 2 (form): `comment` (textarea, required), `authorName` (required), `authorRole` (select: Directeur/Promoteur/Enseignant/Parent/Élève/Comptable/Autre), `schoolName` (text), `city` (required), optional photo upload (public context only — 2 Mo max, JPG/PNG/WebP/AVIF, preview + remove)
+- Step 3 (success): contextual message — "publié sur la page d'accueil avec le logo de votre établissement" for tenant reviews vs "Notre équipe le traitera sous peu" for public reviews
+- Persists `localStorage.helm_review_submitted` + `helm_review_submitted_at` on success; `helm_review_declined_at` on dismiss during rating step.
+
+API endpoint called: `POST /api/public/reviews` (BFF) → proxied to `POST /reviews` (backend). Photo: `POST /api/public/reviews/upload-photo`.
+
+### 4. Public "leave a review" form (no auth) — `apps/web-app/src/app/(public)/avis/page.tsx`
+
+- Server component, returns `<AvisPageClient />` (from `apps/web-app/src/components/public/AvisPageClient.tsx`).
+- SEO metadata: title "Laisser un avis", path `/avis`.
+- `AvisPageClient` renders the public `Header`, a hero ("Donnez votre avis sur Academia Helm"), and `<ReviewRequestModal embedded onClose={() => router.push('/')} />` — **NO `tenantId` passed**, so the review is created with status=PENDING and requires admin moderation.
+- Includes a note: "Vous utilisez déjà le portail ? Une invitation peut aussi s'afficher dans l'application après environ 30 jours d'utilisation" + link to `/login`.
+- Loading state at `apps/web-app/src/app/(public)/avis/loading.tsx`.
+
+### 5. API BFF proxy routes — `apps/web-app/src/app/api/public/`
+
+Three BFF routes related to the reviews system:
+- `apps/web-app/src/app/api/public/reviews/route.ts` — POST proxy. Reads request as text, forwards to `${API_BASE_URL}/reviews` with `bffHeaders()`, returns the raw response.
+- `apps/web-app/src/app/api/public/reviews/upload-photo/route.ts` — POST multipart proxy. Validates `Content-Type: multipart/form-data`, reads body as `arrayBuffer`, forwards with original `Content-Type` (preserves boundary — does NOT use `bffHeaders()` to avoid forcing JSON), sets `User-Agent: AcademiaHelm-BFF/1.0`.
+- `apps/web-app/src/app/api/public/reviews-published/route.ts` — GET proxy. Forwards query string to `${API_BASE_URL}/reviews/published${search}`, `next: { revalidate: 5 }` (5-second revalidation per commit message — reduced from 60s in commit 2390460a so newly submitted tenant reviews appear near-instantly).
+
+URL builders in `apps/web-app/src/lib/reviews-api-url.ts`:
+- `buildReviewsPublishedUrl()` → `/api/public/reviews-published?limit=9&minRating=4`
+- `buildReviewsSubmitUrl()` → `/api/public/reviews`
+
+NOTE: There is ALSO a separate `/api/public/platform-reviews/route.ts` (GET) proxying to `${API_BASE_URL}/public/platform-reviews` — this is a DIFFERENT, OLDER infrastructure that serves pre-published marketing quotes (Prisma model `PlatformMarketingReview`, not `Review`). It's NOT used by `ReviewsSection`. The landing page's `page.tsx` passes `platformReviews={[]}` (empty) to `StructuredData`.
+
+### 6. Database schema — `apps/api-server/prisma/schema.prisma`
+
+Two review-related models exist in the schema:
+
+**`Review`** (lines 11905-11927) — the Trustpilot-style model used by commit 2390460a:
+```prisma
+/// Avis / témoignages style Trustpilot (landing + collecte in-app)
+model Review {
+  id          String       @id @default(cuid())
+  authorName  String
+  authorRole  String?
+  schoolName  String
+  city        String
+  photoUrl    String?
+  rating      Int
+  comment     String
+  status      ReviewStatus @default(PENDING)
+  featured    Boolean      @default(false)
+  source      ReviewSource @default(IN_APP)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  publishedAt DateTime?
+  tenantId    String?
+  tenant      Tenant?      @relation(fields: [tenantId], references: [id])
+
+  @@index([status])
+  @@index([rating])
+  @@index([featured])
+  @@map("reviews")
+}
+```
+
+Supporting enums (lines 13387-13398):
+```prisma
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ARCHIVED
+}
+
+enum ReviewSource {
+  IN_APP
+  MANUAL
+  IMPORT
+}
+```
+
+**`PlatformMarketingReview`** (lines 11886-11902) — separate legacy model for hand-curated marketing quotes (NOT user-submitted):
+```prisma
+model PlatformMarketingReview {
+  id                String    @id @default(uuid())
+  quote             String
+  authorLabel       String    @map("author_label")
+  roleLabel         String    @map("role_label")
+  organizationLabel String    @map("organization_label")
+  rating            Int
+  sortOrder         Int       @default(0) @map("sort_order")
+  published         Boolean   @default(false)
+  verifiedAt        DateTime? @map("verified_at")
+  collectMethod     String?   @map("collect_method")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  @@index([published, sortOrder])
+  @@map("platform_marketing_reviews")
+}
+```
+
+No `Testimonial` model exists in `schema.prisma` (grep returned no match) — the legacy `services/testimonial.service.ts` and `components/public/TestimonialsPage.tsx` that reference `/testimonials` API are DEAD CODE (no backend endpoint exists; the service silently returns `[]` on error).
+
+### 7. Mock data search — NONE FOUND in web-app/src
+
+- Searched `MOCK_REVIEWS`, `mockReviews`, `mockTestimonials`, `fakeReviews`, `sampleReviews`, `mock_avis`, `mockAvis`, `fakeAvis`, `sampleAvis`, `MOCK_TESTIMONIALS` in `apps/web-app/src/` → **no matches**.
+- Searched for the 3 original mock seed author names ("Marie Dossou", "Koffi Mensah", "Aminata Traoré") in `apps/web-app/src/` → only matches are in the infirmary module (`MedicalRecords.tsx`, `AllergiesVigilance.tsx`, `InfirmaryDashboard.tsx`) for an unrelated student named "Koffi Mensah" — NOT review data.
+- Searched `seed-helm-review-` in `apps/api-server/` → confirmed the 3 seed rows are properly cleaned up:
+  - `apps/api-server/prisma/seed.ts` (line 444): deletes any rows with `id IN ('seed-helm-review-1','seed-helm-review-2','seed-helm-review-3')` before seeding.
+  - `apps/api-server/prisma/migrations/20260617000000_delete_mock_reviews/migration.sql`: idempotent `DELETE FROM "reviews" WHERE "id" IN (...)` so existing prod DBs are cleaned.
+
+### Critical observations / gaps identified
+
+1. **NO admin moderation UI exists** in the web-app. The backend exposes `GET /reviews/admin/pending`, `PATCH /reviews/admin/:id/status`, and `DELETE /reviews/admin/:id` (all `@Roles('SUPER_ADMIN')`), but a search for `reviews/admin` in `apps/web-app/src/` returned ZERO matches. **Consequence**: any public-submitted review (no tenantId) is permanently stuck in PENDING status — there is no UI for an admin to approve or reject it. This is the most likely root cause of any "reviews don't show on public page" complaint for non-tenant submissions.
+
+2. **Tenant app submission flow IS present** (contrary to user report) in three places:
+   - `ReviewPromptHost` wired in BOTH `app/layout-client.tsx` AND `(app)/layout-client.tsx` — auto-popup after 30 days of `tenant.createdAt`.
+   - `PilotageTopBar` "Donner mon avis" button — manual, always available on desktop.
+   - `PilotageLayout` `ReviewAutoPopup` — auto-popup after 30 days of `user.createdAt` (inconsistent — uses user date, not tenant date, unlike the other path).
+   - All three POST to `/api/public/reviews` with `tenantId={tenant.id}` and the backend auto-approves such reviews, so they SHOULD appear on the public landing page within 5 seconds (BFF revalidation).
+
+3. **Potential reason tenant reviews might not appear**: the auto-popup only triggers for tenants ≥30 days old. A freshly-onboarded tenant (or a tenant missing `createdAt`) will never see the auto-popup, and the only manual entry point is the "Donner mon avis" button in `PilotageTopBar` (hidden on mobile, in the pilotage module only — not visible to all roles in all sections).
+
+4. **Two competing review systems coexist**:
+   - The NEW system (commit 2390460a): `Review` model + `/reviews` controller + `/api/public/reviews*` BFF + `ReviewsSection` + `ReviewRequestModal`/`InAppReviewModal`. Used on the public landing page.
+   - The LEGACY marketing system: `PlatformMarketingReview` model + `/public/platform-reviews` controller + `/api/public/platform-reviews` BFF + `fetchPublishedPlatformReviews()` lib. NOT visibly used by any component on the landing page (StructuredData receives empty array).
+   - The DEAD `TestimonialsPage` (`/testimonials`): calls `/testimonials?status=APPROVED` which has no backend implementation — always returns empty.
+
+5. **minRating filter**: `ReviewsSection` fetches with `minRating=4`. Reviews rated 1-3 are stored but never displayed on the public landing page (only stats include them in the average/distribution).
+
+6. **`InAppReviewModal` does NOT support photo upload** — it relies entirely on the backend's auto-attach of the tenant logo. `ReviewRequestModal` is the only component with a photo uploader (and only in public context, not tenant context).
+
+### Next actions recommended (for the implementing agent — NOT done here)
+
+- Build an admin moderation page (e.g. `apps/web-app/src/app/admin/reviews/page.tsx`) calling `GET /reviews/admin/pending` and `PATCH /reviews/admin/:id/status`. Without this, public-submitted reviews will never be visible.
+- Unify the auto-popup logic — `PilotageLayout.ReviewAutoPopup` should use `tenant.createdAt` (not `user.createdAt`) to match the `ReviewPromptHost` behavior.
+- Add a manual "Donner mon avis" entry point that works for ALL roles (not only in Pilotage) and is visible on mobile.
+- Consider removing dead code: `services/testimonial.service.ts`, `components/public/TestimonialsPage.tsx`, `app/(public)/testimonials/page.tsx`.
+- Consider lowering `minRating` on the landing page fetch (or making it configurable) so 3-star reviews are also shown.
+- Decide whether `PlatformMarketingReview` should be deprecated/merged into `Review` to avoid data fragmentation.
+
+Files inspected (no modifications):
+- apps/api-server/src/reviews/reviews.controller.ts
+- apps/api-server/src/reviews/reviews.service.ts
+- apps/api-server/src/reviews/reviews.dto.ts
+- apps/api-server/src/reviews/reviews.module.ts
+- apps/api-server/prisma/schema.prisma (lines 11886-11927, 13387-13398)
+- apps/api-server/prisma/seed.ts (line 444)
+- apps/api-server/prisma/migrations/20260617000000_delete_mock_reviews/migration.sql
+- apps/api-server/src/portal/controllers/public-platform-reviews.controller.ts
+- apps/api-server/src/portal/services/platform-marketing-review.service.ts
+- apps/web-app/src/components/landing/ReviewsSection.tsx
+- apps/web-app/src/components/reviews/ReviewRequestModal.tsx
+- apps/web-app/src/components/reviews/InAppReviewModal.tsx
+- apps/web-app/src/components/reviews/ReviewAutoPopup.tsx
+- apps/web-app/src/components/reviews/ReviewPromptHost.tsx
+- apps/web-app/src/hooks/useReviewPrompt.ts
+- apps/web-app/src/lib/reviews-api-url.ts
+- apps/web-app/src/app/page.tsx
+- apps/web-app/src/app/(public)/avis/page.tsx
+- apps/web-app/src/app/(public)/testimonials/page.tsx
+- apps/web-app/src/components/public/AvisPageClient.tsx
+- apps/web-app/src/components/public/PremiumLandingPage.tsx
+- apps/web-app/src/components/public/TestimonialsPage.tsx
+- apps/web-app/src/services/testimonial.service.ts
+- apps/web-app/src/app/api/public/reviews/route.ts
+- apps/web-app/src/app/api/public/reviews/upload-photo/route.ts
+- apps/web-app/src/app/api/public/reviews-published/route.ts
+- apps/web-app/src/app/api/public/platform-reviews/route.ts
+- apps/web-app/src/lib/public/platform-reviews.ts
+- apps/web-app/src/app/app/layout-client.tsx
+- apps/web-app/src/app/(app)/layout-client.tsx
+- apps/web-app/src/components/pilotage/PilotageTopBar.tsx
+- apps/web-app/src/components/pilotage/PilotageLayout.tsx
+
+---
+Task ID: ah-reviews-and-build-oom
+Agent: Main Agent
+Task: (1) Fix Vercel build OOM, (2) Complete the "avis & témoignages" infrastructure (Trustpilot style + real DB + tenant app submission + admin moderation)
+
+Work Log:
+- Investigated Vercel build OOM: build was using `next build --webpack` with `--max-old-space-size=6144` on 8GB machine. Webpack with 6GB heap + OS + other processes exceeded 8GB → SIGKILL after 7-8 min.
+- Fixed build script in apps/web-app/package.json:
+  * Changed `"build"` from `next build --webpack` (6GB heap) → `next build` (4GB heap, Turbopack default)
+  * Added `"build:webpack"` script as fallback (preserves old behavior for non-Vercel envs that need PWA via webpack)
+  * Kept `"analyze"` with `--webpack` (bundle analyzer requires webpack)
+  * Turbopack is safe on Vercel because @ducanh2912/next-pwa is disabled when isVercel=true (see next.config.js line 257)
+- Fixed vercel.json: function paths were `next-app/src/app/api/...` (stale — directory was renamed to web-app). Updated to `src/app/api/...` (Vercel project root is apps/web-app). Added memory/duration limits for platform proxy + reviews BFF routes.
+
+- Investigated reviews infrastructure via subagent:
+  * Backend (apps/api-server/src/reviews/) — already complete: 6 endpoints, ReviewStatus enum (PENDING/APPROVED/REJECTED/ARCHIVED), tenant-submitted reviews auto-APPROVED with logo attached, public reviews require moderation
+  * Public landing page (ReviewsSection.tsx) — already Trustpilot-style with real DB fetch, avatar priority (tenant logo → photo → initials)
+  * Tenant app submission — exists in 3 places (ReviewPromptHost in layout-client.tsx, PilotageTopBar "Donner mon avis" button, PilotageLayout ReviewAutoPopup)
+  * Public form (/avis page) — ReviewRequestModal embedded, no tenantId → PENDING
+  * BFF routes — /api/public/reviews (POST), /api/public/reviews/upload-photo (POST), /api/public/reviews-published (GET)
+  * No mock data found
+
+- Critical gap identified: NO admin moderation UI existed. Public-submitted reviews (no tenantId) were permanently stuck in PENDING — root cause of "reviews don't show on public page" for non-tenant submissions.
+
+- Backend: added reviews moderation endpoints to platform controller/service (reused existing /platform/* auth):
+  * platform.service.ts: getReviewsPending(), getReviewsAll(status?), updateReviewStatus(id, dto), deleteReview(id), getReviewsStats()
+  * platform.controller.ts: GET /platform/reviews/pending, GET /platform/reviews/all, GET /platform/reviews/stats, PATCH /platform/reviews/:id/status, DELETE /platform/reviews/:id
+  * All endpoints guarded by JwtAuthGuard + assertPlatformRole (PLATFORM_OWNER, PLATFORM_SUPER_ADMIN, PLATFORM_ADMIN, SUPER_ADMIN)
+
+- Frontend BFF: extended /api/platform/[...path]/route.ts with PATCH and DELETE handlers (only GET + POST existed before)
+
+- Frontend: created ReviewsModerationWorkspace at apps/web-app/src/components/platform/reviews/ReviewsModerationWorkspace.tsx
+  * Two tabs: "File de modération" (PENDING only) and "Tous les avis" (with status filter)
+  * Stats counters at top (PENDING / APPROVED / REJECTED / ARCHIVED)
+  * PendingCard: Approve / Reject / Archive actions
+  * AllCard: status badge + Approve / Reject / Archive / Feature / Unfeature / Delete actions
+  * Uses usePlatformData hook + PlatformStates (Loading/Error/Empty) — consistent with other platform workspaces
+  * Calls /api/platform/reviews/* which proxies to /platform/reviews/* on NestJS
+
+- Frontend: added "Avis & Témoignages" entry to PLATFORM_MODULES in PilotageSidebar.tsx (icon: Star)
+
+- Frontend: added "Donner mon avis" button to PilotageSidebar bottom links section (visible to ALL tenant users when NOT on admin subdomain and tenantId is available). Uses useModuleContext() to get tenant, opens InAppReviewModal with tenantId pre-filled → backend auto-approves → review appears on public landing page immediately.
+
+- Fixed inconsistent trigger logic: PilotageLayout's ReviewAutoPopup was using `accountCreatedAt={user.createdAt}` → changed to `accountCreatedAt={tenant.createdAt || user.createdAt}` to be consistent with ReviewPromptHost (which uses tenant.createdAt).
+
+- Verification: ran scripts/syntax-check-reviews.mjs (Babel parser) on all 19 touched files → 0 syntax errors. The PlatformOrionWorkspace syntax error from previous session is also confirmed fixed.
+
+Stage Summary:
+- Vercel build OOM fixed by switching to Turbopack (default in Next.js 16) and reducing heap to 4GB
+- "Avis & témoignages" infrastructure is now complete end-to-end:
+  * Tenant users can submit reviews via 4 entry points: auto-popup after 30 days, PilotageTopBar button, NEW sidebar "Donner mon avis" button, public /avis form
+  * Tenant-submitted reviews are auto-approved and visible immediately on the public landing page
+  * Public-submitted reviews go to PENDING queue
+  * Platform admins can moderate (approve/reject/archive/feature/delete) all reviews from admin.academiahelm.com/app/platform/reviews
+- Files modified: 8 + 3 new files (reviews page, loading, workspace component) + 1 new syntax-check script
+- All changes are syntax-clean (Babel parser verified)

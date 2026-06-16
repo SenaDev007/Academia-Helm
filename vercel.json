@@ -1,13 +1,29 @@
 {
   "version": 2,
   "functions": {
-    "next-app/src/app/api/hr/recruitment/apply/route.ts": {
+    "src/app/api/hr/recruitment/apply/route.ts": {
       "maxDuration": 60,
       "memory": 1024
     },
-    "next-app/src/app/api/hr/[...path]/route.ts": {
+    "src/app/api/hr/[...path]/route.ts": {
       "maxDuration": 30,
       "memory": 1024
+    },
+    "src/app/api/platform/[...path]/route.ts": {
+      "maxDuration": 30,
+      "memory": 1024
+    },
+    "src/app/api/public/reviews/route.ts": {
+      "maxDuration": 30,
+      "memory": 512
+    },
+    "src/app/api/public/reviews/upload-photo/route.ts": {
+      "maxDuration": 30,
+      "memory": 512
+    },
+    "src/app/api/public/reviews-published/route.ts": {
+      "maxDuration": 10,
+      "memory": 256
     }
   }
 }

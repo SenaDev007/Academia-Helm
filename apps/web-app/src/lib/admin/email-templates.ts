@@ -138,12 +138,6 @@ export function renderOtpEmailHtml(params: OtpEmailParams): string {
                     <p style="margin:0 0 12px;color:#64748b;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;font-family:Arial,Helvetica,sans-serif;">
                       Votre code de vérification
                     </p>
-                    <!--
-                      Code OTP brut (sans espaces) dans un span masqué visuellement
-                      mais sélectionnable. `user-select:all` permet à l'utilisateur
-                      de copier le code d'un seul clic (sur la plupart des clients
-                      email modernes). Le `onclick` tente un copy programmatique.
-                    -->
                     <p
                       style="margin:0;color:#0b2f73;font-size:38px;font-weight:800;letter-spacing:10px;font-family:'Courier New',Courier,monospace;user-select:all;-webkit-user-select:all;cursor:pointer;"
                       onclick="navigator.clipboard&amp;&amp;navigator.clipboard.writeText('${otp}')"

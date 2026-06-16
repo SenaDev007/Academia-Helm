@@ -292,7 +292,7 @@ function ContractRow({ contract, index, tenantId, onTerminate }: { contract: any
     const diff = (new Date(contract.endDate).getTime() - Date.now()) / 86400000;
     return diff > 0 && diff <= 30;
   };
-  const status = STATUS_CONFIG[contract.status] || STATUS_CONFIG.EXPIRED;
+  const status = STATUS_CONFIG[contract.status] || { label: contract.status || 'Inconnu', className: 'bg-amber-50 text-amber-600 border border-amber-200' };
   const isSigned = !!contract.signedAt;
 
   async function handleGeneratePdf() {

@@ -165,7 +165,7 @@ export default function ContractDetailPage() {
     );
   }
 
-  const status = STATUS_CONFIG[contract.status] || STATUS_CONFIG.EXPIRED;
+  const status = STATUS_CONFIG[contract.status] || STATUS_CONFIG.PENDING;
   const StatusIcon = status.icon;
   const pdfUrl = (contract.terms as any)?.pdfUrl;
   const isSigned = !!contract.signedAt;

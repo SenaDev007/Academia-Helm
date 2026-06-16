@@ -1,7 +1,7 @@
 /**
  * FederisSaraPage Component
  * 
- * Sara AI - Assistance Institutionnelle Intelligente
+ * Sarah AI - Assistance Institutionnelle Intelligente
  * Module 21 de l'infrastructure Academia Federis
  */
 
@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
 
 export default function FederisSaraPage() {
   const [messages, setMessages] = useState([
-    { role: 'assistant', content: 'Bonjour. Je suis Sara AI, votre assistante institutionnelle Federis. Comment puis-je vous aider dans le pilotage de votre réseau aujourd\'hui ?' }
+    { role: 'assistant', content: 'Bonjour. Je suis Sarah AI, votre assistante institutionnelle Federis. Comment puis-je vous aider dans le pilotage de votre réseau aujourd\'hui ?' }
   ]);
   const [input, setInput] = useState('');
 
@@ -35,7 +35,7 @@ export default function FederisSaraPage() {
                  <AppIcon name="sparkles" size="dashboard" className="text-purple-300 animate-pulse" />
               </div>
               <div>
-                 <h1 className="text-3xl font-black tracking-tight">Sara AI <span className="text-purple-300">Federis</span></h1>
+                 <h1 className="text-3xl font-black tracking-tight">Sarah AI <span className="text-purple-300">Federis</span></h1>
                  <p className="text-blue-100/70 font-medium text-sm">Intelligence augmentée pour le pilotage stratégique national.</p>
               </div>
            </div>

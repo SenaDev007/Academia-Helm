@@ -616,6 +616,16 @@ export class ContractPdfService {
     });
     if (!contract) throw new NotFoundException('Contrat introuvable');
 
+    // Vérifier que le contrat peut être signé (pas expiré, résilié ou supprimé)
+    if (contract.status === 'EXPIRED' || contract.status === 'TERMINATED' || contract.status === 'DELETED') {
+      throw new BadRequestException(`Impossible de signer un contrat avec le statut "${contract.status}". Veuillez d'abord réactiver le contrat.`);
+    }
+
+    // Vérifier que le contrat n'est pas déjà signé
+    if (contract.signedAt) {
+      throw new BadRequestException('Ce contrat a déjà été signé.');
+    }
+
     const terms = (contract.terms as any) || {};
     const signerRole = (data.signerRole || 'EMPLOYE').toUpperCase().replace('É', 'E').replace('E', 'E');
 

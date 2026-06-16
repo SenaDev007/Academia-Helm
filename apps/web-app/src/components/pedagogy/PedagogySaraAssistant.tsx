@@ -37,7 +37,7 @@ export default function PedagogySaraAssistant() {
   const [messages, setMessages] = useState<Message[]>([
     { 
       role: 'assistant', 
-      content: "Bonjour ! Je suis Sara, votre assistante pédagogique. Je peux vous aider avec la génération d'épreuves, l'analyse de vos documents, le suivi des cahiers journal et bien plus. Que puis-je faire pour vous ?",
+      content: "Bonjour ! Je suis Sarah, votre assistante pédagogique. Je peux vous aider avec la génération d'épreuves, l'analyse de vos documents, le suivi des cahiers journal et bien plus. Que puis-je faire pour vous ?",
       isAiEnhanced: false,
     }
   ]);
@@ -117,7 +117,7 @@ export default function PedagogySaraAssistant() {
                         <Bot className="w-7 h-7 text-white" />
                      </div>
                      <div>
-                        <h3 className="text-xl font-black italic tracking-tighter">Sara AI</h3>
+                        <h3 className="text-xl font-black italic tracking-tighter">Sarah AI</h3>
                         <div className="flex items-center gap-2">
                            <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
                            <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-widest">Conseil Pédagogique</span>

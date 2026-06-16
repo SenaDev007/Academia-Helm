@@ -29,7 +29,7 @@ interface Message {
 export default function ParentSaraAssistant() {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'assistant', content: "Bonjour ! Je suis Sara, votre assistante pédagogique. Sur la base des récents devoirs de votre enfant, j'ai remarqué un excellent engagement en Mathématiques. Souhaitez-vous des conseils pour maintenir cette dynamique ?" }
+    { role: 'assistant', content: "Bonjour ! Je suis Sarah, votre assistante pédagogique. Sur la base des récents devoirs de votre enfant, j'ai remarqué un excellent engagement en Mathématiques. Souhaitez-vous des conseils pour maintenir cette dynamique ?" }
   ]);
   const [input, setInput] = useState('');
 
@@ -72,7 +72,7 @@ export default function ParentSaraAssistant() {
                   <Bot className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="font-bold">Sara AI</h3>
+                  <h3 className="font-bold">Sarah AI</h3>
                   <p className="text-[10px] font-bold text-indigo-200 uppercase tracking-widest">Conseillère Pédagogique</p>
                 </div>
               </div>

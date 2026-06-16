@@ -126,7 +126,7 @@ export function CollaboratorsWorkspace() {
         staffId: c.staff?.id || '',
         name: `${c.staff?.firstName} ${c.staff?.lastName}`,
         type: 'contract' as const,
-        action: `${c.status === 'ACTIVE' ? 'Contrat actif' : c.status === 'EXPIRED' ? 'Contrat expiré' : 'Contrat ' + c.status} — ${c.contractType}`,
+        action: `${c.status === 'ACTIVE' ? 'Contrat actif' : c.status === 'PENDING' || c.status === 'DRAFT' ? 'En attente de signature' : c.status === 'EXPIRED' ? 'Contrat expiré' : c.status === 'TERMINATED' ? 'Contrat résilié' : 'Contrat ' + (c.status || 'inconnu')} — ${c.contractType}`,
         date: new Date(c.startDate).toLocaleDateString('fr-FR'),
         details: c.baseSalary ? `Salaire : ${formatCurrency(c.baseSalary)}` : undefined,
       })),

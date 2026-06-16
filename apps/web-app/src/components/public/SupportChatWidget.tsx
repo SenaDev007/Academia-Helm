@@ -364,7 +364,7 @@ export default function SupportChatWidget() {
       }
       
       return {
-        answer: `${greeting} ! 😊\n\nJe suis SARA, votre assistante conversationnelle. Je suis là pour répondre à toutes vos questions sur Academia Helm : tarification, free trial, fonctionnalités, et bien plus.\n\nComment puis-je vous aider aujourd'hui ?`,
+        answer: `${greeting} ! 😊\n\nJe suis Sarah, votre conseillère Academia Helm. Je suis là pour répondre à toutes vos questions : tarification, essai gratuit, fonctionnalités, et bien plus.\n\nComment puis-je vous aider aujourd'hui ?`,
         closing: undefined, // Pas de closing sur les salutations
         intentId: 'greeting'
       };

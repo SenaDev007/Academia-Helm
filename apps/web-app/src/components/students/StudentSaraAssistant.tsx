@@ -32,7 +32,7 @@ export default function StudentSaraAssistant() {
   const [messages, setMessages] = useState<Message[]>([
     { 
       role: 'assistant', 
-      content: "Bonjour ! Je suis Sara, votre assistante stratégique. J'ai analysé les flux d'inscriptions actuels. Le taux de ré-inscription est de 78% par rapport à l'année dernière. Souhaitez-vous une analyse détaillée des classes à risque ?" 
+      content: "Bonjour ! Je suis Sarah, votre assistante stratégique. J'ai analysé les flux d'inscriptions actuels. Le taux de ré-inscription est de 78% par rapport à l'année dernière. Souhaitez-vous une analyse détaillée des classes à risque ?" 
     }
   ]);
   const [input, setInput] = useState('');
@@ -81,7 +81,7 @@ export default function StudentSaraAssistant() {
                         <Bot className="w-7 h-7 text-white" />
                      </div>
                      <div>
-                        <h3 className="text-xl font-black italic tracking-tighter">Sara AI</h3>
+                        <h3 className="text-xl font-black italic tracking-tighter">Sarah AI</h3>
                         <div className="flex items-center gap-2">
                            <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
                            <span className="text-[10px] font-bold text-blue-100 uppercase tracking-widest">Scolarité Vision</span>

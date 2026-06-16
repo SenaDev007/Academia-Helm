@@ -33,7 +33,7 @@ export default function ExamSaraAssistant() {
   const [messages, setMessages] = useState<Message[]>([
     { 
       role: 'assistant', 
-      content: "Bonjour ! Je suis Sara. J'ai analysé les résultats provisoires du Bac Blanc. Le taux de réussite prévisionnel est de 74%. J'ai identifié 15 élèves 'à risque' dont la moyenne est entre 9 et 9.5. Voulez-vous voir la liste pour les commissions de délibération ?" 
+      content: "Bonjour ! Je suis Sarah. J'ai analysé les résultats provisoires du Bac Blanc. Le taux de réussite prévisionnel est de 74%. J'ai identifié 15 élèves 'à risque' dont la moyenne est entre 9 et 9.5. Voulez-vous voir la liste pour les commissions de délibération ?" 
     }
   ]);
   const [input, setInput] = useState('');
@@ -82,7 +82,7 @@ export default function ExamSaraAssistant() {
                         <Bot className="w-7 h-7 text-emerald-400" />
                      </div>
                      <div>
-                        <h3 className="text-xl font-black italic tracking-tighter">Sara AI Examen</h3>
+                        <h3 className="text-xl font-black italic tracking-tighter">Sarah AI Examen</h3>
                         <div className="flex items-center gap-2">
                            <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Intelligence Analytique</span>

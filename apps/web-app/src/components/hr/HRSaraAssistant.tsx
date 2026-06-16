@@ -33,7 +33,7 @@ export default function HRSaraAssistant() {
   const [messages, setMessages] = useState<Message[]>([
     { 
       role: 'assistant', 
-      content: "Bonjour ! Je suis Sara, votre assistante stratégique RH. J'ai analysé les évaluations du semestre. Le taux d'atteinte des objectifs pédagogiques est de 88%. Souhaitez-vous identifier les besoins en formation prioritaires ?" 
+      content: "Bonjour ! Je suis Sarah, votre assistante stratégique RH. J'ai analysé les évaluations du semestre. Le taux d'atteinte des objectifs pédagogiques est de 88%. Souhaitez-vous identifier les besoins en formation prioritaires ?" 
     }
   ]);
   const [input, setInput] = useState('');
@@ -82,7 +82,7 @@ export default function HRSaraAssistant() {
                         <Bot className="w-7 h-7 text-white" />
                      </div>
                      <div>
-                        <h3 className="text-xl font-black italic tracking-tighter">Sara AI RH</h3>
+                        <h3 className="text-xl font-black italic tracking-tighter">Sarah AI RH</h3>
                         <div className="flex items-center gap-2">
                            <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
                            <span className="text-[10px] font-bold text-blue-200 uppercase tracking-widest">Intelligence RH</span>

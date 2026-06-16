@@ -739,7 +739,7 @@ export class OpenRouterService {
         return "Bonjour ! Je suis ATLAS, votre assistant Academia Helm. L'intégration IA est en cours de configuration. Je pourrai bientôt répondre à vos questions sur la gestion de votre établissement.";
 
       case 'SARA':
-        return "Bonjour ! Je suis SARA, l'assistante Academia Helm. Notre solution permet de gérer votre école de manière moderne et sécurisée. Souhaitez-vous une démonstration ?";
+        return `Shalom ! Je suis Sarah, votre conseillère Academia Helm. Vous me demandez : "${lastUserMsg.substring(0, 80)}${lastUserMsg.length > 80 ? '...' : ''}". Je suis temporairement indisponible, mais je peux vous faire rappeler par un conseiller. Souhaitez-vous qu'on vous contacte ? C'est gratuit et sans engagement.`;
 
       case 'HDIE':
         return "Le moteur HDIE (Helm Document Intelligence Engine) est prêt à être activé. Configurez la clé API OpenRouter pour bénéficier de l'analyse sémantique de CV et du matching IA.";

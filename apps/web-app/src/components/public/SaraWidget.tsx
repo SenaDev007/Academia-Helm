@@ -277,23 +277,25 @@ export default function SaraWidget() {
     setStreamingText('');
 
     let fullText = '';
+    let hadError = false;
 
     try {
-      const stream = saraApi.queryStream(userMsg, undefined, messages);
+      // On envoie l'historique à jour (incluant le message qu'on vient d'ajouter)
+      // Note: on utilise prev => pour avoir la valeur la plus récente
+      const currentMessages = [...messages, { role: 'user' as const, content: userMsg }];
+      const stream = saraApi.queryStream(userMsg, undefined, currentMessages);
 
       for await (const chunk of stream) {
         if (chunk.type === 'delta' && chunk.text) {
-          // Accumulation progressive des deltas (streaming en temps réel)
           fullText += chunk.text;
           setStreamingText(fullText);
         } else if (chunk.type === 'final' && chunk.text) {
-          // Le chunk 'final' contient le texte complet de la réponse
-          // On l'utilise directement (évite la duplication si on l'accumulait)
           fullText = chunk.text;
           setStreamingText(fullText);
         } else if (chunk.type === 'error') {
+          hadError = true;
           if (!fullText) {
-            fullText = "Je suis désolée, une erreur technique s'est produite. Souhaitez-vous qu'un conseiller vous contacte directement ? C'est gratuit et sans engagement.";
+            fullText = `Shalom ! Je suis Sarah, votre conseillère Academia Helm. Je suis temporairement indisponible pour répondre à votre question sur "${userMsg.substring(0, 50)}${userMsg.length > 50 ? '...' : ''}". Souhaitez-vous qu'un conseiller vous contacte directement ? C'est gratuit et sans engagement.`;
           }
           break;
         }
@@ -304,14 +306,14 @@ export default function SaraWidget() {
       } else {
         setMessages(prev => [...prev, {
           role: 'assistant',
-          content: "Je suis temporairement indisponible. Souhaitez-vous qu'un conseiller vous contacte directement ? C'est gratuit et sans engagement.",
+          content: `Je suis temporairement indisponible. Votre question sur "${userMsg.substring(0, 50)}${userMsg.length > 50 ? '...' : ''}" est bien notée. Souhaitez-vous qu'un conseiller vous contacte ?`,
         }]);
       }
     } catch (error: any) {
       console.error('[SaraWidget] Error:', error?.message);
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: "Je suis désolée, une erreur de connexion s'est produite. Souhaitez-vous qu'un conseiller vous contacte directement ? C'est gratuit et sans engagement.",
+        content: `Je suis désolée, une erreur de connexion s'est produite. Votre question : "${userMsg.substring(0, 50)}${userMsg.length > 50 ? '...' : ''}". Souhaitez-vous qu'un conseiller vous contacte ?`,
       }]);
     } finally {
       setIsTyping(false);

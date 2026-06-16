@@ -68,7 +68,7 @@ function buildPolicyPrompt(outputLanguage: 'FR' | 'EN'): string {
 
   return (
     `POLICY (non négociable)\n` +
-    `- You are SARA for Academia Helm only. Refuse topics unrelated to Academia Helm.\n` +
+    `- You are Sarah for Academia Helm only. Refuse topics unrelated to Academia Helm.\n` +
     `- NEVER invent data: no fake testimonials, no fictional school names, no made-up statistics.\n` +
     `- Use ONLY facts from the system prompt. If you don't have specific data, say so honestly.\n` +
     `- Reason step-by-step before answering. Think about what the prospect REALLY needs.\n` +
@@ -85,11 +85,13 @@ function normalizeSaraOutput(raw: string): string {
 
   // Remplacer les références à d'autres IA (sécurité)
   text = text
-    .replace(/\b(ChatGPT|OpenAI|Gemini|Google|Microsoft|Bard)\b/gi, 'SARA')
+    .replace(/\b(ChatGPT|OpenAI|Gemini|Google|Microsoft|Bard)\b/gi, 'Sarah')
     .replace(/\bAnthropic\b/gi, 'notre IA');
 
-  // Nettoyer les espaces
-  text = text.replace(/\s+/g, ' ').trim();
+  // Nettoyer les espaces SANS détruire les retours à la ligne
+  // (les nouveaux lignes sont essentiels pour le formatage markdown)
+  text = text.replace(/[ \t]+/g, ' ').trim(); // Espaces et tabs uniquement
+  text = text.replace(/\n{3,}/g, '\n\n'); // Max 2 newlines consécutives
 
   // Ponctuation finale si manquante
   if (!/[.!?…]\s*$/.test(text)) {

@@ -156,11 +156,11 @@ export default function InAppSaraGuide({
   const buildWelcomeMessage = (role: string, module: string): string => {
     const moduleName = MODULE_GUIDES[module]?.label || 'Academia Helm';
     const roleWelcome: Record<string, string> = {
-      director: `Bonjour ! Je suis SARA, votre guide dans Academia Helm. 🧭 Vous êtes dans le module **${moduleName}**. Je peux vous aider à naviguer, comprendre une fonctionnalité ou répondre à vos questions. Que puis-je faire pour vous ?`,
-      teacher: `Bonjour ! Je suis SARA, votre assistante pédagogique. 📚 Vous êtes dans **${moduleName}**. Je peux vous guider dans la saisie des notes, la consultation de votre EDT, la génération d'exercices et plus. Comment puis-je vous aider ?`,
-      accountant: `Bonjour ! Je suis SARA, votre assistante financière. 💰 Vous êtes dans **${moduleName}**. Je peux vous guider dans le recouvrement, les paiements, les rapports financiers. Que voulez-vous faire ?`,
-      parent: `Bonjour ! Je suis SARA, votre assistante. 👋 Vous êtes dans **${moduleName}**. Je peux vous aider à consulter les notes, absences, factures de votre enfant. Que souhaitez-vous savoir ?`,
-      secretary: `Bonjour ! Je suis SARA, votre assistante scolarité. 📋 Vous êtes dans **${moduleName}**. Je peux vous guider pour les inscriptions, les dossiers, l'export Educmaster. Comment puis-je vous aider ?`,
+      director: `Bonjour ! Je suis Sarah, votre guide dans Academia Helm. 🧭 Vous êtes dans le module **${moduleName}**. Je peux vous aider à naviguer, comprendre une fonctionnalité ou répondre à vos questions. Que puis-je faire pour vous ?`,
+      teacher: `Bonjour ! Je suis Sarah, votre assistante pédagogique. 📚 Vous êtes dans **${moduleName}**. Je peux vous guider dans la saisie des notes, la consultation de votre EDT, la génération d'exercices et plus. Comment puis-je vous aider ?`,
+      accountant: `Bonjour ! Je suis Sarah, votre assistante financière. 💰 Vous êtes dans **${moduleName}**. Je peux vous guider dans le recouvrement, les paiements, les rapports financiers. Que voulez-vous faire ?`,
+      parent: `Bonjour ! Je suis Sarah, votre assistante. 👋 Vous êtes dans **${moduleName}**. Je peux vous aider à consulter les notes, absences, factures de votre enfant. Que souhaitez-vous savoir ?`,
+      secretary: `Bonjour ! Je suis Sarah, votre assistante scolarité. 📋 Vous êtes dans **${moduleName}**. Je peux vous guider pour les inscriptions, les dossiers, l'export Educmaster. Comment puis-je vous aider ?`,
     };
     return roleWelcome[role] || roleWelcome.director;
   };

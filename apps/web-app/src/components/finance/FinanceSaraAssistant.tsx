@@ -34,7 +34,7 @@ export default function FinanceSaraAssistant() {
   const [messages, setMessages] = useState<Message[]>([
     { 
       role: 'assistant', 
-      content: "Bonjour ! Je suis Sara, votre assistante stratégique financière. J'ai analysé les encaissements du mois. Nous sommes à 82% de l'objectif budgétaire. Souhaitez-vous une prévision de trésorerie pour le prochain trimestre ?" 
+      content: "Bonjour ! Je suis Sarah, votre assistante stratégique financière. J'ai analysé les encaissements du mois. Nous sommes à 82% de l'objectif budgétaire. Souhaitez-vous une prévision de trésorerie pour le prochain trimestre ?" 
     }
   ]);
   const [input, setInput] = useState('');
@@ -83,7 +83,7 @@ export default function FinanceSaraAssistant() {
                         <Bot className="w-7 h-7 text-white" />
                      </div>
                      <div>
-                        <h3 className="text-xl font-black italic tracking-tighter">Sara AI Finance</h3>
+                        <h3 className="text-xl font-black italic tracking-tighter">Sarah AI Finance</h3>
                         <div className="flex items-center gap-2">
                            <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Intelligence Budgétaire</span>

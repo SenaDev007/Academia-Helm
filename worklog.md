@@ -67,3 +67,54 @@ Stage Summary:
 - Sarah (Co-pilot RH) a maintenant accès en temps réel au TOP 3 candidats et au résumé des anomalies — elle peut répondre précisément quand on lui demande les dernières candidatures analysées
 - Sarah mentionne explicitement les 4 types de documents et leur caractère obligatoire/optionnel dans son system prompt
 - SSE streaming, image Sarah réelle et persona "Assistante RH" déjà en place — confirmés fonctionnels
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Fix Détection fraude ID display + restore contract sign/edit/preview features + fix "expiré" bug on unsigned contracts
+
+Work Log:
+- Investigated the IARH "Détection fraude" sub-tab issue: identified that ia-prisma.service.ts detectFraud() was appending the raw candidate UUID in parentheses when grouping by email/phone duplicates (`${c.firstName} ${c.lastName} (${c.id})`). The UI showed "Aurore Akpovi (uuid)" instead of "Aurore Akpovi".
+- Investigated the contract issues: identified that the contract detail page (apps/web-app/src/app/app/hr/contracts/[id]/page.tsx) had LOST three features that were present in commit c9e301da:
+  * ContractEditModal (edit dates/salary/payment mode) — imports & button removed
+  * ContractDocumentEditor (edit articles of the contract) — imports & button removed
+  * In-app PDF preview iframe — entire section removed
+- Investigated the "expiré" bug: identified that the backend ContractsPrismaService.createContract() was auto-expiring ALL existing ACTIVE and PENDING contracts when a new one was created. So if a user accidentally created two contracts for the same staff, the first PENDING (unsigned) one became EXPIRED. Then the sign button (which required `status === 'ACTIVE'`) never appeared, leaving the contract stuck.
+- Investigated the sign button condition: it was `contract.status === 'ACTIVE'` but contracts start as `PENDING` (per commit c64e1ba2) and only become `ACTIVE` after signing. So the button was unreachable.
+
+Backend fixes (api-server):
+- ia-prisma.service.ts detectFraud(): removed `(${c.id})` from email and phone duplicate grouping — only the readable name is now returned.
+- contracts-prisma.service.ts createContract(): changed `status: { in: ['ACTIVE', 'PENDING'] }` → `status: 'ACTIVE'`. Only ACTIVE contracts get auto-expired when a new one is created. PENDING (unsigned) contracts stay PENDING and can coexist with a new contract (so the user can choose which one to sign).
+- contracts-prisma.service.ts: added new `reactivateContract(id, tenantId)` method that reactivates an unsigned EXPIRED contract → PENDING. Guards: rejects already-signed contracts and non-EXPIRED statuses.
+- contracts-prisma.controller.ts: added new `PUT /hr/contracts/:id/reactivate` endpoint.
+
+Frontend fixes (web-app):
+- contracts/[id]/page.tsx (full rewrite of the action bar + restoration of lost features):
+  * Re-imported ContractEditModal, ContractDocumentEditor, Pencil/Eye/RotateCcw icons
+  * Added state: editModalOpen, docEditorOpen, pdfPreviewUrl, loadingPreview, reactivating
+  * Added loadPdfPreview() function with auth header + 401 token-refresh retry + auto-generate fallback
+  * Added "Éditer le document" button → opens ContractDocumentEditor (when !isSigned)
+  * Added "Modifier les infos" button → opens ContractEditModal (when !isSigned)
+  * Added "Réactiver" button → calls PUT /contracts/:id/reactivate (when contract is EXPIRED and !isSigned)
+  * Added "Signer le contrat" button — condition is now `!isSigned && (PENDING || ACTIVE || DRAFT)` instead of just `ACTIVE`
+  * Added reactivation helper banner explaining the flow for unsigned EXPIRED contracts
+  * Restored in-app PDF preview section at the bottom (iframe + "Charger l'aperçu" button + "Actualiser" button)
+- ContractsWorkspace.tsx: replaced `STATUS_CONFIG[x] || STATUS_CONFIG.EXPIRED` (which falsely labelled unknown statuses as 'Expiré') with a neutral `STATUS_FALLBACK` ('En attente', amber style).
+- staff/[id]/page.tsx (contracts tab):
+  * Each contract card is now a clickable Link to /app/hr/contracts/[id] (was just a static div)
+  * Replaced raw status display with a readable statusMap (PENDING → 'En attente de signature', DRAFT → same, etc.)
+  * Added "(non signé)" badge when contract.signedAt is null
+  * Added "Ouvrir le contrat →" link label
+  * Imported `Link` from 'next/link'
+
+Verification:
+- TypeScript check: no NEW errors introduced by these changes (pre-existing environment errors about missing React/NestJS type declarations remain, but they are not caused by this commit).
+- All 6 modified files commit cleanly together (commit 8320b2c5).
+
+Stage Summary:
+- 6 files modified (+336, -33)
+- Détection fraude now displays readable candidate names instead of UUIDs
+- Contracts module fully restored: edit modal + document editor + in-app PDF preview + sign button (for PENDING/ACTIVE/DRAFT) + reactivate button (for unsigned EXPIRED)
+- Backend no longer auto-expires unsigned PENDING contracts — they remain signable
+- Legacy unsigned EXPIRED contracts can be reactivated to PENDING via the new endpoint and the "Réactiver" button on the contract detail page
+- Staff detail page now links directly to each contract's detail page with proper status labels

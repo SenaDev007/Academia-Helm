@@ -245,6 +245,9 @@ export async function middleware(request: NextRequest) {
   // instead of redirecting, so the subdomain stays visible in the URL bar.
   const host = request.headers.get('host') || '';
   const hostParts = host.split(':')[0].split('.');
+  // Lecture du user session avant tout — nécessaire pour le bloc admin subdomain
+  // ci-dessous (vérification isPlatformOwner sur admin.academiahelm.com).
+  const user = getUserFromSessionCookie(request);
   if (hostParts.length >= 3 && isReservedSubdomain(hostParts[0]) && hostParts[0] !== 'www') {
     // ── Academia Federis satellite app ──
     if (hostParts[0] === 'academiafederis') {
@@ -267,10 +270,71 @@ export async function middleware(request: NextRequest) {
       return federisResponse;
     }
 
+    // ── Admin subdomain: back-office centralisé d'Academia Helm ──
+    // admin.academiahelm.com/* est volontairement laissé passer sans redirection.
+    // Les routes /app/platform/* sont réservées à ce sous-domaine.
+    // L'authentification forte (rôle PLATFORM_OWNER / PLATFORM_SUPER_ADMIN) est
+    // vérifiée côté layout + page (cf. /app/platform/layout.tsx) et dans le
+    // cookie de session lu par getUserFromSessionCookie().
+    if (hostParts[0] === 'admin') {
+      // Routes toujours accessibles même sans auth : login, assets, API.
+      const isAdminLoginRoute = pathname === '/admin-login' || pathname.startsWith('/admin-login/');
+      const isRegularLoginRoute = pathname === '/login' || pathname.startsWith('/login/');
+      const isPublicAsset =
+        pathname.startsWith('/images/') ||
+        pathname.startsWith('/fonts/') ||
+        pathname.startsWith('/uploads/') ||
+        pathname === '/sw.js' ||
+        pathname === '/manifest.json' ||
+        pathname === '/robots.txt' ||
+        pathname === '/favicon.ico';
+
+      if (isAdminLoginRoute || isRegularLoginRoute || isPublicAsset || pathname.startsWith('/api/')) {
+        const adminResponse = withAntiCacheHeaders(NextResponse.next());
+        adminResponse.headers.set('x-admin-subdomain', 'true');
+        if (user) {
+          adminResponse.headers.set('x-user-id', user.id);
+          if (user.isPlatformOwner) adminResponse.headers.set('x-platform-owner', 'true');
+        }
+        return adminResponse;
+      }
+
+      if (!user?.id || !user.isPlatformOwner) {
+        // Rediriger vers la page de connexion principale (les PLATFORM_OWNER
+        // s'authentifient via /login, pas /admin-login qui est réservé SUPER_ADMIN).
+        // Le paramètre redirect=?admin indique au LoginPage de renvoyer l'utilisateur
+        // vers admin.academiahelm.com après connexion réussie.
+        const protocol = request.headers.get('x-forwarded-proto') || 'https';
+        const mainDomain = hostParts.slice(1).join('.');
+        const loginUrl = new URL('/login', `${protocol}://${mainDomain}`);
+        loginUrl.searchParams.set('redirect', pathname);
+        loginUrl.searchParams.set('admin', '1');
+        return safeRedirect(loginUrl, request, redirectDepth);
+      }
+
+      // Utilisateur authentifié avec rôle plateforme → laisser passer
+      const adminResponse = withAntiCacheHeaders(NextResponse.next());
+      adminResponse.headers.set('x-admin-subdomain', 'true');
+      adminResponse.headers.set('x-platform-owner', 'true');
+      adminResponse.headers.set('x-user-id', user.id);
+      return adminResponse;
+    }
+
     const mainDomain = hostParts.slice(1).join('.');
     const protocol = request.headers.get('x-forwarded-proto') || 'https';
     const redirectUrl = new URL(pathname + request.nextUrl.search, `${protocol}://${mainDomain}`);
     return safeRedirect(redirectUrl, request, redirectDepth);
+  }
+
+  // ── Bloquer l'accès aux routes /app/platform/* hors du sous-domaine admin ──
+  // Le back-office centralisé d'Academia Helm ne doit être accessible QUE via
+  // admin.academiahelm.com. Toute tentative d'accès depuis un autre sous-domaine
+  // ou le domaine principal est redirigée vers admin.academiahelm.com.
+  if (pathname.startsWith('/app/platform')) {
+    const protocol = request.headers.get('x-forwarded-proto') || 'https';
+    const mainDomain = hostParts.length >= 2 ? hostParts.slice(1).join('.') : 'academiahelm.com';
+    const adminUrl = new URL(pathname + request.nextUrl.search, `${protocol}://admin.${mainDomain}`);
+    return safeRedirect(adminUrl, request, redirectDepth);
   }
 
   // Routes Patronat (Academia Federis) : utiliser le middleware dédié
@@ -290,8 +354,6 @@ export async function middleware(request: NextRequest) {
   }
 
   const response = withAntiCacheHeaders(NextResponse.next());
-
-  const user = getUserFromSessionCookie(request);
 
   // Routes admin : pas de vérification de subdomain
   if (pathname.startsWith('/admin')) {

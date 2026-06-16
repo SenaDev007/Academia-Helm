@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, useEffect } from 'react';
-import { X, PenTool, Trash2, CheckCircle, Loader2, Shield } from 'lucide-react';
+import { X, PenTool, Trash2, CheckCircle, Loader2, Shield, UserCheck, Building2 } from 'lucide-react';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { toast } from '@/components/ui/toast';
@@ -16,6 +16,8 @@ interface ContractSignModalProps {
   contract: any;
 }
 
+type SignerRole = 'EMPLOYEUR' | 'EMPLOYE';
+
 export function ContractSignModal({ isOpen, onClose, onSuccess, contract }: ContractSignModalProps) {
   const { tenant } = useModuleContext();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -24,11 +26,28 @@ export function ContractSignModal({ isOpen, onClose, onSuccess, contract }: Cont
   const [signerName, setSignerName] = useState('');
   const [loading, setLoading] = useState(false);
   const [agreed, setAgreed] = useState(false);
+  const [signerRole, setSignerRole] = useState<SignerRole>('EMPLOYE');
 
-  // Pre-fill the signer's name from the contract
+  // Detect the appropriate signer role from contract state
+  const terms: any = (contract?.terms as any) || {};
+  const employerHasSigned = !!terms.employerSignedAt;
+  const employeeHasSigned = !!contract?.signedAt;
+
   useEffect(() => {
-    if (contract?.staff) {
-      setSignerName(`${contract.staff.firstName} ${contract.staff.lastName}`);
+    if (contract) {
+      // Pre-fill the signer name from the contract staff
+      if (contract.staff) {
+        setSignerName(`${contract.staff.firstName} ${contract.staff.lastName}`);
+      }
+      // Auto-select the role:
+      // - If employer hasn't signed yet → default to EMPLOYEUR
+      // - If employer has signed but employee hasn't → default to EMPLOYE
+      const t: any = (contract.terms as any) || {};
+      if (!t.employerSignedAt) {
+        setSignerRole('EMPLOYEUR');
+      } else {
+        setSignerRole('EMPLOYE');
+      }
     }
   }, [contract]);
 
@@ -110,6 +129,10 @@ export function ContractSignModal({ isOpen, onClose, onSuccess, contract }: Cont
       toast({ variant: 'error', title: 'Veuillez cocher la case d\'acceptation.' });
       return;
     }
+    if (!signerName.trim()) {
+      toast({ variant: 'error', title: 'Veuillez saisir le nom du signataire.' });
+      return;
+    }
     const canvas = canvasRef.current;
     if (!canvas) return;
     const signatureData = canvas.toDataURL('image/png');
@@ -118,14 +141,22 @@ export function ContractSignModal({ isOpen, onClose, onSuccess, contract }: Cont
       setLoading(true);
       await hrFetch<any>(hrUrl(`contracts/${contract.id}/sign`, { tenantId: tenant.id }), {
         method: 'POST',
-        body: { signatureData, signerName, signerRole: 'Employé' },
+        body: { signatureData, signerName: signerName.trim(), signerRole },
       });
-      toast({ variant: 'success', title: 'Contrat signé avec succès !' });
+      const successMsg = signerRole === 'EMPLOYEUR'
+        ? 'Signature employeur enregistrée. Le contrat est en attente de la signature de l\'employé.'
+        : 'Contrat signé avec succès !';
+      toast({ variant: 'success', title: successMsg });
       onSuccess();
       onClose();
-    } catch (err) {
-      console.error(err);
-      toast({ variant: 'error', title: 'Erreur lors de la signature.' });
+    } catch (err: any) {
+      console.error('[ContractSignModal] sign error:', err);
+      // Surface the actual backend error message
+      const backendMsg = err?.message || err?.error || err?.data?.message;
+      const displayMsg = backendMsg
+        ? `Erreur : ${backendMsg}`
+        : 'Erreur lors de la signature. Veuillez réessayer.';
+      toast({ variant: 'error', title: displayMsg });
     } finally {
       setLoading(false);
     }
@@ -158,6 +189,53 @@ export function ContractSignModal({ isOpen, onClose, onSuccess, contract }: Cont
         </div>
 
         <div className="p-6 space-y-5">
+          {/* Signer role selector */}
+          <div>
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+              Je signe en tant que
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setSignerRole('EMPLOYEUR')}
+                disabled={employerHasSigned}
+                className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-xs font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed ${
+                  signerRole === 'EMPLOYEUR'
+                    ? 'border-[#1A2BA6] bg-[#1A2BA6]/5 text-[#1A2BA6]'
+                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                }`}
+              >
+                <Building2 className="h-4 w-4" />
+                <div className="text-left">
+                  <div>Employeur</div>
+                  {employerHasSigned && <div className="text-[9px] text-green-600 font-medium">Déjà signé</div>}
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSignerRole('EMPLOYE')}
+                disabled={!employerHasSigned || employeeHasSigned}
+                className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-xs font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed ${
+                  signerRole === 'EMPLOYE'
+                    ? 'border-[#1A2BA6] bg-[#1A2BA6]/5 text-[#1A2BA6]'
+                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                }`}
+              >
+                <UserCheck className="h-4 w-4" />
+                <div className="text-left">
+                  <div>Employé</div>
+                  {!employerHasSigned && <div className="text-[9px] text-amber-600 font-medium">En attente employeur</div>}
+                  {employeeHasSigned && <div className="text-[9px] text-green-600 font-medium">Déjà signé</div>}
+                </div>
+              </button>
+            </div>
+            {!employerHasSigned && signerRole === 'EMPLOYE' && (
+              <p className="mt-1.5 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
+                L'employeur doit signer le contrat en premier.
+              </p>
+            )}
+          </div>
+
           {/* Signer name */}
           <div>
             <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
@@ -241,14 +319,14 @@ export function ContractSignModal({ isOpen, onClose, onSuccess, contract }: Cont
             </button>
             <button
               onClick={handleSign}
-              disabled={loading || !hasSignature || !agreed}
+              disabled={loading || !hasSignature || !agreed || !signerName.trim()}
               className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white rounded-xl shadow-sm hover:opacity-90 disabled:opacity-50 transition"
               style={{ backgroundColor: PRIMARY }}
             >
               {loading ? (
                 <><Loader2 className="h-4 w-4 animate-spin" /> Enregistrement...</>
               ) : (
-                <><CheckCircle className="h-4 w-4" /> Signer le contrat</>
+                <><CheckCircle className="h-4 w-4" /> Signer en tant que {signerRole === 'EMPLOYEUR' ? 'Employeur' : 'Employé'}</>
               )}
             </button>
           </div>

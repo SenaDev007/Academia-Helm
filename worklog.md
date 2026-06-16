@@ -118,3 +118,69 @@ Stage Summary:
 - Backend no longer auto-expires unsigned PENDING contracts — they remain signable
 - Legacy unsigned EXPIRED contracts can be reactivated to PENDING via the new endpoint and the "Réactiver" button on the contract detail page
 - Staff detail page now links directly to each contract's detail page with proper status labels
+
+---
+Task ID: ah-admin-isolation-and-contract-fix
+Agent: main agent
+Task: 1) Fix HR contract signing error "Erreur lors de la signature" — 2) Isolate admin back-office to admin.academiahelm.com subdomain — 3) Remove all mock data from /app/platform/* workspaces and connect to real DB
+
+Work Log:
+- Analyzed screenshots: (1) sidebar shows all platform modules on regular app; (2) contract signing modal returns generic "Erreur lors de la signature"
+- Investigated root cause of contract signing error:
+  - ContractSignModal always sends signerRole: 'Employé'
+  - Backend contract-pdf.service.signContract() requires terms.employerSignedAt to be set BEFORE employee can sign
+  - Fresh contracts have terms = {} → backend throws "L'employeur doit signer le contrat en premier"
+  - Frontend swallows the backend error message and shows generic toast
+  - Also found a no-op .replace('E','E') on line 630 (broken accent normalization)
+- Fixed ContractSignModal.tsx (both app/app and app/(app) copies):
+  - Added signer role selector (Employeur / Employé) with auto-detection from contract state
+  - Surface the actual backend error message in the toast
+  - Disable Employé button when employer hasn't signed yet (with explanation)
+- Fixed contract-pdf.service.ts signContract():
+  - Replaced broken .replace('É','E').replace('E','E') with proper NFD normalization
+- Investigated admin sidebar leak:
+  - PilotageSidebar.tsx renders PLATFORM_MODULES whenever isPlatformPortal is true (purely role-based)
+  - No hostname check → modules appear on every subdomain for platform owners
+  - Middleware redirects admin.academiahelm.com → main domain (wrong behavior)
+- Created useAdminSubdomain hook (client-side hostname detection)
+- Patched PilotageSidebar.tsx:
+  - isPlatformPortal now requires BOTH role AND admin.academiahelm.com subdomain
+  - Added "Back-Office Academia Helm" link at bottom for platform owners on non-admin subdomains
+- Patched middleware.ts:
+  - admin.academiahelm.com is no longer redirected to main domain
+  - Added auth gate: unauthenticated users on admin subdomain are redirected to /login?admin=1
+  - Added /app/platform/* route guard: requests from non-admin subdomains are redirected to admin.academiahelm.com
+  - Moved user session read earlier (before reserved-subdomain block) to fix ordering bug
+- Patched LoginPage.tsx:
+  - Added maybeRedirectToAdminSubdomain() helper
+  - When ?admin=1 is set, platform owners are redirected to admin.<parent-domain> after successful login
+  - Applied to handlePlatformLogin, handleStandardLogin, handleSchoolLogin (platform retry path)
+- Created new PlatformModule (api-server):
+  - platform.service.ts: 14 methods (dashboard, tenants, initial-subscriptions, invoices, payments, users, audit-logs, support/tickets, roles, permissions, plans, modules, monitoring, orion)
+  - platform.controller.ts: 13 endpoints under /platform/*
+  - platform.module.ts: registered in app.module.ts
+  - All endpoints guarded by JwtAuthGuard + assertPlatformRole()
+- Created BFF proxy route: apps/web-app/src/app/api/platform/[...path]/route.ts
+- Created shared hook usePlatformData() + PlatformStates (Loading/Error/Empty) components
+- Refactored all 14 platform workspaces to use real DB data via /api/platform/*:
+  - PlatformDashboard, TenantsWorkspace, InitialSubscriptionsWorkspace, PlatformBillingWorkspace,
+    PlatformPaymentsWorkspace, PlatformUsersWorkspace, PlatformSupportWorkspace, PlatformAuditWorkspace,
+    PlatformOrionWorkspace, MonitoringWorkspace, ModulesWorkspace, PlatformRBACWorkspace,
+    SubscriptionsWorkspace, PlatformSettingsWorkspace
+  - All MOCK_* constants removed
+  - Loading/error/empty states added
+  - Where a table doesn't exist yet (SupportTicket, Monitoring infrastructure, Orion predictive),
+    an empty state with explanatory note is shown instead of mock data
+- Updated vercel.json: added maxDuration/memory for /api/platform/[...path] route
+
+Stage Summary:
+- HR contract signing now works for both employer-first and employee-second flows
+- Platform back-office modules are HIDDEN from the regular app sidebar
+- /app/platform/* routes are BLOCKED on non-admin subdomains (auto-redirect to admin.academiahelm.com)
+- admin.academiahelm.com requires PLATFORM_OWNER auth and lets platform users through
+- All 14 platform workspaces now display real DB data (tenants, subscriptions, invoices, payments,
+  users, audit logs, roles, permissions, plans, modules adoption, orion alerts)
+- Support tickets and monitoring infrastructure return empty states with notes (no mock data)
+- Files modified: 17 workspaces/components + middleware + sidebar + login page + contract modal/service
+- New files: PlatformModule (3 files), BFF platform proxy route, useAdminSubdomain hook,
+  usePlatformData hook, PlatformStates components

@@ -627,7 +627,13 @@ export class ContractPdfService {
     }
 
     const terms = (contract.terms as any) || {};
-    const signerRole = (data.signerRole || 'EMPLOYE').toUpperCase().replace('É', 'E').replace('E', 'E');
+    // Normaliser le rôle : EMPLOYEUR / EMPLOYE (gérer accents et casse)
+    const rawRole = (data.signerRole || 'EMPLOYE').toString();
+    const signerRole = rawRole
+      .toUpperCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // retire les diacritiques (É→E, é→e)
+      .replace(/[^A-Z]/g, '');           // ne garde que les lettres
 
     // ─── EMPLOYEUR signs first ───────────────────────────────────────────────
     if (signerRole === 'EMPLOYEUR') {

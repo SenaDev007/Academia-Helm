@@ -1,112 +1,123 @@
 'use client';
 
-import { PieChart, CreditCard, DollarSign, Download, ExternalLink, MoreVertical, Search, Filter } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { motion } from 'framer-motion';
+import {
+  Search,
+  Plus,
+  ArrowUpRight,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  MoreVertical,
+  FileText,
+  DollarSign,
+  Download,
+  Filter,
+  ShieldAlert,
+  History,
+  Users,
+  HelpCircle,
+  CreditCard,
+  PieChart,
+  Building,
+  LayoutDashboard,
+  Briefcase,
+  Zap,
+  BarChart3,
+  Lock,
+  Settings,
+  Loader2,
+  AlertCircle,
+  RefreshCw,
+  Inbox,
+} from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';
+import { usePlatformData } from '@/hooks/usePlatformData';
+import { PlatformLoading, PlatformError, PlatformEmpty } from './PlatformStates';
 
-const MOCK_INVOICES = [
-  { id: 'FACT-2024-001', school: 'Lycée Excellence', amount: '250 000 F CFA', status: 'PAID', date: '2025-05-12' },
-  { id: 'FACT-2024-002', school: 'Collège Jean-Paul II', amount: '150 000 F CFA', status: 'PENDING', date: '2025-05-14' },
-];
+interface BillingData {
+  summary: { monthlyRevenue: number; pendingPayments: number; todayCollections: number; currency: string };
+  invoices: Array<{
+    id: string; school: string; amount: number; currency: string;
+    status: string; date: string; paidAt: string | null; period: string;
+  }>;
+}
 
 export default function PlatformBillingWorkspace() {
+  const { data, loading, error, refetch } = usePlatformData<BillingData>('/invoices');
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Facturation SaaS</h1>
-          <p className="text-slate-500">Gestion des factures et paiements des écoles</p>
-        </div>
-        <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-all shadow-sm">
-            <Download className="w-4 h-4" />
-            Exporter
-          </button>
-          <button className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 rounded-xl text-sm font-semibold text-white hover:bg-indigo-700 transition-all shadow-md">
-            <DollarSign className="w-4 h-4" />
-            Nouvelle Facture
-          </button>
-        </div>
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900">Facturation SaaS</h1>
+        <p className="text-slate-500">Factures et encaissements de la plateforme</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
-              <PieChart className="w-5 h-5" />
+      {loading ? <PlatformLoading label="Chargement des factures…" /> :
+       error ? <PlatformError message={error} onRetry={refetch} /> :
+       !data ? <PlatformEmpty /> : (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-5 bg-white rounded-2xl border border-slate-100 shadow-sm">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg"><DollarSign className="w-5 h-5" /></div>
+                <span className="text-sm font-medium text-slate-500">CA mensuel</span>
+              </div>
+              <div className="text-2xl font-bold text-slate-900">{formatCurrency(data.summary.monthlyRevenue)}</div>
             </div>
-            <span className="text-sm font-medium text-slate-500">Chiffre d'Affaires Mensuel</span>
-          </div>
-          <div className="text-2xl font-bold text-slate-900">12,4M F CFA</div>
-        </div>
-        <div className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-amber-50 text-amber-600 rounded-lg">
-              <CreditCard className="w-5 h-5" />
+            <div className="p-5 bg-white rounded-2xl border border-slate-100 shadow-sm">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-amber-50 text-amber-600 rounded-lg"><Clock className="w-5 h-5" /></div>
+                <span className="text-sm font-medium text-slate-500">Paiements en attente</span>
+              </div>
+              <div className="text-2xl font-bold text-slate-900">{formatCurrency(data.summary.pendingPayments)}</div>
             </div>
-            <span className="text-sm font-medium text-slate-500">Paiements en attente</span>
-          </div>
-          <div className="text-2xl font-bold text-slate-900">1,8M F CFA</div>
-        </div>
-        <div className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
-              <DollarSign className="w-5 h-5" />
+            <div className="p-5 bg-white rounded-2xl border border-slate-100 shadow-sm">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><CheckCircle2 className="w-5 h-5" /></div>
+                <span className="text-sm font-medium text-slate-500">Encaissements du jour</span>
+              </div>
+              <div className="text-2xl font-bold text-slate-900">{formatCurrency(data.summary.todayCollections)}</div>
             </div>
-            <span className="text-sm font-medium text-slate-500">Encaissements aujourd'hui</span>
           </div>
-          <div className="text-2xl font-bold text-slate-900">450K F CFA</div>
-        </div>
-      </div>
 
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-50 flex items-center justify-between">
-          <h3 className="font-bold text-slate-900">Dernières Factures</h3>
-          <div className="flex items-center gap-2">
-            <Search className="w-4 h-4 text-slate-400" />
-            <input type="text" placeholder="Rechercher..." className="text-sm bg-transparent border-none focus:ring-0" />
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+            {data.invoices.length === 0 ? <PlatformEmpty title="Aucune facture" /> : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50/50 border-b border-slate-100">
+                      <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">École</th>
+                      <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Montant</th>
+                      <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Période</th>
+                      <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Statut</th>
+                      <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {data.invoices.map((inv) => (
+                      <tr key={inv.id} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="px-6 py-4 font-bold text-slate-900">{inv.school}</td>
+                        <td className="px-6 py-4 text-sm font-bold text-slate-900">{formatCurrency(inv.amount)}</td>
+                        <td className="px-6 py-4 text-xs text-slate-600">{inv.period}</td>
+                        <td className="px-6 py-4">
+                          {inv.status === 'PAID' ? (
+                            <span className="px-2.5 py-1 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-bold uppercase">Payée</span>
+                          ) : (
+                            <span className="px-2.5 py-1 bg-amber-100 text-amber-700 rounded-full text-[10px] font-bold uppercase">En attente</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-xs text-slate-600">{new Date(inv.date).toLocaleDateString('fr-FR')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        </div>
-        <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-        <table className="w-full text-left">
-          <thead>
-            <tr className="bg-slate-50/50 text-xs font-bold text-slate-500 uppercase tracking-wider">
-              <th className="px-6 py-4">N° Facture</th>
-              <th className="px-6 py-4">École</th>
-              <th className="px-6 py-4">Montant</th>
-              <th className="px-6 py-4">Statut</th>
-              <th className="px-6 py-4">Date</th>
-              <th className="px-6 py-4 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-50">
-            {MOCK_INVOICES.map((inv) => (
-              <tr key={inv.id} className="hover:bg-slate-50/30 transition-colors">
-                <td className="px-6 py-4 text-sm font-mono font-bold text-slate-900">{inv.id}</td>
-                <td className="px-6 py-4 text-sm text-slate-700">{inv.school}</td>
-                <td className="px-6 py-4 text-sm font-bold text-slate-900">{inv.amount}</td>
-                <td className="px-6 py-4">
-                  <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
-                    inv.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                  }`}>
-                    {inv.status}
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-xs text-slate-500">{inv.date}</td>
-                <td className="px-6 py-4 text-right">
-                  <div className="flex items-center justify-end gap-2">
-                    <button className="p-2 text-slate-400 hover:text-indigo-600 transition-colors">
-                      <Download className="w-4 h-4" />
-                    </button>
-                    <button className="p-2 text-slate-400 hover:text-slate-600 transition-colors">
-                      <MoreVertical className="w-4 h-4" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 }

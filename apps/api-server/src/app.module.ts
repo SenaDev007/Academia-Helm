@@ -61,6 +61,7 @@ import { NotificationModule } from './notifications/notification.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { GeneralModule } from './modules/general/general.module';
 import { ModulesModule } from './modules/modules.module';
+import { PlatformModule } from './platform/platform.module';
 import { ContextModule } from './common/context/context.module';
 import { ContextModule as TenantContextModule } from './context/context.module';
 import { SynthesisModule } from './modules/synthesis/synthesis.module';
@@ -215,7 +216,10 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     
     // Modules module
     ModulesModule,
-    
+
+    // Platform back-office module (admin.academiahelm.com — données réelles DB)
+    PlatformModule,
+
     // Context module (DOIT être après ModulesModule, SchoolLevelsModule, TenantsModule)
     ContextModule,
     

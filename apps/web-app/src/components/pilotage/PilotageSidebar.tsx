@@ -54,10 +54,12 @@ import {
   PieChart,
   BarChart3,
   School,
+  Shield,
 } from 'lucide-react';
 import type { User } from '@/types';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { useEnabledFeatureCodes } from '@/hooks/useEnabledFeatureCodes';
+import { useAdminSubdomain, getAdminBackOfficeUrl } from '@/hooks/useAdminSubdomain';
 import { getPortalForRole, getVisibleModulesForRole } from '@/lib/auth/role-portal-map';
 
 interface SidebarSchoolIdentity {
@@ -376,7 +378,13 @@ export default function PilotageSidebar({
   const isPlatformOwner =
     user?.role === 'PLATFORM_OWNER' ||
     user?.role === 'PLATFORM_SUPER_ADMIN';
-  const isPlatformPortal = user?.portal === 'PLATFORM' || isPlatformOwner;
+  // Les modules /app/platform/* (back-office global Academia Helm) ne sont
+  // accessibles QUE via admin.academiahelm.com. Sur tout autre sous-domaine
+  // (y compris le domaine principal), ils sont masqués de la sidebar.
+  // Un lien "Back-Office Academia Helm" est proposé en bas de sidebar pour
+  // permettre aux platform owners de basculer vers admin.academiahelm.com.
+  const isAdminSubdomain = useAdminSubdomain();
+  const isPlatformPortal = (user?.portal === 'PLATFORM' || isPlatformOwner) && isAdminSubdomain;
 
   // Module Général (Direction uniquement)
   const generalModule = isSuperDirector
@@ -642,6 +650,26 @@ export default function PilotageSidebar({
 
         {/* ── Bottom Links ── */}
         <div className="mt-auto pt-3 border-t border-white/[0.06]">
+          {/* Back-Office Academia Helm (admin.academiahelm.com) — visible uniquement
+              pour les platform owners qui ne sont PAS déjà sur le sous-domaine admin. */}
+          {isPlatformOwner && !isAdminSubdomain && (
+            <a
+              href={typeof window !== 'undefined' ? getAdminBackOfficeUrl('/app/platform') : '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={onCloseMobileDrawer}
+              className="group flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-gold-300/90 hover:bg-gold-500/10 hover:text-gold-200 border border-gold-500/20 mb-1"
+              title={!effectiveOpen ? 'Back-Office Academia Helm (admin.academiahelm.com)' : undefined}
+            >
+              <Shield className="w-[18px] h-[18px] flex-shrink-0 transition-transform duration-200 group-hover:scale-110" />
+              {effectiveOpen && (
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">Back-Office Academia Helm</div>
+                  <div className="text-[9px] text-gold-400/60 uppercase tracking-wider">admin.academiahelm.com</div>
+                </div>
+              )}
+            </a>
+          )}
           {/* Visiter le site public */}
           <Link
             href={typeof window !== 'undefined' ? getLandingPageUrlFromApp() : '/'}

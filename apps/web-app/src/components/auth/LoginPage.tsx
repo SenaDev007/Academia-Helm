@@ -234,6 +234,26 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   const tenantIdForApi = tenantIdFromUrl || tenantSlug;
   const redirectPath = searchParams?.get('redirect') || '/app';
 
+  // ── Mode "admin subdomain" : l'utilisateur vient d'être redirigé depuis ──
+  // admin.academiahelm.com (cf. middleware). Après une connexion réussie en tant
+  // que PLATFORM_OWNER, on le renvoie vers admin.academiahelm.com${redirectPath}
+  // au lieu de rester sur le domaine principal.
+  const adminRedirectRequested = searchParams?.get('admin') === '1';
+  const maybeRedirectToAdminSubdomain = (): boolean => {
+    if (!adminRedirectRequested) return false;
+    if (typeof window === 'undefined') return false;
+    const host = window.location.hostname || '';
+    // Construire l'URL admin.<parent-domain>
+    const parts = host.split('.');
+    if (parts.length < 2) return false;
+    const parentDomain = parts.slice(-2).join('.');
+    const protocol = window.location.protocol;
+    const adminUrl = `${protocol}//admin.${parentDomain}${redirectPath}`;
+    markFreshLogin();
+    window.location.href = adminUrl;
+    return true;
+  };
+
   // ── Access context detection (subdomain vs main domain) ──
   const [accessContext, setAccessContext] = useState<AccessContext>('main-domain');
 
@@ -550,6 +570,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
         portalType: 'PLATFORM',
       });
       markFreshLogin();
+      if (maybeRedirectToAdminSubdomain()) return;
       window.location.href = redirectUrl;
       return;
     }
@@ -584,6 +605,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     if (!resolvedSlug && !resolvedTenantId) {
       const mainDomain = getAppBaseUrl();
       markFreshLogin();
+      if (maybeRedirectToAdminSubdomain()) return;
       window.location.href = `${mainDomain}${redirectPath}`;
       return;
     }
@@ -595,6 +617,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       portalType: 'PLATFORM',
     });
     markFreshLogin();
+    if (maybeRedirectToAdminSubdomain()) return;
     window.location.href = redirectUrl;
   };
 
@@ -674,6 +697,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       if (resolvedTenantId) url.searchParams.set('tenant_id', resolvedTenantId);
       if (portalType) url.searchParams.set('portal', portalType);
       markFreshLogin();
+      if (maybeRedirectToAdminSubdomain()) return;
       window.location.href = url.toString();
     }
   };
@@ -744,6 +768,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
         portalType: 'PLATFORM',
       });
       markFreshLogin();
+      if (maybeRedirectToAdminSubdomain()) return;
       window.location.href = redirectUrl;
       return;
     }

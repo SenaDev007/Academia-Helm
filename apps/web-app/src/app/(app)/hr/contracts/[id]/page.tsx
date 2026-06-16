@@ -35,6 +35,15 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
   DELETED:    { label: 'Supprimé',            color: '#6b7280', bg: '#f3f4f6', border: '#e5e7eb', icon: AlertCircle },
 };
 
+// Defensive fallback so a new/unexpected status never crashes the page
+const STATUS_FALLBACK: { label: string; color: string; bg: string; border: string; icon: any } = {
+  label: 'Inconnu',
+  color: '#92400e',
+  bg: '#fef3c7',
+  border: '#fde68a',
+  icon: AlertCircle,
+};
+
 export default function ContractDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -168,8 +177,8 @@ export default function ContractDetailPage() {
     );
   }
 
-  const status = STATUS_CONFIG[contract.status] || STATUS_CONFIG.PENDING;
-  const StatusIcon = status.icon;
+  const status = STATUS_CONFIG[contract.status] || STATUS_CONFIG.PENDING || STATUS_FALLBACK;
+  const StatusIcon = status?.icon || AlertCircle;
   const pdfUrl = (contract.terms as any)?.pdfUrl;
   const isSigned = !!contract.signedAt;
   const contractTypeLabel = CONTRACT_TYPE_LABELS[contract.contractType] || contract.contractType;

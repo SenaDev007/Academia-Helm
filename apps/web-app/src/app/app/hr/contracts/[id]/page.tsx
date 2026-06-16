@@ -27,9 +27,21 @@ const CONTRACT_TYPE_LABELS: Record<string, string> = {
 };
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; border: string; icon: any }> = {
-  ACTIVE:     { label: 'En vigueur',  color: '#166534', bg: '#dcfce7', border: '#bbf7d0', icon: CheckCircle },
-  EXPIRED:    { label: 'Expiré',      color: '#475569', bg: '#f1f5f9', border: '#e2e8f0', icon: Clock },
-  TERMINATED: { label: 'Résilié',     color: '#991b1b', bg: '#fee2e2', border: '#fecaca', icon: AlertCircle },
+  DRAFT:      { label: 'Brouillon',                       color: '#6b7280', bg: '#f3f4f6', border: '#e5e7eb', icon: FileText },
+  PENDING:    { label: 'En attente de signature',         color: '#92400e', bg: '#fef3c7', border: '#fde68a', icon: Clock },
+  ACTIVE:     { label: 'En vigueur',                      color: '#166534', bg: '#dcfce7', border: '#bbf7d0', icon: CheckCircle },
+  EXPIRED:    { label: 'Expiré',                          color: '#475569', bg: '#f1f5f9', border: '#e2e8f0', icon: Clock },
+  TERMINATED: { label: 'Résilié',                         color: '#991b1b', bg: '#fee2e2', border: '#fecaca', icon: AlertCircle },
+  DELETED:    { label: 'Supprimé',                        color: '#6b7280', bg: '#f3f4f6', border: '#e5e7eb', icon: AlertCircle },
+};
+
+// Defensive fallback so a new/unexpected status never crashes the page
+const STATUS_FALLBACK: { label: string; color: string; bg: string; border: string; icon: any } = {
+  label: 'Inconnu',
+  color: '#92400e',
+  bg: '#fef3c7',
+  border: '#fde68a',
+  icon: AlertCircle,
 };
 
 export default function ContractDetailPage() {
@@ -165,8 +177,8 @@ export default function ContractDetailPage() {
     );
   }
 
-  const status = STATUS_CONFIG[contract.status] || STATUS_CONFIG.PENDING;
-  const StatusIcon = status.icon;
+  const status = STATUS_CONFIG[contract.status] || STATUS_CONFIG.PENDING || STATUS_FALLBACK;
+  const StatusIcon = status?.icon || AlertCircle;
   const pdfUrl = (contract.terms as any)?.pdfUrl;
   const isSigned = !!contract.signedAt;
   const contractTypeLabel = CONTRACT_TYPE_LABELS[contract.contractType] || contract.contractType;

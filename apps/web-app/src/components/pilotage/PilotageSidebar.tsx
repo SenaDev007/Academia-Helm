@@ -409,32 +409,13 @@ export default function PilotageSidebar({
 
   const sidebarContent = (
     <div className="flex flex-col h-full">
-      {/* ── School Identity Header ── */}
+      {/* ── Toggle only (school identity is already shown in the top header) ── */}
       <div className="px-4 py-4 border-b border-white/[0.08]">
         {effectiveOpen ? (
-          <div className="flex items-center space-x-3">
-            {schoolIdentity?.logoUrl ? (
-              <Image
-                src={schoolIdentity.logoUrl}
-                alt={schoolIdentity.schoolName || 'École'}
-                width={36}
-                height={36}
-                className="rounded-lg object-cover ring-1 ring-white/10 flex-shrink-0"
-              />
-            ) : (
-              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-gold-400 to-gold-600 flex items-center justify-center shadow-lg shadow-gold-500/20 flex-shrink-0">
-                <School className="w-5 h-5 text-blue-900" />
-              </div>
-            )}
-            <div className="min-w-0">
-              <h1 className="text-[13px] font-bold text-white tracking-tight leading-none truncate">
-                {schoolIdentity?.schoolAcronym || schoolIdentity?.schoolName || 'Mon École'}
-              </h1>
-            </div>
-            {/* Toggle button on desktop */}
+          <div className="flex items-center justify-end">
             <button
               onClick={onToggle}
-              className="hidden lg:flex ml-auto p-1.5 rounded-lg hover:bg-white/[0.08] transition-all duration-200 text-blue-300/60 hover:text-white min-h-[36px] min-w-[36px] items-center justify-center"
+              className="hidden lg:flex p-1.5 rounded-lg hover:bg-white/[0.08] transition-all duration-200 text-blue-300/60 hover:text-white min-h-[36px] min-w-[36px] items-center justify-center"
               aria-label="Réduire la barre latérale"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -442,22 +423,9 @@ export default function PilotageSidebar({
           </div>
         ) : (
           <div className="flex flex-col items-center">
-            {schoolIdentity?.logoUrl ? (
-              <Image
-                src={schoolIdentity.logoUrl}
-                alt={schoolIdentity.schoolName || 'École'}
-                width={36}
-                height={36}
-                className="rounded-lg object-cover ring-1 ring-white/10"
-              />
-            ) : (
-              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-gold-400 to-gold-600 flex items-center justify-center shadow-lg shadow-gold-500/20">
-                <School className="w-5 h-5 text-blue-900" />
-              </div>
-            )}
             <button
               onClick={onToggle}
-              className="hidden lg:flex mt-3 p-1.5 rounded-lg hover:bg-white/[0.08] transition-all duration-200 text-blue-300/60 hover:text-white min-h-[36px] min-w-[36px] items-center justify-center"
+              className="hidden lg:flex p-1.5 rounded-lg hover:bg-white/[0.08] transition-all duration-200 text-blue-300/60 hover:text-white min-h-[36px] min-w-[36px] items-center justify-center"
               aria-label="Étendre la barre latérale"
             >
               <ChevronRight className="w-4 h-4" />

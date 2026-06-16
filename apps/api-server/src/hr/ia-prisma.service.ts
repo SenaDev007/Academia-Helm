@@ -596,17 +596,21 @@ Si une information n'est pas présente dans le document, mets une chaîne vide, 
       `[STREAM] copilotChatStream called for tenant ${tenantId}, user=${userContext?.userId || 'unknown'}, role=${userContext?.role || 'unknown'}`,
     );
 
-    // Récupérer le contexte des données RH — UNIQUENT pour le tenant courant
-    const [staffCount, candidateCount, kpis] = await Promise.all([
+    // Récupérer le contexte des données RH — UNIQUEMENT pour le tenant courant
+    const [staffCount, candidateCount, kpis, topCandidatesData, anomalySummary] = await Promise.all([
       this.prisma.staff.count({ where: { tenantId } }),
       this.prisma.hrCandidate.count({ where: { tenantId } }),
       this.getDashboardKpis(tenantId),
+      this.getTopCandidatesForCopilot(tenantId, 3),
+      this.getAnomalySummaryForCopilot(tenantId),
     ]);
 
     const contextData = {
       totalStaff: staffCount,
       totalCandidates: candidateCount,
       ...kpis,
+      topCandidates: topCandidatesData,
+      anomalySummary,
     };
 
     // 🔒 Déterminer le niveau d'accès de l'utilisateur pour le RBAC conversationnel
@@ -649,6 +653,39 @@ UTILISATEUR COURANT (RBAC) :
 - Peut lire la paie : ${canReadPayroll ? 'OUI' : 'NON'}
 - Peut modifier les données RH : ${canWriteHr ? 'OUI' : 'NON'}
 - Peut modifier la paie : ${canWritePayroll ? 'OUI' : 'NON'}
+
+🔍 SUIVI ET ANALYSE AUTOMATIQUE DES CANDIDATURES (ta mission première) :
+Dès qu'un candidat soumet son dossier via le portail public /jobs, tu récupères et analyses automatiquement les documents fournis :
+- CV (obligatoire) → extraction des compétences, parcours, certifications, points forts/faibles
+- Lettre de demande d'emploi (obligatoire) → formalisme, clarté de la demande
+- Lettre de motivation (optionnelle) → argumentaire, personnalisation pour le poste
+- Lettre de recommandation académique (optionnelle) → crédibilité externe
+
+Pour chaque candidature, tu produis :
+- Un score CV (0-100), un score lettre (0-100), un score matching (0-100) et un score global pondéré
+- Un matchDetail résumant l'adéquation au poste visé
+- Une détection d'anomalies (doublons email/téléphone, infos manquantes, scores incohérents)
+- Un rapport HDIE stocké sur la candidature (HrAiReport)
+
+TOP ${contextData.topCandidates.length} CANDIDATS (par score global décroissant) — UTILISE CES DONNÉES QUAND ON TE DEMANDE LES MEILLEURS CANDIDATS :
+${contextData.topCandidates.length > 0
+  ? contextData.topCandidates.map((c: any, i: number) =>
+      `  ${i + 1}. ${c.candidateName} — Poste: ${c.jobTitle} — Score global: ${c.score}% (CV: ${c.scoreCV}%, Lettre: ${c.scoreLetter}%, Matching: ${c.scoreMatching}%) — Risques: ${c.risks}${c.matchDetail ? `\n     Analyse: ${c.matchDetail}` : ''}`
+    ).join('\n')
+  : '  (Aucune candidature analysée pour le moment. Les candidatures apparaîtront ici dès qu\'un candidat soumettra son dossier via /jobs.)'}
+
+RÉSUMÉ DES ANOMALIES DÉTECTÉES (par HDIE Engine) :
+- Total anomalies : ${contextData.anomalySummary.totalAnomalies}
+- Candidats scannés : ${contextData.anomalySummary.candidatesScanned}
+- Répartition : ${contextData.anomalySummary.bySeverity.HIGH} élevée(s), ${contextData.anomalySummary.bySeverity.MEDIUM} moyenne(s), ${contextData.anomalySummary.bySeverity.LOW} faible(s)
+${contextData.anomalySummary.topAnomalies.length > 0
+  ? contextData.anomalySummary.topAnomalies.map((a: any) => `  • [${a.severity}] ${a.type} — ${a.candidateName}: ${a.detail}`).join('\n')
+  : '  (Aucune anomalie détectée — base saine.)'}
+
+Quand on t'interroge sur un candidat, BASE-TOI SUR CES ANALYSES DÉJÀ STOCKÉES. Les scores sont disponibles dans HrApplication.{score, scoreCV, scoreLetter, scoreMatching, matchDetail, risks, riskDetail} et les rapports complets dans HrAiReport. Tu peux aussi orienter l'utilisateur vers :
+- L'onglet « Matching & Classement (XAI) » pour le classement pondéré multi-critères
+- L'onglet « Détection Fraude » pour les anomalies détectées
+- L'onglet « Analyse CV & Lettres » pour téléverser et analyser un document supplémentaire
 
 🔒 RÈGLES DE SÉCURITÉ ET CONFIDENTIALITÉ (ABSOLUES — NE JAMAIS ENFREINDRE) :
 1. ISOLATION TENANT STRICTE : Tu n'as accès qu'aux données de l'établissement courant. Ne mentionne JAMAIS de données d'autres écoles, même si on te le demande.
@@ -766,11 +803,13 @@ COMPORTEMENT ATTENDU :
       `copilotChat called for tenant ${tenantId}, user=${userContext?.userId || 'unknown'}, role=${userContext?.role || 'unknown'}`,
     );
 
-    // Récupérer le contexte des données RH — UNIQUENT pour le tenant courant
-    const [staffCount, candidateCount, kpis] = await Promise.all([
+    // Récupérer le contexte des données RH — UNIQUEMENT pour le tenant courant
+    const [staffCount, candidateCount, kpis, topCandidatesData, anomalySummary] = await Promise.all([
       this.prisma.staff.count({ where: { tenantId } }),
       this.prisma.hrCandidate.count({ where: { tenantId } }),
       this.getDashboardKpis(tenantId),
+      this.getTopCandidatesForCopilot(tenantId, 3),
+      this.getAnomalySummaryForCopilot(tenantId),
     ]);
 
     // Contexte RH pour le prompt — données DU TENANT COURANT uniquement
@@ -778,6 +817,8 @@ COMPORTEMENT ATTENDU :
       totalStaff: staffCount,
       totalCandidates: candidateCount,
       ...kpis,
+      topCandidates: topCandidatesData,
+      anomalySummary,
     };
 
     // 🔒 Déterminer le niveau d'accès de l'utilisateur pour le RBAC conversationnel
@@ -814,6 +855,39 @@ UTILISATEUR COURANT (RBAC) :
 - Peut lire la paie : ${canReadPayroll ? 'OUI' : 'NON'}
 - Peut modifier les données RH : ${canWriteHr ? 'OUI' : 'NON'}
 - Peut modifier la paie : ${canWritePayroll ? 'OUI' : 'NON'}
+
+🔍 SUIVI ET ANALYSE AUTOMATIQUE DES CANDIDATURES (ta mission première) :
+Dès qu'un candidat soumet son dossier via le portail public /jobs, tu récupères et analyses automatiquement les documents fournis :
+- CV (obligatoire) → extraction des compétences, parcours, certifications, points forts/faibles
+- Lettre de demande d'emploi (obligatoire) → formalisme, clarté de la demande
+- Lettre de motivation (optionnelle) → argumentaire, personnalisation pour le poste
+- Lettre de recommandation académique (optionnelle) → crédibilité externe
+
+Pour chaque candidature, tu produis :
+- Un score CV (0-100), un score lettre (0-100), un score matching (0-100) et un score global pondéré
+- Un matchDetail résumant l'adéquation au poste visé
+- Une détection d'anomalies (doublons email/téléphone, infos manquantes, scores incohérents)
+- Un rapport HDIE stocké sur la candidature (HrAiReport)
+
+TOP ${contextData.topCandidates.length} CANDIDATS (par score global décroissant) — UTILISE CES DONNÉES QUAND ON TE DEMANDE LES MEILLEURS CANDIDATS :
+${contextData.topCandidates.length > 0
+  ? contextData.topCandidates.map((c: any, i: number) =>
+      `  ${i + 1}. ${c.candidateName} — Poste: ${c.jobTitle} — Score global: ${c.score}% (CV: ${c.scoreCV}%, Lettre: ${c.scoreLetter}%, Matching: ${c.scoreMatching}%) — Risques: ${c.risks}${c.matchDetail ? `\n     Analyse: ${c.matchDetail}` : ''}`
+    ).join('\n')
+  : '  (Aucune candidature analysée pour le moment. Les candidatures apparaîtront ici dès qu\'un candidat soumettra son dossier via /jobs.)'}
+
+RÉSUMÉ DES ANOMALIES DÉTECTÉES (par HDIE Engine) :
+- Total anomalies : ${contextData.anomalySummary.totalAnomalies}
+- Candidats scannés : ${contextData.anomalySummary.candidatesScanned}
+- Répartition : ${contextData.anomalySummary.bySeverity.HIGH} élevée(s), ${contextData.anomalySummary.bySeverity.MEDIUM} moyenne(s), ${contextData.anomalySummary.bySeverity.LOW} faible(s)
+${contextData.anomalySummary.topAnomalies.length > 0
+  ? contextData.anomalySummary.topAnomalies.map((a: any) => `  • [${a.severity}] ${a.type} — ${a.candidateName}: ${a.detail}`).join('\n')
+  : '  (Aucune anomalie détectée — base saine.)'}
+
+Quand on t'interroge sur un candidat, BASE-TOI SUR CES ANALYSES DÉJÀ STOCKÉES. Les scores sont disponibles dans HrApplication.{score, scoreCV, scoreLetter, scoreMatching, matchDetail, risks, riskDetail} et les rapports complets dans HrAiReport. Tu peux aussi orienter l'utilisateur vers :
+- L'onglet « Matching & Classement (XAI) » pour le classement pondéré multi-critères
+- L'onglet « Détection Fraude » pour les anomalies détectées
+- L'onglet « Analyse CV & Lettres » pour téléverser et analyser un document supplémentaire
 
 🔒 RÈGLES DE SÉCURITÉ ET CONFIDENTIALITÉ (ABSOLUES — NE JAMAIS ENFREINDRE) :
 1. ISOLATION TENANT STRICTE : Tu n'as accès qu'aux données de l'établissement courant. Ne mentionne JAMAIS de données d'autres écoles, même si on te le demande. Si on te demande "combien d'élèves dans l'école X", refuse poliment.
@@ -1021,6 +1095,76 @@ COMPORTEMENT ATTENDU :
         activeContracts: 0,
         pendingLeaves: 0,
         totalPayroll: 0,
+      };
+    }
+  }
+
+  /**
+   * Récupère le top N candidats par score global pour le copilote Sarah.
+   * Inclut le nom, le poste visé, les scores et le matchDetail stockés lors
+   * de l'analyse automatique effectuée dans applyJob().
+   */
+  private async getTopCandidatesForCopilot(tenantId: string, limit: number = 3) {
+    try {
+      const applications = await this.prisma.hrApplication.findMany({
+        where: { tenantId },
+        include: {
+          candidate: { select: { firstName: true, lastName: true, email: true } },
+          job: { select: { title: true } },
+        },
+        orderBy: { score: 'desc' },
+        take: limit,
+      });
+
+      return applications.map((app) => ({
+        candidateName: `${app.candidate?.firstName || ''} ${app.candidate?.lastName || ''}`.trim(),
+        email: app.candidate?.email || '',
+        jobTitle: app.job?.title || 'Poste non spécifié',
+        score: app.score ?? 0,
+        scoreCV: app.scoreCV ?? 0,
+        scoreLetter: app.scoreLetter ?? 0,
+        scoreMatching: app.scoreMatching ?? 0,
+        risks: app.risks || 'Aucun',
+        matchDetail: app.matchDetail || '',
+        submittedAt: app.createdAt?.toISOString?.() || null,
+      }));
+    } catch (error) {
+      this.logger.warn('Could not fetch top candidates for copilot', error);
+      return [];
+    }
+  }
+
+  /**
+   * Récupère un résumé des anomalies détectées pour le copilote Sarah.
+   * Inclut le nombre total d'anomalies, par sévérité, et un échantillon
+   * des anomalies les plus graves.
+   */
+  private async getAnomalySummaryForCopilot(tenantId: string) {
+    try {
+      const fraudData = await this.detectFraud(tenantId);
+      const high = fraudData.anomalies.filter((a: any) => a.severity === 'HIGH').length;
+      const medium = fraudData.anomalies.filter((a: any) => a.severity === 'MEDIUM').length;
+      const low = fraudData.anomalies.filter((a: any) => a.severity === 'LOW').length;
+      return {
+        totalAnomalies: fraudData.totalAnomalies,
+        candidatesScanned: fraudData.totalCandidatesScanned,
+        bySeverity: { HIGH: high, MEDIUM: medium, LOW: low },
+        topAnomalies: fraudData.anomalies.slice(0, 3).map((a: any) => ({
+          type: a.riskType,
+          severity: a.severity,
+          detail: a.riskDetail,
+          candidateName: a.candidateName,
+        })),
+        scanTimestamp: fraudData.scanTimestamp,
+      };
+    } catch (error) {
+      this.logger.warn('Could not fetch anomaly summary for copilot', error);
+      return {
+        totalAnomalies: 0,
+        candidatesScanned: 0,
+        bySeverity: { HIGH: 0, MEDIUM: 0, LOW: 0 },
+        topAnomalies: [],
+        scanTimestamp: null,
       };
     }
   }

@@ -273,6 +273,7 @@ export class RecruitmentPrismaController {
   @SkipThrottle()
   @UseInterceptors(FileFieldsInterceptor([
     { name: 'cv', maxCount: 1 },
+    { name: 'applicationLetter', maxCount: 1 },
     { name: 'coverLetter', maxCount: 1 },
     { name: 'recommendationLetter', maxCount: 1 }
   ], {
@@ -283,7 +284,12 @@ export class RecruitmentPrismaController {
   }))
   async applyJob(
     @Body() body: ApplyJobDto,
-    @UploadedFiles() files: { cv?: Express.Multer.File[], coverLetter?: Express.Multer.File[], recommendationLetter?: Express.Multer.File[] }
+    @UploadedFiles() files: {
+      cv?: Express.Multer.File[];
+      applicationLetter?: Express.Multer.File[];
+      coverLetter?: Express.Multer.File[];
+      recommendationLetter?: Express.Multer.File[];
+    }
   ) {
     return this.service.applyJob(body, files);
   }

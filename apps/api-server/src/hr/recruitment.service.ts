@@ -687,10 +687,12 @@ export class RecruitmentPrismaService {
 
         if (candidate) {
           const hasCV = candidate.documents?.some(d => d.documentType === 'CV') ?? false;
+          const hasApplicationLetter = candidate.documents?.some(d => d.documentType === 'APPLICATION_LETTER') ?? false;
           const hasLetter = candidate.documents?.some(d => d.documentType === 'COVER_LETTER') ?? false;
           const skills = candidate.academicProfile?.subjects ?? [];
           const cvName = hasCV ? 'CV téléchargé' : 'Non fourni';
-          const letterName = hasLetter ? 'Lettre téléchargée' : 'Non fournie';
+          const applicationLetterName = hasApplicationLetter ? 'Lettre de demande d\'emploi téléchargée' : '';
+          const letterName = hasLetter ? 'Lettre de motivation téléchargée' : 'Non fournie';
 
           // Parse experiences from pedagogicalExperience JSON
           let experiences: any[] = [];
@@ -703,7 +705,7 @@ export class RecruitmentPrismaService {
             }
           } catch {}
 
-          const heuristic = this.generateHeuristicScores(hasCV, hasLetter, cvName, letterName, skills, experiences, education);
+          const heuristic = this.generateHeuristicScores(hasCV, hasApplicationLetter, hasLetter, cvName, applicationLetterName, letterName, skills, experiences, education);
           return this.prisma.hrApplication.create({
             data: {
               ...prismaCreateDefaults(),
@@ -1549,12 +1551,14 @@ export class RecruitmentPrismaService {
 
     // Generate scores and detail reports based on files
     const hasCV = files?.cv && files.cv.length > 0;
+    const hasApplicationLetter = files?.applicationLetter && files.applicationLetter.length > 0;
     const hasLetter = files?.coverLetter && files.coverLetter.length > 0;
 
     // ─── AI-powered scoring via OpenRouter HDIE ────────────────────────────
     // If OpenRouter is configured, use real AI analysis. Otherwise, fall back
     // to heuristic scoring based on the presence of documents and profile data.
     const cvName = hasCV ? files.cv[0].originalname : 'Profil LinkedIn / Candidature Simplifiée';
+    const applicationLetterName = hasApplicationLetter ? files.applicationLetter[0].originalname : '';
     const letterName = hasLetter ? files.coverLetter[0].originalname : 'Pitch de motivation intégré';
 
     let scoreCV: number;
@@ -1583,7 +1587,8 @@ export class RecruitmentPrismaService {
           education.length > 0 ? `Formation: ${education.map(e => e.degree || e.diploma || '').filter(Boolean).join(', ')}` : null,
           pitch ? `Motivation: ${pitch.substring(0, 300)}` : null,
           hasCV ? `CV fourni: ${cvName}` : 'CV non fourni',
-          hasLetter ? `Lettre de motivation fournie: ${letterName}` : 'Lettre non fournie',
+          hasApplicationLetter ? `Lettre de demande d'emploi fournie: ${applicationLetterName}` : null,
+          hasLetter ? `Lettre de motivation fournie: ${letterName}` : 'Lettre de motivation non fournie',
         ].filter(Boolean).join('\n');
 
         const jobContext = job
@@ -1601,16 +1606,16 @@ export class RecruitmentPrismaService {
         }>(
           `Analyse ce profil de candidat pour un poste dans l'enseignement et évalue son adéquation.\n\nPROFIL DU CANDIDAT:\n${candidateProfile}\n\nPOSTE VISÉ:\n${jobContext}`,
           `Tu es le moteur HDIE (Helm Document Intelligence Engine) d'Academia Helm. Tu analyses des candidatures pour des postes dans l'enseignement.
-Tu évalues l'adéquation du candidat au poste en te basant sur les informations fournies.
+Tu évalues l'adéquation du candidat au poste en te basant sur les informations fournies, y compris le CV, la lettre de demande d'emploi (courrier formel de candidature) et la lettre de motivation (lettre d'argumentation personnelle).
 
 RÈGLES DE SCORING:
 - scoreCV (0-100): Qualité et pertinence du CV/Profil par rapport au poste. Si pas de CV, base-toi sur les compétences déclarées (max 70).
-- scoreLetter (0-100): Qualité et pertinence de la lettre/motivation. Si pas de lettre mais un pitch, évalue le pitch (max 75). Si rien, max 50.
+- scoreLetter (0-100): Qualité globale des lettres fournies (lettre de demande d'emploi ET lettre de motivation). Si une seule lettre est fournie, évalue celle-ci (max 80). Si les deux sont fournies, valorise la complétude (jusqu'à 100). Si aucune lettre mais un pitch, évalue le pitch (max 60). Si rien, max 40.
 - scoreMatching (0-100): Adéquation globale du profil avec les exigences du poste.
 - matchDetail: Résumé en 2-3 phrases de l'analyse d'adéquation.
 - risks: "Aucun", "Faible", "Moyen", ou "Élevé" selon les incohérences détectées.
 - riskDetail: Description du risque si risks !== "Aucun", sinon null.
-- analysis: Analyse détaillée du profil en 3-5 phrases.
+- analysis: Analyse détaillée du profil en 3-5 phrases couvrant le CV, la lettre de demande d'emploi et la lettre de motivation.
 
 Réponds UNIQUEMENT en JSON valide.`,
           'HDIE',
@@ -1628,16 +1633,16 @@ Réponds UNIQUEMENT en JSON valide.`,
         } else {
           // AI call succeeded but JSON parsing failed — use heuristic fallback
           this.logger.warn('HDIE AI response was not valid JSON, using heuristic scores');
-          ({ scoreCV, scoreLetter, scoreMatching, score, matchDetail, risks, riskDetail } = this.generateHeuristicScores(hasCV, hasLetter, cvName, letterName, skills, experiences, education));
+          ({ scoreCV, scoreLetter, scoreMatching, score, matchDetail, risks, riskDetail } = this.generateHeuristicScores(hasCV, hasApplicationLetter, hasLetter, cvName, applicationLetterName, letterName, skills, experiences, education));
         }
       } catch (aiErr: any) {
         // AI call failed — use heuristic fallback
         this.logger.warn(`HDIE AI analysis failed: ${aiErr.message}, using heuristic scores`);
-        ({ scoreCV, scoreLetter, scoreMatching, score, matchDetail, risks, riskDetail } = this.generateHeuristicScores(hasCV, hasLetter, cvName, letterName, skills, experiences, education));
+        ({ scoreCV, scoreLetter, scoreMatching, score, matchDetail, risks, riskDetail } = this.generateHeuristicScores(hasCV, hasApplicationLetter, hasLetter, cvName, applicationLetterName, letterName, skills, experiences, education));
       }
     } else {
       // OpenRouter not configured — use heuristic scoring
-      ({ scoreCV, scoreLetter, scoreMatching, score, matchDetail, risks, riskDetail } = this.generateHeuristicScores(hasCV, hasLetter, cvName, letterName, skills, experiences, education));
+      ({ scoreCV, scoreLetter, scoreMatching, score, matchDetail, risks, riskDetail } = this.generateHeuristicScores(hasCV, hasApplicationLetter, hasLetter, cvName, applicationLetterName, letterName, skills, experiences, education));
     }
 
     // Calculate final composite score
@@ -1648,9 +1653,11 @@ Réponds UNIQUEMENT en JSON valide.`,
     // transaction timeouts (P2024) or internal errors when the storage backend
     // (R2/S3/Vercel Blob) was slow or misconfigured.
     let cvPath: string | null = null;
+    let applicationLetterPath: string | null = null;
     let letterPath: string | null = null;
     let recoPath: string | null = null;
     let cvFile: Express.Multer.File | null = null;
+    let applicationLetterFile: Express.Multer.File | null = null;
     let letterFile: Express.Multer.File | null = null;
     let recoFile: Express.Multer.File | null = null;
 
@@ -1662,6 +1669,14 @@ Réponds UNIQUEMENT en JSON valide.`,
           `candidate-docs/${tenantId}/pending/cv`,
         );
         this.logger.log(`CV uploaded: ${cvPath}`);
+      }
+      if (hasApplicationLetter) {
+        applicationLetterFile = files.applicationLetter[0];
+        applicationLetterPath = await this.storageService.uploadFile(
+          applicationLetterFile,
+          `candidate-docs/${tenantId}/pending/application-letter`,
+        );
+        this.logger.log(`Application letter (lettre de demande d'emploi) uploaded: ${applicationLetterPath}`);
       }
       if (hasLetter) {
         letterFile = files.coverLetter[0];
@@ -1764,6 +1779,22 @@ Réponds UNIQUEMENT en JSON valide.`,
               filePath: cvPath,
               fileSize: cvFile.size,
               mimeType: cvFile.mimetype,
+              category: 'EXPERIENCE',
+            }
+          });
+          documentRecords.push(doc);
+        }
+
+        if (applicationLetterFile && applicationLetterPath) {
+          const doc = await tx.candidateDocument.create({
+            data: {
+              ...prismaCreateNoUpdatedAt(),
+              candidateId: candidate.id,
+              documentType: 'APPLICATION_LETTER',
+              fileName: applicationLetterFile.originalname,
+              filePath: applicationLetterPath,
+              fileSize: applicationLetterFile.size,
+              mimeType: applicationLetterFile.mimetype,
               category: 'EXPERIENCE',
             }
           });
@@ -1985,8 +2016,10 @@ Réponds UNIQUEMENT en JSON valide.`,
    */
   private generateHeuristicScores(
     hasCV: boolean,
+    hasApplicationLetter: boolean,
     hasLetter: boolean,
     cvName: string,
+    applicationLetterName: string,
     letterName: string,
     skills: string[],
     experiences: any[],
@@ -2006,19 +2039,22 @@ Réponds UNIQUEMENT en JSON valide.`,
     if (skills.length > 0) scoreCV += Math.min(15, skills.length * 3);
     if (experiences.length > 0) scoreCV += Math.min(10, experiences.length * 5);
 
-    // Letter score: based on presence of cover letter or pitch
+    // Letter score: based on presence of lettre de demande d'emploi AND/OR lettre de motivation
+    // Both letters contribute — having both signals a stronger application.
     let scoreLetter = 40; // base
-    if (hasLetter) scoreLetter += 30;
+    if (hasApplicationLetter) scoreLetter += 25; // lettre de demande d'emploi (required by spec)
+    if (hasLetter) scoreLetter += 15; // lettre de motivation (optional)
     if (experiences.length > 0) scoreLetter += 10;
     if (education.length > 0) scoreLetter += 10;
 
     // Matching score: overall profile completeness
     let scoreMatching = 45; // base
     if (hasCV) scoreMatching += 15;
-    if (hasLetter) scoreMatching += 10;
+    if (hasApplicationLetter) scoreMatching += 8;
+    if (hasLetter) scoreMatching += 5;
     if (skills.length >= 3) scoreMatching += 10;
     if (experiences.length > 0) scoreMatching += 10;
-    if (education.length > 0) scoreMatching += 10;
+    if (education.length > 0) scoreMatching += 7;
 
     // Clamp to 0-100
     scoreCV = Math.min(100, scoreCV);
@@ -2027,7 +2063,13 @@ Réponds UNIQUEMENT en JSON valide.`,
 
     const score = Math.round((scoreCV * 0.4) + (scoreLetter * 0.2) + (scoreMatching * 0.4));
 
-    const matchDetail = `Candidature analysée par heuristiques. CV: ${cvName}. Présentation: ${letterName}. Profil avec ${skills.length} compétence(s), ${experiences.length} expérience(s), ${education.length} formation(s).`;
+    const docsSummary = [
+      hasCV ? `CV: ${cvName}` : null,
+      hasApplicationLetter ? `Lettre de demande d'emploi: ${applicationLetterName}` : null,
+      hasLetter ? `Lettre de motivation: ${letterName}` : null,
+    ].filter(Boolean).join('. ') || 'Aucun document fourni';
+
+    const matchDetail = `Candidature analysée par heuristiques. ${docsSummary}. Profil avec ${skills.length} compétence(s), ${experiences.length} expérience(s), ${education.length} formation(s).`;
 
     const risks = 'Aucun';
     const riskDetail = null;

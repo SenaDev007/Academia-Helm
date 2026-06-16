@@ -209,7 +209,7 @@ export function CareersContent({
       case 1:
         return !!(firstName.trim() && lastName.trim() && email.trim());
       case 5:
-        return !!cvFile;
+        return !!(cvFile && applicationLetterFile);
       default:
         return true;
     }
@@ -239,6 +239,7 @@ export function CareersContent({
     setSkillInput('');
     setPitch('');
     setCvFile(null);
+    setApplicationLetterFile(null);
     setCoverFile(null);
     setRecoFile(null);
     setCurrentStep(1);
@@ -572,6 +573,7 @@ export function CareersContent({
       formData.append('pitch', pitch);
 
       if (cvFile) formData.append('cv', cvFile);
+      if (applicationLetterFile) formData.append('applicationLetter', applicationLetterFile);
       if (coverFile) formData.append('coverLetter', coverFile);
       if (recoFile) formData.append('recommendationLetter', recoFile);
 
@@ -585,7 +587,7 @@ export function CareersContent({
       if (res.ok && data) {
         setSubmitResult({
           success: true,
-          message: 'Candidature transmise avec succès ! Notre IA procède à l\'extraction sémantique et à la validation des diplômes/certifications.'
+          message: 'Candidature transmise avec succès ! Sarah, notre Assistante RH, récupère et analyse automatiquement votre CV, votre lettre de demande d\'emploi et vos pièces jointes pour évaluer votre adéquation au poste. Notre équipe RH reviendra vers vous prochainement.'
         });
         setApplicationSubmitted(true);
         // Mark this job as applied to prevent re-application
@@ -1579,27 +1581,35 @@ export function CareersContent({
                               <span className={`text-[10px] mt-1 ${cvFile ? 'text-emerald-600 font-semibold' : 'text-slate-400'}`}>{cvFile ? cvFile.name : 'PDF, DOCX — obligatoire'}</span>
                             </div>
 
-                            {/* Letter */}
+                            {/* Lettre de demande d'emploi (required) */}
+                            <div className={`border border-dashed rounded-xl p-4 flex flex-col items-center justify-center text-center relative hover:bg-slate-50 transition cursor-pointer ${applicationLetterFile ? 'border-emerald-300 bg-emerald-50/50' : 'border-slate-200'}`}>
+                              <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setApplicationLetterFile(e.target.files?.[0] || null)} className="absolute inset-0 opacity-0 cursor-pointer" />
+                              <Upload className={`h-6 w-6 mb-2 ${applicationLetterFile ? 'text-emerald-600' : 'text-[#0b2f73]'}`} />
+                              <span className="text-[10px] font-bold text-slate-700">Lettre de demande d&apos;emploi *</span>
+                              <span className={`text-[10px] mt-1 ${applicationLetterFile ? 'text-emerald-600 font-semibold' : 'text-slate-400'}`}>{applicationLetterFile ? applicationLetterFile.name : 'PDF, DOCX — obligatoire'}</span>
+                            </div>
+
+                            {/* Lettre de motivation (optional) */}
                             <div className="border border-dashed border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center text-center relative hover:bg-slate-50 transition cursor-pointer">
                               <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setCoverFile(e.target.files?.[0] || null)} className="absolute inset-0 opacity-0 cursor-pointer" />
                               <Upload className="h-6 w-6 text-[#0b2f73] mb-2" />
                               <span className="text-[10px] font-bold text-slate-700">Lettre de motivation</span>
-                              <span className="text-[10px] text-slate-400 mt-1">{coverFile ? coverFile.name : 'PDF, DOCX'}</span>
+                              <span className="text-[10px] text-slate-400 mt-1">{coverFile ? coverFile.name : 'PDF, DOCX — optionnel'}</span>
                             </div>
-                          </div>
 
-                          {/* Recommendation */}
-                          <div className="border border-dashed border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center text-center relative hover:bg-slate-50 transition cursor-pointer">
-                            <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setRecoFile(e.target.files?.[0] || null)} className="absolute inset-0 opacity-0 cursor-pointer" />
-                            <Upload className="h-6 w-6 text-[#0b2f73] mb-2" />
-                            <span className="text-[10px] font-bold text-slate-700">Lettre de recommandation académique</span>
-                            <span className="text-[10px] text-slate-400 mt-1">{recoFile ? recoFile.name : 'PDF, DOCX'}</span>
+                            {/* Lettre de recommandation (optional) */}
+                            <div className="border border-dashed border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center text-center relative hover:bg-slate-50 transition cursor-pointer">
+                              <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setRecoFile(e.target.files?.[0] || null)} className="absolute inset-0 opacity-0 cursor-pointer" />
+                              <Upload className="h-6 w-6 text-[#0b2f73] mb-2" />
+                              <span className="text-[10px] font-bold text-slate-700">Lettre de recommandation académique</span>
+                              <span className="text-[10px] text-slate-400 mt-1">{recoFile ? recoFile.name : 'PDF, DOCX — optionnel'}</span>
+                            </div>
                           </div>
 
                           {/* AI Processing notice */}
                           <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-lg flex gap-2 text-[10px] text-slate-600">
                             <Sparkles className="h-4 w-4 text-blue-600 shrink-0 mt-0.5 animate-pulse" />
-                            <p>En transmettant vos documents, le système analysERA la cohérence de vos diplômes et rédigera une note de synthèse pour la direction.</p>
+                            <p>En transmettant votre dossier (CV + lettre de demande d&apos;emploi + pièces jointes), <span className="font-semibold text-indigo-700">Sarah</span>, notre Assistante RH, récupère et analyse automatiquement vos documents : extraction des compétences, évaluation de l&apos;adéquation au poste, score de matching et détection d&apos;anomalies. Les résultats sont mis à la disposition de l&apos;équipe RH pour instruction.</p>
                           </div>
                         </motion.div>
                       )}
@@ -1629,10 +1639,10 @@ export function CareersContent({
                           <button
                             type="button"
                             onClick={handleSubmitApplication}
-                            disabled={submitting || !cvFile}
+                            disabled={submitting || !cvFile || !applicationLetterFile}
                             className="px-5 py-2.5 md:py-2 text-white rounded-lg text-xs font-bold transition hover:opacity-90 flex items-center gap-1 bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            {submitting ? 'Transmission...' : !cvFile ? 'CV requis pour soumettre' : 'Soumettre le dossier'}
+                            {submitting ? 'Transmission...' : (!cvFile || !applicationLetterFile) ? 'CV + lettre de demande requis' : 'Soumettre le dossier'}
                             <Send className="h-3 w-3" />
                           </button>
                         )}

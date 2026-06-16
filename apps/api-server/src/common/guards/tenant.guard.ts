@@ -12,10 +12,17 @@ import { RESERVED_SUBDOMAINS, isReservedSubdomain } from '../constants/reserved-
 /**
  * Guard to extract and validate tenant_id from request
  *
- * Resolves tenant from (ordre de priorité) :
- * 1. X-Tenant-ID header (explicite, priorité maximale)
- * 2. JWT token payload (tenant sélectionné via /auth/select-tenant)
- * 3. Subdomain (e.g., cspeb.academiahelm.com) — dernier recours
+ * 🔒 SÉCURITÉ MULTI-TENANT STRICTE (v2) :
+ *   - Le tenantId est PRIMORDIALEMENT résolu depuis le JWT (user.tenantId)
+ *   - Le header X-Tenant-ID est accepté UNIQUEMENT s'il correspond au tenantId du JWT
+ *     (empêche l'usurpation cross-tenant via header injecté depuis le navigateur)
+ *   - Le sous-domaine est accepté uniquement comme dernier recours, mais le JWT
+ *     reste la source de vérité pour les utilisateurs authentifiés
+ *
+ * Ordre de résolution (SÉCURISÉ) :
+ * 1. JWT token payload (tenant sélectionné via /auth/select-tenant) — SOURCE DE VÉRITÉ
+ * 2. X-Tenant-ID header — accepté SEULEMENT s'il correspond au JWT (anti-usurpation)
+ * 3. Subdomain (e.g., cspeb.academiahelm.com) — dernier recours pour routes publiques
  *
  * ⚠️ IMPORTANT: Ce guard ne doit JAMAIS être appliqué sur les routes d'authentification
  */
@@ -76,21 +83,45 @@ export class TenantGuard implements CanActivate {
     return true;
   }
 
+  /**
+   * 🔒 Extraction SÉCURISÉE du tenantId — empêche l'usurpation cross-tenant.
+   *
+   * Le JWT est la source de vérité. Le header X-Tenant-ID n'est accepté que
+   * s'il correspond au tenantId du JWT (pour les cas où le BFF le transmet
+   * pour compatibilité). Un header X-Tenant-ID qui ne correspond pas au JWT
+   * est IGNORE (silencieusement) pour éviter de révéler la détection.
+   */
   private extractTenantId(request: Request): string | undefined {
-    // Option 1: From X-Tenant-ID header (PRIORITÉ — explicite, pas ambigu)
-    const tenantIdHeader = request.headers['x-tenant-id'];
-    if (tenantIdHeader && typeof tenantIdHeader === 'string') {
-      return tenantIdHeader;
-    }
-
-    // Option 2: From JWT payload (tenant sélectionné via /auth/select-tenant)
     const user = request['user'] as any;
-    if (user && user.tenantId) {
-      return user.tenantId;
+    const jwtTenantId = user?.tenantId;
+
+    // 🔒 Pour les utilisateurs authentifiés (non platform), le JWT prime
+    // Le header X-Tenant-ID est accepté UNIQUEMENT s'il correspond au JWT
+    if (jwtTenantId && typeof jwtTenantId === 'string' && jwtTenantId.length > 0) {
+      const headerTenantId = request.headers['x-tenant-id'];
+      if (headerTenantId && typeof headerTenantId === 'string') {
+        // Vérifier la correspondance — si mismatch, on ignore le header et on log
+        if (headerTenantId !== jwtTenantId) {
+          // 🚨 Tentative d'usurpation cross-tenant détectée — on ignore silencieusement
+          // le header et on utilise le tenant du JWT (sécurité par défaut)
+          console.warn(
+            `🚨 [TenantGuard] Cross-tenant attempt: header='${headerTenantId}' vs JWT='${jwtTenantId}'. Using JWT tenant.`,
+          );
+        }
+      }
+      return jwtTenantId;
     }
 
-    // Option 3: From subdomain (e.g., cspeb.academiahelm.com)
-    // ⚠️ DERNIER recours — les sous-domaines réservés (api, www, app…) sont ignorés
+    // Utilisateurs PLATFORM_OWNER / SUPER_ADMIN sans tenantId JWT — on fait confiance au header
+    // (ils peuvent accéder à n'importe quel tenant pour le support/administration)
+    if (user && (user.role === 'PLATFORM_OWNER' || user.role === 'SUPER_ADMIN' || user.isSuperAdmin)) {
+      const tenantIdHeader = request.headers['x-tenant-id'];
+      if (tenantIdHeader && typeof tenantIdHeader === 'string') {
+        return tenantIdHeader;
+      }
+    }
+
+    // Dernier recours : sous-domaine (pour les routes publiques principalement)
     const host = request.headers.host;
     if (host && host.includes('.')) {
       const parts = host.split('.');

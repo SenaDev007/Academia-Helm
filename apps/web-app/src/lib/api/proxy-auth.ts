@@ -161,13 +161,12 @@ export async function getProxyAuthHeaders(request: NextRequest): Promise<ProxyAu
     request.cookies.get(TENANT_ID_COOKIE)?.value?.trim() ||
     cookieStore.get(TENANT_ID_COOKIE)?.value?.trim() ||
     undefined;
-  const fromQuery =
-    request.nextUrl?.searchParams?.get('tenant_id') ||
-    request.nextUrl?.searchParams?.get('tenantId');
-  const fromHeader = request.headers.get('x-tenant-id');
+  // 🔒 SÉCURITÉ : on ne FAIT PLUS confiance au ?tenantId= dans l'URL ni au header
+  // x-tenant-id envoyé depuis le navigateur. La source de vérité est la session
+  // serveur (JWT). Empêche l'usurpation cross-tenant via query param ou header
+  // injecté depuis la console du navigateur.
+  // (anciennement : fromQuery / fromHeader — retirés pour cause de faille de sécurité)
   const tenantId =
-    fromQuery ||
-    fromHeader ||
     tidFromTenantCookie ||
     (tidFromSessionObj && String(tidFromSessionObj).trim()) ||
     tidFromUser ||

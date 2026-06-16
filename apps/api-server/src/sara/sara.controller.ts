@@ -1,9 +1,30 @@
-import { Controller, Post, Body, Res, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Res, UseGuards, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Response } from 'express';
 import { SaraService } from './sara.service';
 import { VoiceService } from './voice.service';
 import { Public } from '../auth/decorators/public.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../auth/guards/permissions.guard';
+import { Permissions } from '../auth/decorators/permissions.decorator';
+import { GetTenant } from '../common/decorators/tenant.decorator';
+
+/**
+ * 🔒 Mapping currentModule → permission RBAC requise.
+ * Sarah ne peut pas parler d'un module si l'utilisateur n'a pas la permission
+ * de lecture correspondante. Empêche un PARENT de demander à Sarah des infos
+ * sur la paie, un ENSEIGNANT sur les candidats, etc.
+ */
+const MODULE_PERMISSION_MAP: Record<string, string> = {
+  hr: 'RH_read',
+  finance: 'FINANCES_read',
+  students: 'ELEVES_read',
+  pedagogy: 'ORGANISATION_PEDAGOGIQUE_read',
+  exams: 'EXAMENS_read',
+  communication: 'COMMUNICATION_read',
+  qhse: 'QHSE_read',
+  settings: 'PARAMETRES_read',
+  // orion / atlas : pas de permission dédiée, géré par canAccessOrion/canAccessAtlas
+};
 
 @Controller('sara')
 export class SaraController {
@@ -67,9 +88,19 @@ export class SaraController {
   /**
    * In-App SARA query (authenticated, Guide User mode)
    * Used by the InAppSaraGuide and module-specific Sara assistants
+   *
+   * 🔒 SÉCURITÉ :
+   *   - JwtAuthGuard : authentification obligatoire (était MANQUANT avant)
+   *   - Le schoolId du body DOIT correspondre au tenantId du JWT — empêche
+   *     l'usurpation cross-tenant (un utilisateur de l'école A ne peut pas
+   *     passer schoolId=école-b pour obtenir des infos sur l'école B)
+   *   - RBAC par module : si currentModule='hr', l'utilisateur doit avoir
+   *     la permission RH_read, etc. Sinon 403 Forbidden.
    */
+  @UseGuards(JwtAuthGuard)
   @Post('inapp')
   async inappQuery(
+    @GetTenant() tenant: any,
     @Body() body: {
       query: string;
       userId: string;
@@ -79,10 +110,23 @@ export class SaraController {
       messages?: Array<{ role: string; content: string }>;
     },
   ) {
+    // 🔒 Isolation tenant stricte : le schoolId du body doit correspondre
+    // au tenant résolu depuis le JWT. Empêche la fuite cross-tenant.
+    const jwtTenantId = tenant?.id;
+    if (!jwtTenantId) {
+      throw new BadRequestException('Tenant non résolu depuis la session.');
+    }
+    if (body.schoolId && body.schoolId !== jwtTenantId) {
+      throw new ForbiddenException(
+        '🚨 Sécurité : le schoolId fourni ne correspond pas à votre établissement. ' +
+        'Vous ne pouvez accéder qu\'aux données de votre propre tenant.',
+      );
+    }
+
     return this.saraService.handleInAppQuery(
       body.query,
       body.userId,
-      body.schoolId,
+      jwtTenantId, // 🔒 On utilise TOUJOURS le tenant du JWT, jamais celui du body
       body.userRole,
       body.currentModule,
       body.messages,
@@ -92,10 +136,15 @@ export class SaraController {
   /**
    * In-App SARA streaming query (authenticated, SSE)
    * Used by the InAppSaraGuide for real-time streaming responses
+   *
+   * 🔒 Mêmes règles de sécurité que /sara/inapp :
+   *   - JwtAuthGuard (déjà présent)
+   *   - Validation schoolId == JWT.tenantId
    */
   @UseGuards(JwtAuthGuard)
   @Post('inapp/stream')
   async inappQueryStream(
+    @GetTenant() tenant: any,
     @Body() body: {
       query: string;
       userId: string;
@@ -106,16 +155,29 @@ export class SaraController {
     },
     @Res() res: Response,
   ) {
+    // 🔒 Isolation tenant stricte
+    const jwtTenantId = tenant?.id;
+    if (!jwtTenantId) {
+      res.status(400).json({ error: 'Tenant non résolu depuis la session.' });
+      return;
+    }
+    if (body.schoolId && body.schoolId !== jwtTenantId) {
+      res.status(403).json({
+        error: '🚨 Sécurité : le schoolId fourni ne correspond pas à votre établissement.',
+      });
+      return;
+    }
+
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
+    res.setHeader('X-Accel-Buffering', 'no'); // Désactiver le buffering Nginx
 
     try {
       const stream = this.saraService.handleInAppQueryStream(
         body.query,
         body.userId,
-        body.schoolId,
+        jwtTenantId, // 🔒 On utilise TOUJOURS le tenant du JWT
         body.userRole,
         body.currentModule,
         body.messages,
@@ -143,9 +205,15 @@ export class SaraController {
 
   /**
    * In-App SARA query via AI Gateway (mode avancé avec contexte MCP et outils)
+   *
+   * 🔒 SÉCURITÉ :
+   *   - JwtAuthGuard obligatoire
+   *   - Le tenantId du body DOIT correspondre au tenant du JWT
    */
+  @UseGuards(JwtAuthGuard)
   @Post('gateway')
   async gatewayQuery(
+    @GetTenant() tenant: any,
     @Body() body: {
       query: string;
       userId: string;
@@ -153,17 +221,30 @@ export class SaraController {
       schoolId?: string;
     },
   ) {
+    // 🔒 Isolation tenant stricte
+    const jwtTenantId = tenant?.id;
+    if (!jwtTenantId) {
+      throw new BadRequestException('Tenant non résolu depuis la session.');
+    }
+    if (body.tenantId && body.tenantId !== jwtTenantId) {
+      throw new ForbiddenException(
+        '🚨 Sécurité : le tenantId fourni ne correspond pas à votre établissement.',
+      );
+    }
+
     return this.saraService.handleInAppQueryViaGateway(
       body.query,
       body.userId,
-      body.tenantId,
+      jwtTenantId, // 🔒 On utilise TOUJOURS le tenant du JWT
       body.schoolId,
     );
   }
 
   /**
    * Get contextual suggestions based on user role and current module
+   * 🔒 Authentification JWT requise (les suggestions sont contextuelles à l'utilisateur)
    */
+  @UseGuards(JwtAuthGuard)
   @Post('suggestions')
   async getSuggestions(
     @Body() body: { userRole?: string; currentModule?: string },

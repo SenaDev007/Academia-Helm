@@ -7,30 +7,40 @@
  *   - POST /hr/ia/parse-cv       → Analyse sémantique de CV/Lettres
  *   - GET  /hr/ia/match-candidates → Matching & Classement XAI
  *   - GET  /hr/ia/detect-fraud    → Détection d'anomalies/fraude
- *   - POST /hr/ia/copilot         → Copilote RH conversationnel (Sara)
+ *   - POST /hr/ia/copilot         → Copilote RH conversationnel (Sarah)
  *   - GET  /hr/ia/status          → Statut de la configuration IA
  *
+ * 🔒 SÉCURITÉ MULTI-TENANT & RBAC (CRITIQUE) :
+ *   - JwtAuthGuard : authentification JWT obligatoire
+ *   - TenantGuard : résout le tenant depuis le JWT (jamais depuis la query string)
+ *   - PermissionsGuard + @Permissions('RH_read') : SEULS les utilisateurs ayant
+ *     la permission RH_read (DIRECTEUR, COMPTABLE, CENSEUR, PROMOTEUR,
+ *     PLATFORM_OWNER, SUPER_ADMIN, etc.) peuvent accéder à ces endpoints.
+ *     Un ENSEIGNANT, PARENT ou ELEVE n'a PAS cette permission et sera rejeté
+ *     avec 403 Forbidden.
+ *   - Le tenantId est OBTENU UNIQUEMENT depuis @GetTenant() (résolu depuis le
+ *     JWT). AUCUN fallback via query param — empêche l'usurpation cross-tenant.
+ *
  * Utilise @GetTenant() pour la résolution du tenant.
- * Tous les endpoints nécessitent JWT + TenantGuard.
+ * Tous les endpoints nécessitent JWT + TenantGuard + PermissionsGuard.
  * ============================================================================
  */
 
 import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Query,
-  UseGuards,
-  BadRequestException,
+  Controller, Get, Post, Body, Query,
+  UseGuards, BadRequestException, ForbiddenException, Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { IaPrismaService } from './ia-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
+import { PermissionsGuard } from '../auth/guards/permissions.guard';
+import { Permissions } from '../auth/decorators/permissions.decorator';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 
 @Controller('hr/ia')
-@UseGuards(JwtAuthGuard, TenantGuard)
+@UseGuards(JwtAuthGuard, TenantGuard, PermissionsGuard)
+@Permissions('RH_read')
 export class IaPrismaController {
   constructor(private readonly iaService: IaPrismaService) {}
 
@@ -45,22 +55,21 @@ export class IaPrismaController {
    *   - base64Data : Données du fichier encodées en base64
    *   - fileName : Nom du fichier
    *   - mimeType : Type MIME du fichier
-   *   - candidateId : ID d'un candidat existant à enrichir
+   *   - candidateId : ID d'un candidat existant à enrichir (tenant-scoped)
    */
   @Post('parse-cv')
   async parseCv(
     @GetTenant() tenant: any,
     @Body() body: {
-      tenantId?: string;
       fileUrl?: string;
       base64Data?: string;
       fileName?: string;
       mimeType?: string;
       candidateId?: string;
     },
-    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    const tid = tenant?.id ?? tenantIdFallback;
+    // 🔒 Isolation tenant stricte — le tenantId vient UNIQUEMENT du JWT
+    const tid = tenant?.id;
     if (!tid) {
       throw new BadRequestException('Tenant ID requis pour cette opération');
     }
@@ -72,7 +81,7 @@ export class IaPrismaController {
   /**
    * GET /api/hr/ia/match-candidates
    *
-   * Retourne les scores de matching XAI pour les candidats.
+   * Retourne les scores de matching XAI pour les candidats DU TENANT COURANT.
    * Paramètres optionnels :
    *   - jobId : Filtrer les résultats pour un poste spécifique
    */
@@ -80,9 +89,11 @@ export class IaPrismaController {
   async matchCandidates(
     @GetTenant() tenant: any,
     @Query('jobId') jobId?: string,
-    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    const tid = tenant?.id ?? tenantIdFallback;
+    const tid = tenant?.id;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
     return this.iaService.matchCandidates(tid, jobId);
   }
 
@@ -91,14 +102,17 @@ export class IaPrismaController {
   /**
    * GET /api/hr/ia/detect-fraud
    *
-   * Détecte les anomalies et risques de fraude dans les candidatures.
+   * Détecte les anomalies et risques de fraude dans les candidatures
+   * DU TENANT COURANT uniquement.
    */
   @Get('detect-fraud')
   async detectFraud(
     @GetTenant() tenant: any,
-    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    const tid = tenant?.id ?? tenantIdFallback;
+    const tid = tenant?.id;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
     return this.iaService.detectFraud(tid);
   }
 
@@ -107,7 +121,11 @@ export class IaPrismaController {
   /**
    * POST /api/hr/ia/copilot
    *
-   * Chat avec le Copilote RH (Sara).
+   * Chat avec Sarah, l'Assistante RH.
+   * 🔒 Sarah ne peut accéder QU'aux données RH du tenant courant (résolu
+   *    depuis le JWT) et ne communique QU'avec les utilisateurs ayant la
+   *    permission RH_read (vérifiée par PermissionsGuard).
+   *
    * Le body doit contenir :
    *   - message : Le message/question de l'utilisateur
    *   - conversationHistory (optionnel) : Historique de la conversation
@@ -115,11 +133,11 @@ export class IaPrismaController {
   @Post('copilot')
   async copilotChat(
     @GetTenant() tenant: any,
+    @Req() req: Request,
     @Body() body: {
       message: string;
       conversationHistory?: Array<{ role: string; content: string }>;
     },
-    @Query('tenantId') tenantIdFallback?: string,
   ) {
     if (!body.message || !body.message.trim()) {
       return {
@@ -129,15 +147,30 @@ export class IaPrismaController {
       };
     }
 
-    const tid = tenant?.id ?? tenantIdFallback;
+    // 🔒 Isolation tenant stricte — AUCUN fallback via query param
+    const tid = tenant?.id;
     if (!tid) {
       throw new BadRequestException('Tenant ID requis pour cette opération');
     }
+
+    // 🔒 Contexte utilisateur pour le RBAC conversationnel de Sarah.
+    // PermissionsGuard a déjà vérifié que l'utilisateur a RH_read (sinon 403).
+    // On transmet le rôle et les permissions à Sarah pour qu'elle adapte sa
+    // réponse (ex: un COMPTABLE n'a que RH_read, pas PAIE_write — Sarah ne
+    // lui proposera pas d'actions d'écriture sur la paie).
+    const user = req['user'] as any;
+    const userContext = {
+      userId: user?.id,
+      role: user?.role || 'UNKNOWN',
+      permissions: Array.isArray(user?.permissions) ? user.permissions : [],
+      isSuperAdmin: !!user?.isSuperAdmin,
+    };
 
     return this.iaService.copilotChat(
       tid,
       body.message,
       body.conversationHistory,
+      userContext,
     );
   }
 
@@ -147,6 +180,7 @@ export class IaPrismaController {
    * GET /api/hr/ia/status
    *
    * Retourne le statut de la configuration IA du module.
+   * 🔒 Nécessite RH_read (déjà appliqué au niveau du contrôleur).
    */
   @Get('status')
   async getStatus() {

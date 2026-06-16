@@ -60,24 +60,32 @@ export default async function Page() {
         } else {
           // En production : Appel direct au backend NestJS
           // (évite le self-request Vercel qui provoque des cold starts)
+          // ⚠️ Timeout court (3s) pour ne pas bloquer le rendu de la page
+          // si le backend est en cold start. Le branding sera récupéré
+          // côté client via useSchoolBranding si le server échoue.
           const apiBaseUrl = getApiBaseUrl();
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 6000);
+          const timeoutId = setTimeout(() => controller.abort(), 3000);
 
-          const response = await fetch(
-            `${apiBaseUrl}/tenants/by-subdomain/${encodeURIComponent(subdomain)}`,
-            {
-              method: 'GET',
-              headers: { 'Content-Type': 'application/json' },
-              cache: 'no-store',
-              signal: controller.signal,
-            },
-          );
-          clearTimeout(timeoutId);
+          try {
+            const response = await fetch(
+              `${apiBaseUrl}/tenants/by-subdomain/${encodeURIComponent(subdomain)}`,
+              {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' },
+                cache: 'no-store',
+                signal: controller.signal,
+              },
+            );
+            clearTimeout(timeoutId);
 
-          if (response.ok) {
-            const data = await response.json();
-            schoolBranding = extractBrandingFromTenant(data, subdomain);
+            if (response.ok) {
+              const data = await response.json();
+              schoolBranding = extractBrandingFromTenant(data, subdomain);
+            }
+          } catch {
+            // Timeout ou erreur réseau — le client tentera via useSchoolBranding
+            clearTimeout(timeoutId);
           }
         }
       } catch {

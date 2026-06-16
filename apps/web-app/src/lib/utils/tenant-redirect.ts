@@ -230,40 +230,54 @@ export async function redirectToTenant(config: TenantRedirectConfig): Promise<vo
 }
 
 /**
- * Log une redirection tenant (pour analytics/audit)
- * 
+ * Log une redirection tenant (pour analytics/audit).
+ *
+ * Utilise navigator.sendBeacon (non-bloquant, survive aux changements de page)
+ * si disponible, sinon fetch avec keepalive. Le logging est best-effort :
+ * si le backend est en cold start ou indisponible, on n'attend pas.
+ *
  * @param log - Données du log
  */
 async function logTenantRedirect(log: RedirectLog): Promise<void> {
   try {
-    // En production, envoyer au backend pour stockage
-    if (getAppEnvironment() !== 'local') {
-      // ⚠️ Timeout de 5s maximum pour éviter de bloquer quoi que ce soit
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-      
-      await fetch(`${API_URL}/portal/redirect-log`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(log),
-        keepalive: true,
-        signal: controller.signal,
-      }).catch(() => {
-        // Ignorer les erreurs de logging
-      }).finally(() => {
-        clearTimeout(timeoutId);
-      });
-    } else {
-      // En local, juste logger dans la console
+    const payload = JSON.stringify(log);
+
+    // En local, juste logger dans la console (pas de backend)
+    if (getAppEnvironment() === 'local') {
       console.log('[Tenant Redirect]', {
         tenant: log.tenantSlug,
         from: log.fromUrl,
         to: log.toUrl,
         method: log.method,
       });
+      return;
     }
+
+    // En production : utiliser navigator.sendBeacon (non-bloquant)
+    // si disponible — c'est la méthode recommandée pour envoyer des
+    // données de télémétrie juste avant un changement de page.
+    if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+      const blob = new Blob([payload], { type: 'application/json' });
+      const ok = navigator.sendBeacon(`${API_URL}/portal/redirect-log`, blob);
+      if (ok) return; // SendBeacon a accepté la requête — terminé
+      // Sinon, fallback sur fetch keepalive
+    }
+
+    // Fallback : fetch avec keepalive + timeout court (3s max)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+    await fetch(`${API_URL}/portal/redirect-log`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: payload,
+      keepalive: true,
+      signal: controller.signal,
+    }).catch(() => {
+      // Ignorer les erreurs de logging
+    }).finally(() => {
+      clearTimeout(timeoutId);
+    });
   } catch (error) {
     // Ne pas bloquer la redirection en cas d'erreur de logging
     console.warn('Failed to log tenant redirect:', error);

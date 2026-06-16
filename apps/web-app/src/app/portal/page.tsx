@@ -38,6 +38,7 @@ import SchoolSearch from '@/components/portal/SchoolSearch';
 import BeninMap from '@/components/portal/BeninMap';
 import { type DepartmentData } from '@/data/benin-departments';
 import { useTenantRedirect } from '@/lib/hooks/useTenantRedirect';
+import { getTenantRedirectUrl } from '@/lib/utils/tenant-redirect';
 import { BRAND } from '@/lib/brand';
 import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-email';
 import { persistClientSession, markFreshLogin } from '@/lib/auth/client-access-token';
@@ -242,13 +243,50 @@ export default function PortalPage() {
         return;
       }
 
-      await redirectToTenant({
+      // ── Redirection IMMÉDIATE vers /login (sans attendre le logging) ──
+      // On calcule l'URL et on redirige tout de suite. Le logging se fait
+      // en arrière-plan via navigator.sendBeacon (non-bloquant).
+      //
+      // Avant : `await redirectToTenant(...)` pouvait attendre 5s+ si le
+      // backend était en cold start (logging fetch). Maintenant : calcul URL
+      // synchrone + logging fire-and-forget via sendBeacon.
+      const redirectUrl = getTenantRedirectUrl({
         tenantSlug: selectedSchool.slug,
         tenantId: selectedSchool.id,
         path: '/login',
         portalType: selectedPortal,
         queryParams: { portal: selectedPortal.toLowerCase() },
+        skipLogging: true, // on gère le logging nous-mêmes ci-dessous
       });
+
+      // Logger en arrière-plan (fire-and-forget, ne bloque pas la navigation)
+      // navigator.sendBeacon est spécifiquement conçu pour envoyer des données
+      // juste avant un changement de page sans ralentir le navigateur.
+      try {
+        const logPayload = JSON.stringify({
+          tenantId: selectedSchool.id,
+          tenantSlug: selectedSchool.slug,
+          fromUrl: window.location.href,
+          toUrl: redirectUrl,
+          method: 'query',
+          environment: 'production',
+          timestamp: new Date().toISOString(),
+          userAgent: window.navigator.userAgent,
+        });
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.academiahelm.com';
+        const logUrl = apiUrl.endsWith('/api')
+          ? `${apiUrl}/portal/redirect-log`
+          : `${apiUrl}/api/portal/redirect-log`;
+        if (navigator.sendBeacon) {
+          const blob = new Blob([logPayload], { type: 'application/json' });
+          navigator.sendBeacon(logUrl, blob);
+        }
+      } catch {
+        // ignore — le logging est best-effort
+      }
+
+      // Redirection immédiate (synchrone)
+      window.location.href = redirectUrl;
     } catch (error) {
       console.error('[Portal] Erreur lors de la redirection:', error);
       setIsContinuing(false);

@@ -102,13 +102,16 @@ export default function AdminLayout({ children, user }: AdminLayoutProps) {
               <div className="flex items-center space-x-3">
                 <div className="w-10 h-10 bg-gold-500 rounded-full flex items-center justify-center">
                   <span className="text-blue-900 font-bold text-sm">
-                    {user.firstName.charAt(0)}{user.lastName.charAt(0)}
+                    {/* Fallback robuste : utiliser firstName/lastName si présents,
+                        sinon extraire de name, sinon utiliser email */}
+                    {(user.firstName?.[0] || user.name?.[0] || user.email?.[0] || '?').toUpperCase()}
                   </span>
                 </div>
                 {sidebarOpen && (
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold truncate">
-                      {user.firstName} {user.lastName}
+                      {/* Afficher name si présent, sinon firstName + lastName */}
+                      {user.name || [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email}
                     </p>
                     <p className="text-xs text-gray-400 truncate">{user.email}</p>
                   </div>

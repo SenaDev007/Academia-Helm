@@ -7,6 +7,7 @@ import { RegisterDto } from './dto/register.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyResetOtpDto } from './dto/verify-reset-otp.dto';
+import { CheckSchoolUserDto, GoogleLoginDto } from './dto/google-login.dto';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { Public } from './decorators/public.decorator';
@@ -219,6 +220,43 @@ export class AuthController {
 
     const userId = req.user.sub || req.user.id;
     return this.authService.selectTenant(userId, tenantId, {
+      ipAddress: req.ip || req.socket?.remoteAddress,
+      userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : undefined,
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  GOOGLE OAUTH — PORTAIL ÉCOLE (SCHOOL)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * POST /auth/check-school-user
+   *
+   * Vérifie qu'un utilisateur avec cet email existe dans le tenant donné.
+   * Utilisé par le frontend Next.js après Google OAuth pour valider que
+   * l'email Google correspond à un compte établissement existant.
+   */
+  @Public()
+  @Post('check-school-user')
+  @HttpCode(HttpStatus.OK)
+  async checkSchoolUser(@Body() dto: CheckSchoolUserDto) {
+    return this.authService.checkSchoolUser(dto);
+  }
+
+  /**
+   * POST /auth/google-login
+   *
+   * Crée une session SCHOOL pour l'utilisateur sans vérifier le mot de passe.
+   * L'identité a déjà été prouvée via Google OAuth + OTP email (vérifié par
+   * le frontend Next.js via /api/school-auth/verify-otp).
+   *
+   * Retourne { user, tenant, accessToken, refreshToken, serverSessionId }.
+   */
+  @Public()
+  @Post('google-login')
+  @HttpCode(HttpStatus.OK)
+  async googleLogin(@Body() dto: GoogleLoginDto, @Req() req: Request) {
+    return this.authService.googleLogin(dto, {
       ipAddress: req.ip || req.socket?.remoteAddress,
       userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : undefined,
     });

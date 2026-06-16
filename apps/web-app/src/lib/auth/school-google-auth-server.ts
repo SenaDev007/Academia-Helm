@@ -174,9 +174,7 @@ export async function exchangeGoogleCode(code: string): Promise<SchoolGoogleUser
  * Vérifie qu'un utilisateur avec cet email existe dans la DB pour ce tenant
  * et qu'il a un rôle compatible avec le portail SCHOOL.
  *
- * Appelle l'endpoint NestJS /api/auth/check-school-user (à implémenter côté NestJS).
- * Si l'endpoint n'existe pas, on fait confiance à l'email + tenant et on laisse
- * le login NestJS final valider les credentials.
+ * Appelle l'endpoint NestJS /api/auth/check-school-user.
  */
 export async function checkSchoolUserExists(
   email: string,
@@ -186,15 +184,15 @@ export async function checkSchoolUserExists(
   if (!apiUrl) {
     return { ok: false, reason: 'API URL non configurée' };
   }
+  // Le backend NestJS utilise le préfixe global /api → /api/auth/check-school-user
+  const base = apiUrl.replace(/\/$/, '');
+  const url = base.endsWith('/api') ? `${base}/auth/check-school-user` : `${base}/api/auth/check-school-user`;
   try {
-    const res = await fetch(
-      `${apiUrl.replace(/\/$/, '')}/auth/check-school-user`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, tenant_id: tenantIdOrSlug }),
-      },
-    );
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, tenant_id: tenantIdOrSlug }),
+    });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       return {
@@ -390,8 +388,12 @@ export async function createSchoolSessionViaGoogle(params: {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || process.env.API_URL;
   if (!apiUrl) return { ok: false, reason: 'API URL non configurée' };
 
+  // Le backend NestJS utilise le préfixe global /api → /api/auth/google-login
+  const base = apiUrl.replace(/\/$/, '');
+  const url = base.endsWith('/api') ? `${base}/auth/google-login` : `${base}/api/auth/google-login`;
+
   try {
-    const res = await fetch(`${apiUrl.replace(/\/$/, '')}/auth/google-login`, {
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

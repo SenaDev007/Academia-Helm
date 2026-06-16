@@ -44,6 +44,10 @@ export interface AdminUser {
   id: string;
   email: string;
   name: string;
+  /** Prénom (extrait de `name`) — requis par le type User de @/types. */
+  firstName: string;
+  /** Nom (extrait de `name`) — requis par le type User de @/types. */
+  lastName: string;
   picture?: string;
   role: 'PLATFORM_SUPER_ADMIN' | 'PLATFORM_OWNER';
 }
@@ -111,7 +115,53 @@ function generateToken(): string {
 
 // ─── Session management ─────────────────────────────────────────────────────
 
+/**
+ * Sépare un nom complet en firstName / lastName.
+ * - "Jean Dupont" → { firstName: "Jean", lastName: "Dupont" }
+ * - "Jean" → { firstName: "Jean", lastName: "" }
+ * - "" → { firstName: "", lastName: "" }
+ */
+function splitName(fullName: string): { firstName: string; lastName: string } {
+  const trimmed = (fullName || '').trim();
+  if (!trimmed) return { firstName: '', lastName: '' };
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 1) return { firstName: parts[0], lastName: '' };
+  return {
+    firstName: parts[0],
+    lastName: parts.slice(1).join(' '),
+  };
+}
+
+/**
+ * Crée une session admin à partir d'infos Google (qui ne fournissent que `name`).
+ * `firstName` et `lastName` sont extraits automatiquement de `name`.
+ */
+export function createAdminSessionFromGoogle(params: {
+  id: string;
+  email: string;
+  name: string;
+  picture?: string;
+}): AdminSession {
+  const { firstName, lastName } = splitName(params.name);
+  const user: AdminUser = {
+    id: params.id,
+    email: params.email,
+    name: params.name,
+    firstName,
+    lastName,
+    picture: params.picture,
+    role: 'PLATFORM_SUPER_ADMIN',
+  };
+  return createAdminSession(user);
+}
+
 export function createAdminSession(user: AdminUser): AdminSession {
+  // S'assurer que firstName/lastName sont toujours peuplés (même si l'appelant
+  // ne les a pas fournis — on les extrait de `name` par sécurité).
+  if (!user.firstName && !user.lastName && user.name) {
+    const { firstName, lastName } = splitName(user.name);
+    user = { ...user, firstName, lastName };
+  }
   const issuedAt = new Date();
   const expiresAt = new Date(issuedAt.getTime() + SESSION_DURATION_HOURS * 60 * 60 * 1000);
   const payload = JSON.stringify({

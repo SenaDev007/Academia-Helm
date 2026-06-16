@@ -1130,5 +1130,125 @@ export class AuthService {
 </body>
 </html>`.trim();
   }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  GOOGLE OAUTH — PORTAIL ÉCOLE (SCHOOL)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Vérifie qu'un utilisateur avec cet email existe dans le tenant donné
+   * et qu'il a un rôle compatible avec le portail SCHOOL.
+   *
+   * Utilisé par le frontend Next.js après Google OAuth pour valider que
+   * l'email Google correspond à un compte existant dans l'établissement.
+   *
+   * @returns { userId } si l'utilisateur existe, lève une exception sinon.
+   */
+  async checkSchoolUser(dto: { email: string; tenant_id: string }): Promise<{ userId: string }> {
+    const resolvedTenantId = await this.resolveTenantId(dto.tenant_id);
+    if (!resolvedTenantId) {
+      throw new NotFoundException('Établissement non trouvé');
+    }
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        email: dto.email.toLowerCase(),
+        tenantId: resolvedTenantId,
+      },
+      select: { id: true, role: true, status: true },
+    });
+
+    if (!user) {
+      throw new ForbiddenException(
+        "Votre email Google n'est pas associé à un compte établissement. Contactez votre administration.",
+      );
+    }
+
+    // Vérifier que l'utilisateur est actif
+    if (user.status === 'SUSPENDED' || user.status === 'TERMINATED') {
+      throw new ForbiddenException('Votre compte est suspendu. Contactez votre administration.');
+    }
+
+    return { userId: user.id };
+  }
+
+  /**
+   * Crée une session SCHOOL pour l'utilisateur sans vérifier le mot de passe.
+   *
+   * L'identité a déjà été prouvée via Google OAuth + OTP email (vérifié par
+   * le frontend Next.js via /api/school-auth/verify-otp).
+   *
+   * @returns { user, tenant, accessToken, refreshToken, serverSessionId }
+   */
+  async googleLogin(
+    dto: { email: string; tenant_id: string; portal_type: 'SCHOOL' },
+    meta?: SessionPersistMeta,
+  ) {
+    const resolvedTenantId = await this.resolveTenantId(dto.tenant_id);
+    if (!resolvedTenantId) {
+      throw new NotFoundException('Établissement non trouvé');
+    }
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        email: dto.email.toLowerCase(),
+        tenantId: resolvedTenantId,
+      },
+    });
+
+    if (!user) {
+      throw new ForbiddenException(
+        "Votre email Google n'est pas associé à un compte établissement.",
+      );
+    }
+
+    // Vérifier que l'utilisateur est actif
+    if (user.status === 'SUSPENDED' || user.status === 'TERMINATED') {
+      throw new ForbiddenException('Votre compte est suspendu. Contactez votre administration.');
+    }
+
+    // Récupérer le tenant complet
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: resolvedTenantId },
+    });
+
+    if (!tenant) {
+      throw new NotFoundException('Établissement non trouvé');
+    }
+
+    // Générer les tokens JWT enrichis AVEC tenantId (l'utilisateur SCHOOL
+    // est déjà rattaché à un tenant — pas besoin de sélection ultérieure)
+    const accessToken = this.generateEnrichedToken(user, resolvedTenantId).accessToken;
+    const refreshToken = this.generateEnrichedToken(user, resolvedTenantId).refreshToken;
+
+    // Persister la session en DB
+    const sessionRecord = await this.persistWebSession(user.id, refreshToken, meta);
+
+    // Mettre à jour le dernier login
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLogin: new Date() },
+    });
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+        tenantId: resolvedTenantId,
+      },
+      tenant: {
+        id: tenant.id,
+        name: tenant.name,
+        slug: tenant.slug,
+        subdomain: tenant.subdomain || tenant.slug,
+      },
+      accessToken,
+      refreshToken,
+      ...(sessionRecord ? { serverSessionId: sessionRecord.id } : {}),
+    };
+  }
 }
 

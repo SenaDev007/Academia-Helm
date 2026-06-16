@@ -10,7 +10,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  createAdminSession,
+  createAdminSessionFromGoogle,
   serializeAdminSessionCookie,
   verifyOtp,
   clearAdminPendingCookie,
@@ -34,13 +34,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: result.reason }, { status: 400 });
   }
 
-  // Créer la session admin
-  const session = createAdminSession({
+  // Créer la session admin (firstName/lastName extraits automatiquement de name)
+  const session = createAdminSessionFromGoogle({
     id: `admin-${result.pending.email}`,
     email: result.pending.email,
     name: result.pending.name,
     picture: result.pending.picture,
-    role: 'PLATFORM_SUPER_ADMIN',
   });
 
   const res = NextResponse.json({

@@ -180,19 +180,33 @@ export default function AdminLoginPage() {
 
   const handleOtpPaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
+    // Nettoyer : ne garder que les chiffres (au cas où l'utilisateur copie
+    // depuis un email avec espaces, retours ligne, caractères spéciaux, etc.)
     const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
     if (pasted.length) {
       const newOtp = ['', '', '', '', '', ''];
       for (let i = 0; i < pasted.length; i++) newOtp[i] = pasted[i];
       setOtp(newOtp);
+      // Focus sur le dernier champ rempli (ou le suivant si incomplet)
       otpRefs.current[Math.min(pasted.length, 5)]?.focus();
+      // ── Validation AUTOMATIQUE si 6 chiffres collés ──
+      // Permet à l'utilisateur de coller le code reçu par email et d'être
+      // authentifié sans avoir à cliquer sur "Vérifier le code".
+      if (pasted.length === 6) {
+        // setTimeout 0 pour laisser le state se mettre à jour avant verifyOtp
+        setTimeout(() => verifyOtp(pasted), 0);
+      }
     }
   };
 
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
+  /**
+   * Vérifie l'OTP auprès du backend.
+   * Accepte un code optionnel (utilisé par le paste automatique) — sinon
+   * utilise le state `otp`.
+   */
+  const verifyOtp = async (codeOverride?: string) => {
     setError(null);
-    const otpCode = otp.join('');
+    const otpCode = codeOverride || otp.join('');
     if (otpCode.length !== 6) {
       setError('Veuillez saisir les 6 chiffres du code');
       return;
@@ -224,6 +238,11 @@ export default function AdminLoginPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await verifyOtp();
   };
 
   const handleBackToCredentials = () => {

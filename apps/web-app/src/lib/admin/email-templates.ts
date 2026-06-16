@@ -32,14 +32,18 @@ interface OtpEmailParams {
   logoUrl?: string;
 }
 
-/** Construit l'URL absolue du logo Academia Helm pour les emails. */
+/** Construit l'URL absolue du logo Academia Helm pour les emails.
+ * Utilise le même logo que la navbar du landing page (cohérence visuelle). */
 function getLogoUrl(): string {
   const baseUrl =
     process.env.NEXT_PUBLIC_APP_URL ||
     process.env.NEXT_PUBLIC_LANDING_URL ||
     'https://academiahelm.com';
-  // logo-academia-helm-email.png existe dans /public/images/ — optimisé pour emails
-  return `${baseUrl.replace(/\/$/, '')}/images/logo-academia-helm-email.png`;
+  // Même logo que la navbar du landing page (cf. apps/web-app/src/lib/brand.ts)
+  // Note : l'espace dans le nom de fichier doit être URL-encodé (%20) pour
+  // que les clients email puissent le résoudre correctement.
+  const logoPath = '/images/logo-Academia%20Hub.png';
+  return `${baseUrl.replace(/\/$/, '')}${logoPath}`;
 }
 
 /** Formate le code OTP avec espaces pour la lisibilité (8 4 2 1 9 3). */
@@ -134,8 +138,21 @@ export function renderOtpEmailHtml(params: OtpEmailParams): string {
                     <p style="margin:0 0 12px;color:#64748b;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;font-family:Arial,Helvetica,sans-serif;">
                       Votre code de vérification
                     </p>
-                    <p style="margin:0;color:#0b2f73;font-size:38px;font-weight:800;letter-spacing:10px;font-family:'Courier New',Courier,monospace;">
+                    <!--
+                      Code OTP brut (sans espaces) dans un span masqué visuellement
+                      mais sélectionnable. `user-select:all` permet à l'utilisateur
+                      de copier le code d'un seul clic (sur la plupart des clients
+                      email modernes). Le `onclick` tente un copy programmatique.
+                    -->
+                    <p
+                      style="margin:0;color:#0b2f73;font-size:38px;font-weight:800;letter-spacing:10px;font-family:'Courier New',Courier,monospace;user-select:all;-webkit-user-select:all;cursor:pointer;"
+                      onclick="navigator.clipboard&amp;&amp;navigator.clipboard.writeText('${otp}')"
+                      title="Cliquez pour copier le code"
+                    >
                       ${formattedOtp}
+                    </p>
+                    <p style="margin:10px 0 0;color:#94a3b8;font-size:10px;font-family:Arial,Helvetica,sans-serif;">
+                      Cliquez sur le code pour le copier • Code brut : ${otp}
                     </p>
                   </td>
                 </tr>

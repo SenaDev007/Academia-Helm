@@ -1032,18 +1032,24 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   /** Paste OTP SCHOOL. */
   const handleSchoolOtpPaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
+    // Nettoyer : ne garder que les chiffres (espaces, retours ligne, etc. retirés)
     const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
     if (pasted.length) {
       const newOtp = ['', '', '', '', '', ''];
       for (let i = 0; i < pasted.length; i++) newOtp[i] = pasted[i];
       setSchoolOtp(newOtp);
       schoolOtpRefs.current[Math.min(pasted.length, 5)]?.focus();
+      // ── Validation AUTOMATIQUE si 6 chiffres collés ──
+      if (pasted.length === 6) {
+        setTimeout(() => handleSchoolVerifyOtp(pasted), 0);
+      }
     }
   };
 
-  /** Vérifie l'OTP SCHOOL et finalise la connexion. */
-  const handleSchoolVerifyOtp = async () => {
-    const otpCode = schoolOtp.join('');
+  /** Vérifie l'OTP SCHOOL et finalise la connexion.
+   *  Accepte un code optionnel (utilisé par le paste automatique). */
+  const handleSchoolVerifyOtp = async (codeOverride?: string) => {
+    const otpCode = codeOverride || schoolOtp.join('');
     if (otpCode.length !== 6) {
       setError('Veuillez saisir les 6 chiffres du code');
       return;

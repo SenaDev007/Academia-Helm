@@ -4,14 +4,18 @@
  * ============================================================================
  *
  * Utilise l'API MediaRecorder du navigateur pour capturer l'audio du micro.
+ * Convertit automatiquement l'audio en WAV pour une compatibilité maximale
+ * avec le service ASR (Speech-to-Text).
+ *
  * Retourne :
  *   - isRecording : état d'enregistrement
  *   - startRecording : démarrer la capture
- *   - stopRecording : arrêter et obtenir le base64
+ *   - stopRecording : arrêter et obtenir le base64 (WAV)
  *   - audioLevel : niveau sonore actuel (pour l'animation)
  *   - error : erreur éventuelle
+ *   - duration : durée en secondes
  *
- * Format de sortie : audio/webm (ou audio/mp4 sur Safari)
+ * Format de sortie : WAV (PCM 16-bit, 16kHz mono) — compatible ASR
  * ============================================================================
  */
 
@@ -24,10 +28,102 @@ interface UseVoiceRecorderReturn {
   isInitializing: boolean;
   audioLevel: number; // 0-1 pour l'animation du waveform
   startRecording: () => Promise<void>;
-  stopRecording: () => Promise<string | null>; // Retourne base64 audio
+  stopRecording: () => Promise<string | null>; // Retourne base64 audio (WAV)
   cancelRecording: () => void;
   error: string | null;
   duration: number; // Durée en secondes
+}
+
+/**
+ * Convertit un Blob audio (webm/opus, mp4, etc.) en WAV PCM 16-bit mono 16kHz.
+ * C'est le format le plus universellement supporté par les moteurs ASR.
+ */
+async function convertBlobToWavBlob(blob: Blob): Promise<Blob> {
+  const arrayBuffer = await blob.arrayBuffer();
+  const audioContext = new AudioContext({ sampleRate: 16000 });
+  
+  try {
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    
+    // Convertir en mono 16kHz PCM 16-bit
+    const numChannels = 1;
+    const sampleRate = 16000;
+    const length = audioBuffer.length;
+    
+    // Resample si nécessaire
+    let channelData: Float32Array;
+    if (audioBuffer.sampleRate !== sampleRate) {
+      // Offline resampling
+      const offlineCtx = new OfflineAudioContext(numChannels, Math.ceil(length * sampleRate / audioBuffer.sampleRate), sampleRate);
+      const source = offlineCtx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(offlineCtx.destination);
+      source.start();
+      const resampledBuffer = await offlineCtx.startRendering();
+      channelData = resampledBuffer.getChannelData(0);
+    } else {
+      channelData = audioBuffer.getChannelData(0);
+    }
+
+    // Encoder en WAV
+    const wavBuffer = encodeWav(channelData, sampleRate);
+    return new Blob([wavBuffer], { type: 'audio/wav' });
+  } finally {
+    await audioContext.close();
+  }
+}
+
+/**
+ * Encode des samples Float32 en WAV PCM 16-bit.
+ */
+function encodeWav(samples: Float32Array, sampleRate: number): ArrayBuffer {
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  const bytesPerSample = bitsPerSample / 8;
+  const blockAlign = numChannels * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = samples.length * bytesPerSample;
+  const headerSize = 44;
+  const totalSize = headerSize + dataSize;
+
+  const buffer = new ArrayBuffer(totalSize);
+  const view = new DataView(buffer);
+
+  // RIFF header
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, totalSize - 8, true);
+  writeString(view, 8, 'WAVE');
+
+  // fmt chunk
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true); // chunk size
+  view.setUint16(20, 1, true); // PCM format
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+
+  // data chunk
+  writeString(view, 36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  // Write PCM samples
+  let offset = 44;
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    const val = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    view.setInt16(offset, val, true);
+    offset += 2;
+  }
+
+  return buffer;
+}
+
+function writeString(view: DataView, offset: number, str: string) {
+  for (let i = 0; i < str.length; i++) {
+    view.setUint8(offset + i, str.charCodeAt(i));
+  }
 }
 
 export function useVoiceRecorder(): UseVoiceRecorderReturn {
@@ -61,7 +157,7 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
       durationIntervalRef.current = null;
     }
 
-    // Fermer l'AudioContext
+    // Fermer l'AudioContext (seulement celui de l'analyse, pas de conversion)
     if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
       audioContextRef.current.close().catch(() => {});
       audioContextRef.current = null;
@@ -107,7 +203,7 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
         if (!analyserRef.current) return;
         analyserRef.current.getByteFrequencyData(dataArray);
         const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
-        const normalizedLevel = Math.min(average / 128, 1); // Normaliser 0-1
+        const normalizedLevel = Math.min(average / 128, 1);
         setAudioLevel(normalizedLevel);
         animationFrameRef.current = requestAnimationFrame(updateLevel);
       };
@@ -140,7 +236,6 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
-          sampleRate: 24000, // Optimal pour ASR
         },
       });
 
@@ -183,13 +278,6 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
       durationIntervalRef.current = setInterval(() => {
         setDuration(Math.floor((Date.now() - startTimeRef.current) / 1000));
       }, 1000);
-
-      // Auto-stop après 60 secondes (limite ASR)
-      setTimeout(() => {
-        if (mediaRecorderRef.current?.state === 'recording') {
-          // L'auto-stop sera géré par le composant
-        }
-      }, 60000);
     } catch (err: any) {
       setIsInitializing(false);
       cleanup();
@@ -225,9 +313,19 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
         }
 
         try {
-          // Créer le blob audio
-          const mimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
-          const blob = new Blob(chunksRef.current, { type: mimeType });
+          // Créer le blob audio original
+          const originalMimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
+          const originalBlob = new Blob(chunksRef.current, { type: originalMimeType });
+
+          // Convertir en WAV pour compatibilité ASR maximale
+          let finalBlob: Blob;
+          try {
+            finalBlob = await convertBlobToWavBlob(originalBlob);
+          } catch (convertError) {
+            // Si la conversion échoue, utiliser le blob original
+            console.warn('[VoiceRecorder] WAV conversion failed, using original format:', convertError);
+            finalBlob = originalBlob;
+          }
 
           // Convertir en base64
           const reader = new FileReader();
@@ -242,7 +340,7 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
             cleanup();
             resolve(null);
           };
-          reader.readAsDataURL(blob);
+          reader.readAsDataURL(finalBlob);
         } catch {
           cleanup();
           resolve(null);

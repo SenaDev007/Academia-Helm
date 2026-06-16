@@ -83,23 +83,71 @@ export class VoiceService {
     try {
       const zai = await this.getZAI();
 
+      // Ensure the base64 data has a proper data URI prefix for the ASR engine
+      // The SDK may need it to detect the audio format
+      let fileBase64 = audioBase64;
+      if (!audioBase64.startsWith('data:')) {
+        // Detect format from base64 header bytes
+        const prefix = this.detectAudioFormat(audioBase64);
+        fileBase64 = `${prefix}${audioBase64}`;
+      }
+
+      this.logger.log(`🎤 ASR request — audio data length: ${audioBase64.length} chars, prefix: ${fileBase64.substring(0, 50)}...`);
+
       const response = await zai.audio.asr.create({
-        file_base64: audioBase64,
+        file_base64: fileBase64,
       });
 
       const text = response.text || '';
       const durationMs = Date.now() - startTime;
 
-      this.logger.log(`🎤 ASR completed in ${durationMs}ms — ${text.length} chars`);
+      this.logger.log(`🎤 ASR completed in ${durationMs}ms — ${text.length} chars, text: "${text.substring(0, 100)}"`);
 
       return {
         text,
         language: 'fr', // SARA parle principalement français
       };
     } catch (error: any) {
-      this.logger.error(`ASR failed: ${error?.message}`);
+      this.logger.error(`ASR failed: ${error?.message}`, error?.stack);
       throw new Error(`Transcription vocale échouée : ${error?.message}`);
     }
+  }
+
+  /**
+   * Détecte le format audio à partir des premiers octets du base64.
+   * Retourne le data URI prefix approprié.
+   */
+  private detectAudioFormat(base64: string): string {
+    try {
+      const buffer = Buffer.from(base64.substring(0, 20), 'base64');
+      const header = buffer.toString('hex').toLowerCase();
+
+      // WAV: starts with "52494646" (RIFF)
+      if (header.startsWith('52494646')) {
+        return 'data:audio/wav;base64,';
+      }
+      // MP3: starts with "fff3" or "49443303" (ID3)
+      if (header.startsWith('fff3') || header.startsWith('fff2') || header.startsWith('494433')) {
+        return 'data:audio/mpeg;base64,';
+      }
+      // OGG/WebM: starts with "4f676753" (OggS) or "1a45dfa3" (WebM/EBML)
+      if (header.startsWith('4f676753') || header.startsWith('1a45dfa3')) {
+        return 'data:audio/webm;base64,';
+      }
+      // MP4/M4A: starts with ftyp box
+      if (header.includes('66747970')) {
+        return 'data:audio/mp4;base64,';
+      }
+      // FLAC: starts with "664c6143" (fLaC)
+      if (header.startsWith('664c6143')) {
+        return 'data:audio/flac;base64,';
+      }
+    } catch {
+      // Detection failed
+    }
+
+    // Default: assume WAV (since our frontend now converts to WAV)
+    return 'data:audio/wav;base64,';
   }
 
   // ─── TTS : TEXT → SPEECH ──────────────────────────────────────────────

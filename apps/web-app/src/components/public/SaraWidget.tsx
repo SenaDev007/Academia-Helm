@@ -2,9 +2,8 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Image from 'next/image';
-import { saraApi, SaraStreamChunk } from '@/lib/api/sara';
+import { saraApi } from '@/lib/api/sara';
 import { cn } from '@/lib/utils';
-import { Crown, Mic, Volume2 } from 'lucide-react';
 import { VoiceButton } from '@/components/ai/voice/VoiceButton';
 import { VoiceMode } from '@/components/ai/voice/VoiceMode';
 import {
@@ -523,33 +522,6 @@ export default function SaraWidget() {
                   En ligne
                 </span>
               </div>
-              {/* Voice Mode button (ChatGPT-style: waveform icon) */}
-              <button
-                onClick={() => setIsVoiceModeOpen(true)}
-                className="p-1.5 rounded-lg transition-all"
-                style={{
-                  background: H.cyanGhost,
-                  border: `1px solid ${H.cyanFaint}`,
-                  color: H.cyanDim,
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(0,229,255,0.2)';
-                  e.currentTarget.style.color = '#ffffff';
-                  e.currentTarget.style.boxShadow = '0 0 8px rgba(0,229,255,0.3)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = H.cyanGhost;
-                  e.currentTarget.style.color = H.cyanDim;
-                  e.currentTarget.style.boxShadow = 'none';
-                }}
-                title="Mode vocal"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                  <line x1="12" y1="19" x2="12" y2="22" />
-                </svg>
-              </button>
               <button
                 onClick={() => setIsOpen(false)}
                 className="hover:bg-white/10 p-1.5 rounded-lg transition-colors text-white/50 hover:text-white/80"
@@ -695,7 +667,7 @@ export default function SaraWidget() {
             style={{ background: `linear-gradient(90deg, transparent, ${H.cyanFaint}, transparent)` }}
           />
 
-          {/* ─── INPUT ── WHITE BACKGROUND, CYAN HOLOGRAPHIC BORDER ── */}
+          {/* ─── INPUT ── ChatGPT-style pill bar ── */}
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -703,8 +675,16 @@ export default function SaraWidget() {
             }}
             className="p-3 shrink-0 relative"
           >
-            <div className="relative flex items-center gap-2">
-              {/* Voice Button (left of input — ChatGPT-style) */}
+            <div
+              className="flex items-center gap-2 rounded-full px-3 py-1.5"
+              style={{
+                background: '#ffffff',
+                border: `1.5px solid ${H.cyanFaint}`,
+                boxShadow: '0 0 0 0 transparent',
+                transition: 'border-color 0.3s, box-shadow 0.3s',
+              }}
+            >
+              {/* Mic button — voice note recording (ChatGPT-style, left) */}
               <VoiceButton
                 onRecordingComplete={handleVoiceInput}
                 disabled={isTyping}
@@ -712,80 +692,49 @@ export default function SaraWidget() {
               />
 
               {/* Text Input */}
-              <div className="relative flex-1">
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Posez votre question..."
-                  className="w-full py-2.5 pl-4 pr-12 text-sm rounded-full outline-none transition-all duration-300"
-                  style={{
-                    background: '#ffffff',
-                    border: `1px solid ${H.cyanFaint}`,
-                    color: '#001223',
-                    boxShadow: '0 0 0 0 transparent',
-                  }}
-                  onFocus={(e) => {
-                    e.currentTarget.style.borderColor = H.cyan;
-                    e.currentTarget.style.boxShadow = `0 0 20px rgba(0,229,255,0.2), 0 0 40px rgba(0,229,255,0.08)`;
-                  }}
-                  onBlur={(e) => {
-                    e.currentTarget.style.borderColor = H.cyanFaint;
-                    e.currentTarget.style.boxShadow = '0 0 0 0 transparent';
-                  }}
-                  disabled={isTyping}
-                />
-                <style>{`input::placeholder { color: rgba(0,18,35,0.35) !important; }`}</style>
+              <input
+                ref={inputRef}
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Posez votre question..."
+                className="flex-1 bg-transparent border-none outline-none text-sm py-2"
+                style={{ color: '#001223' }}
+                disabled={isTyping}
+              />
+              <style>{`input::placeholder { color: rgba(0,18,35,0.35) !important; }`}</style>
+
+              {/* Send / Voice Mode button (ChatGPT-style — right) */}
+              {input.trim() ? (
                 <button
                   type="submit"
-                  disabled={!input.trim() || isTyping}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300"
-                  style={input.trim() && !isTyping ? {
-                    background: `linear-gradient(135deg, ${H.cyan}, #009bb8)`,
+                  className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all"
+                  style={{
+                    background: H.cyan,
                     color: '#fff',
-                    boxShadow: `0 0 12px rgba(0,229,255,0.4)`,
-                  } : {
-                    background: 'rgba(0,229,255,0.1)',
-                    color: 'rgba(0,229,255,0.3)',
-                    cursor: 'not-allowed',
                   }}
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M5 12h14M12 5l7 7-7 7" />
                   </svg>
                 </button>
-              </div>
-
-              {/* Voice Mode button (right of input — ChatGPT-style waveform) */}
-              <button
-                type="button"
-                onClick={() => setIsVoiceModeOpen(true)}
-                className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition-all"
-                style={{
-                  background: H.cyanGhost,
-                  border: `1px solid ${H.cyanFaint}`,
-                  color: H.cyanDim,
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(0,229,255,0.2)';
-                  e.currentTarget.style.color = '#ffffff';
-                  e.currentTarget.style.boxShadow = '0 0 12px rgba(0,229,255,0.3)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = H.cyanGhost;
-                  e.currentTarget.style.color = H.cyanDim;
-                  e.currentTarget.style.boxShadow = 'none';
-                }}
-                title="Mode vocal"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                  <line x1="12" y1="19" x2="12" y2="22" />
-                </svg>
-              </button>
+              ) : (
+                /* Waveform/Voice Mode button (right, shown when no text) */
+                <button
+                  type="button"
+                  onClick={() => setIsVoiceModeOpen(true)}
+                  className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all"
+                  style={{ color: H.cyanDim, background: 'transparent' }}
+                  title="Mode vocal"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                    <line x1="12" y1="19" x2="12" y2="22" />
+                  </svg>
+                </button>
+              )}
             </div>
           </form>
 

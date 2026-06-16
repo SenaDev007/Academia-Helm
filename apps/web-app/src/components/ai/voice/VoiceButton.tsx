@@ -3,10 +3,10 @@
  * VOICE BUTTON — Bouton micro pour enregistrer la voix (SARA)
  * ============================================================================
  *
- * Bouton holographique style SaraWidget avec :
- *   - Animation de pulsation pendant l'enregistrement
- *   - Waveform basé sur le niveau audio
- *   - États : idle, recording, processing
+ * Bouton style ChatGPT :
+ *   - Simple icône micro transparente au repos
+ *   - Animation de pulsation rouge pendant l'enregistrement
+ *   - Indicateur de durée
  *   - Toast d'erreur si micro non disponible
  *
  * Utilise le hook useVoiceRecorder.
@@ -18,21 +18,6 @@
 import React, { useCallback } from 'react';
 import { Mic, MicOff, Loader2 } from 'lucide-react';
 import { useVoiceRecorder } from '@/hooks/useVoiceRecorder';
-
-// ─── HOLO COLORS (même palette que SaraWidget) ──────────────────────────
-
-const H = {
-  cyan: '#00e5ff',
-  cyanDim: 'rgba(0,229,255,0.7)',
-  cyanFaint: 'rgba(0,229,255,0.3)',
-  cyanGhost: 'rgba(0,229,255,0.1)',
-  cyanBorder: 'rgba(0,229,255,0.85)',
-  darkBg: 'rgba(0,18,35,0.97)',
-  green: '#22c55e',
-  greenGlow: '#4ade80',
-  red: '#ef4444',
-  redGlow: 'rgba(239,68,68,0.4)',
-} as const;
 
 interface VoiceButtonProps {
   /** Callback appelé avec le base64 audio quand l'enregistrement est terminé */
@@ -72,9 +57,9 @@ export function VoiceButton({
   // ─── TAILLES ──────────────────────────────────────────────────────────
 
   const sizeConfig = {
-    sm: { button: 'w-8 h-8', icon: 14, ring: 28 },
-    md: { button: 'w-10 h-10', icon: 16, ring: 36 },
-    lg: { button: 'w-12 h-12', icon: 20, ring: 44 },
+    sm: { button: 'w-8 h-8', icon: 14 },
+    md: { button: 'w-10 h-10', icon: 16 },
+    lg: { button: 'w-12 h-12', icon: 20 },
   };
 
   const config = sizeConfig[size];
@@ -101,80 +86,35 @@ export function VoiceButton({
 
   return (
     <div className={`relative inline-flex items-center justify-center ${className}`}>
-      {/* Waveform rings pendant l'enregistrement */}
-      {isRecording && (
-        <>
-          {/* Ring 1 — pulsation principale */}
-          <div
-            className="absolute rounded-full animate-ping"
-            style={{
-              width: config.ring + audioLevel * 30,
-              height: config.ring + audioLevel * 30,
-              background: `radial-gradient(circle, ${H.redGlow} 0%, transparent 70%)`,
-              opacity: 0.4 + audioLevel * 0.4,
-              transition: 'all 0.1s ease-out',
-            }}
-          />
-          {/* Ring 2 — pulsation secondaire */}
-          <div
-            className="absolute rounded-full"
-            style={{
-              width: config.ring + audioLevel * 50,
-              height: config.ring + audioLevel * 50,
-              border: `1.5px solid rgba(239,68,68,${0.2 + audioLevel * 0.3})`,
-              opacity: 0.5,
-              transition: 'all 0.15s ease-out',
-            }}
-          />
-        </>
-      )}
-
-      {/* Bouton principal */}
+      {/* Bouton principal — ChatGPT-style simple */}
       <button
         type="button"
         onClick={handleClick}
         disabled={disabled || isInitializing}
         className={`
           ${config.button} rounded-full flex items-center justify-center
-          transition-all duration-300 relative z-10
-          focus:outline-none focus:ring-2 focus:ring-offset-2
+          transition-all duration-200 relative z-10
+          focus:outline-none
         `}
         style={
           isRecording
             ? {
-                background: `linear-gradient(135deg, ${H.red}, #dc2626)`,
+                background: '#EF4444',
                 color: '#ffffff',
-                boxShadow: `0 0 ${12 + audioLevel * 20}px ${H.redGlow}`,
-                animation: 'voice-pulse 1s ease-in-out infinite',
+                boxShadow: `0 0 ${8 + audioLevel * 16}px rgba(239,68,68,0.4)`,
+                transform: `scale(${1 + audioLevel * 0.1})`,
               }
             : disabled
             ? {
-                background: H.cyanGhost,
-                color: 'rgba(0,229,255,0.3)',
+                color: 'rgba(0,0,0,0.2)',
                 cursor: 'not-allowed',
+                background: 'transparent',
               }
             : {
-                background: H.cyanGhost,
-                border: `1px solid ${H.cyanFaint}`,
-                color: H.cyanDim,
+                color: 'rgba(0,0,0,0.5)',
+                background: 'transparent',
               }
         }
-        onMouseEnter={(e) => {
-          if (!isRecording && !disabled) {
-            e.currentTarget.style.background = 'rgba(0,229,255,0.2)';
-            e.currentTarget.style.borderColor = H.cyanDim;
-            e.currentTarget.style.boxShadow = '0 0 12px rgba(0,229,255,0.25)';
-            e.currentTarget.style.color = '#ffffff';
-          }
-        }}
-        onMouseLeave={(e) => {
-          if (!isRecording && !disabled) {
-            e.currentTarget.style.background = H.cyanGhost;
-            e.currentTarget.style.borderColor = H.cyanFaint;
-            e.currentTarget.style.boxShadow = 'none';
-            e.currentTarget.style.color = H.cyanDim;
-          }
-        }}
         title={
           isRecording
             ? `Arrêter l'enregistrement (${duration}s)`
@@ -182,7 +122,7 @@ export function VoiceButton({
             ? 'Initialisation du micro...'
             : error
             ? error
-            : 'Mode vocal'
+            : 'Note vocale'
         }
       >
         {isInitializing ? (
@@ -197,8 +137,7 @@ export function VoiceButton({
       {/* Indicateur de durée pendant l'enregistrement */}
       {isRecording && duration > 0 && (
         <span
-          className="absolute -top-5 text-[9px] font-mono font-bold"
-          style={{ color: H.red }}
+          className="absolute -top-5 text-[9px] font-mono font-bold text-red-500"
         >
           {duration}s
         </span>
@@ -211,20 +150,12 @@ export function VoiceButton({
           style={{
             background: 'rgba(239,68,68,0.15)',
             border: '1px solid rgba(239,68,68,0.3)',
-            color: H.red,
+            color: '#ef4444',
           }}
         >
           {error}
         </div>
       )}
-
-      {/* Animation CSS */}
-      <style jsx>{`
-        @keyframes voice-pulse {
-          0%, 100% { transform: scale(1); }
-          50% { transform: scale(1.05); }
-        }
-      `}</style>
     </div>
   );
 }

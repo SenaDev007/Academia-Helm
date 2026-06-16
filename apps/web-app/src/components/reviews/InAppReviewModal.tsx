@@ -257,7 +257,8 @@ export default function InAppReviewModal({
             </div>
             <h4 className="text-lg font-bold text-gray-900 mb-2">Merci pour votre avis !</h4>
             <p className="text-gray-600 text-sm mb-4">
-              Votre témoignage a été enregistré et sera publié après validation par notre équipe.
+              Votre témoignage a été publié sur la page d'accueil avec le logo
+              de votre établissement. Il est désormais visible publiquement.
             </p>
             <button
               onClick={() => { setStep('rating'); setRating(0); onClose(); }}

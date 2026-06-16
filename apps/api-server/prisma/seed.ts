@@ -430,91 +430,23 @@ async function main() {
   console.log(`   ✅ ${reviewSeeds.length} avis plateforme (publiés) assurés`);
 
   // ============================================================================
-  // 8 bis — Avis Helm natifs (table reviews, landing dynamique)
+  // 8 bis — Avis Helm natifs (table reviews)
+  // ----------------------------------------------------------------------------
+  // ⚠️ Plus de données mock : la section avis du landing page est maintenant
+  // alimentée uniquement par les avis réels déposés par les établissements
+  // (auto-approuvés quand tenantId valide) ou par les enseignants/parents
+  // (modération admin). On supprime explicitement les anciennes lignes de
+  // démonstration pour qu'elles ne réapparaissent jamais en production.
   // ============================================================================
-  console.log('\n8️⃣ bis  Avis Helm natifs (reviews, APPROVED)...');
-  const tenantForReviews = await prisma.tenant.findFirst({
-    where: { slug: 'default-tenant' },
+  console.log('\n8️⃣ bis  Nettoyage des anciens avis mock (reviews)...');
+  const deletedMockReviews = await prisma.review.deleteMany({
+    where: {
+      id: { in: ['seed-helm-review-1', 'seed-helm-review-2', 'seed-helm-review-3'] },
+    },
   });
-  const publishedDemo = new Date('2025-03-15T12:00:00.000Z');
-  const helmReviewSeeds: Array<{
-    id: string;
-    authorName: string;
-    authorRole: string;
-    schoolName: string;
-    city: string;
-    rating: number;
-    comment: string;
-    featured: boolean;
-  }> = [
-    {
-      id: 'seed-helm-review-1',
-      authorName: 'Marie Dossou',
-      authorRole: 'Directrice',
-      schoolName: 'Complexe scolaire Horizon',
-      city: 'Cotonou',
-      rating: 5,
-      comment:
-        'Pilotage clair des inscriptions et des finances : nous avons enfin une vision unique pour toute l’équipe.',
-      featured: true,
-    },
-    {
-      id: 'seed-helm-review-2',
-      authorName: 'Koffi Mensah',
-      authorRole: 'Fondateur',
-      schoolName: 'Groupe Alpha Éducation',
-      city: 'Porto-Novo',
-      rating: 5,
-      comment:
-        'ORION et les tableaux de bord nous aident à prioriser sans nous noyer dans les chiffres.',
-      featured: false,
-    },
-    {
-      id: 'seed-helm-review-3',
-      authorName: 'Aminata Traoré',
-      authorRole: 'Responsable administratif',
-      schoolName: 'Lycée privé Les Bambous',
-      city: 'Parakou',
-      rating: 4,
-      comment:
-        'Interface sobre, équipe réactive. Les relances et les exports nous font gagner un temps précieux.',
-      featured: false,
-    },
-  ];
-
-  for (const r of helmReviewSeeds) {
-    await prisma.review.upsert({
-      where: { id: r.id },
-      create: {
-        id: r.id,
-        authorName: r.authorName,
-        authorRole: r.authorRole,
-        schoolName: r.schoolName,
-        city: r.city,
-        photoUrl: null,
-        rating: r.rating,
-        comment: r.comment,
-        status: 'APPROVED',
-        featured: r.featured,
-        source: 'MANUAL',
-        publishedAt: publishedDemo,
-        tenantId: tenantForReviews?.id ?? null,
-      },
-      update: {
-        authorName: r.authorName,
-        authorRole: r.authorRole,
-        schoolName: r.schoolName,
-        city: r.city,
-        rating: r.rating,
-        comment: r.comment,
-        status: 'APPROVED',
-        featured: r.featured,
-        publishedAt: publishedDemo,
-        tenantId: tenantForReviews?.id ?? null,
-      },
-    });
-  }
-  console.log(`   ✅ ${helmReviewSeeds.length} avis Helm (reviews) assurés`);
+  console.log(
+    `   🧹 ${deletedMockReviews.count} ancien(s) avis mock supprimé(s) (aucune donnée mock ne sera recréée)`,
+  );
 
   // ============================================================================
   // RÉSUMÉ

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { buildReviewsPublishedUrl } from '@/lib/reviews-api-url';
 import {
   HELM_GOLD,
+  HELM_GOLD_LIGHT,
   HELM_NAVY,
   HELM_NAVY_MID,
   HELM_SECTION_BG,
@@ -20,7 +21,9 @@ const dmSans = DM_Sans({
 });
 
 const NAVY = HELM_NAVY;
+const NAVY_MID = HELM_NAVY_MID;
 const GOLD = HELM_GOLD;
+const GOLD_LIGHT = HELM_GOLD_LIGHT;
 const SECTION_BG = HELM_SECTION_BG;
 
 type PublishedReview = {
@@ -30,6 +33,10 @@ type PublishedReview = {
   schoolName: string;
   city: string;
   photoUrl: string | null;
+  /** Logo du tenant (école) — présent uniquement pour les avis déposés
+   * depuis l'application par un établissement authentifié. */
+  tenantLogoUrl?: string | null;
+  tenantId?: string | null;
   rating: number;
   comment: string;
   featured: boolean;
@@ -48,7 +55,11 @@ type ApiResponse = {
   stats: Stats;
 };
 
-const EMPTY_STATS: Stats = { average: 0, total: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } };
+const EMPTY_STATS: Stats = {
+  average: 0,
+  total: 0,
+  distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+};
 
 function StarRow({
   rating,
@@ -96,74 +107,158 @@ function scoreLabel(avg: number): string {
   if (avg >= 4.5) return 'Excellent';
   if (avg >= 3.5) return 'Très bien';
   if (avg >= 2.5) return 'Bien';
-  return 'Moyen';
+  if (avg >= 1.5) return 'Passable';
+  return 'Faible';
 }
 
-function ReviewCard({ r }: { r: PublishedReview }) {
-  const featured = r.featured;
+function timeAgo(iso: string | null): string {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '';
+  const diffMs = Date.now() - then;
+  const days = Math.floor(diffMs / 86_400_000);
+  if (days < 1) return "Aujourd'hui";
+  if (days < 7) return `Il y a ${days} jour${days > 1 ? 's' : ''}`;
+  if (days < 30) {
+    const w = Math.floor(days / 7);
+    return `Il y a ${w} semaine${w > 1 ? 's' : ''}`;
+  }
+  if (days < 365) {
+    const m = Math.floor(days / 30);
+    return `Il y a ${m} mois`;
+  }
+  const y = Math.floor(days / 365);
+  return `Il y a ${y} an${y > 1 ? 's' : ''}`;
+}
+
+/**
+ * Avatar : logo école si l'avis provient d'un tenant authentifié,
+ * sinon photo fournie par l'utilisateur, sinon initiales colorées.
+ */
+function Avatar({ r, size = 48 }: { r: PublishedReview; size?: number }) {
+  // 1) Avis déposé depuis l'application par une école → logo de l'école
+  if (r.tenantId && r.tenantLogoUrl) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return (
+      <img
+        src={r.tenantLogoUrl}
+        alt={`Logo ${r.schoolName}`}
+        className="rounded-full object-cover"
+        style={{
+          width: size,
+          height: size,
+          boxShadow: `0 0 0 2px ${GOLD}`,
+        }}
+      />
+    );
+  }
+  // 2) Photo fournie par l'utilisateur (parent / enseignant qui a uploadé)
+  if (r.photoUrl) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return (
+      <img
+        src={r.photoUrl}
+        alt=""
+        className="rounded-full object-cover"
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+  // 3) Fallback : initiales colorées
   const hue = hashHue(r.authorName);
   return (
-    <article
-      className="relative rounded-2xl bg-white p-6 transition-all duration-200 ease-out hover:-translate-y-[3px]"
+    <div
+      className="flex shrink-0 items-center justify-center rounded-full text-sm font-bold text-white"
       style={{
-        boxShadow: featured
-          ? '0 12px 40px rgba(201, 168, 76, 0.25)'
-          : '0 8px 28px rgba(30, 58, 95, 0.08)',
-        border: featured ? `2px solid ${GOLD}` : '1px solid #E2E8F0',
+        width: size,
+        height: size,
+        background: `linear-gradient(135deg, hsl(${hue}, 55%, 42%), hsl(${(hue + 40) % 360}, 50%, 35%))`,
+      }}
+      aria-hidden
+    >
+      {initialsFromName(r.authorName)}
+    </div>
+  );
+}
+
+function TrustpilotCard({ r }: { r: PublishedReview }) {
+  const isSchoolReview = Boolean(r.tenantId);
+  return (
+    <article
+      className="flex flex-col rounded-2xl bg-white p-6 transition-all duration-200 ease-out hover:-translate-y-[3px] hover:shadow-xl"
+      style={{
+        boxShadow: '0 6px 22px rgba(30, 58, 95, 0.07)',
+        border: '1px solid #E2E8F0',
       }}
     >
-      <span
-        className="pointer-events-none absolute left-5 top-4 font-serif text-6xl leading-none text-slate-200"
-        style={{ fontFamily: 'Georgia, serif' }}
-        aria-hidden
-      >
-        &ldquo;
-      </span>
-      {featured ? (
-        <span
-          className="mb-3 inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold"
-          style={{ background: `linear-gradient(90deg, ${GOLD}22, ${GOLD}44)`, color: NAVY }}
-        >
-          ✦ Mis en avant
-        </span>
-      ) : null}
-      <p
-        className="relative z-[1] mt-2 min-h-[4.5rem] text-[15px] italic leading-relaxed text-slate-700"
-        style={{ fontFamily: 'Georgia, serif' }}
-      >
-        {r.comment}
-      </p>
-      <div className="relative z-[1] mt-4">
-        <StarRow rating={r.rating} />
-      </div>
-      <div className="relative z-[1] mt-5 flex items-start gap-3 border-t border-slate-100 pt-4">
-        {r.photoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element -- URLs externes non configurées dans next.config
-          <img
-            src={r.photoUrl}
-            alt=""
-            className="h-12 w-12 rounded-full object-cover"
-          />
-        ) : (
-          <div
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white"
-            style={{
-              background: `linear-gradient(135deg, hsl(${hue}, 55%, 42%), hsl(${(hue + 40) % 360}, 50%, 35%))`,
-            }}
-            aria-hidden
-          >
-            {initialsFromName(r.authorName)}
+      {/* En-tête : avatar + nom + badge source */}
+      <div className="flex items-start gap-3">
+        <Avatar r={r} size={48} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p
+              className="truncate text-[15px] font-bold"
+              style={{ color: NAVY }}
+            >
+              {r.authorName}
+            </p>
+            {isSchoolReview ? (
+              <span
+                className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                style={{
+                  background: `linear-gradient(90deg, ${GOLD}22, ${GOLD}44)`,
+                  color: NAVY,
+                }}
+                title="Avis vérifié déposé depuis l'application Academia Helm"
+              >
+                ✓ École vérifiée
+              </span>
+            ) : (
+              <span
+                className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700"
+                title="Avis soumis depuis le formulaire public"
+              >
+                ✓ Avis vérifié
+              </span>
+            )}
           </div>
-        )}
-        <div className="min-w-0">
-          <p className="font-semibold" style={{ color: NAVY }}>
-            {r.authorName}
-          </p>
-          <p className="mt-0.5 text-xs text-slate-600">
+          <p className="mt-0.5 truncate text-xs text-slate-500">
             {[r.authorRole, r.schoolName, r.city].filter(Boolean).join(' · ')}
           </p>
         </div>
       </div>
+
+      {/* Étoiles + date */}
+      <div className="mt-4 flex items-center justify-between">
+        <StarRow rating={r.rating} size={18} />
+        <span className="text-xs text-slate-400">
+          {timeAgo(r.publishedAt ?? r.createdAt)}
+        </span>
+      </div>
+
+      {/* Commentaire */}
+      <p
+        className="mt-3 flex-1 text-[14.5px] leading-relaxed text-slate-700"
+        style={{ fontFamily: 'Georgia, serif' }}
+      >
+        “{r.comment}”
+      </p>
+
+      {/* Pied : mention "Mis en avant" si featured */}
+      {r.featured ? (
+        <div
+          className="mt-4 inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold"
+          style={{
+            background: `linear-gradient(90deg, ${GOLD}22, ${GOLD}44)`,
+            color: NAVY,
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill={GOLD}>
+            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+          </svg>
+          Mis en avant
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -176,17 +271,64 @@ function SkeletonCards() {
           key={i}
           className="animate-pulse overflow-hidden rounded-2xl border border-slate-200 bg-white p-6"
         >
-          <div className="h-4 w-2/3 rounded bg-slate-200" />
-          <div className="mt-4 h-20 rounded bg-slate-100" />
-          <div className="mt-4 flex gap-3">
+          <div className="flex gap-3">
             <div className="h-12 w-12 rounded-full bg-slate-200" />
             <div className="flex-1 space-y-2 pt-1">
               <div className="h-3 w-1/2 rounded bg-slate-200" />
               <div className="h-3 w-3/4 rounded bg-slate-100" />
             </div>
           </div>
+          <div className="mt-4 h-4 w-24 rounded bg-slate-100" />
+          <div className="mt-4 h-20 rounded bg-slate-100" />
         </div>
       ))}
+    </div>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div
+      className="mx-auto max-w-xl rounded-2xl border border-dashed border-slate-300 bg-white/70 p-10 text-center"
+      style={{ boxShadow: '0 6px 22px rgba(30, 58, 95, 0.04)' }}
+    >
+      <div
+        className="mx-auto flex h-14 w-14 items-center justify-center rounded-full"
+        style={{
+          background: `linear-gradient(135deg, ${GOLD}22, ${GOLD}44)`,
+        }}
+      >
+        <svg
+          width="26"
+          height="26"
+          viewBox="0 0 24 24"
+          fill={GOLD}
+          stroke={NAVY}
+          strokeWidth="1.2"
+        >
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+        </svg>
+      </div>
+      <h3
+        className="mt-4 text-lg font-bold"
+        style={{ color: NAVY }}
+      >
+        Soyez le premier à laisser un avis
+      </h3>
+      <p className="mt-2 text-sm text-slate-600">
+        Les avis vérifiés des établissements et des utilisateurs Academia Helm
+        apparaîtront ici. Aucune donnée fictive n'est affichée — chaque avis
+        est publié après modération.
+      </p>
+      <Link
+        href="/avis"
+        className="mt-5 inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
+        style={{
+          background: `linear-gradient(135deg, ${NAVY}, ${NAVY_MID})`,
+        }}
+      >
+        Laisser un avis →
+      </Link>
     </div>
   );
 }
@@ -195,19 +337,13 @@ export default function ReviewsSection() {
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  /** true = au moins un avis APPROVED côté API */
-  const [hasLiveReviews, setHasLiveReviews] = useState(false);
 
   const url = useMemo(() => buildReviewsPublishedUrl(), []);
-
-  const fallbackReviews = useMemo(() => [] as PublishedReview[], []);
-  const fallbackStats = useMemo(() => EMPTY_STATS, []);
 
   useEffect(() => {
     if (!url) {
       setLoading(false);
       setError('Configuration API manquante');
-      setHasLiveReviews(false);
       return;
     }
     let cancelled = false;
@@ -219,15 +355,11 @@ export default function ReviewsSection() {
         if (!cancelled) {
           setData(json);
           setError(null);
-          setHasLiveReviews(
-            Boolean(json?.stats?.total && json.stats.total > 0),
-          );
         }
       } catch {
         if (!cancelled) {
           setError('Impossible de charger les avis pour le moment.');
           setData(null);
-          setHasLiveReviews(false);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -238,12 +370,9 @@ export default function ReviewsSection() {
     };
   }, [url]);
 
-  const stats = hasLiveReviews && data?.stats ? data.stats : fallbackStats;
-  const reviews =
-    hasLiveReviews && data?.reviews?.length
-      ? data.reviews
-      : fallbackReviews;
-  const showDemoRibbon = !loading && !hasLiveReviews;
+  const stats = data?.stats ?? EMPTY_STATS;
+  const reviews = data?.reviews ?? [];
+  const hasReviews = reviews.length > 0;
 
   return (
     <section
@@ -253,13 +382,16 @@ export default function ReviewsSection() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <header className="mx-auto mb-12 max-w-3xl text-center">
           <span
-            className="inline-flex items-center rounded-full px-4 py-1.5 text-sm font-semibold"
+            className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-semibold"
             style={{
               background: `linear-gradient(90deg, ${GOLD}33, ${GOLD}55)`,
               color: NAVY,
             }}
           >
-            ✦ Avis vérifiés
+            <svg width="14" height="14" viewBox="0 0 24 24" fill={GOLD}>
+              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+            </svg>
+            Avis vérifiés
           </span>
           <h2
             className="mt-5 text-3xl font-extrabold tracking-tight md:text-4xl"
@@ -268,135 +400,117 @@ export default function ReviewsSection() {
             Ce que disent nos établissements
           </h2>
           <p className="mt-3 text-lg" style={{ color: HELM_TEXT_MUTED }}>
-            Des directeurs et fondateurs qui font confiance à Academia Helm.
-          </p>
-          <p className="mt-4 max-w-2xl text-center text-sm leading-relaxed text-slate-600">
-            <Link
-              href="/avis"
-              className="font-semibold underline decoration-[#C9A84C] decoration-2 underline-offset-2"
-              style={{ color: NAVY }}
-            >
-              Laisser un avis
-            </Link>{' '}
-            sur la page dédiée. Les utilisateurs connectés au portail reçoivent
-            aussi une invitation dans l’application après environ 30 jours
-            d’utilisation.
+            Directeurs, enseignants, parents et élèves partagent leur expérience
+            avec Academia Helm.
           </p>
         </header>
 
         {loading ? (
           <SkeletonCards />
-        ) : stats ? (
+        ) : hasReviews ? (
           <>
-            {showDemoRibbon ? (
-              <p className="mb-6 rounded-xl border border-amber-200/90 bg-amber-50/95 px-4 py-3 text-center text-sm text-amber-950">
-                {error ? (
-                  <>
-                    <span className="font-semibold">Aperçu éditorial.</span>{' '}
-                    {error} Les témoignages ci-dessous illustrent le rendu
-                    jusqu’à publication des avis vérifiés en base.
-                  </>
-                ) : (
-                  <>
-                    <span className="font-semibold">Exemples de présentation.</span>{' '}
-                    Les avis vérifiés apparaîtront ici dès qu’ils seront
-                    approuvés dans l’administration.
-                  </>
-                )}
-              </p>
-            ) : null}
+            {/* Bandeau résumé façon Trustpilot */}
             <div
-              className="mb-12 flex flex-col gap-8 rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm md:flex-row md:items-stretch md:gap-0 md:p-8"
+              className="mb-12 overflow-hidden rounded-2xl border border-slate-200/80 bg-white"
               style={{ boxShadow: '0 12px 40px rgba(30, 58, 95, 0.06)' }}
             >
-              <div className="flex flex-1 flex-col justify-center md:pr-8">
-                <div className="flex flex-wrap items-end gap-3">
-                  <span
-                    className="text-5xl font-bold tabular-nums md:text-6xl"
-                    style={{ color: NAVY }}
-                  >
-                    {stats.average.toFixed(1)}
-                  </span>
-                  <div className="pb-1">
-                    <StarRow
-                      rating={Math.round(stats.average)}
-                      size={22}
-                    />
-                    <p className="mt-1 text-sm font-medium text-slate-600">
-                      {scoreLabel(stats.average)}
-                    </p>
-                  </div>
-                </div>
-                <p className="mt-3 text-sm text-slate-500">
-                  {stats.total} avis vérifiés
-                </p>
-              </div>
-
-              <div
-                className="hidden w-px shrink-0 bg-slate-200 md:block"
-                aria-hidden
-              />
-
-              <div className="flex flex-1 flex-col justify-center gap-3 md:px-8">
-                {[5, 4, 3, 2, 1].map((star) => {
-                  const pct =
-                    stats.distribution[star as 1 | 2 | 3 | 4 | 5] ?? 0;
-                  return (
-                    <div
-                      key={star}
-                      className="flex items-center gap-3 text-sm text-slate-600"
-                    >
-                      <span className="w-8 text-right font-medium">
-                        {star}★
-                      </span>
-                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
-                        <div
-                          className="h-full rounded-full transition-all"
-                          style={{
-                            width: `${Math.min(100, pct)}%`,
-                            background: `linear-gradient(90deg, ${GOLD}, ${NAVY})`,
-                          }}
-                        />
-                      </div>
-                      <span className="w-12 text-right tabular-nums text-slate-500">
-                        {pct.toFixed(1)}%
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div
-                className="hidden w-px shrink-0 bg-slate-200 md:block"
-                aria-hidden
-              />
-
-              <div className="flex flex-1 items-center justify-center md:pl-4">
+              <div className="grid grid-cols-1 md:grid-cols-12">
+                {/* Score global */}
                 <div
-                  className="rounded-2xl px-8 py-6 text-center text-white shadow-lg"
+                  className="flex flex-col items-center justify-center gap-3 p-8 md:col-span-4"
                   style={{
-                    background: `linear-gradient(145deg, ${NAVY}, ${HELM_NAVY_MID})`,
-                    minWidth: 200,
+                    background: `linear-gradient(145deg, ${NAVY}, ${NAVY_MID})`,
+                    color: '#fff',
                   }}
                 >
-                  <p className="text-lg font-bold tracking-wide">★ PREMIUM</p>
-                  <p className="mt-1 text-sm opacity-90">Academia Helm</p>
+                  <div className="flex items-end gap-2">
+                    <span className="text-5xl font-bold tabular-nums md:text-6xl">
+                      {stats.average.toFixed(1)}
+                    </span>
+                    <span className="pb-2 text-lg opacity-80">/ 5</span>
+                  </div>
+                  <StarRow rating={Math.round(stats.average)} size={22} gold={GOLD_LIGHT} />
+                  <p className="text-sm font-medium opacity-90">
+                    {scoreLabel(stats.average)}
+                  </p>
+                  <p className="text-xs opacity-75">
+                    Basé sur {stats.total} avis vérifié{stats.total > 1 ? 's' : ''}
+                  </p>
+                </div>
+
+                {/* Répartition */}
+                <div className="flex flex-1 flex-col justify-center gap-2.5 p-6 md:col-span-8 md:p-8">
+                  <p
+                    className="mb-1 text-sm font-semibold"
+                    style={{ color: NAVY }}
+                  >
+                    Répartition des notes
+                  </p>
+                  {[5, 4, 3, 2, 1].map((star) => {
+                    const pct =
+                      stats.distribution[star as 1 | 2 | 3 | 4 | 5] ?? 0;
+                    return (
+                      <div
+                        key={star}
+                        className="flex items-center gap-3 text-sm text-slate-600"
+                      >
+                        <span className="w-12 text-right font-medium">
+                          {star} étoile{star > 1 ? 's' : ''}
+                        </span>
+                        <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{
+                              width: `${Math.min(100, pct)}%`,
+                              background: `linear-gradient(90deg, ${GOLD}, ${NAVY})`,
+                            }}
+                          />
+                        </div>
+                        <span className="w-14 text-right tabular-nums text-slate-500">
+                          {pct.toFixed(1)}%
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
 
+            {/* Grille des avis */}
             <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
               {reviews.map((r) => (
-                <ReviewCard key={r.id} r={r} />
+                <TrustpilotCard key={r.id} r={r} />
               ))}
             </div>
 
-            <p className="mt-12 text-center text-sm text-slate-500">
-              {hasLiveReviews
-                ? 'Avis collectés directement auprès des établissements utilisant Academia Helm'
-                : 'Textes d’illustration — les avis publiés remplaceront cet aperçu automatiquement.'}
-            </p>
+            {/* Appel à l'action — laisser un avis */}
+            <div className="mt-12 flex flex-col items-center gap-4 text-center">
+              <p className="text-sm text-slate-600">
+                Vous utilisez Academia Helm ? Partagez votre expérience.
+              </p>
+              <Link
+                href="/avis"
+                className="inline-flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold text-white transition hover:opacity-90"
+                style={{
+                  background: `linear-gradient(135deg, ${NAVY}, ${NAVY_MID})`,
+                }}
+              >
+                Laisser un avis
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M5 12h14M13 5l7 7-7 7" />
+                </svg>
+              </Link>
+              <p className="text-xs text-slate-400">
+                Avis collectés directement auprès des utilisateurs d'Academia Helm.
+              </p>
+            </div>
           </>
+        ) : (
+          <EmptyState />
+        )}
+
+        {error && !hasReviews && !loading ? (
+          <p className="mt-8 text-center text-sm text-slate-500">{error}</p>
         ) : null}
       </div>
     </section>

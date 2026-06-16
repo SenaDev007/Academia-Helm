@@ -13,7 +13,10 @@ export async function GET(request: NextRequest) {
     const response = await fetch(apiUrl, {
       method: 'GET',
       headers: bffHeaders(),
-      next: { revalidate: 60 },
+      // Revalidation courte (5 s) : les nouveaux avis déposés depuis l'app
+      // tenant (auto-approuvés) doivent apparaître quasi-immédiatement sur le
+      // landing page public sans attendre 60 s.
+      next: { revalidate: 5 },
     });
     const body = await response.text();
     return new NextResponse(body, {

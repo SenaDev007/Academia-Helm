@@ -1,8 +1,11 @@
 /**
  * Admin Layout Client Component
- * 
- * Layout sécurisé pour le panel Super Admin
- * Vérifie que l'utilisateur a le rôle SUPER_ADMIN
+ *
+ * Layout sécurisé pour le panel Super Admin.
+ *
+ * SYSTÈME D'AUTHENTIFICATION SÉPARÉ :
+ * Utilise le cookie `academia_admin_session` (pas le cookie tenant).
+ * Logout via /api/admin-auth/logout (pas /api/auth/logout).
  */
 
 'use client';
@@ -16,7 +19,6 @@ import { usePathname } from 'next/navigation';
 import AppIcon from '@/components/ui/AppIcon';
 import type { IconName } from '@/lib/icons';
 import { offlineBootstrapService } from '@/lib/offline/offline-bootstrap.service';
-import { clearClientSessionSync } from '@/lib/auth/client-access-token';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -31,27 +33,30 @@ export default function AdminLayout({ children, user }: AdminLayoutProps) {
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  // Vérification du rôle SUPER_ADMIN
-  useEffect(() => {
-    if (user.role !== 'SUPER_ADMIN') {
-      router.push('/app'); // Rediriger vers le dashboard normal
-    }
-  }, [user.role, router]);
+  // Vérification du rôle — accepte PLATFORM_SUPER_ADMIN (nouveau système)
+  // et SUPER_ADMIN (legacy, pour compatibilité transitionnelle)
+  const isAdminRole =
+    user.role === 'PLATFORM_SUPER_ADMIN' || user.role === 'SUPER_ADMIN';
 
-  if (user.role !== 'SUPER_ADMIN') {
+  useEffect(() => {
+    if (!isAdminRole) {
+      router.push('/admin-login');
+    }
+  }, [isAdminRole, router]);
+
+  if (!isAdminRole) {
     return null; // Ne rien afficher si pas Super Admin
   }
 
   const handleLogout = async () => {
     try {
       await offlineBootstrapService.clearCache();
-      await fetch('/api/auth/logout', { method: 'POST' });
-      clearClientSessionSync();
-      window.location.href = '/';
+      // Logout admin dédié (supprime academia_admin_session)
+      await fetch('/api/admin-auth/logout', { method: 'POST' });
+      window.location.href = '/admin-login';
     } catch (error) {
       console.error('Error logging out:', error);
-      clearClientSessionSync();
-      window.location.href = '/';
+      window.location.href = '/admin-login';
     }
   };
 

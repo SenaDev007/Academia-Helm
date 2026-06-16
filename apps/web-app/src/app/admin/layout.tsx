@@ -1,28 +1,48 @@
 /**
  * Admin Layout (Server Component)
- * 
- * Layout protégé pour le panel Super Admin
- * Vérifie l'authentification et le rôle SUPER_ADMIN
+ *
+ * Layout protégé pour le panel Super Admin.
+ *
+ * SYSTÈME D'AUTHENTIFICATION SÉPARÉ :
+ * Utilise le cookie dédié `academia_admin_session` (pas le cookie tenant).
+ * Vérification cryptographique complète via verifyAdminSession() :
+ *   - Signature HMAC
+ *   - Expiration
+ *   - Whitelist ADMIN_EMAILS
  */
 
 import { redirect } from 'next/navigation';
-import { getServerSession } from '@/lib/auth/session';
+import { cookies } from 'next/headers';
 import AdminLayoutClient from '@/components/admin/AdminLayout';
+import { verifyAdminSession } from '@/lib/admin/admin-auth-server';
 
 export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const session = await getServerSession();
+  const cookieStore = await cookies();
+  const adminCookie = cookieStore.get('academia_admin_session');
+
+  if (!adminCookie) {
+    redirect('/admin-login');
+  }
+
+  let session;
+  try {
+    const decoded = JSON.parse(decodeURIComponent(adminCookie.value));
+    session = verifyAdminSession(decoded);
+  } catch {
+    session = null;
+  }
 
   if (!session) {
     redirect('/admin-login');
   }
 
-  // Vérification stricte du rôle SUPER_ADMIN
-  if (session.user.role !== 'SUPER_ADMIN') {
-    redirect('/app'); // Rediriger vers le dashboard normal
+  // Vérification stricte du rôle PLATFORM_SUPER_ADMIN
+  if (session.user.role !== 'PLATFORM_SUPER_ADMIN') {
+    redirect('/admin-login');
   }
 
   return (

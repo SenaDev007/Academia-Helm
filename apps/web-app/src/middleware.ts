@@ -12,6 +12,7 @@ import { RESERVED_SUBDOMAINS, isReservedSubdomain, extractTenantSlug } from './l
 import { getApiBaseUrl, getAppBaseUrl } from '@/lib/utils/urls';
 
 const SESSION_COOKIE = 'academia_session';
+const ADMIN_SESSION_COOKIE = 'academia_admin_session';
 
 /** Récupère l'utilisateur et le tenant depuis le cookie de session (Edge). */
 function getUserFromSessionCookie(request: NextRequest): { 
@@ -55,6 +56,44 @@ function getUserFromSessionCookie(request: NextRequest): {
       };
     }
     return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Récupère l'admin authentifié via le cookie dédié `academia_admin_session`.
+ *
+ * Système d'authentification SÉPARÉ de celui des tenants :
+ *   - Cookie: academia_admin_session (httpOnly, secure, sameSite=strict)
+ *   - Vérification: signature HMAC + expiration + whitelist ADMIN_EMAILS
+ *   - Rôle: PLATFORM_SUPER_ADMIN (distinct de PLATFORM_OWNER du tenant)
+ *
+ * En Edge runtime (middleware), on ne peut pas recalculer le HMAC (pas de
+ * module crypto dans l'Edge runtime). On fait donc une vérification basique
+ * de structure + expiration. La vérification cryptographique complète se fait
+ * côté Server Component (layout admin) et API route.
+ */
+function getAdminFromCookie(request: NextRequest): {
+  id: string;
+  email: string;
+  role: string;
+} | null {
+  const cookie = request.cookies.get(ADMIN_SESSION_COOKIE)?.value;
+  if (!cookie) return null;
+  try {
+    const decoded = JSON.parse(decodeURIComponent(cookie)) as {
+      user?: { id?: string; email?: string; role?: string };
+      expiresAt?: string;
+      signature?: string;
+    };
+    if (!decoded.user?.id || !decoded.user?.email || !decoded.signature) return null;
+    if (decoded.expiresAt && new Date(decoded.expiresAt) < new Date()) return null;
+    return {
+      id: decoded.user.id,
+      email: decoded.user.email,
+      role: decoded.user.role || 'PLATFORM_SUPER_ADMIN',
+    };
   } catch {
     return null;
   }
@@ -272,12 +311,21 @@ export async function middleware(request: NextRequest) {
 
     // ── Admin subdomain: back-office centralisé d'Academia Helm ──
     // admin.academiahelm.com/* est volontairement laissé passer sans redirection.
-    // Les routes /app/platform/* sont réservées à ce sous-domaine.
-    // L'authentification forte (rôle PLATFORM_OWNER / PLATFORM_SUPER_ADMIN) est
-    // vérifiée côté layout + page (cf. /app/platform/layout.tsx) et dans le
-    // cookie de session lu par getUserFromSessionCookie().
+    //
+    // SYSTÈME D'AUTHENTIFICATION SÉPARÉ :
+    // Le back-office utilise son propre cookie `academia_admin_session` (distinct
+    // du cookie `academia_session` des tenants). La page de login dédiée est
+    // /admin-login (Google OAuth + 2FA OTP email).
+    //
+    // En l'absence de session admin valide, on redirige vers /admin-login
+    // (SUR admin.academiahelm.com — pas sur le domaine principal — pour
+    // préserver le contexte sous-domaine et éviter les boucles).
     if (hostParts[0] === 'admin') {
-      // Routes toujours accessibles même sans auth : login, assets, API.
+      // Lecture du cookie admin dédié
+      const admin = getAdminFromCookie(request);
+
+      // Routes toujours accessibles même sans auth : login admin, login tenant
+      // (fallback), assets, API.
       const isAdminLoginRoute = pathname === '/admin-login' || pathname.startsWith('/admin-login/');
       const isRegularLoginRoute = pathname === '/login' || pathname.startsWith('/login/');
       const isPublicAsset =
@@ -292,31 +340,30 @@ export async function middleware(request: NextRequest) {
       if (isAdminLoginRoute || isRegularLoginRoute || isPublicAsset || pathname.startsWith('/api/')) {
         const adminResponse = withAntiCacheHeaders(NextResponse.next());
         adminResponse.headers.set('x-admin-subdomain', 'true');
-        if (user) {
-          adminResponse.headers.set('x-user-id', user.id);
-          if (user.isPlatformOwner) adminResponse.headers.set('x-platform-owner', 'true');
+        if (admin) {
+          adminResponse.headers.set('x-admin-id', admin.id);
+          adminResponse.headers.set('x-admin-email', admin.email);
+          adminResponse.headers.set('x-admin-role', admin.role);
         }
         return adminResponse;
       }
 
-      if (!user?.id || !user.isPlatformOwner) {
-        // Rediriger vers la page de connexion principale (les PLATFORM_OWNER
-        // s'authentifient via /login, pas /admin-login qui est réservé SUPER_ADMIN).
-        // Le paramètre redirect=?admin indique au LoginPage de renvoyer l'utilisateur
-        // vers admin.academiahelm.com après connexion réussie.
+      if (!admin) {
+        // Pas de session admin → rediriger vers /admin-login SUR LE SOUS-DOMAINE.
+        // On préserve le pathname d'origine dans ?redirect= pour y revenir après login.
         const protocol = request.headers.get('x-forwarded-proto') || 'https';
-        const mainDomain = hostParts.slice(1).join('.');
-        const loginUrl = new URL('/login', `${protocol}://${mainDomain}`);
+        const adminHost = hostParts.join('.');
+        const loginUrl = new URL('/admin-login', `${protocol}://${adminHost}`);
         loginUrl.searchParams.set('redirect', pathname);
-        loginUrl.searchParams.set('admin', '1');
         return safeRedirect(loginUrl, request, redirectDepth);
       }
 
-      // Utilisateur authentifié avec rôle plateforme → laisser passer
+      // Admin authentifié → laisser passer
       const adminResponse = withAntiCacheHeaders(NextResponse.next());
       adminResponse.headers.set('x-admin-subdomain', 'true');
-      adminResponse.headers.set('x-platform-owner', 'true');
-      adminResponse.headers.set('x-user-id', user.id);
+      adminResponse.headers.set('x-admin-id', admin.id);
+      adminResponse.headers.set('x-admin-email', admin.email);
+      adminResponse.headers.set('x-admin-role', admin.role);
       return adminResponse;
     }
 

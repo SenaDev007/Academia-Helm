@@ -23,7 +23,7 @@
  */
 
 import * as React from 'react';
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -60,6 +60,14 @@ export type SliderReview = {
 interface TestimonialSliderProps {
   reviews: SliderReview[];
   className?: string;
+  /** Autoplay interval en ms (0 = désactivé). Défaut : 7000ms. */
+  autoPlayInterval?: number;
+  /** Active la navigation clavier (flèches gauche/droite). Défaut : true. */
+  enableKeyboard?: boolean;
+  /** Active le swipe tactile sur mobile. Défaut : true. */
+  enableSwipe?: boolean;
+  /** Active le lazy-load des images non visibles. Défaut : true. */
+  enableLazyLoad?: boolean;
 }
 
 // ----------------------------------------------------------------------------
@@ -139,9 +147,17 @@ function StarRow({
 export function TestimonialSlider({
   reviews,
   className,
+  autoPlayInterval = 7000,
+  enableKeyboard = true,
+  enableSwipe = true,
+  enableLazyLoad = true,
 }: TestimonialSliderProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [direction, setDirection] = useState<'left' | 'right'>('right');
+  const [isPaused, setIsPaused] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
 
   // Garde-fou : si pas d'avis, on ne rend rien (cas géré par le parent).
   if (reviews.length === 0) return null;
@@ -151,22 +167,102 @@ export function TestimonialSlider({
 
   const activeReview = reviews[currentIndex];
 
-  const handleNext = () => {
+  const goNext = useCallback(() => {
     if (isSingle) return;
     setDirection('right');
     setCurrentIndex((prev) => (prev + 1) % reviews.length);
-  };
+  }, [isSingle]);
 
-  const handlePrev = () => {
+  const goPrev = useCallback(() => {
     if (isSingle) return;
     setDirection('left');
     setCurrentIndex((prev) => (prev - 1 + reviews.length) % reviews.length);
+  }, [isSingle]);
+
+  const goTo = useCallback(
+    (index: number) => {
+      if (isSingle || index === currentIndex) return;
+      setDirection(index > currentIndex ? 'right' : 'left');
+      setCurrentIndex(index);
+    },
+    [isSingle, currentIndex],
+  );
+
+  const handleNext = goNext;
+  const handlePrev = goPrev;
+  const handleThumbnailClick = goTo;
+
+  // --- Autoplay avec pause au hover ---
+  useEffect(() => {
+    if (isSingle || !autoPlayInterval || autoPlayInterval <= 0) return;
+    if (isPaused) return;
+    const id = window.setInterval(() => {
+      goNext();
+    }, autoPlayInterval);
+    return () => window.clearInterval(id);
+  }, [isSingle, autoPlayInterval, isPaused, goNext]);
+
+  // --- Navigation clavier (flèches gauche/droite) ---
+  useEffect(() => {
+    if (!enableKeyboard || isSingle) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore si l'utilisateur est dans un champ de saisie.
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      // Ignore si le slider n'est pas au moins partiellement visible.
+      const el = containerRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const isVisible =
+        rect.top < window.innerHeight && rect.bottom > 0;
+      if (!isVisible) return;
+
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goPrev();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        goNext();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [enableKeyboard, isSingle, goPrev, goNext]);
+
+  // --- Swipe tactile sur mobile ---
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (!enableSwipe || isSingle) return;
+    const t = e.touches[0];
+    touchStartX.current = t.clientX;
+    touchStartY.current = t.clientY;
   };
 
-  const handleThumbnailClick = (index: number) => {
-    if (isSingle || index === currentIndex) return;
-    setDirection(index > currentIndex ? 'right' : 'left');
-    setCurrentIndex(index);
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!enableSwipe || isSingle) return;
+    if (touchStartX.current === null || touchStartY.current === null) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStartX.current;
+    const dy = t.clientY - touchStartY.current;
+    const SWIPE_THRESHOLD = 40; // px minimum pour déclencher
+    // Ne déclencher que si le swipe est majoritairement horizontal
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > SWIPE_THRESHOLD) {
+      if (dx < 0) {
+        // Swipe gauche → next
+        goNext();
+      } else {
+        // Swipe droite → prev
+        goPrev();
+      }
+    }
+    touchStartX.current = null;
+    touchStartY.current = null;
   };
 
   // Les 3 prochaines vignettes (en excluant l'avis courant).
@@ -175,6 +271,11 @@ export function TestimonialSlider({
     .map((r, i) => ({ r, i }))
     .filter(({ i }) => i !== currentIndex)
     .slice(0, 3);
+
+  // Note sur le lazy-load :
+  // - L'image principale (AnimatePresence) ne rend que l'index courant → `loading="eager"`.
+  // - Les vignettes sont chargées en `loading="lazy"` via le prop `enableLazyLoad`.
+  // - Les data URLs SVG (avatars générés) sont quasi instantanées (pas de fetch réseau).
 
   // Variantes d'animation image (slide vertical)
   const imageVariants = {
@@ -204,14 +305,29 @@ export function TestimonialSlider({
 
   return (
     <div
+      ref={containerRef}
       className={cn(
         'relative w-full overflow-hidden rounded-2xl bg-white p-6 md:p-10',
+        enableSwipe && !isSingle ? 'touch-pan-y' : '',
         className,
       )}
       style={{
         boxShadow: '0 10px 36px rgba(30, 58, 95, 0.10)',
         border: '1px solid #E2E8F0',
       }}
+      // --- Pause autoplay au hover/focus ---
+      onMouseEnter={() => setIsPaused(true)}
+      onMouseLeave={() => setIsPaused(false)}
+      onFocus={() => setIsPaused(true)}
+      onBlur={() => setIsPaused(false)}
+      // --- Swipe tactile ---
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      // ARIA : indique que c'est un carrousel
+      role="region"
+      aria-roledescription="carousel"
+      aria-label="Témoignages clients"
+      tabIndex={0}
     >
       {/* Décor doré subtil en arrière-plan */}
       <div
@@ -266,6 +382,8 @@ export function TestimonialSlider({
                   <img
                     src={r.thumbnailSrc}
                     alt={r.name}
+                    loading={enableLazyLoad ? 'lazy' : 'eager'}
+                    decoding="async"
                     className="h-full w-full object-cover"
                   />
                 </button>
@@ -281,6 +399,9 @@ export function TestimonialSlider({
               key={currentIndex}
               src={activeReview.imageSrc}
               alt={activeReview.name}
+              // Image courante = eager (doit s'afficher immédiatement).
+              loading="eager"
+              decoding="async"
               custom={direction}
               variants={imageVariants}
               initial="enter"

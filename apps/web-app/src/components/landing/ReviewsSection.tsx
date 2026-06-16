@@ -13,6 +13,7 @@ import {
   HELM_STAR_EMPTY,
   HELM_TEXT_MUTED,
 } from '@/lib/helm-colors';
+import { TestimonialSlider, buildAvatarDataUrl, type SliderReview } from './TestimonialSlider';
 
 const dmSans = DM_Sans({
   subsets: ['latin'],
@@ -170,6 +171,37 @@ function timeAgo(iso: string | null): string {
   }
   const y = Math.floor(days / 365);
   return `Il y a ${y} an${y > 1 ? 's' : ''}`;
+}
+
+/**
+ * Mappe un PublishedReview (API) vers le format attendu par TestimonialSlider.
+ * - imageSrc : photo utilisateur > logo école > avatar SVG généré (initiales)
+ * - affiliation : combine rôle · école · ville
+ * - badge : "École vérifiée" si tenant, sinon "Avis vérifié"
+ */
+function publishedToSliderReview(r: PublishedReview): SliderReview {
+  const imageSrc =
+    r.photoUrl || r.tenantLogoUrl || buildAvatarDataUrl(r.authorName, 600);
+  const thumbnailSrc =
+    r.photoUrl || r.tenantLogoUrl || buildAvatarDataUrl(r.authorName, 120);
+  const affiliation = [r.authorRole, r.schoolName, r.city]
+    .filter(Boolean)
+    .join(' · ');
+  const isSchoolReview = Boolean(r.tenantId);
+
+  return {
+    id: r.id,
+    name: r.authorName,
+    affiliation: affiliation || 'Avis vérifié Academia Helm',
+    quote: r.comment,
+    rating: r.rating,
+    imageSrc,
+    thumbnailSrc,
+    badge: {
+      label: isSchoolReview ? 'École vérifiée' : 'Avis vérifié',
+      variant: isSchoolReview ? 'school' : 'public',
+    },
+  };
 }
 
 /**
@@ -635,12 +667,11 @@ export default function ReviewsSection() {
               </div>
             </div>
 
-            {/* Grille des avis — flexbox centrée pour 1, 2 ou 3+ cartes */}
-            <div className="flex flex-wrap justify-center gap-5">
-              {reviews.map((r, i) => (
-                <TrustpilotCard key={r.id} r={r} index={i} />
-              ))}
-            </div>
+            {/* Slider de témoignages animé — un avis à la fois, navigation par vignettes + flèches */}
+            <TestimonialSlider
+              reviews={reviews.map(publishedToSliderReview)}
+              className="mx-auto max-w-5xl"
+            />
 
             {/* Appel à l'action — laisser un avis */}
             <div className="mt-10 flex flex-col items-center gap-3 text-center">

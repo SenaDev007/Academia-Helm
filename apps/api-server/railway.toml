@@ -6,4 +6,7 @@
     grace_period = 300
 
 [env]
-  NODE_OPTIONS = "--max-old-space-size=3072 --expose-gc"
+  # Réduit de 3072 à 1024 pour éviter l'OOM (Out of Memory) sur Railway.
+  # Le container Railway a généralement 512MB-1GB de RAM. Node ne doit pas
+  # essayer d'allouer 3GB sinon l'OOM killer le termine immédiatement.
+  NODE_OPTIONS = "--max-old-space-size=1024"

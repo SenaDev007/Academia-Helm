@@ -130,15 +130,34 @@ export default function AdminLoginPage() {
   };
 
   // Callback Google : si on revient avec ?code=...&state=... dans l'URL
+  // Cette page /admin-login reçoit les callbacks Google pour BOTH :
+  //   - flow admin (state = UUID simple, pas de marqueur 'f')
+  //   - flow school (state = base64url avec { f: 'school', t, s, n })
   useEffect(() => {
     const code = searchParams.get('code');
     const state = searchParams.get('state');
     if (code && state) {
+      // ── Détecter le flow (admin vs school) en décodant le state ──
+      let isSchoolFlow = false;
+      try {
+        // base64url → base64 (remplacer - par + et _ par /) puis atob
+        const b64 = state.replace(/-/g, '+').replace(/_/g, '/');
+        const decoded = JSON.parse(atob(b64)) as { f?: string };
+        isSchoolFlow = decoded?.f === 'school';
+      } catch {
+        // Si le state n'est pas du JSON base64url, c'est le flow admin (UUID)
+        isSchoolFlow = false;
+      }
+
+      const callbackEndpoint = isSchoolFlow
+        ? '/api/school-auth/google/callback'
+        : '/api/admin-auth/google/callback';
+
       // Flow Google callback
       setStep('otp');
       setMethod('google');
       setIsLoading(true);
-      fetch('/api/admin-auth/google/callback', {
+      fetch(callbackEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code, state }),
@@ -149,6 +168,12 @@ export default function AdminLoginPage() {
           setPendingToken(data.pendingToken);
           setPendingEmail(data.email);
           setError(null);
+          // Stocker le flow pour que verifyOtp sache quel endpoint appeler
+          if (isSchoolFlow) {
+            sessionStorage.setItem('admin_login_flow', 'school');
+          } else {
+            sessionStorage.setItem('admin_login_flow', 'admin');
+          }
           setTimeout(() => otpRefs.current[0]?.focus(), 100);
         })
         .catch((err) => {
@@ -203,6 +228,11 @@ export default function AdminLoginPage() {
    * Vérifie l'OTP auprès du backend.
    * Accepte un code optionnel (utilisé par le paste automatique) — sinon
    * utilise le state `otp`.
+   *
+   * Détecte le flow (admin vs school) via sessionStorage pour appeler
+   * le bon endpoint :
+   *   - admin → /api/admin-auth/verify-otp → cookie academia_admin_session → /admin
+   *   - school → /api/school-auth/verify-otp → cookie academia_session → /app
    */
   const verifyOtp = async (codeOverride?: string) => {
     setError(null);
@@ -216,9 +246,16 @@ export default function AdminLoginPage() {
       setStep('credentials');
       return;
     }
+
+    const flow = sessionStorage.getItem('admin_login_flow') || 'admin';
+    const verifyEndpoint =
+      flow === 'school'
+        ? '/api/school-auth/verify-otp'
+        : '/api/admin-auth/verify-otp';
+
     setIsLoading(true);
     try {
-      const res = await fetch('/api/admin-auth/verify-otp', {
+      const res = await fetch(verifyEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pendingToken, otp: otpCode }),
@@ -226,10 +263,31 @@ export default function AdminLoginPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Code OTP invalide');
       setStep('success');
-      // Rediriger après un court délai
+
+      // ── Redirection selon le flow ──
       setTimeout(() => {
-        router.push(redirectPath);
-        router.refresh();
+        if (flow === 'school') {
+          // Flow school : rediriger vers /app sur le domaine principal
+          // (pas admin.academiahelm.com qui est réservé au back-office)
+          // data contient user + tenant + accessToken
+          sessionStorage.removeItem('admin_login_flow');
+          const tenantSlug = data.tenant?.slug || data.tenant?.id || '';
+          const tenantId = data.tenant?.id || '';
+          // Construire l'URL vers /app sur le domaine principal
+          const mainDomain = window.location.hostname.includes('academiahelm.com')
+            ? 'https://academiahelm.com'
+            : window.location.origin.replace('admin.', '');
+          const appUrl = new URL('/app', mainDomain);
+          if (tenantSlug) appUrl.searchParams.set('tenant', tenantSlug);
+          if (tenantId) appUrl.searchParams.set('tenant_id', tenantId);
+          appUrl.searchParams.set('portal', 'school');
+          window.location.href = appUrl.toString();
+        } else {
+          // Flow admin : rester sur admin.academiahelm.com/admin
+          sessionStorage.removeItem('admin_login_flow');
+          router.push(redirectPath);
+          router.refresh();
+        }
       }, 800);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur vérification OTP');

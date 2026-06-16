@@ -59,7 +59,26 @@ export default function AdminDashboard() {
     );
   }
 
-  const { stats, recentTenants, recentActivity, pendingTestimonials, systemHealth } = data;
+  // ── Fallbacks robustes : si l'API ne renvoie pas toutes les clés
+  // (par ex. systemHealth manquant quand le backend NestJS ne reconnaît
+  // pas le cookie admin_session), on utilise des valeurs par défaut
+  // pour éviter le crash 'Cannot read properties of undefined'.
+  const stats = data.stats ?? {
+    totalTenants: 0,
+    activeTenants: 0,
+    totalUsers: 0,
+    totalRevenue: 0,
+    monthlyRevenue: 0,
+    pendingTestimonials: 0,
+  };
+  const recentTenants = data.recentTenants ?? [];
+  const recentActivity = data.recentActivity ?? [];
+  const pendingTestimonials = data.pendingTestimonials ?? [];
+  const systemHealth = data.systemHealth ?? {
+    apiStatus: 'degraded' as 'healthy' | 'degraded' | 'down',
+    databaseStatus: 'degraded' as 'healthy' | 'degraded' | 'down',
+    lastCheckAt: new Date().toISOString(),
+  };
 
   return (
     <div className="space-y-6">

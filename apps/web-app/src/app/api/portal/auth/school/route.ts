@@ -44,18 +44,21 @@ export async function POST(request: NextRequest) {
 
     // Gérer la session après connexion réussie
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24h
+    // IMPORTANT : backend renvoie user.tenantId (UUID) — l'utiliser en priorité
+    // car body.tenantId peut être un slug (non résolu par /tenants/:id)
     const tenantId = data.user.tenantId || body.tenantId || '';
-    
+
     // Charger le tenant complet depuis l'API backend avec le token reçu
     let tenant = await loadTenantFromApi(tenantId, data.token);
-    
+
     // Fallback si le chargement échoue (utiliser valeurs minimales)
     if (!tenant) {
       tenant = {
         id: tenantId,
         name: 'Mon École',
-        slug: '',
-        subdomain: '',
+        // Conserver le slug envoyé par le client pour cohérence URL
+        slug: typeof body.tenantId === 'string' && !body.tenantId.match(/^[0-9a-f]{8}-/) ? body.tenantId : '',
+        subdomain: typeof body.tenantId === 'string' && !body.tenantId.match(/^[0-9a-f]{8}-/) ? body.tenantId : '',
         status: 'active',
         subscriptionStatus: 'ACTIVE_SUBSCRIBED',
         createdAt: new Date().toISOString(),

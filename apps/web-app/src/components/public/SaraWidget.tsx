@@ -4,8 +4,6 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { saraApi } from '@/lib/api/sara';
 import { cn } from '@/lib/utils';
-import { VoiceButton } from '@/components/ai/voice/VoiceButton';
-import { VoiceMode } from '@/components/ai/voice/VoiceMode';
 import {
   loadChatMessages,
   saveChatMessages,
@@ -222,7 +220,6 @@ function generateParticles(count: number): Particle[] {
 
 export default function SaraWidget() {
   const [isOpen, setIsOpen] = useState(false);
-  const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
   // Message d'accueil par défaut
   const WELCOME_MESSAGE: { role: 'user' | 'assistant'; content: string } = {
     role: 'assistant',
@@ -328,74 +325,6 @@ export default function SaraWidget() {
       handleSend();
     }
   };
-
-  // ─── VOICE INPUT HANDLER ──────────────────────────────────────────────
-
-  const handleVoiceInput = useCallback(async (audioBase64: string) => {
-    setIsTyping(true);
-    setStreamingText('');
-
-    try {
-      // Transcrire l'audio
-      const { text } = await saraApi.voiceTranscribe(audioBase64);
-
-      if (!text.trim()) {
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: "Je n'ai pas bien compris. Pouvez-vous répéter ?",
-        }]);
-        setIsTyping(false);
-        return;
-      }
-
-      // Afficher le message utilisateur
-      setInput('');
-      setShowSuggestions(false);
-      setMessages(prev => [...prev, { role: 'user', content: text }]);
-
-      // Envoyer à SARA (streaming)
-      let fullText = '';
-      const stream = saraApi.queryStream(text, undefined, messages);
-
-      for await (const chunk of stream) {
-        if (chunk.type === 'delta' && chunk.text) {
-          fullText += chunk.text;
-          setStreamingText(fullText);
-        } else if (chunk.type === 'final' && chunk.text) {
-          // Le chunk 'final' contient le texte complet — on l'utilise directement
-          fullText = chunk.text;
-          setStreamingText(fullText);
-        } else if (chunk.type === 'error') {
-          if (!fullText) {
-            fullText = "Je suis désolée, une erreur technique s'est produite.";
-          }
-          break;
-        }
-      }
-
-      if (fullText) {
-        setMessages(prev => [...prev, { role: 'assistant', content: fullText }]);
-      }
-    } catch (error: any) {
-      const errorMsg = error?.message || '';
-      let userMessage = "Erreur vocale. Essayez de taper votre question.";
-      // Message plus spécifique selon le type d'erreur
-      if (errorMsg.includes('500')) {
-        userMessage = "Le service vocal est temporairement indisponible. Veuillez taper votre question.";
-      } else if (errorMsg.includes('timeout') || errorMsg.includes('Timeout')) {
-        userMessage = "La requête vocale a pris trop de temps. Veuillez réessayer ou taper votre question.";
-      } else if (errorMsg.includes('network') || errorMsg.includes('fetch')) {
-        userMessage = "Problème de connexion. Vérifiez votre réseau et réessayez.";
-      }
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: userMessage,
-      }]);
-    } finally {
-      setIsTyping(false);
-      setStreamingText('');
-    }
-  }, [messages]);
 
   // ─── RENDER ──────────────────────────────────────────────────────────
 
@@ -684,13 +613,6 @@ export default function SaraWidget() {
                 transition: 'border-color 0.3s, box-shadow 0.3s',
               }}
             >
-              {/* Mic button — voice note recording (ChatGPT-style, left) */}
-              <VoiceButton
-                onRecordingComplete={handleVoiceInput}
-                disabled={isTyping}
-                size="sm"
-              />
-
               {/* Text Input */}
               <input
                 ref={inputRef}
@@ -705,36 +627,20 @@ export default function SaraWidget() {
               />
               <style>{`input::placeholder { color: rgba(0,18,35,0.35) !important; }`}</style>
 
-              {/* Send / Voice Mode button (ChatGPT-style — right) */}
-              {input.trim() ? (
-                <button
-                  type="submit"
-                  className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all"
-                  style={{
-                    background: H.cyan,
-                    color: '#fff',
-                  }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M5 12h14M12 5l7 7-7 7" />
-                  </svg>
-                </button>
-              ) : (
-                /* Waveform/Voice Mode button (right, shown when no text) */
-                <button
-                  type="button"
-                  onClick={() => setIsVoiceModeOpen(true)}
-                  className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all"
-                  style={{ color: H.cyanDim, background: 'transparent' }}
-                  title="Mode vocal"
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                    <line x1="12" y1="19" x2="12" y2="22" />
-                  </svg>
-                </button>
-              )}
+              {/* Send button */}
+              <button
+                type="submit"
+                disabled={!input.trim() || isTyping}
+                className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all disabled:opacity-30"
+                style={{
+                  background: input.trim() ? H.cyan : 'rgba(0,229,255,0.1)',
+                  color: input.trim() ? '#fff' : 'rgba(0,229,255,0.3)',
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 12h14M12 5l7 7-7 7" />
+                </svg>
+              </button>
             </div>
           </form>
 
@@ -931,13 +837,6 @@ export default function SaraWidget() {
           background: rgba(0,229,255,0.3);
         }
       `}</style>
-
-      {/* ─── VOICE MODE (Full-screen immersive) ──────────────────────── */}
-      <VoiceMode
-        isOpen={isVoiceModeOpen}
-        onClose={() => setIsVoiceModeOpen(false)}
-        visitorId={undefined}
-      />
     </div>
   );
 }

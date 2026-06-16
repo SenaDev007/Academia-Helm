@@ -37,10 +37,30 @@ export class ContractsPrismaService {
   }) {
     return this.prisma.$transaction(async (tx) => {
       // Désactiver l'éventuel contrat actif existant
-      await tx.contract.updateMany({
-        where: { staffId: data.staffId, tenantId: data.tenantId, status: { in: ['ACTIVE', 'PENDING'] } },
-        data: { status: 'EXPIRED' },
+      // IMPORTANT: On n'expire PAS les CDI (sans date de fin) — ils restent en vigueur
+      // On n'expire que les contrats à durée déterminée (CDD, VACATAIRE, STAGE, CONSULTANT)
+      const contractsToExpire = await tx.contract.findMany({
+        where: {
+          staffId: data.staffId,
+          tenantId: data.tenantId,
+          status: { in: ['ACTIVE', 'PENDING'] },
+          contractType: { in: ['CDD', 'VACATAIRE', 'STAGE', 'CONSULTANT'] },
+        },
+        select: { id: true },
       });
+
+      if (contractsToExpire.length > 0) {
+        await tx.contract.updateMany({
+          where: {
+            id: { in: contractsToExpire.map(c => c.id) },
+          },
+          data: { status: 'EXPIRED' },
+        });
+      }
+
+      // Pour les CDI existants, on ne les expire pas — ils restent en vigueur
+      // Le nouveau contrat peut coexister si c'est un avenant ou un remplacement
+      // Si c'est vraiment un remplacement, l'admin doit résilier manuellement l'ancien CDI
 
       // Créer le nouveau contrat — PENDING par défaut tant que l'employé n'a pas signé
       const contractStatus = data.status ?? 'PENDING';

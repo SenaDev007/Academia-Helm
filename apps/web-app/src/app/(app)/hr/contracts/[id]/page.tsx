@@ -27,9 +27,12 @@ const CONTRACT_TYPE_LABELS: Record<string, string> = {
 };
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; border: string; icon: any }> = {
-  ACTIVE:     { label: 'En vigueur',  color: '#166534', bg: '#dcfce7', border: '#bbf7d0', icon: CheckCircle },
-  EXPIRED:    { label: 'Expiré',      color: '#475569', bg: '#f1f5f9', border: '#e2e8f0', icon: Clock },
-  TERMINATED: { label: 'Résilié',     color: '#991b1b', bg: '#fee2e2', border: '#fecaca', icon: AlertCircle },
+  DRAFT:      { label: 'Brouillon',          color: '#6b7280', bg: '#f3f4f6', border: '#e5e7eb', icon: FileText },
+  PENDING:    { label: 'En attente de signature', color: '#92400e', bg: '#fef3c7', border: '#fde68a', icon: Clock },
+  ACTIVE:     { label: 'En vigueur',          color: '#166534', bg: '#dcfce7', border: '#bbf7d0', icon: CheckCircle },
+  EXPIRED:    { label: 'Expiré',              color: '#475569', bg: '#f1f5f9', border: '#e2e8f0', icon: Clock },
+  TERMINATED: { label: 'Résilié',             color: '#991b1b', bg: '#fee2e2', border: '#fecaca', icon: AlertCircle },
+  DELETED:    { label: 'Supprimé',            color: '#6b7280', bg: '#f3f4f6', border: '#e5e7eb', icon: AlertCircle },
 };
 
 export default function ContractDetailPage() {
@@ -165,7 +168,7 @@ export default function ContractDetailPage() {
     );
   }
 
-  const status = STATUS_CONFIG[contract.status] || STATUS_CONFIG.EXPIRED;
+  const status = STATUS_CONFIG[contract.status] || STATUS_CONFIG.PENDING;
   const StatusIcon = status.icon;
   const pdfUrl = (contract.terms as any)?.pdfUrl;
   const isSigned = !!contract.signedAt;
@@ -267,13 +270,34 @@ export default function ContractDetailPage() {
             <RefreshCw className={`h-4 w-4 ${generating ? 'animate-spin' : ''}`} />
             Régénérer
           </button>
-          {!isSigned && contract.status === 'ACTIVE' && (
+          {!isSigned && (contract.status === 'ACTIVE' || contract.status === 'PENDING' || contract.status === 'DRAFT') && (
             <button
               onClick={() => setSignModalOpen(true)}
               className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 shadow-sm transition"
             >
               <PenTool className="h-4 w-4" />
               Signer le contrat
+            </button>
+          )}
+          {!isSigned && contract.status === 'EXPIRED' && (
+            <button
+              onClick={async () => {
+                try {
+                  await hrFetch(hrUrl(`contracts/${contractId}`, { tenantId: tenant.id }), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'PENDING' }),
+                  });
+                  toast({ variant: 'success', title: 'Contrat réactivé avec succès.' });
+                  fetchContract();
+                } catch {
+                  toast({ variant: 'error', title: 'Impossible de réactiver le contrat.' });
+                }
+              }}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-amber-500 text-white rounded-xl hover:bg-amber-600 shadow-sm transition"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Réactiver et signer
             </button>
           )}
         </div>
@@ -403,7 +427,7 @@ export default function ContractDetailPage() {
                       Le contrat doit être signé par l'employé(e) pour être pleinement exécutoire.
                     </p>
                   </div>
-                  {contract.status === 'ACTIVE' && (
+                  {(contract.status === 'ACTIVE' || contract.status === 'PENDING' || contract.status === 'DRAFT') && (
                     <button
                       onClick={() => setSignModalOpen(true)}
                       className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white rounded-xl shadow-sm hover:opacity-90 transition mt-2"
@@ -411,6 +435,27 @@ export default function ContractDetailPage() {
                     >
                       <PenTool className="h-4 w-4" />
                       Procéder à la signature
+                    </button>
+                  )}
+                  {contract.status === 'EXPIRED' && (
+                    <button
+                      onClick={async () => {
+                        try {
+                          await hrFetch(hrUrl(`contracts/${contractId}`, { tenantId: tenant.id }), {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ status: 'PENDING' }),
+                          });
+                          toast({ variant: 'success', title: 'Contrat réactivé avec succès.' });
+                          fetchContract();
+                        } catch {
+                          toast({ variant: 'error', title: 'Impossible de réactiver le contrat.' });
+                        }
+                      }}
+                      className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white rounded-xl shadow-sm hover:opacity-90 transition mt-2 bg-amber-500 hover:bg-amber-600"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      Réactiver le contrat pour signer
                     </button>
                   )}
                 </div>

@@ -12,6 +12,8 @@
 export type { AppEnvironment } from './app-base-url';
 export { getAppEnvironment, getAppBaseUrl, isNextProductionBuild } from './app-base-url';
 import { getAppEnvironment, getAppBaseUrl, isNextProductionBuild } from './app-base-url';
+// Import statique (Turbopack ne supporte pas require() dynamique)
+import { getTenantRedirectUrl as _getTenantRedirectUrl } from './tenant-redirect';
 
 /**
  * Assure une URL de base pointant vers le préfixe global Nest `/api`.
@@ -192,8 +194,7 @@ export function getTenantRedirectUrl(
   queryParams?: Record<string, string>
 ): string {
   // Utiliser la nouvelle implémentation
-  const { getTenantRedirectUrl: newGetTenantRedirectUrl } = require('./tenant-redirect');
-  return newGetTenantRedirectUrl({
+  return _getTenantRedirectUrl({
     tenantSlug,
     path,
     queryParams,

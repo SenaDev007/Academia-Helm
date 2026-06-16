@@ -298,6 +298,8 @@ export async function sendSchoolOtpEmail(
     return false;
   }
 
+  // Import dynamique du SDK Resend (déjà dans apps/web-app/package.json)
+  // Turbopack ne supporte pas require() — utiliser await import()
   let Resend: new (apiKey: string) => {
     emails: {
       send: (params: {
@@ -311,16 +313,37 @@ export async function sendSchoolOtpEmail(
     };
   };
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const resendModule = require('resend');
-    Resend = resendModule.Resend || resendModule.default?.Resend || resendModule.default;
+    const resendModule = await import('resend');
+    const mod = resendModule as unknown as {
+      Resend?: new (apiKey: string) => unknown;
+      default?: { Resend?: new (apiKey: string) => unknown } | new (apiKey: string) => unknown;
+    };
+    const ResendCtor =
+      mod.Resend ||
+      (mod.default && typeof mod.default === 'function'
+        ? (mod.default as new (apiKey: string) => unknown)
+        : mod.default?.Resend);
+    if (!ResendCtor) throw new Error('Resend constructor not found');
+    Resend = ResendCtor as new (apiKey: string) => {
+      emails: {
+        send: (params: {
+          from: string;
+          to: string;
+          subject: string;
+          html: string;
+          text?: string;
+          reply_to?: string;
+        }) => Promise<{ id?: string; error?: { message?: string } | null }>;
+      };
+    };
   } catch (err) {
     console.error('Module "resend" non disponible :', err);
     return false;
   }
 
   // Réutilise le template OTP de l'admin (même design palette Helm)
-  const { renderOtpEmailHtml, renderOtpEmailText } = require('./email-templates');
+  // Import statique — Turbopack ne supporte pas require() dynamique
+  const { renderOtpEmailHtml, renderOtpEmailText } = await import('../admin/email-templates');
   const html = renderOtpEmailHtml({
     name,
     otp,

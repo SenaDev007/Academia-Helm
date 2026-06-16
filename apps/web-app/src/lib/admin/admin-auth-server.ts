@@ -340,6 +340,7 @@ export async function sendOtpEmail(
   }
 
   // Import dynamique du SDK Resend (déjà dans apps/web-app/package.json)
+  // Turbopack ne supporte pas require() — utiliser await import()
   let Resend: new (apiKey: string) => {
     emails: {
       send: (params: {
@@ -353,16 +354,36 @@ export async function sendOtpEmail(
     };
   };
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const resendModule = require('resend');
-    Resend = resendModule.Resend || resendModule.default?.Resend || resendModule.default;
+    const resendModule = await import('resend');
+    const mod = resendModule as unknown as {
+      Resend?: new (apiKey: string) => unknown;
+      default?: { Resend?: new (apiKey: string) => unknown } | new (apiKey: string) => unknown;
+    };
+    const ResendCtor =
+      mod.Resend ||
+      (mod.default && typeof mod.default === 'function'
+        ? (mod.default as new (apiKey: string) => unknown)
+        : mod.default?.Resend);
+    if (!ResendCtor) throw new Error('Resend constructor not found');
+    Resend = ResendCtor as new (apiKey: string) => {
+      emails: {
+        send: (params: {
+          from: string;
+          to: string;
+          subject: string;
+          html: string;
+          text?: string;
+          reply_to?: string;
+        }) => Promise<{ id?: string; error?: { message?: string } | null }>;
+      };
+    };
   } catch (err) {
     console.error('Module "resend" non disponible :', err);
     return false;
   }
 
-  // Construction du contenu email
-  const { renderOtpEmailHtml, renderOtpEmailText } = require('./email-templates');
+  // Construction du contenu email — import statique du template (même dossier)
+  const { renderOtpEmailHtml, renderOtpEmailText } = await import('./email-templates');
   const html = renderOtpEmailHtml({ name, otp, validityMinutes: OTP_VALIDITY_MINUTES });
   const text = renderOtpEmailText({ name, otp, validityMinutes: OTP_VALIDITY_MINUTES });
 
@@ -430,27 +451,34 @@ export function clearAdminPendingCookie(): string {
  *
  * En l'absence de cette var, la méthode email/password est désactivée.
  *
- * Note : bcryptjs est importé dynamiquement pour éviter de casser le build
- * si la dépendance n'est pas installée (l'auth password est optionnelle).
+ * Note : bcryptjs n'est PAS installé dans apps/web-app (uniquement dans
+ * apps/api-server). Cette fonctionnalité est donc désactivée par défaut côté
+ * Next.js — l'authentification admin doit se faire via Google OAuth.
+ * Pour l'activer, installer bcryptjs dans apps/web-app :
+ *   cd apps/web-app && npm install bcryptjs
  */
-export async function verifyAdminPassword(email: string, password: string): Promise<boolean> {
+export async function verifyAdminPassword(_email: string, _password: string): Promise<boolean> {
   const raw = process.env.ADMIN_PASSWORDS;
   if (!raw) return false;
   try {
     const passwords = JSON.parse(raw) as Record<string, string>;
-    const hash = passwords[email.toLowerCase()];
+    const hash = passwords[_email.toLowerCase()];
     if (!hash) return false;
-    // Vérification bcrypt — import dynamique pour ne pas casser le build
-    // si la dépendance n'est pas installée.
-    let bcrypt: { compare: (data: string, hash: string) => Promise<boolean> };
+    // Import dynamique de bcryptjs — Turbopack ne supporte pas require()
+    // Si bcryptjs n'est pas installé, on log une erreur et on renvoie false
+    // (l'auth password est optionnelle — Google OAuth est la méthode recommandée)
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      bcrypt = require('bcryptjs');
+      const bcryptModule = await import('bcryptjs');
+      const bcrypt = bcryptModule.default || bcryptModule;
+      // @ts-expect-error — l'API de bcryptjs est connue
+      return await bcrypt.compare(_password, hash);
     } catch {
-      console.error('bcryptjs not installed — password auth disabled');
+      console.error(
+        'bcryptjs non installé dans apps/web-app — authentification password admin désactivée. ' +
+          'Installez-le avec : cd apps/web-app && npm install bcryptjs',
+      );
       return false;
     }
-    return await bcrypt.compare(password, hash);
   } catch {
     return false;
   }

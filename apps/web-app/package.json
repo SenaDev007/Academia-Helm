@@ -63,7 +63,8 @@
     "y-protocols": "^1.0.7",
     "yjs": "^13.6.30",
     "zod": "^3.23.8",
-    "zustand": "^5.0.12"
+    "zustand": "^5.0.12",
+    "bcryptjs": "^2.4.3"
   },
   "devDependencies": {
     "@ducanh2912/next-pwa": "^10.2.9",

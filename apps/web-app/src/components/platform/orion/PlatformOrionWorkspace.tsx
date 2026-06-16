@@ -68,7 +68,7 @@ export default function PlatformOrionWorkspace() {
             <p className="text-xs text-slate-300 mt-2">
               {data.expansionPredictions.length > 0
                 ? 'Prêtes pour un passage au plan supérieur.'
-                : 'Aucun potentiel d'expansion détecté actuellement.'}
+                : "Aucun potentiel d'expansion détecté actuellement."}
             </p>
           </div>
         </div>

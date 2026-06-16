@@ -33,13 +33,14 @@ import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 /** Force dynamique — les cookies / session doivent être lus côté serveur. */
 export const dynamic = 'force-dynamic';
 
-/** Pas de parsing body — on forward le JSON brut pour streaming. */
-export const config = {
-  api: {
-    bodyParser: false,
-    responseLimit: false,
-  },
-};
+/**
+ * NOTE — Next.js App Router ne supporte plus `export const config = { api: { bodyParser, responseLimit } }`
+ * (pattern réservé au Pages Router, désormais ignoré et déprécié).
+ * - bodyParser : en App Router, le body n'est jamais auto-parisé ; on lit `request.text()` explicitement
+ *   ci-dessous pour forwarder le JSON brut vers NestJS (préserve le streaming SSE).
+ * - responseLimit : pas d'équivalent en App Router (réponses illimitées par défaut — le flux SSE
+ *   `text/event-stream` passe sans contrainte).
+ */
 
 export async function POST(request: NextRequest) {
   const backendUrl = nestControllerUrl('hr/ia/copilot/stream');

@@ -22,16 +22,17 @@ import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 export const dynamic = 'force-dynamic';
 
 /**
- * Increase body size limit for file uploads (CV, cover letter, recommendation letter).
- * Vercel default is 4.5MB — recruitment documents can exceed this.
- * 10MB allows 3 documents of ~3MB each plus form data.
+ * Augmentation de la limite body pour uploads (CV, lettre de motivation, recommandation).
+ *
+ * NOTE — Next.js App Router ne supporte plus `export const config = { api: { bodyParser, responseLimit } }`
+ * (pattern réservé au Pages Router, désormais ignoré et déprécié).
+ * - bodyParser : en App Router, le body n'est JAMAIS auto-parisé ; on lit `request.json()` /
+ *   `request.formData()` / `request.text()` explicitement. La limite est gérée par la plateforme
+ *   (Vercel : 4.5 MB par défaut, extensible via `functions` dans vercel.json).
+ * - responseLimit : pas d'équivalent en App Router (réponses illimitées par défaut).
+ *
+ * Pour les uploads > 4.5 MB, configurer `functions` dans `vercel.json` à la racine.
  */
-export const config = {
-  api: {
-    bodyParser: false,
-    responseLimit: '10mb',
-  },
-};
 
 function buildBackendUrl(pathSegments: string[]): string {
   const path = pathSegments.length ? pathSegments.join('/') : '';

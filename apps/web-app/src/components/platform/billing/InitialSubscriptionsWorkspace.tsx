@@ -34,7 +34,7 @@ import {
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { usePlatformData } from '@/hooks/usePlatformData';
-import { PlatformLoading, PlatformError, PlatformEmpty } from './PlatformStates';
+import { PlatformLoading, PlatformError, PlatformEmpty } from '../PlatformStates';
 
 interface InitialSubData {
   summary: { paidThisMonth: number; pending: number; invoicedTotal: number; currency: string };

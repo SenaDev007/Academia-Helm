@@ -62,9 +62,10 @@ export class IaPrismaService {
   /**
    * Analyse sémantique d'un CV ou d'une lettre de motivation.
    *
-   * Si l'IA est configurée (ANTHROPIC_API_KEY), envoie le document à Claude
-   * pour extraction structurée. Sinon, retourne un résultat placeholder
-   * indiquant que l'IA n'est pas configurée.
+   * Si un fichier est fourni (base64Data + mimeType), le document est envoyé
+   * au modèle IA multimodal (GLM-5.1 vision) qui extrait les informations clés.
+   * Si l'IA n'est pas configurée ou si l'analyse échoue, on retombe sur un
+   * résultat structuré de secours basé sur les données candidat existantes.
    */
   async parseCv(tenantId: string, data: {
     fileUrl?: string;
@@ -73,10 +74,10 @@ export class IaPrismaService {
     mimeType?: string;
     candidateId?: string;
   }) {
-    this.logger.log(`parseCv called for tenant ${tenantId}`);
+    this.logger.log(`parseCv called for tenant ${tenantId}, file=${data.fileName || 'none'}, mime=${data.mimeType || 'none'}`);
 
     // Si un candidateId est fourni, on récupère les données existantes du candidat
-    // pour enrichir le résultat du parsing
+    // pour enrichir le résultat du parsing et/ou servir de fallback
     let existingCandidate = null;
     if (data.candidateId) {
       existingCandidate = await this.prisma.hrCandidate.findFirst({
@@ -88,79 +89,149 @@ export class IaPrismaService {
       });
     }
 
-    if (this.isAiConfigured()) {
-      // Appel réel à l'IA via OpenRouter
-      const candidateInfo = existingCandidate
-        ? `Candidat : ${existingCandidate.firstName} ${existingCandidate.lastName}, Compétences: ${this.extractSkillsFromCandidate(existingCandidate).join(', ')}, Expérience: ${existingCandidate.academicProfile?.pedagogicalExperience || 'Non spécifiée'}, Formation: ${existingCandidate.academicProfile?.teachingLevel || 'Non spécifiée'}`
-        : `Document : ${data.fileName || 'CV à analyser'}`;
+    // ─── Appel IA avec le document réel ───────────────────────────────────
+    if (this.isAiConfigured() && data.base64Data && data.mimeType) {
+      const supportedMimeTypes = [
+        'image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif',
+        'application/pdf',
+      ];
 
-      const result = await this.openRouter.structuredChat<{
-        name: string;
-        skills: string[];
-        experience: string;
-        education: string;
-        strengths: string;
-        weaknesses: string;
-      }>(
-        `Analyse ce profil de candidat pour un poste dans l'enseignement et extrais les informations clés :\n${candidateInfo}`,
-        `Tu es le moteur HDIE (Helm Document Intelligence Engine) d'Academia Helm. Tu analyses des CV et profils de candidats pour des postes dans l'enseignement.
-Tu extrais les informations clés de manière structurée et factuelle.
-Réponds en JSON avec les champs : name, skills (tableau), experience, education, strengths, weaknesses.`,
-        'HDIE',
-      );
+      if (supportedMimeTypes.includes(data.mimeType.toLowerCase())) {
+        const systemPrompt = `Tu es le moteur HDIE (Helm Document Intelligence Engine) d'Academia Helm, spécialisé en analyse de CV et lettres de motivation pour le secteur de l'éducation.
 
-      if (result.data && !result.isPlaceholder) {
-        return {
-          ...result.data,
-          isPlaceholder: false,
-          confidence: 85,
-          candidateId: existingCandidate?.id,
-        };
-      }
+Ta mission : analyser le document fourni (CV ou lettre de motivation) et en extraire les informations clés de manière structurée, factuelle et professionnelle.
 
-      // Fallback si le parsing JSON échoue mais qu'on a une réponse IA
-      if (!result.isPlaceholder && result.raw) {
-        if (existingCandidate) {
-          return {
-            name: `${existingCandidate.firstName} ${existingCandidate.lastName}`,
-            skills: this.extractSkillsFromCandidate(existingCandidate),
-            experience: existingCandidate.academicProfile?.pedagogicalExperience || 'Expérience extraite par IA',
-            education: existingCandidate.academicProfile?.teachingLevel || 'Formation extraite par IA',
-            strengths: result.raw.substring(0, 200),
-            weaknesses: 'Consultez l\'analyse complète pour plus de détails',
-            isPlaceholder: false,
-            confidence: 70,
-            candidateId: existingCandidate.id,
-          };
+RÈGLES D'ANALYSE :
+- Identifie le nom complet du candidat (prénom + nom)
+- Liste toutes les compétences techniques, pédagogiques et comportementales mentionnées (tableau de chaînes)
+- Résume l'expérience professionnelle pertinente (postes, durées, établissements)
+- Indique le niveau de formation le plus élevé et les diplômes clés
+- Identifie 2-3 forces majeures du candidat (points forts)
+- Identifie 1-2 axes d'amélioration ou points de vigilance (faiblesses)
+
+FORMAT DE RÉPONSE : Réponds UNIQUEMENT avec du JSON valide, sans markdown, sans commentaires, sans texte avant ou après. Le JSON doit avoir exactement cette structure :
+{
+  "name": "Prénom Nom",
+  "skills": ["compétence1", "compétence2", ...],
+  "experience": "Résumé de l'expérience (2-3 phrases)",
+  "education": "Niveau de formation et diplômes",
+  "strengths": "Forces principales du candidat",
+  "weaknesses": "Axes d'amélioration"
+}
+
+Si une information n'est pas présente dans le document, mets une chaîne vide ou un tableau vide.`;
+
+        const userPrompt = `Analyse ce document (${data.fileName || 'CV/Lettre'}) et extrais les informations structurées demandées.`;
+
+        try {
+          const aiResponse = await this.openRouter.chatWithDocument(
+            userPrompt,
+            data.base64Data,
+            data.mimeType,
+            systemPrompt,
+            'HDIE',
+            { temperature: 0.2, maxTokens: 1200 },
+          );
+
+          if (!aiResponse.isPlaceholder && aiResponse.content) {
+            // Extraire le JSON de la réponse (peut être enveloppé dans du markdown)
+            const jsonMatch = aiResponse.content.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              try {
+                const parsed = JSON.parse(jsonMatch[0]);
+                return {
+                  name: parsed.name || (existingCandidate ? `${existingCandidate.firstName} ${existingCandidate.lastName}` : 'Candidat'),
+                  skills: Array.isArray(parsed.skills) && parsed.skills.length > 0
+                    ? parsed.skills.filter((s: any) => typeof s === 'string' && s.trim())
+                    : (existingCandidate ? this.extractSkillsFromCandidate(existingCandidate) : ['Non spécifié']),
+                  experience: parsed.experience || 'Non spécifié dans le document',
+                  education: parsed.education || 'Non spécifié dans le document',
+                  strengths: parsed.strengths || 'Non identifié',
+                  weaknesses: parsed.weaknesses || 'Non identifié',
+                  isPlaceholder: false,
+                  confidence: 92,
+                  candidateId: existingCandidate?.id,
+                  fileName: data.fileName,
+                  modelUsed: aiResponse.model,
+                };
+              } catch (parseErr) {
+                this.logger.warn('[HDIE] JSON parse failed, using raw content as experience');
+                // Si le JSON échoue, on utilise le texte brut comme experience
+                return {
+                  name: existingCandidate
+                    ? `${existingCandidate.firstName} ${existingCandidate.lastName}`
+                    : 'Candidat',
+                  skills: existingCandidate
+                    ? this.extractSkillsFromCandidate(existingCandidate)
+                    : ['Voir analyse complète ci-dessous'],
+                  experience: aiResponse.content.substring(0, 800),
+                  education: 'Voir analyse',
+                  strengths: 'Analyse IA fournie (format non structuré)',
+                  weaknesses: 'Voir analyse complète',
+                  isPlaceholder: false,
+                  confidence: 65,
+                  candidateId: existingCandidate?.id,
+                  fileName: data.fileName,
+                  modelUsed: aiResponse.model,
+                };
+              }
+            }
+          }
+        } catch (err) {
+          this.logger.error(`[HDIE] Document analysis failed: ${err?.message}`, err?.stack);
+          // On continue vers le fallback ci-dessous
         }
+      } else {
+        this.logger.warn(`[HDIE] Unsupported MIME type for vision analysis: ${data.mimeType}`);
       }
     }
 
-    // IA non configurée — retourner un résultat placeholder structuré
+    // ─── Fallback : IA non configurée OU analyse échouée ──────────────────
     if (existingCandidate) {
+      const aiConfigured = this.isAiConfigured();
       return {
         name: `${existingCandidate.firstName} ${existingCandidate.lastName}`,
         skills: this.extractSkillsFromCandidate(existingCandidate),
-        experience: existingCandidate.academicProfile?.pedagogicalExperience || 'Données du candidat (IA non configurée)',
-        education: existingCandidate.academicProfile?.teachingLevel || 'Données du candidat (IA non configurée)',
-        strengths: 'L\'analyse IA sera disponible prochainément',
-        weaknesses: 'L\'analyse sémantique avancée sera activée ultérieurement',
-        isPlaceholder: true,
+        experience: existingCandidate.academicProfile?.pedagogicalExperience
+          || (aiConfigured
+            ? 'L\'analyse du document a échoué. Vérifiez le format du fichier (PDF, PNG, JPG).'
+            : 'IA non configurée — données candidat depuis la base'),
+        education: existingCandidate.academicProfile?.teachingLevel || 'Non spécifié',
+        strengths: aiConfigured
+          ? 'Le document n\'a pas pu être analysé. Réessayez avec un autre fichier.'
+          : 'L\'analyse IA sera disponible une fois le service activé',
+        weaknesses: aiConfigured
+          ? 'Vérifiez la qualité et le format du fichier téléversé'
+          : 'L\'analyse sémantique avancée sera activée ultérieurement',
+        isPlaceholder: !aiConfigured,
         confidence: 0,
         candidateId: existingCandidate.id,
+        fileName: data.fileName,
       };
     }
 
     // Aucun candidat, aucune IA — placeholder générique
+    const aiConfigured = this.isAiConfigured();
     return {
-      name: '— (IA non configurée)',
-      skills: ['Analyse sémantique non disponible'],
-      experience: 'L\'analyse IA n\'est pas encore activée. Contactez votre administrateur.',
-      education: 'L\'analyse automatique de CV sera disponible prochainement.',
-      strengths: 'Le module d\'analyse IA est en cours de configuration',
-      weaknesses: 'L\'analyse sémantique avancée sera disponible une fois le service activé',
+      name: aiConfigured ? 'Analyse en cours…' : '— (IA non configurée)',
+      skills: aiConfigured
+        ? ['L\'analyse n\'a pas pu aboutir']
+        : ['Analyse sémantique non disponible'],
+      experience: aiConfigured
+        ? 'L\'analyse du document a échoué. Vérifiez le format (PDF, PNG, JPG acceptés) et réessayez.'
+        : 'L\'analyse IA n\'est pas encore activée. Contactez votre administrateur.',
+      education: aiConfigured
+        ? 'Vérifiez que le fichier est lisible et non corrompu.'
+        : 'L\'analyse automatique de CV sera disponible prochainement.',
+      strengths: aiConfigured
+        ? 'Réessayez avec un document plus clair ou mieux numérisé'
+        : 'Le module d\'analyse IA est en cours de configuration',
+      weaknesses: aiConfigured
+        ? 'Si le problème persiste, contactez l\'administrateur'
+        : 'L\'analyse sémantique avancée sera disponible une fois le service activé',
       isPlaceholder: true,
       confidence: 0,
+      fileName: data.fileName,
     };
   }
 
@@ -386,20 +457,36 @@ Réponds en JSON avec les champs : name, skills (tableau), experience, education
 
     if (this.isAiConfigured()) {
       // Appel réel à l'IA via OpenRouter
-      const systemPrompt = `Tu es Sara, le Copilote RH d'Academia Helm. Tu aides les gestionnaires RH dans leur quotidien.
-Tu as accès aux données suivantes :
+      const systemPrompt = `Tu es Sarah, l'Assistante RH d'Academia Helm. Tu es une experte en ressources humaines avec une maîtrise complète du domaine :
+- Recrutement et sourcing de talents (CV, lettres, entretiens, tests)
+- Contrats de travail (CDI, CDD, vacation, stage, consultant) et droit du travail applicable
+- Gestion de la paie, charges sociales (CNSS Bénin), déclarations fiscales
+- Congés, absences, présences et gestion du temps
+- Évaluation des performances, développement des compétences, formation continue
+- Gestion des conflits, discipline, procédures disciplinaires
+- Conformité légale et réglementaire (Code du travail béninois, conventions collectives)
+- Planification des effectifs et stratégies RH
+- Bien-être au travail, QVT, santé et sécurité au travail
+- Onboarding et offboarding des collaborateurs
+
+DONNÉES RH EN TEMPS RÉEL DE L'ÉTABLISSEMENT :
 - Effectif total : ${contextData.totalStaff} collaborateur(s)
 - Candidats enregistrés : ${contextData.totalCandidates}
-- Contrats actifs : ${contextData.activeContracts}
-- Congés en attente : ${contextData.pendingLeaves}
-- Masse salariale cumulée : ${contextData.totalPayroll.toLocaleString()} FCFA
+- Contrats actifs ou en attente : ${contextData.activeContracts}
+- Demandes de congé en attente : ${contextData.pendingLeaves}
+- Masse salariale cumulée (paies versées) : ${contextData.totalPayroll.toLocaleString()} FCFA
 
-RÈGLES :
-- Réponds en français
-- Sois concis et professionnel
-- Base-toi sur les données réelles fournies
-- Propose des actions concrètes quand c'est pertinent
-- Si tu ne connais pas la réponse, dis-le honnêtement`;
+COMPORTEMENT ATTENDU :
+- Réponds en français, de manière professionnelle, structurée et concise
+- Maîtrise le vocabulaire RH technique (effectif, turnover, onboarding, KPI RH, etc.)
+- Propose des actions concrètes et applicables immédiatement
+- Quand pertinent, structure tes réponses avec des puces ou des étapes numérotées
+- Base-toi sur les données réelles fournies dans le contexte ci-dessus
+- Si une question sort de ton domaine RH, oriente l'utilisateur vers le bon interlocuteur
+- Pour les questions légales, rappelle que ta réponse ne remplace pas un avis juridique qualifié
+- Tu peux suggérer des templates d'entretien, des grilles d'évaluation, des processus RH
+- Sois proactive : anticipe les besoins RH (échéances contractuelles, pics d'absence, etc.)
+- Si tu ne connais pas la réponse, dis-le honnêtement et propose une recherche ou un contact`;
 
       const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
         { role: 'system', content: systemPrompt },

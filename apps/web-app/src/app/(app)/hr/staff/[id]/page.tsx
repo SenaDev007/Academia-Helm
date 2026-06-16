@@ -470,7 +470,7 @@ export default function StaffDetailPage() {
     return (
       <div className="p-8 text-center">
         <h3 className="text-xl font-bold">Collaborateur non trouvé</h3>
-        <button onClick={() => router.back()} className="mt-4 text-blue-600 font-bold flex items-center gap-2 mx-auto">
+        <button onClick={() => router.push('/app/hr/staff')} className="mt-4 text-blue-600 font-bold flex items-center gap-2 mx-auto">
           <ArrowLeft size={16} /> Retour à la liste
         </button>
       </div>
@@ -776,8 +776,8 @@ export default function StaffDetailPage() {
 
       {/* ─── Back Button ──────────────────────────────────────────────────── */}
       <div className="px-6 pt-4">
-        <button 
-          onClick={() => router.back()}
+        <button
+          onClick={() => router.push('/app/hr/staff')}
           className="flex items-center gap-2 text-sm font-bold text-gray-500 hover:text-blue-600 transition-colors"
         >
           <ArrowLeft size={16} /> Retour à l'effectif

@@ -170,8 +170,8 @@ export default function ContractDetailPage() {
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
         <AlertCircle className="h-12 w-12 text-rose-400" />
         <p className="text-slate-600 font-medium">Contrat introuvable.</p>
-        <button onClick={() => router.back()} className="text-sm font-semibold" style={{ color: PRIMARY }}>
-          ← Retour
+        <button onClick={() => router.push('/app/hr/contracts')} className="text-sm font-semibold" style={{ color: PRIMARY }}>
+          ← Retour aux contrats
         </button>
       </div>
     );
@@ -200,7 +200,7 @@ export default function ContractDetailPage() {
       {/* Breadcrumb & Back */}
       <div className="flex items-center gap-3">
         <Link
-          href="/app/hr?tab=contracts"
+          href="/app/hr/contracts"
           className="flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-[#1A2BA6] transition"
         >
           <ArrowLeft className="h-4 w-4" /> Contrats

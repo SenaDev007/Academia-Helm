@@ -49,7 +49,13 @@ export interface OpenRouterChatOptions {
   /** Messages de la conversation (system, user, assistant, tool) */
   messages: Array<{
     role: 'system' | 'user' | 'assistant' | 'tool';
-    content: string | null;
+    // Multimodal : string pour le texte simple, ou tableau de parts (text + image_url + file_url)
+    // pour supporter la vision (GLM-4V, GLM-5.1 multimodal, etc.)
+    content: string | null | Array<
+      | { type: 'text'; text: string }
+      | { type: 'image_url'; image_url: { url: string; detail?: 'auto' | 'low' | 'high' } }
+      | { type: 'file_url'; file_url: { url: string } }
+    >;
     reasoning_details?: unknown;
     tool_call_id?: string;
     tool_calls?: Array<{
@@ -654,6 +660,52 @@ export class OpenRouterService {
     }
 
     return { data: null, isPlaceholder: true, raw: result.content };
+  }
+
+  /**
+   * Appel IA avec un document multimodal (image ou PDF envoyé comme image_url).
+   * Utilisé pour l'analyse de CV, lettres de motivation, documents scannés, etc.
+   *
+   * @param userPrompt - Le prompt utilisateur (question/instruction)
+   * @param base64Data - Les données du fichier encodées en base64 (sans le préfixe data:xxx;base64,)
+   * @param mimeType - Le type MIME du fichier (image/png, image/jpeg, application/pdf, etc.)
+   * @param systemPrompt - Le prompt système (persona, consignes)
+   * @param persona - La personnalité IA (pour logging)
+   * @param options - Options additionnelles (temperature, maxTokens)
+   */
+  async chatWithDocument(
+    userPrompt: string,
+    base64Data: string,
+    mimeType: string,
+    systemPrompt: string,
+    persona?: OpenRouterChatOptions['persona'],
+    options?: { temperature?: number; maxTokens?: number },
+  ): Promise<OpenRouterChatResponse> {
+    const dataUrl = `data:${mimeType};base64,${base64Data}`;
+
+    // Les images sont envoyées via image_url (supporté par GLM-4V, GLM-5.1 multimodal)
+    // Les PDF peuvent aussi être envoyés via image_url car l'API OpenAI-compatible
+    // de Modal/GLM accepte les PDF comme image_url avec extraction native.
+    const isImage = mimeType.startsWith('image/');
+    const contentPart = isImage
+      ? { type: 'image_url' as const, image_url: { url: dataUrl, detail: 'high' as const } }
+      : { type: 'file_url' as const, file_url: { url: dataUrl } };
+
+    return this.chat({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: userPrompt },
+            contentPart,
+          ],
+        },
+      ],
+      temperature: options?.temperature ?? 0.3,
+      maxTokens: options?.maxTokens ?? 1500,
+      persona,
+    });
   }
 
   /**

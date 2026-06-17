@@ -27,10 +27,21 @@ export class DatabaseModule implements OnApplicationBootstrap {
   constructor(private readonly bootstrap: DatabaseTriggersBootstrapService) {}
 
   async onApplicationBootstrap() {
-    // Exécuter les triggers critiques au démarrage
-    await this.bootstrap.runModule1Triggers();
-    await this.bootstrap.runFinanceTriggers();
-    // Corriger les statuts Staff/Contract incohérents (idempotent)
-    await this.bootstrap.runHrStatusDataFix();
+    // ── Fire-and-forget : ne pas bloquer le démarrage de NestJS ──
+    // Ces opérations (triggers SQL, finance, HR fix) peuvent prendre 10-30s
+    // chacune. Si on les attend, NestJS ne commence pas à écouter sur le port
+    // 3000 → Fly.io health check échoue → 503.
+    //
+    // On les lance en arrière-plan. NestJS commence à écouter immédiatement.
+    // Les triggers seront appliqués pendant que l'app tourne (idempotent).
+    this.bootstrap.runModule1Triggers().catch((err) =>
+      console.error('[DatabaseBootstrap] runModule1Triggers failed:', err?.message || err),
+    );
+    this.bootstrap.runFinanceTriggers().catch((err) =>
+      console.error('[DatabaseBootstrap] runFinanceTriggers failed:', err?.message || err),
+    );
+    this.bootstrap.runHrStatusDataFix().catch((err) =>
+      console.error('[DatabaseBootstrap] runHrStatusDataFix failed:', err?.message || err),
+    );
   }
 }

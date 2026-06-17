@@ -17,8 +17,31 @@ import {
   ArrowDownRight,
   Activity,
   TrendingUp,
-  Clock
+  Clock,
+  Loader2
 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesDashboard } from '@/lib/modules-complementaires/hooks';
+
+interface InfirmaryStats {
+  totalVisits?: number;
+  pendingVisits?: number;
+  criticalCases?: number;
+  medicationsDispensed?: number;
+  allergiesTracked?: number;
+  recentVisits?: Array<{ id?: string; name: string; class?: string; reason?: string; time?: string; status?: string; color?: string }>;
+  alerts?: Array<{ id?: string; title: string; desc: string; severity?: string }>;
+}
+
+const DEFAULT_STATS: InfirmaryStats = {
+  totalVisits: 0,
+  pendingVisits: 0,
+  criticalCases: 0,
+  medicationsDispensed: 0,
+  allergiesTracked: 0,
+  recentVisits: [],
+  alerts: [],
+};
 
 interface StatCardProps {
   title: string;
@@ -58,13 +81,33 @@ function StatCard({ title, value, trend, trendType, icon: Icon, iconColor, delay
 }
 
 export default function InfirmaryDashboard() {
+  const { academicYear } = useModuleContext();
+  const { data, loading, error } = useModulesDashboard<InfirmaryStats>('infirmary', academicYear?.id);
+
+  const stats = { ...DEFAULT_STATS, ...(data ?? {}) };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les statistiques. Affichage des valeurs par défaut.
+        </div>
+      )}
+
       {/* Overview Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
           title="Visites ce mois" 
-          value="42" 
+          value={String(stats.totalVisits ?? 0)} 
           trend="+12%" 
           trendType="up"
           icon={Activity} 
@@ -73,7 +116,7 @@ export default function InfirmaryDashboard() {
         />
         <StatCard 
           title="Urgences actives" 
-          value="2" 
+          value={String(stats.criticalCases ?? 0)} 
           trend="-50%" 
           trendType="down"
           icon={AlertCircle} 
@@ -81,9 +124,9 @@ export default function InfirmaryDashboard() {
           delay={0.2}
         />
         <StatCard 
-          title="Stock faible" 
-          value="5" 
-          trend="8 articles" 
+          title="Médicaments délivrés" 
+          value={String(stats.medicationsDispensed ?? 0)} 
+          trend="Stock" 
           trendType="neutral"
           icon={Pill} 
           iconColor="bg-amber-600"
@@ -91,7 +134,7 @@ export default function InfirmaryDashboard() {
         />
         <StatCard 
           title="Visites prévues" 
-          value="15" 
+          value={String(stats.pendingVisits ?? 0)} 
           trend="Semaine" 
           trendType="up"
           icon={Calendar} 
@@ -112,30 +155,30 @@ export default function InfirmaryDashboard() {
               <button className="text-blue-600 text-sm font-semibold hover:underline">Voir tout</button>
             </div>
             <div className="divide-y divide-slate-100">
-              {[
-                { name: 'Jean Dupont', class: '6ème A', reason: 'Maux de tête', time: 'Il y a 10 min', status: 'En cours', color: 'text-amber-600 bg-amber-50' },
-                { name: 'Marie Kassa', class: 'CM2 B', reason: 'Chute cour de récré', time: 'Il y a 45 min', status: 'Terminé', color: 'text-emerald-600 bg-emerald-50' },
-                { name: 'Koffi Mensah', class: 'Terminal D', reason: 'Fièvre légère', time: 'Il y a 2h', status: 'Terminé', color: 'text-emerald-600 bg-emerald-50' },
-                { name: 'Sarah Lawson', class: '3ème B', reason: 'Douleur abdominale', time: 'Ce matin', status: 'Transféré', color: 'text-rose-600 bg-rose-50' },
-              ].map((visit, i) => (
-                <div key={i} className="p-4 hover:bg-slate-50 transition-colors flex items-center justify-between">
+              {(stats.recentVisits?.length ? stats.recentVisits : []).map((visit, i) => (
+                <div key={visit.id ?? i} className="p-4 hover:bg-slate-50 transition-colors flex items-center justify-between">
                   <div className="flex items-center space-x-4">
                     <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 font-bold">
-                      {visit.name.charAt(0)}
+                      {visit.name?.charAt(0) ?? '?'}
                     </div>
                     <div>
                       <p className="font-bold text-slate-900">{visit.name}</p>
-                      <p className="text-xs text-slate-500">{visit.class} • {visit.reason}</p>
+                      <p className="text-xs text-slate-500">{visit.class ?? '—'} • {visit.reason ?? '—'}</p>
                     </div>
                   </div>
                   <div className="flex items-center space-x-4">
-                    <span className="text-xs text-slate-400">{visit.time}</span>
-                    <span className={`text-[10px] uppercase tracking-wider font-bold px-2 py-1 rounded-full ${visit.color}`}>
-                      {visit.status}
+                    <span className="text-xs text-slate-400">{visit.time ?? '—'}</span>
+                    <span className={`text-[10px] uppercase tracking-wider font-bold px-2 py-1 rounded-full ${visit.color ?? 'text-slate-600 bg-slate-100'}`}>
+                      {visit.status ?? '—'}
                     </span>
                   </div>
                 </div>
               ))}
+              {(!stats.recentVisits || stats.recentVisits.length === 0) && (
+                <div className="text-center py-8 text-sm text-slate-400">
+                  Aucune visite récente.
+                </div>
+              )}
             </div>
           </div>
 
@@ -146,20 +189,20 @@ export default function InfirmaryDashboard() {
               Alertes de Vigilance
             </h3>
             <div className="space-y-3">
-              <div className="bg-white border border-rose-200 rounded-xl p-4 flex items-start space-x-3">
-                <div className="mt-1 w-2 h-2 rounded-full bg-rose-600 animate-pulse" />
-                <div>
-                  <p className="text-sm font-bold text-slate-900 underline">ALERTE ALLERGIE : Marc Yao (CE1)</p>
-                  <p className="text-xs text-slate-600 mt-1">Allergie sévère à l'arachide. Épi-pen disponible en pharmacie (Casier A2).</p>
+              {(stats.alerts?.length ? stats.alerts : []).map((alert, i) => (
+                <div key={alert.id ?? i} className="bg-white border border-rose-200 rounded-xl p-4 flex items-start space-x-3">
+                  <div className="mt-1 w-2 h-2 rounded-full bg-rose-600 animate-pulse" />
+                  <div>
+                    <p className="text-sm font-bold text-slate-900 underline">{alert.title}</p>
+                    <p className="text-xs text-slate-600 mt-1">{alert.desc}</p>
+                  </div>
                 </div>
-              </div>
-              <div className="bg-white border border-rose-200 rounded-xl p-4 flex items-start space-x-3">
-                <div className="mt-1 w-2 h-2 rounded-full bg-rose-600 animate-pulse" />
-                <div>
-                  <p className="text-sm font-bold text-slate-900 underline">CONTRE-INDICATION SPORT : Sophie Boli (3ème)</p>
-                  <p className="text-xs text-slate-600 mt-1">Dispense médicale jusqu'au 15 Juin. Problème cardiaque mineur.</p>
+              ))}
+              {(!stats.alerts || stats.alerts.length === 0) && (
+                <div className="bg-white border border-dashed border-rose-200 rounded-xl p-4 text-center text-sm text-slate-400">
+                  Aucune alerte de vigilance enregistrée.
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>

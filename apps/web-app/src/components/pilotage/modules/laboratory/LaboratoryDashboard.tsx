@@ -15,24 +15,65 @@ import {
   Wrench, 
   TrendingUp,
   Activity,
-  Package
+  Package,
+  Loader2
 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesDashboard } from '@/lib/modules-complementaires/hooks';
+
+interface LaboratoryStats {
+  totalLabs?: number;
+  activeReservations?: number;
+  pendingMaintenance?: number;
+  incidentsCount?: number;
+  recentReservations?: Array<{ id?: string; lab?: string; teacher?: string; date?: string; time?: string; status?: string }>;
+  lowStockConsumables?: Array<{ id?: string; name?: string; quantity?: number; threshold?: number }>;
+}
+
+const DEFAULT_STATS: LaboratoryStats = {
+  totalLabs: 0,
+  activeReservations: 0,
+  pendingMaintenance: 0,
+  incidentsCount: 0,
+  recentReservations: [],
+  lowStockConsumables: [],
+};
 
 export default function LaboratoryDashboard() {
-  const stats = [
-    { label: 'Laboratoires Actifs', value: '4', icon: Beaker, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { label: 'Réservations du Jour', value: '6', icon: Calendar, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-    { label: 'Équipements Disponibles', value: '142', icon: Microscope, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { label: 'En Maintenance', value: '3', icon: Wrench, color: 'text-amber-600', bg: 'bg-amber-50' },
-    { label: 'Stock Faible', value: '8', icon: Package, color: 'text-rose-600', bg: 'bg-rose-50' },
-    { label: 'Incidents Récents', value: '1', icon: AlertTriangle, color: 'text-orange-600', bg: 'bg-orange-50' },
+  const { academicYear } = useModuleContext();
+  const { data, loading, error } = useModulesDashboard<LaboratoryStats>('labs', academicYear?.id);
+
+  const stats = { ...DEFAULT_STATS, ...(data ?? {}) };
+
+  const kpiCards = [
+    { label: 'Laboratoires Actifs', value: String(stats.totalLabs ?? 0), icon: Beaker, color: 'text-blue-600', bg: 'bg-blue-50' },
+    { label: 'Réservations du Jour', value: String(stats.activeReservations ?? 0), icon: Calendar, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { label: 'Équipements Disponibles', value: '—', icon: Microscope, color: 'text-blue-600', bg: 'bg-blue-50' },
+    { label: 'En Maintenance', value: String(stats.pendingMaintenance ?? 0), icon: Wrench, color: 'text-amber-600', bg: 'bg-amber-50' },
+    { label: 'Stock Faible', value: String(stats.lowStockConsumables?.length ?? 0), icon: Package, color: 'text-rose-600', bg: 'bg-rose-50' },
+    { label: 'Incidents Récents', value: String(stats.incidentsCount ?? 0), icon: AlertTriangle, color: 'text-orange-600', bg: 'bg-orange-50' },
   ];
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les statistiques. Affichage des valeurs par défaut.
+        </div>
+      )}
+
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-        {stats.map((stat, i) => (
+        {kpiCards.map((stat, i) => (
           <motion.div
             key={i}
             initial={{ opacity: 0, scale: 0.95 }}

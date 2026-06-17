@@ -10,44 +10,84 @@ import React from 'react';
 import { 
   DollarSign, ShoppingBag, Package, TrendingUp, 
   AlertTriangle, CheckCircle2, Clock, ArrowRight,
-  TrendingDown, ShoppingCart, UserCheck, Zap, BarChart3
+  TrendingDown, ShoppingCart, UserCheck, Zap, BarChart3, Loader2
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesDashboard } from '@/lib/modules-complementaires/hooks';
+
+interface ShopStats {
+  totalSales?: number;
+  totalOrders?: number;
+  pendingOrders?: number;
+  lowStockItems?: number;
+  recentOrders?: Array<{ id?: string; refNo: string; name: string; student?: string; items: string; amount: number; mode: string; status: string; time: string }>;
+  topProducts?: Array<{ id?: string; name?: string; sales?: number; revenue?: number }>;
+}
+
+const DEFAULT_STATS: ShopStats = {
+  totalSales: 0,
+  totalOrders: 0,
+  pendingOrders: 0,
+  lowStockItems: 0,
+  recentOrders: [],
+  topProducts: [],
+};
 
 export default function ShopDashboard() {
+  const { academicYear } = useModuleContext();
+  const { data, loading, error } = useModulesDashboard<ShopStats>('shop', academicYear?.id);
+
+  const stats = { ...DEFAULT_STATS, ...(data ?? {}) };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les statistiques. Affichage des valeurs par défaut.
+        </div>
+      )}
+
       {/* KPI Section */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <KPICard 
           title="Chiffre d'Affaires (Mois)" 
-          value={formatCurrency(4850000)} 
+          value={formatCurrency(stats.totalSales ?? 0)} 
           icon={DollarSign} 
           color="navy" 
           trend="+15.4%" 
           trendUp={true}
         />
         <KPICard 
+          title="Commandes Totales" 
+          value={String(stats.totalOrders ?? 0)} 
+          icon={ShoppingBag} 
+          color="emerald" 
+          trend="+5%" 
+          trendUp={true}
+        />
+        <KPICard 
           title="Commandes en Attente" 
-          value="24" 
+          value={String(stats.pendingOrders ?? 0)} 
           icon={ShoppingCart} 
           color="amber" 
           sub="À préparer"
         />
         <KPICard 
           title="Articles en Rupture" 
-          value="7" 
+          value={String(stats.lowStockItems ?? 0)} 
           icon={Package} 
           color="red" 
           sub="Action requise"
-        />
-        <KPICard 
-          title="Panier Moyen" 
-          value={formatCurrency(12500)} 
-          icon={TrendingUp} 
-          color="emerald" 
-          trend="+5%" 
-          trendUp={true}
         />
       </div>
 
@@ -97,14 +137,32 @@ export default function ShopDashboard() {
           </div>
 
           <div className="bg-white rounded-3xl border border-gray-100 p-8 shadow-sm">
-            <h3 className="font-black text-navy-900 uppercase tracking-tight mb-6">Alertes Stock Critique</h3>
+            <h3 className="font-black text-navy-900 uppercase tracking-tight mb-6">Top Produits</h3>
             <div className="space-y-4">
-              <StockAlertItem name="Cahier de dessin (A4)" stock={2} threshold={10} />
-              <StockAlertItem name="Gourde Academia" stock={0} threshold={5} isRupture={true} />
-              <StockAlertItem name="Uniforme Garçon - Taille L" stock={3} threshold={8} />
+              {(stats.topProducts?.length ? stats.topProducts : []).map((product, i) => (
+                <div key={product.id ?? i} className="flex items-center justify-between p-4 bg-gray-50/50 rounded-2xl border border-gray-100 hover:bg-white hover:border-navy-100 transition-all group cursor-pointer">
+                  <div className="flex items-center space-x-4">
+                    <div className="p-2 rounded-lg bg-blue-100 text-blue-600">
+                      <Package className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-black text-navy-900 group-hover:text-navy-600 transition-colors">{product.name ?? '—'}</p>
+                      <p className="text-[10px] text-gray-400 font-bold uppercase">{product.sales ?? 0} ventes</p>
+                    </div>
+                  </div>
+                  <div className="px-3 py-1 rounded-full text-[10px] font-black border bg-emerald-50 text-emerald-600 border-emerald-100">
+                    {product.revenue ? formatCurrency(product.revenue) : '—'}
+                  </div>
+                </div>
+              ))}
+              {(!stats.topProducts || stats.topProducts.length === 0) && (
+                <div className="text-center py-8 text-sm text-slate-400">
+                  Aucun produit en vedette.
+                </div>
+              )}
             </div>
             <button className="w-full mt-6 py-3 border border-gray-100 rounded-xl text-xs font-bold text-gray-500 hover:bg-gray-50 transition-all uppercase tracking-widest">
-              Gérer les approvisionnements
+              Voir le catalogue
             </button>
           </div>
         </div>
@@ -135,46 +193,26 @@ export default function ShopDashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              <TransactionRow 
-                refNo="#VTE-2026-0045" 
-                name="Saliou Diallo" 
-                student="6ème B" 
-                items="Uniforme (x1), Badge (x1)" 
-                amount={45000} 
-                mode="Wallet" 
-                status="Complété" 
-                time="Il y a 5 min"
-              />
-              <TransactionRow 
-                refNo="#VTE-2026-0044" 
-                name="Marie Koné" 
-                student="CM2 A" 
-                items="Kit Papeterie (x2)" 
-                amount={12000} 
-                mode="Espèces" 
-                status="Complété" 
-                time="Il y a 14 min"
-              />
-              <TransactionRow 
-                refNo="#VTE-2026-0043" 
-                name="Jean-Marc Koffi" 
-                student="Tle D" 
-                items="Cahiers TP (x5)" 
-                amount={7500} 
-                mode="MoMo" 
-                status="Vérification" 
-                time="Il y a 22 min"
-              />
-              <TransactionRow 
-                refNo="#VTE-2026-0042" 
-                name="Awa Touré" 
-                student="Maternelle" 
-                items="Gourde, Sac à dos" 
-                amount={18500} 
-                mode="Carte" 
-                status="Complété" 
-                time="Il y a 35 min"
-              />
+              {(stats.recentOrders?.length ? stats.recentOrders : []).map((order, i) => (
+                <TransactionRow 
+                  key={order.id ?? i}
+                  refNo={order.refNo} 
+                  name={order.name} 
+                  student={order.student ?? '—'} 
+                  items={order.items} 
+                  amount={order.amount} 
+                  mode={order.mode} 
+                  status={order.status} 
+                  time={order.time}
+                />
+              ))}
+              {(!stats.recentOrders || stats.recentOrders.length === 0) && (
+                <tr>
+                  <td colSpan={7} className="px-8 py-12 text-center text-sm text-slate-400">
+                    Aucune vente récente.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

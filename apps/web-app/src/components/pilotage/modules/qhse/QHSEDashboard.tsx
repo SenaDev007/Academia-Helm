@@ -7,21 +7,62 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { ShieldCheck, AlertTriangle, Activity, CheckCircle2, TrendingUp, TrendingDown, Clock, MapPin } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, Activity, CheckCircle2, TrendingUp, TrendingDown, Clock, MapPin, Loader2 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesDashboard } from '@/lib/modules-complementaires/hooks';
+
+interface QHSEStats {
+  openIncidents?: number;
+  resolvedIncidents?: number;
+  pendingAudits?: number;
+  complianceRate?: number;
+  recentIncidents?: Array<{ id: string | number; type: string; gravity: string; location: string; time: string; status: string }>;
+  alerts?: Array<{ id?: string; type?: string; title?: string; desc?: string; time?: string }>;
+}
+
+const DEFAULT_STATS: QHSEStats = {
+  openIncidents: 0,
+  resolvedIncidents: 0,
+  pendingAudits: 0,
+  complianceRate: 0,
+  recentIncidents: [],
+  alerts: [],
+};
 
 export default function QHSEDashboard() {
-  const stats = [
-    { label: 'Incidents Déclarés', value: '12', trend: '+2', trendType: 'up', icon: AlertTriangle, color: 'text-rose-600', bg: 'bg-rose-50' },
-    { label: 'Risques Critiques', value: '3', trend: '-1', trendType: 'down', icon: Activity, color: 'text-amber-600', bg: 'bg-amber-50' },
-    { label: 'Audits en Cours', value: '2', trend: 'Non-conformités: 5', trendType: 'neutral', icon: ShieldCheck, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { label: 'Plans d\'Action', value: '8', trend: '65% complété', trendType: 'positive', icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+  const { academicYear } = useModuleContext();
+  const { data, loading, error } = useModulesDashboard<QHSEStats>('qhse', academicYear?.id);
+
+  const stats = { ...DEFAULT_STATS, ...(data ?? {}) };
+  const complianceRate = Math.min(Math.max(stats.complianceRate ?? 0, 0), 100);
+
+  const kpiCards = [
+    { label: 'Incidents Ouverts', value: String(stats.openIncidents ?? 0), trend: '+2', trendType: 'up', icon: AlertTriangle, color: 'text-rose-600', bg: 'bg-rose-50' },
+    { label: 'Incidents Résolus', value: String(stats.resolvedIncidents ?? 0), trend: '-1', trendType: 'down', icon: Activity, color: 'text-amber-600', bg: 'bg-amber-50' },
+    { label: 'Audits en Cours', value: String(stats.pendingAudits ?? 0), trend: 'Non-conformités: 5', trendType: 'neutral', icon: ShieldCheck, color: 'text-blue-600', bg: 'bg-blue-50' },
+    { label: 'Taux de Conformité', value: `${complianceRate}%`, trend: '65% complété', trendType: 'positive', icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50' },
   ];
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les statistiques. Affichage des valeurs par défaut.
+        </div>
+      )}
+
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat, i) => (
+        {kpiCards.map((stat, i) => (
           <motion.div
             key={i}
             initial={{ opacity: 0, y: 20 }}
@@ -56,11 +97,7 @@ export default function QHSEDashboard() {
             <button className="text-emerald-600 font-black text-[10px] uppercase tracking-widest hover:underline">Voir Registre</button>
           </div>
           <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
-            {[
-              { id: 1, type: 'Accident élève', gravity: 'IMPORTANT', location: 'Cour de récréation', time: 'Il y a 2h', status: 'DECLARE' },
-              { id: 2, type: 'Problème électrique', gravity: 'MODERE', location: 'Bâtiment B - Salle 12', time: 'Hier, 14:30', status: 'TRAITEMENT' },
-              { id: 3, type: 'Malaise', gravity: 'URGENCE', location: 'Cantine', time: '12 Mai, 11:45', status: 'RESOLU' },
-            ].map((incident) => (
+            {(stats.recentIncidents?.length ? stats.recentIncidents : []).map((incident) => (
               <div key={incident.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0 group cursor-pointer">
                 <div className="flex items-center gap-4">
                   <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
@@ -86,6 +123,11 @@ export default function QHSEDashboard() {
                 </div>
               </div>
             ))}
+            {(!stats.recentIncidents || stats.recentIncidents.length === 0) && (
+              <div className="text-center py-12 text-sm text-slate-400">
+                Aucun incident récent enregistré.
+              </div>
+            )}
           </div>
         </div>
 
@@ -107,10 +149,10 @@ export default function QHSEDashboard() {
               <div className="pt-6 border-t border-white/10 space-y-4">
                 <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest">
                   <span>Conformité Sanitaire</span>
-                  <span className="text-emerald-400">92%</span>
+                  <span className="text-emerald-400">{complianceRate}%</span>
                 </div>
                 <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
-                  <div className="h-full bg-emerald-400 w-[92%]" />
+                  <div className="h-full bg-emerald-400 transition-all" style={{ width: `${complianceRate}%` }} />
                 </div>
               </div>
             </div>

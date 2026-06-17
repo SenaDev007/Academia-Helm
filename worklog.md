@@ -968,3 +968,65 @@ Stage Summary:
 - Backfill Neon : 8 lignes corrigées (financial_settings + orion_alerts)
 - Documentation complète : routes exemptées + tests E2E
 - Le mode "année scolaire stricte" est maintenant opérationnel
+
+---
+Task ID: ah-h1-modules-complementaires-dashboards
+Agent: Main Agent
+Task: H1 — Brancher les 8 dashboards de modules complémentaires sur le backend réel
+
+Work Log:
+- Constaté que les 8 dashboards (Library, Transport, Canteen, Infirmary, QHSE, EduCast, Shop, Laboratory) étaient en MOCK UI (données en dur comme '1,248', '450', '94%')
+- Backend déjà prêt : 195 endpoints dans modules-complementaires.controller.ts exigeant academicYearId
+
+Architecture mise en place :
+- Créé `apps/web-app/src/lib/modules-complementaires/client.ts` :
+  * Client API unifié (modulesApi) avec méthodes get/post/put/patch/delete
+  * Passe automatiquement academicYearId en query param
+  * Utilise apiClient Axios qui injecte x-academic-year-id + x-tenant-id headers
+  * Helper buildModulesApiOptions(academicYearId, tenantId)
+- Créé `apps/web-app/src/lib/modules-complementaires/hooks.ts` :
+  * useModulesDashboard(module, academicYearId) — stats dashboard
+  * useModulesList(module, resource, academicYearId, extraFilters) — liste paginée
+  * Gestion loading/error/refetch automatique
+  * Compatibilité backend : supporte { data: ... } ou objet direct
+
+Pattern appliqué à chaque dashboard :
+1. Import useModuleContext + useModulesDashboard
+2. Interface <Module>Stats avec champs optionnels
+3. DEFAULT_STATS avec valeurs à 0/tableaux vides
+4. const { data, loading, error } = useModulesDashboard<Stats>('<module>', academicYear?.id)
+5. stats = { ...DEFAULT_STATS, ...(data ?? {}) }
+6. Remplacement des valeurs mock par stats.xxx ?? 0
+7. État de chargement (Loader2 spinning)
+8. Bandeau d'erreur amber si error
+9. Listes : stats.xxx?.length ? stats.xxx : [] avec message "Aucune donnée" si vide
+10. Structure UI existante préservée
+
+Dashboards modifiés (8/8) :
+- LibraryDashboard.tsx : module 'library', stats = totalBooks, activeReaders, activeLoans, overdueLoans, lostBooks, stockValue, topBooks, weeklyActivity
+- TransportDashboard.tsx : module 'transport', stats = activeVehicles, transportedStudents, punctualityRate, recentIncidents, activeTrips, maintenanceAlerts
+- CanteenDashboard.tsx : module 'canteen', stats = enrolledStudents, mealsToday, stockAlerts, hygieneScore, todayMenu, recentActivity, alerts
+- InfirmaryDashboard.tsx : module 'infirmary', stats = totalVisits, pendingVisits, criticalCases, medicationsDispensed, allergiesTracked, recentVisits, alerts
+- QHSEDashboard.tsx : module 'qhse', stats = openIncidents, resolvedIncidents, pendingAudits, complianceRate, recentIncidents, alerts
+- EduCastDashboard.tsx : module 'educast', stats = totalContents, totalViews, activeChannels, totalSubscribers, recentContents, topChannels
+- ShopDashboard.tsx : module 'shop', stats = totalSales, totalOrders, pendingOrders, lowStockItems, recentOrders, topProducts
+- LaboratoryDashboard.tsx : module 'labs', stats = totalLabs, activeReservations, pendingMaintenance, incidentsCount, recentReservations, lowStockConsumables
+
+Décisions techniques :
+- Conflit de nomming `stats` : dans QHSE/EduCast/Laboratory, la variable locale `stats = [...]` (tableau KPI) a été renommée `kpiCards` pour éviter le shadowing avec `stats` du hook
+- CanteenDashboard manquait `'use client'` : ajouté (nécessaire pour les hooks)
+- lowStockConsumables traité comme liste (avec .length pour le KPI) — défensif
+- Sécurisation tous les accès propriétés avec ?. et ?? '—' / ?? 0
+
+Verification:
+- Babel parser sur 10 fichiers (2 lib + 8 dashboards) → 0 erreur syntaxe
+- Tous les dashboards utilisent maintenant useModuleContext() pour récupérer academicYear
+- Rechargement automatique quand l'année change (via dépendance useEffect du hook)
+- Les 195 endpoints backend sont prêts à recevoir les requêtes
+
+Stage Summary:
+- 2 nouveaux fichiers lib (client.ts + hooks.ts)
+- 8 dashboards modifiés (Library, Transport, Canteen, Infirmary, QHSE, EduCast, Shop, Laboratory)
+- Pattern homogène sur tous les dashboards : loading state, error banner, fallback DEFAULT_STATS
+- Les sous-composants (~70 fichiers) restent à brancher — c'est un travail de fond qui peut être fait module par module dans les prochaines sessions
+- L'infrastructure (client + hooks) est réutilisable pour les sous-composants futurs

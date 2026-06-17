@@ -1,18 +1,62 @@
+'use client';
+
 import React from 'react';
 import { 
   Users, UtensilsCrossed, Package, CheckCircle2, 
   BarChart3, Activity, TrendingUp, TrendingDown,
-  Clock, AlertTriangle
+  Clock, AlertTriangle, Loader2
 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesDashboard } from '@/lib/modules-complementaires/hooks';
+
+interface CanteenStats {
+  enrolledStudents?: number;
+  mealsToday?: number;
+  stockAlerts?: number;
+  hygieneScore?: string;
+  todayMenu?: Array<{ label: string; value: string; icon?: string }>;
+  recentActivity?: Array<{ id?: string; student: string; time: string; status: string; color?: string }>;
+  alerts?: Array<{ id?: string; type: string; title: string; desc: string; time: string }>;
+}
+
+const DEFAULT_STATS: CanteenStats = {
+  enrolledStudents: 0,
+  mealsToday: 0,
+  stockAlerts: 0,
+  hygieneScore: '—',
+  todayMenu: [],
+  recentActivity: [],
+  alerts: [],
+};
 
 export default function CanteenDashboard() {
+  const { academicYear } = useModuleContext();
+  const { data, loading, error } = useModulesDashboard<CanteenStats>('canteen', academicYear?.id);
+
+  const stats = { ...DEFAULT_STATS, ...(data ?? {}) };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les statistiques. Affichage des valeurs par défaut.
+        </div>
+      )}
+
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
           title="Élèves Inscrits" 
-          value="450" 
+          value={String(stats.enrolledStudents ?? 0)} 
           change="+12" 
           trend="up" 
           icon={Users} 
@@ -20,7 +64,7 @@ export default function CanteenDashboard() {
         />
         <StatCard 
           title="Repas Prévus (Midi)" 
-          value="412" 
+          value={String(stats.mealsToday ?? 0)} 
           change="-5" 
           trend="down" 
           icon={UtensilsCrossed} 
@@ -28,7 +72,7 @@ export default function CanteenDashboard() {
         />
         <StatCard 
           title="Alertes Stock" 
-          value="05" 
+          value={String(stats.stockAlerts ?? 0).padStart(2, '0')} 
           change="Critical" 
           trend="neutral" 
           icon={Package} 
@@ -36,7 +80,7 @@ export default function CanteenDashboard() {
         />
         <StatCard 
           title="Score Hygiène" 
-          value="A+" 
+          value={stats.hygieneScore ?? '—'} 
           change="Excellent" 
           trend="up" 
           icon={CheckCircle2} 
@@ -57,26 +101,19 @@ export default function CanteenDashboard() {
             </div>
           </div>
           <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
-            <MenuSection 
-              label="Entrée" 
-              value="Salade de mangue verte à la menthe" 
-              icon="🥗"
-            />
-            <MenuSection 
-              label="Plat Principal" 
-              value="Mafé au bœuf & Riz blanc parfumé" 
-              icon="🍲"
-            />
-            <MenuSection 
-              label="Accompagnement" 
-              value="Légumes vapeur (Carottes & Haricots)" 
-              icon="🥕"
-            />
-            <MenuSection 
-              label="Dessert & Boisson" 
-              value="Yaourt artisanal & Jus de Bissap" 
-              icon="🥤"
-            />
+            {(stats.todayMenu?.length ? stats.todayMenu : []).map((item, i) => (
+              <MenuSection 
+                key={i}
+                label={item.label} 
+                value={item.value} 
+                icon={item.icon ?? '🍽️'}
+              />
+            ))}
+            {(!stats.todayMenu || stats.todayMenu.length === 0) && (
+              <div className="md:col-span-2 text-center py-8 text-sm text-slate-400">
+                Aucun menu disponible pour aujourd'hui.
+              </div>
+            )}
           </div>
           <div className="px-8 py-4 bg-navy-50/50 flex items-center justify-between">
             <div className="flex items-center space-x-2">
@@ -132,10 +169,20 @@ export default function CanteenDashboard() {
             <span>Service en Temps Réel</span>
           </h3>
           <div className="space-y-4">
-            <LiveRow student="Bakary Diallo" time="12:42" status="Servi" />
-            <LiveRow student="Aicha Koné" time="12:40" status="Servi" />
-            <LiveRow student="Marc-Antoine" time="12:38" status="Régime Spécial" color="amber" />
-            <LiveRow student="Inès Traoré" time="12:35" status="Servi" />
+            {(stats.recentActivity?.length ? stats.recentActivity : []).map((row, i) => (
+              <LiveRow 
+                key={row.id ?? i}
+                student={row.student}
+                time={row.time}
+                status={row.status}
+                color={row.color ?? 'green'}
+              />
+            ))}
+            {(!stats.recentActivity || stats.recentActivity.length === 0) && (
+              <div className="text-center py-8 text-sm text-slate-400">
+                Aucune activité récente.
+              </div>
+            )}
           </div>
         </div>
 
@@ -145,18 +192,20 @@ export default function CanteenDashboard() {
             <span>Alertes & Rappels</span>
           </h3>
           <div className="space-y-4">
-            <AlertItem 
-              type="stock" 
-              title="Rupture imminente : Huile" 
-              desc="Stock inférieur au seuil de 15L" 
-              time="Il y a 1h"
-            />
-            <AlertItem 
-              type="payment" 
-              title="Retards de paiements" 
-              desc="15 parents n'ont pas encore réglé Mai" 
-              time="Il y a 3h"
-            />
+            {(stats.alerts?.length ? stats.alerts : []).map((alert, i) => (
+              <AlertItem 
+                key={alert.id ?? i}
+                type={alert.type} 
+                title={alert.title} 
+                desc={alert.desc} 
+                time={alert.time}
+              />
+            ))}
+            {(!stats.alerts || stats.alerts.length === 0) && (
+              <div className="text-center py-8 text-sm text-slate-400">
+                Aucune alerte.
+              </div>
+            )}
           </div>
         </div>
       </div>

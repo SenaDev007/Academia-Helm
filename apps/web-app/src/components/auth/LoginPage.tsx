@@ -1516,21 +1516,12 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
 
                     {/* Password field */}
                     <div>
-                      <div className="mb-1.5 flex items-center justify-between">
-                        <label
-                          htmlFor={`password-${tenantStorageKey}`}
-                          className="text-sm font-semibold text-slate-900"
-                        >
-                          Mot de passe
-                        </label>
-                        <Link
-                          href={forgotPasswordHref}
-                          className="text-xs font-medium transition-colors hover:underline min-h-[44px] inline-flex items-center"
-                          style={{ color: BLUE }}
-                        >
-                          Mot de passe oublié ?
-                        </Link>
-                      </div>
+                      <label
+                        htmlFor={`password-${tenantStorageKey}`}
+                        className="mb-1.5 block text-sm font-semibold text-slate-900"
+                      >
+                        Mot de passe
+                      </label>
                       <div className="relative">
                         <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                           <Lock className="h-5 w-5 text-slate-400" />
@@ -1586,6 +1577,16 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                           </p>
                         </div>
                       )}
+                      {/* Mot de passe oublié — en dessous à droite */}
+                      <div className="mt-1.5 flex justify-end">
+                        <Link
+                          href={forgotPasswordHref}
+                          className="text-xs font-medium transition-colors hover:underline min-h-[44px] inline-flex items-center"
+                          style={{ color: BLUE }}
+                        >
+                          Mot de passe oublié ?
+                        </Link>
+                      </div>
                     </div>
                   </>
                 )}
@@ -1626,21 +1627,12 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                     </div>
 
                     <div>
-                      <div className="mb-1.5 flex items-center justify-between">
-                        <label
-                          htmlFor="teacherPassword"
-                          className="text-sm font-semibold text-slate-900"
-                        >
-                          Mot de passe
-                        </label>
-                        <Link
-                          href={forgotPasswordHref}
-                          className="text-xs font-medium transition-colors hover:underline min-h-[44px] inline-flex items-center"
-                          style={{ color: BLUE }}
-                        >
-                          Mot de passe oublié ?
-                        </Link>
-                      </div>
+                      <label
+                        htmlFor="teacherPassword"
+                        className="mb-1.5 block text-sm font-semibold text-slate-900"
+                      >
+                        Mot de passe
+                      </label>
                       <div className="relative">
                         <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                           <Lock className="h-5 w-5 text-slate-400" />
@@ -1690,6 +1682,16 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                           </p>
                         </div>
                       )}
+                      {/* Mot de passe oublié — en dessous à droite */}
+                      <div className="mt-1.5 flex justify-end">
+                        <Link
+                          href={forgotPasswordHref}
+                          className="text-xs font-medium transition-colors hover:underline min-h-[44px] inline-flex items-center"
+                          style={{ color: BLUE }}
+                        >
+                          Mot de passe oublié ?
+                        </Link>
+                      </div>
                     </div>
                   </>
                 )}

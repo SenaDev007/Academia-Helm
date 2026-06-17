@@ -524,3 +524,67 @@ export async function verifyAdminPassword(_email: string, _password: string): Pr
 export function isPasswordAuthEnabled(): boolean {
   return Boolean(process.env.ADMIN_PASSWORDS);
 }
+
+// ─── Password reset (token JWT signé) ───────────────────────────────────────
+
+const RESET_TOKEN_VALIDITY_MINUTES = 30;
+
+/**
+ * Génère un token de réinitialisation de mot de passe admin.
+ * Le token est un JWT signé avec ADMIN_JWT_SECRET contenant l'email + expiration.
+ */
+export function generateResetToken(email: string): string {
+  const payload = JSON.stringify({
+    email: email.toLowerCase(),
+    exp: Date.now() + RESET_TOKEN_VALIDITY_MINUTES * 60 * 1000,
+    type: 'admin_reset',
+  });
+  const signature = hmacSign(payload);
+  return Buffer.from(payload).toString('base64url') + '.' + signature;
+}
+
+/**
+ * Vérifie un token de réinitialisation.
+ * @returns l'email si valide, null sinon.
+ */
+export function verifyResetToken(token: string): string | null {
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  try {
+    const payload = Buffer.from(parts[0], 'base64url').toString('utf-8');
+    const signature = parts[1];
+    const expected = hmacSign(payload);
+    if (!crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expected, 'hex'))) {
+      return null;
+    }
+    const data = JSON.parse(payload) as { email?: string; exp?: number; type?: string };
+    if (data.type !== 'admin_reset') return null;
+    if (!data.email || !data.exp) return null;
+    if (Date.now() > data.exp) return null;
+    return data.email;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Met à jour le mot de passe admin dans ADMIN_PASSWORDS (env var).
+ * Attention : cette fonction ne peut pas modifier l'env var en runtime.
+ * Elle hash le nouveau mot de passe et renvoie le hash à stocker.
+ *
+ * En production, ADMIN_PASSWORDS devrait être stocké en DB plutôt qu'en env var.
+ * Pour l'instant, on logge le hash à mettre à jour manuellement.
+ */
+export async function hashAdminPassword(password: string): Promise<string> {
+  try {
+    const bcryptModule = await import('bcryptjs');
+    const bcrypt = bcryptModule.default || bcryptModule;
+    // @ts-expect-error — l'API de bcryptjs est connue
+    return await bcrypt.hash(password, 10);
+  } catch {
+    console.error('bcryptjs non installé — impossible de hasher le mot de passe');
+    return '';
+  }
+}
+
+export const RESET_TOKEN_VALIDITY = RESET_TOKEN_VALIDITY_MINUTES;

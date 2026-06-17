@@ -334,15 +334,14 @@ export async function sendSchoolOtpEmail(
     return false;
   }
 
-  // Réutilise le template OTP de l'admin (même design palette Helm)
-  // Import statique — Turbopack ne supporte pas require() dynamique
-  const { renderOtpEmailHtml, renderOtpEmailText } = await import('../admin/email-templates');
-  const html = renderOtpEmailHtml({
+  // Template email SCHOOL (distinct du template admin)
+  const { renderSchoolOtpEmailHtml, renderSchoolOtpEmailText } = await import('../admin/email-templates');
+  const html = renderSchoolOtpEmailHtml({
     name,
     otp,
     validityMinutes: OTP_VALIDITY_MINUTES,
   });
-  const text = renderOtpEmailText({ name, otp, validityMinutes: OTP_VALIDITY_MINUTES });
+  const text = renderSchoolOtpEmailText({ name, otp, validityMinutes: OTP_VALIDITY_MINUTES });
 
   const fromEmail =
     process.env.ADMIN_EMAIL_FROM ||

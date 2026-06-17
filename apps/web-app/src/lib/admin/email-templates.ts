@@ -1,23 +1,25 @@
 /**
  * ============================================================================
- * Email Templates — Academia Helm (back-office admin)
+ * Email Templates — Academia Helm
  * ============================================================================
  *
- * Templates HTML professionnels pour les emails envoyés par le back-office.
+ * 2 templates distincts inspirés du style GitHub (simple, centré, épuré) :
  *
- * Contraintes email HTML :
- *   - Tables pour le layout (pas de flexbox/grid)
- *   - CSS inline (la plupart des clients mail strip les <style>)
- *   - Polices web-safe (Arial, Helvetica)
- *   - Images en URL absolue (HTTPS)
- *   - Largeur max 600px
- *   - Pas de JavaScript
+ * 1. renderAdminOtpEmail() — Back-office (admin.academiahelm.com)
+ *    Destinataire : administrateur plateforme (membre de l'équipe interne)
+ *    Ton : institutionnel, sécurité plateforme
+ *
+ * 2. renderSchoolOtpEmail() — Portail École (academiahelm.com)
+ *    Destinataire : personnel de l'établissement (directeur, secrétaire, etc.)
+ *    Ton : professionnel, sécurité établissement
  *
  * Palette Academia Helm :
- *   - Navy : #0b2f73 / #144798 / #1E3A5F
- *   - Or : #f5b335 / #C9A84C / #e4c978
- *   - Fond clair : #f8fafc
- *   - Texte : #1e293b / #475569
+ *   - Navy : #0b2f73 / #1E3A5F
+ *   - Or : #f5b335 / #C9A84C
+ *   - Fond : #ffffff (blanc, style GitHub)
+ *   - Texte : #1e293b / #64748b (gris)
+ *
+ * Logo : /images/logo-Academia Hub.png (couleurs originales, pas noir/blanc)
  * ============================================================================
  */
 
@@ -28,47 +30,36 @@ interface OtpEmailParams {
   otp: string;
   /** Durée de validité en minutes (défaut: 10). */
   validityMinutes?: number;
-  /** URL du logo (absolue). Si non fourni, utilise NEXT_PUBLIC_APP_URL. */
-  logoUrl?: string;
 }
 
-/** Construit l'URL absolue du logo Academia Helm pour les emails.
- * Utilise le même logo que la navbar du landing page (cohérence visuelle). */
+/** Construit l'URL absolue du logo Academia Helm (couleurs originales). */
 function getLogoUrl(): string {
   const baseUrl =
     process.env.NEXT_PUBLIC_APP_URL ||
     process.env.NEXT_PUBLIC_LANDING_URL ||
     'https://academiahelm.com';
-  // Même logo que la navbar du landing page (cf. apps/web-app/src/lib/brand.ts)
-  // Note : l'espace dans le nom de fichier doit être URL-encodé (%20) pour
-  // que les clients email puissent le résoudre correctement.
   const logoPath = '/images/logo-Academia%20Hub.png';
   return `${baseUrl.replace(/\/$/, '')}${logoPath}`;
 }
 
-/** Formate le code OTP avec espaces pour la lisibilité (8 4 2 1 9 3). */
-function formatOtp(otp: string): string {
-  return otp
-    .split('')
-    .join(' ')
-    .trim();
+/** Échappe les caractères HTML pour éviter les injections dans le nom. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
-/**
- * Template HTML de l'email OTP pour le back-office Academia Helm.
- *
- * Structure :
- *   - Header navy gradient avec logo + titre
- *   - Corps : salutation, explication, code OTP dans une box dorée
- *   - Encart expiration (jaune doré)
- *   - Note de sécurité
- *   - Footer navy avec signature Academia Helm
- */
-export function renderOtpEmailHtml(params: OtpEmailParams): string {
+// ─────────────────────────────────────────────────────────────────────────────
+// TEMPLATE 1 : BACK-OFFICE ADMIN
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function renderAdminOtpEmailHtml(params: OtpEmailParams): string {
   const { name, otp, validityMinutes = 10 } = params;
-  const logoUrl = params.logoUrl || getLogoUrl();
-  const formattedOtp = formatOtp(otp);
   const displayName = name || 'Administrateur';
+  const logoUrl = getLogoUrl();
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -76,144 +67,89 @@ export function renderOtpEmailHtml(params: OtpEmailParams): string {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <meta name="x-apple-disable-message-reformatting">
-  <title>Code de vérification — Academia Helm</title>
-  <!--[if mso]>
-  <noscript>
-    <xml>
-      <o:OfficeDocumentSettings>
-        <o:PixelsPerInch>96</o:PixelsPerInch>
-      </o:OfficeDocumentSettings>
-    </xml>
-  </noscript>
-  <![endif]-->
+  <title>Code de vérification — Back-office Academia Helm</title>
 </head>
-<body style="margin:0;padding:0;background-color:#f8fafc;font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased;-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;">
+<body style="margin:0;padding:0;background-color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;font-size:16px;line-height:1.6;color:#1e293b;">
 
-  <!-- Preheader (invisible mais affiché dans l'aperçu inbox) -->
-  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;height:0;width:0;mso-hide:all;">
-    Votre code de vérification à 6 chiffres pour accéder au back-office Academia Helm. Ne le partagez avec personne.
-    &nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
-  </div>
-
-  <!-- Wrapper -->
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f8fafc;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;">
     <tr>
-      <td align="center" style="padding:32px 16px;">
+      <td align="center" style="padding:40px 20px;">
 
-        <!-- Main container 600px -->
-        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;border-radius:16px;overflow:hidden;max-width:600px;width:600px;box-shadow:0 4px 24px rgba(11,47,115,0.08);">
+        <table role="presentation" width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;width:480px;">
 
-          <!-- ── HEADER (navy gradient + logo) ── -->
+          <!-- Logo centré (couleurs originales) -->
           <tr>
-            <td style="background-color:#0b2f73;background-image:linear-gradient(135deg,#0b2f73 0%,#144798 100%);padding:36px 40px 32px;text-align:center;" bgcolor="#0b2f73">
-              <img src="${logoUrl}" alt="Academia Helm" width="56" height="56" style="display:block;margin:0 auto 18px;width:56px;height:56px;border-radius:12px;">
-              <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;letter-spacing:0.5px;font-family:Arial,Helvetica,sans-serif;">
-                Back-office Academia Helm
+            <td align="center" style="padding-bottom:32px;">
+              <img src="${logoUrl}" alt="Academia Helm" width="56" height="56" style="display:block;margin:0 auto;width:56px;height:56px;border-radius:12px;">
+            </td>
+          </tr>
+
+          <!-- Titre -->
+          <tr>
+            <td style="padding-bottom:24px;text-align:left;">
+              <h1 style="margin:0;font-size:22px;font-weight:700;color:#0b2f73;line-height:1.4;">
+                Veuillez vérifier votre identité, ${escapeHtml(displayName)}
               </h1>
-              <p style="margin:10px 0 0;color:#f5b335;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;font-family:Arial,Helvetica,sans-serif;">
-                Vérification en deux étapes
+            </td>
+          </tr>
+
+          <!-- Texte d'introduction -->
+          <tr>
+            <td style="padding-bottom:20px;text-align:left;">
+              <p style="margin:0;font-size:16px;color:#475569;line-height:1.6;">
+                Vous avez demand&eacute; &agrave; acc&eacute;der au back-office Academia Helm. Voici votre code de v&eacute;rification :
               </p>
             </td>
           </tr>
 
-          <!-- ── BODY ── -->
+          <!-- Code OTP (grand, centré, style GitHub) -->
           <tr>
-            <td style="padding:40px 40px 24px;">
-
-              <p style="margin:0 0 16px;color:#1e293b;font-size:16px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">
-                Bonjour <strong style="color:#0b2f73;">${escapeHtml(displayName)}</strong>,
+            <td style="padding-bottom:20px;text-align:center;">
+              <p style="margin:0;font-size:36px;font-weight:700;letter-spacing:8px;color:#0b2f73;font-family:'SF Mono',Monaco,Consolas,'Courier New',monospace;">
+                ${otp}
               </p>
-
-              <p style="margin:0 0 24px;color:#475569;font-size:15px;line-height:1.65;font-family:Arial,Helvetica,sans-serif;">
-                Vous avez demandé à accéder au back-office Academia Helm. Pour finaliser
-                votre authentification et garantir la sécurité de votre compte, veuillez
-                saisir le code de vérification ci-dessous sur la page de connexion.
-              </p>
-
-              <!-- ── OTP CODE BOX ── -->
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;">
-                <tr>
-                  <td style="background-color:#f8fafc;border:2px dashed #f5b335;border-radius:12px;padding:28px 24px;text-align:center;">
-                    <p style="margin:0 0 12px;color:#64748b;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;font-family:Arial,Helvetica,sans-serif;">
-                      Votre code de vérification
-                    </p>
-                    <p
-                      style="margin:0;color:#0b2f73;font-size:38px;font-weight:800;letter-spacing:10px;font-family:'Courier New',Courier,monospace;user-select:all;-webkit-user-select:all;cursor:pointer;"
-                      onclick="navigator.clipboard&amp;&amp;navigator.clipboard.writeText('${otp}')"
-                      title="Cliquez pour copier le code"
-                    >
-                      ${formattedOtp}
-                    </p>
-                    <p style="margin:10px 0 0;color:#94a3b8;font-size:10px;font-family:Arial,Helvetica,sans-serif;">
-                      Cliquez sur le code pour le copier • Code brut : ${otp}
-                    </p>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- ── EXPIRATION NOTICE ── -->
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;">
-                <tr>
-                  <td style="background-color:#fef3c7;border-left:4px solid #f5b335;border-radius:8px;padding:14px 18px;">
-                    <p style="margin:0;color:#92400e;font-size:13px;line-height:1.5;font-family:Arial,Helvetica,sans-serif;">
-                      <strong>⏱ Ce code expire dans ${validityMinutes} minutes.</strong><br>
-                      Pour votre sécurité, ne partagez ce code avec personne — y compris les équipes Academia Helm.
-                    </p>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- ── SECURITY NOTICE ── -->
-              <p style="margin:24px 0 0;color:#475569;font-size:13px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">
-                <strong style="color:#1e293b;">🔒 Sécurité &amp; confidentialité</strong><br>
-                Si vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet email
-                en toute sécurité — votre compte reste protégé. Academia Helm ne vous demandera
-                jamais votre code de vérification par téléphone, email ou chat.
-              </p>
-
             </td>
           </tr>
 
-          <!-- ── DIVIDER ── -->
+          <!-- Validité + sécurité -->
           <tr>
-            <td style="padding:0 40px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                <tr>
-                  <td style="border-top:1px solid #e2e8f0;font-size:0;line-height:0;">&nbsp;</td>
-                </tr>
-              </table>
+            <td style="padding-bottom:28px;text-align:left;">
+              <p style="margin:0 0 8px;font-size:14px;color:#64748b;">
+                Ce code est valable ${validityMinutes} minutes et ne peut &ecirc;tre utilis&eacute; qu'une seule fois.
+              </p>
+              <p style="margin:0;font-size:14px;color:#64748b;">
+                Veuillez ne pas partager ce code avec personne : nous ne vous le demanderons jamais par t&eacute;l&eacute;phone ni par courriel.
+              </p>
             </td>
           </tr>
 
-          <!-- ── FOOTER ── -->
+          <!-- Séparateur -->
           <tr>
-            <td style="padding:28px 40px 36px;text-align:center;">
-              <p style="margin:0 0 6px;color:#0b2f73;font-size:15px;font-weight:700;font-family:Arial,Helvetica,sans-serif;">
-                Academia Helm
-              </p>
-              <p style="margin:0 0 16px;color:#64748b;font-size:12px;line-height:1.5;font-family:Arial,Helvetica,sans-serif;">
-                Plateforme de pilotage éducatif nouvelle génération<br>
-                <em style="color:#94a3b8;">Prenez le gouvernail de votre institution</em>
-              </p>
-              <p style="margin:0;color:#94a3b8;font-size:11px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">
-                © ${new Date().getFullYear()} Academia Helm · <a href="https://academiahelm.com" style="color:#94a3b8;text-decoration:none;">academiahelm.com</a><br>
-                Email automatique envoyé depuis <a href="mailto:noreply@academiahelm.com" style="color:#94a3b8;text-decoration:none;">noreply@academiahelm.com</a> — merci de ne pas répondre
-              </p>
+            <td style="padding-bottom:28px;">
+              <hr style="border:none;border-top:1px solid #e2e8f0;margin:0;">
+            </td>
+          </tr>
+
+          <!-- Signature -->
+          <tr>
+            <td style="text-align:left;">
+              <p style="margin:0 0 2px;font-size:16px;color:#1e293b;">Merci,</p>
+              <p style="margin:0;font-size:16px;font-weight:600;color:#0b2f73;">&Eacute;quipe Academia Helm</p>
             </td>
           </tr>
 
         </table>
-        <!-- /Main container -->
 
-        <!-- Disclaimer below the card -->
-        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:600px;">
+        <!-- Footer discret -->
+        <table role="presentation" width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;width:480px;margin-top:32px;">
           <tr>
-            <td style="padding:24px 0 0;text-align:center;">
-              <p style="margin:0;color:#94a3b8;font-size:11px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">
-                Cet email a été envoyé automatiquement par Academia Helm suite à une
-                tentative de connexion au back-office.<br>
-                Si vous recevez cet email par erreur, aucune action n'est requise de votre part.
+            <td style="padding-top:20px;border-top:1px solid #e2e8f0;">
+              <p style="margin:0;font-size:13px;color:#94a3b8;line-height:1.5;text-align:center;">
+                Vous recevez ce courriel car un code de v&eacute;rification a &eacute;t&eacute; demand&eacute; pour acc&eacute;der au back-office Academia Helm.<br>
+                Si vous n'&ecirc;tes pas &agrave; l'origine de cette demande, veuillez ignorer ce courriel.
+              </p>
+              <p style="margin:12px 0 0;font-size:12px;color:#cbd5e1;text-align:center;">
+                &copy; ${new Date().getFullYear()} Academia Helm &middot; <a href="https://academiahelm.com" style="color:#94a3b8;text-decoration:none;">academiahelm.com</a>
               </p>
             </td>
           </tr>
@@ -227,39 +163,167 @@ export function renderOtpEmailHtml(params: OtpEmailParams): string {
 </html>`;
 }
 
-/** Version texte brut (pour les clients mail qui ne supportent pas HTML). */
-export function renderOtpEmailText(params: OtpEmailParams): string {
+export function renderAdminOtpEmailText(params: OtpEmailParams): string {
   const { name, otp, validityMinutes = 10 } = params;
   const displayName = name || 'Administrateur';
+  return `Veuillez vérifier votre identité, ${displayName}
 
-  return `ACADEMIA HELM — Vérification en deux étapes
+Vous avez demandé à accéder au back-office Academia Helm. Voici votre code de vérification :
 
-Bonjour ${displayName},
+${otp}
 
-Vous avez demandé à accéder au back-office Academia Helm.
-Votre code de vérification est : ${otp}
+Ce code est valable ${validityMinutes} minutes et ne peut être utilisé qu'une seule fois.
+Veuillez ne pas partager ce code avec personne : nous ne vous le demanderons jamais par téléphone ni par courriel.
 
-⏱ Ce code expire dans ${validityMinutes} minutes.
+Merci,
+Équipe Academia Helm
 
-SÉCURITÉ :
-- Ne partagez jamais ce code avec qui que ce soit.
-- Academia Helm ne vous demandera jamais ce code par téléphone ou email.
-- Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.
+Vous recevez ce courriel car un code de vérification a été demandé pour accéder au back-office Academia Helm.
+Si vous n'êtes pas à l'origine de cette demande, veuillez ignorer ce courriel.
 
-—
-Academia Helm
-Plateforme de pilotage éducatif nouvelle génération
-https://academiahelm.com
-
-Email automatique — merci de ne pas répondre.`;
+© ${new Date().getFullYear()} Academia Helm · academiahelm.com`;
 }
 
-/** Échappe les caractères HTML pour éviter les injections dans le nom. */
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+// ─────────────────────────────────────────────────────────────────────────────
+// TEMPLATE 2 : PORTAIL ÉCOLE (personnel de l'établissement)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function renderSchoolOtpEmailHtml(params: OtpEmailParams): string {
+  const { name, otp, validityMinutes = 10 } = params;
+  const displayName = name || 'cher utilisateur';
+  const logoUrl = getLogoUrl();
+
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>Code de vérification — Connexion établissement</title>
+</head>
+<body style="margin:0;padding:0;background-color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;font-size:16px;line-height:1.6;color:#1e293b;">
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;">
+    <tr>
+      <td align="center" style="padding:40px 20px;">
+
+        <table role="presentation" width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;width:480px;">
+
+          <!-- Logo centré (couleurs originales) -->
+          <tr>
+            <td align="center" style="padding-bottom:32px;">
+              <img src="${logoUrl}" alt="Academia Helm" width="56" height="56" style="display:block;margin:0 auto;width:56px;height:56px;border-radius:12px;">
+            </td>
+          </tr>
+
+          <!-- Titre -->
+          <tr>
+            <td style="padding-bottom:24px;text-align:left;">
+              <h1 style="margin:0;font-size:22px;font-weight:700;color:#0b2f73;line-height:1.4;">
+                Veuillez vérifier votre identité, ${escapeHtml(displayName)}
+              </h1>
+            </td>
+          </tr>
+
+          <!-- Texte d'introduction -->
+          <tr>
+            <td style="padding-bottom:20px;text-align:left;">
+              <p style="margin:0;font-size:16px;color:#475569;line-height:1.6;">
+                Vous avez demand&eacute; &agrave; vous connecter &agrave; votre &eacute;tablissement sur Academia Helm. Voici votre code de v&eacute;rification :
+              </p>
+            </td>
+          </tr>
+
+          <!-- Code OTP (grand, centré, style GitHub) -->
+          <tr>
+            <td style="padding-bottom:20px;text-align:center;">
+              <p style="margin:0;font-size:36px;font-weight:700;letter-spacing:8px;color:#0b2f73;font-family:'SF Mono',Monaco,Consolas,'Courier New',monospace;">
+                ${otp}
+              </p>
+            </td>
+          </tr>
+
+          <!-- Validité + sécurité -->
+          <tr>
+            <td style="padding-bottom:28px;text-align:left;">
+              <p style="margin:0 0 8px;font-size:14px;color:#64748b;">
+                Ce code est valable ${validityMinutes} minutes et ne peut &ecirc;tre utilis&eacute; qu'une seule fois.
+              </p>
+              <p style="margin:0;font-size:14px;color:#64748b;">
+                Veuillez ne pas partager ce code avec personne : nous ne vous le demanderons jamais par t&eacute;l&eacute;phone ni par courriel.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Séparateur -->
+          <tr>
+            <td style="padding-bottom:28px;">
+              <hr style="border:none;border-top:1px solid #e2e8f0;margin:0;">
+            </td>
+          </tr>
+
+          <!-- Signature -->
+          <tr>
+            <td style="text-align:left;">
+              <p style="margin:0 0 2px;font-size:16px;color:#1e293b;">Cordialement,</p>
+              <p style="margin:0;font-size:16px;font-weight:600;color:#0b2f73;">Academia Helm</p>
+            </td>
+          </tr>
+
+        </table>
+
+        <!-- Footer discret -->
+        <table role="presentation" width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;width:480px;margin-top:32px;">
+          <tr>
+            <td style="padding-top:20px;border-top:1px solid #e2e8f0;">
+              <p style="margin:0;font-size:13px;color:#94a3b8;line-height:1.5;text-align:center;">
+                Vous recevez ce courriel car un code de v&eacute;rification a &eacute;t&eacute; demand&eacute; pour vous connecter &agrave; votre &eacute;tablissement sur Academia Helm.<br>
+                Si vous n'&ecirc;tes pas &agrave; l'origine de cette demande, veuillez ignorer ce courriel.
+              </p>
+              <p style="margin:12px 0 0;font-size:12px;color:#cbd5e1;text-align:center;">
+                &copy; ${new Date().getFullYear()} Academia Helm &middot; <a href="https://academiahelm.com" style="color:#94a3b8;text-decoration:none;">academiahelm.com</a>
+              </p>
+            </td>
+          </tr>
+        </table>
+
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>`;
+}
+
+export function renderSchoolOtpEmailText(params: OtpEmailParams): string {
+  const { name, otp, validityMinutes = 10 } = params;
+  const displayName = name || 'cher utilisateur';
+  return `Veuillez vérifier votre identité, ${displayName}
+
+Vous avez demandé à vous connecter à votre établissement sur Academia Helm. Voici votre code de vérification :
+
+${otp}
+
+Ce code est valable ${validityMinutes} minutes et ne peut être utilisé qu'une seule fois.
+Veuillez ne pas partager ce code avec personne : nous ne vous le demanderons jamais par téléphone ni par courriel.
+
+Cordialement,
+Academia Helm
+
+Vous recevez ce courriel car un code de vérification a été demandé pour vous connecter à votre établissement sur Academia Helm.
+Si vous n'êtes pas à l'origine de cette demande, veuillez ignorer ce courriel.
+
+© ${new Date().getFullYear()} Academia Helm · academiahelm.com`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ALIAS pour rétrocompatibilité (admin-auth-server.ts utilise renderOtpEmailHtml)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function renderOtpEmailHtml(params: OtpEmailParams): string {
+  return renderAdminOtpEmailHtml(params);
+}
+
+export function renderOtpEmailText(params: OtpEmailParams): string {
+  return renderAdminOtpEmailText(params);
 }

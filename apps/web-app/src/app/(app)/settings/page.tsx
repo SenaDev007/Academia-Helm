@@ -1533,7 +1533,8 @@ export default function SettingsPage() {
     { id: 'academic-year' as TabId, label: 'Année scolaire', icon: Calendar },
     { id: 'school-calendar' as TabId, label: 'Calendrier scolaire', icon: CalendarRange },
     { id: 'structure' as TabId, label: 'Structure', icon: GraduationCap },
-    { id: 'bilingual' as TabId, label: 'Bilingue', icon: Languages },
+    // M3 — Masquer l'onglet Bilingue si le plan ne l'autorise pas
+    ...(billingSettings?.planDetails?.bilingualAllowed !== false ? [{ id: 'bilingual' as TabId, label: 'Bilingue', icon: Languages }] : []),
     { id: 'features' as TabId, label: 'Modules', icon: ToggleLeft },
     { id: 'roles' as TabId, label: 'Rôles', icon: UserCog },
     { id: 'communication' as TabId, label: 'Communication', icon: Mail },

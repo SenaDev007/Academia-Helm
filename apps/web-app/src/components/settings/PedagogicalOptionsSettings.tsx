@@ -1,6 +1,19 @@
 /**
+ * @deprecated Ce composant est orphelin — il n'est plus utilisé dans la page
+ * Settings. L'activation du bilingue se fait désormais via l'onglet
+ * 'Bilingue' de la page Settings qui utilise BilingualSettingsService (source
+ * de vérité unique). Ce composant utilisait l'ancien chemin TenantFeatures
+ * qui est maintenant synchronisé automatiquement par BilingualSettingsService.
+ *
+ * Conservé temporairement pour référence — sera supprimé dans une future version.
+ *
+ * Voir : apps/web-app/src/app/(app)/settings/page.tsx → onglet 'bilingual'
+ * Voir : apps/api-server/src/settings/services/bilingual-settings.service.ts
+ */
+
+/**
  * Pedagogical Options Settings Component
- * 
+ *
  * Interface pour activer/désactiver les options pédagogiques
  * (ex: BILINGUAL_TRACK)
  */

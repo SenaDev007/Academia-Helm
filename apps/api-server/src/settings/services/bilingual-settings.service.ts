@@ -187,9 +187,17 @@ export class BilingualSettingsService {
   }
 
   /**
-   * Lance la migration bilingue : marque les données existantes comme FR.
-   * Les élèves et classes ne sont pas dupliqués ; seules les matières/notes/bulletins
-   * sont explicitées avec une langue (FR) pour cohérence avec le mode bilingue.
+   * Lance la migration bilingue : marque les données existantes avec une langue.
+   *
+   * Étapes (M1 — migration étendue) :
+   * 1. Créer l'AcademicTrack EN s'il n'existe pas (via feature flag sync)
+   * 2. Pour les AcademicClass avec languageTrack='EN', inférer la langue des
+   *    Subjects/Exams/Grades liés
+   * 3. Backfill FR sur toutes les données sans langue explicite
+   * 4. Backfill Class.language depuis AcademicClass.languageTrack
+   * 5. Backfill Exam.language depuis Subject.language
+   *
+   * Les élèves ne sont PAS dupliqués (conforme au cahier des charges).
    */
   async startMigration(tenantId: string, userId: string) {
     const settings = await this.getSettings(tenantId);
@@ -208,7 +216,77 @@ export class BilingualSettingsService {
     });
 
     try {
-      // Marquer toutes les données existantes sans langue comme FR
+      // ─── Étape 1 : Créer l'AcademicTrack EN via feature flag ───
+      try {
+        const isEnabled = await this.tenantFeaturesService.isFeatureEnabled(
+          FeatureCode.BILINGUAL_TRACK,
+          tenantId,
+        );
+        if (!isEnabled) {
+          await this.tenantFeaturesService.enableFeature(
+            FeatureCode.BILINGUAL_TRACK,
+            tenantId,
+            userId,
+            'Created during bilingual migration',
+          );
+          this.logger.log(`AcademicTrack EN created for tenant ${tenantId} during migration`);
+        }
+      } catch (trackErr: any) {
+        this.logger.warn(`Could not create AcademicTrack EN during migration: ${trackErr.message}`);
+      }
+
+      // ─── Étape 2 : Inférer la langue depuis AcademicClass.languageTrack ───
+      // Pour les classes pédagogiques avec languageTrack='EN', on marque leurs
+      // matières et examens liés comme EN. Le reste reste FR.
+      const enClasses = await this.prisma.academicClass.findMany({
+        where: { tenantId, languageTrack: 'EN' },
+        select: { id: true },
+      });
+      const enClassIds = enClasses.map((c) => c.id);
+
+      let enSubjectsCount = 0;
+      let enExamsCount = 0;
+      let enGradesCount = 0;
+
+      if (enClassIds.length > 0) {
+        // Marquer les matières des classes EN comme EN
+        const enSubjects = await this.prisma.subject.updateMany({
+          where: {
+            tenantId,
+            language: null,
+            // Les matières liées aux classes EN via ClassSubject
+            classSubjects: { some: { classId: { in: enClassIds } } },
+          },
+          data: { language: 'EN', updatedAt: new Date() },
+        });
+        enSubjectsCount = enSubjects.count;
+
+        // Marquer les examens des classes EN comme EN
+        const enExams = await this.prisma.exam.updateMany({
+          where: {
+            tenantId,
+            language: null,
+            classId: { in: enClassIds },
+          },
+          data: { language: 'EN', updatedAt: new Date() },
+        });
+        enExamsCount = enExams.count;
+
+        // Marquer les notes des examens EN comme EN
+        if (enExamsCount > 0) {
+          const enGrades = await this.prisma.grade.updateMany({
+            where: {
+              tenantId,
+              language: null,
+              exam: { language: 'EN' },
+            },
+            data: { language: 'EN', updatedAt: new Date() },
+          });
+          enGradesCount = enGrades.count;
+        }
+      }
+
+      // ─── Étape 3 : Backfill FR sur toutes les données restantes sans langue ───
       const [subjects, grades, examScores, reportCards] = await Promise.all([
         this.prisma.subject.updateMany({
           where: { tenantId, language: null },
@@ -228,6 +306,50 @@ export class BilingualSettingsService {
         }),
       ]);
 
+      // ─── Étape 4 : Backfill Class.language depuis AcademicClass.languageTrack ───
+      // Les classes (table `classes`) qui n'ont pas de langue explicite
+      // héritent de la langue de leur AcademicClass correspondante (si elle existe)
+      const classesWithoutLanguage = await this.prisma.class.findMany({
+        where: { tenantId, language: null },
+        select: { id: true, code: true },
+      });
+
+      let classesBackfilled = 0;
+      for (const cls of classesWithoutLanguage) {
+        // Chercher l'AcademicClass correspondante par code
+        const academicClass = await this.prisma.academicClass.findFirst({
+          where: { tenantId, code: cls.code },
+          select: { languageTrack: true },
+        });
+        const inferredLanguage = academicClass?.languageTrack || 'FR';
+        await this.prisma.class.update({
+          where: { id: cls.id },
+          data: { language: inferredLanguage },
+        });
+        classesBackfilled++;
+      }
+
+      // ─── Étape 5 : Backfill Exam.language depuis Subject.language ───
+      // Pour les examens qui n'ont pas de classeId (et donc pas été traités à l'étape 2)
+      const examsWithoutLanguage = await this.prisma.exam.findMany({
+        where: { tenantId, language: null },
+        select: { id: true, subjectId: true },
+      });
+
+      let examsBackfilled = 0;
+      for (const exam of examsWithoutLanguage) {
+        const subject = await this.prisma.subject.findUnique({
+          where: { id: exam.subjectId },
+          select: { language: true },
+        });
+        const inferredLanguage = subject?.language || 'FR';
+        await this.prisma.exam.update({
+          where: { id: exam.id },
+          data: { language: inferredLanguage },
+        });
+        examsBackfilled++;
+      }
+
       await this.prisma.settingsBilingual.update({
         where: { tenantId },
         data: {
@@ -239,14 +361,29 @@ export class BilingualSettingsService {
         },
       });
 
+      this.logger.log(
+        `Migration bilingue terminée pour tenant ${tenantId}: ` +
+        `${enSubjectsCount} matières EN, ${enExamsCount} examens EN, ${enGradesCount} notes EN, ` +
+        `${subjects.count} matières FR, ${grades.count} notes FR, ${examScores.count} scores FR, ` +
+        `${reportCards.count} bulletins FR, ${classesBackfilled} classes backfillées, ${examsBackfilled} examens backfillés`,
+      );
+
       return {
         success: true,
         message: 'Migration terminée avec succès.',
         migrated: {
+          // Données marquées EN (inférées depuis AcademicClass.languageTrack)
+          enSubjects: enSubjectsCount,
+          enExams: enExamsCount,
+          enGrades: enGradesCount,
+          // Données marquées FR (backfill par défaut)
           subjects: subjects.count,
           grades: grades.count,
           examScores: examScores.count,
           reportCards: reportCards.count,
+          // Données additionnelles backfillées
+          classesBackfilled,
+          examsBackfilled,
         },
       };
     } catch (error) {

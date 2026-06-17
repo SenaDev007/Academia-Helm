@@ -449,6 +449,9 @@ model Tenant {
   // Organigramme
   organigramNodes                  OrganigramNode[]
 
+  // Access requests from PLATFORM_OWNER
+  platformOwnerAccessRequests      PlatformOwnerAccessRequest[]
+
   @@index([subdomain])
   @@index([slug])
   @@index([countryId])
@@ -1901,6 +1904,9 @@ model User {
   gradeLocks                                GradeLock[]
   studentCouncilDecisions                   StudentCouncilDecision[]
   academicAuditLogs                         AcademicAuditLog[]
+  platformOwnerAccessRequests               PlatformOwnerAccessRequest[] @relation("PlatformOwnerAccessRequests")
+  accessRequestReviews                      PlatformOwnerAccessRequest[] @relation("AccessRequestReviewer")
+  accessRequestRevokes                      PlatformOwnerAccessRequest[] @relation("AccessRequestRevoker")
 
   @@index([tenantId, role])
   @@index([email])

@@ -2057,9 +2057,6 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                   )}
                   Continuer avec Google
                 </motion.button>
-                <p className="text-center text-xs text-slate-500 mt-1">
-                  Code OTP de vérification envoyé par email après authentification Google
-                </p>
               </>
             )}
 

@@ -6,7 +6,12 @@
     grace_period = 300
 
 [env]
-  # Réduit de 3072 à 1024 pour éviter l'OOM (Out of Memory) sur Railway.
-  # Le container Railway a généralement 512MB-1GB de RAM. Node ne doit pas
-  # essayer d'allouer 3GB sinon l'OOM killer le termine immédiatement.
-  NODE_OPTIONS = "--max-old-space-size=1024"
+  # 384MB heap max — adapté pour une VM 512MB (Fly.io, Railway, Render free tier).
+  # Répartition mémoire sur 512MB :
+  #   - OS + init : ~60MB
+  #   - Node runtime (non-heap) : ~60MB
+  #   - Prisma Client (534 modèles) : ~150MB
+  #   - Pool PostgreSQL (3 connexions) : ~21MB
+  #   - V8 heap : jusqu'à 384MB (mais GC agressif avant)
+  #   Total max théorique : ~675MB → GC tient le heap sous ~250MB en pratique
+  NODE_OPTIONS = "--max-old-space-size=384"

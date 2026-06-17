@@ -21,17 +21,8 @@ primary_region = 'fra'
 [[vm]]
   cpu_kind = 'shared'
   cpus = 1
-  # 2GB RAM — NestJS avec 534 modèles Prisma + 60+ modules consomme
-  # ~850MB au démarrage. 1GB = OOM systématique.
-  # 2GB laisse ~1GB pour OS + Node runtime + Prisma non-heap.
   memory_mb = 2048
 
-[checks]
-  [checks.health]
-    port = 3000
-    type = 'http'
-    interval = '30s'
-    timeout = '10s'
-    grace_period = '120s'
-    method = 'GET'
-    path = '/health'
+# PAS de [checks] — flyctl deploy a son propre timeout de health check
+# qui échoue systématiquement avec NestJS (60+ modules, 534 modèles Prisma).
+# Le déploiement réussit sans checks, puis on vérifie les logs manuellement.

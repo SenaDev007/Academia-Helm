@@ -1,5 +1,7 @@
 app = 'academia-helm-api'
-primary_region = 'jnb'
+# Frankfurt = plus proche de Neon PostgreSQL (eu-central-1)
+# Johannesburg (jnb) était trop loin → latence élevée
+primary_region = 'fra'
 
 [build]
   dockerfile = "Dockerfile"
@@ -19,14 +21,16 @@ primary_region = 'jnb'
 [[vm]]
   cpu_kind = "shared"
   cpus = 1
+  # 512MB — suffisant après optimisation (PrismaService unique, pool réduit)
   memory_mb = 512
 
 [checks]
   [checks.health]
-    grace_period = "10s"
-    interval = "15s"
+    # Grace period augmenté : NestJS avec 534 modèles Prisma met ~10s à démarrer
+    grace_period = "30s"
+    interval = "30s"
     method = "GET"
     path = "/health"
     port = 3000
-    timeout = "5s"
+    timeout = "10s"
     type = "http"

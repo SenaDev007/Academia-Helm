@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import { EducMasterController } from './educmaster.controller';
 import { EducMasterService } from './educmaster.service';
-import { PrismaService } from '../database/prisma.service';
+// PrismaService retiré — fourni globalement par DatabaseModule (@Global)
 
 @Module({
   controllers: [EducMasterController],
-  providers: [EducMasterService, PrismaService],
+  providers: [EducMasterService],
   exports: [EducMasterService],
 })
 export class EducMasterModule {}

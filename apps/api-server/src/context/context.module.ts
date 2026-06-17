@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import { ContextController } from './context.controller';
 import { ContextService } from './context.service';
-import { PrismaService } from '../database/prisma.service';
+// PrismaService retiré — fourni globalement par DatabaseModule (@Global)
 
 @Module({
   controllers: [ContextController],
-  providers: [ContextService, PrismaService],
+  providers: [ContextService],
   exports: [ContextService],
 })
 export class ContextModule {}

@@ -225,6 +225,14 @@ export class ExpensesPrismaService {
       search?: string;
     }
   ) {
+    // Mode "année stricte" : warning si pas d'academicYearId
+    if (!filters?.academicYearId) {
+      console.warn('EXPENSES_FINDALL_WITHOUT_ACADEMIC_YEAR', {
+        tenantId,
+        message: 'findAllExpenses appelé sans academicYearId — mode non-strict',
+      });
+    }
+
     const where: any = {
       tenantId,
     };

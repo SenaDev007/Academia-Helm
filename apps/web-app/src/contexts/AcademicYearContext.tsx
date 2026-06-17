@@ -2,19 +2,31 @@
  * Contexte partagé pour l'année scolaire courante.
  * Un seul état pour le sélecteur (header), la sidebar et tout le contenu.
  * Au changement d'année, toute l'app affiche les données de l'année sélectionnée.
+ *
+ * COMPORTEMENT "ANNÉE STRICTE" :
+ * - Quand l'utilisateur bascule vers une autre année, on invalide TOUTES les
+ *   queries TanStack pour forcer le rechargement avec la nouvelle année.
+ * - On dispatch aussi un CustomEvent 'academic-year-changed' pour informer
+ *   les composants hors React (services, hooks personnalisés, etc.).
  */
 
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef, ReactNode } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import { academicYearsKeys } from '@/lib/query/academic-years-keys';
 import { fetchAcademicYearsSnapshot } from '@/lib/query/academic-years-fetch';
 import type { AcademicYear } from '@/types/academic-year';
 
 export type { AcademicYear };
+
+/**
+ * Nom du CustomEvent dispatch quand l'année scolaire change.
+ * Permet aux composants hors React d'écouter le changement.
+ */
+export const ACADEMIC_YEAR_CHANGED_EVENT = 'academic-year-changed';
 
 /**
  * Clés localStorage utilisées pour la persistance de l'année scolaire :
@@ -48,6 +60,8 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
     (isPlatformOwner || !tenant?.id ? urlTenantId || tenant?.id : tenant?.id) ?? undefined;
   const tenantKey = effectiveTenantId ?? 'no-tenant';
 
+  const queryClient = useQueryClient();
+
   const {
     data: availableYears = [],
     isLoading,
@@ -62,6 +76,28 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
   const [currentYear, setCurrentYearState] = useState<AcademicYear | null>(null);
   const availableYearsRef = useRef<AcademicYear[]>([]);
   availableYearsRef.current = availableYears;
+
+  /**
+   * Invalide toutes les queries TanStack quand l'année scolaire change.
+   * Cela force le rechargement des données de tous les modules avec la
+   * nouvelle année (dashboard, students, finance, hr, exams, etc.).
+   *
+   * On préserve les queries liées aux années scolaires elles-mêmes
+   * (academicYearsKeys) pour éviter une boucle de rechargement.
+   */
+  const invalidateQueriesForYearChange = useCallback(() => {
+    // Invalider toutes les queries sauf celles liées aux années scolaires
+    queryClient.invalidateQueries({
+      predicate: (query) => {
+        const key = query.queryKey;
+        if (!Array.isArray(key) || key.length === 0) return true;
+        // Préserver les queries 'academic-years' (sinon boucle)
+        const firstKey = String(key[0]);
+        if (firstKey === 'academic-years') return false;
+        return true;
+      },
+    });
+  }, [queryClient]);
 
   useEffect(() => {
     if (!availableYears.length) {
@@ -81,6 +117,7 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
       activeYear ?? (savedYearId ? availableYears.find((y) => y.id === savedYearId) : null) ?? availableYears[0] ?? null;
 
     if (selectedYear) {
+      const previousYearId = currentYear?.id;
       setCurrentYearState(selectedYear);
       if (typeof window !== 'undefined') {
         localStorage.setItem(STORAGE_KEY_ID, selectedYear.id);
@@ -91,13 +128,27 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
           /* ignore quota errors */
         }
       }
+      // Si l'année a changé (pas juste le premier chargement), invalider les queries
+      if (previousYearId && previousYearId !== selectedYear.id) {
+        invalidateQueriesForYearChange();
+        // Dispatcher un CustomEvent pour informer les composants hors React
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent(ACADEMIC_YEAR_CHANGED_EVENT, {
+              detail: { previousYearId, newYearId: selectedYear.id },
+            }),
+          );
+        }
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [availableYears, isLoading]);
 
   const setCurrentYear = useCallback((yearId: string) => {
     const years = availableYearsRef.current;
     const year = years.find((y) => y.id === yearId);
     if (year) {
+      const previousYearId = currentYear?.id;
       setCurrentYearState(year);
       if (typeof window !== 'undefined') {
         localStorage.setItem(STORAGE_KEY_ID, yearId);
@@ -108,8 +159,21 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
           /* ignore quota errors */
         }
       }
+      // Si l'année a vraiment changé, invalider toutes les queries TanStack
+      // pour forcer le rechargement avec la nouvelle année
+      if (previousYearId !== yearId) {
+        invalidateQueriesForYearChange();
+        // Dispatcher un CustomEvent pour informer les composants hors React
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent(ACADEMIC_YEAR_CHANGED_EVENT, {
+              detail: { previousYearId, newYearId: yearId },
+            }),
+          );
+        }
+      }
     }
-  }, []);
+  }, [currentYear?.id, invalidateQueriesForYearChange]);
 
   const loading = isLoading || (isFetching && availableYears.length === 0);
 
@@ -133,3 +197,4 @@ export function useAcademicYearContext(): AcademicYearContextType {
   }
   return context;
 }
+

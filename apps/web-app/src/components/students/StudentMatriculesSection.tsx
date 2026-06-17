@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { studentsService } from '@/services/students.service';
 import { toast } from '@/components/ui/toast';
+import { useModuleContext } from '@/hooks/useModuleContext';
 
 interface MatriculeStats {
   total: number;
@@ -35,15 +36,17 @@ interface MatriculeStats {
 
 export default function StudentMatriculesSection() {
   const confirmDialog = useConfirmDialog();
+  const { academicYear, schoolLevel } = useModuleContext();
   const [stats, setStats] = useState<MatriculeStats | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [searchMatricule, setSearchMatricule] = useState('');
   const [selectedStudent] = useState<string | null>(null);
 
-  // Charger les statistiques
+  // Charger les statistiques — recharger quand l'année ou le niveau change
   useEffect(() => {
     loadStats();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [academicYear?.id, schoolLevel?.id]);
 
   const loadStats = async () => {
     try {
@@ -80,8 +83,15 @@ export default function StudentMatriculesSection() {
 
     try {
       setIsLoading(true);
-      const academicYearId = localStorage.getItem('academicYearId') || '';
-      const schoolLevelId = localStorage.getItem('schoolLevelId') || '';
+      // Récupérer l'année scolaire et le niveau depuis le contexte React
+      // (au lieu de lire localStorage avec de mauvaises clés)
+      const academicYearId = academicYear?.id || '';
+      const schoolLevelId = schoolLevel?.id || '';
+
+      if (!academicYearId) {
+        toast({ title: 'Erreur', description: 'Aucune année scolaire sélectionnée. Veuillez sélectionner une année dans le header.', variant: 'error' });
+        return;
+      }
 
       const data = await studentsService.generateBulkMatricules({
         academicYearId,

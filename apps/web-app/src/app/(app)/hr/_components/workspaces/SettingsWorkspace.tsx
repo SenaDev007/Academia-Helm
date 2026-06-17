@@ -22,7 +22,7 @@ const CONTRACT_TYPES = [
 
 export function SettingsWorkspace() {
   const confirmDialog = useConfirmDialog();
-  const { tenant } = useModuleContext();
+  const { tenant, academicYear } = useModuleContext();
   const [activeTab, setActiveTab] = useState<'payroll' | 'templates'>('payroll');
 
   // ── Payroll Settings ──────────────────────────────────────────────────────

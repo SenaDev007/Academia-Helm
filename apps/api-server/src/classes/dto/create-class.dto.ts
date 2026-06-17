@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsInt, Min } from 'class-validator';
+import { IsString, IsOptional, IsInt, Min, IsUUID } from 'class-validator';
 
 export class CreateClassDto {
   @IsString()
@@ -11,9 +11,13 @@ export class CreateClassDto {
   @IsString()
   schoolLevelId: string;
 
-  @IsString()
-  @IsOptional()
-  academicYearId?: string;
+  /**
+   * Année scolaire — obligatoire pour le mode "année stricte".
+   * Injecté automatiquement par l'AcademicYearEnforcementInterceptor
+   * depuis le header X-Academic-Year-ID.
+   */
+  @IsUUID()
+  academicYearId: string;
 
   @IsInt()
   @Min(1)

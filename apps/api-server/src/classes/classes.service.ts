@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ClassesRepository } from './classes.repository';
 import { Class } from './entities/class.entity';
 import { CreateClassDto } from './dto/create-class.dto';
@@ -11,6 +11,10 @@ export class ClassesService {
   constructor(private readonly classesRepository: ClassesRepository) {}
 
   async create(createClassDto: CreateClassDto, tenantId: string, createdBy?: string): Promise<Class> {
+    // Mode "année stricte" : academicYearId est obligatoire
+    if (!createClassDto.academicYearId) {
+      throw new BadRequestException('academicYearId est obligatoire pour créer une classe.');
+    }
     return this.classesRepository.create({
       ...createClassDto,
       tenantId,
@@ -24,6 +28,9 @@ export class ClassesService {
     pagination: PaginationDto,
     academicYearId?: string,
   ): Promise<PaginatedResponse<Class>> {
+    // Mode "année stricte" : academicYearId fortement recommandé
+    // (si non fourni, on retourne toutes les classes du tenant — mais l'interceptor
+    // l'injecte automatiquement depuis le header, donc en pratique toujours présent)
     const [data, total] = await Promise.all([
       this.classesRepository.findAll(tenantId, schoolLevelId, pagination, academicYearId),
       this.classesRepository.count(tenantId, schoolLevelId, academicYearId),
@@ -54,4 +61,5 @@ export class ClassesService {
     await this.classesRepository.delete(id, tenantId);
   }
 }
+
 

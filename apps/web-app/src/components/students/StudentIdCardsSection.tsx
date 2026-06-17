@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { studentsService } from '@/services/students.service';
 import { toast } from '@/components/ui/toast';
+import { useModuleContext } from '@/hooks/useModuleContext';
 
 interface IdCard {
   id: string;
@@ -65,20 +66,25 @@ interface IdCardStats {
 
 export default function StudentIdCardsSection() {
   const confirmDialog = useConfirmDialog();
+  const { academicYear, schoolLevel } = useModuleContext();
   const [stats, setStats] = useState<IdCardStats | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedCard, setSelectedCard] = useState<IdCard | null>(null);
   const [revokeReason, setRevokeReason] = useState('');
   const [isRevokeModalOpen, setIsRevokeModalOpen] = useState(false);
 
+  // Charger les statistiques — recharger quand l'année scolaire change
   useEffect(() => {
     loadStats();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [academicYear?.id]);
 
   const loadStats = async () => {
     try {
       setIsLoading(true);
-      const academicYearId = localStorage.getItem('academicYearId') || '';
+      // Récupérer l'année scolaire depuis le contexte React
+      // (au lieu de lire localStorage avec la mauvaise clé 'academicYearId')
+      const academicYearId = academicYear?.id || '';
       const data = await studentsService.getIdCardStats(academicYearId);
       setStats(data);
     } catch (error: any) {
@@ -97,11 +103,16 @@ export default function StudentIdCardsSection() {
 
     try {
       setIsLoading(true);
-      const academicYearId = localStorage.getItem('academicYearId') || '';
-      const schoolLevelId = localStorage.getItem('schoolLevelId') || '';
+      // Récupérer l'année scolaire et le niveau depuis le contexte React
+      const academicYearId = academicYear?.id || '';
+      const schoolLevelId = schoolLevel?.id || '';
 
-      if (!academicYearId || !schoolLevelId) {
-        toast({ title: 'Attention', description: 'Veuillez sélectionner une année scolaire et un niveau', variant: 'error' });
+      if (!academicYearId) {
+        toast({ title: 'Attention', description: 'Aucune année scolaire sélectionnée. Veuillez sélectionner une année dans le header.', variant: 'error' });
+        return;
+      }
+      if (!schoolLevelId) {
+        toast({ title: 'Attention', description: 'Veuillez sélectionner un niveau scolaire', variant: 'error' });
         return;
       }
 

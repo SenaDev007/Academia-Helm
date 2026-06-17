@@ -30,7 +30,7 @@ import { useModuleContext } from '@/hooks/useModuleContext';
 const PRIMARY = '#1A2BA6';
 
 export function IaWorkspace() {
-  const { tenant } = useModuleContext();
+  const { tenant, academicYear } = useModuleContext();
   const [activeTab, setActiveTab] = useState<'parse' | 'matching' | 'fraud' | 'copilot'>('parse');
   const [candidates, setCandidates] = useState<any[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);

@@ -173,7 +173,7 @@ interface TalentPool {
 }
 
 export function RecruitmentWorkspace() {
-  const { tenant } = useModuleContext();
+  const { tenant, academicYear } = useModuleContext();
   const confirmDialog = useConfirmDialog();
 
   // Valid status transitions (mirrors backend VALID_TRANSITIONS)

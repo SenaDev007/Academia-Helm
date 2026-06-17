@@ -17,10 +17,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
 import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
+import { useModuleContext } from '@/hooks/useModuleContext';
 
 export default function ExpensesManagement() {
   const syncStatuses = useEntitySyncStatusBatch('EXPENSE');
   const { toast } = useToast();
+  const { academicYear } = useModuleContext();
   const [expenses, setExpenses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -29,7 +31,9 @@ export default function ExpensesManagement() {
   const loadExpenses = async () => {
     setLoading(true);
     try {
-      const data = await financeService.getExpenses();
+      // Passer l'academicYearId pour filtrer les dépenses par année scolaire
+      const academicYearId = academicYear?.id;
+      const data = await financeService.getExpenses(academicYearId ? { academicYearId } : undefined);
       setExpenses(Array.isArray(data) ? data : (data.data || []));
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message || 'Impossible de charger les dépenses', variant: 'destructive' });
@@ -38,20 +42,27 @@ export default function ExpensesManagement() {
     }
   };
 
+  // Recharger quand l'année scolaire change
   useEffect(() => {
     loadExpenses();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [academicYear?.id]);
 
   const handleCreate = async () => {
     if (!newExpense.description || !newExpense.amount) {
       toast({ title: 'Erreur', description: 'Veuillez remplir les champs obligatoires.', variant: 'destructive' });
       return;
     }
+    if (!academicYear?.id) {
+      toast({ title: 'Erreur', description: 'Aucune année scolaire sélectionnée.', variant: 'destructive' });
+      return;
+    }
     try {
       await financeService.createExpense({
         ...newExpense,
         amount: Number(newExpense.amount),
-        date: newExpense.date || new Date().toISOString().split('T')[0]
+        date: newExpense.date || new Date().toISOString().split('T')[0],
+        academicYearId: academicYear.id,
       });
       setModalOpen(false);
       setNewExpense({ description: '', amount: '', category: 'FOURNITURES', date: '' });

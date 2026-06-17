@@ -78,6 +78,11 @@ export class StudentsPrismaService {
 
   /**
    * Récupère tous les élèves d'un tenant
+   *
+   * Mode "année stricte" : academicYearId est fortement recommandé.
+   * Si non fourni, un warning est loggé pour aider à identifier les callers
+   * à corriger. L'interceptor injecte automatiquement academicYearId dans
+   * les query params, donc en pratique il est toujours présent.
    */
   async findAllStudents(
     tenantId: string,
@@ -93,6 +98,14 @@ export class StudentsPrismaService {
       limit?: number;
     }
   ) {
+    // Mode "année stricte" : warning si pas d'academicYearId
+    if (!filters?.academicYearId) {
+      console.warn('STUDENTS_FINDALL_WITHOUT_ACADEMIC_YEAR', {
+        tenantId,
+        message: 'findAllStudents appelé sans academicYearId — mode non-strict',
+      });
+    }
+
     const where: any = {
       tenantId,
     };

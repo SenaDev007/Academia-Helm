@@ -47,7 +47,7 @@ interface HistoryEntry {
 }
 
 export function CollaboratorsWorkspace() {
-  const { tenant } = useModuleContext();
+  const { tenant, academicYear } = useModuleContext();
   const [activeTab, setActiveTab] = useState<'staff' | 'contracts' | 'assignments' | 'history' | 'org_chart'>('staff');
   const [staffList, setStaffList] = useState<any[]>([]);
   const [contractsList, setContractsList] = useState<any[]>([]);

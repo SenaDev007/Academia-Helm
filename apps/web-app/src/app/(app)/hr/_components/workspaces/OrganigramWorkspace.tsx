@@ -89,7 +89,7 @@ const SCHOOL_LEVEL_OPTIONS = [
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function OrganigramWorkspace() {
-  const { tenant } = useModuleContext();
+  const { tenant, academicYear } = useModuleContext();
   const [tree, setTree] = useState<OrganigramNode[]>([]);
   const [stats, setStats] = useState<OrganigramStats | null>(null);
   const [loading, setLoading] = useState(true);

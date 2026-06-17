@@ -41,7 +41,7 @@ const CATEGORY_LABEL: Record<string, string> = {
 };
 
 export function StaffWorkspace() {
-  const { tenant } = useModuleContext();
+  const { tenant, academicYear } = useModuleContext();
   const [staff, setStaff] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -57,13 +57,16 @@ export function StaffWorkspace() {
   const [reactivateId, setReactivateId] = useState<string | null>(null);
   const [reactivateLoading, setReactivateLoading] = useState(false);
 
-  useEffect(() => { fetchStaff(); }, [tenant?.id, filterCategory, filterStatus]);
+  // Recharger quand l'année scolaire change
+  useEffect(() => { fetchStaff(); }, [tenant?.id, academicYear?.id, filterCategory, filterStatus]);
 
   async function fetchStaff() {
     if (!tenant?.id) return;
     try {
       setLoading(true);
       const query: Record<string, string> = { tenantId: tenant.id };
+      // Mode "année stricte" : passer academicYearId pour filtrer le staff par année
+      if (academicYear?.id) query.academicYearId = academicYear.id;
       if (filterCategory !== 'ALL') query.category = filterCategory;
       if (filterStatus !== 'ALL') query.status = filterStatus;
       const result = await hrFetch<any[]>(hrUrl('staff', query));

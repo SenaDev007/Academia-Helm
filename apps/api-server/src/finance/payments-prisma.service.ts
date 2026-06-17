@@ -110,6 +110,14 @@ export class PaymentsPrismaService {
       search?: string;
     }
   ) {
+    // Mode "année stricte" : warning si pas d'academicYearId
+    if (!filters?.academicYearId) {
+      console.warn('PAYMENTS_FINDALL_WITHOUT_ACADEMIC_YEAR', {
+        tenantId,
+        message: 'findAllPayments appelé sans academicYearId — mode non-strict',
+      });
+    }
+
     const where: any = {
       tenantId,
     };

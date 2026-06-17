@@ -13,7 +13,7 @@ const PRIMARY = '#1A2BA6';
 
 export function AllowancesWorkspace() {
   const confirmDialog = useConfirmDialog();
-  const { tenant } = useModuleContext();
+  const { tenant, academicYear } = useModuleContext();
   const [allowanceTypes, setAllowanceTypes] = useState<any[]>([]);
   const [staffList, setStaffList] = useState<any[]>([]);
   const [selectedStaff, setSelectedStaff] = useState<any>(null);

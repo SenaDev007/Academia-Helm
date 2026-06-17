@@ -31,7 +31,7 @@ const inputClass =
 const labelClass = 'block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5';
 
 export function ContractsWorkspace() {
-  const { tenant } = useModuleContext();
+  const { tenant, academicYear } = useModuleContext();
   const [contracts, setContracts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');

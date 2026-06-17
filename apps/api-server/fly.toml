@@ -21,15 +21,13 @@ primary_region = 'fra'
   min_machines_running = 1
   processes = ['app']
 
-[[vm]]
-  cpu_kind = 'shared'
-  cpus = 1
-  memory_mb = 2048
-
+# Une seule configuration VM — 4 GB RAM, 2 CPUs partagés.
+# L'app NestJS utilise --max-old-space-size=1536 (1.5 GB heap), le reste
+# est pour l'OS, Chromium (Puppeteer), Redis, et le buffer de sécurité.
+# Anciennement : 2 blocs [[vm]] conflictuels (2048 MB et 4096 MB) →
+# Fly.io pouvait utiliser le plus petit et crasher en OOM.
 [[vm]]
   cpu_kind = 'shared'
   cpus = 2
   memory_mb = 4096
-  memory = '4gb'
-  processes = ['app']
   size = 'shared-cpu-2x'

@@ -65,4 +65,9 @@ ENTRYPOINT []
 
 # Migrations : déjà appliquées ("No pending migrations"). Si besoin :
 #   fly ssh console -C "npx prisma migrate deploy --schema=prisma/schema.prisma"
-CMD [ "node", "--max-old-space-size=1024", "dist/main.js" ]
+#
+# --max-old-space-size=1536 : 1.5 GB heap pour NestJS + Prisma (536 modèles).
+# La VM Fly.io a 4 GB de RAM (voir fly.toml), on laisse ~2.5 GB pour l'OS +
+# Chromium (Puppeteer) + Redis + autres processus.
+# Ancienne valeur : 1024 → crash OOM systématique au démarrage.
+CMD [ "node", "--max-old-space-size=1536", "dist/main.js" ]

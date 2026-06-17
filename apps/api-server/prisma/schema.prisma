@@ -326,6 +326,7 @@ model Tenant {
   schoolLevels                     SchoolLevel[]
   schoolPaymentAccounts            SchoolPaymentAccount[]
   schoolSettings                   SchoolSettings?
+  schoolCalendarConfig             SchoolCalendarConfig?
   schoolStrategicSnapshots         SchoolStrategicSnapshot[]         @relation("TenantSchoolStrategicSnapshots")
   schools                          School?
   securitySettings                 SecuritySettings?
@@ -3250,6 +3251,50 @@ model SchoolSettings {
   tenant              Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("school_settings")
+}
+
+/**
+ * Configuration du calendrier scolaire par tenant.
+ *
+ * Rend paramétrables les règles de calcul des dates d'année scolaire et de
+ * trimestres qui étaient auparavant codées en dur (calendrier type Bénin).
+ *
+ * Si aucun enregistrement n'existe pour un tenant, les services utilisent
+ * les valeurs par défaut (calendrier Bénin : pré-rentrée 2e lundi sept,
+ * rentrée 3e lundi sept, fin dernier vendredi juin, T1 sept→déc,
+ * T2 janv→mars, T3 avr→juin).
+ *
+ * Champs :
+ * - startMonth (0=Jan ... 11=Déc) : mois de début d'année scolaire (défaut: 8=Sept)
+ * - preEntryWeekNumber : numéro de semaine du mois pour la pré-rentrée (défaut: 2)
+ * - preEntryDayOfWeek : jour de la semaine (0=Dim, 1=Lun, ..., 6=Sam) (défaut: 1=Lun)
+ * - entryWeekOffset : décalage en semaines entre pré-rentrée et rentrée (défaut: 1)
+ * - endMonth : mois de fin d'année scolaire (défaut: 5=Juin)
+ * - endDayOfWeek : jour de la semaine de fin (défaut: 5=Ven pour dernier vendredi)
+ * - quarter1EndMonth / quarter1EndDay : fin T1 (défaut: 11/Déc, 31)
+ * - quarter2EndMonth / quarter2EndDay : fin T2 (défaut: 2/Mars, 31)
+ * - quarter3EndMonth / quarter3EndDay : fin T3 (défaut: 5/Juin, 30)
+ */
+model SchoolCalendarConfig {
+  id                  String   @id @default(uuid())
+  tenantId            String   @unique
+  startMonth          Int      @default(8)
+  preEntryWeekNumber  Int      @default(2)
+  preEntryDayOfWeek   Int      @default(1)
+  entryWeekOffset     Int      @default(1)
+  endMonth            Int      @default(5)
+  endDayOfWeek        Int      @default(5)
+  quarter1EndMonth    Int      @default(11)
+  quarter1EndDay      Int      @default(31)
+  quarter2EndMonth    Int      @default(2)
+  quarter2EndDay      Int      @default(31)
+  quarter3EndMonth    Int      @default(5)
+  quarter3EndDay      Int      @default(30)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("school_calendar_configs")
 }
 
 model TenantIdentityProfile {

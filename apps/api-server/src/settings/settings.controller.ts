@@ -34,6 +34,7 @@ import { BilingualSettingsService } from './services/bilingual-settings.service'
 import { CommunicationSettingsService } from './services/communication-settings.service';
 import { AcademicYearSettingsService } from './services/academic-year-settings.service';
 import { AcademicPeriodSettingsService } from './services/academic-period-settings.service';
+import { SchoolCalendarConfigService } from './services/school-calendar-config.service';
 import { EducationStructureService } from './services/education-structure.service';
 import { RolesPermissionsService } from './services/roles-permissions.service';
 import { RolesPermissionsBootstrapService } from './services/roles-permissions-bootstrap.service';
@@ -67,6 +68,7 @@ export class SettingsController {
     private readonly communicationSettingsService: CommunicationSettingsService,
     private readonly academicYearSettingsService: AcademicYearSettingsService,
     private readonly academicPeriodSettingsService: AcademicPeriodSettingsService,
+    private readonly schoolCalendarConfigService: SchoolCalendarConfigService,
     private readonly educationStructureService: EducationStructureService,
     private readonly rolesPermissionsService: RolesPermissionsService,
     private readonly rolesPermissionsBootstrapService: RolesPermissionsBootstrapService,
@@ -1391,6 +1393,64 @@ export class SettingsController {
     @Param('id') id: string,
   ) {
     return this.academicYearSettingsService.getYearStats(tenantId, id);
+  }
+
+  // ============================================================================
+  // CONFIGURATION DU CALENDRIER SCOLAIRE (par tenant)
+  // ============================================================================
+
+  /**
+   * Récupère la config du calendrier scolaire du tenant.
+   * Retourne les valeurs par défaut (Bénin) si aucune config n'existe en base.
+   */
+  @Get('school-calendar-config')
+  async getSchoolCalendarConfig(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
+    const fromHeader = req?.headers?.['x-tenant-id'];
+    const tid = tenantId ?? fromUser ?? (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader);
+    if (!tid || typeof tid !== 'string') throw new BadRequestException('Contexte tenant manquant.');
+    const config = await this.schoolCalendarConfigService.getForTenant(tid);
+    const raw = await this.schoolCalendarConfigService.getRawForTenant(tid);
+    return { config, isCustom: !!raw, raw };
+  }
+
+  /**
+   * Met à jour (ou crée) la config du calendrier scolaire du tenant.
+   * Permet à l'admin d'adapter les règles si le gouvernement change les dates
+   * (ex : rentrée décalée au 4e lundi de septembre).
+   */
+  @Put('school-calendar-config')
+  async updateSchoolCalendarConfig(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Body() data: any,
+  ) {
+    const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
+    const fromHeader = req?.headers?.['x-tenant-id'];
+    const tid = tenantId ?? fromUser ?? (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader);
+    if (!tid || typeof tid !== 'string') throw new BadRequestException('Contexte tenant manquant.');
+    return this.schoolCalendarConfigService.upsert(tid, data ?? {}, user.id);
+  }
+
+  /**
+   * Réinitialise la config du calendrier aux valeurs par défaut (Bénin).
+   */
+  @Post('school-calendar-config/reset')
+  async resetSchoolCalendarConfig(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
+    const fromHeader = req?.headers?.['x-tenant-id'];
+    const tid = tenantId ?? fromUser ?? (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader);
+    if (!tid || typeof tid !== 'string') throw new BadRequestException('Contexte tenant manquant.');
+    return this.schoolCalendarConfigService.reset(tid, user.id);
   }
 
   // ============================================================================

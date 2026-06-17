@@ -3,6 +3,7 @@ import { AcademicYearsController } from './academic-years.controller';
 import { AcademicYearsService } from './academic-years.service';
 import { AcademicYearsRepository } from './academic-years.repository';
 import { DatabaseModule } from '../database/database.module';
+import { CommunicationModule } from '../communication/communication.module';
 import { AcademicYearCalculatorService } from './academic-year-calculator.service';
 import { AcademicYearsPrismaService } from './academic-years-prisma.service';
 import { AcademicYearRolloverService } from './academic-year-rollover.service';
@@ -10,6 +11,7 @@ import { AcademicYearRolloverService } from './academic-year-rollover.service';
 @Module({
   imports: [
     DatabaseModule, // Pour PrismaService
+    CommunicationModule, // Pour EmailService (notifications de rollover)
   ],
   controllers: [AcademicYearsController],
   providers: [

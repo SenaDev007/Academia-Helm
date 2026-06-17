@@ -5,6 +5,15 @@ import { CreateAcademicYearDto } from './dto/create-academic-year.dto';
 import { UpdateAcademicYearDto } from './dto/update-academic-year.dto';
 import { toDate } from '../common/helpers/date.helper';
 
+/**
+ * @deprecated Utilisez `AcademicYearSettingsService` (settings/services/)
+ * à la place. Ce service legacy utilise le champ `isCurrent` qui n'existe
+ * pas dans le schéma Prisma (qui utilise `isActive`). `findCurrent()`
+ * retourne toujours null. conservé temporairement pour rétro-compatibilité
+ * mais sera supprimé dans une future version.
+ *
+ * Voir : `apps/api-server/src/settings/services/academic-year-settings.service.ts`
+ */
 @Injectable()
 export class AcademicYearsService {
   constructor(private readonly academicYearsRepository: AcademicYearsRepository) {}

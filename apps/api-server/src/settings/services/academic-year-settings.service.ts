@@ -3,6 +3,10 @@ import { Injectable, BadRequestException, NotFoundException, Logger } from '@nes
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
 import { AcademicPeriodSettingsService } from './academic-period-settings.service';
+import {
+  SchoolCalendarConfigService,
+  DEFAULT_CALENDAR_CONFIG,
+} from './school-calendar-config.service';
 
 /** Format attendu du nom d'année : "YYYY-YYYY" (ex. 2025-2026) */
 const ACADEMIC_YEAR_NAME_REGEX = /^(\d{4})-(\d{4})$/;
@@ -20,6 +24,7 @@ export class AcademicYearSettingsService {
     private readonly prisma: PrismaService,
     private readonly historyService: SettingsHistoryService,
     private readonly academicPeriodSettingsService: AcademicPeriodSettingsService,
+    private readonly calendarConfigService: SchoolCalendarConfigService,
   ) {}
 
   /**
@@ -48,13 +53,13 @@ export class AcademicYearSettingsService {
   /**
    * Recalcule les dates à partir du nom et les enregistre en BDD si elles diffèrent ou sont manquantes.
    */
-  private async ensureAndPersistYearDates<T extends { id: string; name: string; preEntryDate?: Date | null; officialStartDate?: Date | null; startDate: Date; endDate: Date } & Record<string, unknown>>(
+  private async ensureAndPersistYearDates<T extends { id: string; name: string; tenantId?: string; preEntryDate?: Date | null; officialStartDate?: Date | null; startDate: Date; endDate: Date } & Record<string, unknown>>(
     year: T,
   ): Promise<T> {
     const startYear = this.parseStartYearFromName(year.name);
     if (startYear === null) return year;
 
-    const dates = this.buildYearDates(startYear);
+    const dates = await this.buildYearDates(startYear, year.tenantId);
     const needsUpdate =
       !this.sameDate(year.preEntryDate ?? null, dates.preEntryDate) ||
       !this.sameDate(year.officialStartDate ?? null, dates.officialStartDate) ||
@@ -160,7 +165,7 @@ export class AcademicYearSettingsService {
       return this.ensureAndPersistYearDates({ ...activated, _count: { students: s, classes: c, grades: g } } as any);
     }
 
-    const dates = this.buildYearDates(startYear);
+    const dates = await this.buildYearDates(startYear, tid);
     const created = await this.prisma.academicYear.create({
       data: {
         ...prismaCreateDefaults(),
@@ -196,17 +201,30 @@ export class AcademicYearSettingsService {
   }
 
   /**
-   * Calcule les dates officielles d'une année scolaire (calendrier type Bénin) :
+   * Calcule les dates officielles d'une année scolaire en utilisant la config
+   * du calendrier du tenant (ou les valeurs par défaut Bénin si pas de config).
+   *
+   * Default (Bénin) :
    * - Pré-rentrée : 2e lundi de septembre (lundi de la 2e semaine de septembre).
    * - Rentrée : 3e lundi de septembre (lundi suivant immédiatement les 2 premières semaines).
    * - Fin d'année : dernier vendredi de juin de l'année suivante.
+   *
+   * Si le tenant a personnalisé sa config (SchoolCalendarConfig), les dates
+   * sont calculées selon ses règles (ex : 4e lundi de septembre, fin juin
+   * dernier samedi, etc.).
    */
-  private buildYearDates(startYear: number) {
-    const preEntryDate = this.getSecondMondayOfSeptember(startYear);
-    const officialStartDate = this.getThirdMondayOfSeptember(startYear);
-    const startDate = new Date(officialStartDate);
-    const endDate = this.getLastFridayOfJune(startYear + 1);
-    return { preEntryDate, officialStartDate, startDate, endDate };
+  private async buildYearDates(
+    startYear: number,
+    tenantId?: string,
+  ) {
+    // Charger la config du tenant (ou défaut Bénin)
+    const config = tenantId
+      ? await this.calendarConfigService.getForTenant(tenantId)
+      : DEFAULT_CALENDAR_CONFIG;
+
+    // Déléguer le calcul au service SchoolCalendarConfigService qui contient
+    // la logique paramétrable (N-ième jour de la semaine d'un mois, etc.)
+    return SchoolCalendarConfigService.calculateYearDates(startYear, config);
   }
 
   /**
@@ -252,7 +270,7 @@ export class AcademicYearSettingsService {
     userId: string,
   ) {
     const startYear = this.parseStartYearFromName(data.name);
-    const dates = startYear !== null ? this.buildYearDates(startYear) : null;
+    const dates = startYear !== null ? await this.buildYearDates(startYear, tenantId) : null;
 
     const startDate = dates ? dates.startDate : data.startDate!;
     const endDate = dates ? dates.endDate : data.endDate!;
@@ -626,7 +644,7 @@ export class AcademicYearSettingsService {
       throw new BadRequestException(`L'année scolaire ${name} existe déjà.`);
     }
 
-    const dates = this.buildYearDates(startYear);
+    const dates = await this.buildYearDates(startYear, tenantId);
 
     const year = await this.prisma.academicYear.create({
       data: {
@@ -815,7 +833,7 @@ export class AcademicYearSettingsService {
     }
     const nextStartYear = startYear + 1;
     const nextName = `${nextStartYear}-${nextStartYear + 1}`;
-    const nextDates = this.buildYearDates(nextStartYear);
+    const nextDates = await this.buildYearDates(nextStartYear, tenantId);
 
     const closedAt = new Date();
 

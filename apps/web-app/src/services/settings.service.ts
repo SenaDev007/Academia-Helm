@@ -943,6 +943,54 @@ export async function closeAcademicPeriod(id: string, tenantId?: string | null) 
 }
 
 // ============================================================================
+// CONFIGURATION DU CALENDRIER SCOLAIRE (par tenant)
+// ============================================================================
+
+export interface SchoolCalendarConfig {
+  startMonth: number;
+  preEntryWeekNumber: number;
+  preEntryDayOfWeek: number;
+  entryWeekOffset: number;
+  endMonth: number;
+  endDayOfWeek: number;
+  quarter1EndMonth: number;
+  quarter1EndDay: number;
+  quarter2EndMonth: number;
+  quarter2EndDay: number;
+  quarter3EndMonth: number;
+  quarter3EndDay: number;
+}
+
+export interface SchoolCalendarConfigResponse {
+  config: SchoolCalendarConfig;
+  isCustom: boolean;
+  raw: any;
+}
+
+export async function getSchoolCalendarConfig(tenantId?: string | null): Promise<SchoolCalendarConfigResponse> {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuthNoCache(`${BASE_URL}/school-calendar-config${qs}`);
+}
+
+export async function updateSchoolCalendarConfig(
+  data: Partial<SchoolCalendarConfig>,
+  tenantId?: string | null,
+) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/school-calendar-config${qs}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function resetSchoolCalendarConfig(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/school-calendar-config/reset${qs}`, {
+    method: 'POST',
+  });
+}
+
+// ============================================================================
 // HISTORIQUE
 // ============================================================================
 

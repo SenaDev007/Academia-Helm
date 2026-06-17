@@ -31,6 +31,8 @@ import {
 } from 'lucide-react';
 import { ModuleHeader } from '@/components/modules/blueprint';
 import GeneratedStampsSignatures from '@/components/settings/GeneratedStampsSignatures';
+import SchoolCalendarConfigSection from '@/components/settings/SchoolCalendarConfigSection';
+import YearEndBanner from '@/components/settings/YearEndBanner';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import * as settingsService from '@/services/settings.service';
 import {
@@ -68,11 +70,11 @@ function formatRoleDisplayName(name: string | null | undefined): string {
   return String(name).replace(/_/g, ' ');
 }
 
-type TabId = 'identity' | 'academic-year' | 'structure' | 'bilingual' | 'features' | 
+type TabId = 'identity' | 'academic-year' | 'school-calendar' | 'structure' | 'bilingual' | 'features' | 
              'roles' | 'communication' | 'billing' | 'security' | 'seals' | 'orion' | 'atlas' | 'offline' | 'appareils' | 'history';
 
 const SETTINGS_TAB_IDS: TabId[] = [
-  'identity', 'academic-year', 'structure', 'bilingual', 'features',
+  'identity', 'academic-year', 'school-calendar', 'structure', 'bilingual', 'features',
   'roles', 'communication', 'billing', 'security', 'seals', 'orion', 'atlas', 'offline', 'appareils', 'history',
 ];
 
@@ -1446,6 +1448,7 @@ export default function SettingsPage() {
   const tabs = [
     { id: 'identity' as TabId, label: 'Identité', icon: Globe },
     { id: 'academic-year' as TabId, label: 'Année scolaire', icon: Calendar },
+    { id: 'school-calendar' as TabId, label: 'Calendrier scolaire', icon: CalendarRange },
     { id: 'structure' as TabId, label: 'Structure', icon: GraduationCap },
     { id: 'bilingual' as TabId, label: 'Bilingue', icon: Languages },
     { id: 'features' as TabId, label: 'Modules', icon: ToggleLeft },
@@ -1754,6 +1757,8 @@ export default function SettingsPage() {
       case 'academic-year':
         return (
           <div className="space-y-6">
+            {/* Bannière de fin d'année — affichée si l'année active se termine dans ≤ 30 jours */}
+            <YearEndBanner activeYear={activeAcademicYear} showToast={showToast} tenantId={effectiveTenantId} />
             {/* Sélecteur d'établissement pour Plateforme Owner */}
             {isPlatformOwner && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
@@ -2412,6 +2417,9 @@ export default function SettingsPage() {
             )}
           </div>
         );
+
+      case 'school-calendar':
+        return <SchoolCalendarConfigSection tenantId={effectiveTenantId} showToast={showToast} />;
 
       case 'structure':
         const levels = educationStructure?.levels ?? [];

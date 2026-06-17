@@ -16,6 +16,7 @@ import { CommunicationSettingsService } from './services/communication-settings.
 import { AcademicYearSettingsService } from './services/academic-year-settings.service';
 import { AcademicPeriodSettingsService } from './services/academic-period-settings.service';
 import { AcademicPeriodRolloverService } from './services/academic-period-rollover.service';
+import { SchoolCalendarConfigService } from './services/school-calendar-config.service';
 import { EducationStructureService } from './services/education-structure.service';
 import { RolesPermissionsService } from './services/roles-permissions.service';
 import { RolesPermissionsBootstrapService } from './services/roles-permissions-bootstrap.service';
@@ -59,6 +60,8 @@ import { PermissionGuard } from '../common/guards/permission.guard';
     AcademicPeriodSettingsService,
     // Cron job d'auto-bascule des trimestres (tourne chaque jour à 2h05)
     AcademicPeriodRolloverService,
+    // Configuration du calendrier scolaire par tenant (règles paramétrables)
+    SchoolCalendarConfigService,
     EducationStructureService,
     RolesPermissionsService,
     RolesPermissionsBootstrapService,
@@ -84,6 +87,7 @@ import { PermissionGuard } from '../common/guards/permission.guard';
     AcademicYearSettingsService,
     AcademicPeriodSettingsService,
     AcademicPeriodRolloverService,
+    SchoolCalendarConfigService,
     EducationStructureService,
     RolesPermissionsService,
     BillingSettingsService,

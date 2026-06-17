@@ -31,6 +31,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../database/prisma.service';
 import { AcademicYearsPrismaService } from './academic-years-prisma.service';
 import { AcademicYearCalculatorService } from './academic-year-calculator.service';
+import { EmailService } from '../communication/services/email.service';
 
 @Injectable()
 export class AcademicYearRolloverService {
@@ -43,6 +44,7 @@ export class AcademicYearRolloverService {
     private readonly prisma: PrismaService,
     private readonly academicYearsPrisma: AcademicYearsPrismaService,
     private readonly calculator: AcademicYearCalculatorService,
+    private readonly emailService: EmailService,
   ) {}
 
   /**
@@ -150,6 +152,8 @@ export class AcademicYearRolloverService {
         this.logger.log(
           `✓ Tenant ${tenantName ?? tenantId}: ${promoteResult.previousYearLabel} → ${promoteResult.nextYearLabel}`,
         );
+        // Notification email au directeur du tenant
+        await this.notifyRollover(tenantId, tenantName ?? tenantId, promoteResult.previousYearLabel, promoteResult.nextYearLabel ?? 'N/A');
       } catch (error) {
         this.logger.error(
           `❌ Échec du rollover tenant ${tenantName ?? tenantId} (${activeYear.label}): ${
@@ -231,5 +235,90 @@ export class AcademicYearRolloverService {
       autoCreates,
       errors,
     };
+  }
+
+  /**
+   * Envoie une notification email au directeur/promoteur du tenant après
+   * un rollover automatique réussi. Échec non-bloquant (juste loggué).
+   *
+   * Le destinataire est déterminé en cherchant les utilisateurs avec role
+   * 'PROMOTER', 'SCHOOL_OWNER', 'DIRECTEUR', 'DIRECTEUR_GENERAL', ou
+   * 'SUPER_DIRECTOR' pour ce tenant. Si aucun n'a d'email, on logge juste.
+   */
+  private async notifyRollover(
+    tenantId: string,
+    tenantName: string,
+    previousYearLabel: string,
+    nextYearLabel: string,
+  ): Promise<void> {
+    try {
+      // Récupérer les utilisateurs avec un rôle de direction pour ce tenant
+      const directors = await this.prisma.user.findMany({
+        where: {
+          tenantId,
+          role: { in: ['PROMOTER', 'SCHOOL_OWNER', 'DIRECTEUR', 'DIRECTEUR_GENERAL', 'SUPER_DIRECTOR', 'director', 'admin'] },
+          status: 'active',
+        },
+        select: { email: true, firstName: true, lastName: true },
+        take: 10, // Limiter à 10 destinataires maximum
+      });
+
+      if (directors.length === 0) {
+        this.logger.debug(
+          `Aucun directeur trouvé pour notification rollover tenant ${tenantId}`,
+        );
+        return;
+      }
+
+      const recipientEmails = directors
+        .map((d) => d.email)
+        .filter((e): e is string => !!e);
+      if (recipientEmails.length === 0) return;
+
+      const subject = `[Academia Helm] Rollover automatique — ${previousYearLabel} → ${nextYearLabel}`;
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h2 style="color: #1E3A5F;">Rollover automatique de l'année scolaire</h2>
+          <p>Bonjour,</p>
+          <p>Le système Acadia Helm a effectué automatiquement le passage à la nouvelle année scolaire pour votre établissement <strong>${tenantName}</strong>.</p>
+          <table style="border-collapse: collapse; margin: 16px 0;">
+            <tr><td style="padding: 8px 16px; background: #f3f4f6; border: 1px solid #d1d5db;">Année clôturée</td><td style="padding: 8px 16px; border: 1px solid #d1d5db;"><strong>${previousYearLabel}</strong></td></tr>
+            <tr><td style="padding: 8px 16px; background: #f3f4f6; border: 1px solid #d1d5db;">Nouvelle année active</td><td style="padding: 8px 16px; border: 1px solid #d1d5db;"><strong>${nextYearLabel}</strong></td></tr>
+          </table>
+          <p>Les actions effectuées automatiquement :</p>
+          <ul>
+            <li>Clôture de l'année ${previousYearLabel} (désormais en lecture seule)</li>
+            <li>Création et activation de l'année ${nextYearLabel}</li>
+            <li>Promotion automatique des élèves actifs (création d'enrollments PROMOTION dans la nouvelle année)</li>
+          </ul>
+          <p>Vous pouvez vous connecter à votre espace Academia Helm pour vérifier ces informations dans le module Paramètres → Année scolaire.</p>
+          <p style="margin-top: 24px; color: #6b7280; font-size: 12px;">
+            Cet email a été envoyé automatiquement par le système de rollover Academia Helm.
+            Aucune action de votre part n'est requise.
+          </p>
+        </div>
+      `;
+
+      const result = await this.emailService.sendEmail({
+        to: recipientEmails,
+        subject,
+        html,
+      });
+
+      if (result.success) {
+        this.logger.log(
+          `📧 Notification rollover envoyée à ${recipientEmails.length} destinataire(s) tenant ${tenantName}`,
+        );
+      } else {
+        this.logger.warn(
+          `⚠ Échec envoi notification rollover tenant ${tenantName} (email service a retourné success=false)`,
+        );
+      }
+    } catch (error) {
+      // Non-bloquant — on ne veut pas faire échouer le rollover si l'email échoue
+      this.logger.warn(
+        `⚠ Erreur notification rollover tenant ${tenantName}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 }

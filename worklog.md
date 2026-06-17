@@ -712,3 +712,100 @@ Stage Summary:
 - Workflow manuel simplifié : 1 bouton "Passer à l'année suivante" au lieu de 3 actions (générer + activer + clôturer)
 - Le bug du header x-academic-year-id non injecté est résolu
 - Calcul des trimestres conforme au calendrier scolaire béninois (sept→déc / janv→mars / avr→juin)
+
+---
+Task ID: ah-academic-year-automation-phase2
+Agent: Main Agent
+Task: Implémentation priorités HAUTE (H1-H5) + MOYENNE (M1-M4) — suite session précédente
+
+Work Log:
+
+H1+M3 — Table SchoolCalendarConfig + migration :
+- Ajouté le modèle `SchoolCalendarConfig` au schéma Prisma (apps/api-server/prisma/schema.prisma)
+  * 13 champs paramétrables : startMonth, preEntryWeekNumber, preEntryDayOfWeek, entryWeekOffset, endMonth, endDayOfWeek, quarter1EndMonth/Day, quarter2EndMonth/Day, quarter3EndMonth/Day
+  * Contrainte @unique sur tenantId (1 config par tenant)
+  * Relation Tenant ↔ SchoolCalendarConfig (cascade au delete)
+- Ajouté la relation `schoolCalendarConfig` au modèle Tenant
+- Créé la migration SQL : apps/api-server/prisma/migrations/20260618000000_add_school_calendar_config/migration.sql
+  * CREATE TABLE school_calendar_configs avec tous les champs + defaults Bénin
+  * Index unique sur tenantId
+  * FK vers tenants avec ON DELETE CASCADE
+
+H1 — Service SchoolCalendarConfigService :
+- Créé apps/api-server/src/settings/services/school-calendar-config.service.ts
+- Exporte DEFAULT_CALENDAR_CONFIG (valeurs Bénin : sept→juin, T1 sept→déc, T2 janv→mars, T3 avr→juin)
+- Méthodes : getForTenant (retourne defaults si pas de config), getRawForTenant, upsert, reset
+- Méthodes statiques de calcul : getNthDayOfWeekOfMonth, getLastDayOfWeekOfMonth, calculateYearDates, calculateQuarterDates
+- Validation des plages (mois 0-11, jour 0-6, etc.)
+- Enregistré dans SettingsModule (providers + exports)
+
+H1 — Endpoints API :
+- GET /settings/school-calendar-config (retourne config + isCustom + raw)
+- PUT /settings/school-calendar-config (upsert)
+- POST /settings/school-calendar-config/reset (réinitialise aux valeurs par défaut)
+- Ajouté à settings.controller.ts
+
+H1 — Intégration dans les calculateurs de dates :
+- AcademicYearSettingsService.buildYearDates() est maintenant async et accepte tenantId
+  * Charge la config du tenant via SchoolCalendarConfigService.getForTenant()
+  * Délègue le calcul à SchoolCalendarConfigService.calculateYearDates()
+  * Tous les callers mis à jour (5 endroits) : ensureAndPersistYearDates, create, generateNext, promote
+- AcademicPeriodSettingsService.createDefaultTrimestersForYear() utilise maintenant la config
+  * Détection du pattern standard basée sur la config (pas hardcoded sept→juin)
+  * Calcul via SchoolCalendarConfigService.calculateQuarterDates()
+  * Fallback "3 parts égales" si pattern non-standard
+
+H4 — Notifications email lors du rollover :
+- AcademicYearRolloverService injecte maintenant EmailService (CommunicationModule importé)
+- Nouvelle méthode privée notifyRollover() :
+  * Cherche les utilisateurs avec role de direction (PROMOTER, SCHOOL_OWNER, DIRECTEUR, DIRECTEUR_GENERAL, SUPER_DIRECTOR, director, admin)
+  * Envoie un email HTML avec le détail du rollover (année clôturée, nouvelle année active, promotions)
+  * Non-bloquant : si l'email échoue, le rollover a quand même réussi
+- Appelée après chaque closeAndPromoteYear réussi dans le cron
+
+H5 — Documentation :
+- Créé docs/ACADEMIC-YEAR-ROLLOVER.md
+- Contenu : architecture, règles métier, workflow automatisé, workflow manuel (UI), configuration du calendrier, endpoints, fichiers clés, sécurité & idempotence, tests
+
+M1 — Bannière UI fin d'année :
+- Créé apps/web-app/src/components/settings/YearEndBanner.tsx
+- S'affiche si l'année active se termine dans ≤ 30 jours (ou déjà terminée)
+- 3 niveaux d'urgence : amber (≤30j), orange (≤7j), red (terminée)
+- Boutons d'action : "Passer à l'année suivante" (promote) + "Préparer la prochaine année" (generate)
+- Intégrée en haut de l'onglet 'academic-year' des Settings
+
+M2 — Onglet "Calendrier scolaire" dans Settings :
+- Créé apps/web-app/src/components/settings/SchoolCalendarConfigSection.tsx
+- Formulaire complet pour éditer les 13 champs de SchoolCalendarConfig
+- Sélecteurs en français (mois, jours de la semaine)
+- Boutons : Enregistrer + Réinitialiser aux valeurs par défaut
+- Indicateur "Configuration personnalisée" vs "Par défaut (Bénin)"
+- Note d'information explicative
+- Nouvel onglet 'school-calendar' ajouté dans la page Settings (entre 'academic-year' et 'structure')
+
+M4 — Tests unitaires :
+- Créé apps/api-server/src/academic-years/academic-year-rollover.service.spec.ts
+- 7 tests couvrant : année pas terminée → rien, année terminée → close+promote, année suivante inexistante → create+activate, année clôturée → rien, pré-génération ≤30j, pas de notification si échec, multi-tenant avec isolation des erreurs
+
+H2 — Marquage @deprecated du code legacy :
+- AcademicYearsService marqué @deprecated avec commentaire pointant vers AcademicYearSettingsService
+- AcademicYearsRepository marqué @deprecated (findCurrent() cassé — utilise isCurrent inexistant)
+- Conservation des fichiers pour rétro-compatibilité (autres modules peuvent encore les référencer)
+
+Frontend service :
+- Ajouté dans services/settings.service.ts : interface SchoolCalendarConfig, getSchoolCalendarConfig, updateSchoolCalendarConfig, resetSchoolCalendarConfig
+
+Verification:
+- Babel parser sur 14 fichiers modifiés → 0 erreur syntaxe
+- Schéma Prisma vérifié : modèle SchoolCalendarConfig bien présent + relation Tenant
+- Migration SQL idempotente (IF NOT EXISTS)
+
+Stage Summary:
+- 5 nouveaux fichiers backend (school-calendar-config.service.ts, academic-year-rollover.service.spec.ts, migration SQL, doc)
+- 5 fichiers backend modifiés (schema.prisma, academic-years.module.ts, academic-years.service.ts, academic-years.repository.ts, academic-period-settings.service.ts, academic-year-settings.service.ts, settings.module.ts, settings.controller.ts)
+- 2 nouveaux fichiers frontend (SchoolCalendarConfigSection.tsx, YearEndBanner.tsx)
+- 2 fichiers frontend modifiés (settings.service.ts, settings/page.tsx)
+- Le système de calendrier scolaire est maintenant 100% paramétrable par tenant
+- Les notifications email informent automatiquement les directeurs lors des rollovers
+- La UI guide l'utilisateur en fin d'année avec une bannière contextuelle
+- Le code legacy est marqué @deprecated pour préparer un futur nettoyage

@@ -323,6 +323,7 @@ export async function exchangeGoogleCode(code: string): Promise<{
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body,
+      signal: AbortSignal.timeout(15000), // 15s timeout
     });
     if (!res.ok) return null;
     const tokens = (await res.json()) as { id_token?: string };

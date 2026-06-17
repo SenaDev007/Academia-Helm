@@ -65,6 +65,15 @@ export default function AdminLoginPage() {
     const code = searchParams.get('code');
     const state = searchParams.get('state');
     if (code && state && !resetToken) {
+      // ── Nettoyer les paramètres code/state de l'URL IMMÉDIATEMENT ──
+      // pour éviter que l'useEffect se ré-exécute en boucle si la requête échoue.
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('code');
+        url.searchParams.delete('state');
+        window.history.replaceState({}, '', url.toString());
+      }
+
       setIsLoading(true);
       fetch('/api/admin-auth/google/callback', {
         method: 'POST',

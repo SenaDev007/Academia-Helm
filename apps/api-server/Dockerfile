@@ -63,17 +63,11 @@ EXPOSE 3000
 # If migrations fail, the server still starts (fallback SQL in main.ts covers critical columns)
 #
 # MIGRATION STRATEGY:
-# Migrations are run in BACKGROUND (non-blocking) so NestJS starts immediately.
-# This is critical for Fly.io: the smoke check expects port 3000 to be open
-# within seconds. If migrations block for 10-15s, the smoke check fails → 503.
+# Migrations are NOT run at container startup. They are run separately via:
+#   fly ssh console -C "npx prisma migrate deploy --schema=prisma/schema.prisma"
+# Or via a CI/CD step before deployment.
 #
-# Since migrations are idempotent and already applied in most cases
-# ("No pending migrations to apply"), running them in background is safe.
-CMD [ "sh", "-c", \
-  "if [ -n \"$ZAI_CONFIG\" ]; then echo \"$ZAI_CONFIG\" > .z-ai-config && echo '✅ z-ai-config written from env var'; fi && \
-   echo '📦 Starting Prisma migrations in background...' && \
-   (npx prisma migrate deploy --schema=prisma/schema.prisma 2>&1 && echo '✅ All migrations applied' || \
-    (for m in 20260606120000_add_staff_photo_matricule_document_structuring 20260606140000_add_candidate_documents 20260606160000_recruitment_tables_complete 20260606180000_add_country_city_to_hr_candidates 20260606200000_add_staffId_to_hr_applications 20260606220000_add_job_number_sequence 20260607080000_add_interview_status_result_feedback 20260608120000_add_staff_termination_fields 20260609100000_add_published_at_to_hr_jobs 20260609120000_add_staff_hr_fields; do npx prisma migrate resolve --applied $m 2>/dev/null || true; done && \
-     npx prisma migrate deploy --schema=prisma/schema.prisma 2>&1 || echo '⚠️ Migration failed, continuing with fallback SQL')) & \
-   echo '🚀 Starting API server immediately...' && \
-   node --max-old-space-size=768 dist/main.js" ]
+# This is critical: running `npx prisma` consumes CPU and memory that slows
+# down Node.js startup. On Fly.io shared-cpu-1x, every second counts —
+# the health check has a 60s grace period and NestJS needs all of it.
+CMD [ "node", "--max-old-space-size=768", "dist/main.js" ]

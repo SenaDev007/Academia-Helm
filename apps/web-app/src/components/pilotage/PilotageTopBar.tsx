@@ -170,7 +170,14 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
 
   const handleLogout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      // Timeout court (3s) — si le backend ne répond pas, on déconnecte quand même
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        signal: controller.signal,
+      }).catch(() => {});
+      clearTimeout(timeoutId);
       clearClientSessionSync();
       window.location.href = '/';
     } catch (error) {

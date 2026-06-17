@@ -23,11 +23,28 @@ export default function DashboardHeader({ user, tenant }: DashboardHeaderProps) 
 
   const handleLogout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      // Appel au backend pour révoquer le token — avec timeout court (3s)
+      // Si le backend ne répond pas, on déconnecte quand même côté client
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        signal: controller.signal,
+      }).catch(() => {
+        // Timeout ou erreur réseau — on continue la déconnexion côté client
+      });
+
+      clearTimeout(timeoutId);
+
+      // Nettoyer côté client (localStorage, sessionStorage, cookies client)
       clearClientSessionSync();
+
+      // Redirection immédiate vers la page d'accueil
       window.location.href = '/';
     } catch (error) {
       console.error('Error logging out:', error);
+      // Même en cas d'erreur, on nettoie et on redirige
       clearClientSessionSync();
       window.location.href = '/';
     }

@@ -6,10 +6,12 @@
 
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ShieldAlert, Activity, ArrowUpRight, Zap, Droplets, Flame, Users, Lock, MoreVertical, Loader2 } from 'lucide-react';
+import { ShieldAlert, Activity, ArrowUpRight, Zap, Droplets, Flame, Users, Lock, MoreVertical, Loader2, Plus, X } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface RiskItem {
   id: string | number;
@@ -32,9 +34,33 @@ const CATEGORY_ICONS: Record<string, any> = {
   ENVIRONNEMENT: Flame,
 };
 
+const EMPTY_FORM = { title: '', category: 'SECURITE', probability: 3, impact: 3 };
+
 export default function QHSERisks() {
   const { academicYear } = useModuleContext();
-  const { data: risks, loading, error } = useModulesList<RiskItem>('qhse', 'risks', academicYear?.id);
+  const { data: risks, loading, error, refetch } = useModulesList<RiskItem>('qhse', 'risks', academicYear?.id);
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [formData, setFormData] = useState(EMPTY_FORM);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleCreate = async () => {
+    if (!formData.title) {
+      alert('Le titre est requis');
+      return;
+    }
+    try {
+      setSubmitting(true);
+      await modulesApi.post('qhse/risks', formData, buildModulesApiOptions(academicYear?.id));
+      setModalOpen(false);
+      setFormData(EMPTY_FORM);
+      await refetch();
+    } catch (e: any) {
+      alert(e?.message || 'Erreur lors de la création du risque');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -52,6 +78,16 @@ export default function QHSERisks() {
           ⚠ Impossible de charger les données. {error}
         </div>
       )}
+
+      <div className="flex justify-end">
+        <button
+          onClick={() => setModalOpen(true)}
+          className="px-6 py-3 bg-rose-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-rose-600/20 hover:bg-rose-700 transition-all flex items-center gap-2"
+        >
+          <Plus className="w-4 h-4" />
+          Nouveau Risque
+        </button>
+      </div>
 
       {/* Risk Matrix Preview */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
@@ -147,6 +183,85 @@ export default function QHSERisks() {
           )}
         </div>
       </div>
+
+      {/* Modal: Nouveau risque */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-slate-900">Nouveau risque</h3>
+              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-slate-100 rounded-lg">
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Titre</label>
+                <input
+                  type="text"
+                  value={formData.title}
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-rose-500/20"
+                  placeholder="Ex: Risque de chute"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Catégorie</label>
+                <select
+                  value={formData.category}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-rose-500/20"
+                >
+                  <option value="SECURITE">Sécurité</option>
+                  <option value="HYGIENE">Hygiène</option>
+                  <option value="INFRA">Infrastructure</option>
+                  <option value="ENVIRONNEMENT">Environnement</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Probabilité (1-5)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={5}
+                    value={formData.probability}
+                    onChange={(e) => setFormData({ ...formData, probability: Number(e.target.value) })}
+                    className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-rose-500/20"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Impact (1-5)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={5}
+                    value={formData.impact}
+                    onChange={(e) => setFormData({ ...formData, impact: Number(e.target.value) })}
+                    className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-rose-500/20"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                onClick={() => setModalOpen(false)}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={submitting}
+                className="px-4 py-2 bg-rose-600 text-white rounded-lg text-sm font-bold hover:bg-rose-700 disabled:opacity-60 flex items-center gap-2"
+              >
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                {submitting ? 'Envoi...' : 'Créer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

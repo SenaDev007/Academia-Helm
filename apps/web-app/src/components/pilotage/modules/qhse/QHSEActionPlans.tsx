@@ -6,10 +6,12 @@
 
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle2, Clock, User, AlertTriangle, ArrowRight, MoreVertical, Plus, Filter, LayoutGrid, List, Loader2 } from 'lucide-react';
+import { CheckCircle2, Clock, User, AlertTriangle, ArrowRight, MoreVertical, Plus, Filter, LayoutGrid, List, Loader2, X } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface ActionPlanItem {
   id: string | number;
@@ -26,9 +28,41 @@ interface ActionPlanItem {
   status?: string;
 }
 
+const EMPTY_FORM = { planId: '', description: '', responsible: '', dueDate: '' };
+
 export default function QHSEActionPlans() {
   const { academicYear } = useModuleContext();
-  const { data: plans, loading, error } = useModulesList<ActionPlanItem>('qhse', 'action-plans', academicYear?.id);
+  const { data: plans, loading, error, refetch } = useModulesList<ActionPlanItem>('qhse', 'action-plans', academicYear?.id);
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [formData, setFormData] = useState(EMPTY_FORM);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleAddAction = async () => {
+    if (!formData.planId || !formData.description) {
+      alert('L\'ID du plan et la description sont requis');
+      return;
+    }
+    try {
+      setSubmitting(true);
+      await modulesApi.post(
+        `qhse/action-plans/${formData.planId}/items`,
+        {
+          description: formData.description,
+          responsible: formData.responsible,
+          dueDate: formData.dueDate,
+        },
+        buildModulesApiOptions(academicYear?.id),
+      );
+      setModalOpen(false);
+      setFormData(EMPTY_FORM);
+      await refetch();
+    } catch (e: any) {
+      alert(e?.message || 'Erreur lors de l\'ajout de l\'action');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -58,7 +92,11 @@ export default function QHSEActionPlans() {
           <button className="p-3 bg-white border border-slate-100 rounded-xl text-slate-400">
             <Filter className="w-5 h-5" />
           </button>
-          <button className="px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-navy-900/10 hover:bg-navy-800 transition-all">
+          <button
+            onClick={() => setModalOpen(true)}
+            className="px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-navy-900/10 hover:bg-navy-800 transition-all flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
             Nouvelle Action
           </button>
         </div>
@@ -132,6 +170,77 @@ export default function QHSEActionPlans() {
               </motion.div>
             );
           })}
+        </div>
+      )}
+
+      {/* Modal: Ajouter une action */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-slate-900">Ajouter une action</h3>
+              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-slate-100 rounded-lg">
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">ID du plan d'action</label>
+                <input
+                  type="text"
+                  value={formData.planId}
+                  onChange={(e) => setFormData({ ...formData, planId: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20"
+                  placeholder="Ex: 123 ou uuid"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Description</label>
+                <textarea
+                  rows={3}
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+                  placeholder="Décrivez l'action..."
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Responsable</label>
+                <input
+                  type="text"
+                  value={formData.responsible}
+                  onChange={(e) => setFormData({ ...formData, responsible: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20"
+                  placeholder="Ex: M. Dupont"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Date d'échéance</label>
+                <input
+                  type="date"
+                  value={formData.dueDate}
+                  onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                onClick={() => setModalOpen(false)}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleAddAction}
+                disabled={submitting}
+                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold hover:bg-navy-800 disabled:opacity-60 flex items-center gap-2"
+              >
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                {submitting ? 'Envoi...' : 'Ajouter'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

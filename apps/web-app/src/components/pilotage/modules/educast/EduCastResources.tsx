@@ -56,7 +56,10 @@ export default function EduCastResources() {
           </h3>
           <p className="text-slate-500 text-sm font-medium">Gérez les fichiers attachés à vos contenus multimédias.</p>
         </div>
-        <button className="px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-navy-900/10">
+        <button
+          onClick={() => alert('Bientôt disponible')}
+          className="px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-navy-900/10"
+        >
           Attacher une Ressource
         </button>
       </div>

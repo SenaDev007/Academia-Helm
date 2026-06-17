@@ -72,7 +72,10 @@ export default function QHSESecurity() {
             <Users className="w-4 h-4" /> 45 Visiteurs déclarés
           </div>
         </div>
-        <button className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">
+        <button
+          onClick={() => alert('Bientôt disponible')}
+          className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+        >
           Accéder au Poste de Contrôle
         </button>
       </div>
@@ -155,7 +158,10 @@ export default function QHSESecurity() {
           <Map className="w-24 h-24 mb-6 text-white/20 group-hover:scale-110 transition-transform" />
           <h3 className="text-2xl font-black uppercase tracking-tighter text-center">Plan d'Évacuation & Points Chauds</h3>
           <p className="text-sm font-medium text-white/40 mt-2 text-center max-w-xs">Visualisez l'état sécuritaire de chaque bâtiment en temps réel.</p>
-          <button className="mt-8 px-8 py-4 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-600/20 hover:bg-emerald-500 transition-all">
+          <button
+            onClick={() => alert('Bientôt disponible')}
+            className="mt-8 px-8 py-4 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-600/20 hover:bg-emerald-500 transition-all"
+          >
             Ouvrir la Carte Interactive
           </button>
           <div className="absolute top-6 right-6 px-3 py-1 bg-white/10 backdrop-blur-md rounded-full border border-white/10 text-[8px] font-black uppercase tracking-widest">

@@ -3,15 +3,12 @@
  * CANTEEN SUPPLIERS — Branché sur backend réel
  * ============================================================================
  *
- * Endpoint : GET /modules-complementaires/canteen/suppliers?academicYearId=...
- * Endpoint : POST /modules-complementaires/canteen/suppliers
- *
- * Note : la liste des bons de commande (sidebar) reste en mock car aucun
- * endpoint GET dédié n'est exposé pour les commandes.
+ * Endpoint (lecture)   : GET  /modules-complementaires/canteen/suppliers
+ * Endpoint (création)  : POST /modules-complementaires/canteen/suppliers
  * ============================================================================
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Search, Plus,
   Phone, Mail, Star,
@@ -20,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface SupplierItem {
   id: string;
@@ -47,13 +45,43 @@ const ORDERS_MOCK = [
   { id: 'BC-2026-107', supplier: 'Agro-Légumes', date: '15 Mai', amount: '85 000 F', status: 'Brouillon' },
 ];
 
+interface NewSupplierFormData {
+  name: string;
+  contact: string;
+  phone: string;
+}
+
+const emptySupplierForm: NewSupplierFormData = { name: '', contact: '', phone: '' };
+
 export default function CanteenSuppliers() {
   const { academicYear } = useModuleContext();
-  const { data: suppliers, loading, error } = useModulesList<SupplierItem>(
+  const [modalOpen, setModalOpen] = useState(false);
+  const [formData, setFormData] = useState<NewSupplierFormData>(emptySupplierForm);
+  const [submitting, setSubmitting] = useState(false);
+  const { data: suppliers, loading, error, refetch } = useModulesList<SupplierItem>(
     'canteen',
     'suppliers',
     academicYear?.id,
   );
+
+  const handleCreate = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post(
+        'canteen/suppliers',
+        formData,
+        buildModulesApiOptions(academicYear?.id),
+      );
+      setModalOpen(false);
+      setFormData(emptySupplierForm);
+      await refetch();
+    } catch (e: any) {
+      console.error('Erreur création fournisseur :', e?.message || e);
+      alert(e?.message || 'Erreur lors de la création du fournisseur');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -89,7 +117,10 @@ export default function CanteenSuppliers() {
                   className="pl-11 pr-4 py-2.5 bg-gray-50/50 border border-gray-100 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-navy-500/20 w-56 transition-all"
                 />
               </div>
-              <button className="flex items-center space-x-2 px-6 py-2.5 bg-navy-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20">
+              <button
+                onClick={() => setModalOpen(true)}
+                className="flex items-center space-x-2 px-6 py-2.5 bg-navy-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20"
+              >
                 <Plus className="w-4 h-4" />
                 <span>Nouveau</span>
               </button>
@@ -145,6 +176,63 @@ export default function CanteenSuppliers() {
           </button>
         </div>
       </div>
+
+      {/* Modal Nouveau Fournisseur */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <h3 className="text-lg font-black text-navy-900">Nouveau Fournisseur</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nom / Raison sociale</label>
+                <input
+                  type="text"
+                  placeholder="ex : Grossiste CI"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Contact</label>
+                <input
+                  type="text"
+                  placeholder="Nom du contact"
+                  value={formData.contact}
+                  onChange={(e) => setFormData({ ...formData, contact: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Téléphone</label>
+                <input
+                  type="tel"
+                  placeholder="ex : +225 07 00 00 00"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                onClick={() => setModalOpen(false)}
+                disabled={submitting}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={submitting}
+                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {submitting ? 'Envoi…' : 'Créer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -6,10 +6,11 @@
 
 'use client';
 
-import React from 'react';
-import { Loader2, Percent, Plus, Search, Trash2, Edit, CheckCircle2, Ticket } from 'lucide-react';
+import React, { useState } from 'react';
+import { Loader2, Percent, Plus, Search, Trash2, Edit, CheckCircle2, Ticket, X } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface DiscountItem {
   id?: string;
@@ -32,11 +33,29 @@ interface DiscountItem {
 
 export default function ShopDiscounts() {
   const { academicYear } = useModuleContext();
-  const { data: discounts, loading, error } = useModulesList<DiscountItem>(
+  const { data: discounts, loading, error, refetch } = useModulesList<DiscountItem>(
     'shop',
     'discounts',
     academicYear?.id,
   );
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [discountForm, setDiscountForm] = useState({ code: '', percentage: 0, validUntil: '' });
+
+  const handleCreateDiscount = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post('shop/discounts', discountForm, buildModulesApiOptions(academicYear?.id));
+      setModalOpen(false);
+      setDiscountForm({ code: '', percentage: 0, validUntil: '' });
+      await refetch();
+    } catch (e: any) {
+      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création de la remise');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const safeDiscounts = discounts ?? [];
 
@@ -63,7 +82,10 @@ export default function ShopDiscounts() {
           <h3 className="text-xl font-black text-navy-900 uppercase tracking-tight">Remises & Promotions</h3>
           <p className="text-sm text-gray-400 font-medium">Gérez les codes promos, soldes et remises automatiques</p>
         </div>
-        <button className="flex items-center space-x-2 px-8 py-3 bg-navy-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20 active:scale-95">
+        <button
+          onClick={() => setModalOpen(true)}
+          className="flex items-center space-x-2 px-8 py-3 bg-navy-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20 active:scale-95"
+        >
           <Plus className="w-4 h-4" />
           <span>Nouvelle Promotion</span>
         </button>
@@ -165,6 +187,38 @@ export default function ShopDiscounts() {
            </div>
         </div>
       </div>
+
+      {/* Discount Modal */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-navy-900">Nouvelle Remise</h3>
+              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Code</label>
+                <input type="text" value={discountForm.code} onChange={(e) => setDiscountForm({ ...discountForm, code: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Pourcentage</label>
+                <input type="number" value={discountForm.percentage} onChange={(e) => setDiscountForm({ ...discountForm, percentage: Number(e.target.value) })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Valide jusqu'à</label>
+                <input type="date" value={discountForm.validUntil} onChange={(e) => setDiscountForm({ ...discountForm, validUntil: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-gray-200 rounded-xl text-sm font-bold">Annuler</button>
+              <button onClick={handleCreateDiscount} disabled={submitting} className="px-4 py-2 bg-navy-900 text-white rounded-xl text-sm font-bold disabled:opacity-50">
+                {submitting ? 'Envoi...' : 'Créer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

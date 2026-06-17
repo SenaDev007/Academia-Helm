@@ -3,8 +3,9 @@
  * LIBRARY BORROWINGS (EMPRUNTS) — Branché sur backend réel
  * ============================================================================
  *
- * Endpoint : GET /modules-complementaires/library/loans?academicYearId=...
- * Endpoint : POST /modules-complementaires/library/loans/:id/return
+ * Endpoint (lecture)   : GET  /modules-complementaires/library/loans
+ * Endpoint (création)  : POST /modules-complementaires/library/loans
+ * Endpoint (retour)    : POST /modules-complementaires/library/loans/:id/return
  * ============================================================================
  */
 
@@ -38,9 +39,21 @@ interface LoanItem {
   [key: string]: any;
 }
 
+interface NewLoanFormData {
+  readerId: string;
+  bookId: string;
+  dueDate: string;
+}
+
+const emptyLoanForm: NewLoanFormData = { readerId: '', bookId: '', dueDate: '' };
+
 export default function LibraryBorrowings() {
   const { academicYear } = useModuleContext();
   const [search, setSearch] = useState('');
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [formData, setFormData] = useState<NewLoanFormData>(emptyLoanForm);
+  const [submitting, setSubmitting] = useState(false);
   const { data: loans, loading, error, refetch } = useModulesList<LoanItem>(
     'library',
     'loans',
@@ -50,6 +63,7 @@ export default function LibraryBorrowings() {
 
   const handleReturn = async (loanId: string) => {
     try {
+      setActionLoading(loanId);
       await modulesApi.post(
         `library/loans/${loanId}/return`,
         {},
@@ -59,6 +73,27 @@ export default function LibraryBorrowings() {
     } catch (e: any) {
       console.error('Erreur retour de prêt :', e?.message || e);
       alert(`Erreur lors du retour : ${e?.message || 'Erreur inconnue'}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleCreateLoan = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post(
+        'library/loans',
+        formData,
+        buildModulesApiOptions(academicYear?.id),
+      );
+      setModalOpen(false);
+      setFormData(emptyLoanForm);
+      await refetch();
+    } catch (e: any) {
+      console.error('Erreur création emprunt :', e?.message || e);
+      alert(e?.message || 'Erreur lors de la création de l\'emprunt');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -94,7 +129,10 @@ export default function LibraryBorrowings() {
           <button className="p-2.5 bg-white border border-slate-200 rounded-2xl text-slate-400 hover:text-blue-600 transition-all">
             <Filter className="w-5 h-5" />
           </button>
-          <button className="flex items-center space-x-2 px-6 py-2.5 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all shadow-lg shadow-navy-900/10">
+          <button
+            onClick={() => setModalOpen(true)}
+            className="flex items-center space-x-2 px-6 py-2.5 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all shadow-lg shadow-navy-900/10"
+          >
             <Plus className="w-4 h-4 text-[#C9A84C]" />
             <span>Nouvel Emprunt</span>
           </button>
@@ -161,9 +199,10 @@ export default function LibraryBorrowings() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => handleReturn(loan.id)}
-                className="px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 hover:text-white transition-all"
+                disabled={actionLoading === loan.id}
+                className="px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Retourner
+                {actionLoading === loan.id ? 'En cours…' : 'Retourner'}
               </button>
               <button className="p-2 hover:bg-slate-50 rounded-xl transition-colors">
                 <MoreVertical className="w-5 h-5 text-slate-300" />
@@ -173,6 +212,62 @@ export default function LibraryBorrowings() {
           );
         })}
       </div>
+      )}
+
+      {/* Modal Nouvel Emprunt */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <h3 className="text-lg font-black text-slate-900">Nouvel Emprunt</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Lecteur (ID)</label>
+                <input
+                  type="text"
+                  placeholder="ex : student-123"
+                  value={formData.readerId}
+                  onChange={(e) => setFormData({ ...formData, readerId: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Livre (ID)</label>
+                <input
+                  type="text"
+                  placeholder="ex : book-456"
+                  value={formData.bookId}
+                  onChange={(e) => setFormData({ ...formData, bookId: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Date de retour prévue</label>
+                <input
+                  type="date"
+                  value={formData.dueDate}
+                  onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                onClick={() => setModalOpen(false)}
+                disabled={submitting}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleCreateLoan}
+                disabled={submitting}
+                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {submitting ? 'Envoi…' : 'Créer l\'emprunt'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

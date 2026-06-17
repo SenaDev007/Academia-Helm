@@ -6,11 +6,12 @@
 
 'use client';
 
-import React from 'react';
-import { Loader2, Archive, Search, Filter, Plus, Clock, CheckCircle2, Truck, MoreVertical, Eye, Download, Calendar, ShoppingBag, User } from 'lucide-react';
+import React, { useState } from 'react';
+import { Loader2, Archive, Search, Filter, Plus, Clock, CheckCircle2, Truck, MoreVertical, Eye, Download, Calendar, ShoppingBag, User, X } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface OrderItem {
   id?: string;
@@ -33,11 +34,47 @@ interface OrderItem {
 
 export default function ShopOrders() {
   const { academicYear } = useModuleContext();
-  const { data: orders, loading, error } = useModulesList<OrderItem>(
+  const { data: orders, loading, error, refetch } = useModulesList<OrderItem>(
     'shop',
     'orders',
     academicYear?.id,
   );
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [formData, setFormData] = useState({ customer: '', items: '' });
+
+  const handleCreate = async () => {
+    try {
+      setSubmitting(true);
+      const items = formData.items.split(',').map((s) => s.trim()).filter(Boolean);
+      await modulesApi.post('shop/orders', { customer: formData.customer, items }, buildModulesApiOptions(academicYear?.id));
+      setModalOpen(false);
+      setFormData({ customer: '', items: '' });
+      await refetch();
+    } catch (e: any) {
+      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création de la commande');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleStatusChange = async (id: string, newStatus: string) => {
+    try {
+      setActionLoading(id);
+      await modulesApi.put(
+        `shop/orders/${id}/status`,
+        { status: newStatus },
+        buildModulesApiOptions(academicYear?.id),
+      );
+      await refetch();
+    } catch (e: any) {
+      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors du changement de statut');
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   const safeOrders = orders ?? [];
 
@@ -82,7 +119,10 @@ export default function ShopOrders() {
           <h3 className="text-xl font-black text-navy-900 uppercase tracking-tight">Gestion des Commandes</h3>
           <p className="text-sm text-gray-400 font-medium">Suivez les pré-commandes parents et le processus de préparation</p>
         </div>
-        <button className="flex items-center space-x-2 px-8 py-3 bg-navy-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20 active:scale-95">
+        <button
+          onClick={() => setModalOpen(true)}
+          className="flex items-center space-x-2 px-8 py-3 bg-navy-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20 active:scale-95"
+        >
           <Plus className="w-4 h-4" />
           <span>Créer une Commande</span>
         </button>
@@ -145,12 +185,15 @@ export default function ShopOrders() {
                   <OrderRow
                     key={order?.id ?? `order-${i}`}
                     id={order?.refNo ?? order?.reference ?? order?.number ?? order?.id ?? `CMD-${i}`}
+                    orderId={order?.id ?? ''}
                     name={order?.customerName ?? order?.parentName ?? order?.clientName ?? 'Client'}
                     student={order?.studentName ?? order?.student ?? ''}
                     date={order?.date ?? (order?.createdAt ? new Date(order.createdAt).toLocaleDateString('fr-FR') : '—')}
                     itemCount={order?.itemCount ?? order?.itemsCount ?? 0}
                     total={order?.total ?? order?.amount ?? 0}
-                    status={order?.status ?? 'En attente'}
+                    status={order?.status ?? 'pending'}
+                    actionLoading={actionLoading}
+                    onStatusChange={handleStatusChange}
                   />
                 ))
               )}
@@ -158,6 +201,34 @@ export default function ShopOrders() {
           </table>
         </div>
       </div>
+
+      {/* Modal */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-navy-900">Nouvelle Commande</h3>
+              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Client</label>
+                <input type="text" value={formData.customer} onChange={(e) => setFormData({ ...formData, customer: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Articles (IDs séparés par virgule)</label>
+                <textarea value={formData.items} onChange={(e) => setFormData({ ...formData, items: e.target.value })} placeholder="ex: prod-1, prod-2" className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20 h-20" />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-gray-200 rounded-xl text-sm font-bold">Annuler</button>
+              <button onClick={handleCreate} disabled={submitting} className="px-4 py-2 bg-navy-900 text-white rounded-xl text-sm font-bold disabled:opacity-50">
+                {submitting ? 'Envoi...' : 'Créer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -183,13 +254,27 @@ function OrderStatCard({ label, count, color, icon: Icon }: any) {
   );
 }
 
-function OrderRow({ id, name, student, date, itemCount, total, status }: any) {
+function OrderRow({ id, orderId, name, student, date, itemCount, total, status, actionLoading, onStatusChange }: any) {
   const statusColors: any = {
     'À préparer': 'bg-rose-50 text-rose-600 border-rose-100',
     'Payé': 'bg-blue-50 text-blue-600 border-blue-100',
     'Confirmé': 'bg-amber-50 text-amber-600 border-amber-100',
     'Prêt': 'bg-emerald-50 text-emerald-600 border-emerald-100',
+    pending: 'bg-amber-50 text-amber-600 border-amber-100',
+    confirmed: 'bg-blue-50 text-blue-600 border-blue-100',
+    shipped: 'bg-rose-50 text-rose-600 border-rose-100',
+    delivered: 'bg-emerald-50 text-emerald-600 border-emerald-100',
+    cancelled: 'bg-gray-50 text-gray-600 border-gray-100',
   };
+  const statusLabel: any = {
+    pending: 'En attente',
+    confirmed: 'Confirmée',
+    shipped: 'Expédiée',
+    delivered: 'Livrée',
+    cancelled: 'Annulée',
+  };
+  const displayStatus = statusLabel[status] ?? status;
+  const statusValue = ['pending', 'confirmed', 'shipped', 'delivered', 'cancelled'].includes(status) ? status : 'pending';
 
   return (
     <tr className="hover:bg-gray-50/50 transition-all group">
@@ -216,9 +301,24 @@ function OrderRow({ id, name, student, date, itemCount, total, status }: any) {
       </td>
       <td className="px-8 py-5 font-black text-navy-900 text-sm">{formatCurrency(total)}</td>
       <td className="px-8 py-5">
-        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tight border ${statusColors[status] ?? 'bg-gray-50 text-gray-500 border-gray-100'}`}>
-          {status}
-        </span>
+        {orderId ? (
+          <select
+            value={statusValue}
+            onChange={(e) => onStatusChange(orderId, e.target.value)}
+            disabled={actionLoading === orderId}
+            className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-tight border ${statusColors[statusValue] ?? 'bg-gray-50 text-gray-500 border-gray-100'} outline-none disabled:opacity-50`}
+          >
+            <option value="pending">En attente</option>
+            <option value="confirmed">Confirmée</option>
+            <option value="shipped">Expédiée</option>
+            <option value="delivered">Livrée</option>
+            <option value="cancelled">Annulée</option>
+          </select>
+        ) : (
+          <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tight border ${statusColors[status] ?? 'bg-gray-50 text-gray-500 border-gray-100'}`}>
+            {displayStatus}
+          </span>
+        )}
       </td>
       <td className="px-8 py-5">
         <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">

@@ -3,8 +3,9 @@
  * CANTEEN ENROLLMENTS — Branché sur backend réel
  * ============================================================================
  *
- * Endpoint : GET /modules-complementaires/canteen/enrollments?academicYearId=...
- * Endpoint : POST /modules-complementaires/canteen/enrollments
+ * Endpoint (lecture)   : GET  /modules-complementaires/canteen/enrollments
+ * Endpoint (création)  : POST /modules-complementaires/canteen/enrollments
+ * Endpoint (validation): PUT  /modules-complementaires/canteen/enrollments/:id/validate
  * ============================================================================
  */
 
@@ -17,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface EnrollmentItem {
   id: string;
@@ -39,15 +41,62 @@ interface EnrollmentItem {
   [key: string]: any;
 }
 
+interface NewEnrollmentFormData {
+  studentId: string;
+  regime: string;
+}
+
+const emptyEnrollmentForm: NewEnrollmentFormData = { studentId: '', regime: 'STANDARD' };
+
 export default function CanteenEnrollments() {
   const { academicYear } = useModuleContext();
   const [search, setSearch] = useState('');
-  const { data: enrollments, loading, error } = useModulesList<EnrollmentItem>(
+  const [modalOpen, setModalOpen] = useState(false);
+  const [formData, setFormData] = useState<NewEnrollmentFormData>(emptyEnrollmentForm);
+  const [submitting, setSubmitting] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const { data: enrollments, loading, error, refetch } = useModulesList<EnrollmentItem>(
     'canteen',
     'enrollments',
     academicYear?.id,
     search ? { search } : undefined,
   );
+
+  const handleCreate = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post(
+        'canteen/enrollments',
+        formData,
+        buildModulesApiOptions(academicYear?.id),
+      );
+      setModalOpen(false);
+      setFormData(emptyEnrollmentForm);
+      await refetch();
+    } catch (e: any) {
+      console.error('Erreur création inscription :', e?.message || e);
+      alert(e?.message || 'Erreur lors de la création de l\'inscription');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleValidate = async (enrollmentId: string) => {
+    try {
+      setActionLoading(enrollmentId);
+      await modulesApi.put(
+        `canteen/enrollments/${enrollmentId}/validate`,
+        {},
+        buildModulesApiOptions(academicYear?.id),
+      );
+      await refetch();
+    } catch (e: any) {
+      console.error('Erreur validation inscription :', e?.message || e);
+      alert(e?.message || 'Erreur lors de la validation de l\'inscription');
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   const pendingCount = enrollments.filter((e) => (e.status ?? '').toLowerCase().includes('attente') || (e.status ?? '').toLowerCase().includes('pending')).length;
   const acceptedCount = enrollments.filter((e) => (e.status ?? '').toLowerCase().includes('valid') || (e.status ?? '').toLowerCase().includes('accept')).length;
@@ -114,7 +163,10 @@ export default function CanteenEnrollments() {
               <Filter className="w-4 h-4" />
               <span>Filtres</span>
             </button>
-            <button className="flex items-center space-x-2 px-6 py-2.5 bg-navy-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20">
+            <button
+              onClick={() => setModalOpen(true)}
+              className="flex items-center space-x-2 px-6 py-2.5 bg-navy-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20"
+            >
               <Plus className="w-4 h-4" />
               <span>Inscrire un élève</span>
             </button>
@@ -142,6 +194,7 @@ export default function CanteenEnrollments() {
               {enrollments.map((enr) => (
                 <EnrollmentRow
                   key={enr.id}
+                  enrollmentId={enr.id}
                   date={enr.date ?? enr.requestDate ?? enr.createdAt ?? '—'}
                   student={enr.student ?? enr.studentName ?? '—'}
                   class={enr.class ?? enr.className ?? '—'}
@@ -150,6 +203,8 @@ export default function CanteenEnrollments() {
                   diet={enr.diet ?? enr.dietType ?? 'Standard'}
                   allergy={enr.allergy ?? enr.allergies}
                   status={enr.status ?? 'En attente'}
+                  onValidate={() => handleValidate(enr.id)}
+                  actionLoading={actionLoading}
                 />
               ))}
             </tbody>
@@ -157,6 +212,56 @@ export default function CanteenEnrollments() {
         </div>
         )}
       </div>
+
+      {/* Modal Inscrire un élève */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <h3 className="text-lg font-black text-navy-900">Inscrire un élève</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Élève (ID)</label>
+                <input
+                  type="text"
+                  placeholder="ex : student-123"
+                  value={formData.studentId}
+                  onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Régime alimentaire</label>
+                <select
+                  value={formData.regime}
+                  onChange={(e) => setFormData({ ...formData, regime: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                >
+                  <option value="STANDARD">Standard</option>
+                  <option value="VEGETARIEN">Végétarien</option>
+                  <option value="SANS_PORC">Sans porc</option>
+                  <option value="SANS_GLUTEN">Sans gluten</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                onClick={() => setModalOpen(false)}
+                disabled={submitting}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={submitting}
+                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {submitting ? 'Envoi…' : 'Inscrire'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -180,13 +285,14 @@ function SummaryCard({ title, value, icon: Icon, color }: any) {
   );
 }
 
-function EnrollmentRow({ date, student, class: className, parent, plan, diet, allergy, status }: any) {
+function EnrollmentRow({ enrollmentId, date, student, class: className, parent, plan, diet, allergy, status, onValidate, actionLoading }: any) {
   const statusStyles: any = {
     'En attente': 'bg-amber-50 text-amber-600 border-amber-100',
     'Validé': 'bg-emerald-50 text-emerald-600 border-emerald-100',
     'Rejeté': 'bg-red-50 text-red-600 border-red-100',
   };
   const statusStyle = statusStyles[status] ?? statusStyles['En attente'];
+  const isLoading = actionLoading === enrollmentId;
 
   return (
     <tr className="group hover:bg-navy-50/30 transition-all duration-300">
@@ -236,7 +342,14 @@ function EnrollmentRow({ date, student, class: className, parent, plan, diet, al
         <div className="flex items-center justify-end space-x-2">
           {status === 'En attente' ? (
             <>
-              <button className="px-4 py-1.5 bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20">Valider</button>
+              <button
+                onClick={onValidate}
+                disabled={isLoading}
+                className="px-4 py-1.5 bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+              >
+                {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                {isLoading ? '…' : 'Valider'}
+              </button>
               <button className="p-2 text-gray-400 hover:text-red-500 hover:bg-white rounded-xl transition-all border border-transparent hover:border-gray-100"><XCircle className="w-4 h-4" /></button>
             </>
           ) : (

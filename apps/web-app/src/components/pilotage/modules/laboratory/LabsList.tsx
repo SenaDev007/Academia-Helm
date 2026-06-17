@@ -6,10 +6,12 @@
 
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Loader2, Beaker, MapPin, Users, User, ShieldCheck, ChevronRight, MoreVertical, Plus } from 'lucide-react';
+import { Loader2, Beaker, MapPin, Users, User, ShieldCheck, ChevronRight, MoreVertical, Plus, X } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface LabItem {
   id?: string;
@@ -27,11 +29,29 @@ interface LabItem {
 
 export default function LabsList() {
   const { academicYear } = useModuleContext();
-  const { data: labs, loading, error } = useModulesList<LabItem>(
+  const { data: labs, loading, error, refetch } = useModulesList<LabItem>(
     'labs',
     '',
     academicYear?.id,
   );
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [labForm, setLabForm] = useState({ name: '', location: '', capacity: 0, type: '' });
+
+  const handleCreateLab = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post('labs', labForm, buildModulesApiOptions(academicYear?.id));
+      setModalOpen(false);
+      setLabForm({ name: '', location: '', capacity: 0, type: '' });
+      await refetch();
+    } catch (e: any) {
+      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création du laboratoire');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -54,7 +74,10 @@ export default function LabsList() {
 
       <div className="flex justify-between items-center">
         <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Nos Espaces Laboratoires</h3>
-        <button className="flex items-center space-x-2 px-4 py-2 bg-navy-900 text-white rounded-xl hover:bg-navy-800 transition-all font-bold text-sm">
+        <button
+          onClick={() => setModalOpen(true)}
+          className="flex items-center space-x-2 px-4 py-2 bg-navy-900 text-white rounded-xl hover:bg-navy-800 transition-all font-bold text-sm"
+        >
           <Plus className="w-4 h-4" />
           <span>Nouveau Laboratoire</span>
         </button>
@@ -142,6 +165,44 @@ export default function LabsList() {
               </motion.div>
             );
           })}
+        </div>
+      )}
+
+      {/* Lab Modal */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-slate-900">Nouveau Laboratoire</h3>
+              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nom</label>
+                <input type="text" value={labForm.name} onChange={(e) => setLabForm({ ...labForm, name: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Emplacement</label>
+                <input type="text" value={labForm.location} onChange={(e) => setLabForm({ ...labForm, location: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Capacité</label>
+                  <input type="number" value={labForm.capacity} onChange={(e) => setLabForm({ ...labForm, capacity: Number(e.target.value) })} className="w-full px-4 py-2 bg-gray-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Type</label>
+                  <input type="text" value={labForm.type} onChange={(e) => setLabForm({ ...labForm, type: e.target.value })} placeholder="ex: Physique" className="w-full px-4 py-2 bg-gray-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20" />
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-bold">Annuler</button>
+              <button onClick={handleCreateLab} disabled={submitting} className="px-4 py-2 bg-navy-900 text-white rounded-xl text-sm font-bold disabled:opacity-50">
+                {submitting ? 'Envoi...' : 'Créer'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

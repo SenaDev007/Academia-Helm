@@ -1,8 +1,10 @@
 'use client';
 
-import { Users, Plus, Search, Mail, Phone, Calendar, ShieldCheck, MoreVertical, Loader2 } from 'lucide-react';
+import { useState } from 'react';
+import { Users, Plus, Search, Mail, Phone, Calendar, ShieldCheck, MoreVertical, Loader2, X } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface DriverItem {
   id: string;
@@ -21,11 +23,31 @@ interface DriverItem {
   [key: string]: any;
 }
 
+const EMPTY_FORM = { name: '', phone: '', license: '' };
+
 export default function TransportDrivers() {
   const { academicYear } = useModuleContext();
-  const { data, loading, error } = useModulesList<DriverItem>('transport', 'drivers', academicYear?.id);
+  const { data, loading, error, refetch } = useModulesList<DriverItem>('transport', 'drivers', academicYear?.id);
 
   const drivers = data ?? [];
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [formData, setFormData] = useState<{ name: string; phone: string; license: string }>(EMPTY_FORM);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleCreate = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post('transport/drivers', formData, buildModulesApiOptions(academicYear?.id));
+      setModalOpen(false);
+      setFormData(EMPTY_FORM);
+      await refetch();
+    } catch (e: any) {
+      alert(e?.response?.data?.message || e?.message || 'Erreur lors de la création');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -53,7 +75,10 @@ export default function TransportDrivers() {
             className="w-full pl-12 pr-4 py-3 rounded-2xl border border-slate-100 focus:outline-none focus:ring-2 focus:ring-navy-900/5 transition-all text-sm font-medium"
           />
         </div>
-        <button className="flex items-center gap-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all">
+        <button
+          onClick={() => { setFormData(EMPTY_FORM); setModalOpen(true); }}
+          className="flex items-center gap-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all"
+        >
           <Plus className="w-4 h-4" />
           Nouveau Personnel
         </button>
@@ -128,6 +153,63 @@ export default function TransportDrivers() {
                 })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold">Nouveau chauffeur</h3>
+              <button onClick={() => setModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-900">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Nom complet</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="Jean Dupont"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Téléphone</label>
+                <input
+                  type="text"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="+229 00 00 00 00"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Permis</label>
+                <input
+                  type="text"
+                  value={formData.license}
+                  onChange={(e) => setFormData({ ...formData, license: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="Permis B"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold">
+                Annuler
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={submitting}
+                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {submitting ? 'Envoi...' : 'Créer'}
+              </button>
+            </div>
           </div>
         </div>
       )}

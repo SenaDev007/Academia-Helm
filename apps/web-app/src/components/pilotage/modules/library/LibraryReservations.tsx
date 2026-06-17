@@ -3,16 +3,19 @@
  * LIBRARY RESERVATIONS — Branché sur backend réel
  * ============================================================================
  *
- * Endpoint : GET /modules-complementaires/library/reservations?academicYearId=...
+ * Endpoint (lecture)   : GET  /modules-complementaires/library/reservations
+ * Endpoint (création)  : POST /modules-complementaires/library/reservations
  * ============================================================================
  */
 
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Calendar, Clock, Book, XCircle, Timer, MoreVertical, Loader2 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface ReservationItem {
   id: string;
@@ -33,13 +36,43 @@ interface ReservationItem {
   [key: string]: any;
 }
 
+interface NewReservationFormData {
+  bookId: string;
+  readerId: string;
+  date: string;
+}
+
+const emptyReservationForm: NewReservationFormData = { bookId: '', readerId: '', date: '' };
+
 export default function LibraryReservations() {
   const { academicYear } = useModuleContext();
-  const { data: reservations, loading, error } = useModulesList<ReservationItem>(
+  const [modalOpen, setModalOpen] = useState(false);
+  const [formData, setFormData] = useState<NewReservationFormData>(emptyReservationForm);
+  const [submitting, setSubmitting] = useState(false);
+  const { data: reservations, loading, error, refetch } = useModulesList<ReservationItem>(
     'library',
     'reservations',
     academicYear?.id,
   );
+
+  const handleCreateReservation = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post(
+        'library/reservations',
+        formData,
+        buildModulesApiOptions(academicYear?.id),
+      );
+      setModalOpen(false);
+      setFormData(emptyReservationForm);
+      await refetch();
+    } catch (e: any) {
+      console.error('Erreur création réservation :', e?.message || e);
+      alert(e?.message || 'Erreur lors de la création de la réservation');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -66,7 +99,10 @@ export default function LibraryReservations() {
           </h3>
           <p className="text-slate-500 text-sm font-medium">Gérez les priorités et les délais de retrait.</p>
         </div>
-        <button className="px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/10">
+        <button
+          onClick={() => setModalOpen(true)}
+          className="px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/10"
+        >
           Nouvelle Réservation
         </button>
       </div>
@@ -166,6 +202,62 @@ export default function LibraryReservations() {
           );
         })}
       </div>
+      )}
+
+      {/* Modal Nouvelle Réservation */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <h3 className="text-lg font-black text-slate-900">Nouvelle Réservation</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Livre (ID)</label>
+                <input
+                  type="text"
+                  placeholder="ex : book-456"
+                  value={formData.bookId}
+                  onChange={(e) => setFormData({ ...formData, bookId: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Lecteur (ID)</label>
+                <input
+                  type="text"
+                  placeholder="ex : student-123"
+                  value={formData.readerId}
+                  onChange={(e) => setFormData({ ...formData, readerId: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Date souhaitée</label>
+                <input
+                  type="date"
+                  value={formData.date}
+                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                onClick={() => setModalOpen(false)}
+                disabled={submitting}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleCreateReservation}
+                disabled={submitting}
+                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {submitting ? 'Envoi…' : 'Créer'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

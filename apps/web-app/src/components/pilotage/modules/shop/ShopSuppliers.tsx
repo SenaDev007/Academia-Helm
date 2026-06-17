@@ -6,11 +6,12 @@
 
 'use client';
 
-import React from 'react';
-import { Loader2, Truck, FileText, Plus, Phone, Mail, MoreVertical, ChevronRight } from 'lucide-react';
+import React, { useState } from 'react';
+import { Loader2, Truck, FileText, Plus, Phone, Mail, MoreVertical, ChevronRight, X } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface SupplierItem {
   id?: string;
@@ -41,16 +42,51 @@ interface PurchaseOrderItem {
 
 export default function ShopSuppliers() {
   const { academicYear } = useModuleContext();
-  const { data: suppliers, loading: supLoading, error: supError } = useModulesList<SupplierItem>(
+  const { data: suppliers, loading: supLoading, error: supError, refetch: refetchSuppliers } = useModulesList<SupplierItem>(
     'shop',
     'suppliers',
     academicYear?.id,
   );
-  const { data: purchaseOrders, loading: poLoading, error: poError } = useModulesList<PurchaseOrderItem>(
+  const { data: purchaseOrders, loading: poLoading, error: poError, refetch: refetchPOs } = useModulesList<PurchaseOrderItem>(
     'shop',
     'purchase-orders',
     academicYear?.id,
   );
+
+  const [supplierModalOpen, setSupplierModalOpen] = useState(false);
+  const [poModalOpen, setPoModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [supplierForm, setSupplierForm] = useState({ name: '', contact: '', phone: '', email: '' });
+  const [poForm, setPoForm] = useState({ supplierId: '', items: '' });
+
+  const handleCreateSupplier = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post('shop/suppliers', supplierForm, buildModulesApiOptions(academicYear?.id));
+      setSupplierModalOpen(false);
+      setSupplierForm({ name: '', contact: '', phone: '', email: '' });
+      await refetchSuppliers();
+    } catch (e: any) {
+      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création du fournisseur');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCreatePO = async () => {
+    try {
+      setSubmitting(true);
+      const items = poForm.items.split(',').map((s) => s.trim()).filter(Boolean);
+      await modulesApi.post('shop/purchase-orders', { supplierId: poForm.supplierId, items }, buildModulesApiOptions(academicYear?.id));
+      setPoModalOpen(false);
+      setPoForm({ supplierId: '', items: '' });
+      await refetchPOs();
+    } catch (e: any) {
+      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création du bon de commande');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (supLoading || poLoading) {
     return (
@@ -78,11 +114,17 @@ export default function ShopSuppliers() {
           <p className="text-sm text-gray-400 font-medium">Gérez votre réseau de partenaires et vos bons de commande (PO)</p>
         </div>
         <div className="flex items-center space-x-3">
-          <button className="flex items-center space-x-2 px-6 py-3 bg-gray-50 text-navy-900 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-gray-100 transition-all border border-gray-100">
+          <button
+            onClick={() => setPoModalOpen(true)}
+            className="flex items-center space-x-2 px-6 py-3 bg-gray-50 text-navy-900 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-gray-100 transition-all border border-gray-100"
+          >
             <FileText className="w-4 h-4" />
-            <span>Nouvel Achat</span>
+            <span>Nouveau Bon de Commande</span>
           </button>
-          <button className="flex items-center space-x-2 px-8 py-3 bg-navy-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20">
+          <button
+            onClick={() => setSupplierModalOpen(true)}
+            className="flex items-center space-x-2 px-8 py-3 bg-navy-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20"
+          >
             <Plus className="w-4 h-4" />
             <span>Nouveau Fournisseur</span>
           </button>
@@ -190,6 +232,70 @@ export default function ShopSuppliers() {
            </div>
         </div>
       </div>
+
+      {/* Supplier Modal */}
+      {supplierModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-navy-900">Nouveau Fournisseur</h3>
+              <button onClick={() => setSupplierModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Nom</label>
+                <input type="text" value={supplierForm.name} onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Contact</label>
+                <input type="text" value={supplierForm.contact} onChange={(e) => setSupplierForm({ ...supplierForm, contact: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Téléphone</label>
+                <input type="text" value={supplierForm.phone} onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Email</label>
+                <input type="email" value={supplierForm.email} onChange={(e) => setSupplierForm({ ...supplierForm, email: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setSupplierModalOpen(false)} className="px-4 py-2 border border-gray-200 rounded-xl text-sm font-bold">Annuler</button>
+              <button onClick={handleCreateSupplier} disabled={submitting} className="px-4 py-2 bg-navy-900 text-white rounded-xl text-sm font-bold disabled:opacity-50">
+                {submitting ? 'Envoi...' : 'Créer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Purchase Order Modal */}
+      {poModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-navy-900">Nouveau Bon de Commande</h3>
+              <button onClick={() => setPoModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">ID Fournisseur</label>
+                <input type="text" value={poForm.supplierId} onChange={(e) => setPoForm({ ...poForm, supplierId: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Articles (IDs séparés par virgule)</label>
+                <textarea value={poForm.items} onChange={(e) => setPoForm({ ...poForm, items: e.target.value })} placeholder="ex: prod-1, prod-2" className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20 h-20" />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setPoModalOpen(false)} className="px-4 py-2 border border-gray-200 rounded-xl text-sm font-bold">Annuler</button>
+              <button onClick={handleCreatePO} disabled={submitting} className="px-4 py-2 bg-navy-900 text-white rounded-xl text-sm font-bold disabled:opacity-50">
+                {submitting ? 'Envoi...' : 'Créer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

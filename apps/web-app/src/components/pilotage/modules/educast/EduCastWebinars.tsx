@@ -57,7 +57,10 @@ export default function EduCastWebinars() {
           </h3>
           <p className="text-slate-500 text-sm font-medium">Planifiez et diffusez vos événements en temps réel.</p>
         </div>
-        <button className="px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-navy-900/10 hover:bg-navy-800 transition-all">
+        <button
+          onClick={() => alert('Bientôt disponible')}
+          className="px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-navy-900/10 hover:bg-navy-800 transition-all"
+        >
           Nouvelle Session
         </button>
       </div>
@@ -117,10 +120,16 @@ export default function EduCastWebinars() {
                 </div>
 
                 <div className="flex flex-col gap-3 min-w-[200px]">
-                  <button className="w-full py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all shadow-lg">
+                  <button
+                    onClick={() => alert('Bientôt disponible')}
+                    className="w-full py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all shadow-lg"
+                  >
                     S'inscrire
                   </button>
-                  <button className="w-full py-3 bg-slate-50 text-slate-400 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-100 transition-all">
+                  <button
+                    onClick={() => alert('Bientôt disponible')}
+                    className="w-full py-3 bg-slate-50 text-slate-400 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-100 transition-all"
+                  >
                     Détails
                   </button>
                 </div>

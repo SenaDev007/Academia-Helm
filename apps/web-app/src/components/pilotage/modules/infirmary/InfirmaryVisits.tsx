@@ -6,8 +6,9 @@
 
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Loader2 } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 import {
   Plus,
   Search,
@@ -22,6 +23,7 @@ import {
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface VisitItem {
   id: string;
@@ -49,9 +51,27 @@ const STATUS_META: Record<string, { icon: any; color: string; statusLabel: strin
 
 export default function InfirmaryVisits() {
   const { academicYear } = useModuleContext();
-  const { data, loading, error } = useModulesList<VisitItem>('infirmary', 'visits', academicYear?.id);
+  const { data, loading, error, refetch } = useModulesList<VisitItem>('infirmary', 'visits', academicYear?.id);
 
   const visits = data ?? [];
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [formData, setFormData] = useState({ studentId: '', reason: '', symptoms: '' });
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleCreate = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post('infirmary/visits', formData, buildModulesApiOptions(academicYear?.id));
+      setModalOpen(false);
+      setFormData({ studentId: '', reason: '', symptoms: '' });
+      await refetch();
+    } catch (e: any) {
+      alert(e?.response?.data?.message || e?.message || 'Erreur lors de la création de la visite');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -73,7 +93,10 @@ export default function InfirmaryVisits() {
       {/* Action Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center space-x-2">
-          <button className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold flex items-center hover:bg-blue-700 transition-colors shadow-sm">
+          <button
+            onClick={() => { setFormData({ studentId: '', reason: '', symptoms: '' }); setModalOpen(true); }}
+            className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold flex items-center hover:bg-blue-700 transition-colors shadow-sm"
+          >
             <Plus className="w-4 h-4 mr-2" />
             Nouveau Passage
           </button>
@@ -163,6 +186,63 @@ export default function InfirmaryVisits() {
       <button className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 text-sm font-bold hover:border-slate-300 hover:text-slate-500 transition-all">
         Afficher les visites des jours précédents
       </button>
+
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold">Nouvelle visite</h3>
+              <button onClick={() => setModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-900">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Student ID</label>
+                <input
+                  type="text"
+                  value={formData.studentId}
+                  onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="student-001"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Motif de visite</label>
+                <input
+                  type="text"
+                  value={formData.reason}
+                  onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="Maux de tête"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Symptômes</label>
+                <textarea
+                  value={formData.symptoms}
+                  onChange={(e) => setFormData({ ...formData, symptoms: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  rows={3}
+                  placeholder="Description des symptômes"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold">
+                Annuler
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={submitting}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {submitting ? 'Envoi...' : 'Créer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

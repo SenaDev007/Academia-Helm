@@ -6,9 +6,9 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { TrendingUp, DollarSign, Users, ShoppingCart, ArrowUpRight, ArrowDownRight, Wallet, Download, Clock, Loader2 } from 'lucide-react';
+import { TrendingUp, DollarSign, Users, ShoppingCart, ArrowUpRight, ArrowDownRight, Wallet, Download, Clock, Loader2, X } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
@@ -56,6 +56,37 @@ export default function EduCastMonetization() {
   const [data, setData] = useState<EarningsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [payoutModal, setPayoutModal] = useState(false);
+  const [payoutAmount, setPayoutAmount] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
+
+  const refresh = useCallback(async () => {
+    if (!academicYear?.id) return;
+    try {
+      const result = await modulesApi.get<EarningsData>('educast/teacher-earnings', buildModulesApiOptions(academicYear.id));
+      setData(result);
+    } catch (e: any) {
+      setError(e?.message || 'Erreur de chargement');
+    }
+  }, [academicYear?.id]);
+
+  const handlePayoutRequest = async () => {
+    if (!payoutAmount || payoutAmount <= 0) {
+      alert('Le montant doit être supérieur à 0');
+      return;
+    }
+    try {
+      setSubmitting(true);
+      await modulesApi.post('educast/payout-requests', { amount: Number(payoutAmount) }, buildModulesApiOptions(academicYear?.id));
+      setPayoutModal(false);
+      setPayoutAmount(0);
+      await refresh();
+    } catch (e: any) {
+      alert(e?.message || 'Erreur lors de la demande de paiement');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     if (!academicYear?.id) return;
@@ -225,10 +256,59 @@ export default function EduCastMonetization() {
                 </div>
               ))
             )}
+            <button
+              onClick={() => setPayoutModal(true)}
+              className="w-full py-4 bg-navy-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/10"
+            >
+              Demander un Paiement
+            </button>
             <button className="w-full py-4 bg-slate-50 hover:bg-slate-100 text-slate-400 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all">Voir tout l'historique</button>
           </div>
         </div>
       </div>
+
+      {/* Modal: Demander un paiement */}
+      {payoutModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-slate-900">Demander un paiement</h3>
+              <button onClick={() => setPayoutModal(false)} className="p-1 hover:bg-slate-100 rounded-lg">
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Montant (F CFA)</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={payoutAmount}
+                  onChange={(e) => setPayoutAmount(Number(e.target.value))}
+                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20"
+                  placeholder="Ex: 50000"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                onClick={() => setPayoutModal(false)}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handlePayoutRequest}
+                disabled={submitting}
+                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold hover:bg-navy-800 disabled:opacity-60 flex items-center gap-2"
+              >
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                {submitting ? 'Envoi...' : 'Demander'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -3,12 +3,12 @@
  * CANTEEN PAYMENTS — Branché sur backend réel
  * ============================================================================
  *
- * Endpoint : GET /modules-complementaires/canteen/payments?academicYearId=...
- * Endpoint : POST /modules-complementaires/canteen/payments
+ * Endpoint (lecture)   : GET  /modules-complementaires/canteen/payments
+ * Endpoint (création)  : POST /modules-complementaires/canteen/payments
  * ============================================================================
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Search, Filter, Download,
   CreditCard, Wallet, Smartphone,
@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface PaymentItem {
   id: string;
@@ -38,13 +39,43 @@ interface PaymentItem {
   [key: string]: any;
 }
 
+interface NewPaymentFormData {
+  studentId: string;
+  amount: number;
+  method: string;
+}
+
+const emptyPaymentForm: NewPaymentFormData = { studentId: '', amount: 0, method: 'ESPECES' };
+
 export default function CanteenPayments() {
   const { academicYear } = useModuleContext();
-  const { data: payments, loading, error } = useModulesList<PaymentItem>(
+  const [modalOpen, setModalOpen] = useState(false);
+  const [formData, setFormData] = useState<NewPaymentFormData>(emptyPaymentForm);
+  const [submitting, setSubmitting] = useState(false);
+  const { data: payments, loading, error, refetch } = useModulesList<PaymentItem>(
     'canteen',
     'payments',
     academicYear?.id,
   );
+
+  const handleCreate = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post(
+        'canteen/payments',
+        formData,
+        buildModulesApiOptions(academicYear?.id),
+      );
+      setModalOpen(false);
+      setFormData(emptyPaymentForm);
+      await refetch();
+    } catch (e: any) {
+      console.error('Erreur enregistrement paiement :', e?.message || e);
+      alert(e?.message || 'Erreur lors de l\'enregistrement du paiement');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const totalRevenue = payments
     .filter((p) => {
@@ -140,7 +171,10 @@ export default function CanteenPayments() {
             <button className="p-2.5 bg-white border border-gray-100 text-gray-400 hover:text-navy-600 rounded-2xl transition-all shadow-sm">
               <Filter className="w-4 h-4" />
             </button>
-            <button className="flex items-center space-x-2 px-6 py-2.5 bg-navy-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20">
+            <button
+              onClick={() => setModalOpen(true)}
+              className="flex items-center space-x-2 px-6 py-2.5 bg-navy-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20"
+            >
               <Plus className="w-4 h-4" />
               <span>Nouveau Paiement</span>
             </button>
@@ -187,6 +221,66 @@ export default function CanteenPayments() {
         </div>
         )}
       </div>
+
+      {/* Modal Nouveau Paiement */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <h3 className="text-lg font-black text-navy-900">Enregistrer un Paiement</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Élève (ID)</label>
+                <input
+                  type="text"
+                  placeholder="ex : student-123"
+                  value={formData.studentId}
+                  onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Montant (F CFA)</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={formData.amount}
+                  onChange={(e) => setFormData({ ...formData, amount: Number(e.target.value) })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Mode de paiement</label>
+                <select
+                  value={formData.method}
+                  onChange={(e) => setFormData({ ...formData, method: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                >
+                  <option value="ESPECES">Espèces</option>
+                  <option value="MOBILE_MONEY">Mobile Money</option>
+                  <option value="CARTE_BANCAIRE">Carte bancaire</option>
+                  <option value="VIREMENT">Virement</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                onClick={() => setModalOpen(false)}
+                disabled={submitting}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={submitting}
+                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {submitting ? 'Envoi…' : 'Enregistrer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

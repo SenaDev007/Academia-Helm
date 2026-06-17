@@ -37,6 +37,26 @@ export default function EduCastTeacherStudio() {
   const [channel, setChannel] = useState<TeacherChannel | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [channelName, setChannelName] = useState('');
+  const [channelSlogan, setChannelSlogan] = useState('');
+  const [channelDesc, setChannelDesc] = useState('');
+
+  const refresh = async () => {
+    if (!academicYear?.id) return;
+    try {
+      const result = await modulesApi.get<TeacherChannel>('educast/teacher-channel', buildModulesApiOptions(academicYear.id));
+      const resolved: TeacherChannel = Array.isArray(result)
+        ? result[0] ?? {}
+        : ((result as any)?.data ?? result ?? {});
+      setChannel(resolved);
+      setChannelName(resolved.name || resolved.title || '');
+      setChannelSlogan(resolved.slogan || resolved.tagline || '');
+      setChannelDesc('');
+    } catch (e: any) {
+      setError(e?.message || 'Erreur de chargement');
+    }
+  };
 
   useEffect(() => {
     if (!academicYear?.id) return;
@@ -50,7 +70,11 @@ export default function EduCastTeacherStudio() {
         const resolved: TeacherChannel = Array.isArray(result)
           ? result[0] ?? {}
           : ((result as any)?.data ?? result ?? {});
-        if (!cancelled) setChannel(resolved);
+        if (!cancelled) {
+          setChannel(resolved);
+          setChannelName(resolved.name || resolved.title || '');
+          setChannelSlogan(resolved.slogan || resolved.tagline || '');
+        }
       } catch (e: any) {
         if (!cancelled) setError(e?.message || 'Erreur de chargement');
       } finally {
@@ -61,6 +85,41 @@ export default function EduCastTeacherStudio() {
       cancelled = true;
     };
   }, [academicYear?.id]);
+
+  const handleSaveChannel = async () => {
+    try {
+      setSaving(true);
+      const payload = { name: channelName, slogan: channelSlogan, description: channelDesc };
+      if (channel?.id) {
+        await modulesApi.patch(`educast/teacher-channel/${channel.id}`, payload, buildModulesApiOptions(academicYear?.id));
+      } else {
+        await modulesApi.post('educast/teacher-channel', payload, buildModulesApiOptions(academicYear?.id));
+      }
+      alert('Chaîne enregistrée');
+      await refresh();
+    } catch (e: any) {
+      alert(e?.message || 'Erreur lors de l\'enregistrement');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handlePayoutRequest = async () => {
+    const amountStr = prompt('Montant du paiement (F CFA) :');
+    if (!amountStr) return;
+    const amount = Number(amountStr);
+    if (!amount || amount <= 0) {
+      alert('Montant invalide');
+      return;
+    }
+    try {
+      await modulesApi.post('educast/payout-requests', { amount }, buildModulesApiOptions(academicYear?.id));
+      alert('Demande de paiement envoyée');
+      await refresh();
+    } catch (e: any) {
+      alert(e?.message || 'Erreur lors de la demande de paiement');
+    }
+  };
 
   if (loading) {
     return (
@@ -129,7 +188,10 @@ export default function EduCastTeacherStudio() {
         <div className="lg:col-span-2 space-y-8">
           <div className="flex items-center justify-between">
             <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Gestion de ma Chaîne</h3>
-            <button className="flex items-center gap-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-navy-900/10 hover:bg-navy-800 transition-all">
+            <button
+              onClick={() => alert('Bientôt disponible')}
+              className="flex items-center gap-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-navy-900/10 hover:bg-navy-800 transition-all"
+            >
               <Plus className="w-4 h-4 text-[#C9A84C]" />
               Nouvelle Vidéo
             </button>
@@ -139,19 +201,26 @@ export default function EduCastTeacherStudio() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-3">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nom de la Chaîne</label>
-                <input type="text" defaultValue={name} className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-slate-900 font-black outline-none focus:ring-2 focus:ring-blue-500/20 transition-all" />
+                <input type="text" value={channelName} onChange={(e) => setChannelName(e.target.value)} className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-slate-900 font-black outline-none focus:ring-2 focus:ring-blue-500/20 transition-all" />
               </div>
               <div className="space-y-3">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Slogan</label>
-                <input type="text" defaultValue={slogan} className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-slate-900 font-black outline-none focus:ring-2 focus:ring-blue-500/20 transition-all" />
+                <input type="text" value={channelSlogan} onChange={(e) => setChannelSlogan(e.target.value)} className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-slate-900 font-black outline-none focus:ring-2 focus:ring-blue-500/20 transition-all" />
               </div>
             </div>
             <div className="space-y-3">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Description Longue</label>
-              <textarea rows={4} className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-slate-900 font-black outline-none focus:ring-2 focus:ring-blue-500/20 transition-all resize-none" placeholder="Décrivez votre vision pédagogique..."></textarea>
+              <textarea rows={4} value={channelDesc} onChange={(e) => setChannelDesc(e.target.value)} className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-slate-900 font-black outline-none focus:ring-2 focus:ring-blue-500/20 transition-all resize-none" placeholder="Décrivez votre vision pédagogique..."></textarea>
             </div>
             <div className="flex justify-end">
-              <button className="px-8 py-3 bg-[#C9A84C] text-navy-900 rounded-2xl font-black text-xs uppercase tracking-widest hover:scale-105 transition-all shadow-lg">Enregistrer les modifications</button>
+              <button
+                onClick={handleSaveChannel}
+                disabled={saving}
+                className="px-8 py-3 bg-[#C9A84C] text-navy-900 rounded-2xl font-black text-xs uppercase tracking-widest hover:scale-105 transition-all shadow-lg disabled:opacity-60 flex items-center gap-2"
+              >
+                {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+                Enregistrer les modifications
+              </button>
             </div>
           </div>
         </div>
@@ -184,10 +253,20 @@ export default function EduCastTeacherStudio() {
                   </div>
                   <button className="text-[10px] font-black text-white uppercase tracking-widest hover:underline">Détails</button>
                 </div>
-                <button className="w-full py-4 bg-white/10 hover:bg-white/20 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all">Demander un paiement</button>
+                <button
+                  onClick={handlePayoutRequest}
+                  className="w-full py-4 bg-white/10 hover:bg-white/20 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all"
+                >
+                  Demander un paiement
+                </button>
               </div>
             ) : (
-              <button className="w-full py-4 bg-navy-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all">Demander l'éligibilité</button>
+              <button
+                onClick={() => alert('Bientôt disponible')}
+                className="w-full py-4 bg-navy-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all"
+              >
+                Demander l'éligibilité
+              </button>
             )}
           </div>
 

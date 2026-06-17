@@ -30,6 +30,19 @@ export default function ShopSettings() {
   const [settings, setSettings] = useState<ShopSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSave = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.put('shop/settings', settings ?? {}, buildModulesApiOptions(academicYear?.id));
+      alert('Paramètres enregistrés avec succès');
+    } catch (e: any) {
+      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de l\'enregistrement');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     if (!academicYear?.id) {
@@ -85,9 +98,13 @@ export default function ShopSettings() {
           <h3 className="text-xl font-black text-navy-900 uppercase tracking-tight">Configuration Boutique</h3>
           <p className="text-sm text-gray-400 font-medium">Personnalisez le fonctionnement de l'économat et du point de vente</p>
         </div>
-        <button className="flex items-center space-x-2 px-8 py-3 bg-navy-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20 active:scale-95">
+        <button
+          onClick={handleSave}
+          disabled={submitting}
+          className="flex items-center space-x-2 px-8 py-3 bg-navy-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20 active:scale-95 disabled:opacity-50"
+        >
           <Save className="w-4 h-4" />
-          <span>Enregistrer les modifications</span>
+          <span>{submitting ? 'Enregistrement...' : 'Enregistrer les modifications'}</span>
         </button>
       </div>
 

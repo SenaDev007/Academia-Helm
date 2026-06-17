@@ -6,10 +6,12 @@
 
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Megaphone, Calendar, Users, Eye, MoreHorizontal, Plus, Bell, MessageSquare, Loader2 } from 'lucide-react';
+import { Megaphone, Calendar, Users, Eye, MoreHorizontal, Plus, Bell, MessageSquare, Loader2, X } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface AnnouncementItem {
   id: string | number;
@@ -31,9 +33,33 @@ interface AnnouncementItem {
   priority?: string;
 }
 
+const EMPTY_FORM = { title: '', content: '', targetAudience: 'TOUS' };
+
 export default function EduCastAnnouncements() {
   const { academicYear } = useModuleContext();
-  const { data: announcements, loading, error } = useModulesList<AnnouncementItem>('educast', 'announcements', academicYear?.id);
+  const { data: announcements, loading, error, refetch } = useModulesList<AnnouncementItem>('educast', 'announcements', academicYear?.id);
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [formData, setFormData] = useState(EMPTY_FORM);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleCreate = async () => {
+    if (!formData.title || !formData.content) {
+      alert('Le titre et le contenu sont requis');
+      return;
+    }
+    try {
+      setSubmitting(true);
+      await modulesApi.post('educast/announcements', formData, buildModulesApiOptions(academicYear?.id));
+      setModalOpen(false);
+      setFormData(EMPTY_FORM);
+      await refetch();
+    } catch (e: any) {
+      alert(e?.message || 'Erreur lors de la création de l\'annonce');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -60,7 +86,10 @@ export default function EduCastAnnouncements() {
           </h3>
           <p className="text-slate-500 text-sm font-medium">Communiquez officiellement via des formats audio/vidéo.</p>
         </div>
-        <button className="px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-navy-900/10">
+        <button
+          onClick={() => setModalOpen(true)}
+          className="px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-navy-900/10"
+        >
           Créer une Annonce
         </button>
       </div>
@@ -130,6 +159,72 @@ export default function EduCastAnnouncements() {
               </motion.div>
             );
           })}
+        </div>
+      )}
+
+      {/* Modal: Créer une annonce */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-slate-900">Créer une annonce</h3>
+              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-slate-100 rounded-lg">
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Titre</label>
+                <input
+                  type="text"
+                  value={formData.title}
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-amber-500/20"
+                  placeholder="Ex: Rentrée scolaire 2026"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Contenu</label>
+                <textarea
+                  rows={4}
+                  value={formData.content}
+                  onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-amber-500/20 resize-none"
+                  placeholder="Contenu de l'annonce..."
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Audience cible</label>
+                <select
+                  value={formData.targetAudience}
+                  onChange={(e) => setFormData({ ...formData, targetAudience: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-amber-500/20"
+                >
+                  <option value="TOUS">Tous</option>
+                  <option value="ELEVES">Élèves</option>
+                  <option value="PARENTS">Parents</option>
+                  <option value="ENSEIGNANTS">Enseignants</option>
+                  <option value="PERSONNEL">Personnel</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                onClick={() => setModalOpen(false)}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={submitting}
+                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold hover:bg-navy-800 disabled:opacity-60 flex items-center gap-2"
+              >
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                {submitting ? 'Envoi...' : 'Publier'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

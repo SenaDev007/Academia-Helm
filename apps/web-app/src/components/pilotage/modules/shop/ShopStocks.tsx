@@ -6,11 +6,12 @@
 
 'use client';
 
-import React from 'react';
-import { Loader2, Package, Search, Filter, AlertTriangle, History, TrendingDown, TrendingUp, BarChart3, MapPin, MoreVertical, Edit, RefreshCw } from 'lucide-react';
+import React, { useState } from 'react';
+import { Loader2, Package, Search, Filter, AlertTriangle, History, TrendingDown, TrendingUp, BarChart3, MapPin, MoreVertical, Edit, RefreshCw, X } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface StockItem {
   id?: string;
@@ -34,11 +35,34 @@ interface StockItem {
 
 export default function ShopStocks() {
   const { academicYear } = useModuleContext();
-  const { data: stocks, loading, error } = useModulesList<StockItem>(
+  const { data: stocks, loading, error, refetch } = useModulesList<StockItem>(
     'shop',
     'stocks',
     academicYear?.id,
   );
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [stockForm, setStockForm] = useState({ productId: '', quantity: 0 });
+
+  const handleUpdateStock = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.put('shop/stocks', stockForm, buildModulesApiOptions(academicYear?.id));
+      setModalOpen(false);
+      setStockForm({ productId: '', quantity: 0 });
+      await refetch();
+    } catch (e: any) {
+      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la mise à jour du stock');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const openStockModal = (productId?: string) => {
+    setStockForm({ productId: productId ?? '', quantity: 0 });
+    setModalOpen(true);
+  };
 
   const safeStocks = stocks ?? [];
 
@@ -100,9 +124,12 @@ export default function ShopStocks() {
                 <Filter className="w-4 h-4" />
                 <span>Localisation</span>
               </button>
-              <button className="flex items-center space-x-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-navy-800 transition-all">
+              <button
+                onClick={() => openStockModal()}
+                className="flex items-center space-x-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-navy-800 transition-all"
+              >
                 <RefreshCw className="w-4 h-4" />
-                <span>Inventaire Physique</span>
+                <span>Mettre à jour le Stock</span>
               </button>
             </div>
           </div>
@@ -147,6 +174,7 @@ export default function ShopStocks() {
                               threshold={threshold}
                               lastMvt={lastMvt}
                               status={status}
+                              onEdit={() => openStockModal(s?.id)}
                             />
                           );
                         })
@@ -192,6 +220,34 @@ export default function ShopStocks() {
            </div>
         </div>
       </div>
+
+      {/* Stock Update Modal */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-navy-900">Mettre à jour le Stock</h3>
+              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">ID Produit</label>
+                <input type="text" value={stockForm.productId} onChange={(e) => setStockForm({ ...stockForm, productId: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Quantité</label>
+                <input type="number" value={stockForm.quantity} onChange={(e) => setStockForm({ ...stockForm, quantity: Number(e.target.value) })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-gray-200 rounded-xl text-sm font-bold">Annuler</button>
+              <button onClick={handleUpdateStock} disabled={submitting} className="px-4 py-2 bg-navy-900 text-white rounded-xl text-sm font-bold disabled:opacity-50">
+                {submitting ? 'Envoi...' : 'Mettre à jour'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -215,7 +271,7 @@ function StockStatCard({ label, value, icon: Icon, color }: any) {
   );
 }
 
-function StockRow({ name, location, qty, threshold, lastMvt, status }: any) {
+function StockRow({ name, location, qty, threshold, lastMvt, status, onEdit }: any) {
   return (
     <tr className="hover:bg-gray-50/50 transition-all group">
       <td className="px-8 py-6">
@@ -239,7 +295,7 @@ function StockRow({ name, location, qty, threshold, lastMvt, status }: any) {
       <td className="px-8 py-6 text-[10px] text-gray-400 font-black uppercase tracking-tight">{lastMvt}</td>
       <td className="px-8 py-6">
          <div className="flex items-center space-x-2">
-           <button className="p-2.5 bg-gray-50 text-gray-400 rounded-xl hover:bg-navy-50 hover:text-navy-600 transition-all">
+           <button onClick={onEdit} className="p-2.5 bg-gray-50 text-gray-400 rounded-xl hover:bg-navy-50 hover:text-navy-600 transition-all">
              <Edit className="w-4 h-4" />
            </button>
            <button className="p-2.5 bg-gray-50 text-gray-400 rounded-xl hover:bg-gray-100 transition-all">

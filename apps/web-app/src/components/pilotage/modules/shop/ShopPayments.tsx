@@ -6,11 +6,12 @@
 
 'use client';
 
-import React from 'react';
-import { Loader2, Wallet, CreditCard, Banknote, History, Search, Filter, ArrowUpRight, ArrowDownLeft, Plus, Smartphone, User } from 'lucide-react';
+import React, { useState } from 'react';
+import { Loader2, Wallet, CreditCard, Banknote, History, Search, Filter, ArrowUpRight, ArrowDownLeft, Plus, Smartphone, User, X } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface SaleItem {
   id?: string;
@@ -32,11 +33,45 @@ interface SaleItem {
 
 export default function ShopPayments() {
   const { academicYear } = useModuleContext();
-  const { data: sales, loading, error } = useModulesList<SaleItem>(
+  const { data: sales, loading, error, refetch } = useModulesList<SaleItem>(
     'shop',
     'sales',
     academicYear?.id,
   );
+
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [paymentForm, setPaymentForm] = useState({ amount: 0, method: 'cash', customerId: '' });
+  const [walletAmount, setWalletAmount] = useState(0);
+
+  const handleRecordPayment = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post('shop/sales', paymentForm, buildModulesApiOptions(academicYear?.id));
+      setPaymentModalOpen(false);
+      setPaymentForm({ amount: 0, method: 'cash', customerId: '' });
+      await refetch();
+    } catch (e: any) {
+      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de l\'enregistrement du paiement');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleWalletRecharge = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post('shop/wallet/recharge', { amount: walletAmount }, buildModulesApiOptions(academicYear?.id));
+      setWalletModalOpen(false);
+      setWalletAmount(0);
+      await refetch();
+    } catch (e: any) {
+      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la recharge');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const safeSales = sales ?? [];
 
@@ -88,7 +123,7 @@ export default function ShopPayments() {
             </div>
 
             <div className="grid grid-cols-3 gap-6">
-              <QuickAction label="Recharger" icon={Plus} />
+              <QuickAction label="Recharger" icon={Plus} onClick={() => setWalletModalOpen(true)} />
               <QuickAction label="Historique" icon={History} />
               <QuickAction label="Réglages" icon={Smartphone} />
             </div>
@@ -104,8 +139,11 @@ export default function ShopPayments() {
               <PaymentMethodItem icon={CreditCard} label="Carte Bancaire" percent={10} color="amber" />
             </div>
           </div>
-          <button className="w-full mt-8 py-3 bg-gray-50 text-navy-900 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-gray-100 transition-all">
-            Voir Analyse de Paiement
+          <button
+            onClick={() => setPaymentModalOpen(true)}
+            className="w-full mt-8 py-3 bg-gray-50 text-navy-900 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-gray-100 transition-all"
+          >
+            Enregistrer un Paiement
           </button>
         </div>
       </div>
@@ -170,13 +208,75 @@ export default function ShopPayments() {
           </table>
         </div>
       </div>
+
+      {/* Payment Modal */}
+      {paymentModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-navy-900">Enregistrer un Paiement</h3>
+              <button onClick={() => setPaymentModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Montant</label>
+                <input type="number" value={paymentForm.amount} onChange={(e) => setPaymentForm({ ...paymentForm, amount: Number(e.target.value) })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Méthode</label>
+                <select value={paymentForm.method} onChange={(e) => setPaymentForm({ ...paymentForm, method: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20">
+                  <option value="cash">Espèces</option>
+                  <option value="wallet">Wallet</option>
+                  <option value="card">Carte</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">ID Client</label>
+                <input type="text" value={paymentForm.customerId} onChange={(e) => setPaymentForm({ ...paymentForm, customerId: e.target.value })} placeholder="Optionnel" className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setPaymentModalOpen(false)} className="px-4 py-2 border border-gray-200 rounded-xl text-sm font-bold">Annuler</button>
+              <button onClick={handleRecordPayment} disabled={submitting} className="px-4 py-2 bg-navy-900 text-white rounded-xl text-sm font-bold disabled:opacity-50">
+                {submitting ? 'Envoi...' : 'Enregistrer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Wallet Recharge Modal */}
+      {walletModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-navy-900">Recharger le Portefeuille</h3>
+              <button onClick={() => setWalletModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Montant</label>
+              <input type="number" value={walletAmount} onChange={(e) => setWalletAmount(Number(e.target.value))} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setWalletModalOpen(false)} className="px-4 py-2 border border-gray-200 rounded-xl text-sm font-bold">Annuler</button>
+              <button onClick={handleWalletRecharge} disabled={submitting} className="px-4 py-2 bg-navy-900 text-white rounded-xl text-sm font-bold disabled:opacity-50">
+                {submitting ? 'Envoi...' : 'Recharger'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function QuickAction({ label, icon: Icon }: any) {
+function QuickAction({ label, icon: Icon, onClick }: any) {
   return (
-    <button className="flex flex-col items-center justify-center space-y-3 p-6 rounded-3xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex flex-col items-center justify-center space-y-3 p-6 rounded-3xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group"
+    >
       <div className="p-3 bg-white/10 rounded-xl group-hover:scale-110 transition-transform">
         <Icon className="w-5 h-5" />
       </div>

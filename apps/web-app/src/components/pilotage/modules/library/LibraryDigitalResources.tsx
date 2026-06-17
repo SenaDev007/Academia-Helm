@@ -3,16 +3,19 @@
  * LIBRARY DIGITAL RESOURCES — Branché sur backend réel
  * ============================================================================
  *
- * Endpoint : GET /modules-complementaires/library/digital-resources?academicYearId=...
+ * Endpoint (lecture)   : GET  /modules-complementaires/library/digital-resources
+ * Endpoint (création)  : POST /modules-complementaires/library/digital-resources
  * ============================================================================
  */
 
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Globe, FileText, Video, Headphones, Link as LinkIcon, Search, Eye, Download, Plus, Filter, MoreVertical, Loader2 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface DigitalResourceItem {
   id: string;
@@ -28,13 +31,43 @@ interface DigitalResourceItem {
   [key: string]: any;
 }
 
+interface NewDigitalResourceFormData {
+  title: string;
+  url: string;
+  type: string;
+}
+
+const emptyDigitalForm: NewDigitalResourceFormData = { title: '', url: '', type: 'PDF' };
+
 export default function LibraryDigitalResources() {
   const { academicYear } = useModuleContext();
-  const { data: resources, loading, error } = useModulesList<DigitalResourceItem>(
+  const [modalOpen, setModalOpen] = useState(false);
+  const [formData, setFormData] = useState<NewDigitalResourceFormData>(emptyDigitalForm);
+  const [submitting, setSubmitting] = useState(false);
+  const { data: resources, loading, error, refetch } = useModulesList<DigitalResourceItem>(
     'library',
     'digital-resources',
     academicYear?.id,
   );
+
+  const handleCreate = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post(
+        'library/digital-resources',
+        formData,
+        buildModulesApiOptions(academicYear?.id),
+      );
+      setModalOpen(false);
+      setFormData(emptyDigitalForm);
+      await refetch();
+    } catch (e: any) {
+      console.error('Erreur création ressource numérique :', e?.message || e);
+      alert(e?.message || 'Erreur lors de la création de la ressource numérique');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const getTypeIcon = (type: string) => {
     switch ((type ?? '').toUpperCase()) {
@@ -77,7 +110,10 @@ export default function LibraryDigitalResources() {
           <button className="p-3 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-blue-600 transition-all">
             <Filter className="w-5 h-5" />
           </button>
-          <button className="flex items-center space-x-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/10">
+          <button
+            onClick={() => setModalOpen(true)}
+            className="flex items-center space-x-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/10"
+          >
             <Plus className="w-4 h-4 text-[#C9A84C]" />
             <span>Publier une ressource</span>
           </button>
@@ -139,6 +175,66 @@ export default function LibraryDigitalResources() {
           );
         })}
       </div>
+      )}
+
+      {/* Modal Publier une ressource numérique */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <h3 className="text-lg font-black text-slate-900">Publier une ressource numérique</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Titre</label>
+                <input
+                  type="text"
+                  placeholder="Titre de la ressource"
+                  value={formData.title}
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">URL</label>
+                <input
+                  type="url"
+                  placeholder="https://..."
+                  value={formData.url}
+                  onChange={(e) => setFormData({ ...formData, url: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Type</label>
+                <select
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                >
+                  <option value="PDF">PDF</option>
+                  <option value="VIDEO">Vidéo</option>
+                  <option value="AUDIO">Audio</option>
+                  <option value="LINK">Lien</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                onClick={() => setModalOpen(false)}
+                disabled={submitting}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={submitting}
+                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {submitting ? 'Envoi…' : 'Publier'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

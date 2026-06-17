@@ -10,7 +10,8 @@ import React, { useState } from 'react';
 import { formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
-import { Loader2, Search, Filter, Plus, Package, Grid, List, Tag, ChevronRight, Bookmark } from 'lucide-react';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+import { Loader2, Search, Filter, Plus, Package, Grid, List, Tag, ChevronRight, Bookmark, X } from 'lucide-react';
 
 interface ProductItem {
   id?: string;
@@ -40,16 +41,50 @@ export default function ShopCatalog() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const { academicYear } = useModuleContext();
 
-  const { data: categories, loading: catLoading } = useModulesList<CategoryItem>(
+  const { data: categories, loading: catLoading, refetch: refetchCategories } = useModulesList<CategoryItem>(
     'shop',
     'categories',
     academicYear?.id,
   );
-  const { data: products, loading, error } = useModulesList<ProductItem>(
+  const { data: products, loading, error, refetch } = useModulesList<ProductItem>(
     'shop',
     'products',
     academicYear?.id,
   );
+
+  const [productModalOpen, setProductModalOpen] = useState(false);
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [productForm, setProductForm] = useState({ name: '', price: 0, categoryId: '', stock: 0, description: '' });
+  const [categoryForm, setCategoryForm] = useState({ name: '' });
+
+  const handleCreateProduct = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post('shop/products', productForm, buildModulesApiOptions(academicYear?.id));
+      setProductModalOpen(false);
+      setProductForm({ name: '', price: 0, categoryId: '', stock: 0, description: '' });
+      await refetch();
+    } catch (e: any) {
+      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création du produit');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCreateCategory = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post('shop/categories', categoryForm, buildModulesApiOptions(academicYear?.id));
+      setCategoryModalOpen(false);
+      setCategoryForm({ name: '' });
+      await refetchCategories();
+    } catch (e: any) {
+      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création de la catégorie');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading || catLoading) {
     return (
@@ -79,10 +114,19 @@ export default function ShopCatalog() {
       <div className="flex flex-col lg:flex-row gap-8">
         <div className="lg:w-64 space-y-6">
           <div className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm">
-            <h3 className="font-black text-navy-900 uppercase tracking-tight mb-6 flex items-center space-x-2">
-              <Tag className="w-4 h-4 text-navy-600" />
-              <span>Catégories</span>
-            </h3>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="font-black text-navy-900 uppercase tracking-tight flex items-center space-x-2">
+                <Tag className="w-4 h-4 text-navy-600" />
+                <span>Catégories</span>
+              </h3>
+              <button
+                onClick={() => setCategoryModalOpen(true)}
+                className="p-1.5 bg-navy-50 text-navy-600 rounded-lg hover:bg-navy-100 transition-all"
+                title="Ajouter une catégorie"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
             <div className="space-y-2">
               {safeCategories.length === 0 ? (
                 <p className="text-xs text-gray-400 text-center py-4">Aucune catégorie</p>
@@ -142,7 +186,10 @@ export default function ShopCatalog() {
                   <List className="w-4 h-4" />
                 </button>
               </div>
-              <button className="flex items-center space-x-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-navy-800 transition-all shadow-lg shadow-navy-900/20">
+              <button
+                onClick={() => setProductModalOpen(true)}
+                className="flex items-center space-x-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-navy-800 transition-all shadow-lg shadow-navy-900/20"
+              >
                 <Plus className="w-4 h-4" />
                 <span>Ajouter un Article</span>
               </button>
@@ -163,6 +210,69 @@ export default function ShopCatalog() {
           )}
         </div>
       </div>
+
+      {/* Modals */}
+      {productModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-navy-900">Nouvel Article</h3>
+              <button onClick={() => setProductModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Nom</label>
+                <input type="text" value={productForm.name} onChange={(e) => setProductForm({ ...productForm, name: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Prix</label>
+                  <input type="number" value={productForm.price} onChange={(e) => setProductForm({ ...productForm, price: Number(e.target.value) })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Stock</label>
+                  <input type="number" value={productForm.stock} onChange={(e) => setProductForm({ ...productForm, stock: Number(e.target.value) })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">ID Catégorie</label>
+                <input type="text" value={productForm.categoryId} onChange={(e) => setProductForm({ ...productForm, categoryId: e.target.value })} placeholder="Optionnel" className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Description</label>
+                <textarea value={productForm.description} onChange={(e) => setProductForm({ ...productForm, description: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20 h-20" />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setProductModalOpen(false)} className="px-4 py-2 border border-gray-200 rounded-xl text-sm font-bold">Annuler</button>
+              <button onClick={handleCreateProduct} disabled={submitting} className="px-4 py-2 bg-navy-900 text-white rounded-xl text-sm font-bold disabled:opacity-50">
+                {submitting ? 'Envoi...' : 'Créer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {categoryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-navy-900">Nouvelle Catégorie</h3>
+              <button onClick={() => setCategoryModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Nom de la catégorie</label>
+              <input type="text" value={categoryForm.name} onChange={(e) => setCategoryForm({ name: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setCategoryModalOpen(false)} className="px-4 py-2 border border-gray-200 rounded-xl text-sm font-bold">Annuler</button>
+              <button onClick={handleCreateCategory} disabled={submitting} className="px-4 py-2 bg-navy-900 text-white rounded-xl text-sm font-bold disabled:opacity-50">
+                {submitting ? 'Envoi...' : 'Créer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

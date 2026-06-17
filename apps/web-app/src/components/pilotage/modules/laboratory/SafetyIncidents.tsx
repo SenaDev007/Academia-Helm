@@ -10,6 +10,7 @@
 // Seul POST labs/incidents existe (création). Les données ci-dessous sont des mocks.
 // Une fois l'endpoint GET exposé, brancher via useModulesList('labs', 'incidents', academicYear?.id).
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   ShieldAlert,
@@ -18,10 +19,18 @@ import {
   Plus,
   Eye,
   CheckCircle2,
-  Activity
+  Activity,
+  X
 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 export default function SafetyIncidents() {
+  const { academicYear } = useModuleContext();
+  const [modalOpen, setModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [incidentForm, setIncidentForm] = useState({ description: '', severity: 'LOW', labId: '' });
+
   // MOCK UI — Backend endpoint GET labs/incidents non disponible.
   const incidents = [
     { id: 'INC-402', type: 'CASSE MATÉRIEL', item: 'Éprouvette graduée', severity: 'LOW', date: '14/05/2026', status: 'RESOLVED' },
@@ -29,6 +38,20 @@ export default function SafetyIncidents() {
     { id: 'INC-404', type: 'BLESSURE LÉGÈRE', item: 'Coupure (verre)', severity: 'MEDIUM', date: '10/05/2026', status: 'RESOLVED' },
     { id: 'INC-405', type: 'DÉFAUT ÉLECTRIQUE', item: 'Prise paillasse 4', severity: 'CRITICAL', date: '08/05/2026', status: 'OPEN' },
   ];
+
+  const handleCreateIncident = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post('labs/incidents', incidentForm, buildModulesApiOptions(academicYear?.id));
+      setModalOpen(false);
+      setIncidentForm({ description: '', severity: 'LOW', labId: '' });
+      alert('Incident signalé avec succès');
+    } catch (e: any) {
+      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors du signalement de l\'incident');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -48,7 +71,10 @@ export default function SafetyIncidents() {
             1 incident critique non résolu (Défaut électrique Bâtiment A). L'accès au Lab de Physique est restreint jusqu'à nouvel ordre.
           </p>
         </div>
-        <button className="px-6 py-3 bg-rose-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-rose-700 transition-all shadow-xl shadow-rose-600/20">
+        <button
+          onClick={() => setModalOpen(true)}
+          className="px-6 py-3 bg-rose-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-rose-700 transition-all shadow-xl shadow-rose-600/20"
+        >
           Déclarer un Incident
         </button>
       </div>
@@ -138,6 +164,43 @@ export default function SafetyIncidents() {
           </div>
         </div>
       </div>
+
+      {/* Incident Modal */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-slate-900">Signaler un Incident</h3>
+              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Description</label>
+                <textarea value={incidentForm.description} onChange={(e) => setIncidentForm({ ...incidentForm, description: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20 h-20" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Gravité</label>
+                <select value={incidentForm.severity} onChange={(e) => setIncidentForm({ ...incidentForm, severity: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20">
+                  <option value="LOW">Faible</option>
+                  <option value="MEDIUM">Moyenne</option>
+                  <option value="HIGH">Élevée</option>
+                  <option value="CRITICAL">Critique</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">ID Laboratoire</label>
+                <input type="text" value={incidentForm.labId} onChange={(e) => setIncidentForm({ ...incidentForm, labId: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20" />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-bold">Annuler</button>
+              <button onClick={handleCreateIncident} disabled={submitting} className="px-4 py-2 bg-rose-600 text-white rounded-xl text-sm font-bold disabled:opacity-50">
+                {submitting ? 'Envoi...' : 'Signaler'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

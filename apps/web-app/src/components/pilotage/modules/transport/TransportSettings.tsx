@@ -27,6 +27,8 @@ export default function TransportSettings() {
   const [settings, setSettings] = useState<TransportSettingsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (!academicYear?.id) {
@@ -66,6 +68,20 @@ export default function TransportSettings() {
     );
   }
 
+  const handleSave = async () => {
+    try {
+      setSubmitting(true);
+      setSuccessMsg(null);
+      await modulesApi.put('transport/settings', settings ?? DEFAULT_SETTINGS, buildModulesApiOptions(academicYear?.id));
+      setSuccessMsg('Paramètres enregistrés avec succès.');
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (e: any) {
+      alert(e?.response?.data?.message || e?.message || 'Erreur lors de l\'enregistrement');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const sections = [
     { title: 'Types de véhicules', icon: Truck, items: settings?.vehicleTypes || DEFAULT_SETTINGS.vehicleTypes! },
     { title: 'Zones de transport', icon: Map, items: settings?.zones || DEFAULT_SETTINGS.zones! },
@@ -81,12 +97,22 @@ export default function TransportSettings() {
         </div>
       )}
 
+      {successMsg && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-800">
+          ✓ {successMsg}
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <h3 className="text-xl font-black text-slate-900 tracking-tighter uppercase flex items-center gap-2">
           <Settings className="w-6 h-6 text-slate-400" /> Configuration du module
         </h3>
-        <button className="flex items-center gap-2 px-8 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20">
-          <Save className="w-4 h-4" /> Enregistrer les modifications
+        <button
+          onClick={handleSave}
+          disabled={submitting}
+          className="flex items-center gap-2 px-8 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20 disabled:opacity-50"
+        >
+          <Save className="w-4 h-4" /> {submitting ? 'Enregistrement...' : 'Enregistrer les modifications'}
         </button>
       </div>
 

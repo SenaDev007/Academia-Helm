@@ -63,7 +63,10 @@ export default function QHSECompliance() {
               Votre établissement est actuellement conforme à <span className="font-black text-white underline">{overall}%</span> des exigences réglementaires QHSE.
             </p>
             <div className="flex items-center gap-4">
-               <button className="px-8 py-4 bg-white text-emerald-600 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-white/10 hover:bg-emerald-50 transition-all">
+               <button
+                  onClick={() => alert('Bientôt disponible')}
+                  className="px-8 py-4 bg-white text-emerald-600 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-white/10 hover:bg-emerald-50 transition-all"
+               >
                   Télécharger Certificat
                </button>
             </div>

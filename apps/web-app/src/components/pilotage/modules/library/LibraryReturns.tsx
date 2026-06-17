@@ -3,7 +3,8 @@
  * LIBRARY RETURNS (RETOURS) — Branché sur backend réel
  * ============================================================================
  *
- * Endpoint : GET /modules-complementaires/library/loans?status=returned&academicYearId=...
+ * Endpoint (lecture)  : GET  /modules-complementaires/library/loans?status=returned
+ * Endpoint (retour)   : POST /modules-complementaires/library/loans/:id/return
  * ============================================================================
  */
 
@@ -14,6 +15,7 @@ import { motion } from 'framer-motion';
 import { ArrowDownCircle, CheckCircle2, AlertCircle, Calendar, ShieldCheck, Search, Loader2 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface LoanItem {
   id: string;
@@ -38,12 +40,30 @@ interface LoanItem {
 export default function LibraryReturns() {
   const { academicYear } = useModuleContext();
   const [search, setSearch] = useState('');
-  const { data: returns, loading, error } = useModulesList<LoanItem>(
+  const [returningId, setReturningId] = useState<string | null>(null);
+  const { data: returns, loading, error, refetch } = useModulesList<LoanItem>(
     'library',
     'loans',
     academicYear?.id,
     { status: 'returned', ...(search ? { search } : {}) },
   );
+
+  const handleReturn = async (loanId: string) => {
+    try {
+      setReturningId(loanId);
+      await modulesApi.post(
+        `library/loans/${loanId}/return`,
+        {},
+        buildModulesApiOptions(academicYear?.id),
+      );
+      await refetch();
+    } catch (e: any) {
+      console.error('Erreur validation retour :', e?.message || e);
+      alert(`Erreur lors de la validation du retour : ${e?.message || 'Erreur inconnue'}`);
+    } finally {
+      setReturningId(null);
+    }
+  };
 
   const formatPenalty = (item: LoanItem) => {
     if (item.penalty) return item.penalty;
@@ -81,9 +101,16 @@ export default function LibraryReturns() {
               className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs outline-none shadow-sm"
             />
           </div>
-          <button className="flex items-center space-x-2 px-6 py-2 bg-navy-900 text-white rounded-xl font-black text-xs uppercase tracking-widest">
+          <button
+            onClick={() => {
+              const id = window.prompt('ID de l\'emprunt à retourner :');
+              if (id) handleReturn(id.trim());
+            }}
+            disabled={!!returningId}
+            className="flex items-center space-x-2 px-6 py-2 bg-navy-900 text-white rounded-xl font-black text-xs uppercase tracking-widest disabled:opacity-50"
+          >
             <ArrowDownCircle className="w-4 h-4 text-[#C9A84C]" />
-            <span>Valider Retour</span>
+            <span>{returningId ? 'En cours…' : 'Valider Retour'}</span>
           </button>
         </div>
       </div>

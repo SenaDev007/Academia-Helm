@@ -1,20 +1,78 @@
 /**
  * ============================================================================
- * LIBRARY INVENTORY
+ * LIBRARY INVENTORY — Branché sur backend réel
  * ============================================================================
  *
- * TODO: endpoint non disponible — garder mock. Le backend expose seulement
- * POST library/inventory/campaigns et POST library/inventory/scan (pas de GET).
- * La récupération de la liste des campagnes n'est pas encore implémentée côté backend.
+ * Endpoint (création campagne) : POST /modules-complementaires/library/inventory/campaigns
+ * Endpoint (scan exemplaire)   : POST /modules-complementaires/library/inventory/scan
+ *
+ * Note : la liste des campagnes reste en mock car le backend n'expose pas
+ * encore de GET dédié pour les récupérer.
  * ============================================================================
  */
 
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ClipboardCheck, Barcode, ShieldCheck, AlertCircle, Plus, ChevronRight, PackageSearch } from 'lucide-react';
+import { ClipboardCheck, Barcode, ShieldCheck, AlertCircle, Plus, ChevronRight, PackageSearch, Loader2 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+
+interface NewCampaignFormData {
+  title: string;
+  period: string;
+}
+
+const emptyCampaignForm: NewCampaignFormData = { title: '', period: '' };
 
 export default function LibraryInventory() {
+  const { academicYear } = useModuleContext();
+  const [modalOpen, setModalOpen] = useState(false);
+  const [scanModalOpen, setScanModalOpen] = useState(false);
+  const [campaignForm, setCampaignForm] = useState<NewCampaignFormData>(emptyCampaignForm);
+  const [scanCode, setScanCode] = useState('');
+  const [submittingCampaign, setSubmittingCampaign] = useState(false);
+  const [submittingScan, setSubmittingScan] = useState(false);
+
+  const handleCreateCampaign = async () => {
+    try {
+      setSubmittingCampaign(true);
+      await modulesApi.post(
+        'library/inventory/campaigns',
+        campaignForm,
+        buildModulesApiOptions(academicYear?.id),
+      );
+      setModalOpen(false);
+      setCampaignForm(emptyCampaignForm);
+      alert('Campagne d\'inventaire créée avec succès.');
+    } catch (e: any) {
+      console.error('Erreur création campagne :', e?.message || e);
+      alert(e?.message || 'Erreur lors de la création de la campagne');
+    } finally {
+      setSubmittingCampaign(false);
+    }
+  };
+
+  const handleScan = async () => {
+    try {
+      setSubmittingScan(true);
+      await modulesApi.post(
+        'library/inventory/scan',
+        { code: scanCode },
+        buildModulesApiOptions(academicYear?.id),
+      );
+      setScanModalOpen(false);
+      setScanCode('');
+      alert('Exemplaire scanné avec succès.');
+    } catch (e: any) {
+      console.error('Erreur scan :', e?.message || e);
+      alert(e?.message || 'Erreur lors du scan');
+    } finally {
+      setSubmittingScan(false);
+    }
+  };
+
   const campaigns = [
     { id: 'INV-2026-01', title: 'Inventaire Annuel - Section Collège', period: 'Mai 2026', progress: 65, status: 'IN_PROGRESS', found: 420, total: 650 },
     { id: 'INV-2025-02', title: 'Contrôle Trimestriel - Littérature', period: 'Janv 2026', progress: 100, status: 'VALIDATED', found: 145, total: 148 },
@@ -33,11 +91,17 @@ export default function LibraryInventory() {
           <p className="text-slate-500 text-sm font-medium">Contrôlez l'intégrité de votre patrimoine documentaire.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center space-x-2 px-6 py-3 bg-white border border-slate-200 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-50 transition-all">
+          <button
+            onClick={() => setScanModalOpen(true)}
+            className="flex items-center space-x-2 px-6 py-3 bg-white border border-slate-200 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-50 transition-all"
+          >
             <Barcode className="w-4 h-4 text-slate-400" />
             <span>Mode Scan</span>
           </button>
-          <button className="flex items-center space-x-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/10">
+          <button
+            onClick={() => setModalOpen(true)}
+            className="flex items-center space-x-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/10"
+          >
             <Plus className="w-4 h-4 text-[#C9A84C]" />
             <span>Nouvelle Campagne</span>
           </button>
@@ -100,6 +164,89 @@ export default function LibraryInventory() {
           </motion.div>
         ))}
       </div>
+
+      {/* Modal Nouvelle Campagne */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <h3 className="text-lg font-black text-slate-900">Nouvelle Campagne d&rsquo;Inventaire</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Titre</label>
+                <input
+                  type="text"
+                  placeholder="ex : Inventaire Annuel - Section Collège"
+                  value={campaignForm.title}
+                  onChange={(e) => setCampaignForm({ ...campaignForm, title: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Période</label>
+                <input
+                  type="text"
+                  placeholder="ex : Mai 2026"
+                  value={campaignForm.period}
+                  onChange={(e) => setCampaignForm({ ...campaignForm, period: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                onClick={() => setModalOpen(false)}
+                disabled={submittingCampaign}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleCreateCampaign}
+                disabled={submittingCampaign}
+                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {submittingCampaign ? 'Envoi…' : 'Créer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Mode Scan */}
+      {scanModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <h3 className="text-lg font-black text-slate-900">Scanner un exemplaire</h3>
+            <div>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Code-barres / ID</label>
+              <input
+                type="text"
+                placeholder="ex : BC-1234"
+                value={scanCode}
+                onChange={(e) => setScanCode(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+              />
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                onClick={() => setScanModalOpen(false)}
+                disabled={submittingScan}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleScan}
+                disabled={submittingScan}
+                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {submittingScan ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {submittingScan ? 'Scan…' : 'Scanner'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -17,6 +17,7 @@ export default function EduCastSettings() {
   const [settings, setSettings] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!academicYear?.id) return;
@@ -47,6 +48,22 @@ export default function EduCastSettings() {
     );
   }
 
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      await modulesApi.put('educast/settings', settings ?? {}, buildModulesApiOptions(academicYear?.id));
+      alert('Paramètres enregistrés');
+    } catch (e: any) {
+      alert(e?.message || 'Erreur lors de l\'enregistrement');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleSetting = (key: string) => {
+    setSettings((prev: any) => ({ ...(prev ?? {}), [key]: !prev?.[key] }));
+  };
+
   return (
     <div className="max-w-4xl space-y-8">
       {error && (
@@ -63,8 +80,12 @@ export default function EduCastSettings() {
           </h3>
           <p className="text-slate-500 text-sm font-medium">Paramétrez les règles de diffusion et de stockage média.</p>
         </div>
-        <button className="flex items-center space-x-2 px-6 py-3 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl shadow-blue-600/20">
-          <Save className="w-4 h-4" />
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="flex items-center space-x-2 px-6 py-3 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl shadow-blue-600/20 disabled:opacity-60"
+        >
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           <span>Enregistrer</span>
         </button>
       </div>
@@ -110,7 +131,7 @@ export default function EduCastSettings() {
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tout contenu élève doit être validé</p>
               </div>
             </div>
-            <div className={`w-12 h-6 rounded-full p-1 flex cursor-pointer transition-colors ${settings?.mandatoryModeration ? 'bg-blue-600 justify-end' : 'bg-slate-300 justify-start'}`}>
+            <div className={`w-12 h-6 rounded-full p-1 flex cursor-pointer transition-colors ${settings?.mandatoryModeration ? 'bg-blue-600 justify-end' : 'bg-slate-300 justify-start'}`} onClick={() => toggleSetting('mandatoryModeration')}>
               <div className="w-4 h-4 bg-white rounded-full shadow-sm" />
             </div>
           </div>
@@ -181,7 +202,7 @@ export default function EduCastSettings() {
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">L'école doit valider tout contenu payant</p>
               </div>
             </div>
-            <div className={`w-12 h-6 rounded-full p-1 flex cursor-pointer transition-colors ${settings?.paidVideoValidation ? 'bg-amber-600 justify-end' : 'bg-slate-300 justify-start'}`}>
+            <div className={`w-12 h-6 rounded-full p-1 flex cursor-pointer transition-colors ${settings?.paidVideoValidation ? 'bg-amber-600 justify-end' : 'bg-slate-300 justify-start'}`} onClick={() => toggleSetting('paidVideoValidation')}>
               <div className="w-4 h-4 bg-white rounded-full shadow-sm" />
             </div>
           </div>
@@ -203,7 +224,7 @@ export default function EduCastSettings() {
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Alerter les élèves lors d'un nouveau cours</p>
                 </div>
               </div>
-              <div className={`w-12 h-6 rounded-full p-1 flex cursor-pointer transition-colors ${settings?.publishNotifications ? 'bg-blue-600 justify-end' : 'bg-slate-300 justify-start'}`}>
+              <div className={`w-12 h-6 rounded-full p-1 flex cursor-pointer transition-colors ${settings?.publishNotifications ? 'bg-blue-600 justify-end' : 'bg-slate-300 justify-start'}`} onClick={() => toggleSetting('publishNotifications')}>
                 <div className="w-4 h-4 bg-white rounded-full shadow-sm" />
               </div>
             </div>

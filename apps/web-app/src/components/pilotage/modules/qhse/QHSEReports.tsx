@@ -88,7 +88,10 @@ export default function QHSEReports() {
                <button className="p-3 bg-white border border-slate-100 rounded-xl text-slate-400">
                 <Printer className="w-5 h-5" />
               </button>
-              <button className="px-6 py-3 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest">
+              <button
+                onClick={() => alert('Bientôt disponible')}
+                className="px-6 py-3 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest"
+              >
                 Nouveau Rapport
               </button>
             </div>

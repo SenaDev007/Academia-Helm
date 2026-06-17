@@ -3,20 +3,19 @@
  * LIBRARY RECOMMENDATIONS — Branché sur backend réel
  * ============================================================================
  *
- * Endpoint (lecture) : GET /modules-complementaires/library/recommendations
+ * Endpoint (lecture)  : GET  /modules-complementaires/library/recommendations
  * Endpoint (création): POST /modules-complementaires/library/recommendations
- *
- * Note : Si le GET n'est pas encore implémenté, le hook renvoie un tableau
- * vide et le bandeau d'erreur s'affiche (sans casser l'UI).
  * ============================================================================
  */
 
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Sparkles, GraduationCap, Plus, Send, Loader2 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface RecommendationItem {
   id: string;
@@ -35,13 +34,42 @@ interface RecommendationItem {
   [key: string]: any;
 }
 
+interface NewRecommendationFormData {
+  bookId: string;
+  comment: string;
+}
+
+const emptyRecForm: NewRecommendationFormData = { bookId: '', comment: '' };
+
 export default function LibraryRecommendations() {
   const { academicYear } = useModuleContext();
-  const { data: recommendations, loading, error } = useModulesList<RecommendationItem>(
+  const [modalOpen, setModalOpen] = useState(false);
+  const [formData, setFormData] = useState<NewRecommendationFormData>(emptyRecForm);
+  const [submitting, setSubmitting] = useState(false);
+  const { data: recommendations, loading, error, refetch } = useModulesList<RecommendationItem>(
     'library',
     'recommendations',
     academicYear?.id,
   );
+
+  const handleCreate = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post(
+        'library/recommendations',
+        formData,
+        buildModulesApiOptions(academicYear?.id),
+      );
+      setModalOpen(false);
+      setFormData(emptyRecForm);
+      await refetch();
+    } catch (e: any) {
+      console.error('Erreur création recommandation :', e?.message || e);
+      alert(e?.message || 'Erreur lors de la création de la recommandation');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -94,7 +122,10 @@ export default function LibraryRecommendations() {
           <GraduationCap className="w-6 h-6 mr-3 text-emerald-600" />
           Recommandations Pédagogiques
         </h3>
-        <button className="flex items-center space-x-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-navy-900/10 hover:bg-navy-800 transition-all">
+        <button
+          onClick={() => setModalOpen(true)}
+          className="flex items-center space-x-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-navy-900/10 hover:bg-navy-800 transition-all"
+        >
           <Plus className="w-4 h-4 text-[#C9A84C]" />
           <span>Créer une recommandation</span>
         </button>
@@ -156,6 +187,53 @@ export default function LibraryRecommendations() {
           );
         })}
       </div>
+      )}
+
+      {/* Modal Créer une recommandation */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <h3 className="text-lg font-black text-slate-900">Créer une recommandation</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Livre (ID)</label>
+                <input
+                  type="text"
+                  placeholder="ex : book-456"
+                  value={formData.bookId}
+                  onChange={(e) => setFormData({ ...formData, bookId: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Commentaire</label>
+                <textarea
+                  rows={4}
+                  placeholder="Raison pédagogique..."
+                  value={formData.comment}
+                  onChange={(e) => setFormData({ ...formData, comment: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                onClick={() => setModalOpen(false)}
+                disabled={submitting}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={submitting}
+                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {submitting ? 'Envoi…' : 'Recommander'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

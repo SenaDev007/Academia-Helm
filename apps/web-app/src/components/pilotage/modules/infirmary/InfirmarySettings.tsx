@@ -52,6 +52,8 @@ export default function InfirmarySettings() {
   const [settings, setSettings] = useState<InfirmarySettingsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (!academicYear?.id) {
@@ -91,6 +93,20 @@ export default function InfirmarySettings() {
     );
   }
 
+  const handleSave = async () => {
+    try {
+      setSubmitting(true);
+      setSuccessMsg(null);
+      await modulesApi.post('infirmary/settings', settings ?? DEFAULT_SETTINGS, buildModulesApiOptions(academicYear?.id));
+      setSuccessMsg('Paramètres enregistrés avec succès.');
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (e: any) {
+      alert(e?.response?.data?.message || e?.message || 'Erreur lors de l\'enregistrement');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const stockThreshold = settings?.stockAlertThreshold ?? DEFAULT_SETTINGS.stockAlertThreshold!;
   const requireAuth = settings?.requireParentalAuthorization ?? DEFAULT_SETTINGS.requireParentalAuthorization!;
   const smsNotif = settings?.smsNotifications ?? DEFAULT_SETTINGS.smsNotifications!;
@@ -104,6 +120,12 @@ export default function InfirmarySettings() {
         </div>
       )}
 
+      {successMsg && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-800">
+          ✓ {successMsg}
+        </div>
+      )}
+
       {/* Settings Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -113,9 +135,13 @@ export default function InfirmarySettings() {
           </h2>
           <p className="text-slate-500 font-medium">Personnalisez les workflows et paramètres du module santé.</p>
         </div>
-        <button className="px-6 py-3 bg-blue-600 text-white rounded-2xl font-black text-sm flex items-center hover:bg-blue-700 transition-all shadow-lg shadow-blue-200">
+        <button
+          onClick={handleSave}
+          disabled={submitting}
+          className="px-6 py-3 bg-blue-600 text-white rounded-2xl font-black text-sm flex items-center hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 disabled:opacity-50"
+        >
           <Save className="w-5 h-5 mr-2" />
-          Enregistrer
+          {submitting ? 'Enregistrement...' : 'Enregistrer'}
         </button>
       </div>
 

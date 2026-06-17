@@ -6,10 +6,12 @@
 
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Loader2, GraduationCap, Search, FileText, Users, Plus } from 'lucide-react';
+import { Loader2, GraduationCap, Search, FileText, Users, Plus, X } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface SessionItem {
   id?: string;
@@ -29,11 +31,29 @@ interface SessionItem {
 
 export default function PracticalSessions() {
   const { academicYear } = useModuleContext();
-  const { data: sessions, loading, error } = useModulesList<SessionItem>(
+  const { data: sessions, loading, error, refetch } = useModulesList<SessionItem>(
     'labs',
     'sessions',
     academicYear?.id,
   );
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [sessionForm, setSessionForm] = useState({ labId: '', subject: '', date: '', duration: 0, studentCount: 0 });
+
+  const handleCreateSession = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post('labs/sessions', sessionForm, buildModulesApiOptions(academicYear?.id));
+      setModalOpen(false);
+      setSessionForm({ labId: '', subject: '', date: '', duration: 0, studentCount: 0 });
+      await refetch();
+    } catch (e: any) {
+      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création de la séance');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const safeSessions = sessions ?? [];
 
@@ -61,7 +81,10 @@ export default function PracticalSessions() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input type="text" placeholder="Rechercher..." className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm outline-none" />
           </div>
-          <button className="flex items-center space-x-2 px-4 py-2 bg-[#C9A84C] text-white rounded-xl font-bold text-sm">
+          <button
+            onClick={() => setModalOpen(true)}
+            className="flex items-center space-x-2 px-4 py-2 bg-[#C9A84C] text-white rounded-xl font-bold text-sm"
+          >
             <Plus className="w-4 h-4" />
             <span>Enregistrer Séance</span>
           </button>
@@ -136,6 +159,48 @@ export default function PracticalSessions() {
         </table>
         </div>
       </div>
+
+      {/* Session Modal */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-slate-900">Nouvelle Séance</h3>
+              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">ID Laboratoire</label>
+                <input type="text" value={sessionForm.labId} onChange={(e) => setSessionForm({ ...sessionForm, labId: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Matière</label>
+                <input type="text" value={sessionForm.subject} onChange={(e) => setSessionForm({ ...sessionForm, subject: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Date</label>
+                <input type="date" value={sessionForm.date} onChange={(e) => setSessionForm({ ...sessionForm, date: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Durée (min)</label>
+                  <input type="number" value={sessionForm.duration} onChange={(e) => setSessionForm({ ...sessionForm, duration: Number(e.target.value) })} className="w-full px-4 py-2 bg-gray-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Élèves</label>
+                  <input type="number" value={sessionForm.studentCount} onChange={(e) => setSessionForm({ ...sessionForm, studentCount: Number(e.target.value) })} className="w-full px-4 py-2 bg-gray-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20" />
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-bold">Annuler</button>
+              <button onClick={handleCreateSession} disabled={submitting} className="px-4 py-2 bg-[#C9A84C] text-white rounded-xl text-sm font-bold disabled:opacity-50">
+                {submitting ? 'Envoi...' : 'Créer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

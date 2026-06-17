@@ -3,12 +3,12 @@
  * CANTEEN STOCKS — Branché sur backend réel
  * ============================================================================
  *
- * Endpoint : GET /modules-complementaires/canteen/stocks?academicYearId=...
- * Endpoint : POST /modules-complementaires/canteen/stocks
+ * Endpoint (lecture)   : GET  /modules-complementaires/canteen/stocks
+ * Endpoint (mouvement) : POST /modules-complementaires/canteen/stocks
  * ============================================================================
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Package, Search,
   ArrowDownCircle, ArrowUpCircle, History,
@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface StockItem {
   id: string;
@@ -36,13 +37,48 @@ interface StockItem {
   [key: string]: any;
 }
 
+interface StockMovementFormData {
+  itemId: string;
+  quantity: number;
+  type: 'IN' | 'OUT';
+}
+
+const emptyMovementForm: StockMovementFormData = { itemId: '', quantity: 1, type: 'IN' };
+
 export default function CanteenStocks() {
   const { academicYear } = useModuleContext();
-  const { data: stocks, loading, error } = useModulesList<StockItem>(
+  const [modalOpen, setModalOpen] = useState(false);
+  const [formData, setFormData] = useState<StockMovementFormData>(emptyMovementForm);
+  const [submitting, setSubmitting] = useState(false);
+  const { data: stocks, loading, error, refetch } = useModulesList<StockItem>(
     'canteen',
     'stocks',
     academicYear?.id,
   );
+
+  const openMovement = (type: 'IN' | 'OUT') => {
+    setFormData({ ...emptyMovementForm, type });
+    setModalOpen(true);
+  };
+
+  const handleCreate = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post(
+        'canteen/stocks',
+        formData,
+        buildModulesApiOptions(academicYear?.id),
+      );
+      setModalOpen(false);
+      setFormData(emptyMovementForm);
+      await refetch();
+    } catch (e: any) {
+      console.error('Erreur mouvement de stock :', e?.message || e);
+      alert(e?.message || 'Erreur lors de l\'enregistrement du mouvement');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const totalValue = stocks.reduce((acc, s) => acc + (s.qty ?? s.quantity ?? 0), 0);
   const criticalCount = stocks.filter((s) => {
@@ -119,11 +155,17 @@ export default function CanteenStocks() {
                 className="pl-11 pr-4 py-2.5 bg-white border border-gray-100 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-navy-500/20 w-64 transition-all"
               />
             </div>
-            <button className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-50 text-emerald-600 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-100 transition-all border border-emerald-100">
+            <button
+              onClick={() => openMovement('IN')}
+              className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-50 text-emerald-600 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-100 transition-all border border-emerald-100"
+            >
               <ArrowDownCircle className="w-4 h-4" />
               <span>Entrée</span>
             </button>
-            <button className="flex items-center space-x-2 px-4 py-2.5 bg-red-50 text-red-600 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-red-100 transition-all border border-red-100">
+            <button
+              onClick={() => openMovement('OUT')}
+              className="flex items-center space-x-2 px-4 py-2.5 bg-red-50 text-red-600 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-red-100 transition-all border border-red-100"
+            >
               <ArrowUpCircle className="w-4 h-4" />
               <span>Sortie</span>
             </button>
@@ -171,6 +213,66 @@ export default function CanteenStocks() {
         </div>
         )}
       </div>
+
+      {/* Modal Mouvement de stock */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <h3 className="text-lg font-black text-navy-900">
+              {formData.type === 'IN' ? 'Entrée de stock' : 'Sortie de stock'}
+            </h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Article (ID)</label>
+                <input
+                  type="text"
+                  placeholder="ex : stock-123"
+                  value={formData.itemId}
+                  onChange={(e) => setFormData({ ...formData, itemId: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Quantité</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={formData.quantity}
+                  onChange={(e) => setFormData({ ...formData, quantity: Number(e.target.value) })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Type de mouvement</label>
+                <select
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value as 'IN' | 'OUT' })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                >
+                  <option value="IN">Entrée (+)</option>
+                  <option value="OUT">Sortie (−)</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                onClick={() => setModalOpen(false)}
+                disabled={submitting}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={submitting}
+                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {submitting ? 'Envoi…' : 'Enregistrer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

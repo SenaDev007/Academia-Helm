@@ -3,12 +3,12 @@
  * CANTEEN INCIDENTS — Branché sur backend réel
  * ============================================================================
  *
- * Endpoint : GET /modules-complementaires/canteen/incidents?academicYearId=...
- * Endpoint : POST /modules-complementaires/canteen/incidents
+ * Endpoint (lecture)   : GET  /modules-complementaires/canteen/incidents
+ * Endpoint (création)  : POST /modules-complementaires/canteen/incidents
  * ============================================================================
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Search, Plus,
   AlertCircle, Activity, CheckCircle2,
@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface IncidentItem {
   id: string;
@@ -37,13 +38,43 @@ interface IncidentItem {
   [key: string]: any;
 }
 
+interface NewIncidentFormData {
+  type: string;
+  description: string;
+  severity: string;
+}
+
+const emptyIncidentForm: NewIncidentFormData = { type: 'HYGIENE', description: '', severity: 'MEDIUM' };
+
 export default function CanteenIncidents() {
   const { academicYear } = useModuleContext();
-  const { data: incidents, loading, error } = useModulesList<IncidentItem>(
+  const [modalOpen, setModalOpen] = useState(false);
+  const [formData, setFormData] = useState<NewIncidentFormData>(emptyIncidentForm);
+  const [submitting, setSubmitting] = useState(false);
+  const { data: incidents, loading, error, refetch } = useModulesList<IncidentItem>(
     'canteen',
     'incidents',
     academicYear?.id,
   );
+
+  const handleCreate = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post(
+        'canteen/incidents',
+        formData,
+        buildModulesApiOptions(academicYear?.id),
+      );
+      setModalOpen(false);
+      setFormData(emptyIncidentForm);
+      await refetch();
+    } catch (e: any) {
+      console.error('Erreur création incident :', e?.message || e);
+      alert(e?.message || 'Erreur lors de la création de l\'incident');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const openCount = incidents.filter((i) => {
     const s = (i.status ?? '').toLowerCase();
@@ -120,7 +151,10 @@ export default function CanteenIncidents() {
                 className="pl-11 pr-4 py-2.5 bg-white border border-gray-100 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-navy-500/20 w-64 transition-all"
               />
             </div>
-            <button className="flex items-center space-x-2 px-6 py-2.5 bg-red-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-red-700 transition-all shadow-xl shadow-red-600/20">
+            <button
+              onClick={() => setModalOpen(true)}
+              className="flex items-center space-x-2 px-6 py-2.5 bg-red-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-red-700 transition-all shadow-xl shadow-red-600/20"
+            >
               <Plus className="w-4 h-4" />
               <span>Signaler un Incident</span>
             </button>
@@ -148,6 +182,70 @@ export default function CanteenIncidents() {
         </div>
         )}
       </div>
+
+      {/* Modal Signaler un Incident */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <h3 className="text-lg font-black text-navy-900">Signaler un Incident</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Type</label>
+                <select
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                >
+                  <option value="HYGIENE">Hygiène</option>
+                  <option value="SECURITE">Sécurité</option>
+                  <option value="QUALITE">Qualité</option>
+                  <option value="ALLERGIE">Allergie</option>
+                  <option value="AUTRE">Autre</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Sévérité</label>
+                <select
+                  value={formData.severity}
+                  onChange={(e) => setFormData({ ...formData, severity: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                >
+                  <option value="LOW">Faible</option>
+                  <option value="MEDIUM">Moyenne</option>
+                  <option value="HIGH">Élevée</option>
+                  <option value="CRITICAL">Critique</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Description</label>
+                <textarea
+                  rows={4}
+                  placeholder="Décrivez l&rsquo;incident..."
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                onClick={() => setModalOpen(false)}
+                disabled={submitting}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={submitting}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {submitting ? 'Envoi…' : 'Signaler'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,19 +1,24 @@
 'use client';
 
-import { Users, Plus, Search, MapPin, Bus, CreditCard, MoreVertical, Loader2 } from 'lucide-react';
+import { useState } from 'react';
+import { Users, Plus, Search, MapPin, Bus, CreditCard, MoreVertical, Loader2, X } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface AssignmentItem {
   id: string;
   student?: string;
   studentName?: string;
+  studentId?: string;
   class?: string;
   className?: string;
   route?: string;
   routeName?: string;
+  routeId?: string;
   stop?: string;
   stopName?: string;
+  stopId?: string;
   payment?: string;
   paymentStatus?: string;
   status?: string;
@@ -21,11 +26,31 @@ interface AssignmentItem {
   [key: string]: any;
 }
 
+const EMPTY_FORM = { studentId: '', routeId: '', stopId: '' };
+
 export default function TransportStudents() {
   const { academicYear } = useModuleContext();
-  const { data, loading, error } = useModulesList<AssignmentItem>('transport', 'assignments', academicYear?.id);
+  const { data, loading, error, refetch } = useModulesList<AssignmentItem>('transport', 'assignments', academicYear?.id);
 
   const students = data ?? [];
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [formData, setFormData] = useState<{ studentId: string; routeId: string; stopId: string }>(EMPTY_FORM);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleCreate = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post('transport/assignments', formData, buildModulesApiOptions(academicYear?.id));
+      setModalOpen(false);
+      setFormData(EMPTY_FORM);
+      await refetch();
+    } catch (e: any) {
+      alert(e?.response?.data?.message || e?.message || 'Erreur lors de l\'affectation');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -53,9 +78,12 @@ export default function TransportStudents() {
             className="w-full pl-12 pr-4 py-3 rounded-2xl border border-slate-100 focus:outline-none focus:ring-2 focus:ring-navy-900/5 transition-all text-sm font-medium"
           />
         </div>
-        <button className="flex items-center gap-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all">
+        <button
+          onClick={() => { setFormData(EMPTY_FORM); setModalOpen(true); }}
+          className="flex items-center gap-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all"
+        >
           <Plus className="w-4 h-4" />
-          Inscrire un Élève
+          Affecter un Élève
         </button>
       </div>
 
@@ -133,6 +161,63 @@ export default function TransportStudents() {
                 })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold">Affecter un élève</h3>
+              <button onClick={() => setModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-900">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Student ID</label>
+                <input
+                  type="text"
+                  value={formData.studentId}
+                  onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="student-001"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Route ID</label>
+                <input
+                  type="text"
+                  value={formData.routeId}
+                  onChange={(e) => setFormData({ ...formData, routeId: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="route-001"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Stop ID</label>
+                <input
+                  type="text"
+                  value={formData.stopId}
+                  onChange={(e) => setFormData({ ...formData, stopId: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="stop-001"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold">
+                Annuler
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={submitting}
+                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {submitting ? 'Envoi...' : 'Affecter'}
+              </button>
+            </div>
           </div>
         </div>
       )}

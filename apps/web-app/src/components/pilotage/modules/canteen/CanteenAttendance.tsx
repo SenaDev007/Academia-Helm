@@ -3,19 +3,20 @@
  * CANTEEN ATTENDANCE — Branché sur backend réel
  * ============================================================================
  *
- * Endpoint : GET /modules-complementaires/canteen/attendance?academicYearId=...
+ * Endpoint (lecture)     : GET  /modules-complementaires/canteen/attendance
+ * Endpoint (présence)    : POST /modules-complementaires/canteen/meal-services
  * ============================================================================
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Search,
   Activity,
-  AlertCircle,
   Scan, Tablet, Calendar, Clock, Loader2
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface AttendanceItem {
   id: string;
@@ -37,11 +38,35 @@ interface AttendanceItem {
 
 export default function CanteenAttendance() {
   const { academicYear } = useModuleContext();
-  const { data: attendance, loading, error } = useModulesList<AttendanceItem>(
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const { data: attendance, loading, error, refetch } = useModulesList<AttendanceItem>(
     'canteen',
     'attendance',
     academicYear?.id,
   );
+
+  const handleTogglePresence = async (item: AttendanceItem) => {
+    const isServed = (item.status ?? '').toLowerCase().includes('servi') || (item.status ?? '').toLowerCase().includes('served');
+    const newStatus = isServed ? 'NON_SERVI' : 'SERVI';
+    try {
+      setActionLoading(item.id);
+      await modulesApi.post(
+        'canteen/meal-services',
+        {
+          studentId: item.student ?? item.studentName,
+          status: newStatus,
+          mealType: item.mealType ?? item.type ?? 'DEJEUNER',
+        },
+        buildModulesApiOptions(academicYear?.id),
+      );
+      await refetch();
+    } catch (e: any) {
+      console.error('Erreur mise à jour présence :', e?.message || e);
+      alert(e?.message || 'Erreur lors de la mise à jour de la présence');
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   const total = attendance.length;
   const served = attendance.filter((a) => {
@@ -124,6 +149,7 @@ export default function CanteenAttendance() {
                 {attendance.map((row) => (
                   <AttendanceRow
                     key={row.id}
+                    attendanceId={row.id}
                     student={row.student ?? row.studentName ?? '—'}
                     class={row.class ?? row.className ?? '—'}
                     time={row.time ?? row.servedAt ?? row.timestamp ?? '—'}
@@ -131,6 +157,8 @@ export default function CanteenAttendance() {
                     type={row.type ?? row.mealType ?? 'Standard'}
                     isSpecial={row.isSpecial}
                     note={row.note ?? row.comment}
+                    onToggle={() => handleTogglePresence(row)}
+                    actionLoading={actionLoading}
                   />
                 ))}
               </tbody>
@@ -176,13 +204,15 @@ export default function CanteenAttendance() {
   );
 }
 
-function AttendanceRow({ student, class: className, time, status, type, isSpecial, note }: any) {
+function AttendanceRow({ attendanceId, student, class: className, time, status, type, isSpecial, note, onToggle, actionLoading }: any) {
   const statusColors: any = {
     'Servi': 'bg-emerald-50 text-emerald-600 border-emerald-100',
     'Non Servi': 'bg-amber-50 text-amber-600 border-amber-100',
     'Refusé': 'bg-red-50 text-red-600 border-red-100',
   };
   const statusStyle = statusColors[status] ?? statusColors['Non Servi'];
+  const isLoading = actionLoading === attendanceId;
+  const isServed = (status ?? '').toLowerCase().includes('servi') && !(status ?? '').toLowerCase().includes('non');
 
   return (
     <tr className="group hover:bg-navy-50/30 transition-all duration-300">
@@ -216,8 +246,17 @@ function AttendanceRow({ student, class: className, time, status, type, isSpecia
         </div>
       </td>
       <td className="px-8 py-6 text-right">
-        <button className="p-2 text-gray-400 hover:text-navy-600 hover:bg-white rounded-xl transition-all border border-transparent hover:border-gray-100">
-          <AlertCircle className="w-4 h-4" />
+        <button
+          onClick={onToggle}
+          disabled={isLoading}
+          title={isServed ? 'Marquer absent' : 'Marquer présent'}
+          className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase transition-all disabled:opacity-50 ${
+            isServed
+              ? 'bg-red-50 text-red-600 hover:bg-red-100'
+              : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+          }`}
+        >
+          {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : isServed ? 'Absent' : 'Présent'}
         </button>
       </td>
     </tr>

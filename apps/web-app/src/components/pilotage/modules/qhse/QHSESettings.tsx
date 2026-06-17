@@ -17,6 +17,7 @@ export default function QHSESettings() {
   const [settings, setSettings] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!academicYear?.id) return;
@@ -37,6 +38,22 @@ export default function QHSESettings() {
       cancelled = true;
     };
   }, [academicYear?.id]);
+
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      await modulesApi.put('qhse/settings', settings ?? {}, buildModulesApiOptions(academicYear?.id));
+      alert('Paramètres enregistrés');
+    } catch (e: any) {
+      alert(e?.message || 'Erreur lors de l\'enregistrement');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleSetting = (key: string) => {
+    setSettings((prev: any) => ({ ...(prev ?? {}), [key]: !prev?.[key] }));
+  };
 
   const sections = [
     { title: 'Configuration Générale', icon: Settings, desc: 'Paramètres du module et seuils de criticité.' },
@@ -93,7 +110,7 @@ export default function QHSESettings() {
                   <p className="text-sm font-black text-slate-900 uppercase tracking-tight">Signalement Mobile</p>
                   <p className="text-xs text-slate-400 font-medium">Autoriser les enseignants à signaler des incidents via l'application mobile.</p>
                 </div>
-                <div className={`w-12 h-6 rounded-full relative cursor-pointer shadow-inner ${settings?.mobileReporting ? 'bg-emerald-500' : 'bg-slate-200'}`}>
+                <div className={`w-12 h-6 rounded-full relative cursor-pointer shadow-inner ${settings?.mobileReporting ? 'bg-emerald-500' : 'bg-slate-200'}`} onClick={() => toggleSetting('mobileReporting')}>
                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${settings?.mobileReporting ? 'right-1' : 'left-1'}`} />
                 </div>
               </div>
@@ -103,7 +120,7 @@ export default function QHSESettings() {
                   <p className="text-sm font-black text-slate-900 uppercase tracking-tight">Anonymat des Risques</p>
                   <p className="text-xs text-slate-400 font-medium">Permettre le signalement anonyme des risques par le personnel.</p>
                 </div>
-                <div className={`w-12 h-6 rounded-full relative cursor-pointer shadow-inner ${settings?.anonymousRisks ? 'bg-emerald-500' : 'bg-slate-200'}`}>
+                <div className={`w-12 h-6 rounded-full relative cursor-pointer shadow-inner ${settings?.anonymousRisks ? 'bg-emerald-500' : 'bg-slate-200'}`} onClick={() => toggleSetting('anonymousRisks')}>
                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${settings?.anonymousRisks ? 'right-1' : 'left-1'}`} />
                 </div>
               </div>
@@ -121,8 +138,12 @@ export default function QHSESettings() {
                <button className="flex items-center gap-2 text-rose-600 font-black text-[10px] uppercase tracking-widest hover:bg-rose-50 px-4 py-2 rounded-xl transition-all">
                   <Trash2 className="w-4 h-4" /> Réinitialiser
                </button>
-               <button className="flex items-center gap-2 bg-emerald-600 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-600/20 hover:bg-emerald-700 transition-all">
-                  <Save className="w-4 h-4" /> Enregistrer les Modifications
+               <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="flex items-center gap-2 bg-emerald-600 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-600/20 hover:bg-emerald-700 transition-all disabled:opacity-60"
+               >
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Enregistrer les Modifications
                </button>
             </div>
           </div>

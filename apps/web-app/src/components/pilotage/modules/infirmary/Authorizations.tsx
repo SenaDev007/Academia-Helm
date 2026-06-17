@@ -6,8 +6,9 @@
 
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Loader2 } from 'lucide-react';
+import { Loader2, X, Plus, CheckCircle2 } from 'lucide-react';
 import {
   ClipboardCheck,
   UserCheck,
@@ -21,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface AuthorizationItem {
   id: string;
@@ -46,9 +48,40 @@ const STATUS_META: Record<string, { label: string; color: string; icon: any }> =
 
 export default function Authorizations() {
   const { academicYear } = useModuleContext();
-  const { data, loading, error } = useModulesList<AuthorizationItem>('infirmary', 'authorizations', academicYear?.id);
+  const { data, loading, error, refetch } = useModulesList<AuthorizationItem>('infirmary', 'authorizations', academicYear?.id);
 
   const authorizations = data ?? [];
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [formData, setFormData] = useState({ studentId: '', type: 'MEDICATION', medication: '' });
+  const [submitting, setSubmitting] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const handleCreate = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post('infirmary/authorizations', formData, buildModulesApiOptions(academicYear?.id));
+      setModalOpen(false);
+      setFormData({ studentId: '', type: 'MEDICATION', medication: '' });
+      await refetch();
+    } catch (e: any) {
+      alert(e?.response?.data?.message || e?.message || 'Erreur lors de la création de l\'autorisation');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleValidate = async (id: string) => {
+    try {
+      setActionLoading(id);
+      await modulesApi.post(`infirmary/authorizations/${id}/validate`, {}, buildModulesApiOptions(academicYear?.id));
+      await refetch();
+    } catch (e: any) {
+      alert(e?.response?.data?.message || e?.message || 'Erreur lors de la validation');
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   // Statistiques calculées à partir des données réelles
   const total = authorizations.length;
@@ -94,6 +127,13 @@ export default function Authorizations() {
             <p className="text-3xl font-black text-amber-400">{pending}</p>
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">En attente</p>
           </div>
+          <button
+            onClick={() => { setFormData({ studentId: '', type: 'MEDICATION', medication: '' }); setModalOpen(true); }}
+            className="bg-emerald-500 text-white px-6 py-3 rounded-2xl font-black text-sm hover:bg-emerald-600 transition-all flex items-center"
+          >
+            <Plus className="w-5 h-5 mr-2" />
+            Nouvelle Autorisation
+          </button>
           <button className="bg-white text-slate-900 px-6 py-3 rounded-2xl font-black text-sm hover:bg-slate-100 transition-all flex items-center">
             <Mail className="w-5 h-5 mr-2" />
             Relancer Parents
@@ -167,6 +207,16 @@ export default function Authorizations() {
                     </span>
                   </div>
                   <div className="flex items-center space-x-2">
+                    {rawStatus === 'PENDING' && (
+                      <button
+                        onClick={() => handleValidate(auth.id)}
+                        disabled={actionLoading === auth.id}
+                        className="px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center"
+                      >
+                        <CheckCircle2 className="w-3 h-3 mr-1" />
+                        {actionLoading === auth.id ? 'Envoi...' : 'Valider'}
+                      </button>
+                    )}
                     <button className="p-2 hover:bg-white rounded-xl text-slate-400 hover:text-blue-600 transition-all">
                       <FileText className="w-5 h-5" />
                     </button>
@@ -180,6 +230,66 @@ export default function Authorizations() {
           })}
         </div>
       </div>
+
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold">Nouvelle autorisation</h3>
+              <button onClick={() => setModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-900">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Student ID</label>
+                <input
+                  type="text"
+                  value={formData.studentId}
+                  onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="student-001"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Type d'autorisation</label>
+                <select
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                >
+                  <option value="MEDICATION">Administration de médicaments</option>
+                  <option value="FIRST_AID">Premiers soins</option>
+                  <option value="EMERGENCY_TRANSFER">Transfert d'urgence</option>
+                  <option value="EXCURSION">Sortie scolaire</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Médicament / Détails</label>
+                <textarea
+                  value={formData.medication}
+                  onChange={(e) => setFormData({ ...formData, medication: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  rows={3}
+                  placeholder="Nom du médicament, posologie, etc."
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold">
+                Annuler
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={submitting}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {submitting ? 'Envoi...' : 'Créer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -6,10 +6,12 @@
 
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Headphones, Search, Filter, Plus, Clock, Play, MoreVertical, Music, Loader2 } from 'lucide-react';
+import { Headphones, Search, Filter, Plus, Clock, Play, MoreVertical, Music, Loader2, X } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface MediaItem {
   id: string | number;
@@ -28,9 +30,33 @@ interface MediaItem {
   views?: number;
 }
 
+const EMPTY_FORM = { title: '', description: '', type: 'podcast', url: '' };
+
 export default function EduCastPodcasts() {
   const { academicYear } = useModuleContext();
-  const { data: podcasts, loading, error } = useModulesList<MediaItem>('educast', 'media', academicYear?.id, { type: 'podcast' });
+  const { data: podcasts, loading, error, refetch } = useModulesList<MediaItem>('educast', 'media', academicYear?.id, { type: 'podcast' });
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [formData, setFormData] = useState(EMPTY_FORM);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleCreate = async () => {
+    if (!formData.title || !formData.url) {
+      alert('Le titre et l\'URL sont requis');
+      return;
+    }
+    try {
+      setSubmitting(true);
+      await modulesApi.post('educast/media', { ...formData, type: 'podcast' }, buildModulesApiOptions(academicYear?.id));
+      setModalOpen(false);
+      setFormData(EMPTY_FORM);
+      await refetch();
+    } catch (e: any) {
+      alert(e?.message || 'Erreur lors de la publication');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -57,7 +83,10 @@ export default function EduCastPodcasts() {
           </h3>
           <p className="text-slate-500 text-sm font-medium">Contenus audio pour apprendre partout, tout le temps.</p>
         </div>
-        <button className="px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/10">
+        <button
+          onClick={() => setModalOpen(true)}
+          className="px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/10"
+        >
           Publier Podcast
         </button>
       </div>
@@ -121,6 +150,68 @@ export default function EduCastPodcasts() {
               </motion.div>
             );
           })}
+        </div>
+      )}
+
+      {/* Modal: Publier un podcast */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-slate-900">Publier un podcast</h3>
+              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-slate-100 rounded-lg">
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Titre</label>
+                <input
+                  type="text"
+                  value={formData.title}
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20"
+                  placeholder="Ex: Analyse de texte - Méthodologie"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Description</label>
+                <textarea
+                  rows={3}
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+                  placeholder="Décrivez le contenu..."
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">URL de l'audio</label>
+                <input
+                  type="text"
+                  value={formData.url}
+                  onChange={(e) => setFormData({ ...formData, url: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20"
+                  placeholder="https://...mp3"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                onClick={() => setModalOpen(false)}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={submitting}
+                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold hover:bg-navy-800 disabled:opacity-60 flex items-center gap-2"
+              >
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                {submitting ? 'Envoi...' : 'Publier'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -10,10 +10,11 @@ import React, { useState } from 'react';
 import { formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 import {
   Loader2, Search, Plus, Minus, CreditCard,
   Wallet, Banknote, QrCode, User, Package,
-  ShoppingCart
+  ShoppingCart, X
 } from 'lucide-react';
 
 interface ProductItem {
@@ -32,13 +33,17 @@ interface ProductItem {
 
 export default function ShopPOS() {
   const { academicYear } = useModuleContext();
-  const { data: products, loading, error } = useModulesList<ProductItem>(
+  const { data: products, loading, error, refetch } = useModulesList<ProductItem>(
     'shop',
     'products',
     academicYear?.id,
   );
 
   const [cart, setCart] = useState<any[]>([]);
+  const [paymentMode, setPaymentMode] = useState<'cash' | 'wallet' | 'card'>('cash');
+  const [submitting, setSubmitting] = useState(false);
+  const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [walletAmount, setWalletAmount] = useState(0);
 
   const addToCart = (product: any) => {
     setCart((prev) => {
@@ -62,6 +67,50 @@ export default function ShopPOS() {
   const subtotal = cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
   const tax = subtotal * 0.18; // 18% TVA
   const total = subtotal + tax;
+
+  const handleCheckout = async () => {
+    if (cart.length === 0) {
+      alert('Le panier est vide');
+      return;
+    }
+    try {
+      setSubmitting(true);
+      await modulesApi.post(
+        'shop/sales',
+        {
+          items: cart.map((it) => ({ productId: it.id, quantity: it.qty, price: it.price })),
+          paymentMethod: paymentMode,
+          total,
+        },
+        buildModulesApiOptions(academicYear?.id),
+      );
+      setCart([]);
+      await refetch();
+      alert('Vente encaissée avec succès');
+    } catch (e: any) {
+      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de l\'encaissement');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleWalletRecharge = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post(
+        'shop/wallet/recharge',
+        { amount: walletAmount },
+        buildModulesApiOptions(academicYear?.id),
+      );
+      setWalletModalOpen(false);
+      setWalletAmount(0);
+      await refetch();
+    } catch (e: any) {
+      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la recharge');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -174,16 +223,42 @@ export default function ShopPOS() {
           </div>
 
           <div className="grid grid-cols-3 gap-3">
-            <PaymentModeBtn icon={Banknote} label="Cash" active />
-            <PaymentModeBtn icon={Wallet} label="Wallet" />
-            <PaymentModeBtn icon={CreditCard} label="Carte" />
+            <PaymentModeBtn icon={Banknote} label="Cash" active={paymentMode === 'cash'} onClick={() => setPaymentMode('cash')} />
+            <PaymentModeBtn icon={Wallet} label="Wallet" active={paymentMode === 'wallet'} onClick={() => setPaymentMode('wallet')} />
+            <PaymentModeBtn icon={CreditCard} label="Carte" active={paymentMode === 'card'} onClick={() => setPaymentMode('card')} />
           </div>
 
-          <button className="w-full py-4 bg-navy-900 text-white rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/40 active:scale-[0.98]">
-            Valider l'Encaissement
+          <button
+            onClick={handleCheckout}
+            disabled={submitting || cart.length === 0}
+            className="w-full py-4 bg-navy-900 text-white rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/40 active:scale-[0.98] disabled:opacity-50"
+          >
+            {submitting ? 'En cours...' : 'Valider l\'Encaissement'}
           </button>
         </div>
       </div>
+
+      {/* Wallet Recharge Modal */}
+      {walletModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-navy-900">Recharger le Portefeuille</h3>
+              <button onClick={() => setWalletModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Montant</label>
+              <input type="number" value={walletAmount} onChange={(e) => setWalletAmount(Number(e.target.value))} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setWalletModalOpen(false)} className="px-4 py-2 border border-gray-200 rounded-xl text-sm font-bold">Annuler</button>
+              <button onClick={handleWalletRecharge} disabled={submitting} className="px-4 py-2 bg-navy-900 text-white rounded-xl text-sm font-bold disabled:opacity-50">
+                {submitting ? 'Envoi...' : 'Recharger'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -242,13 +317,16 @@ function CartItem({ item }: any) {
   );
 }
 
-function PaymentModeBtn({ icon: Icon, label, active }: any) {
+function PaymentModeBtn({ icon: Icon, label, active, onClick }: any) {
   return (
-    <button className={`flex flex-col items-center justify-center p-3 rounded-2xl border transition-all space-y-1 ${
-      active
-        ? 'bg-navy-900 text-white border-navy-900 shadow-lg shadow-navy-900/20'
-        : 'bg-white text-gray-400 border-gray-100 hover:border-navy-500 hover:text-navy-900'
-    }`}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex flex-col items-center justify-center p-3 rounded-2xl border transition-all space-y-1 ${
+        active
+          ? 'bg-navy-900 text-white border-navy-900 shadow-lg shadow-navy-900/20'
+          : 'bg-white text-gray-400 border-gray-100 hover:border-navy-500 hover:text-navy-900'
+      }`}>
       <Icon className="w-5 h-5" />
       <span className="text-[9px] font-black uppercase tracking-widest">{label}</span>
     </button>

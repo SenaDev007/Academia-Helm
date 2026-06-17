@@ -6,10 +6,12 @@
 
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Zap, Play, Search, Filter, BookOpen, Clock, Star, Share2, Loader2 } from 'lucide-react';
+import { Zap, Play, Search, Filter, BookOpen, Clock, Star, Share2, Loader2, X, Plus } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface MediaItem {
   id: string | number;
@@ -26,9 +28,33 @@ interface MediaItem {
   score?: number;
 }
 
+const EMPTY_FORM = { title: '', description: '', type: 'capsule', url: '' };
+
 export default function EduCastRevisionCapsules() {
   const { academicYear } = useModuleContext();
-  const { data: capsules, loading, error } = useModulesList<MediaItem>('educast', 'media', academicYear?.id, { type: 'capsule' });
+  const { data: capsules, loading, error, refetch } = useModulesList<MediaItem>('educast', 'media', academicYear?.id, { type: 'capsule' });
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [formData, setFormData] = useState(EMPTY_FORM);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleCreate = async () => {
+    if (!formData.title || !formData.url) {
+      alert('Le titre et l\'URL sont requis');
+      return;
+    }
+    try {
+      setSubmitting(true);
+      await modulesApi.post('educast/media', { ...formData, type: 'capsule' }, buildModulesApiOptions(academicYear?.id));
+      setModalOpen(false);
+      setFormData(EMPTY_FORM);
+      await refetch();
+    } catch (e: any) {
+      alert(e?.message || 'Erreur lors de la création');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -55,7 +81,11 @@ export default function EduCastRevisionCapsules() {
           </h3>
           <p className="text-slate-500 text-sm font-medium">Contenus courts (2-5 min) pour mémoriser les points essentiels.</p>
         </div>
-        <button className="flex items-center space-x-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-navy-900/10 hover:bg-navy-800 transition-all">
+        <button
+          onClick={() => setModalOpen(true)}
+          className="flex items-center space-x-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-navy-900/10 hover:bg-navy-800 transition-all"
+        >
+          <Plus className="w-4 h-4 text-[#C9A84C]" />
           <span>Créer une Capsule</span>
         </button>
       </div>
@@ -123,6 +153,68 @@ export default function EduCastRevisionCapsules() {
               </motion.div>
             );
           })}
+        </div>
+      )}
+
+      {/* Modal: Créer une capsule */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-slate-900">Créer une capsule</h3>
+              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-slate-100 rounded-lg">
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Titre</label>
+                <input
+                  type="text"
+                  value={formData.title}
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-amber-500/20"
+                  placeholder="Ex: Les identités remarquables"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Description</label>
+                <textarea
+                  rows={3}
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-amber-500/20 resize-none"
+                  placeholder="Décrivez la capsule..."
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">URL du média</label>
+                <input
+                  type="text"
+                  value={formData.url}
+                  onChange={(e) => setFormData({ ...formData, url: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-amber-500/20"
+                  placeholder="https://..."
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                onClick={() => setModalOpen(false)}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={submitting}
+                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold hover:bg-navy-800 disabled:opacity-60 flex items-center gap-2"
+              >
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                {submitting ? 'Envoi...' : 'Créer'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

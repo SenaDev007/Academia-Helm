@@ -70,7 +70,10 @@ export default function EduCastLibrary() {
           <button className="p-2.5 bg-white border border-slate-200 rounded-2xl text-slate-400 hover:text-blue-600 transition-all">
             <Filter className="w-5 h-5" />
           </button>
-          <button className="flex items-center space-x-2 px-6 py-2.5 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all shadow-lg shadow-navy-900/10">
+          <button
+            onClick={() => alert('Bientôt disponible')}
+            className="flex items-center space-x-2 px-6 py-2.5 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all shadow-lg shadow-navy-900/10"
+          >
             <Plus className="w-4 h-4 text-[#C9A84C]" />
             <span>Importer</span>
           </button>

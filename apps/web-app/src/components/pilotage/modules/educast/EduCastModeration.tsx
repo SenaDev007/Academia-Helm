@@ -62,7 +62,10 @@ export default function EduCastModeration() {
           <button className="p-3 bg-white border border-slate-200 rounded-xl text-slate-400">
             <Filter className="w-5 h-5" />
           </button>
-          <button className="px-6 py-3 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-600/20">
+          <button
+            onClick={() => alert('Bientôt disponible')}
+            className="px-6 py-3 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-600/20"
+          >
             Tout Valider
           </button>
         </div>
@@ -122,13 +125,22 @@ export default function EduCastModeration() {
                     <td className="px-8 py-5 text-xs font-bold text-slate-500">{date}</td>
                     <td className="px-8 py-5 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <button className="p-2 bg-slate-50 hover:bg-blue-50 hover:text-blue-600 rounded-xl transition-all">
+                        <button
+                          onClick={() => alert('Bientôt disponible')}
+                          className="p-2 bg-slate-50 hover:bg-blue-50 hover:text-blue-600 rounded-xl transition-all"
+                        >
                           <Eye className="w-4 h-4" />
                         </button>
-                        <button className="p-2 bg-emerald-50 hover:bg-emerald-600 hover:text-white rounded-xl text-emerald-600 transition-all">
+                        <button
+                          onClick={() => alert('Bientôt disponible')}
+                          className="p-2 bg-emerald-50 hover:bg-emerald-600 hover:text-white rounded-xl text-emerald-600 transition-all"
+                        >
                           <CheckCircle2 className="w-4 h-4" />
                         </button>
-                        <button className="p-2 bg-rose-50 hover:bg-rose-600 hover:text-white rounded-xl text-rose-600 transition-all">
+                        <button
+                          onClick={() => alert('Bientôt disponible')}
+                          className="p-2 bg-rose-50 hover:bg-rose-600 hover:text-white rounded-xl text-rose-600 transition-all"
+                        >
                           <XCircle className="w-4 h-4" />
                         </button>
                       </div>

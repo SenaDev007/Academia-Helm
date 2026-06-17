@@ -9,16 +9,33 @@
 
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { FileText, Download, Printer, Share2, Calendar, Filter, Plus, PieChart, BarChart } from 'lucide-react';
+import { FileText, Download, Printer, Share2, Calendar, Filter, Plus, PieChart, BarChart, Loader2 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 export default function EduCastReports() {
+  const { academicYear } = useModuleContext();
+  const [generating, setGenerating] = useState(false);
   const reports = [
     { title: 'Rapport d\'Engagement Mensuel - Mai 2026', type: 'GLOBAL', date: '15/05/2026', size: '2.4 MB' },
     { title: 'Statistiques de consultation par Classe', type: 'CLASSE', date: '12/05/2026', size: '1.1 MB' },
     { title: 'Audit Modération et Signalements', type: 'MODÉRATION', date: '10/05/2026', size: '850 KB' },
     { title: 'Performance des contenus Enseignants', type: 'TEACHER', date: '01/05/2026', size: '3.2 MB' },
   ];
+
+  const handleGenerate = async () => {
+    try {
+      setGenerating(true);
+      await modulesApi.post('educast/reports', { type: 'GLOBAL' }, buildModulesApiOptions(academicYear?.id));
+      alert('Rapport généré');
+    } catch (e: any) {
+      alert(e?.message || 'Erreur lors de la génération du rapport');
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -27,8 +44,12 @@ export default function EduCastReports() {
           <FileText className="w-6 h-6 mr-3 text-blue-600" />
           Rapports EduCast
         </h3>
-        <button className="flex items-center space-x-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-navy-900/10">
-          <Printer className="w-4 h-4 text-[#C9A84C]" />
+        <button
+          onClick={handleGenerate}
+          disabled={generating}
+          className="flex items-center space-x-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-navy-900/10 disabled:opacity-60"
+        >
+          {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4 text-[#C9A84C]" />}
           <span>Générer Rapport</span>
         </button>
       </div>

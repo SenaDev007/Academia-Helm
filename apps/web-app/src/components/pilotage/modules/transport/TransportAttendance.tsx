@@ -1,16 +1,47 @@
 'use client';
 
-import { Users, CheckCircle2, XCircle, Clock, Search, Filter, Calendar } from 'lucide-react';
+import { useState } from 'react';
+import { Users, CheckCircle2, XCircle, Clock, Search, Filter, Calendar, Loader2, X } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 // TODO: endpoint non disponible — garder mock
 // Le backend expose uniquement POST transport/attendances (pas de GET).
 // Les présences restent en données statiques en attendant un endpoint de lecture.
+
+const EMPTY_FORM = { studentId: '', tripId: '', status: 'PRESENT' };
+
 export default function TransportAttendance() {
+  const { academicYear } = useModuleContext();
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [formData, setFormData] = useState<{ studentId: string; tripId: string; status: string }>(EMPTY_FORM);
+  const [submitting, setSubmitting] = useState(false);
+  const [lastSubmission, setLastSubmission] = useState<{ name: string; status: string; time: string } | null>(null);
+
   const attendance = [
     { id: '1', name: 'Fatou Sow', route: 'Circuit Nord', stop: 'Rond-point Central', status: 'PRESENT', time: '07:15' },
     { id: '2', name: 'Abdoulaye Diallo', route: 'Circuit Est', stop: 'Pharmacie du Marché', status: 'ABSENT', time: '—' },
     { id: '3', name: 'Mariama Ba', route: 'Circuit Nord', stop: 'Rond-point Central', status: 'PRESENT', time: '07:12' },
   ];
+
+  const handleCreate = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post('transport/attendances', formData, buildModulesApiOptions(academicYear?.id));
+      setLastSubmission({
+        name: `Élève ${formData.studentId}`,
+        status: formData.status,
+        time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+      });
+      setModalOpen(false);
+      setFormData(EMPTY_FORM);
+    } catch (e: any) {
+      alert(e?.response?.data?.message || e?.message || 'Erreur lors de l\'enregistrement de la présence');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -23,11 +54,20 @@ export default function TransportAttendance() {
           <button className="flex items-center gap-2 px-6 py-3 bg-white border border-slate-100 rounded-2xl font-black text-xs uppercase tracking-widest text-slate-600 hover:bg-slate-50 transition-all">
             <Filter className="w-4 h-4" /> Filtres
           </button>
-          <button className="flex items-center gap-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all">
-            Exporter le registre
+          <button
+            onClick={() => { setFormData(EMPTY_FORM); setModalOpen(true); }}
+            className="flex items-center gap-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all"
+          >
+            <Users className="w-4 h-4" /> Marquer Présence
           </button>
         </div>
       </div>
+
+      {lastSubmission && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-800">
+          ✓ Présence enregistrée : <strong>{lastSubmission.name}</strong> — {lastSubmission.status} à {lastSubmission.time}
+        </div>
+      )}
 
       <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
@@ -79,6 +119,66 @@ export default function TransportAttendance() {
           </table>
         </div>
       </div>
+
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold">Marquer une présence</h3>
+              <button onClick={() => setModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-900">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Student ID</label>
+                <input
+                  type="text"
+                  value={formData.studentId}
+                  onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="student-001"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Trip ID</label>
+                <input
+                  type="text"
+                  value={formData.tripId}
+                  onChange={(e) => setFormData({ ...formData, tripId: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="trip-001"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Statut</label>
+                <select
+                  value={formData.status}
+                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                >
+                  <option value="PRESENT">Présent</option>
+                  <option value="ABSENT">Absent</option>
+                  <option value="LATE">En retard</option>
+                  <option value="EXCUSED">Excusé</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold">
+                Annuler
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={submitting}
+                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {submitting ? 'Envoi...' : 'Enregistrer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

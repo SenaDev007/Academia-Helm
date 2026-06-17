@@ -1,8 +1,10 @@
 'use client';
 
-import { PenTool, Plus, Search, Filter, Calendar, Wrench, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import { useState } from 'react';
+import { PenTool, Plus, Search, Filter, Calendar, Wrench, AlertCircle, CheckCircle2, Loader2, X } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface VehicleItem {
   id: string;
@@ -25,6 +27,7 @@ interface VehicleItem {
 
 interface MaintenanceRow {
   id: string;
+  vehicleId: string;
   vehicle: string;
   type: string;
   date: string;
@@ -32,10 +35,12 @@ interface MaintenanceRow {
   status: string;
 }
 
+const EMPTY_FORM = { vehicleId: '', type: 'PREVENTIVE', cost: '', date: new Date().toISOString().slice(0, 10) };
+
 export default function TransportMaintenance() {
   const { academicYear } = useModuleContext();
   // Récupère les véhicules avec un filtre "maintenance" pour cibler les entretiens
-  const { data, loading, error } = useModulesList<VehicleItem>('transport', 'vehicles', academicYear?.id, { maintenance: true });
+  const { data, loading, error, refetch } = useModulesList<VehicleItem>('transport', 'vehicles', academicYear?.id, { maintenance: true });
 
   const vehicles = data ?? [];
 
@@ -46,6 +51,7 @@ export default function TransportMaintenance() {
     if (list.length === 0) {
       return [{
         id: v.id,
+        vehicleId: v.id,
         vehicle: vehicleName,
         type: '—',
         date: '',
@@ -55,6 +61,7 @@ export default function TransportMaintenance() {
     }
     return list.map((m, idx) => ({
       id: m.id ?? `${v.id}-${idx}`,
+      vehicleId: v.id,
       vehicle: vehicleName,
       type: m.type || m.maintenanceType || '—',
       date: m.date || m.maintenanceDate || '',
@@ -62,6 +69,33 @@ export default function TransportMaintenance() {
       status: m.status || m.maintenanceStatus || 'PLANNED',
     }));
   });
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [formData, setFormData] = useState<{ vehicleId: string; type: string; cost: string; date: string }>(EMPTY_FORM);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleCreate = async () => {
+    if (!formData.vehicleId) {
+      alert('Veuillez saisir l\'ID du véhicule.');
+      return;
+    }
+    try {
+      setSubmitting(true);
+      const payload = {
+        type: formData.type,
+        cost: Number(formData.cost) || 0,
+        date: formData.date,
+      };
+      await modulesApi.post(`transport/vehicles/${formData.vehicleId}/maintenance`, payload, buildModulesApiOptions(academicYear?.id));
+      setModalOpen(false);
+      setFormData(EMPTY_FORM);
+      await refetch();
+    } catch (e: any) {
+      alert(e?.response?.data?.message || e?.message || 'Erreur lors de l\'enregistrement de la maintenance');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -84,8 +118,11 @@ export default function TransportMaintenance() {
         <h3 className="text-xl font-black text-slate-900 tracking-tighter uppercase flex items-center gap-2">
           <Wrench className="w-6 h-6 text-navy-900" /> Maintenance Préventive
         </h3>
-        <button className="flex items-center gap-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all">
-          <Plus className="w-4 h-4" /> Planifier un entretien
+        <button
+          onClick={() => { setFormData(EMPTY_FORM); setModalOpen(true); }}
+          className="flex items-center gap-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all"
+        >
+          <Plus className="w-4 h-4" /> Nouvelle Maintenance
         </button>
       </div>
 
@@ -153,6 +190,82 @@ export default function TransportMaintenance() {
           </div>
         </div>
       </div>
+
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold">Nouvelle maintenance</h3>
+              <button onClick={() => setModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-900">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Vehicle ID</label>
+                <input
+                  type="text"
+                  value={formData.vehicleId}
+                  onChange={(e) => setFormData({ ...formData, vehicleId: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="vehicle-001"
+                />
+                {vehicles.length > 0 && (
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    IDs disponibles : {vehicles.slice(0, 5).map((v) => v.id).join(', ')}
+                    {vehicles.length > 5 ? '…' : ''}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Type d'entretien</label>
+                <select
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                >
+                  <option value="PREVENTIVE">Préventive</option>
+                  <option value="CORRECTIVE">Corrective</option>
+                  <option value="TECHNICAL_INSPECTION">Visite technique</option>
+                  <option value="TIRES">Pneumatiques</option>
+                  <option value="OIL_CHANGE">Vidange</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Coût (FCFA)</label>
+                <input
+                  type="number"
+                  value={formData.cost}
+                  onChange={(e) => setFormData({ ...formData, cost: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="50000"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Date</label>
+                <input
+                  type="date"
+                  value={formData.date}
+                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold">
+                Annuler
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={submitting}
+                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {submitting ? 'Envoi...' : 'Enregistrer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

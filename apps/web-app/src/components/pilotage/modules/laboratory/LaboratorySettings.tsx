@@ -69,7 +69,10 @@ export default function LaboratorySettings() {
           <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Configuration du Module</h3>
           <p className="text-slate-500 text-sm font-medium">Personnalisez les règles métier de vos espaces pratiques.</p>
         </div>
-        <button className="flex items-center space-x-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-sm hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20">
+        <button
+          onClick={() => alert('Bientôt disponible')}
+          className="flex items-center space-x-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-sm hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20"
+        >
           <Save className="w-4 h-4 text-[#C9A84C]" />
           <span>Enregistrer</span>
         </button>

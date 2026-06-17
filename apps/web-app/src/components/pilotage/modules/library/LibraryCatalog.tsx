@@ -3,7 +3,9 @@
  * LIBRARY CATALOG — Branché sur backend réel
  * ============================================================================
  *
- * Endpoint : GET /modules-complementaires/library/books?academicYearId=...
+ * Endpoint (lecture)        : GET  /modules-complementaires/library/books
+ * Endpoint (création)       : POST /modules-complementaires/library/books
+ * Endpoint (favoris toggle) : POST /modules-complementaires/library/favorites/:bookId
  * ============================================================================
  */
 
@@ -11,9 +13,10 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Search, Filter, BookOpen, MoreVertical, Bookmark, Star, ChevronRight, Loader2 } from 'lucide-react';
+import { Search, Filter, BookOpen, MoreVertical, Bookmark, Star, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface BookItem {
   id: string;
@@ -29,15 +32,64 @@ interface BookItem {
   [key: string]: any;
 }
 
+interface NewBookFormData {
+  title: string;
+  author: string;
+  category: string;
+  total: number;
+}
+
+const emptyBookForm: NewBookFormData = { title: '', author: '', category: '', total: 1 };
+
 export default function LibraryCatalog() {
   const { academicYear } = useModuleContext();
   const [search, setSearch] = useState('');
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [formData, setFormData] = useState<NewBookFormData>(emptyBookForm);
+  const [submitting, setSubmitting] = useState(false);
   const { data: books, loading, error, refetch } = useModulesList<BookItem>(
     'library',
     'books',
     academicYear?.id,
     search ? { search } : undefined,
   );
+
+  const handleToggleFavorite = async (bookId: string) => {
+    try {
+      setActionLoading(bookId);
+      await modulesApi.post(
+        `library/favorites/${bookId}`,
+        {},
+        buildModulesApiOptions(academicYear?.id),
+      );
+      await refetch();
+    } catch (e: any) {
+      console.error('Erreur favori :', e?.message || e);
+      alert(e?.message || 'Erreur lors de la mise à jour du favori');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleCreateBook = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post(
+        'library/books',
+        formData,
+        buildModulesApiOptions(academicYear?.id),
+      );
+      setModalOpen(false);
+      setFormData(emptyBookForm);
+      await refetch();
+    } catch (e: any) {
+      console.error('Erreur création livre :', e?.message || e);
+      alert(e?.message || 'Erreur lors de la création du livre');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -73,8 +125,12 @@ export default function LibraryCatalog() {
             <Filter className="w-4 h-4" />
             <span>Filtres Avancés</span>
           </button>
-          <button className="p-3.5 bg-navy-900 text-white rounded-2xl hover:bg-navy-800 transition-all">
-            <Bookmark className="w-5 h-5" />
+          <button
+            onClick={() => setModalOpen(true)}
+            className="flex items-center space-x-2 px-4 py-3.5 bg-navy-900 text-white rounded-2xl font-bold text-sm hover:bg-navy-800 transition-all shadow-lg shadow-navy-900/10"
+          >
+            <Plus className="w-4 h-4 text-[#C9A84C]" />
+            <span>Ajouter un livre</span>
           </button>
         </div>
       </div>
@@ -111,8 +167,13 @@ export default function LibraryCatalog() {
                     <h4 className="text-lg font-black text-slate-900 leading-tight group-hover:text-blue-600 transition-colors line-clamp-1">{title}</h4>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{book.author ?? '—'}</p>
                   </div>
-                  <button className="p-1.5 hover:bg-slate-50 rounded-lg text-slate-300">
-                    <MoreVertical className="w-4 h-4" />
+                  <button
+                    onClick={() => handleToggleFavorite(book.id)}
+                    disabled={actionLoading === book.id}
+                    title="Ajouter aux favoris"
+                    className="p-1.5 hover:bg-slate-50 rounded-lg text-slate-300 hover:text-amber-500 transition-colors disabled:opacity-50"
+                  >
+                    <Bookmark className="w-4 h-4" />
                   </button>
                 </div>
 
@@ -146,6 +207,73 @@ export default function LibraryCatalog() {
           );
         })}
       </div>
+      )}
+
+      {/* Modal Ajouter un livre */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <h3 className="text-lg font-black text-slate-900">Ajouter un livre</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Titre</label>
+                <input
+                  type="text"
+                  placeholder="Titre du livre"
+                  value={formData.title}
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Auteur</label>
+                <input
+                  type="text"
+                  placeholder="Auteur"
+                  value={formData.author}
+                  onChange={(e) => setFormData({ ...formData, author: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Catégorie</label>
+                <input
+                  type="text"
+                  placeholder="ex : Sciences, Littérature..."
+                  value={formData.category}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nombre d'exemplaires</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={formData.total}
+                  onChange={(e) => setFormData({ ...formData, total: Number(e.target.value) })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                onClick={() => setModalOpen(false)}
+                disabled={submitting}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleCreateBook}
+                disabled={submitting}
+                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {submitting ? 'Envoi…' : 'Créer'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

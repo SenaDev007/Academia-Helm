@@ -72,7 +72,10 @@ export default function QHSEHealth() {
             <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter flex items-center">
               <Stethoscope className="w-6 h-6 mr-3 text-emerald-600" /> Passages Récents
             </h3>
-            <button className="px-6 py-2 bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-600/10">
+            <button
+              onClick={() => alert('Bientôt disponible')}
+              className="px-6 py-2 bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-600/10"
+            >
               Nouveau Passage
             </button>
           </div>
@@ -163,7 +166,10 @@ export default function QHSEHealth() {
                 </div>
               </div>
             ))}
-            <button className="w-full py-4 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl shadow-navy-900/10">
+            <button
+              onClick={() => alert('Bientôt disponible')}
+              className="w-full py-4 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl shadow-navy-900/10"
+            >
               Passer une Commande
             </button>
           </div>

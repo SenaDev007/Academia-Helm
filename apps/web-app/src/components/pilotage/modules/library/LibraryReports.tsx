@@ -3,20 +3,19 @@
  * LIBRARY REPORTS & STATS — Branché sur backend réel
  * ============================================================================
  *
- * Endpoint stats : GET /modules-complementaires/library/dashboard?academicYearId=...
- * Endpoint génération : POST /modules-complementaires/library/reports
- *
- * Note : La liste des rapports générés reste en mock (TODO endpoint liste),
- * mais les KPI analytiques sont branchés sur le dashboard.
+ * Endpoint stats       : GET  /modules-complementaires/library/dashboard
+ * Endpoint génération  : POST /modules-complementaires/library/reports
  * ============================================================================
  */
 
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { BarChart3, FileText, Download, Calendar, Printer, Share2, TrendingUp, Filter, Loader2 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesDashboard } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface LibraryDashboardStats {
   rotationRate?: number;
@@ -37,11 +36,29 @@ const REPORTS_MOCK = [
 export default function LibraryReports() {
   const { academicYear } = useModuleContext();
   const { data, loading, error } = useModulesDashboard<LibraryDashboardStats>('library', academicYear?.id);
+  const [generating, setGenerating] = useState(false);
 
   const rotationRate = data?.rotationRate ?? 68;
   const avgLoanDays = data?.averageLoanDuration ?? 9.2;
   const maxLoanDays = data?.maxLoanDuration ?? 14;
   const penaltyRevenue = data?.penaltyRevenue ?? data?.totalRevenue ?? 42500;
+
+  const handleGenerateReport = async () => {
+    try {
+      setGenerating(true);
+      await modulesApi.post(
+        'library/reports',
+        { generatedAt: new Date().toISOString() },
+        buildModulesApiOptions(academicYear?.id),
+      );
+      alert('Rapport généré avec succès.');
+    } catch (e: any) {
+      console.error('Erreur génération rapport :', e?.message || e);
+      alert(e?.message || 'Erreur lors de la génération du rapport');
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -98,9 +115,13 @@ export default function LibraryReports() {
           <button className="p-3 bg-white border border-slate-200 rounded-xl text-slate-400">
             <Filter className="w-5 h-5" />
           </button>
-          <button className="flex items-center space-x-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/10">
+          <button
+            onClick={handleGenerateReport}
+            disabled={generating}
+            className="flex items-center space-x-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/10 disabled:opacity-50"
+          >
             <Printer className="w-4 h-4 text-[#C9A84C]" />
-            <span>Nouveau Rapport</span>
+            <span>{generating ? 'Génération…' : 'Nouveau Rapport'}</span>
           </button>
         </div>
       </div>

@@ -34,6 +34,19 @@ export default function LabReportsStats() {
   const [stats, setStats] = useState<LabsStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleGenerateReport = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post('labs/reports', {}, buildModulesApiOptions(academicYear?.id));
+      alert('Rapport généré avec succès');
+    } catch (e: any) {
+      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la génération du rapport');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     if (!academicYear?.id) {
@@ -160,9 +173,13 @@ export default function LabReportsStats() {
       <div className="space-y-4">
         <div className="flex justify-between items-center">
           <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Documents & Exports</h3>
-          <button className="flex items-center space-x-2 px-6 py-2.5 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all">
+          <button
+            onClick={handleGenerateReport}
+            disabled={submitting}
+            className="flex items-center space-x-2 px-6 py-2.5 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all disabled:opacity-50"
+          >
             <FileText className="w-4 h-4 text-[#C9A84C]" />
-            <span>Nouveau Rapport</span>
+            <span>{submitting ? 'Génération...' : 'Nouveau Rapport'}</span>
           </button>
         </div>
 

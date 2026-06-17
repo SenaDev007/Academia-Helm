@@ -6,10 +6,12 @@
 
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Bell, AlertTriangle, ShieldAlert, CheckCircle2, Info, Clock, Trash2, Send, Filter, Settings, Loader2 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface AlertItem {
   id: string | number;
@@ -27,7 +29,36 @@ interface AlertItem {
 
 export default function QHSEAlerts() {
   const { academicYear } = useModuleContext();
-  const { data: alerts, loading, error } = useModulesList<AlertItem>('qhse', 'alerts', academicYear?.id);
+  const { data: alerts, loading, error, refetch } = useModulesList<AlertItem>('qhse', 'alerts', academicYear?.id);
+
+  const [markingAll, setMarkingAll] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | number | null>(null);
+
+  const handleMarkRead = async (alertId: string | number) => {
+    try {
+      setActionLoading(alertId);
+      await modulesApi.patch(`qhse/alerts/${alertId}/read`, {}, buildModulesApiOptions(academicYear?.id));
+      await refetch();
+    } catch (e: any) {
+      alert(e?.message || 'Erreur lors du marquage');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    try {
+      setMarkingAll(true);
+      await Promise.all(
+        alerts.map((a) => modulesApi.patch(`qhse/alerts/${a.id}/read`, {}, buildModulesApiOptions(academicYear?.id))),
+      );
+      await refetch();
+    } catch (e: any) {
+      alert(e?.message || 'Erreur lors du marquage global');
+    } finally {
+      setMarkingAll(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -57,7 +88,12 @@ export default function QHSEAlerts() {
            <button className="p-3 bg-white border border-slate-100 rounded-xl text-slate-400">
             <Settings className="w-5 h-5" />
           </button>
-          <button className="px-6 py-3 bg-rose-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-rose-600/20 hover:bg-rose-700 transition-all">
+          <button
+            onClick={handleMarkAllRead}
+            disabled={markingAll}
+            className="px-6 py-3 bg-rose-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-rose-600/20 hover:bg-rose-700 transition-all disabled:opacity-60 flex items-center gap-2"
+          >
+            {markingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
             Tout Marquer Lu
           </button>
         </div>
@@ -103,6 +139,14 @@ export default function QHSEAlerts() {
                     <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 px-2 py-1 rounded-lg">Source : {type}</span>
                     <button className="text-[8px] font-black text-blue-600 uppercase tracking-widest hover:underline flex items-center gap-1 ml-auto">
                        Voir les détails <Send className="w-2.5 h-2.5" />
+                    </button>
+                    <button
+                      onClick={() => handleMarkRead(alert.id)}
+                      disabled={actionLoading === alert.id || alert.read}
+                      className="text-[8px] font-black text-emerald-600 uppercase tracking-widest hover:underline flex items-center gap-1 disabled:opacity-50"
+                    >
+                      {actionLoading === alert.id ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <CheckCircle2 className="w-2.5 h-2.5" />}
+                      {alert.read ? 'Lu' : 'Marquer comme lu'}
                     </button>
                   </div>
                 </div>

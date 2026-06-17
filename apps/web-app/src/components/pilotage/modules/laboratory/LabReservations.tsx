@@ -6,10 +6,12 @@
 
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Loader2, Calendar, Clock, Beaker, CheckCircle2, XCircle, Clock4, Plus } from 'lucide-react';
+import { Loader2, Calendar, Clock, Beaker, CheckCircle2, XCircle, Clock4, Plus, X } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface ReservationItem {
   id?: string;
@@ -33,11 +35,29 @@ interface ReservationItem {
 export default function LabReservations() {
   const { academicYear } = useModuleContext();
   // Les réservations sont stockées comme des sessions (cf. endpoints : POST labs/:id/reservations)
-  const { data: reservations, loading, error } = useModulesList<ReservationItem>(
+  const { data: reservations, loading, error, refetch } = useModulesList<ReservationItem>(
     'labs',
     'sessions',
     academicYear?.id,
   );
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [reservationForm, setReservationForm] = useState({ labId: '', date: '', startTime: '', endTime: '', purpose: '' });
+
+  const handleCreateReservation = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post(`labs/${reservationForm.labId}/reservations`, reservationForm, buildModulesApiOptions(academicYear?.id));
+      setModalOpen(false);
+      setReservationForm({ labId: '', date: '', startTime: '', endTime: '', purpose: '' });
+      await refetch();
+    } catch (e: any) {
+      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création de la réservation');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const safeReservations = reservations ?? [];
 
@@ -68,7 +88,10 @@ export default function LabReservations() {
           <p className="text-slate-500 text-sm font-medium">Gérez l'occupation des espaces spécialisés.</p>
         </div>
         <div className="flex items-center space-x-2">
-          <button className="flex items-center space-x-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-sm hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20">
+          <button
+            onClick={() => setModalOpen(true)}
+            className="flex items-center space-x-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-sm hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20"
+          >
             <Plus className="w-4 h-4" />
             <span>Nouvelle Réservation</span>
           </button>
@@ -156,6 +179,48 @@ export default function LabReservations() {
               </motion.div>
             );
           })}
+        </div>
+      )}
+
+      {/* Reservation Modal */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-slate-900">Nouvelle Réservation</h3>
+              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">ID Laboratoire</label>
+                <input type="text" value={reservationForm.labId} onChange={(e) => setReservationForm({ ...reservationForm, labId: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Date</label>
+                <input type="date" value={reservationForm.date} onChange={(e) => setReservationForm({ ...reservationForm, date: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Heure début</label>
+                  <input type="time" value={reservationForm.startTime} onChange={(e) => setReservationForm({ ...reservationForm, startTime: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Heure fin</label>
+                  <input type="time" value={reservationForm.endTime} onChange={(e) => setReservationForm({ ...reservationForm, endTime: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Objet</label>
+                <textarea value={reservationForm.purpose} onChange={(e) => setReservationForm({ ...reservationForm, purpose: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20 h-20" />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-bold">Annuler</button>
+              <button onClick={handleCreateReservation} disabled={submitting} className="px-4 py-2 bg-navy-900 text-white rounded-xl text-sm font-bold disabled:opacity-50">
+                {submitting ? 'Envoi...' : 'Réserver'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

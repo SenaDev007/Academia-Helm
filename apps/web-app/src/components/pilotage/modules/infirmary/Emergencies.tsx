@@ -6,8 +6,9 @@
 
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Loader2 } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 import {
   AlertCircle,
   PhoneCall,
@@ -20,6 +21,7 @@ import {
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface EmergencyItem {
   id: string;
@@ -57,9 +59,40 @@ const SEVERITY_BADGE: Record<string, string> = {
 
 export default function Emergencies() {
   const { academicYear } = useModuleContext();
-  const { data, loading, error } = useModulesList<EmergencyItem>('infirmary', 'emergencies', academicYear?.id);
+  const { data, loading, error, refetch } = useModulesList<EmergencyItem>('infirmary', 'emergencies', academicYear?.id);
 
   const emergencies = data ?? [];
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [formData, setFormData] = useState({ studentId: '', severity: 'HAUTE', description: '' });
+  const [submitting, setSubmitting] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const handleCreate = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post('infirmary/emergencies', formData, buildModulesApiOptions(academicYear?.id));
+      setModalOpen(false);
+      setFormData({ studentId: '', severity: 'HAUTE', description: '' });
+      await refetch();
+    } catch (e: any) {
+      alert(e?.response?.data?.message || e?.message || 'Erreur lors de la création de l\'urgence');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleUpdateStatus = async (id: string, status: string) => {
+    try {
+      setActionLoading(id);
+      await modulesApi.post(`infirmary/emergencies/${id}`, { status }, buildModulesApiOptions(academicYear?.id));
+      await refetch();
+    } catch (e: any) {
+      alert(e?.response?.data?.message || e?.message || 'Erreur lors de la mise à jour');
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   // Sépare les urgences actives (CRITIQUE / OPEN) de l'historique
   const active = emergencies.filter((e) => {
@@ -96,7 +129,10 @@ export default function Emergencies() {
             </h2>
             <p className="text-rose-700 font-medium">Interventions critiques nécessitant un suivi immédiat.</p>
           </div>
-          <button className="bg-rose-600 hover:bg-rose-700 text-white px-6 py-3 rounded-2xl font-black text-sm flex items-center transition-all shadow-lg shadow-rose-200">
+          <button
+            onClick={() => { setFormData({ studentId: '', severity: 'HAUTE', description: '' }); setModalOpen(true); }}
+            className="bg-rose-600 hover:bg-rose-700 text-white px-6 py-3 rounded-2xl font-black text-sm flex items-center transition-all shadow-lg shadow-rose-200"
+          >
             <Plus className="w-5 h-5 mr-2" />
             DÉCLARER URGENCE
           </button>
@@ -153,8 +189,19 @@ export default function Emergencies() {
                       <PhoneCall className="w-4 h-4 mr-2" />
                       Appeler Parent
                     </button>
-                    <button className="flex-1 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black transition-colors flex items-center justify-center">
-                      Suivre Dossier
+                    <button
+                      onClick={() => handleUpdateStatus(e.id, 'IN_PROGRESS')}
+                      disabled={actionLoading === e.id}
+                      className="flex-1 py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black transition-colors flex items-center justify-center disabled:opacity-50"
+                    >
+                      {actionLoading === e.id ? 'Envoi...' : 'Prendre en charge'}
+                    </button>
+                    <button
+                      onClick={() => handleUpdateStatus(e.id, 'RESOLVED')}
+                      disabled={actionLoading === e.id}
+                      className="flex-1 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black transition-colors flex items-center justify-center disabled:opacity-50"
+                    >
+                      Résoudre
                       <ArrowRight className="w-4 h-4 ml-2" />
                     </button>
                   </div>
@@ -223,6 +270,66 @@ export default function Emergencies() {
           </div>
         </div>
       </div>
+
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold">Nouvelle urgence</h3>
+              <button onClick={() => setModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-900">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Student ID</label>
+                <input
+                  type="text"
+                  value={formData.studentId}
+                  onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="student-001"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Gravité</label>
+                <select
+                  value={formData.severity}
+                  onChange={(e) => setFormData({ ...formData, severity: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                >
+                  <option value="CRITIQUE">Critique</option>
+                  <option value="HAUTE">Haute</option>
+                  <option value="MOYENNE">Moyenne</option>
+                  <option value="FAIBLE">Faible</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Description</label>
+                <textarea
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  rows={3}
+                  placeholder="Description de l'urgence"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold">
+                Annuler
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={submitting}
+                className="px-4 py-2 bg-rose-600 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {submitting ? 'Envoi...' : 'Déclarer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

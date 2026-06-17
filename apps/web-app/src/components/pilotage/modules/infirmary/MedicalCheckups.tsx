@@ -6,8 +6,9 @@
 
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Loader2 } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 import {
   Calendar,
   Plus,
@@ -22,6 +23,7 @@ import {
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface CheckupItem {
   id: string;
@@ -44,9 +46,27 @@ interface CheckupItem {
 
 export default function MedicalCheckups() {
   const { academicYear } = useModuleContext();
-  const { data, loading, error } = useModulesList<CheckupItem>('infirmary', 'checkups', academicYear?.id);
+  const { data, loading, error, refetch } = useModulesList<CheckupItem>('infirmary', 'checkups', academicYear?.id);
 
   const checkups = data ?? [];
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [formData, setFormData] = useState({ studentId: '', type: 'GENERAL', results: '' });
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleCreate = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post('infirmary/checkups', formData, buildModulesApiOptions(academicYear?.id));
+      setModalOpen(false);
+      setFormData({ studentId: '', type: 'GENERAL', results: '' });
+      await refetch();
+    } catch (e: any) {
+      alert(e?.response?.data?.message || e?.message || 'Erreur lors de la création du bilan');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -68,9 +88,12 @@ export default function MedicalCheckups() {
       {/* Action Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center space-x-2">
-          <button className="px-6 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-black flex items-center hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200">
+          <button
+            onClick={() => { setFormData({ studentId: '', type: 'GENERAL', results: '' }); setModalOpen(true); }}
+            className="px-6 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-black flex items-center hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200"
+          >
             <Plus className="w-4 h-4 mr-2" />
-            Planifier Visite
+            Nouveau Bilan
           </button>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -167,6 +190,68 @@ export default function MedicalCheckups() {
               </motion.div>
             );
           })}
+        </div>
+      )}
+
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold">Nouveau bilan de santé</h3>
+              <button onClick={() => setModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-900">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Student ID</label>
+                <input
+                  type="text"
+                  value={formData.studentId}
+                  onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="student-001"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Type de bilan</label>
+                <select
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                >
+                  <option value="GENERAL">Bilan général</option>
+                  <option value="VISION">Vision</option>
+                  <option value="HEARING">Audition</option>
+                  <option value="DENTAL">Bilan dentaire</option>
+                  <option value="SCOLIOSIS">Dépistage scoliose</option>
+                  <option value="BMI">IMC / Croissance</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Résultats</label>
+                <textarea
+                  value={formData.results}
+                  onChange={(e) => setFormData({ ...formData, results: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  rows={3}
+                  placeholder="Détails des résultats du bilan"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold">
+                Annuler
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={submitting}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {submitting ? 'Envoi...' : 'Créer'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

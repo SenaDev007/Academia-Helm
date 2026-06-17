@@ -158,9 +158,12 @@ export default function ShopReports() {
       <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden">
          <div className="p-8 border-b border-gray-50 flex items-center justify-between">
             <h3 className="text-xl font-black text-navy-900 uppercase tracking-tight">Articles les plus vendus</h3>
-            <button className="flex items-center space-x-2 px-6 py-2.5 bg-navy-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-navy-900/20">
-               <FileText className="w-3.5 h-3.5" />
-               <span>Générer Rapport Complet</span>
+            <button
+              onClick={() => alert('Bientôt disponible')}
+              className="flex items-center space-x-2 px-6 py-2.5 bg-navy-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-navy-900/20"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Générer Rapport Complet</span>
             </button>
          </div>
          <div className="p-0">

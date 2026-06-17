@@ -6,10 +6,11 @@
 
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Loader2, Truck, CheckCircle2, Package, MapPin, User, Search, Filter, MoreVertical, Eye, Smartphone, Bell } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface DeliveryItem {
   id?: string;
@@ -30,11 +31,25 @@ interface DeliveryItem {
 
 export default function ShopPickups() {
   const { academicYear } = useModuleContext();
-  const { data: deliveries, loading, error } = useModulesList<DeliveryItem>(
+  const { data: deliveries, loading, error, refetch } = useModulesList<DeliveryItem>(
     'shop',
     'deliveries',
     academicYear?.id,
   );
+
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const handleStatusChange = async (id: string, newStatus: string) => {
+    try {
+      setActionLoading(id);
+      await modulesApi.post(`shop/deliveries/${id}/status`, { status: newStatus }, buildModulesApiOptions(academicYear?.id));
+      await refetch();
+    } catch (e: any) {
+      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors du changement de statut');
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   const safeDeliveries = deliveries ?? [];
 
@@ -80,7 +95,10 @@ export default function ShopPickups() {
             <Truck className="w-4 h-4" />
             <span>Planifier Tournée</span>
           </button>
-          <button className="flex items-center space-x-2 px-8 py-3 bg-navy-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20 active:scale-95">
+          <button
+            onClick={() => alert('Sélectionnez une livraison dans le tableau pour confirmer le retrait.')}
+            className="flex items-center space-x-2 px-8 py-3 bg-navy-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20 active:scale-95"
+          >
             <CheckCircle2 className="w-4 h-4" />
             <span>Confirmer Retrait</span>
           </button>
@@ -136,10 +154,13 @@ export default function ShopPickups() {
                           <PickupRow
                             key={d?.id ?? `dlv-${i}`}
                             id={d?.refNo ?? d?.reference ?? d?.code ?? d?.id ?? `PKP-${i}`}
+                            deliveryId={d?.id ?? ''}
                             name={d?.customerName ?? d?.parentName ?? d?.clientName ?? 'Client'}
                             type={d?.type ?? d?.deliveryType ?? 'Sur place'}
-                            status={d?.status ?? 'En attente'}
+                            status={d?.status ?? 'pending'}
                             date={d?.date ?? d?.appointment ?? d?.rendezVous ?? (d?.scheduledAt ? new Date(d.scheduledAt).toLocaleDateString('fr-FR') : '—')}
+                            actionLoading={actionLoading}
+                            onStatusChange={handleStatusChange}
                           />
                         ))
                       )}
@@ -216,13 +237,25 @@ function StatusCard({ label, count, icon: Icon, color }: any) {
   );
 }
 
-function PickupRow({ id, name, type, status, date }: any) {
+function PickupRow({ id, deliveryId, name, type, status, date, actionLoading, onStatusChange }: any) {
   const statusStyles: any = {
     'Prêt': 'bg-emerald-50 text-emerald-600 border-emerald-100',
     'En Route': 'bg-blue-50 text-blue-600 border-blue-100',
     'En attente': 'bg-amber-50 text-amber-600 border-amber-100',
     'Planifié': 'bg-gray-50 text-gray-400 border-gray-100',
+    pending: 'bg-amber-50 text-amber-600 border-amber-100',
+    ready: 'bg-emerald-50 text-emerald-600 border-emerald-100',
+    picked_up: 'bg-blue-50 text-blue-600 border-blue-100',
+    delivered: 'bg-emerald-50 text-emerald-600 border-emerald-100',
   };
+  const statusLabel: any = {
+    pending: 'En attente',
+    ready: 'Prêt',
+    picked_up: 'Récupéré',
+    delivered: 'Livré',
+  };
+  const displayStatus = statusLabel[status] ?? status;
+  const statusValue = ['pending', 'ready', 'picked_up', 'delivered'].includes(status) ? status : 'pending';
 
   return (
     <tr className="hover:bg-gray-50 transition-all group">
@@ -242,9 +275,23 @@ function PickupRow({ id, name, type, status, date }: any) {
           </div>
        </td>
        <td className="px-8 py-6">
-          <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tight border ${statusStyles[status] ?? 'bg-gray-50 text-gray-400 border-gray-100'}`}>
-             {status}
-          </span>
+          {deliveryId ? (
+            <select
+              value={statusValue}
+              onChange={(e) => onStatusChange(deliveryId, e.target.value)}
+              disabled={actionLoading === deliveryId}
+              className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-tight border ${statusStyles[statusValue] ?? 'bg-gray-50 text-gray-400 border-gray-100'} outline-none disabled:opacity-50`}
+            >
+              <option value="pending">En attente</option>
+              <option value="ready">Prêt</option>
+              <option value="picked_up">Récupéré</option>
+              <option value="delivered">Livré</option>
+            </select>
+          ) : (
+            <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tight border ${statusStyles[status] ?? 'bg-gray-50 text-gray-400 border-gray-100'}`}>
+              {displayStatus}
+            </span>
+          )}
        </td>
        <td className="px-8 py-6 text-[10px] font-bold text-gray-400 uppercase tracking-tight">{date}</td>
        <td className="px-8 py-6">

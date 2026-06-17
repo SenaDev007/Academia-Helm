@@ -1,8 +1,10 @@
 'use client';
 
-import { Bus, Plus, Search, Filter, MoreVertical, Fuel, Gauge, Users, Loader2 } from 'lucide-react';
+import { useState } from 'react';
+import { Bus, Plus, Search, Filter, MoreVertical, Fuel, Gauge, Users, Loader2, X } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface VehicleItem {
   id: string;
@@ -17,11 +19,68 @@ interface VehicleItem {
   [key: string]: any;
 }
 
+const EMPTY_FORM = { name: '', plate: '', model: '', capacity: '', type: 'Bus Scolaire' };
+
 export default function TransportVehicles() {
   const { academicYear } = useModuleContext();
-  const { data, loading, error } = useModulesList<VehicleItem>('transport', 'vehicles', academicYear?.id);
+  const { data, loading, error, refetch } = useModulesList<VehicleItem>('transport', 'vehicles', academicYear?.id);
 
   const vehicles = data ?? [];
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [formData, setFormData] = useState<{ name: string; plate: string; model: string; capacity: string; type: string }>(EMPTY_FORM);
+  const [submitting, setSubmitting] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const openCreate = () => {
+    setFormData(EMPTY_FORM);
+    setEditId(null);
+    setModalOpen(true);
+  };
+
+  const openEdit = (v: VehicleItem) => {
+    setFormData({
+      name: v.name || '',
+      plate: v.plate || v.registrationPlate || '',
+      model: v.model || v.type || '',
+      capacity: String(v.capacity ?? ''),
+      type: v.type || 'Bus Scolaire',
+    });
+    setEditId(v.id);
+    setModalOpen(true);
+  };
+
+  const handleCreateOrUpdate = async () => {
+    try {
+      setSubmitting(true);
+      const payload = {
+        name: formData.name,
+        plate: formData.plate,
+        registrationPlate: formData.plate,
+        model: formData.model,
+        type: formData.type,
+        capacity: Number(formData.capacity) || 0,
+      };
+      if (editId) {
+        await modulesApi.put(`transport/vehicles/${editId}`, payload, buildModulesApiOptions(academicYear?.id));
+      } else {
+        await modulesApi.post('transport/vehicles', payload, buildModulesApiOptions(academicYear?.id));
+      }
+      setModalOpen(false);
+      setFormData(EMPTY_FORM);
+      setEditId(null);
+      await refetch();
+    } catch (e: any) {
+      alert(e?.response?.data?.message || e?.message || 'Erreur lors de l\'enregistrement');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    alert('Suppression non disponible : aucun endpoint DELETE n\'est exposé pour transport/vehicles.');
+  };
 
   if (loading) {
     return (
@@ -53,7 +112,10 @@ export default function TransportVehicles() {
           <button className="p-3 bg-white border border-slate-100 rounded-2xl text-slate-600 hover:bg-slate-50 transition-all">
             <Filter className="w-5 h-5" />
           </button>
-          <button className="flex items-center gap-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all">
+          <button
+            onClick={openCreate}
+            className="flex items-center gap-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all"
+          >
             <Plus className="w-4 h-4" />
             Nouveau Véhicule
           </button>
@@ -125,13 +187,108 @@ export default function TransportVehicles() {
                       <p className="text-xs font-bold text-slate-900">{driver}</p>
                     </div>
                   </div>
-                  <button className="p-2 bg-slate-50 rounded-xl text-slate-400 hover:text-navy-900 hover:bg-slate-100 transition-all">
-                    <Fuel className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => openEdit(vehicle)}
+                      disabled={actionLoading === vehicle.id}
+                      className="px-3 py-2 bg-slate-50 rounded-xl text-slate-600 hover:text-navy-900 hover:bg-slate-100 transition-all text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
+                    >
+                      Modifier
+                    </button>
+                    <button
+                      onClick={() => handleDelete(vehicle.id)}
+                      disabled={actionLoading === vehicle.id}
+                      className="p-2 bg-slate-50 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-slate-100 transition-all disabled:opacity-50"
+                    >
+                      <Fuel className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold">{editId ? 'Modifier le véhicule' : 'Nouveau véhicule'}</h3>
+              <button onClick={() => setModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-900">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Nom</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="Bus scolaire A"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Plaque d'immatriculation</label>
+                <input
+                  type="text"
+                  value={formData.plate}
+                  onChange={(e) => setFormData({ ...formData, plate: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="AB-123-CD"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Modèle</label>
+                <input
+                  type="text"
+                  value={formData.model}
+                  onChange={(e) => setFormData({ ...formData, model: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="Mercedes Sprinter"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase">Capacité</label>
+                  <input
+                    type="number"
+                    value={formData.capacity}
+                    onChange={(e) => setFormData({ ...formData, capacity: e.target.value })}
+                    className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    placeholder="30"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase">Type</label>
+                  <select
+                    value={formData.type}
+                    onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                    className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  >
+                    <option>Bus Scolaire</option>
+                    <option>Mini-bus</option>
+                    <option>Van</option>
+                    <option>4x4</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold">
+                Annuler
+              </button>
+              <button
+                onClick={handleCreateOrUpdate}
+                disabled={submitting}
+                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {submitting ? 'Envoi...' : editId ? 'Enregistrer' : 'Créer'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

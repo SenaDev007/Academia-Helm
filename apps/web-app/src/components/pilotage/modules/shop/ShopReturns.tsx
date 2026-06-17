@@ -6,11 +6,12 @@
 
 'use client';
 
-import React from 'react';
-import { Loader2, RotateCcw, Search, Filter, AlertCircle, Package } from 'lucide-react';
+import React, { useState } from 'react';
+import { Loader2, RotateCcw, Search, Filter, AlertCircle, Package, X } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface ReturnItem {
   id?: string;
@@ -33,11 +34,43 @@ interface ReturnItem {
 
 export default function ShopReturns() {
   const { academicYear } = useModuleContext();
-  const { data: returns, loading, error } = useModulesList<ReturnItem>(
+  const { data: returns, loading, error, refetch } = useModulesList<ReturnItem>(
     'shop',
     'returns',
     academicYear?.id,
   );
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [returnForm, setReturnForm] = useState({ orderId: '', reason: '', items: '' });
+
+  const handleCreateReturn = async () => {
+    try {
+      setSubmitting(true);
+      const items = returnForm.items.split(',').map((s) => s.trim()).filter(Boolean);
+      await modulesApi.post('shop/returns', { orderId: returnForm.orderId, reason: returnForm.reason, items }, buildModulesApiOptions(academicYear?.id));
+      setModalOpen(false);
+      setReturnForm({ orderId: '', reason: '', items: '' });
+      await refetch();
+    } catch (e: any) {
+      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création du retour');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleStatusChange = async (id: string, newStatus: string) => {
+    try {
+      setActionLoading(id);
+      await modulesApi.post(`shop/returns/${id}/status`, { status: newStatus }, buildModulesApiOptions(academicYear?.id));
+      await refetch();
+    } catch (e: any) {
+      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors du changement de statut');
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   const safeReturns = returns ?? [];
 
@@ -72,7 +105,10 @@ export default function ShopReturns() {
           <h3 className="text-xl font-black text-navy-900 uppercase tracking-tight">Retours & Échanges</h3>
           <p className="text-sm text-gray-400 font-medium">Gérez les remboursements, avoirs et échanges d'articles</p>
         </div>
-        <button className="flex items-center space-x-2 px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-700 transition-all shadow-xl shadow-rose-600/20 active:scale-95">
+        <button
+          onClick={() => setModalOpen(true)}
+          className="flex items-center space-x-2 px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-700 transition-all shadow-xl shadow-rose-600/20 active:scale-95"
+        >
           <RotateCcw className="w-4 h-4" />
           <span>Initier un Retour</span>
         </button>
@@ -130,12 +166,15 @@ export default function ShopReturns() {
                    <ReturnRow
                      key={r?.id ?? `ret-${i}`}
                      id={r?.refNo ?? r?.reference ?? r?.ticketNo ?? r?.id ?? `RET-${i}`}
+                     returnId={r?.id ?? ''}
                      product={r?.productName ?? r?.product ?? r?.item ?? 'Article'}
                      client={r?.clientName ?? r?.client ?? r?.customer ?? 'Client'}
                      reason={r?.reason ?? '—'}
                      type={r?.type ?? 'ÉCHANGE'}
-                     status={r?.status ?? 'En attente'}
+                     status={r?.status ?? 'pending'}
                      date={r?.date ?? (r?.createdAt ? new Date(r.createdAt).toLocaleDateString('fr-FR') : '—')}
+                     actionLoading={actionLoading}
+                     onStatusChange={handleStatusChange}
                    />
                  ))
                )}
@@ -156,6 +195,38 @@ export default function ShopReturns() {
             </p>
          </div>
       </div>
+
+      {/* Return Modal */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-navy-900">Nouveau Retour</h3>
+              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">ID Commande</label>
+                <input type="text" value={returnForm.orderId} onChange={(e) => setReturnForm({ ...returnForm, orderId: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Motif</label>
+                <textarea value={returnForm.reason} onChange={(e) => setReturnForm({ ...returnForm, reason: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20 h-20" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Articles (IDs séparés par virgule)</label>
+                <input type="text" value={returnForm.items} onChange={(e) => setReturnForm({ ...returnForm, items: e.target.value })} placeholder="ex: prod-1, prod-2" className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-gray-200 rounded-xl text-sm font-bold">Annuler</button>
+              <button onClick={handleCreateReturn} disabled={submitting} className="px-4 py-2 bg-rose-600 text-white rounded-xl text-sm font-bold disabled:opacity-50">
+                {submitting ? 'Envoi...' : 'Créer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -176,12 +247,24 @@ function ReturnStat({ label, count, color }: any) {
   );
 }
 
-function ReturnRow({ id, product, client, reason, type, status, date }: any) {
+function ReturnRow({ id, returnId, product, client, reason, type, status, date, actionLoading, onStatusChange }: any) {
   const statusStyles: any = {
     'Traité': 'bg-emerald-50 text-emerald-600 border-emerald-100',
     'En attente': 'bg-amber-50 text-amber-600 border-amber-100',
     'Approuvé': 'bg-blue-50 text-blue-600 border-blue-100',
+    pending: 'bg-amber-50 text-amber-600 border-amber-100',
+    approved: 'bg-blue-50 text-blue-600 border-blue-100',
+    processed: 'bg-emerald-50 text-emerald-600 border-emerald-100',
+    rejected: 'bg-rose-50 text-rose-600 border-rose-100',
   };
+  const statusLabel: any = {
+    pending: 'En attente',
+    approved: 'Approuvé',
+    processed: 'Traité',
+    rejected: 'Rejeté',
+  };
+  const displayStatus = statusLabel[status] ?? status;
+  const statusValue = ['pending', 'approved', 'processed', 'rejected'].includes(status) ? status : 'pending';
 
   const typeStyles: any = {
     'ÉCHANGE': 'bg-navy-50 text-navy-600 border-navy-100',
@@ -206,9 +289,23 @@ function ReturnRow({ id, product, client, reason, type, status, date }: any) {
           </span>
        </td>
        <td className="px-8 py-6">
-          <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tight border ${statusStyles[status] ?? 'bg-gray-50 text-gray-500 border-gray-100'}`}>
-             {status}
-          </span>
+          {returnId ? (
+            <select
+              value={statusValue}
+              onChange={(e) => onStatusChange(returnId, e.target.value)}
+              disabled={actionLoading === returnId}
+              className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-tight border ${statusStyles[statusValue] ?? 'bg-gray-50 text-gray-500 border-gray-100'} outline-none disabled:opacity-50`}
+            >
+              <option value="pending">En attente</option>
+              <option value="approved">Approuvé</option>
+              <option value="processed">Traité</option>
+              <option value="rejected">Rejeté</option>
+            </select>
+          ) : (
+            <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tight border ${statusStyles[status] ?? 'bg-gray-50 text-gray-500 border-gray-100'}`}>
+              {displayStatus}
+            </span>
+          )}
        </td>
        <td className="px-8 py-6 text-[10px] font-bold text-gray-400 uppercase tracking-tight">{date}</td>
     </tr>

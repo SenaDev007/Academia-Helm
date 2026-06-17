@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface MenuItem {
   id: string;
@@ -36,14 +37,101 @@ interface MenuItem {
   [key: string]: any;
 }
 
+interface MenuFormData {
+  date: string;
+  mealType: string;
+  dishes: string;
+}
+
+const emptyMenuForm: MenuFormData = { date: '', mealType: 'DEJEUNER', dishes: '' };
+
 export default function CanteenMenus() {
   const { academicYear } = useModuleContext();
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('list');
-  const { data: menus, loading, error } = useModulesList<MenuItem>(
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [formData, setFormData] = useState<MenuFormData>(emptyMenuForm);
+  const [submitting, setSubmitting] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const { data: menus, loading, error, refetch } = useModulesList<MenuItem>(
     'canteen',
     'menus',
     academicYear?.id,
   );
+
+  const openCreate = () => {
+    setFormData(emptyMenuForm);
+    setEditingId(null);
+    setCreateOpen(true);
+  };
+
+  const openEdit = (menu: MenuItem) => {
+    setEditingId(menu.id);
+    setFormData({
+      date: menu.date ?? menu.menuDate ?? '',
+      mealType: menu.mealType ?? menu.period ?? 'DEJEUNER',
+      dishes: menu.main ?? menu.mainCourse ?? menu.dish ?? '',
+    });
+    setEditOpen(true);
+  };
+
+  const handleCreate = async () => {
+    try {
+      setSubmitting(true);
+      await modulesApi.post(
+        'canteen/menus',
+        formData,
+        buildModulesApiOptions(academicYear?.id),
+      );
+      setCreateOpen(false);
+      setFormData(emptyMenuForm);
+      await refetch();
+    } catch (e: any) {
+      console.error('Erreur création menu :', e?.message || e);
+      alert(e?.message || 'Erreur lors de la création du menu');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleUpdate = async () => {
+    if (!editingId) return;
+    try {
+      setSubmitting(true);
+      await modulesApi.put(
+        `canteen/menus/${editingId}`,
+        formData,
+        buildModulesApiOptions(academicYear?.id),
+      );
+      setEditOpen(false);
+      setEditingId(null);
+      setFormData(emptyMenuForm);
+      await refetch();
+    } catch (e: any) {
+      console.error('Erreur mise à jour menu :', e?.message || e);
+      alert(e?.message || 'Erreur lors de la mise à jour du menu');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (menuId: string) => {
+    if (!window.confirm('Supprimer ce menu ?')) return;
+    try {
+      setActionLoading(menuId);
+      await modulesApi.delete(
+        `canteen/menus/${menuId}`,
+        buildModulesApiOptions(academicYear?.id),
+      );
+      await refetch();
+    } catch (e: any) {
+      console.error('Erreur suppression menu :', e?.message || e);
+      alert(e?.message || 'Erreur lors de la suppression du menu');
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   if (loading) {
     return (
@@ -84,7 +172,10 @@ export default function CanteenMenus() {
             <Sparkles className="w-4 h-4" />
             <span>Générer via Sarah AI</span>
           </button>
-          <button className="flex items-center space-x-2 px-6 py-2.5 bg-navy-900 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20">
+          <button
+            onClick={openCreate}
+            className="flex items-center space-x-2 px-6 py-2.5 bg-navy-900 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20"
+          >
             <Plus className="w-4 h-4" />
             <span>Planifier</span>
           </button>
@@ -133,12 +224,16 @@ export default function CanteenMenus() {
                 {menus.map((menu) => (
                   <MenuRow
                     key={menu.id}
+                    menuId={menu.id}
                     date={menu.date ?? menu.menuDate ?? '—'}
                     period={menu.period ?? menu.mealType ?? '—'}
                     main={menu.main ?? menu.mainCourse ?? menu.dish ?? '—'}
                     level={menu.level ?? menu.schoolLevel ?? menu.targetLevel ?? 'Tous les niveaux'}
                     cost={menu.cost ?? menu.estimatedCost ?? 0}
                     status={menu.status ?? 'Brouillon'}
+                    onEdit={() => openEdit(menu)}
+                    onDelete={() => handleDelete(menu.id)}
+                    actionLoading={actionLoading}
                   />
                 ))}
               </tbody>
@@ -168,20 +263,139 @@ export default function CanteenMenus() {
           </div>
           <h3 className="text-2xl font-black text-navy-900 mb-2 tracking-tight">Vue Calendrier Interactive</h3>
           <p className="text-gray-400 max-w-sm text-sm font-medium leading-relaxed">Organisez visuellement vos menus par semaine ou par mois avec la fluidité Academia Helm.</p>
-          <button className="mt-8 px-8 py-3 bg-navy-900 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl shadow-navy-900/20">Activer la vue</button>
+          <button className="mt-8 px-8 py-3 bg-navy-900 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl shadow-navy-900/20" onClick={openCreate}>Activer la vue</button>
+        </div>
+      )}
+
+      {/* Modal Planifier (création) */}
+      {createOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <h3 className="text-lg font-black text-navy-900">Planifier un menu</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Date</label>
+                <input
+                  type="date"
+                  value={formData.date}
+                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Type de repas</label>
+                <select
+                  value={formData.mealType}
+                  onChange={(e) => setFormData({ ...formData, mealType: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                >
+                  <option value="DEJEUNER">Déjeuner</option>
+                  <option value="PETIT_DEJEUNER">Petit Déjeuner</option>
+                  <option value="GOUTER">Goûter</option>
+                  <option value="DINER">Dîner</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Plat principal</label>
+                <input
+                  type="text"
+                  placeholder="ex : Riz au poisson"
+                  value={formData.dishes}
+                  onChange={(e) => setFormData({ ...formData, dishes: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                onClick={() => setCreateOpen(false)}
+                disabled={submitting}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={submitting}
+                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {submitting ? 'Envoi…' : 'Créer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Modification */}
+      {editOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <h3 className="text-lg font-black text-navy-900">Modifier le menu</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Date</label>
+                <input
+                  type="date"
+                  value={formData.date}
+                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Type de repas</label>
+                <select
+                  value={formData.mealType}
+                  onChange={(e) => setFormData({ ...formData, mealType: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                >
+                  <option value="DEJEUNER">Déjeuner</option>
+                  <option value="PETIT_DEJEUNER">Petit Déjeuner</option>
+                  <option value="GOUTER">Goûter</option>
+                  <option value="DINER">Dîner</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Plat principal</label>
+                <input
+                  type="text"
+                  placeholder="ex : Riz au poisson"
+                  value={formData.dishes}
+                  onChange={(e) => setFormData({ ...formData, dishes: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                onClick={() => setEditOpen(false)}
+                disabled={submitting}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleUpdate}
+                disabled={submitting}
+                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {submitting ? 'Envoi…' : 'Enregistrer'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-function MenuRow({ date, period, main, level, cost, status }: any) {
+function MenuRow({ menuId, date, period, main, level, cost, status, onEdit, onDelete, actionLoading }: any) {
   const statusColors: any = {
     'Publié': 'bg-emerald-50 text-emerald-600 border-emerald-100',
     'Brouillon': 'bg-gray-50 text-gray-500 border-gray-100',
     'Modifié': 'bg-amber-50 text-amber-600 border-amber-100',
   };
   const formattedCost = typeof cost === 'number' ? `${cost.toLocaleString('fr-FR')} F` : cost;
+  const isLoading = actionLoading === menuId;
 
   return (
     <tr className="group hover:bg-navy-50/30 transition-all duration-300">
@@ -220,8 +434,20 @@ function MenuRow({ date, period, main, level, cost, status }: any) {
       <td className="px-8 py-6 text-right">
         <div className="flex items-center justify-end space-x-1">
           <button className="p-2 text-gray-400 hover:text-navy-600 hover:bg-white rounded-lg transition-all"><Eye className="w-4 h-4" /></button>
-          <button className="p-2 text-gray-400 hover:text-blue-600 hover:bg-white rounded-lg transition-all"><Edit className="w-4 h-4" /></button>
-          <button className="p-2 text-gray-400 hover:text-red-600 hover:bg-white rounded-lg transition-all"><Trash2 className="w-4 h-4" /></button>
+          <button
+            onClick={onEdit}
+            disabled={isLoading}
+            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-white rounded-lg transition-all disabled:opacity-50"
+          >
+            <Edit className="w-4 h-4" />
+          </button>
+          <button
+            onClick={onDelete}
+            disabled={isLoading}
+            className="p-2 text-gray-400 hover:text-red-600 hover:bg-white rounded-lg transition-all disabled:opacity-50"
+          >
+            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+          </button>
         </div>
       </td>
     </tr>

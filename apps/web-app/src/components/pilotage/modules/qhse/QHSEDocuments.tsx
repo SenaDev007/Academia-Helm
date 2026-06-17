@@ -52,7 +52,10 @@ export default function QHSEDocuments() {
           </h3>
           <p className="text-slate-500 text-sm font-medium">Accédez aux procédures, consignes et rapports officiels.</p>
         </div>
-        <button className="px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-navy-900/10 hover:bg-navy-800 transition-all">
+        <button
+          onClick={() => alert('Bientôt disponible')}
+          className="px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-navy-900/10 hover:bg-navy-800 transition-all"
+        >
           Ajouter un Document
         </button>
       </div>

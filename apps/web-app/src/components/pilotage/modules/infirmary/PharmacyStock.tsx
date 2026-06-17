@@ -6,8 +6,9 @@
 
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Loader2 } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 import {
   Pill,
   Plus,
@@ -21,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface StockItem {
   id: string;
@@ -46,9 +48,35 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function PharmacyStock() {
   const { academicYear } = useModuleContext();
-  const { data, loading, error } = useModulesList<StockItem>('infirmary', 'stock', academicYear?.id);
+  const { data, loading, error, refetch } = useModulesList<StockItem>('infirmary', 'stock', academicYear?.id);
 
   const items = data ?? [];
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [formData, setFormData] = useState({ medicationId: '', quantity: '', type: 'IN' });
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleMove = async () => {
+    if (!formData.medicationId) {
+      alert('Veuillez saisir l\'ID du médicament.');
+      return;
+    }
+    try {
+      setSubmitting(true);
+      const payload = {
+        quantity: Number(formData.quantity) || 0,
+        type: formData.type,
+      };
+      await modulesApi.post(`infirmary/stock/${formData.medicationId}/move`, payload, buildModulesApiOptions(academicYear?.id));
+      setModalOpen(false);
+      setFormData({ medicationId: '', quantity: '', type: 'IN' });
+      await refetch();
+    } catch (e: any) {
+      alert(e?.response?.data?.message || e?.message || 'Erreur lors du mouvement de stock');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   // Statistiques calculées depuis le stock réel
   const total = items.length;
@@ -123,11 +151,17 @@ export default function PharmacyStock() {
           />
         </div>
         <div className="flex items-center space-x-2">
-          <button className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold flex items-center hover:bg-emerald-700 transition-colors shadow-sm">
+          <button
+            onClick={() => { setFormData({ medicationId: '', quantity: '', type: 'IN' }); setModalOpen(true); }}
+            className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold flex items-center hover:bg-emerald-700 transition-colors shadow-sm"
+          >
             <Plus className="w-4 h-4 mr-2" />
-            Approvisionner
+            Mouvement de Stock
           </button>
-          <button className="px-4 py-2 bg-slate-900 text-white rounded-xl text-sm font-bold flex items-center hover:bg-slate-800 transition-colors shadow-sm">
+          <button
+            onClick={() => { setFormData({ medicationId: '', quantity: '', type: 'OUT' }); setModalOpen(true); }}
+            className="px-4 py-2 bg-slate-900 text-white rounded-xl text-sm font-bold flex items-center hover:bg-slate-800 transition-colors shadow-sm"
+          >
             <ArrowDownCircle className="w-4 h-4 mr-2" />
             Sortie Stock
           </button>
@@ -194,6 +228,70 @@ export default function PharmacyStock() {
           })}
         </div>
       </div>
+
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold">Mouvement de stock</h3>
+              <button onClick={() => setModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-900">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Médicament (ID)</label>
+                <input
+                  type="text"
+                  value={formData.medicationId}
+                  onChange={(e) => setFormData({ ...formData, medicationId: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="med-001"
+                />
+                {items.length > 0 && (
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    IDs disponibles : {items.slice(0, 5).map((i) => i.id).join(', ')}
+                    {items.length > 5 ? '…' : ''}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Type de mouvement</label>
+                <select
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                >
+                  <option value="IN">Entrée (approvisionnement)</option>
+                  <option value="OUT">Sortie (distribution)</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase">Quantité</label>
+                <input
+                  type="number"
+                  value={formData.quantity}
+                  onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="10"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold">
+                Annuler
+              </button>
+              <button
+                onClick={handleMove}
+                disabled={submitting}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {submitting ? 'Envoi...' : 'Valider'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

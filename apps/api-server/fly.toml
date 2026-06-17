@@ -1,4 +1,7 @@
-# fly.toml — Configuration PRODUCTION pour academia-helm-api
+# fly.toml app configuration file generated for academia-helm-api on 2026-06-17T15:00:37Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
 
 app = 'academia-helm-api'
 primary_region = 'fra'
@@ -23,6 +26,10 @@ primary_region = 'fra'
   cpus = 1
   memory_mb = 2048
 
-# PAS de [checks] — flyctl deploy a son propre timeout de health check
-# qui échoue systématiquement avec NestJS (60+ modules, 534 modèles Prisma).
-# Le déploiement réussit sans checks, puis on vérifie les logs manuellement.
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 2
+  memory_mb = 4096
+  memory = '4gb'
+  processes = ['app']
+  size = 'shared-cpu-2x'

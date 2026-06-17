@@ -201,6 +201,7 @@ export async function checkSchoolUserExists(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, tenant_id: tenantIdOrSlug }),
+      signal: AbortSignal.timeout(10000), // 10s timeout — éviter les blocages
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -214,10 +215,17 @@ export async function checkSchoolUserExists(
       return { ok: false, reason: 'Utilisateur non trouvé' };
     }
     return { ok: true, userId: data.userId };
-  } catch (err) {
+  } catch (err: any) {
+    // Distinguer les erreurs réseau (API down) des erreurs de validation
+    if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
+      return {
+        ok: false,
+        reason: 'Le serveur met trop de temps à répondre. Veuillez réessayer dans un instant.',
+      };
+    }
     return {
       ok: false,
-      reason: 'Erreur lors de la vérification utilisateur',
+      reason: 'Erreur de connexion au serveur. Vérifiez votre connexion et réessayez.',
     };
   }
 }

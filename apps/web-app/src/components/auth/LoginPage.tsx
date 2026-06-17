@@ -1031,6 +1031,16 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
 
     if (!isSchoolFlow) return;
 
+    // ── Nettoyer les paramètres code/state de l'URL IMMÉDIATEMENT ──
+    // pour éviter que l'useEffect se ré-exécute en boucle si la requête échoue.
+    // On utilise window.history.replaceState pour ne pas déclencher de re-render.
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('code');
+      url.searchParams.delete('state');
+      window.history.replaceState({}, '', url.toString());
+    }
+
     setIsLoading(true);
     fetch('/api/school-auth/google/callback', {
       method: 'POST',
@@ -1049,6 +1059,8 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       })
       .catch((err) => {
         setError(err instanceof Error ? err.message : 'Erreur callback Google');
+        // Ne PAS cacher les boutons — l'utilisateur doit pouvoir réessayer
+        // schoolGooglePending reste false → boutons visibles
       })
       .finally(() => setIsLoading(false));
   }, [searchParams, schoolGooglePending]);

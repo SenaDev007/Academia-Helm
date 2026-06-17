@@ -58,16 +58,11 @@ COPY --from=build /app/.z-ai-config* ./
 
 EXPOSE 3000
 
-# TypeORM removed — but Prisma with 270+ models still needs ~2GB during startup
-# Run migrations BEFORE starting the server (non-blocking: separate process)
-# If migrations fail, the server still starts (fallback SQL in main.ts covers critical columns)
-#
-# MIGRATION STRATEGY:
-# Migrations are NOT run at container startup. They are run separately via:
+# PAS d'ENTRYPOINT — on utilise CMD directement pour éviter que
+# docker-entrypoint.sh (qui exécute `npx prisma migrate deploy`) ne bloque
+# le démarrage de NestJS.
+ENTRYPOINT []
+
+# Migrations : déjà appliquées ("No pending migrations"). Si besoin :
 #   fly ssh console -C "npx prisma migrate deploy --schema=prisma/schema.prisma"
-# Or via a CI/CD step before deployment.
-#
-# This is critical: running `npx prisma` consumes CPU and memory that slows
-# down Node.js startup. On Fly.io shared-cpu-1x, every second counts —
-# the health check has a 60s grace period and NestJS needs all of it.
-CMD [ "node", "--max-old-space-size=768", "dist/main.js" ]
+CMD [ "node", "--max-old-space-size=1024", "dist/main.js" ]

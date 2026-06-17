@@ -1,8 +1,4 @@
 # fly.toml — Configuration PRODUCTION pour academia-helm-api
-#
-# Setup : performance-1x (1 vCPU dédié) + 1GB RAM
-# Coût : ~$8.50/mois
-# NestJS démarre en 5-10s avec un CPU dédié
 
 app = 'academia-helm-api'
 primary_region = 'fra'
@@ -23,9 +19,12 @@ primary_region = 'fra'
   processes = ['app']
 
 [[vm]]
-  cpu_kind = 'performance'
+  cpu_kind = 'shared'
   cpus = 1
-  memory_mb = 1024
+  # 2GB RAM — NestJS avec 534 modèles Prisma + 60+ modules consomme
+  # ~850MB au démarrage. 1GB = OOM systématique.
+  # 2GB laisse ~1GB pour OS + Node runtime + Prisma non-heap.
+  memory_mb = 2048
 
 [checks]
   [checks.health]
@@ -33,8 +32,6 @@ primary_region = 'fra'
     type = 'http'
     interval = '30s'
     timeout = '10s'
-    # 120s grace period — assez pour NestJS + 60 modules + 534 modèles Prisma
-    # sur performance-1x (démarrage en 5-10s, mais on garde de la marge)
     grace_period = '120s'
     method = 'GET'
     path = '/health'

@@ -42,13 +42,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       isNeon;
 
     // Taille du pool adaptée au mode
-    // - Neon pooler : 3 connexions (suffisant, le pooler multiplexe vers Neon)
+    // - Neon pooler : 5 connexions (suffisant, le pooler multiplexe vers Neon)
     // - Neon direct : 3 connexions (Neon free tier = limité)
     // - Local dev : 3 connexions
-    // ⚠️ Réduit à 3 pour limiter la consommation mémoire sur Fly.io 512MB.
-    //    Chaque connexion PostgreSQL consomme ~5-10MB de RAM.
-    //    3 connexions × ~7MB = ~21MB (au lieu de 70MB avec 10 connexions).
-    const poolMax = isNeonPooler ? 3 : isNeon ? 3 : 3;
+    const poolMax = isNeonPooler ? 5 : isNeon ? 3 : 3;
 
     const poolConfig: any = {
       connectionString: databaseUrl,

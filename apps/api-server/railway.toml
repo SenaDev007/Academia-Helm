@@ -14,4 +14,4 @@
   #   - Pool PostgreSQL (3 connexions) : ~21MB
   #   - V8 heap : jusqu'à 384MB (mais GC agressif avant)
   #   Total max théorique : ~675MB → GC tient le heap sous ~250MB en pratique
-  NODE_OPTIONS = "--max-old-space-size=384"
+  NODE_OPTIONS = "--max-old-space-size=768"

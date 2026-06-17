@@ -1,17 +1,86 @@
 'use client';
 
-import { Settings, Bell, Shield, Map, Truck, CreditCard, Save } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Settings, Bell, Shield, Map, Truck, CreditCard, Save, Loader2 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+
+interface TransportSettingsData {
+  vehicleTypes?: string[];
+  zones?: string[];
+  parentNotifications?: string[];
+  pricingOptions?: string[];
+  notifications?: string[];
+  tariffs?: string[];
+  [key: string]: any;
+}
+
+const DEFAULT_SETTINGS: TransportSettingsData = {
+  vehicleTypes: ['Bus Scolaire', 'Mini-bus', 'Van', '4x4'],
+  zones: ['Centre-ville', 'Périphérie', 'Zone Industrielle', 'Hors périmètre'],
+  parentNotifications: ['Montée dans le bus', 'Descente du bus', 'Retard > 10 min', 'Incident'],
+  pricingOptions: ['Mensuel A/R', 'Mensuel simple', 'Trimestriel', 'Annuel'],
+};
 
 export default function TransportSettings() {
+  const { academicYear } = useModuleContext();
+  const [settings, setSettings] = useState<TransportSettingsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!academicYear?.id) {
+      setSettings(DEFAULT_SETTINGS);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const data = await modulesApi.get<TransportSettingsData>(
+          'transport/settings',
+          buildModulesApiOptions(academicYear.id),
+        );
+        if (!cancelled) setSettings(data ?? DEFAULT_SETTINGS);
+      } catch (e: any) {
+        if (!cancelled) {
+          setError(e?.response?.data?.message || e?.message || 'Erreur de chargement');
+          setSettings(DEFAULT_SETTINGS);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [academicYear?.id]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-slate-600">Chargement...</span>
+      </div>
+    );
+  }
+
   const sections = [
-    { title: 'Types de véhicules', icon: Truck, items: ['Bus Scolaire', 'Mini-bus', 'Van', '4x4'] },
-    { title: 'Zones de transport', icon: Map, items: ['Centre-ville', 'Périphérie', 'Zone Industrielle', 'Hors périmètre'] },
-    { title: 'Notifications parents', icon: Bell, items: ['Montée dans le bus', 'Descente du bus', 'Retard > 10 min', 'Incident'] },
-    { title: 'Tarification', icon: CreditCard, items: ['Mensuel A/R', 'Mensuel simple', 'Trimestriel', 'Annuel'] },
+    { title: 'Types de véhicules', icon: Truck, items: settings?.vehicleTypes || DEFAULT_SETTINGS.vehicleTypes! },
+    { title: 'Zones de transport', icon: Map, items: settings?.zones || DEFAULT_SETTINGS.zones! },
+    { title: 'Notifications parents', icon: Bell, items: settings?.parentNotifications || settings?.notifications || DEFAULT_SETTINGS.parentNotifications! },
+    { title: 'Tarification', icon: CreditCard, items: settings?.pricingOptions || settings?.tariffs || DEFAULT_SETTINGS.pricingOptions! },
   ];
 
   return (
     <div className="space-y-8">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les paramètres. {error}
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <h3 className="text-xl font-black text-slate-900 tracking-tighter uppercase flex items-center gap-2">
           <Settings className="w-6 h-6 text-slate-400" /> Configuration du module
@@ -31,7 +100,7 @@ export default function TransportSettings() {
               <h4 className="text-lg font-black text-slate-900 tracking-tighter uppercase">{section.title}</h4>
             </div>
             <div className="space-y-3">
-              {section.items.map((item, j) => (
+              {section.items.map((item: string, j: number) => (
                 <div key={j} className="flex items-center justify-between p-4 rounded-2xl bg-slate-50/50 border border-slate-100 group hover:border-navy-900 transition-all cursor-pointer">
                   <span className="text-sm font-bold text-slate-700">{item}</span>
                   <div className="w-8 h-4 bg-slate-200 rounded-full relative group-hover:bg-navy-900 transition-colors">

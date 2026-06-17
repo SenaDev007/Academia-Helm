@@ -6,39 +6,119 @@
 
 'use client';
 
-import React from 'react';
-import { 
-  BarChart3, PieChart, TrendingUp, TrendingDown,
-  Calendar, Download, Filter, FileText, ArrowRight,
-  Zap, Info, Activity
-} from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Loader2, BarChart3, PieChart, TrendingUp, Activity, Zap, Calendar, Download, FileText } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+
+interface ShopStats {
+  grossMargin?: number;
+  marginTotal?: number;
+  stockValue?: number;
+  stockTotalValue?: number;
+  averageBasket?: number;
+  basketAverage?: number;
+  topProducts?: Array<{
+    name?: string;
+    productName?: string;
+    qty?: number;
+    quantity?: number;
+    revenue?: number;
+    stock?: number;
+    remainingStock?: number;
+    status?: string;
+  }>;
+  salesByCategory?: Array<{ label?: string; value?: number }>;
+  monthlyEvolution?: Array<{ label?: string; value?: number }>;
+}
+
+const DEFAULT_STATS: ShopStats = {
+  grossMargin: 0,
+  stockValue: 0,
+  averageBasket: 0,
+  topProducts: [],
+};
 
 export default function ShopReports() {
+  const { academicYear } = useModuleContext();
+  const [stats, setStats] = useState<ShopStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!academicYear?.id) {
+      setStats(null);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await modulesApi.get<ShopStats>(
+          'shop/stats',
+          buildModulesApiOptions(academicYear.id),
+        );
+        if (!cancelled) {
+          setStats(data?.data ?? data);
+        }
+      } catch (e: any) {
+        if (!cancelled) {
+          setError(e?.response?.data?.message ?? e?.message ?? 'Erreur de chargement');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [academicYear?.id]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des rapports...</span>
+      </div>
+    );
+  }
+
+  const safeStats: ShopStats = { ...DEFAULT_STATS, ...(stats ?? {}) };
+  const topProducts = safeStats.topProducts ?? [];
+
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les statistiques. {error}
+        </div>
+      )}
+
       {/* Quick Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <SummaryCard 
-          label="Marge Brute" 
-          value={formatCurrency(12450000)} 
-          trend="+8.5%" 
-          trendUp={true} 
-          icon={TrendingUp} 
+        <SummaryCard
+          label="Marge Brute"
+          value={formatCurrency(safeStats.grossMargin ?? safeStats.marginTotal ?? 0)}
+          trend="—"
+          trendUp={true}
+          icon={TrendingUp}
         />
-        <SummaryCard 
-          label="Valeur Stock Immobilisée" 
-          value={formatCurrency(38200000)} 
-          trend="-2.1%" 
-          trendUp={false} 
-          icon={Activity} 
+        <SummaryCard
+          label="Valeur Stock Immobilisée"
+          value={formatCurrency(safeStats.stockValue ?? safeStats.stockTotalValue ?? 0)}
+          trend="—"
+          trendUp={false}
+          icon={Activity}
         />
-        <SummaryCard 
-          label="Panier Moyen" 
-          value={formatCurrency(14500)} 
-          trend="+540 F" 
-          trendUp={true} 
-          icon={Zap} 
+        <SummaryCard
+          label="Panier Moyen"
+          value={formatCurrency(safeStats.averageBasket ?? safeStats.basketAverage ?? 0)}
+          trend="—"
+          trendUp={true}
+          icon={Zap}
         />
       </div>
 
@@ -63,7 +143,7 @@ export default function ShopReports() {
                <h3 className="text-xl font-black text-navy-900 uppercase tracking-tight">Évolution Mensuelle</h3>
                <div className="flex items-center space-x-2">
                   <select className="text-[10px] font-black uppercase tracking-tight bg-gray-50 border-none rounded-xl px-3 py-2 outline-none">
-                     <option>Année 2026</option>
+                     <option>Année {new Date().getFullYear()}</option>
                   </select>
                </div>
             </div>
@@ -96,10 +176,31 @@ export default function ShopReports() {
                   </tr>
                </thead>
                <tbody className="divide-y divide-gray-50">
-                  <ReportRow name="Cahier Academia 200p" qty={1250} revenue={1500000} stock={450} status="TOP" />
-                  <ReportRow name="Uniforme Polo (M)" qty={850} revenue={12750000} stock={12} status="TOP" />
-                  <ReportRow name="Gourde Isotherme" qty={420} revenue={2310000} stock={0} status="RUPTURE" />
-                  <ReportRow name="Kit Papeterie CP1" qty={380} revenue={7030000} stock={85} status="NORMAL" />
+                  {topProducts.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-8 py-16 text-center text-gray-500">
+                        Aucune donnée disponible pour cette année scolaire.
+                      </td>
+                    </tr>
+                  ) : (
+                    topProducts.map((p: any, i: number) => {
+                      const name = p?.name ?? p?.productName ?? `Produit #${i + 1}`;
+                      const qty = p?.qty ?? p?.quantity ?? 0;
+                      const revenue = p?.revenue ?? 0;
+                      const stock = p?.stock ?? p?.remainingStock ?? 0;
+                      const status = qty >= 800 ? 'TOP' : stock <= 0 ? 'RUPTURE' : 'NORMAL';
+                      return (
+                        <ReportRow
+                          key={`rep-${i}`}
+                          name={name}
+                          qty={qty}
+                          revenue={revenue}
+                          stock={stock}
+                          status={status}
+                        />
+                      );
+                    })
+                  )}
                </tbody>
             </table>
             </div>

@@ -1,38 +1,98 @@
+/**
+ * ============================================================================
+ * CANTEEN DIETS — Branché sur backend réel
+ * ============================================================================
+ *
+ * Endpoint : GET /modules-complementaires/canteen/diets?academicYearId=...
+ * Endpoint : GET /modules-complementaires/canteen/allergies?academicYearId=...
+ * ============================================================================
+ */
+
 import React from 'react';
-import { 
-  AlertTriangle, Search, Filter, Plus, 
-  ShieldAlert, Clipboard, User, Heart,
-  ChevronRight, Info, CheckCircle2, Download
+import {
+  Search, Filter,
+  ShieldAlert, Clipboard, Heart,
+  ChevronRight, Info, CheckCircle2, Loader2
 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface DietItem {
+  id: string;
+  student?: string;
+  studentName?: string;
+  name?: string;
+  class?: string;
+  className?: string;
+  diet?: string;
+  dietType?: string;
+  regime?: string;
+  severity?: string;
+  forbidden?: string;
+  forbiddenFoods?: string;
+  excludedFoods?: string;
+  [key: string]: any;
+}
 
 export default function CanteenDiets() {
+  const { academicYear } = useModuleContext();
+  const { data: diets, loading, error } = useModulesList<DietItem>(
+    'canteen',
+    'diets',
+    academicYear?.id,
+  );
+
+  const criticalCount = diets.filter((d) => {
+    const s = (d.severity ?? '').toUpperCase();
+    return s === 'CRITICAL' || s === 'CRITIQUE';
+  }).length;
+  const paiCount = diets.filter((d) => {
+    const s = (d.severity ?? '').toUpperCase();
+    return s.includes('PAI') || s.includes('MEDICAL');
+  }).length;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des profils alimentaires...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les données. {error}
+        </div>
+      )}
+
       {/* Risk Summary */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <RiskCard 
-          title="Allergies Critiques" 
-          value="12" 
-          icon={ShieldAlert} 
-          color="red" 
+        <RiskCard
+          title="Allergies Critiques"
+          value={String(criticalCount).padStart(2, '0')}
+          icon={ShieldAlert}
+          color="red"
         />
-        <RiskCard 
-          title="Régimes Spéciaux" 
-          value="85" 
-          icon={Heart} 
-          color="blue" 
+        <RiskCard
+          title="Régimes Spéciaux"
+          value={String(diets.length).padStart(2, '0')}
+          icon={Heart}
+          color="blue"
         />
-        <RiskCard 
-          title="Médicalisés (PAI)" 
-          value="05" 
-          icon={Clipboard} 
-          color="amber" 
+        <RiskCard
+          title="Médicalisés (PAI)"
+          value={String(paiCount).padStart(2, '0')}
+          icon={Clipboard}
+          color="amber"
         />
-        <RiskCard 
-          title="Mises à jour (Mois)" 
-          value="18" 
-          icon={CheckCircle2} 
-          color="green" 
+        <RiskCard
+          title="Mises à jour (Mois)"
+          value={String(diets.length).padStart(2, '0')}
+          icon={CheckCircle2}
+          color="green"
         />
       </div>
 
@@ -47,9 +107,9 @@ export default function CanteenDiets() {
             <div className="flex items-center space-x-2">
               <div className="relative group">
                 <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-navy-600 transition-colors" />
-                <input 
-                  type="text" 
-                  placeholder="Élève, allergie..." 
+                <input
+                  type="text"
+                  placeholder="Élève, allergie..."
                   className="pl-11 pr-4 py-2.5 bg-gray-50/50 border border-gray-100 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-navy-500/20 w-56 transition-all"
                 />
               </div>
@@ -59,36 +119,33 @@ export default function CanteenDiets() {
             </div>
           </div>
 
+          {diets.length === 0 ? (
+            <div className="text-center py-16 text-gray-500">
+              Aucun profil alimentaire spécial enregistré pour cette année scolaire.
+            </div>
+          ) : (
           <div className="divide-y divide-gray-50">
-            <DietRow 
-              student="Alice N'Guessan"
-              class="CM1-B"
-              diet="Sans Arachide"
-              severity="CRITICAL"
-              forbidden="Arachides, Huile d'arachide, Beurre de cacahuète"
-            />
-            <DietRow 
-              student="Ibrahim Traoré"
-              class="6ème 2"
-              diet="Végétarien"
-              severity="LOW"
-              forbidden="Viande, Poisson"
-            />
-            <DietRow 
-              student="Clara Dubois"
-              class="CP2"
-              diet="Sans Lactose"
-              severity="HIGH"
-              forbidden="Lait, Fromage, Beurre"
-            />
+            {diets.map((diet) => (
+              <DietRow
+                key={diet.id}
+                student={diet.student ?? diet.studentName ?? diet.name ?? '—'}
+                class={diet.class ?? diet.className ?? '—'}
+                diet={diet.diet ?? diet.dietType ?? diet.regime ?? 'Standard'}
+                severity={diet.severity ?? 'LOW'}
+                forbidden={diet.forbidden ?? diet.forbiddenFoods ?? diet.excludedFoods ?? '—'}
+              />
+            ))}
           </div>
+          )}
 
+          {diets.length > 3 && (
           <div className="p-6 bg-gray-50/50 flex justify-center">
             <button className="text-xs font-black text-navy-600 uppercase tracking-widest hover:underline flex items-center space-x-2">
               <span>Voir tous les profils</span>
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
+          )}
         </div>
 
         {/* Action Sidebar */}
@@ -97,8 +154,8 @@ export default function CanteenDiets() {
             <div className="relative z-10">
               <h4 className="text-lg font-black mb-4">Alerte Menu</h4>
               <p className="text-xs text-navy-200 leading-relaxed mb-8">
-                Le menu de demain (Mafé) contient des <span className="text-amber-400 font-bold">Arachides</span>. 
-                <span className="text-white font-bold block mt-2">12 élèves concernés par cette alerte.</span>
+                Le menu de demain (Mafé) contient des <span className="text-amber-400 font-bold">Arachides</span>.
+                <span className="text-white font-bold block mt-2">{criticalCount} élève(s) concerné(s) par cette alerte.</span>
               </p>
               <button className="w-full py-4 bg-white text-navy-900 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-navy-50 transition-all shadow-xl shadow-white/10">
                 Générer les Repas Spéciaux
@@ -150,22 +207,24 @@ function RiskCard({ title, value, icon: Icon, color }: any) {
 function DietRow({ student, class: className, diet, severity, forbidden }: any) {
   const severityColors: any = {
     'CRITICAL': 'bg-red-100 text-red-600 border-red-200',
+    'CRITIQUE': 'bg-red-100 text-red-600 border-red-200',
     'HIGH': 'bg-orange-100 text-orange-600 border-orange-200',
     'MEDIUM': 'bg-amber-100 text-amber-600 border-amber-200',
     'LOW': 'bg-blue-100 text-blue-600 border-blue-200',
   };
+  const severityStyle = severityColors[severity] ?? severityColors['LOW'];
 
   return (
     <div className="p-8 group hover:bg-navy-50/30 transition-all duration-300">
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
         <div className="flex items-start space-x-4">
           <div className="w-12 h-12 rounded-2xl bg-gray-100 flex items-center justify-center text-gray-500 font-black text-sm group-hover:bg-white transition-all shadow-sm">
-            {student.split(' ').map((n: string) => n[0]).join('')}
+            {typeof student === 'string' ? student.split(' ').map((n: string) => n[0]).join('') : '—'}
           </div>
           <div>
             <h4 className="font-black text-navy-900 text-base">{student}</h4>
             <p className="text-[10px] font-bold text-navy-400 uppercase tracking-widest">{className}</p>
-            <div className={`mt-3 px-3 py-1 rounded-full text-[10px] font-black uppercase border w-fit ${severityColors[severity]}`}>
+            <div className={`mt-3 px-3 py-1 rounded-full text-[10px] font-black uppercase border w-fit ${severityStyle}`}>
               {diet} — {severity}
             </div>
           </div>

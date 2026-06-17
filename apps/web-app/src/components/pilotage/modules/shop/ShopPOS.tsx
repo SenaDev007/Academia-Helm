@@ -8,32 +8,86 @@
 
 import React, { useState } from 'react';
 import { formatCurrency } from '@/lib/utils';
-import { 
-  Search, Plus, Minus, Trash2, CreditCard, 
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import {
+  Loader2, Search, Plus, Minus, CreditCard,
   Wallet, Banknote, QrCode, User, Package,
-  Zap, ShoppingCart, Tag, CheckCircle2
+  ShoppingCart
 } from 'lucide-react';
 
+interface ProductItem {
+  id?: string;
+  name?: string;
+  sku?: string;
+  price?: number;
+  unitPrice?: number;
+  stock?: number;
+  quantity?: number;
+  category?: string;
+  imageUrl?: string;
+  image?: string;
+  emoji?: string;
+}
+
 export default function ShopPOS() {
-  const [cart, setCart] = useState<any[]>([
-    { id: 1, name: 'Cahier Academia 200p', price: 1200, qty: 2, image: '📔' },
-    { id: 2, name: 'Uniforme Polo Sport (L)', price: 8500, qty: 1, image: '👕' },
-  ]);
+  const { academicYear } = useModuleContext();
+  const { data: products, loading, error } = useModulesList<ProductItem>(
+    'shop',
+    'products',
+    academicYear?.id,
+  );
+
+  const [cart, setCart] = useState<any[]>([]);
+
+  const addToCart = (product: any) => {
+    setCart((prev) => {
+      const existing = prev.find((it) => it.id === product.id);
+      if (existing) {
+        return prev.map((it) => (it.id === product.id ? { ...it, qty: it.qty + 1 } : it));
+      }
+      return [
+        ...prev,
+        {
+          id: product.id,
+          name: product?.name ?? 'Article',
+          price: product?.price ?? product?.unitPrice ?? 0,
+          qty: 1,
+          image: product?.emoji ?? product?.image ?? '📦',
+        },
+      ];
+    });
+  };
 
   const subtotal = cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
   const tax = subtotal * 0.18; // 18% TVA
   const total = subtotal + tax;
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des articles...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col lg:flex-row gap-8 h-[calc(100vh-250px)] min-h-[600px] animate-in fade-in duration-700">
       {/* Products Selection Area */}
       <div className="flex-1 flex flex-col space-y-6">
+        {error && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+            ⚠ Impossible de charger les articles. {error}
+          </div>
+        )}
+
         <div className="bg-white rounded-3xl border border-gray-100 p-4 shadow-sm flex items-center space-x-4">
           <div className="relative flex-1">
             <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input 
-              type="text" 
-              placeholder="Scanner un code-barres ou rechercher un article..." 
+            <input
+              type="text"
+              placeholder="Scanner un code-barres ou rechercher un article..."
               className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border-none rounded-2xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20 transition-all font-medium"
             />
           </div>
@@ -43,11 +97,22 @@ export default function ShopPOS() {
         </div>
 
         <div className="flex-1 bg-gray-50/50 rounded-3xl border border-dashed border-gray-200 p-8 overflow-y-auto no-scrollbar">
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6">
-            {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-              <POSProductCard key={i} index={i} />
-            ))}
-          </div>
+          {(products ?? []).length === 0 ? (
+            <div className="h-full flex items-center justify-center text-gray-500 text-sm">
+              Aucun article disponible pour le point de vente.
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6">
+              {(products ?? []).map((product, i) => (
+                <POSProductCard
+                  key={product?.id ?? `pos-${i}`}
+                  product={product}
+                  index={i + 1}
+                  onAdd={() => addToCart(product)}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -65,9 +130,15 @@ export default function ShopPOS() {
           </div>
 
           <div className="flex-1 overflow-y-auto p-6 space-y-4 no-scrollbar">
-            {cart.map((item) => (
-              <CartItem key={item.id} item={item} />
-            ))}
+            {cart.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-gray-400 text-xs font-medium text-center">
+                Panier vide. Cliquez sur un article pour l'ajouter.
+              </div>
+            ) : (
+              cart.map((item) => (
+                <CartItem key={item.id} item={item} />
+              ))
+            )}
           </div>
 
           <div className="p-6 bg-gray-50/80 border-t border-gray-100 space-y-3">
@@ -117,24 +188,34 @@ export default function ShopPOS() {
   );
 }
 
-function POSProductCard({ index }: any) {
+function POSProductCard({ product, index, onAdd }: any) {
+  const name = product?.name ?? `Article #${index}`;
+  const price = product?.price ?? product?.unitPrice ?? 0;
+  const stock = product?.stock ?? product?.quantity ?? 0;
+  const sku = product?.sku ?? `SKU-${index}`;
+  const emoji = product?.emoji ?? '📦';
+
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm hover:shadow-xl hover:border-navy-200 transition-all duration-300 group cursor-pointer active:scale-95">
+    <button
+      type="button"
+      onClick={onAdd}
+      className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm hover:shadow-xl hover:border-navy-200 transition-all duration-300 group cursor-pointer active:scale-95 text-left"
+    >
       <div className="h-24 bg-gray-50 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden">
-         <Package className="w-10 h-10 text-gray-200 group-hover:scale-110 transition-transform duration-500" />
-         <div className="absolute top-2 right-2">
-            <div className="w-6 h-6 bg-white/90 backdrop-blur-sm rounded-lg flex items-center justify-center text-navy-600 border border-gray-100 shadow-sm">
-              <Plus className="w-4 h-4" />
-            </div>
-         </div>
+        <span className="text-3xl">{emoji}</span>
+        <div className="absolute top-2 right-2">
+          <div className="w-6 h-6 bg-white/90 backdrop-blur-sm rounded-lg flex items-center justify-center text-navy-600 border border-gray-100 shadow-sm">
+            <Plus className="w-4 h-4" />
+          </div>
+        </div>
       </div>
-      <h4 className="text-xs font-black text-navy-900 line-clamp-1 mb-1">Cahier Academia #{index}</h4>
-      <p className="text-[10px] font-black text-navy-500 mb-2">{formatCurrency(1200 + (index * 100))}</p>
+      <h4 className="text-xs font-black text-navy-900 line-clamp-1 mb-1">{name}</h4>
+      <p className="text-[10px] font-black text-navy-500 mb-2">{formatCurrency(price)}</p>
       <div className="flex items-center justify-between">
-        <span className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">Stock: 45</span>
-        <div className="px-2 py-0.5 bg-gray-50 rounded-md text-[9px] font-black text-gray-400 border border-gray-100">PAP-0{index}</div>
+        <span className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">Stock: {stock}</span>
+        <div className="px-2 py-0.5 bg-gray-50 rounded-md text-[9px] font-black text-gray-400 border border-gray-100">{sku}</div>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -164,8 +245,8 @@ function CartItem({ item }: any) {
 function PaymentModeBtn({ icon: Icon, label, active }: any) {
   return (
     <button className={`flex flex-col items-center justify-center p-3 rounded-2xl border transition-all space-y-1 ${
-      active 
-        ? 'bg-navy-900 text-white border-navy-900 shadow-lg shadow-navy-900/20' 
+      active
+        ? 'bg-navy-900 text-white border-navy-900 shadow-lg shadow-navy-900/20'
         : 'bg-white text-gray-400 border-gray-100 hover:border-navy-500 hover:text-navy-900'
     }`}>
       <Icon className="w-5 h-5" />

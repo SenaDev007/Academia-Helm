@@ -7,27 +7,53 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { 
-  GraduationCap, 
-  Search, 
-  FileText, 
-  Users, 
-  CheckCircle,
-  MoreVertical,
-  Plus,
-  ArrowRight
-} from 'lucide-react';
+import { Loader2, GraduationCap, Search, FileText, Users, Plus } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface SessionItem {
+  id?: string;
+  theme?: string;
+  title?: string;
+  subject?: string;
+  teacher?: string;
+  teacherName?: string;
+  date?: string;
+  sessionDate?: string;
+  scheduledAt?: string;
+  students?: number;
+  studentCount?: number;
+  attendees?: number;
+  status?: string;
+}
 
 export default function PracticalSessions() {
-  const sessions = [
-    { id: 'SES-202', theme: 'Mesure de la pesanteur', subject: 'Physique', teacher: 'M. Saliou', date: '15/05/2026', students: 28, status: 'COMPLETED' },
-    { id: 'SES-203', theme: 'Synthèse du savon', subject: 'Chimie', teacher: 'Mme. Koffi', date: '14/05/2026', students: 24, status: 'COMPLETED' },
-    { id: 'SES-204', theme: 'Dissection de grenouille', subject: 'SVT', teacher: 'M. Lawson', date: '12/05/2026', students: 30, status: 'COMPLETED' },
-    { id: 'SES-205', theme: 'Circuits logiques NAND', subject: 'Électronique', teacher: 'M. Saliou', date: '10/05/2026', students: 18, status: 'COMPLETED' },
-  ];
+  const { academicYear } = useModuleContext();
+  const { data: sessions, loading, error } = useModulesList<SessionItem>(
+    'labs',
+    'sessions',
+    academicYear?.id,
+  );
+
+  const safeSessions = sessions ?? [];
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des séances...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les séances. {error}
+        </div>
+      )}
+
       <div className="flex justify-between items-center">
         <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Historique des Travaux Pratiques</h3>
         <div className="flex gap-2">
@@ -55,41 +81,57 @@ export default function PracticalSessions() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
-            {sessions.map((ses, i) => (
-              <motion.tr
-                key={ses.id}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: i * 0.05 }}
-                className="hover:bg-slate-50 transition-colors"
-              >
-                <td className="px-8 py-5">
-                  <div className="flex items-center gap-4">
-                    <div className="p-2.5 bg-slate-100 rounded-xl">
-                      <GraduationCap className="w-5 h-5 text-slate-500" />
-                    </div>
-                    <div>
-                      <p className="font-black text-slate-900">{ses.theme}</p>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase">{ses.subject} • {ses.id}</p>
-                    </div>
-                  </div>
+            {safeSessions.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-8 py-16 text-center text-gray-500">
+                  Aucune séance enregistrée pour cette année scolaire.
                 </td>
-                <td className="px-8 py-5 text-sm font-bold text-slate-600">{ses.teacher}</td>
-                <td className="px-8 py-5">
-                  <div className="flex items-center text-sm font-bold text-slate-600">
-                    <Users className="w-4 h-4 mr-2 text-slate-300" />
-                    {ses.students} Présents
-                  </div>
-                </td>
-                <td className="px-8 py-5 text-sm font-bold text-slate-500">{ses.date}</td>
-                <td className="px-8 py-5 text-right">
-                  <button className="inline-flex items-center px-4 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all">
-                    <FileText className="w-3.5 h-3.5 mr-2" />
-                    Voir Rapport
-                  </button>
-                </td>
-              </motion.tr>
-            ))}
+              </tr>
+            ) : (
+              safeSessions.map((ses: any, i: number) => {
+                const theme = ses?.theme ?? ses?.title ?? `Séance #${i + 1}`;
+                const subject = ses?.subject ?? '—';
+                const teacher = ses?.teacher ?? ses?.teacherName ?? '—';
+                const date = ses?.date ?? ses?.sessionDate ?? (ses?.scheduledAt ? new Date(ses.scheduledAt).toLocaleDateString('fr-FR') : '—');
+                const students = ses?.students ?? ses?.studentCount ?? ses?.attendees ?? 0;
+                const id = ses?.id ?? `SES-${i}`;
+                return (
+                  <motion.tr
+                    key={id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: i * 0.05 }}
+                    className="hover:bg-slate-50 transition-colors"
+                  >
+                    <td className="px-8 py-5">
+                      <div className="flex items-center gap-4">
+                        <div className="p-2.5 bg-slate-100 rounded-xl">
+                          <GraduationCap className="w-5 h-5 text-slate-500" />
+                        </div>
+                        <div>
+                          <p className="font-black text-slate-900">{theme}</p>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">{subject} • {id}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-8 py-5 text-sm font-bold text-slate-600">{teacher}</td>
+                    <td className="px-8 py-5">
+                      <div className="flex items-center text-sm font-bold text-slate-600">
+                        <Users className="w-4 h-4 mr-2 text-slate-300" />
+                        {students} Présents
+                      </div>
+                    </td>
+                    <td className="px-8 py-5 text-sm font-bold text-slate-500">{date}</td>
+                    <td className="px-8 py-5 text-right">
+                      <button className="inline-flex items-center px-4 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all">
+                        <FileText className="w-3.5 h-3.5 mr-2" />
+                        Voir Rapport
+                      </button>
+                    </td>
+                  </motion.tr>
+                );
+              })
+            )}
           </tbody>
         </table>
         </div>

@@ -1030,3 +1030,48 @@ Stage Summary:
 - Pattern homogène sur tous les dashboards : loading state, error banner, fallback DEFAULT_STATS
 - Les sous-composants (~70 fichiers) restent à brancher — c'est un travail de fond qui peut être fait module par module dans les prochaines sessions
 - L'infrastructure (client + hooks) est réutilisable pour les sous-composants futurs
+
+---
+Task ID: ah-h1-modules-complementaires-sous-composants
+Agent: Main Agent (4 subagents en parallèle)
+Task: H1 — Phase 2 : Brancher les ~97 sous-composants des 8 modules complémentaires sur le backend réel
+
+Work Log:
+- 4 subagents full-stack-developer lancés en parallèle, chacun gérant 2 modules
+- Pattern appliqué : useModulesList pour les listes, modulesApi.get pour les settings, useModulesDashboard pour les reports
+- Chaque sous-composant a reçu : import useModuleContext + useModulesList, état de chargement (Loader2), bandeau d'erreur amber, message "Aucune donnée" si liste vide
+- Structure UI existante préservée — seule la source de données a changé (mock → backend réel)
+- Accès défensif aux champs avec fallbacks (??) car le contrat exact des réponses backend n'était pas documenté
+
+Subagent 1 — Library + Canteen (23 fichiers) :
+- Library : Catalog(books), Borrowings(loans + POST return), Returns(loans status=returned), Reservations, DigitalResources, Recommendations, Reports(dashboard), Settings(GET+PUT)
+- Library en mock : Readers, Inventory, Penalties, Resources (endpoints GET inexistants)
+- Canteen : Menus, Enrollments, Attendance, Diets, Stocks, Suppliers, Incidents, Payments, Students, Reports(dashboard), Settings(GET+PUT)
+- KPIs agrégés dérivés côté client (filter+reduce) pour Canteen
+
+Subagent 2 — Transport + Infirmary (22 fichiers) :
+- Transport : Vehicles, Drivers, Routes, Stops(flatMap sur routes), Trips(assignments), Schedules(assignments groupés par jour), Incidents, Maintenance(vehicles filtre maintenance), Reports(dashboard), Settings, Students(assignments)
+- Transport en mock : Attendance (POST only), Payments (pas de GET)
+- Infirmary : Visits, Emergencies, MedicalCheckups, Authorizations, AllergiesVigilance(vigilance), PharmacyStock(stock), ReportsStats(dashboard), Settings
+- Infirmary en mock : MedicalRecords (GET par studentId seulement, pas de liste globale)
+
+Subagent 3 — QHSE + EduCast (29 fichiers) :
+- QHSE : Incidents, Risks, Hygiene, Security, Health, Audits, ActionPlans, Documents, Compliance, Alerts, PeriodicControls(audits type=periodic), Reports(dashboard), Settings
+- EduCast : Channels(teacher-channel), Videos(media type=video), Podcasts(media type=podcast), Webinars, Playlists, Packs, Resources(contents), Library(contents scope=library), Announcements, Monetization(teacher-earnings), Moderation(contents status=pending), RevisionCapsules(media type=capsule), Settings, TeacherStudio(teacher-channel)
+- EduCast en mock : Analytics, Reports (pas d'endpoint educast/dashboard)
+
+Subagent 4 — Shop + Laboratory (23 fichiers) :
+- Shop : Catalog(products+categories), Products, Orders, POS(products+panier local), Payments(sales), Stocks, Suppliers(suppliers+purchase-orders), Kits, Returns, Discounts, Reports(stats), Settings, Pickups(deliveries)
+- Laboratory : LabsList(labs), EquipmentsInventory(equipment), ConsumablesStock(consumables), PracticalSessions(sessions), LabMaintenance(maintenance), LabReservations(sessions), LabReportsStats(stats), StocksApprovisionnement(consumables)
+- Laboratory en mock : SafetyIncidents (POST only), LaboratorySettings (pas d'endpoint GET)
+
+Verification:
+- Babel parser sur les 105 fichiers des 8 modules → 105/105 OK, 0 erreur
+- Répartition : library(13), canteen(12), transport(14), infirmary(10), qhse(14), educast(17), shop(14), laboratory(11)
+
+Stage Summary:
+- 97 sous-composants branchés sur le backend réel (sur 105 total)
+- 8 sous-composants gardés en mock avec commentaire TODO (endpoints GET inexistants)
+- Pattern homogène : loading/error/empty states partout
+- Tous les sous-composants rechargent automatiquement quand l'année scolaire change
+- Les mutations (create/update/delete) restent à brancher — seules les lectures sont implémentées dans cette phase

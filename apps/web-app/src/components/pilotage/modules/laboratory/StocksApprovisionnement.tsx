@@ -7,28 +7,65 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { 
-  Package, 
-  ShoppingCart, 
-  TrendingDown, 
-  Truck, 
-  CheckCircle2, 
-  Clock, 
-  ChevronRight,
-  MoreVertical,
-  Plus
-} from 'lucide-react';
+import { Loader2, Package, ShoppingCart, TrendingDown, Truck, CheckCircle2, Clock, ChevronRight } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface ConsumableItem {
+  id?: string;
+  name?: string;
+  quantity?: number;
+  qty?: number;
+  unit?: string;
+  status?: string;
+  cost?: number;
+  unitPrice?: number;
+  price?: number;
+  estimatedCost?: string;
+  requestStatus?: string;
+  date?: string;
+  requestedAt?: string;
+  createdAt?: string;
+}
 
 export default function StocksApprovisionnement() {
-  const requests = [
-    { id: 'REQ-001', item: 'Lames de microscope', qty: 200, cost: '45 000 F CFA', status: 'APPROVED', date: '14/05/2026' },
-    { id: 'REQ-002', item: 'Acide Sulfurique', qty: 5, cost: '32 000 F CFA', status: 'PENDING', date: '15/05/2026' },
-    { id: 'REQ-003', item: 'Ordinateurs Portables HP', qty: 2, cost: '850 000 F CFA', status: 'REJECTED', date: '10/05/2026' },
-    { id: 'REQ-004', item: 'Kits Électroniques Arduino', qty: 10, cost: '150 000 F CFA', status: 'ORDERED', date: '08/05/2026' },
-  ];
+  const { academicYear } = useModuleContext();
+  // Approvisionnement = mouvements de stock. On réutilise l'endpoint consumables.
+  const { data: consumables, loading, error } = useModulesList<ConsumableItem>(
+    'labs',
+    'consumables',
+    academicYear?.id,
+  );
+
+  const safeItems = consumables ?? [];
+
+  const inStockCount = safeItems.length;
+  const alertCount = safeItems.filter((c: any) => {
+    const s = (c?.status ?? '').toString().toUpperCase();
+    return s.includes('LOW') || s.includes('CRITICAL') || s.includes('FAIBLE');
+  }).length;
+  const pendingOrdersCount = safeItems.filter((c: any) => {
+    const s = (c?.requestStatus ?? c?.status ?? '').toString().toUpperCase();
+    return s.includes('PENDING') || s.includes('ORDERED') || s.includes('ATTENTE');
+  }).length;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des approvisionnements...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les données d'approvisionnement. {error}
+        </div>
+      )}
+
       {/* Stock Health & Alerts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-6 group hover:border-emerald-200 transition-all">
@@ -36,7 +73,7 @@ export default function StocksApprovisionnement() {
             <Package className="w-8 h-8" />
           </div>
           <div>
-            <p className="text-3xl font-black text-slate-900">142</p>
+            <p className="text-3xl font-black text-slate-900">{inStockCount}</p>
             <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Articles en Stock</p>
           </div>
         </div>
@@ -45,7 +82,7 @@ export default function StocksApprovisionnement() {
             <TrendingDown className="w-8 h-8" />
           </div>
           <div>
-            <p className="text-3xl font-black text-slate-900">12</p>
+            <p className="text-3xl font-black text-slate-900">{alertCount}</p>
             <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Articles en Alerte</p>
           </div>
         </div>
@@ -54,7 +91,7 @@ export default function StocksApprovisionnement() {
             <Truck className="w-8 h-8" />
           </div>
           <div>
-            <p className="text-3xl font-black text-slate-900">4</p>
+            <p className="text-3xl font-black text-slate-900">{pendingOrdersCount}</p>
             <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Commandes en Cours</p>
           </div>
         </div>
@@ -82,44 +119,61 @@ export default function StocksApprovisionnement() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
-            {requests.map((req, i) => (
-              <motion.tr
-                key={req.id}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: i * 0.05 }}
-                className="hover:bg-slate-50 transition-colors group"
-              >
-                <td className="px-8 py-5">
-                  <div>
-                    <p className="font-black text-slate-900">{req.item}</p>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">QTÉ: {req.qty} • {req.id}</p>
-                  </div>
+            {safeItems.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-8 py-16 text-center text-gray-500">
+                  Aucune demande d'approvisionnement pour cette année scolaire.
                 </td>
-                <td className="px-8 py-5">
-                  <span className="text-sm font-black text-slate-900">{req.cost}</span>
-                </td>
-                <td className="px-8 py-5">
-                  <div className={`inline-flex items-center px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest ${
-                    req.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-600' :
-                    req.status === 'PENDING' ? 'bg-amber-50 text-amber-600' :
-                    req.status === 'REJECTED' ? 'bg-rose-50 text-rose-600' : 'bg-blue-50 text-blue-600'
-                  }`}>
-                    {req.status === 'APPROVED' && <CheckCircle2 className="w-3.5 h-3.5 mr-2" />}
-                    {req.status === 'PENDING' && <Clock className="w-3.5 h-3.5 mr-2" />}
-                    {req.status === 'ORDERED' && <Truck className="w-3.5 h-3.5 mr-2" />}
-                    {req.status}
-                  </div>
-                </td>
-                <td className="px-8 py-5 text-sm font-bold text-slate-500">{req.date}</td>
-                <td className="px-8 py-5 text-right">
-                  <button className="flex items-center ml-auto text-blue-600 font-black text-xs uppercase tracking-widest hover:translate-x-1 transition-transform">
-                    Détails
-                    <ChevronRight className="w-4 h-4 ml-1" />
-                  </button>
-                </td>
-              </motion.tr>
-            ))}
+              </tr>
+            ) : (
+              safeItems.map((req: any, i: number) => {
+                const name = req?.name ?? `Article #${i + 1}`;
+                const qty = req?.quantity ?? req?.qty ?? 0;
+                const id = req?.id ?? `REQ-${i}`;
+                const costValue = req?.cost ?? req?.unitPrice ?? req?.price ?? 0;
+                const cost = req?.estimatedCost ?? (costValue > 0 ? `${costValue.toLocaleString('fr-FR')} F CFA` : '—');
+                const status = (req?.requestStatus ?? req?.status ?? 'PENDING').toString().toUpperCase();
+                const date = req?.date ?? (req?.requestedAt ?? req?.createdAt ? new Date(req.requestedAt ?? req.createdAt).toLocaleDateString('fr-FR') : '—');
+                return (
+                  <motion.tr
+                    key={id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: i * 0.05 }}
+                    className="hover:bg-slate-50 transition-colors group"
+                  >
+                    <td className="px-8 py-5">
+                      <div>
+                        <p className="font-black text-slate-900">{name}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">QTÉ: {qty} • {id}</p>
+                      </div>
+                    </td>
+                    <td className="px-8 py-5">
+                      <span className="text-sm font-black text-slate-900">{cost}</span>
+                    </td>
+                    <td className="px-8 py-5">
+                      <div className={`inline-flex items-center px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest ${
+                        status === 'APPROVED' ? 'bg-emerald-50 text-emerald-600' :
+                        status === 'PENDING' ? 'bg-amber-50 text-amber-600' :
+                        status === 'REJECTED' ? 'bg-rose-50 text-rose-600' : 'bg-blue-50 text-blue-600'
+                      }`}>
+                        {status === 'APPROVED' && <CheckCircle2 className="w-3.5 h-3.5 mr-2" />}
+                        {status === 'PENDING' && <Clock className="w-3.5 h-3.5 mr-2" />}
+                        {status === 'ORDERED' && <Truck className="w-3.5 h-3.5 mr-2" />}
+                        {status}
+                      </div>
+                    </td>
+                    <td className="px-8 py-5 text-sm font-bold text-slate-500">{date}</td>
+                    <td className="px-8 py-5 text-right">
+                      <button className="flex items-center ml-auto text-blue-600 font-black text-xs uppercase tracking-widest hover:translate-x-1 transition-transform">
+                        Détails
+                        <ChevronRight className="w-4 h-4 ml-1" />
+                      </button>
+                    </td>
+                  </motion.tr>
+                );
+              })
+            )}
           </tbody>
         </table>
         </div>

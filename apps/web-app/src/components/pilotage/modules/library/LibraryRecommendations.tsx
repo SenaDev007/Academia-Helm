@@ -1,23 +1,65 @@
 /**
  * ============================================================================
- * LIBRARY RECOMMENDATIONS
+ * LIBRARY RECOMMENDATIONS — Branché sur backend réel
+ * ============================================================================
+ *
+ * Endpoint (lecture) : GET /modules-complementaires/library/recommendations
+ * Endpoint (création): POST /modules-complementaires/library/recommendations
+ *
+ * Note : Si le GET n'est pas encore implémenté, le hook renvoie un tableau
+ * vide et le bandeau d'erreur s'affiche (sans casser l'UI).
  * ============================================================================
  */
 
 'use client';
 
 import { motion } from 'framer-motion';
-import { Sparkles, GraduationCap, Users, BookOpen, Star, Send, Plus, ChevronRight } from 'lucide-react';
+import { Sparkles, GraduationCap, Plus, Send, Loader2 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface RecommendationItem {
+  id: string;
+  target?: string;
+  targetName?: string;
+  audience?: string;
+  type?: string;
+  book?: string;
+  bookTitle?: string;
+  title?: string;
+  reason?: string;
+  description?: string;
+  teacher?: string;
+  author?: string;
+  createdBy?: string;
+  [key: string]: any;
+}
 
 export default function LibraryRecommendations() {
-  const recommendations = [
-    { id: 'REC-001', target: 'Terminal D', type: 'CLASSE', book: 'Annales BAC Mathématiques', reason: 'Préparation intensive examen', teacher: 'M. Diallo' },
-    { id: 'REC-002', target: '6ème A', type: 'CLASSE', book: 'Le Petit Prince', reason: 'Lecture obligatoire trimestre 3', teacher: 'Mme. Goussi' },
-    { id: 'REC-003', target: 'Saliou Diallo', type: 'ÉLÈVE', book: 'L\'Enfant Noir', reason: 'Excellence en littérature', teacher: 'M. Lawson' },
-  ];
+  const { academicYear } = useModuleContext();
+  const { data: recommendations, loading, error } = useModulesList<RecommendationItem>(
+    'library',
+    'recommendations',
+    academicYear?.id,
+  );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des recommandations...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les recommandations. {error}
+        </div>
+      )}
+
       {/* AI Recommendation Spotlight */}
       <div className="bg-gradient-to-r from-navy-900 to-blue-900 rounded-3xl p-8 text-white relative overflow-hidden">
         <div className="absolute top-0 right-0 p-8 opacity-10">
@@ -58,8 +100,19 @@ export default function LibraryRecommendations() {
         </button>
       </div>
 
+      {recommendations.length === 0 ? (
+        <div className="text-center py-16 text-gray-500 bg-white rounded-3xl border border-slate-200">
+          Aucune recommandation pédagogique pour cette année scolaire.
+        </div>
+      ) : (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {recommendations.map((rec, i) => (
+        {recommendations.map((rec, i) => {
+          const target = rec.target ?? rec.targetName ?? rec.audience ?? '—';
+          const type = (rec.type ?? 'CLASSE').toString().toUpperCase();
+          const bookTitle = rec.book ?? rec.bookTitle ?? rec.title ?? '—';
+          const reason = rec.reason ?? rec.description ?? '';
+          const teacher = rec.teacher ?? rec.author ?? rec.createdBy ?? '—';
+          return (
           <motion.div
             key={rec.id}
             initial={{ opacity: 0, x: -20 }}
@@ -74,9 +127,9 @@ export default function LibraryRecommendations() {
               <div className="space-y-4 flex-1">
                 <div className="flex justify-between">
                   <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${
-                    rec.type === 'CLASSE' ? 'bg-blue-50 text-blue-600' : 'bg-emerald-50 text-emerald-600'
+                    type === 'CLASSE' ? 'bg-blue-50 text-blue-600' : 'bg-emerald-50 text-emerald-600'
                   }`}>
-                    {rec.type}: {rec.target}
+                    {type}: {target}
                   </span>
                   <div className="flex -space-x-2">
                     {[1, 2, 3].map((_, j) => (
@@ -85,13 +138,13 @@ export default function LibraryRecommendations() {
                   </div>
                 </div>
                 <div>
-                  <h4 className="text-lg font-black text-slate-900 leading-tight group-hover:text-blue-600 transition-colors">{rec.book}</h4>
-                  <p className="text-sm font-medium text-slate-500 mt-2 italic">"{rec.reason}"</p>
+                  <h4 className="text-lg font-black text-slate-900 leading-tight group-hover:text-blue-600 transition-colors">{bookTitle}</h4>
+                  {reason && <p className="text-sm font-medium text-slate-500 mt-2 italic">"{reason}"</p>}
                 </div>
                 <div className="pt-4 border-t border-slate-50 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="w-6 h-6 rounded-full bg-slate-100" />
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Recommandé par {rec.teacher}</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Recommandé par {teacher}</p>
                   </div>
                   <button className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition-all">
                     <Send className="w-5 h-5" />
@@ -100,8 +153,10 @@ export default function LibraryRecommendations() {
               </div>
             </div>
           </motion.div>
-        ))}
+          );
+        })}
       </div>
+      )}
     </div>
   );
 }

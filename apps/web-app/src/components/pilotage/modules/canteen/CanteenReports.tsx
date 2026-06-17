@@ -1,33 +1,89 @@
+/**
+ * ============================================================================
+ * CANTEEN REPORTS — Branché sur backend réel
+ * ============================================================================
+ *
+ * Endpoint stats : GET /modules-complementaires/canteen/dashboard?academicYearId=...
+ *
+ * Note : la liste des rapports générés reste en mock (TODO endpoint liste),
+ * mais les KPI analytiques sont branchés sur le dashboard.
+ * ============================================================================
+ */
+
 import React from 'react';
-import { 
-  BarChart3, PieChart, TrendingUp, Download, 
-  Calendar, Filter, FileText, Share2,
-  CheckCircle2, Users, UtensilsCrossed, Package,
-  ArrowRight, Search
+import {
+  BarChart3, TrendingUp, Download,
+  FileText, Share2,
+  Users, Package,
+  ArrowRight, Loader2
 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesDashboard } from '@/lib/modules-complementaires/hooks';
+
+interface CanteenDashboardStats {
+  totalMeals?: number;
+  servedMeals?: number;
+  satisfaction?: number;
+  satisfactionRate?: number;
+  wasteRate?: number;
+  waste?: number;
+  totalRevenue?: number;
+  revenue?: number;
+  [key: string]: any;
+}
+
+// TODO: endpoint liste des rapports non disponible — garder mock
+const RECENT_REPORTS_MOCK = [
+  { title: 'Bilan Hebdomadaire S19', date: '14 Mai, 18:00', type: 'PDF', size: '1.2 MB' },
+  { title: 'Inventaire Stock Fin Avril', date: '01 Mai, 09:30', type: 'XLS', size: '450 KB' },
+  { title: 'Rapport Incidents QHSE Q1', date: '15 Avr, 14:15', type: 'PDF', size: '2.8 MB' },
+];
 
 export default function CanteenReports() {
+  const { academicYear } = useModuleContext();
+  const { data, loading, error } = useModulesDashboard<CanteenDashboardStats>('canteen', academicYear?.id);
+
+  const totalMeals = data?.totalMeals ?? data?.servedMeals ?? 12450;
+  const satisfaction = data?.satisfaction ?? data?.satisfactionRate ?? 4.8;
+  const wasteRate = data?.wasteRate ?? data?.waste ?? 2.1;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des statistiques...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les statistiques depuis le serveur. Affichage des valeurs par défaut.
+          <details className="mt-1 text-xs text-amber-700"><summary>Détail</summary>{error}</details>
+        </div>
+      )}
+
       {/* Report Types Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <ReportTemplateCard 
-          title="Rapport de Fréquentation" 
-          desc="Analyse quotidienne et hebdomadaire des repas servis." 
-          icon={Users} 
-          color="blue" 
+        <ReportTemplateCard
+          title="Rapport de Fréquentation"
+          desc="Analyse quotidienne et hebdomadaire des repas servis."
+          icon={Users}
+          color="blue"
         />
-        <ReportTemplateCard 
-          title="Bilan Financier Cantine" 
-          desc="Recettes, impayés et rentabilité du module." 
-          icon={TrendingUp} 
-          color="emerald" 
+        <ReportTemplateCard
+          title="Bilan Financier Cantine"
+          desc="Recettes, impayés et rentabilité du module."
+          icon={TrendingUp}
+          color="emerald"
         />
-        <ReportTemplateCard 
-          title="État des Stocks & Achats" 
-          desc="Consommation réelle vs achats fournisseurs." 
-          icon={Package} 
-          color="amber" 
+        <ReportTemplateCard
+          title="État des Stocks & Achats"
+          desc="Consommation réelle vs achats fournisseurs."
+          icon={Package}
+          color="amber"
         />
       </div>
 
@@ -45,7 +101,7 @@ export default function CanteenReports() {
                 <button className="p-2 border border-gray-100 rounded-xl text-gray-400 hover:text-navy-900 transition-all"><Download className="w-4 h-4" /></button>
               </div>
             </div>
-            
+
             {/* Chart Placeholder */}
             <div className="h-64 bg-gradient-to-b from-gray-50/50 to-white rounded-2xl border border-dashed border-gray-200 flex items-center justify-center relative overflow-hidden group">
               <div className="absolute inset-0 flex items-end justify-between px-12 pb-8">
@@ -62,15 +118,15 @@ export default function CanteenReports() {
             <div className="grid grid-cols-3 gap-8 mt-8 pt-8 border-t border-gray-50">
               <div className="text-center">
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Total Repas</p>
-                <p className="text-xl font-black text-navy-900">12,450</p>
+                <p className="text-xl font-black text-navy-900">{totalMeals.toLocaleString('fr-FR')}</p>
               </div>
               <div className="text-center border-x border-gray-50">
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Satisfaction</p>
-                <p className="text-xl font-black text-emerald-600">4.8/5</p>
+                <p className="text-xl font-black text-emerald-600">{satisfaction}/5</p>
               </div>
               <div className="text-center">
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Gaspillage</p>
-                <p className="text-xl font-black text-red-500">2.1%</p>
+                <p className="text-xl font-black text-red-500">{wasteRate}%</p>
               </div>
             </div>
           </div>
@@ -81,9 +137,15 @@ export default function CanteenReports() {
               <span>Rapports Générés Récemment</span>
             </h3>
             <div className="space-y-4">
-              <RecentReportRow title="Bilan Hebdomadaire S19" date="14 Mai, 18:00" type="PDF" size="1.2 MB" />
-              <RecentReportRow title="Inventaire Stock Fin Avril" date="01 Mai, 09:30" type="XLS" size="450 KB" />
-              <RecentReportRow title="Rapport Incidents QHSE Q1" date="15 Avr, 14:15" type="PDF" size="2.8 MB" />
+              {RECENT_REPORTS_MOCK.map((report) => (
+                <RecentReportRow
+                  key={report.title}
+                  title={report.title}
+                  date={report.date}
+                  type={report.type}
+                  size={report.size}
+                />
+              ))}
             </div>
           </div>
         </div>
@@ -94,7 +156,7 @@ export default function CanteenReports() {
           <div className="relative z-10">
             <h4 className="text-xl font-black mb-2 tracking-tight">Sarah AI Report Builder</h4>
             <p className="text-xs text-navy-200 leading-relaxed mb-8">Générez des rapports personnalisés en demandant simplement à l'IA.</p>
-            
+
             <div className="space-y-4 mb-8">
               <div className="p-4 bg-white/5 rounded-2xl border border-white/10 hover:bg-white/10 cursor-pointer transition-all">
                 <p className="text-xs font-bold text-white/90">"Analyse du coût des repas par niveau scolaire sur les 3 derniers mois"</p>
@@ -105,9 +167,9 @@ export default function CanteenReports() {
             </div>
 
             <div className="relative group/input">
-              <input 
-                type="text" 
-                placeholder="Décrivez votre besoin..." 
+              <input
+                type="text"
+                placeholder="Décrivez votre besoin..."
                 className="w-full bg-white/10 border border-white/10 rounded-2xl py-4 pl-4 pr-12 text-sm text-white placeholder-white/30 outline-none focus:ring-2 focus:ring-white/20 transition-all"
               />
               <button className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-white text-navy-900 rounded-xl hover:scale-105 transition-all shadow-lg">

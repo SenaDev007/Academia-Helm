@@ -1,26 +1,77 @@
+/**
+ * ============================================================================
+ * CANTEEN MENUS — Branché sur backend réel
+ * ============================================================================
+ *
+ * Endpoint : GET /modules-complementaires/canteen/menus?academicYearId=...
+ * Endpoint : POST /modules-complementaires/canteen/menus
+ * ============================================================================
+ */
+
 import React, { useState } from 'react';
-import { 
-  Plus, Calendar, Search, Filter, Download, 
-  ChevronLeft, ChevronRight, MoreHorizontal,
-  Clock, ChefHat, Eye, Edit, Trash2, Printer,
-  Share2, Sparkles, CheckCircle2
+import {
+  Plus, Calendar, Search, Filter, Download,
+  ChevronLeft, ChevronRight,
+  Clock, ChefHat, Eye, Edit, Trash2,
+  Sparkles, CheckCircle2, Loader2
 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface MenuItem {
+  id: string;
+  date?: string;
+  menuDate?: string;
+  period?: string;
+  mealType?: string;
+  main?: string;
+  mainCourse?: string;
+  dish?: string;
+  level?: string;
+  schoolLevel?: string;
+  targetLevel?: string;
+  cost?: number;
+  estimatedCost?: number;
+  status?: string;
+  [key: string]: any;
+}
 
 export default function CanteenMenus() {
+  const { academicYear } = useModuleContext();
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('list');
+  const { data: menus, loading, error } = useModulesList<MenuItem>(
+    'canteen',
+    'menus',
+    academicYear?.id,
+  );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des menus...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les données. {error}
+        </div>
+      )}
+
       {/* Header Actions */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center space-x-2 bg-gray-100 p-1 rounded-2xl w-fit">
-          <button 
+          <button
             onClick={() => setViewMode('list')}
             className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${viewMode === 'list' ? 'bg-white text-navy-900 shadow-sm' : 'text-gray-400 hover:text-navy-600'}`}
           >
             Vue Liste
           </button>
-          <button 
+          <button
             onClick={() => setViewMode('calendar')}
             className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${viewMode === 'calendar' ? 'bg-white text-navy-900 shadow-sm' : 'text-gray-400 hover:text-navy-600'}`}
           >
@@ -45,9 +96,9 @@ export default function CanteenMenus() {
           <div className="p-8 border-b border-gray-50 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="relative group flex-1 max-w-md">
               <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-navy-600 transition-colors" />
-              <input 
-                type="text" 
-                placeholder="Rechercher un plat, une date..." 
+              <input
+                type="text"
+                placeholder="Rechercher un plat, une date..."
                 className="w-full pl-11 pr-4 py-3 bg-gray-50/50 border border-gray-100 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20 focus:border-navy-500/50 transition-all"
               />
             </div>
@@ -61,6 +112,11 @@ export default function CanteenMenus() {
             </div>
           </div>
 
+          {menus.length === 0 ? (
+            <div className="text-center py-16 text-gray-500">
+              Aucun menu planifié pour cette année scolaire.
+            </div>
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
@@ -74,50 +130,31 @@ export default function CanteenMenus() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                <MenuRow 
-                  date="Lundi 11 Mai" 
-                  period="Déjeuner" 
-                  main="Poulet Yassa & Riz Blanc" 
-                  level="Tous les niveaux" 
-                  cost="450 000 F" 
-                  status="Publié"
-                />
-                <MenuRow 
-                  date="Mardi 12 Mai" 
-                  period="Déjeuner" 
-                  main="Sauce Graine & Foutou" 
-                  level="Primaire & Collège" 
-                  cost="380 000 F" 
-                  status="Publié"
-                />
-                <MenuRow 
-                  date="Mercredi 13 Mai" 
-                  period="Petit-Déj" 
-                  main="Bouillie de mil & Beignets" 
-                  level="Maternelle" 
-                  cost="120 000 F" 
-                  status="Brouillon"
-                />
-                <MenuRow 
-                  date="Jeudi 14 Mai" 
-                  period="Déjeuner" 
-                  main="Poisson Braisé & Alloco" 
-                  level="Secondaire" 
-                  cost="520 000 F" 
-                  status="Publié"
-                />
+                {menus.map((menu) => (
+                  <MenuRow
+                    key={menu.id}
+                    date={menu.date ?? menu.menuDate ?? '—'}
+                    period={menu.period ?? menu.mealType ?? '—'}
+                    main={menu.main ?? menu.mainCourse ?? menu.dish ?? '—'}
+                    level={menu.level ?? menu.schoolLevel ?? menu.targetLevel ?? 'Tous les niveaux'}
+                    cost={menu.cost ?? menu.estimatedCost ?? 0}
+                    status={menu.status ?? 'Brouillon'}
+                  />
+                ))}
               </tbody>
             </table>
           </div>
+          )}
 
           <div className="p-8 border-t border-gray-50 flex items-center justify-between">
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Affichage de 4 sur 25 menus</p>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+              Affichage de {menus.length} menu{menus.length > 1 ? 's' : ''}
+            </p>
             <div className="flex items-center space-x-2">
               <button className="p-2 border border-gray-100 rounded-xl hover:bg-gray-50 transition-all">
                 <ChevronLeft className="w-4 h-4 text-gray-400" />
               </button>
               <button className="px-4 py-2 border border-navy-500 bg-navy-50 text-navy-600 rounded-xl text-xs font-black shadow-sm shadow-navy-500/10">1</button>
-              <button className="px-4 py-2 border border-gray-100 rounded-xl text-xs font-black text-gray-400 hover:bg-gray-50">2</button>
               <button className="p-2 border border-gray-100 rounded-xl hover:bg-gray-50 transition-all">
                 <ChevronRight className="w-4 h-4 text-gray-400" />
               </button>
@@ -144,6 +181,7 @@ function MenuRow({ date, period, main, level, cost, status }: any) {
     'Brouillon': 'bg-gray-50 text-gray-500 border-gray-100',
     'Modifié': 'bg-amber-50 text-amber-600 border-amber-100',
   };
+  const formattedCost = typeof cost === 'number' ? `${cost.toLocaleString('fr-FR')} F` : cost;
 
   return (
     <tr className="group hover:bg-navy-50/30 transition-all duration-300">
@@ -171,10 +209,10 @@ function MenuRow({ date, period, main, level, cost, status }: any) {
         <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest bg-gray-100 px-2.5 py-1 rounded-lg w-fit">{level}</p>
       </td>
       <td className="px-8 py-6 text-center">
-        <p className="text-sm font-black text-navy-900">{cost}</p>
+        <p className="text-sm font-black text-navy-900">{formattedCost}</p>
       </td>
       <td className="px-8 py-6">
-        <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border w-fit flex items-center space-x-1.5 ${statusColors[status]}`}>
+        <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border w-fit flex items-center space-x-1.5 ${statusColors[status] ?? statusColors['Brouillon']}`}>
           {status === 'Publié' && <CheckCircle2 className="w-3 h-3" />}
           <span>{status}</span>
         </div>

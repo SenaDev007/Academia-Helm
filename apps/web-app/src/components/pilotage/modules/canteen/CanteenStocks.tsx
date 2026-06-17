@@ -1,43 +1,105 @@
+/**
+ * ============================================================================
+ * CANTEEN STOCKS — Branché sur backend réel
+ * ============================================================================
+ *
+ * Endpoint : GET /modules-complementaires/canteen/stocks?academicYearId=...
+ * Endpoint : POST /modules-complementaires/canteen/stocks
+ * ============================================================================
+ */
+
 import React from 'react';
-import { 
-  Package, Search, Filter, Plus, 
+import {
+  Package, Search,
   ArrowDownCircle, ArrowUpCircle, History,
   AlertTriangle, CheckCircle2, MoreHorizontal,
-  BarChart3, RefreshCcw
+  BarChart3, RefreshCcw, Loader2
 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface StockItem {
+  id: string;
+  name?: string;
+  productName?: string;
+  category?: string;
+  qty?: number;
+  quantity?: number;
+  unit?: string;
+  threshold?: string;
+  alertThreshold?: number;
+  minThreshold?: number;
+  status?: string;
+  lastEntry?: string;
+  lastRestockDate?: string;
+  updatedAt?: string;
+  [key: string]: any;
+}
 
 export default function CanteenStocks() {
+  const { academicYear } = useModuleContext();
+  const { data: stocks, loading, error } = useModulesList<StockItem>(
+    'canteen',
+    'stocks',
+    academicYear?.id,
+  );
+
+  const totalValue = stocks.reduce((acc, s) => acc + (s.qty ?? s.quantity ?? 0), 0);
+  const criticalCount = stocks.filter((s) => {
+    const st = (s.status ?? '').toLowerCase();
+    return st.includes('critique') || st.includes('critical');
+  }).length;
+  const freshCount = stocks.filter((s) => {
+    const cat = (s.category ?? '').toLowerCase();
+    return cat.includes('frais') || cat.includes('fresh');
+  }).length;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des stocks...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les données. {error}
+        </div>
+      )}
+
       {/* Stock KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StockCard 
-          title="Valeur Totale Stock" 
-          value="1,250,000 F" 
-          desc="Toutes catégories" 
-          icon={BarChart3} 
-          color="navy" 
+        <StockCard
+          title="Articles en Stock"
+          value={String(stocks.length)}
+          desc="Toutes catégories"
+          icon={BarChart3}
+          color="navy"
         />
-        <StockCard 
-          title="Articles Critiques" 
-          value="03" 
-          desc="Seuil d'alerte atteint" 
-          icon={AlertTriangle} 
-          color="red" 
+        <StockCard
+          title="Articles Critiques"
+          value={String(criticalCount).padStart(2, '0')}
+          desc="Seuil d'alerte atteint"
+          icon={AlertTriangle}
+          color="red"
         />
-        <StockCard 
-          title="Mouvements (24h)" 
-          value="12" 
-          desc="Entrées & Sorties" 
-          icon={RefreshCcw} 
-          color="blue" 
+        <StockCard
+          title="Quantité Totale"
+          value={totalValue.toLocaleString('fr-FR')}
+          desc="Unités cumulées"
+          icon={RefreshCcw}
+          color="blue"
         />
-        <StockCard 
-          title="Produits Frais" 
-          value="28" 
-          desc="À consommer d'ici 48h" 
-          icon={CheckCircle2} 
-          color="emerald" 
+        <StockCard
+          title="Produits Frais"
+          value={String(freshCount).padStart(2, '0')}
+          desc="Catégorie frais"
+          icon={CheckCircle2}
+          color="emerald"
         />
       </div>
 
@@ -47,13 +109,13 @@ export default function CanteenStocks() {
             <h3 className="font-black text-navy-900 text-xl tracking-tight">Inventaire & Stocks</h3>
             <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mt-1">Gestion des denrées et consommables</p>
           </div>
-          
+
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative group">
               <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-navy-600 transition-colors" />
-              <input 
-                type="text" 
-                placeholder="Rechercher un produit..." 
+              <input
+                type="text"
+                placeholder="Rechercher un produit..."
                 className="pl-11 pr-4 py-2.5 bg-white border border-gray-100 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-navy-500/20 w-64 transition-all"
               />
             </div>
@@ -68,6 +130,11 @@ export default function CanteenStocks() {
           </div>
         </div>
 
+        {stocks.length === 0 ? (
+          <div className="text-center py-16 text-gray-500">
+            Aucun article en stock pour cette année scolaire.
+          </div>
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
@@ -81,45 +148,28 @@ export default function CanteenStocks() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              <StockRow 
-                name="Riz Parfumé (Mélange)"
-                category="Céréales"
-                qty="150"
-                unit="KG"
-                threshold="50"
-                status="OK"
-                lastEntry="12 Mai 2026"
-              />
-              <StockRow 
-                name="Huile Végétale (Cœur de Lion)"
-                category="Liquides"
-                qty="12"
-                unit="L"
-                threshold="20"
-                status="Faible"
-                lastEntry="08 Mai 2026"
-              />
-              <StockRow 
-                name="Poulet Entier (Fermier)"
-                category="Protéines"
-                qty="5"
-                unit="Unité"
-                threshold="15"
-                status="Critique"
-                lastEntry="14 Mai 2026"
-              />
-              <StockRow 
-                name="Tomates Fraiches"
-                category="Légumes"
-                qty="45"
-                unit="KG"
-                threshold="10"
-                status="OK"
-                lastEntry="15 Mai 2026"
-              />
+              {stocks.map((stock) => {
+                const qty = stock.qty ?? stock.quantity ?? 0;
+                const threshold = stock.threshold ?? stock.alertThreshold ?? stock.minThreshold ?? '—';
+                const name = stock.name ?? stock.productName ?? '—';
+                const lastEntry = stock.lastEntry ?? stock.lastRestockDate ?? stock.updatedAt ?? '—';
+                return (
+                <StockRow
+                  key={stock.id}
+                  name={name}
+                  category={stock.category ?? '—'}
+                  qty={String(qty)}
+                  unit={stock.unit ?? 'U'}
+                  threshold={String(threshold)}
+                  status={stock.status ?? 'OK'}
+                  lastEntry={lastEntry}
+                />
+                );
+              })}
             </tbody>
           </table>
         </div>
+        )}
       </div>
     </div>
   );
@@ -154,7 +204,9 @@ function StockRow({ name, category, qty, unit, threshold, status, lastEntry }: a
     'OK': 'bg-emerald-50 text-emerald-600 border-emerald-100',
     'Faible': 'bg-amber-50 text-amber-600 border-amber-100',
     'Critique': 'bg-red-50 text-red-600 border-red-100',
+    'Critical': 'bg-red-50 text-red-600 border-red-100',
   };
+  const statusStyle = statusStyles[status] ?? statusStyles['OK'];
 
   return (
     <tr className="group hover:bg-navy-50/30 transition-all duration-300">
@@ -179,7 +231,7 @@ function StockRow({ name, category, qty, unit, threshold, status, lastEntry }: a
         <p className="text-xs font-bold text-navy-400 italic">{threshold} {unit}</p>
       </td>
       <td className="px-8 py-6">
-        <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border w-fit flex items-center space-x-1.5 ${statusStyles[status]}`}>
+        <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border w-fit flex items-center space-x-1.5 ${statusStyle}`}>
           {status === 'OK' ? <CheckCircle2 className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
           <span>{status}</span>
         </div>

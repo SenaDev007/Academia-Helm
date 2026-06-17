@@ -7,15 +7,68 @@
 'use client';
 
 import React from 'react';
-import { 
-  Truck, CheckCircle2, Clock, MapPin, User,
-  Calendar, Search, Filter, MoreVertical, Eye,
-  Navigation, Smartphone, Bell, Package
-} from 'lucide-react';
+import { Loader2, Truck, CheckCircle2, Package, MapPin, User, Search, Filter, MoreVertical, Eye, Smartphone, Bell } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface DeliveryItem {
+  id?: string;
+  refNo?: string;
+  reference?: string;
+  code?: string;
+  customerName?: string;
+  parentName?: string;
+  clientName?: string;
+  type?: string;
+  deliveryType?: string;
+  status?: string;
+  date?: string;
+  scheduledAt?: string;
+  appointment?: string;
+  rendezVous?: string;
+}
 
 export default function ShopPickups() {
+  const { academicYear } = useModuleContext();
+  const { data: deliveries, loading, error } = useModulesList<DeliveryItem>(
+    'shop',
+    'deliveries',
+    academicYear?.id,
+  );
+
+  const safeDeliveries = deliveries ?? [];
+
+  const toPickupCount = safeDeliveries.filter((d: any) => {
+    const t = (d?.type ?? d?.deliveryType ?? '').toString().toLowerCase();
+    const s = (d?.status ?? '').toString().toLowerCase();
+    return (t.includes('sur place') || t.includes('pickup')) && (s.includes('prêt') || s.includes('ready') || s.includes('attente') || s.includes('pending'));
+  }).length;
+  const inProgressCount = safeDeliveries.filter((d: any) => {
+    const s = (d?.status ?? '').toString().toLowerCase();
+    return s.includes('route') || s.includes('transit') || s.includes('progress');
+  }).length;
+  const deliveredCount = safeDeliveries.filter((d: any) => {
+    const s = (d?.status ?? '').toString().toLowerCase();
+    return s.includes('livré') || s.includes('delivered') || s.includes('done');
+  }).length;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des livraisons...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les livraisons. {error}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
@@ -24,7 +77,7 @@ export default function ShopPickups() {
         </div>
         <div className="flex items-center space-x-3">
           <button className="flex items-center space-x-2 px-6 py-3 bg-gray-50 text-navy-900 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-gray-100 transition-all border border-gray-100">
-            <Navigation className="w-4 h-4" />
+            <Truck className="w-4 h-4" />
             <span>Planifier Tournée</span>
           </button>
           <button className="flex items-center space-x-2 px-8 py-3 bg-navy-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20 active:scale-95">
@@ -36,9 +89,9 @@ export default function ShopPickups() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        <StatusCard label="À Retirer (Sur place)" count={18} icon={Package} color="amber" />
-        <StatusCard label="Livraisons en cours" count={5} icon={Truck} color="blue" />
-        <StatusCard label="Livrés Aujourd'hui" count={42} icon={CheckCircle2} color="emerald" />
+        <StatusCard label="À Retirer (Sur place)" count={toPickupCount} icon={Package} color="amber" />
+        <StatusCard label="Livraisons en cours" count={inProgressCount} icon={Truck} color="blue" />
+        <StatusCard label="Livrés Aujourd'hui" count={deliveredCount} icon={CheckCircle2} color="emerald" />
       </div>
 
       {/* Main Content Split */}
@@ -47,9 +100,9 @@ export default function ShopPickups() {
           <div className="bg-white rounded-3xl border border-gray-100 p-4 shadow-sm flex items-center gap-4">
              <div className="relative flex-1">
                 <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input 
-                  type="text" 
-                  placeholder="Rechercher par N° commande, Parent ou Code de retrait..." 
+                <input
+                  type="text"
+                  placeholder="Rechercher par N° commande, Parent ou Code de retrait..."
                   className="w-full pl-11 pr-4 py-3 bg-gray-50 border-none rounded-2xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20 transition-all font-medium"
                 />
              </div>
@@ -72,34 +125,24 @@ export default function ShopPickups() {
                       </tr>
                    </thead>
                    <tbody className="divide-y divide-gray-50">
-                      <PickupRow 
-                        id="PKP-8824" 
-                        name="Ibrahim Dieng" 
-                        type="Sur place" 
-                        status="Prêt" 
-                        date="Aujourd'hui, 14:00" 
-                      />
-                      <PickupRow 
-                        id="DLV-4412" 
-                        name="Sana Fall" 
-                        type="Domicile" 
-                        status="En Route" 
-                        date="Aujourd'hui, 15:30" 
-                      />
-                      <PickupRow 
-                        id="PKP-8823" 
-                        name="Fatou Gning" 
-                        type="Sur place" 
-                        status="En attente" 
-                        date="Demain, 09:00" 
-                      />
-                      <PickupRow 
-                        id="DLV-4411" 
-                        name="Amadou Ba" 
-                        type="Domicile" 
-                        status="Planifié" 
-                        date="19 Mai, 11:00" 
-                      />
+                      {safeDeliveries.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-8 py-16 text-center text-gray-500">
+                            Aucune livraison ou retrait enregistré pour cette année scolaire.
+                          </td>
+                        </tr>
+                      ) : (
+                        safeDeliveries.map((d: any, i: number) => (
+                          <PickupRow
+                            key={d?.id ?? `dlv-${i}`}
+                            id={d?.refNo ?? d?.reference ?? d?.code ?? d?.id ?? `PKP-${i}`}
+                            name={d?.customerName ?? d?.parentName ?? d?.clientName ?? 'Client'}
+                            type={d?.type ?? d?.deliveryType ?? 'Sur place'}
+                            status={d?.status ?? 'En attente'}
+                            date={d?.date ?? d?.appointment ?? d?.rendezVous ?? (d?.scheduledAt ? new Date(d.scheduledAt).toLocaleDateString('fr-FR') : '—')}
+                          />
+                        ))
+                      )}
                    </tbody>
                 </table>
              </div>
@@ -136,9 +179,17 @@ export default function ShopPickups() {
                  <Bell className="w-5 h-5 text-gray-300" />
               </div>
               <div className="space-y-4">
-                 <NotificationItem text="SMS envoyé à M. Dieng pour sa commande #8824" time="2 min" />
-                 <NotificationItem text="Livreur #02 a démarré la tournée SUD" time="15 min" />
-                 <NotificationItem text="Commande #4409 livrée avec succès" time="1h" />
+                 {safeDeliveries.length === 0 ? (
+                   <p className="text-xs text-gray-400 text-center py-4">Aucune notification récente.</p>
+                 ) : (
+                   safeDeliveries.slice(0, 3).map((d: any, i: number) => (
+                     <NotificationItem
+                       key={`notif-${i}`}
+                       text={`Mise à jour : ${d?.refNo ?? d?.reference ?? d?.code ?? 'Commande'} — ${d?.status ?? 'En attente'}`}
+                       time="récemment"
+                     />
+                   ))
+                 )}
               </div>
            </div>
         </div>
@@ -191,7 +242,7 @@ function PickupRow({ id, name, type, status, date }: any) {
           </div>
        </td>
        <td className="px-8 py-6">
-          <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tight border ${statusStyles[status]}`}>
+          <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tight border ${statusStyles[status] ?? 'bg-gray-50 text-gray-400 border-gray-100'}`}>
              {status}
           </span>
        </td>
@@ -216,7 +267,7 @@ function NotificationItem({ text, time }: any) {
          <div className="w-1.5 h-1.5 rounded-full bg-navy-500 mt-1.5 flex-shrink-0 group-hover:scale-125 transition-transform"></div>
          <div className="flex-1">
             <p className="text-[11px] font-medium text-gray-600 leading-tight">{text}</p>
-            <p className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter mt-1">{time} ago</p>
+            <p className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter mt-1">{time}</p>
          </div>
       </div>
    );

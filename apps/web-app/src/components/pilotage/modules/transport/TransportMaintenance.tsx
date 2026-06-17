@@ -1,15 +1,85 @@
 'use client';
 
-import { PenTool, Plus, Search, Filter, Calendar, Wrench, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { PenTool, Plus, Search, Filter, Calendar, Wrench, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface VehicleItem {
+  id: string;
+  name?: string;
+  vehicleName?: string;
+  maintenance?: any;
+  maintenances?: Array<{
+    id?: string;
+    type?: string;
+    maintenanceType?: string;
+    date?: string;
+    maintenanceDate?: string;
+    cost?: string;
+    maintenanceCost?: string;
+    status?: string;
+    maintenanceStatus?: string;
+  }>;
+  [key: string]: any;
+}
+
+interface MaintenanceRow {
+  id: string;
+  vehicle: string;
+  type: string;
+  date: string;
+  cost: string;
+  status: string;
+}
 
 export default function TransportMaintenance() {
-  const maintenances = [
-    { id: '1', vehicle: 'Bus #01', type: 'Vidange & Filtres', date: '2026-05-10', cost: '45 000 F CFA', status: 'COMPLETED' },
-    { id: '2', vehicle: 'Bus #04', type: 'Révision freins', date: '2026-05-18', cost: '—', status: 'PLANNED' },
-  ];
+  const { academicYear } = useModuleContext();
+  // Récupère les véhicules avec un filtre "maintenance" pour cibler les entretiens
+  const { data, loading, error } = useModulesList<VehicleItem>('transport', 'vehicles', academicYear?.id, { maintenance: true });
+
+  const vehicles = data ?? [];
+
+  // Aplatit les maintenances imbriquées dans chaque véhicule
+  const maintenances: MaintenanceRow[] = vehicles.flatMap((v) => {
+    const vehicleName = v.name || v.vehicleName || `Véhicule ${v.id}`;
+    const list = Array.isArray(v.maintenance) ? v.maintenance : (v.maintenances ?? []);
+    if (list.length === 0) {
+      return [{
+        id: v.id,
+        vehicle: vehicleName,
+        type: '—',
+        date: '',
+        cost: '—',
+        status: 'NONE',
+      }];
+    }
+    return list.map((m, idx) => ({
+      id: m.id ?? `${v.id}-${idx}`,
+      vehicle: vehicleName,
+      type: m.type || m.maintenanceType || '—',
+      date: m.date || m.maintenanceDate || '',
+      cost: m.cost || m.maintenanceCost || '—',
+      status: m.status || m.maintenanceStatus || 'PLANNED',
+    }));
+  });
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-slate-600">Chargement...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les données. {error}
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <h3 className="text-xl font-black text-slate-900 tracking-tighter uppercase flex items-center gap-2">
           <Wrench className="w-6 h-6 text-navy-900" /> Maintenance Préventive
@@ -34,11 +104,17 @@ export default function TransportMaintenance() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {maintenances.map((m) => (
+                  {maintenances.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-8 py-10 text-center text-slate-500 text-sm">
+                        Aucune donnée disponible pour cette année scolaire.
+                      </td>
+                    </tr>
+                  ) : maintenances.map((m) => (
                     <tr key={m.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="px-8 py-5 font-black text-slate-900 text-sm uppercase">{m.vehicle}</td>
                       <td className="px-8 py-5 text-sm font-medium text-slate-600">{m.type}</td>
-                      <td className="px-8 py-5 text-sm font-medium text-slate-600">{new Date(m.date).toLocaleDateString()}</td>
+                      <td className="px-8 py-5 text-sm font-medium text-slate-600">{m.date ? new Date(m.date).toLocaleDateString() : '—'}</td>
                       <td className="px-8 py-5">
                         <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
                           m.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'

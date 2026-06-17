@@ -1,23 +1,66 @@
 /**
  * ============================================================================
- * LIBRARY REPORTS & STATS
+ * LIBRARY REPORTS & STATS — Branché sur backend réel
+ * ============================================================================
+ *
+ * Endpoint stats : GET /modules-complementaires/library/dashboard?academicYearId=...
+ * Endpoint génération : POST /modules-complementaires/library/reports
+ *
+ * Note : La liste des rapports générés reste en mock (TODO endpoint liste),
+ * mais les KPI analytiques sont branchés sur le dashboard.
  * ============================================================================
  */
 
 'use client';
 
 import { motion } from 'framer-motion';
-import { BarChart3, PieChart, FileText, Download, Calendar, Printer, Share2, TrendingUp, Filter } from 'lucide-react';
+import { BarChart3, FileText, Download, Calendar, Printer, Share2, TrendingUp, Filter, Loader2 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesDashboard } from '@/lib/modules-complementaires/hooks';
+
+interface LibraryDashboardStats {
+  rotationRate?: number;
+  averageLoanDuration?: number;
+  maxLoanDuration?: number;
+  penaltyRevenue?: number;
+  totalRevenue?: number;
+  [key: string]: any;
+}
+
+// TODO: endpoint liste des rapports non disponible — garder mock
+const REPORTS_MOCK = [
+  { title: 'Rapport Annuel de Fréquentation', type: 'COMPLET', date: '01/01/2026', size: '2.4 MB', author: 'Logiciel System' },
+  { title: 'Analyse des Retards et Pénalités', type: 'FINANCE', date: '12/05/2026', size: '1.1 MB', author: 'Sarah AI' },
+  { title: 'Inventaire Physique - Section Littérature', type: 'INVENTAIRE', date: '10/05/2026', size: '850 KB', author: 'Admin' },
+];
 
 export default function LibraryReports() {
-  const reports = [
-    { title: 'Rapport Annuel de Fréquentation', type: 'COMPLET', date: '01/01/2026', size: '2.4 MB', author: 'Logiciel System' },
-    { title: 'Analyse des Retards et Pénalités', type: 'FINANCE', date: '12/05/2026', size: '1.1 MB', author: 'Sarah AI' },
-    { title: 'Inventaire Physique - Section Littérature', type: 'INVENTAIRE', date: '10/05/2026', size: '850 KB', author: 'Admin' },
-  ];
+  const { academicYear } = useModuleContext();
+  const { data, loading, error } = useModulesDashboard<LibraryDashboardStats>('library', academicYear?.id);
+
+  const rotationRate = data?.rotationRate ?? 68;
+  const avgLoanDays = data?.averageLoanDuration ?? 9.2;
+  const maxLoanDays = data?.maxLoanDuration ?? 14;
+  const penaltyRevenue = data?.penaltyRevenue ?? data?.totalRevenue ?? 42500;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des statistiques...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les statistiques depuis le serveur. Affichage des valeurs par défaut.
+          <details className="mt-1 text-xs text-amber-700"><summary>Détail</summary>{error}</details>
+        </div>
+      )}
+
       {/* Analytics Summary */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
@@ -25,7 +68,7 @@ export default function LibraryReports() {
             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Taux de Rotation</h4>
             <TrendingUp className="w-5 h-5 text-emerald-500" />
           </div>
-          <div className="text-4xl font-black text-slate-900 mb-2">68%</div>
+          <div className="text-4xl font-black text-slate-900 mb-2">{rotationRate}%</div>
           <p className="text-[10px] font-bold text-emerald-600 bg-emerald-50 w-fit px-2 py-0.5 rounded-lg">+12% vs mois dernier</p>
         </div>
         <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
@@ -33,15 +76,15 @@ export default function LibraryReports() {
             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Temps Moyen Emprunt</h4>
             <Calendar className="w-5 h-5 text-blue-500" />
           </div>
-          <div className="text-4xl font-black text-slate-900 mb-2">9.2 Jours</div>
-          <p className="text-[10px] font-bold text-blue-600 bg-blue-50 w-fit px-2 py-0.5 rounded-lg">Dans les limites (14j)</p>
+          <div className="text-4xl font-black text-slate-900 mb-2">{avgLoanDays} Jours</div>
+          <p className="text-[10px] font-bold text-blue-600 bg-blue-50 w-fit px-2 py-0.5 rounded-lg">Dans les limites ({maxLoanDays}j)</p>
         </div>
         <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
           <div className="flex items-center justify-between mb-6">
             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Recettes Pénalités</h4>
             <FileText className="w-5 h-5 text-amber-500" />
           </div>
-          <div className="text-4xl font-black text-slate-900 mb-2">42 500 F CFA</div>
+          <div className="text-4xl font-black text-slate-900 mb-2">{penaltyRevenue.toLocaleString('fr-FR')} F CFA</div>
           <p className="text-[10px] font-bold text-slate-400 bg-slate-50 w-fit px-2 py-0.5 rounded-lg">Mois en cours</p>
         </div>
       </div>
@@ -63,7 +106,7 @@ export default function LibraryReports() {
       </div>
 
       <div className="grid grid-cols-1 gap-4">
-        {reports.map((report, i) => (
+        {REPORTS_MOCK.map((report, i) => (
           <motion.div
             key={i}
             initial={{ opacity: 0, y: 10 }}

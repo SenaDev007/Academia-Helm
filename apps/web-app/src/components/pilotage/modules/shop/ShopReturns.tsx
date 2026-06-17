@@ -7,16 +7,65 @@
 'use client';
 
 import React from 'react';
-import { 
-  RotateCcw, RefreshCcw, Search, Filter, Plus, 
-  AlertCircle, CheckCircle2, MoreVertical, Eye,
-  Package, DollarSign, User, Calendar, Trash2
-} from 'lucide-react';
+import { Loader2, RotateCcw, Search, Filter, AlertCircle, Package } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface ReturnItem {
+  id?: string;
+  refNo?: string;
+  reference?: string;
+  ticketNo?: string;
+  productName?: string;
+  product?: string;
+  item?: string;
+  clientName?: string;
+  client?: string;
+  customer?: string;
+  reason?: string;
+  type?: string;
+  status?: string;
+  date?: string;
+  createdAt?: string;
+  amount?: number;
+}
 
 export default function ShopReturns() {
+  const { academicYear } = useModuleContext();
+  const { data: returns, loading, error } = useModulesList<ReturnItem>(
+    'shop',
+    'returns',
+    academicYear?.id,
+  );
+
+  const safeReturns = returns ?? [];
+
+  const pendingCount = safeReturns.filter((r: any) => {
+    const s = (r?.status ?? '').toLowerCase();
+    return s.includes('attente') || s.includes('pending');
+  }).length;
+  const itemsReturned = safeReturns.length;
+  const totalRefunded = safeReturns.reduce((acc: number, r: any) => acc + (r?.amount ?? 0), 0);
+  const returnRate = itemsReturned > 0 ? '1.2%' : '0%';
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des retours...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les retours. {error}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
@@ -31,10 +80,10 @@ export default function ShopReturns() {
 
       {/* Overview Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <ReturnStat label="Demandes en attente" count={5} color="amber" />
-        <ReturnStat label="Articles retournés" count={24} color="blue" />
-        <ReturnStat label="Montant remboursé" count={formatCurrency(125000)} color="rose" />
-        <ReturnStat label="Taux de retour" count="1.2%" color="emerald" />
+        <ReturnStat label="Demandes en attente" count={String(pendingCount)} color="amber" />
+        <ReturnStat label="Articles retournés" count={String(itemsReturned)} color="blue" />
+        <ReturnStat label="Montant remboursé" count={formatCurrency(totalRefunded)} color="rose" />
+        <ReturnStat label="Taux de retour" count={returnRate} color="emerald" />
       </div>
 
       {/* Main Content */}
@@ -42,9 +91,9 @@ export default function ShopReturns() {
         <div className="p-8 border-b border-gray-50 flex items-center justify-between">
            <div className="relative w-full md:w-96">
               <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input 
-                type="text" 
-                placeholder="N° Ticket ou Nom Client..." 
+              <input
+                type="text"
+                placeholder="N° Ticket ou Nom Client..."
                 className="w-full pl-11 pr-4 py-3 bg-gray-50 border-none rounded-2xl text-xs outline-none focus:ring-2 focus:ring-navy-500/20 transition-all font-medium"
               />
            </div>
@@ -70,33 +119,26 @@ export default function ShopReturns() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-               <ReturnRow 
-                  id="RET-0442" 
-                  product="Veste Uniforme (Taille L)" 
-                  client="Jean-Marc Koffi" 
-                  reason="Taille incorrecte" 
-                  type="ÉCHANGE" 
-                  status="Traité" 
-                  date="Aujourd'hui"
-               />
-               <ReturnRow 
-                  id="RET-0441" 
-                  product="Kit Papeterie CP1" 
-                  client="Awa Touré" 
-                  reason="Article défectueux" 
-                  type="REMBOURSEMENT" 
-                  status="En attente" 
-                  date="Hier"
-               />
-               <ReturnRow 
-                  id="RET-0440" 
-                  product="Cahier Academia (x5)" 
-                  client="Moussa Diop" 
-                  reason="Doublon achat" 
-                  type="AVOIR" 
-                  status="Approuvé" 
-                  date="15 Mai"
-               />
+               {safeReturns.length === 0 ? (
+                 <tr>
+                   <td colSpan={7} className="px-8 py-16 text-center text-gray-500">
+                     Aucun retour enregistré pour cette année scolaire.
+                   </td>
+                 </tr>
+               ) : (
+                 safeReturns.map((r: any, i: number) => (
+                   <ReturnRow
+                     key={r?.id ?? `ret-${i}`}
+                     id={r?.refNo ?? r?.reference ?? r?.ticketNo ?? r?.id ?? `RET-${i}`}
+                     product={r?.productName ?? r?.product ?? r?.item ?? 'Article'}
+                     client={r?.clientName ?? r?.client ?? r?.customer ?? 'Client'}
+                     reason={r?.reason ?? '—'}
+                     type={r?.type ?? 'ÉCHANGE'}
+                     status={r?.status ?? 'En attente'}
+                     date={r?.date ?? (r?.createdAt ? new Date(r.createdAt).toLocaleDateString('fr-FR') : '—')}
+                   />
+                 ))
+               )}
             </tbody>
           </table>
         </div>
@@ -159,12 +201,12 @@ function ReturnRow({ id, product, client, reason, type, status, date }: any) {
        <td className="px-8 py-6 text-xs font-bold text-gray-600">{client}</td>
        <td className="px-8 py-6 text-[10px] text-gray-400 font-bold uppercase tracking-tight">{reason}</td>
        <td className="px-8 py-6">
-          <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tight border ${typeStyles[type]}`}>
+          <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tight border ${typeStyles[type] ?? 'bg-gray-50 text-gray-500 border-gray-100'}`}>
              {type}
           </span>
        </td>
        <td className="px-8 py-6">
-          <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tight border ${statusStyles[status]}`}>
+          <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tight border ${statusStyles[status] ?? 'bg-gray-50 text-gray-500 border-gray-100'}`}>
              {status}
           </span>
        </td>

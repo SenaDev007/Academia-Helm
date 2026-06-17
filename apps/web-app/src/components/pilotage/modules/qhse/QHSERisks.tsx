@@ -7,18 +7,52 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { ShieldAlert, Activity, ArrowUpRight, Zap, Droplets, Flame, Users, Lock, MoreVertical } from 'lucide-react';
+import { ShieldAlert, Activity, ArrowUpRight, Zap, Droplets, Flame, Users, Lock, MoreVertical, Loader2 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface RiskItem {
+  id: string | number;
+  title?: string;
+  name?: string;
+  category?: string;
+  criticite?: string;
+  criticality?: string;
+  probability?: number;
+  impact?: number;
+  icon?: any;
+  color?: string;
+  bg?: string;
+}
+
+const CATEGORY_ICONS: Record<string, any> = {
+  SECURITE: Lock,
+  HYGIENE: Droplets,
+  INFRA: Zap,
+  ENVIRONNEMENT: Flame,
+};
 
 export default function QHSERisks() {
-  const risks = [
-    { id: 1, title: 'Risque Incendie', category: 'SECURITE', criticite: 'ELEVE', probability: 2, impact: 5, icon: Flame, color: 'text-rose-600', bg: 'bg-rose-50' },
-    { id: 2, title: 'Intoxication Alimentaire', category: 'HYGIENE', criticite: 'MOYEN', probability: 2, impact: 4, icon: Droplets, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { id: 3, title: 'Court-circuit électrique', category: 'INFRA', criticite: 'CRITIQUE', probability: 3, impact: 5, icon: Zap, color: 'text-amber-600', bg: 'bg-amber-50' },
-    { id: 4, title: 'Intrusion malveillante', category: 'SECURITE', criticite: 'MOYEN', probability: 1, impact: 5, icon: Lock, color: 'text-slate-600', bg: 'bg-slate-50' },
-  ];
+  const { academicYear } = useModuleContext();
+  const { data: risks, loading, error } = useModulesList<RiskItem>('qhse', 'risks', academicYear?.id);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-slate-600">Chargement des risques...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les données. {error}
+        </div>
+      )}
+
       {/* Risk Matrix Preview */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         <div className="lg:col-span-1 space-y-6">
@@ -53,52 +87,64 @@ export default function QHSERisks() {
 
         {/* Risk Cards */}
         <div className="lg:col-span-3">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {risks.map((risk, i) => (
-              <motion.div
-                key={risk.id}
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: i * 0.1 }}
-                className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-xl transition-all group"
-              >
-                <div className="flex items-center justify-between mb-8">
-                  <div className={`p-4 rounded-2xl ${risk.bg} ${risk.color}`}>
-                    <risk.icon className="w-8 h-8" />
-                  </div>
-                  <button className="p-2 hover:bg-slate-50 rounded-xl">
-                    <MoreVertical className="w-5 h-5 text-slate-300" />
-                  </button>
-                </div>
-                
-                <div className="space-y-4">
-                  <div>
-                    <h4 className="text-xl font-black text-slate-900 tracking-tighter leading-tight">{risk.title}</h4>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{risk.category}</p>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-4 border-t border-slate-50">
-                    <div className="flex items-center gap-4">
-                      <div className="text-center">
-                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Proba</p>
-                        <p className="text-sm font-black text-slate-900">{risk.probability}/5</p>
+          {risks.length === 0 ? (
+            <div className="text-center py-16 text-slate-500 bg-white rounded-[2.5rem] border border-slate-100">
+              Aucun risque enregistré pour cette année scolaire.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {risks.map((risk, i) => {
+                const Icon = risk.icon || CATEGORY_ICONS[risk.category || ''] || ShieldAlert;
+                const color = risk.color || 'text-slate-600';
+                const bg = risk.bg || 'bg-slate-50';
+                const criticite = risk.criticite || risk.criticality || 'MOYEN';
+                return (
+                  <motion.div
+                    key={risk.id ?? i}
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.1 }}
+                    className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-xl transition-all group"
+                  >
+                    <div className="flex items-center justify-between mb-8">
+                      <div className={`p-4 rounded-2xl ${bg} ${color}`}>
+                        <Icon className="w-8 h-8" />
                       </div>
-                      <div className="text-center">
-                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Impact</p>
-                        <p className="text-sm font-black text-slate-900">{risk.impact}/5</p>
+                      <button className="p-2 hover:bg-slate-50 rounded-xl">
+                        <MoreVertical className="w-5 h-5 text-slate-300" />
+                      </button>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="text-xl font-black text-slate-900 tracking-tighter leading-tight">{risk.title || risk.name}</h4>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{risk.category}</p>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-4 border-t border-slate-50">
+                        <div className="flex items-center gap-4">
+                          <div className="text-center">
+                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Proba</p>
+                            <p className="text-sm font-black text-slate-900">{risk.probability ?? '—'}/5</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Impact</p>
+                            <p className="text-sm font-black text-slate-900">{risk.impact ?? '—'}/5</p>
+                          </div>
+                        </div>
+                        <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                          criticite === 'CRITIQUE' ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/20' : 
+                          criticite === 'ELEVE' || criticite === 'HIGH' ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-500'
+                        }`}>
+                          {criticite}
+                        </span>
                       </div>
                     </div>
-                    <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${
-                      risk.criticite === 'CRITIQUE' ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/20' : 
-                      risk.criticite === 'ELEVE' ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-500'
-                    }`}>
-                      {risk.criticite}
-                    </span>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>

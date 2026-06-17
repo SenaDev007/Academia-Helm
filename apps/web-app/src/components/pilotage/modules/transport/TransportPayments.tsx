@@ -2,6 +2,9 @@
 
 import { CreditCard, Plus, Search, Filter, Download, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 
+// TODO: endpoint non disponible — garder mock
+// Le backend ne expose pas de GET transport/payments.
+// Les paiements restent en données statiques en attendant un endpoint de lecture.
 export default function TransportPayments() {
   const payments = [
     { id: '1', student: 'Fatou Sow', amount: '25 000 F CFA', date: '2026-05-10', method: 'Orange Money', status: 'PAID' },

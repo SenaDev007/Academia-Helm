@@ -7,16 +7,50 @@
 'use client';
 
 import React from 'react';
-import { 
-  Package, Tag, Layers, Search, Filter, Plus, 
-  ArrowUpDown, MoreVertical, Edit, Trash2,
-  CheckCircle2, AlertTriangle, Info, Copy
-} from 'lucide-react';
+import { Loader2, Package, Layers, Search, Filter, Plus, ArrowUpDown, MoreVertical, Edit, Trash2, Copy } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface ProductItem {
+  id?: string;
+  name?: string;
+  sku?: string;
+  price?: number;
+  unitPrice?: number;
+  cost?: number;
+  purchaseCost?: number;
+  variants?: number;
+  variantCount?: number;
+  status?: string;
+  active?: boolean;
+}
 
 export default function ShopProducts() {
+  const { academicYear } = useModuleContext();
+  const { data: products, loading, error } = useModulesList<ProductItem>(
+    'shop',
+    'products',
+    academicYear?.id,
+  );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des articles...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les articles. {error}
+        </div>
+      )}
+
       {/* Header Actions */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
@@ -39,9 +73,9 @@ export default function ShopProducts() {
       <div className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm flex flex-col md:flex-row items-center gap-4">
         <div className="relative flex-1 w-full">
           <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input 
-            type="text" 
-            placeholder="Rechercher par nom, SKU ou code-barres..." 
+          <input
+            type="text"
+            placeholder="Rechercher par nom, SKU ou code-barres..."
             className="w-full pl-11 pr-4 py-3 bg-gray-50 border-none rounded-2xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20 transition-all font-medium"
           />
         </div>
@@ -73,38 +107,33 @@ export default function ShopProducts() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              <ProductRow 
-                name="Uniforme Sport (Complet)" 
-                sku="SKU-SPT-2026-01" 
-                variants={4} 
-                price={15000} 
-                cost={9500} 
-                status="Actif"
-              />
-              <ProductRow 
-                name="Kit Papeterie Primaire" 
-                sku="SKU-PAP-2026-05" 
-                variants={1} 
-                price={7500} 
-                cost={4200} 
-                status="Actif"
-              />
-              <ProductRow 
-                name="Gourde Isotherme Academia" 
-                sku="SKU-ACC-2026-12" 
-                variants={3} 
-                price={5500} 
-                cost={3100} 
-                status="Rupture"
-              />
-              <ProductRow 
-                name="Cahier TP Academia 200p" 
-                sku="SKU-PAP-2026-08" 
-                variants={2} 
-                price={1200} 
-                cost={650} 
-                status="Actif"
-              />
+              {(products ?? []).length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-8 py-16 text-center text-gray-500">
+                    Aucun article disponible pour cette année scolaire.
+                  </td>
+                </tr>
+              ) : (
+                (products ?? []).map((product, i) => {
+                  const name = product?.name ?? `Article #${i + 1}`;
+                  const sku = product?.sku ?? `SKU-${i + 1}`;
+                  const price = product?.price ?? product?.unitPrice ?? 0;
+                  const cost = product?.cost ?? product?.purchaseCost ?? 0;
+                  const variants = product?.variants ?? product?.variantCount ?? 0;
+                  const status = product?.active === false || product?.status === 'Rupture' ? 'Rupture' : 'Actif';
+                  return (
+                    <ProductRow
+                      key={product?.id ?? `prod-${i}`}
+                      name={name}
+                      sku={sku}
+                      variants={variants}
+                      price={price}
+                      cost={cost}
+                      status={status}
+                    />
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
@@ -114,8 +143,8 @@ export default function ShopProducts() {
 }
 
 function ProductRow({ name, sku, variants, price, cost, status }: any) {
-  const margin = price - cost;
-  const marginPercent = Math.round((margin / price) * 100);
+  const margin = (price ?? 0) - (cost ?? 0);
+  const marginPercent = price > 0 ? Math.round((margin / price) * 100) : 0;
 
   return (
     <tr className="hover:bg-gray-50/50 transition-all group">

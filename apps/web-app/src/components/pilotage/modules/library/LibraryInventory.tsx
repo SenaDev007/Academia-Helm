@@ -2,12 +2,17 @@
  * ============================================================================
  * LIBRARY INVENTORY
  * ============================================================================
+ *
+ * TODO: endpoint non disponible — garder mock. Le backend expose seulement
+ * POST library/inventory/campaigns et POST library/inventory/scan (pas de GET).
+ * La récupération de la liste des campagnes n'est pas encore implémentée côté backend.
+ * ============================================================================
  */
 
 'use client';
 
 import { motion } from 'framer-motion';
-import { ClipboardCheck, Barcode, Search, ShieldCheck, AlertCircle, Plus, ChevronRight, PackageSearch } from 'lucide-react';
+import { ClipboardCheck, Barcode, ShieldCheck, AlertCircle, Plus, ChevronRight, PackageSearch } from 'lucide-react';
 
 export default function LibraryInventory() {
   const campaigns = [

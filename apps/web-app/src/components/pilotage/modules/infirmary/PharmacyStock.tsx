@@ -7,27 +7,86 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { 
-  Pill, 
-  Plus, 
-  ArrowDownCircle, 
-  ArrowUpCircle, 
-  Search, 
+import { Loader2 } from 'lucide-react';
+import {
+  Pill,
+  Plus,
+  ArrowDownCircle,
+  ArrowUpCircle,
+  Search,
   AlertTriangle,
   Package,
   Calendar,
   MoreHorizontal
 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface StockItem {
+  id: string;
+  name?: string;
+  itemName?: string;
+  type?: string;
+  itemType?: string;
+  qty?: number;
+  quantity?: number;
+  unit?: string;
+  status?: string;
+  stockStatus?: string;
+  expiry?: string;
+  expirationDate?: string;
+  [key: string]: any;
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  OK: 'bg-emerald-500',
+  LOW: 'bg-amber-500',
+  CRITICAL: 'bg-rose-500',
+};
 
 export default function PharmacyStock() {
+  const { academicYear } = useModuleContext();
+  const { data, loading, error } = useModulesList<StockItem>('infirmary', 'stock', academicYear?.id);
+
+  const items = data ?? [];
+
+  // Statistiques calculées depuis le stock réel
+  const total = items.length;
+  const lowStock = items.filter((i) => {
+    const s = (i.status || i.stockStatus || '').toUpperCase();
+    return s === 'LOW' || s === 'CRITICAL';
+  }).length;
+  const expiringSoon = items.filter((i) => {
+    const exp = i.expiry || i.expirationDate;
+    if (!exp) return false;
+    const d = new Date(exp);
+    const diff = (d.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+    return diff >= 0 && diff <= 30;
+  }).length;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-slate-600">Chargement...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les données. {error}
+        </div>
+      )}
+
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white rounded-2xl border border-slate-200 p-6 flex items-center justify-between shadow-sm">
           <div>
             <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-1">Total Articles</p>
-            <p className="text-3xl font-black text-slate-900">124</p>
+            <p className="text-3xl font-black text-slate-900">{total}</p>
           </div>
           <div className="p-4 bg-blue-50 rounded-2xl text-blue-600">
             <Package className="w-6 h-6" />
@@ -36,7 +95,7 @@ export default function PharmacyStock() {
         <div className="bg-white rounded-2xl border border-slate-200 p-6 flex items-center justify-between shadow-sm">
           <div>
             <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-1">Stock Faible</p>
-            <p className="text-3xl font-black text-amber-600">8</p>
+            <p className="text-3xl font-black text-amber-600">{lowStock}</p>
           </div>
           <div className="p-4 bg-amber-50 rounded-2xl text-amber-600">
             <AlertTriangle className="w-6 h-6" />
@@ -45,7 +104,7 @@ export default function PharmacyStock() {
         <div className="bg-white rounded-2xl border border-slate-200 p-6 flex items-center justify-between shadow-sm">
           <div>
             <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-1">Péremption &lt; 30j</p>
-            <p className="text-3xl font-black text-rose-600">3</p>
+            <p className="text-3xl font-black text-rose-600">{expiringSoon}</p>
           </div>
           <div className="p-4 bg-rose-50 rounded-2xl text-rose-600">
             <Calendar className="w-6 h-6" />
@@ -57,8 +116,8 @@ export default function PharmacyStock() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input 
-            type="text" 
+          <input
+            type="text"
             placeholder="Rechercher un médicament..."
             className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
           />
@@ -93,41 +152,46 @@ export default function PharmacyStock() {
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-0 divide-x divide-y divide-slate-100 border-b border-slate-100">
-          {[
-            { name: 'Paracétamol 500mg', type: 'Médicament', qty: 450, unit: 'comp.', status: 'OK', color: 'bg-emerald-500', expiry: 'Jan 2026' },
-            { name: 'Alcool Chirurgical 70%', type: 'Consommable', qty: 2, unit: 'litres', status: 'LOW', color: 'bg-amber-500', expiry: 'Oct 2024' },
-            { name: 'Compresses Stériles', type: 'Consommable', qty: 85, unit: 'unités', status: 'OK', color: 'bg-emerald-500', expiry: 'Mars 2027' },
-            { name: 'Bétadine Jaune', type: 'Antiseptique', qty: 5, unit: 'flacons', status: 'OK', color: 'bg-emerald-500', expiry: 'Dec 2025' },
-            { name: 'Masques Chirurgicaux', type: 'Protection', qty: 12, unit: 'boîtes', status: 'OK', color: 'bg-emerald-500', expiry: 'Aout 2026' },
-            { name: 'Ventoline Spray', type: 'Urgence', qty: 1, unit: 'unité', status: 'CRITICAL', color: 'bg-rose-500', expiry: 'Juin 2024' },
-            { name: 'Gants Examen (M)', type: 'Consommable', qty: 3, unit: 'boîtes', status: 'OK', color: 'bg-emerald-500', expiry: 'Sep 2028' },
-            { name: 'Thermomètre Infra', type: 'Matériel', qty: 4, unit: 'unités', status: 'OK', color: 'bg-emerald-500', expiry: 'N/A' },
-          ].map((item, i) => (
-            <motion.div 
-              key={i} 
-              whileHover={{ backgroundColor: '#F8FAFC' }}
-              className="p-6 transition-colors group relative"
-            >
-              <div className="flex justify-between items-start mb-4">
-                <div className={`w-2 h-2 rounded-full ${item.color}`} />
-                <button className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-200 rounded-md transition-all">
-                  <MoreHorizontal className="w-4 h-4 text-slate-500" />
-                </button>
-              </div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-tighter mb-1">{item.type}</p>
-              <h4 className="font-black text-slate-900 mb-4">{item.name}</h4>
-              <div className="flex justify-between items-end">
-                <div>
-                  <p className="text-2xl font-black text-slate-900">{item.qty}</p>
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{item.unit}</p>
+          {items.length === 0 ? (
+            <div className="md:col-span-2 lg:col-span-4 p-12 text-center text-slate-500">
+              Aucune donnée disponible pour cette année scolaire.
+            </div>
+          ) : items.map((item, i) => {
+            const name = item.name || item.itemName || `Article ${item.id}`;
+            const type = item.type || item.itemType || 'Médicament';
+            const qty = item.qty ?? item.quantity ?? 0;
+            const unit = item.unit || 'unités';
+            const status = (item.status || item.stockStatus || 'OK').toUpperCase();
+            const color = STATUS_COLORS[status] ?? STATUS_COLORS.OK;
+            const expiry = item.expiry || item.expirationDate;
+            const expiryLabel = expiry ? new Date(expiry).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' }) : 'N/A';
+            return (
+              <motion.div
+                key={item.id ?? i}
+                whileHover={{ backgroundColor: '#F8FAFC' }}
+                className="p-6 transition-colors group relative"
+              >
+                <div className="flex justify-between items-start mb-4">
+                  <div className={`w-2 h-2 rounded-full ${color}`} />
+                  <button className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-200 rounded-md transition-all">
+                    <MoreHorizontal className="w-4 h-4 text-slate-500" />
+                  </button>
                 </div>
-                <div className="text-right">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase">Expire</p>
-                  <p className="text-xs font-black text-slate-600">{item.expiry}</p>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-tighter mb-1">{type}</p>
+                <h4 className="font-black text-slate-900 mb-4">{name}</h4>
+                <div className="flex justify-between items-end">
+                  <div>
+                    <p className="text-2xl font-black text-slate-900">{qty}</p>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{unit}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">Expire</p>
+                    <p className="text-xs font-black text-slate-600">{expiryLabel}</p>
+                  </div>
                 </div>
-              </div>
-            </motion.div>
-          ))}
+              </motion.div>
+            );
+          })}
         </div>
       </div>
     </div>

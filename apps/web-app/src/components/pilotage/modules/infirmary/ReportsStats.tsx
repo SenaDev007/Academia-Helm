@@ -7,23 +7,104 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { 
-  BarChart3, 
-  PieChart, 
-  TrendingUp, 
-  Download, 
-  FileJson, 
-  FileText, 
+import { Loader2 } from 'lucide-react';
+import {
+  BarChart3,
+  PieChart,
+  TrendingUp,
+  Download,
+  FileJson,
+  FileText,
   Filter,
   Calendar,
   Share2,
   Table as TableIcon,
   ShieldAlert
 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesDashboard } from '@/lib/modules-complementaires/hooks';
+
+// Templates de rapports (statiques — pas d'endpoint GET pour la liste de rapports générés)
+const REPORT_TEMPLATES = [
+  { title: 'Journal de l\'Infirmerie', desc: 'Registre complet des passages quotidiens.', icon: FileText },
+  { title: 'Bilan Sanitaire Annuel', desc: 'Statistiques globales pour le conseil intérieur.', icon: BarChart3 },
+  { title: 'Export Données Vigilance', desc: 'Liste des allergies et contre-indications.', icon: TableIcon },
+  { title: 'Inventaire Pharmacie', desc: 'État des stocks et prévisions d\'achat.', icon: PieChart },
+  { title: 'Rapport Incidents Graves', desc: 'Détails des urgences et transferts.', icon: ShieldAlert },
+  { title: 'Audit Accès Dossiers', desc: 'Journal de consultation des données RGPD.', icon: Calendar },
+];
+
+const FALLBACK_VISITS = [
+  { month: 'Jan', val: 45, color: 'bg-blue-200' },
+  { month: 'Fév', val: 52, color: 'bg-blue-300' },
+  { month: 'Mar', val: 38, color: 'bg-blue-400' },
+  { month: 'Avr', val: 65, color: 'bg-blue-500' },
+  { month: 'Mai', val: 78, color: 'bg-blue-600' },
+  { month: 'Juin', val: 30, color: 'bg-slate-200' },
+];
+
+const FALLBACK_REASONS = [
+  { label: 'Maux de tête / Fièvre', val: 42, color: 'bg-blue-500' },
+  { label: 'Bobologie / Chutes', val: 28, color: 'bg-emerald-500' },
+  { label: 'Douleurs Abdominales', val: 15, color: 'bg-amber-500' },
+  { label: 'Urgences / Autres', val: 15, color: 'bg-rose-500' },
+];
+
+interface InfirmaryDashboard {
+  visitsTrend?: Array<{ month?: string; label?: string; val?: number; value?: number; count?: number }>;
+  monthlyVisits?: Array<{ month?: string; label?: string; val?: number; value?: number; count?: number }>;
+  reasonBreakdown?: Array<{ label?: string; name?: string; val?: number; value?: number; percent?: number }>;
+  visitReasons?: Array<{ label?: string; name?: string; val?: number; value?: number; percent?: number }>;
+  [key: string]: any;
+}
 
 export default function ReportsStats() {
+  const { academicYear } = useModuleContext();
+  const { data: dashboard, loading, error } = useModulesDashboard<InfirmaryDashboard>('infirmary', academicYear?.id);
+
+  // Données de fréquentation depuis le dashboard (fallback mock)
+  const rawVisits = dashboard?.visitsTrend || dashboard?.monthlyVisits;
+  const visitsData = Array.isArray(rawVisits) && rawVisits.length > 0
+    ? rawVisits.map((d, i) => {
+        const fallback = FALLBACK_VISITS[i] || { color: 'bg-blue-200' };
+        return {
+          month: d.month || d.label || fallback.month || `M${i + 1}`,
+          val: d.val ?? d.value ?? d.count ?? 0,
+          color: fallback.color,
+        };
+      })
+    : FALLBACK_VISITS;
+
+  // Répartition des motifs depuis le dashboard (fallback mock)
+  const rawReasons = dashboard?.reasonBreakdown || dashboard?.visitReasons;
+  const reasonData = Array.isArray(rawReasons) && rawReasons.length > 0
+    ? rawReasons.map((d, i) => {
+        const fallback = FALLBACK_REASONS[i] || { color: 'bg-slate-300' };
+        return {
+          label: d.label || d.name || fallback.label,
+          val: d.val ?? d.value ?? d.percent ?? 0,
+          color: fallback.color,
+        };
+      })
+    : FALLBACK_REASONS;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-slate-600">Chargement...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les statistiques. {error}
+        </div>
+      )}
+
       {/* Analytics Overview */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 bg-white rounded-3xl border border-slate-200 p-8 shadow-sm">
@@ -40,18 +121,11 @@ export default function ReportsStats() {
               <option>Année Scolaire</option>
             </select>
           </div>
-          
+
           <div className="h-64 flex items-end justify-between px-4 space-x-4">
-            {[
-              { month: 'Jan', val: 45, color: 'bg-blue-200' },
-              { month: 'Fév', val: 52, color: 'bg-blue-300' },
-              { month: 'Mar', val: 38, color: 'bg-blue-400' },
-              { month: 'Avr', val: 65, color: 'bg-blue-500' },
-              { month: 'Mai', val: 78, color: 'bg-blue-600' },
-              { month: 'Juin', val: 30, color: 'bg-slate-200' },
-            ].map((d, i) => (
+            {visitsData.map((d, i) => (
               <div key={i} className="flex-1 flex flex-col items-center">
-                <motion.div 
+                <motion.div
                   initial={{ height: 0 }}
                   animate={{ height: `${d.val}%` }}
                   transition={{ delay: i * 0.1, duration: 0.8 }}
@@ -73,12 +147,7 @@ export default function ReportsStats() {
             Répartition Motifs
           </h3>
           <div className="space-y-4">
-            {[
-              { label: 'Maux de tête / Fièvre', val: 42, color: 'bg-blue-500' },
-              { label: 'Bobologie / Chutes', val: 28, color: 'bg-emerald-500' },
-              { label: 'Douleurs Abdominales', val: 15, color: 'bg-amber-500' },
-              { label: 'Urgences / Autres', val: 15, color: 'bg-rose-500' },
-            ].map((d, i) => (
+            {reasonData.map((d, i) => (
               <div key={i} className="space-y-1">
                 <div className="flex justify-between text-xs font-bold">
                   <span className="text-slate-600">{d.label}</span>
@@ -105,18 +174,11 @@ export default function ReportsStats() {
           </h3>
           <p className="text-slate-500 text-sm font-medium">Extractions de données conformes aux standards académiques et médicaux.</p>
         </div>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-0 divide-x divide-y divide-slate-100">
-          {[
-            { title: 'Journal de l\'Infirmerie', desc: 'Registre complet des passages quotidiens.', icon: FileText },
-            { title: 'Bilan Sanitaire Annuel', desc: 'Statistiques globales pour le conseil intérieur.', icon: BarChart3 },
-            { title: 'Export Données Vigilance', desc: 'Liste des allergies et contre-indications.', icon: TableIcon },
-            { title: 'Inventaire Pharmacie', desc: 'État des stocks et prévisions d\'achat.', icon: PieChart },
-            { title: 'Rapport Incidents Graves', desc: 'Détails des urgences et transferts.', icon: ShieldAlert },
-            { title: 'Audit Accès Dossiers', desc: 'Journal de consultation des données RGPD.', icon: Calendar },
-          ].map((rep, i) => (
-            <motion.div 
-              key={i} 
+          {REPORT_TEMPLATES.map((rep, i) => (
+            <motion.div
+              key={i}
               whileHover={{ backgroundColor: '#F8FAFC' }}
               className="p-8 group cursor-pointer transition-colors"
             >

@@ -2,6 +2,10 @@
  * ============================================================================
  * EDUCAST ANALYTICS
  * ============================================================================
+ * TODO: endpoint non disponible — `educast/dashboard` n'existe pas encore côté backend.
+ *       Les statistiques utilisent des données mockées. Quand l'endpoint sera disponible,
+ *       remplacer par : const { data, loading, error } = useModulesDashboard('educast', academicYear?.id);
+ *       ou : const stats = await modulesApi.get('educast/stats', buildModulesApiOptions(academicYear.id));
  */
 
 'use client';

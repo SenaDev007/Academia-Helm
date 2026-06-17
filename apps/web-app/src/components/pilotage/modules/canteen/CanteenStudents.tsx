@@ -1,27 +1,86 @@
+/**
+ * ============================================================================
+ * CANTEEN STUDENTS — Branché sur backend réel
+ * ============================================================================
+ *
+ * Endpoint : GET /modules-complementaires/canteen/enrollments?academicYearId=...
+ *
+ * Réutilise l'endpoint enrollments mais présente une vue "élèves inscrits".
+ * ============================================================================
+ */
+
 import React from 'react';
-import { 
-  Users, Search, Filter, Download, 
+import {
+  Search, Filter, Download,
   ChevronLeft, ChevronRight, MoreHorizontal,
-  Mail, Phone, MessageSquare, AlertTriangle,
-  History, Eye, Edit
+  Mail, Phone, AlertTriangle,
+  Loader2
 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface EnrollmentItem {
+  id: string;
+  student?: string;
+  studentName?: string;
+  name?: string;
+  studentId?: string;
+  matricule?: string;
+  class?: string;
+  className?: string;
+  level?: string;
+  schoolLevel?: string;
+  plan?: string;
+  subscriptionPlan?: string;
+  diet?: string;
+  dietType?: string;
+  regime?: string;
+  health?: string;
+  medicalNote?: string;
+  attendance?: string;
+  attendanceRate?: number;
+  presenceRate?: number;
+  [key: string]: any;
+}
 
 export default function CanteenStudents() {
+  const { academicYear } = useModuleContext();
+  const { data: enrollments, loading, error } = useModulesList<EnrollmentItem>(
+    'canteen',
+    'enrollments',
+    academicYear?.id,
+  );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des élèves inscrits...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les données. {error}
+        </div>
+      )}
+
       <div className="bg-white rounded-3xl border border-gray-100 shadow-xl shadow-gray-200/50 overflow-hidden">
         <div className="p-8 border-b border-gray-50 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div>
             <h3 className="font-black text-navy-900 text-xl tracking-tight">Effectif Cantine</h3>
-            <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mt-1">450 élèves bénéficiaires du service</p>
+            <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mt-1">{enrollments.length} élève(s) bénéficiaire(s) du service</p>
           </div>
-          
+
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative group">
               <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-navy-600 transition-colors" />
-              <input 
-                type="text" 
-                placeholder="Rechercher un élève..." 
+              <input
+                type="text"
+                placeholder="Rechercher un élève..."
                 className="pl-11 pr-4 py-2.5 bg-gray-50/50 border border-gray-100 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-navy-500/20 w-64 transition-all"
               />
             </div>
@@ -35,6 +94,11 @@ export default function CanteenStudents() {
           </div>
         </div>
 
+        {enrollments.length === 0 ? (
+          <div className="text-center py-16 text-gray-500">
+            Aucun élève inscrit à la cantine pour cette année scolaire.
+          </div>
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
@@ -48,49 +112,37 @@ export default function CanteenStudents() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              <StudentRow 
-                name="Félix Kouadio"
-                id="AC-2026-001"
-                class="CM1-A"
-                level="Primaire"
-                plan="Mensuel"
-                diet="Standard"
-                attendance="95%"
-              />
-              <StudentRow 
-                name="Fatouma Bamba"
-                id="AC-2026-042"
-                class="6ème 1"
-                level="Collège"
-                plan="Trimestriel"
-                diet="Sans Arachide"
-                health="Allergie Sévère"
-                attendance="88%"
-              />
-              <StudentRow 
-                name="Lucas Martin"
-                id="AC-2026-115"
-                class="Moyenne Section"
-                level="Maternelle"
-                plan="Annuel"
-                diet="Sans Lactose"
-                attendance="100%"
-              />
-              <StudentRow 
-                name="Grace Amon"
-                id="AC-2026-089"
-                class="Terminale D"
-                level="Lycée"
-                plan="Mensuel"
-                diet="Végétarien"
-                attendance="92%"
-              />
+              {enrollments.map((enr) => {
+                const name = enr.student ?? enr.studentName ?? enr.name ?? '—';
+                const id = enr.studentId ?? enr.matricule ?? enr.id ?? '—';
+                const className = enr.class ?? enr.className ?? '—';
+                const level = enr.level ?? enr.schoolLevel ?? '—';
+                const plan = enr.plan ?? enr.subscriptionPlan ?? '—';
+                const diet = enr.diet ?? enr.dietType ?? enr.regime ?? 'Standard';
+                const health = enr.health ?? enr.medicalNote;
+                const attendance = enr.attendance ?? enr.attendanceRate ?? enr.presenceRate ?? 0;
+                const attendancePct = typeof attendance === 'number' ? attendance : parseInt(attendance, 10) || 0;
+                return (
+                <StudentRow
+                  key={enr.id}
+                  name={name}
+                  id={id}
+                  class={className}
+                  level={level}
+                  plan={plan}
+                  diet={diet}
+                  health={health}
+                  attendance={`${attendancePct}%`}
+                />
+                );
+              })}
             </tbody>
           </table>
         </div>
+        )}
 
         <div className="p-8 border-t border-gray-50 flex items-center justify-between">
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Page 1 sur 12</p>
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Page 1 sur 1</p>
           <div className="flex items-center space-x-2">
             <button className="p-2 border border-gray-100 rounded-xl hover:bg-gray-50 transition-all"><ChevronLeft className="w-4 h-4 text-gray-400" /></button>
             <button className="p-2 border border-gray-100 rounded-xl hover:bg-gray-50 transition-all"><ChevronRight className="w-4 h-4 text-gray-400" /></button>
@@ -107,7 +159,7 @@ function StudentRow({ name, id, class: className, level, plan, diet, health, att
       <td className="px-8 py-6">
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-gray-100 to-gray-50 border border-gray-100 flex items-center justify-center text-navy-600 font-black text-xs shadow-sm group-hover:bg-white transition-all">
-            {name.split(' ').map((n: string) => n[0]).join('')}
+            {typeof name === 'string' ? name.split(' ').map((n: string) => n[0]).join('') : '—'}
           </div>
           <div>
             <p className="text-sm font-black text-navy-900">{name}</p>

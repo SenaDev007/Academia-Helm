@@ -7,16 +7,75 @@
 'use client';
 
 import React from 'react';
-import { 
-  Archive, Search, Filter, Plus, Clock, CheckCircle2, 
-  Truck, XCircle, MoreVertical, Eye, Download,
-  User, Calendar, ShoppingBag
-} from 'lucide-react';
+import { Loader2, Archive, Search, Filter, Plus, Clock, CheckCircle2, Truck, MoreVertical, Eye, Download, Calendar, ShoppingBag, User } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface OrderItem {
+  id?: string;
+  refNo?: string;
+  reference?: string;
+  number?: string;
+  customerName?: string;
+  parentName?: string;
+  clientName?: string;
+  studentName?: string;
+  student?: string;
+  date?: string;
+  createdAt?: string;
+  itemCount?: number;
+  itemsCount?: number;
+  total?: number;
+  amount?: number;
+  status?: string;
+}
 
 export default function ShopOrders() {
+  const { academicYear } = useModuleContext();
+  const { data: orders, loading, error } = useModulesList<OrderItem>(
+    'shop',
+    'orders',
+    academicYear?.id,
+  );
+
+  const safeOrders = orders ?? [];
+
+  // Calcul des compteurs par statut
+  const pendingCount = safeOrders.filter((o: any) => {
+    const s = (o?.status ?? '').toLowerCase();
+    return s.includes('attente') || s.includes('pending') || s.includes('à prép');
+  }).length;
+  const confirmedCount = safeOrders.filter((o: any) => {
+    const s = (o?.status ?? '').toLowerCase();
+    return s.includes('confirm') || s.includes('payé') || s.includes('paid');
+  }).length;
+  const toPrepareCount = safeOrders.filter((o: any) => {
+    const s = (o?.status ?? '').toLowerCase();
+    return s.includes('prépar') || s.includes('prepare') || s.includes('ready');
+  }).length;
+  const deliveredCount = safeOrders.filter((o: any) => {
+    const s = (o?.status ?? '').toLowerCase();
+    return s.includes('livr') || s.includes('deliver') || s.includes('prêt');
+  }).length;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des commandes...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les commandes. {error}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
@@ -31,19 +90,19 @@ export default function ShopOrders() {
 
       {/* Stats Mini Bar */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <OrderStatCard label="En attente" count={12} color="amber" icon={Clock} />
-        <OrderStatCard label="Confirmées" count={45} color="blue" icon={CheckCircle2} />
-        <OrderStatCard label="À préparer" count={8} color="rose" icon={Archive} />
-        <OrderStatCard label="Prêtes / Livrées" count={120} color="emerald" icon={Truck} />
+        <OrderStatCard label="En attente" count={pendingCount} color="amber" icon={Clock} />
+        <OrderStatCard label="Confirmées" count={confirmedCount} color="blue" icon={CheckCircle2} />
+        <OrderStatCard label="À préparer" count={toPrepareCount} color="rose" icon={Archive} />
+        <OrderStatCard label="Prêtes / Livrées" count={deliveredCount} color="emerald" icon={Truck} />
       </div>
 
       {/* Filter Bar */}
       <div className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm flex flex-col md:flex-row items-center gap-4">
         <div className="relative flex-1 w-full">
           <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input 
-            type="text" 
-            placeholder="Rechercher par N° commande, Parent ou Élève..." 
+          <input
+            type="text"
+            placeholder="Rechercher par N° commande, Parent ou Élève..."
             className="w-full pl-11 pr-4 py-3 bg-gray-50 border-none rounded-2xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20 transition-all font-medium"
           />
         </div>
@@ -75,42 +134,26 @@ export default function ShopOrders() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              <OrderRow 
-                id="CMD-2026-0452" 
-                name="Abdoulaye Traoré" 
-                student="Moussa (6ème B)" 
-                date="Aujourd'hui, 10:24" 
-                itemCount={3} 
-                total={45000} 
-                status="À préparer" 
-              />
-              <OrderRow 
-                id="CMD-2026-0451" 
-                name="Fatou Sow" 
-                student="Zainab (CM1 A)" 
-                date="Aujourd'hui, 09:15" 
-                itemCount={1} 
-                total={12500} 
-                status="Payé" 
-              />
-              <OrderRow 
-                id="CMD-2026-0450" 
-                name="Pauline Dupont" 
-                student="Leo (CP2)" 
-                date="Hier, 16:45" 
-                itemCount={5} 
-                total={28000} 
-                status="Confirmé" 
-              />
-              <OrderRow 
-                id="CMD-2026-0449" 
-                name="Michel Koffi" 
-                student="Jean (Tle D)" 
-                date="Hier, 14:20" 
-                itemCount={2} 
-                total={18500} 
-                status="Prêt" 
-              />
+              {safeOrders.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-8 py-16 text-center text-gray-500">
+                    Aucune commande disponible pour cette année scolaire.
+                  </td>
+                </tr>
+              ) : (
+                safeOrders.map((order: any, i: number) => (
+                  <OrderRow
+                    key={order?.id ?? `order-${i}`}
+                    id={order?.refNo ?? order?.reference ?? order?.number ?? order?.id ?? `CMD-${i}`}
+                    name={order?.customerName ?? order?.parentName ?? order?.clientName ?? 'Client'}
+                    student={order?.studentName ?? order?.student ?? ''}
+                    date={order?.date ?? (order?.createdAt ? new Date(order.createdAt).toLocaleDateString('fr-FR') : '—')}
+                    itemCount={order?.itemCount ?? order?.itemsCount ?? 0}
+                    total={order?.total ?? order?.amount ?? 0}
+                    status={order?.status ?? 'En attente'}
+                  />
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -156,10 +199,12 @@ function OrderRow({ id, name, student, date, itemCount, total, status }: any) {
       <td className="px-8 py-5">
         <div>
           <p className="text-xs font-bold text-navy-900">{name}</p>
-          <div className="flex items-center space-x-1 mt-0.5 text-gray-400">
-            <User className="w-3 h-3" />
-            <span className="text-[10px] font-medium">{student}</span>
-          </div>
+          {student && (
+            <div className="flex items-center space-x-1 mt-0.5 text-gray-400">
+              <User className="w-3 h-3" />
+              <span className="text-[10px] font-medium">{student}</span>
+            </div>
+          )}
         </div>
       </td>
       <td className="px-8 py-5 text-xs text-gray-400 font-bold">{date}</td>
@@ -171,7 +216,7 @@ function OrderRow({ id, name, student, date, itemCount, total, status }: any) {
       </td>
       <td className="px-8 py-5 font-black text-navy-900 text-sm">{formatCurrency(total)}</td>
       <td className="px-8 py-5">
-        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tight border ${statusColors[status]}`}>
+        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tight border ${statusColors[status] ?? 'bg-gray-50 text-gray-500 border-gray-100'}`}>
           {status}
         </span>
       </td>

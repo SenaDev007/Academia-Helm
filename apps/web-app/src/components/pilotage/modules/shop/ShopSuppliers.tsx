@@ -7,16 +7,70 @@
 'use client';
 
 import React from 'react';
-import { 
-  Users, Truck, FileText, Plus, Search, Filter, 
-  ExternalLink, Phone, Mail, MapPin, MoreVertical,
-  CheckCircle2, Clock, XCircle, ChevronRight, DollarSign
-} from 'lucide-react';
+import { Loader2, Truck, FileText, Plus, Phone, Mail, MoreVertical, ChevronRight } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface SupplierItem {
+  id?: string;
+  name?: string;
+  category?: string;
+  type?: string;
+  phone?: string;
+  email?: string;
+  ordersCount?: number;
+  totalAmount?: number;
+  total?: number;
+}
+
+interface PurchaseOrderItem {
+  id?: string;
+  refNo?: string;
+  reference?: string;
+  number?: string;
+  supplierName?: string;
+  supplier?: string;
+  amount?: number;
+  total?: number;
+  status?: string;
+  deliveryDate?: string;
+  expectedDate?: string;
+  date?: string;
+}
 
 export default function ShopSuppliers() {
+  const { academicYear } = useModuleContext();
+  const { data: suppliers, loading: supLoading, error: supError } = useModulesList<SupplierItem>(
+    'shop',
+    'suppliers',
+    academicYear?.id,
+  );
+  const { data: purchaseOrders, loading: poLoading, error: poError } = useModulesList<PurchaseOrderItem>(
+    'shop',
+    'purchase-orders',
+    academicYear?.id,
+  );
+
+  if (supLoading || poLoading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des fournisseurs...</span>
+      </div>
+    );
+  }
+
+  const errorMsg = supError || poError;
+
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
+      {errorMsg && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les données d'approvisionnement. {errorMsg}
+        </div>
+      )}
+
       {/* Header Actions */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
@@ -40,34 +94,25 @@ export default function ShopSuppliers() {
         <div className="lg:col-span-2 space-y-8">
           {/* Suppliers List */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <SupplierCard 
-              name="Bureau Vallée" 
-              category="Papeterie" 
-              phone="+221 33 800 00 00" 
-              email="contact@bureauvallee.sn" 
-              stats={{ orders: 12, total: 4500000 }}
-            />
-            <SupplierCard 
-              name="Uniformes Express" 
-              category="Textile" 
-              phone="+221 77 123 45 67" 
-              email="sales@uexpress.com" 
-              stats={{ orders: 8, total: 8200000 }}
-            />
-            <SupplierCard 
-              name="Librairie Clairafrique" 
-              category="Livres & Manuels" 
-              phone="+221 33 822 11 00" 
-              email="manuels@clairafrique.sn" 
-              stats={{ orders: 24, total: 12500000 }}
-            />
-            <SupplierCard 
-              name="Sport Direct" 
-              category="Équipements Sportifs" 
-              phone="+221 70 999 88 77" 
-              email="info@sportdirect.sn" 
-              stats={{ orders: 5, total: 1800000 }}
-            />
+            {(suppliers ?? []).length === 0 ? (
+              <div className="md:col-span-2 text-center py-12 text-gray-500">
+                Aucun fournisseur enregistré pour cette année scolaire.
+              </div>
+            ) : (
+              (suppliers ?? []).map((supplier: any, i: number) => (
+                <SupplierCard
+                  key={supplier?.id ?? `sup-${i}`}
+                  name={supplier?.name ?? `Fournisseur #${i + 1}`}
+                  category={supplier?.category ?? supplier?.type ?? 'Général'}
+                  phone={supplier?.phone ?? '—'}
+                  email={supplier?.email ?? '—'}
+                  stats={{
+                    orders: supplier?.ordersCount ?? 0,
+                    total: supplier?.totalAmount ?? supplier?.total ?? 0,
+                  }}
+                />
+              ))
+            )}
           </div>
 
           {/* Active Purchase Orders */}
@@ -88,9 +133,24 @@ export default function ShopSuppliers() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  <PORow id="ACH-2026-045" supplier="Bureau Vallée" amount={850000} status="Reçu" date="Aujourd'hui" />
-                  <PORow id="ACH-2026-044" supplier="Uniformes Express" amount={2400000} status="En Transit" date="Lundi 18 Mai" />
-                  <PORow id="ACH-2026-043" supplier="Librairie Clairafrique" amount={1200000} status="En Attente" date="Prévu 20 Mai" />
+                  {(purchaseOrders ?? []).length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-8 py-12 text-center text-gray-500">
+                        Aucun bon de commande enregistré.
+                      </td>
+                    </tr>
+                  ) : (
+                    (purchaseOrders ?? []).map((po: any, i: number) => (
+                      <PORow
+                        key={po?.id ?? `po-${i}`}
+                        id={po?.refNo ?? po?.reference ?? po?.number ?? po?.id ?? `ACH-${i}`}
+                        supplier={po?.supplierName ?? po?.supplier ?? '—'}
+                        amount={po?.amount ?? po?.total ?? 0}
+                        status={po?.status ?? 'En Attente'}
+                        date={po?.deliveryDate ?? po?.expectedDate ?? po?.date ?? '—'}
+                      />
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -102,11 +162,14 @@ export default function ShopSuppliers() {
            <div className="bg-white rounded-[2.5rem] border border-gray-100 p-8 shadow-sm">
               <h3 className="text-lg font-black text-navy-900 uppercase tracking-tight mb-8">Répartition des Achats</h3>
               <div className="space-y-6">
-                 <ProcurementCategory label="Textile / Uniformes" amount={12500000} percent={45} color="navy" />
-                 <ProcurementCategory label="Papeterie" amount={8200000} percent={30} color="emerald" />
-                 <ProcurementCategory label="Livres" amount={4500000} percent={15} color="blue" />
-                 <ProcurementCategory label="Autres" amount={2800000} percent={10} color="amber" />
+                 <ProcurementCategory label="Textile / Uniformes" amount={0} percent={45} color="navy" />
+                 <ProcurementCategory label="Papeterie" amount={0} percent={30} color="emerald" />
+                 <ProcurementCategory label="Livres" amount={0} percent={15} color="blue" />
+                 <ProcurementCategory label="Autres" amount={0} percent={10} color="amber" />
               </div>
+              {(suppliers ?? []).length === 0 && (
+                <p className="mt-6 text-[10px] text-gray-400 text-center">Données d'analyse non disponibles.</p>
+              )}
            </div>
 
            <div className="bg-navy-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden group">
@@ -117,7 +180,7 @@ export default function ShopSuppliers() {
                     <h3 className="font-black uppercase tracking-tight">Optimisation ORION</h3>
                  </div>
                  <p className="text-xs text-navy-200 font-medium leading-relaxed mb-6">
-                   "Le fournisseur <span className="text-white font-bold">Bureau Vallée</span> a réduit ses délais de livraison de 15% ce trimestre. Considérez de grouper vos prochaines commandes de papeterie chez eux pour économiser sur les frais logistiques."
+                   "L'analyse des performances fournisseurs sera disponible une fois vos données d'achat renseignées."
                  </p>
                  <button className="flex items-center justify-between w-full p-4 bg-white/10 rounded-2xl hover:bg-white/20 transition-all group">
                     <span className="text-[10px] font-black uppercase tracking-widest">Analyser les performances</span>
@@ -142,10 +205,10 @@ function SupplierCard({ name, category, phone, email, stats }: any) {
             <MoreVertical className="w-5 h-5" />
          </button>
       </div>
-      
+
       <h4 className="text-lg font-black text-navy-900 mb-1">{name}</h4>
       <p className="text-[10px] font-black text-navy-600 uppercase tracking-widest mb-6">{category}</p>
-      
+
       <div className="space-y-3 mb-8">
          <div className="flex items-center space-x-3 text-gray-500">
             <Phone className="w-4 h-4" />
@@ -184,7 +247,7 @@ function PORow({ id, supplier, amount, status, date }: any) {
        <td className="px-8 py-5 text-xs font-bold text-gray-600">{supplier}</td>
        <td className="px-8 py-5 text-sm font-black text-navy-900">{formatCurrency(amount)}</td>
        <td className="px-8 py-5">
-         <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tight border ${statusStyles[status]}`}>
+         <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tight border ${statusStyles[status] ?? 'bg-gray-50 text-gray-500 border-gray-100'}`}>
             {status}
          </span>
        </td>

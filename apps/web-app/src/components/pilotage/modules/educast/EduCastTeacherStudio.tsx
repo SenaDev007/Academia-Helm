@@ -6,22 +6,86 @@
 
 'use client';
 
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { MonitorPlay, Users, Plus, Settings, Camera, Edit3, Image as ImageIcon, CheckCircle2, AlertCircle } from 'lucide-react';
+import { MonitorPlay, Users, Plus, Settings, Camera, Edit3, Image as ImageIcon, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+
+interface TeacherChannel {
+  id?: string | number;
+  name?: string;
+  title?: string;
+  slogan?: string;
+  tagline?: string;
+  subs?: number;
+  subscribers?: number;
+  subscriberCount?: number;
+  status?: string;
+  isMonetized?: boolean;
+  monetizationEnabled?: boolean;
+  avatar?: string | null;
+  avatarUrl?: string | null;
+  banner?: string | null;
+  bannerUrl?: string | null;
+  balance?: string | number;
+  availableBalance?: string | number;
+}
 
 export default function EduCastTeacherStudio() {
-  const channel = {
-    name: 'Math Excellence avec M. Koffi',
-    slogan: 'Réussir ses examens avec méthode',
-    subs: 450,
-    status: 'ACTIVE',
-    isMonetized: true,
-    avatar: null,
-    banner: null
-  };
+  const { academicYear } = useModuleContext();
+  const [channel, setChannel] = useState<TeacherChannel | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!academicYear?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const result = await modulesApi.get<TeacherChannel>('educast/teacher-channel', buildModulesApiOptions(academicYear.id));
+        // Le backend peut retourner { data: {...} } ou directement l'objet, ou un tableau (on prend le 1er)
+        const resolved: TeacherChannel = Array.isArray(result)
+          ? result[0] ?? {}
+          : ((result as any)?.data ?? result ?? {});
+        if (!cancelled) setChannel(resolved);
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message || 'Erreur de chargement');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [academicYear?.id]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-slate-600">Chargement de votre chaîne enseignant...</span>
+      </div>
+    );
+  }
+
+  const name = channel?.name || channel?.title || 'Ma Chaîne Enseignant';
+  const slogan = channel?.slogan || channel?.tagline || '';
+  const subs = channel?.subs ?? channel?.subscribers ?? channel?.subscriberCount ?? 0;
+  const status = channel?.status || 'ACTIVE';
+  const isMonetized = channel?.isMonetized ?? channel?.monetizationEnabled ?? false;
+  const balance = channel?.balance ?? channel?.availableBalance ?? '0';
 
   return (
     <div className="space-y-10">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger votre chaîne enseignant. {error}
+        </div>
+      )}
+
       {/* Banner Preview */}
       <div className="relative h-64 bg-navy-900 rounded-[2.5rem] overflow-hidden group">
         <div className="absolute inset-0 bg-gradient-to-r from-navy-900 via-navy-900/40 to-transparent z-10" />
@@ -29,20 +93,26 @@ export default function EduCastTeacherStudio() {
           <div className="flex items-center gap-8">
             <div className="relative">
               <div className="w-32 h-32 bg-slate-200 rounded-full border-4 border-white overflow-hidden flex items-center justify-center text-slate-400">
-                <Camera className="w-8 h-8" />
+                {channel?.avatar || channel?.avatarUrl ? (
+                  <img src={channel.avatar || channel.avatarUrl || ''} alt={name} className="w-full h-full object-cover" />
+                ) : (
+                  <Camera className="w-8 h-8" />
+                )}
               </div>
               <button className="absolute bottom-0 right-0 p-2 bg-[#C9A84C] rounded-full text-navy-900 shadow-lg border-2 border-white">
                 <Edit3 className="w-4 h-4" />
               </button>
             </div>
             <div className="text-white space-y-2">
-              <h2 className="text-3xl font-black tracking-tighter">{channel.name}</h2>
-              <p className="text-white/60 font-medium italic">"{channel.slogan}"</p>
+              <h2 className="text-3xl font-black tracking-tighter">{name}</h2>
+              {slogan && <p className="text-white/60 font-medium italic">"{slogan}"</p>}
               <div className="flex items-center gap-4 pt-2">
-                <span className="px-3 py-1 bg-white/10 backdrop-blur-md rounded-full text-[10px] font-black uppercase tracking-widest">{channel.subs} Abonnés</span>
-                <span className="px-3 py-1 bg-emerald-500/20 text-emerald-400 backdrop-blur-md rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
+                <span className="px-3 py-1 bg-white/10 backdrop-blur-md rounded-full text-[10px] font-black uppercase tracking-widest">{subs} Abonnés</span>
+                <span className={`px-3 py-1 backdrop-blur-md rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 ${
+                  status === 'ACTIVE' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'
+                }`}>
                   <CheckCircle2 className="w-3 h-3" />
-                  Chaîne Active
+                  {status === 'ACTIVE' ? 'Chaîne Active' : status}
                 </span>
               </div>
             </div>
@@ -69,11 +139,11 @@ export default function EduCastTeacherStudio() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-3">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nom de la Chaîne</label>
-                <input type="text" defaultValue={channel.name} className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-slate-900 font-black outline-none focus:ring-2 focus:ring-blue-500/20 transition-all" />
+                <input type="text" defaultValue={name} className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-slate-900 font-black outline-none focus:ring-2 focus:ring-blue-500/20 transition-all" />
               </div>
               <div className="space-y-3">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Slogan</label>
-                <input type="text" defaultValue={channel.slogan} className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-slate-900 font-black outline-none focus:ring-2 focus:ring-blue-500/20 transition-all" />
+                <input type="text" defaultValue={slogan} className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-slate-900 font-black outline-none focus:ring-2 focus:ring-blue-500/20 transition-all" />
               </div>
             </div>
             <div className="space-y-3">
@@ -90,27 +160,27 @@ export default function EduCastTeacherStudio() {
         <div className="space-y-8">
           <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Monétisation</h3>
           
-          <div className={`rounded-3xl p-8 space-y-6 shadow-xl ${channel.isMonetized ? 'bg-navy-900 text-white shadow-navy-900/20' : 'bg-slate-50 text-slate-400 border border-slate-200 shadow-none'}`}>
+          <div className={`rounded-3xl p-8 space-y-6 shadow-xl ${isMonetized ? 'bg-navy-900 text-white shadow-navy-900/20' : 'bg-slate-50 text-slate-400 border border-slate-200 shadow-none'}`}>
             <div className="flex items-center justify-between">
-              <div className={`p-3 rounded-2xl ${channel.isMonetized ? 'bg-[#C9A84C] text-navy-900' : 'bg-slate-200 text-slate-400'}`}>
-                <Zap className="w-6 h-6" />
+              <div className={`p-3 rounded-2xl ${isMonetized ? 'bg-[#C9A84C] text-navy-900' : 'bg-slate-200 text-slate-400'}`}>
+                <ZapIcon className="w-6 h-6" />
               </div>
-              {channel.isMonetized && <span className="text-[10px] font-black uppercase tracking-widest text-[#C9A84C] animate-pulse">Activé</span>}
+              {isMonetized && <span className="text-[10px] font-black uppercase tracking-widest text-[#C9A84C] animate-pulse">Activé</span>}
             </div>
             
             <div className="space-y-2">
               <h4 className="text-xl font-black">Programme Partenaire</h4>
-              <p className={`text-xs leading-relaxed font-medium ${channel.isMonetized ? 'text-white/60' : 'text-slate-400'}`}>
+              <p className={`text-xs leading-relaxed font-medium ${isMonetized ? 'text-white/60' : 'text-slate-400'}`}>
                 Vendez vos cours et générez des revenus basés sur votre impact pédagogique.
               </p>
             </div>
 
-            {channel.isMonetized ? (
+            {isMonetized ? (
               <div className="pt-6 border-t border-white/10 space-y-4">
                 <div className="flex justify-between items-end">
                   <div>
                     <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Solde Disponible</p>
-                    <p className="text-3xl font-black text-[#C9A84C]">125.400 <span className="text-xs">F CFA</span></p>
+                    <p className="text-3xl font-black text-[#C9A84C]">{balance} <span className="text-xs">F CFA</span></p>
                   </div>
                   <button className="text-[10px] font-black text-white uppercase tracking-widest hover:underline">Détails</button>
                 </div>
@@ -134,7 +204,7 @@ export default function EduCastTeacherStudio() {
   );
 }
 
-function Zap({ className }: { className?: string }) {
+function ZapIcon({ className }: { className?: string }) {
   return (
     <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />

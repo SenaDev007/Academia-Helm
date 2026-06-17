@@ -6,14 +6,16 @@
 
 'use client';
 
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { 
-  Settings, 
-  Bell, 
-  Lock, 
-  Database, 
-  HeartPulse, 
-  Activity, 
+import { Loader2 } from 'lucide-react';
+import {
+  Settings,
+  Bell,
+  Lock,
+  Database,
+  HeartPulse,
+  Activity,
   ChevronRight,
   ShieldCheck,
   Stethoscope,
@@ -21,10 +23,87 @@ import {
   MessageSquare,
   AlertCircle
 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+
+interface InfirmarySettingsData {
+  defaultVisitReasons?: string[];
+  stockAlertThreshold?: number;
+  requireParentalAuthorization?: boolean;
+  smsNotifications?: boolean;
+  emailEmergencyAlerts?: boolean;
+  restrictedAccess?: boolean;
+  auditLogEnabled?: boolean;
+  [key: string]: any;
+}
+
+const DEFAULT_SETTINGS: InfirmarySettingsData = {
+  defaultVisitReasons: ['Maux de tête', 'Fièvre', 'Blessure', 'Douleurs'],
+  stockAlertThreshold: 5,
+  requireParentalAuthorization: true,
+  smsNotifications: false,
+  emailEmergencyAlerts: true,
+  restrictedAccess: true,
+  auditLogEnabled: true,
+};
 
 export default function InfirmarySettings() {
+  const { academicYear } = useModuleContext();
+  const [settings, setSettings] = useState<InfirmarySettingsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!academicYear?.id) {
+      setSettings(DEFAULT_SETTINGS);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const data = await modulesApi.get<InfirmarySettingsData>(
+          'infirmary/settings',
+          buildModulesApiOptions(academicYear.id),
+        );
+        if (!cancelled) setSettings({ ...DEFAULT_SETTINGS, ...(data ?? {}) });
+      } catch (e: any) {
+        if (!cancelled) {
+          setError(e?.response?.data?.message || e?.message || 'Erreur de chargement');
+          setSettings(DEFAULT_SETTINGS);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [academicYear?.id]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-slate-600">Chargement...</span>
+      </div>
+    );
+  }
+
+  const stockThreshold = settings?.stockAlertThreshold ?? DEFAULT_SETTINGS.stockAlertThreshold!;
+  const requireAuth = settings?.requireParentalAuthorization ?? DEFAULT_SETTINGS.requireParentalAuthorization!;
+  const smsNotif = settings?.smsNotifications ?? DEFAULT_SETTINGS.smsNotifications!;
+  const emailAlerts = settings?.emailEmergencyAlerts ?? DEFAULT_SETTINGS.emailEmergencyAlerts!;
+
   return (
     <div className="max-w-4xl mx-auto space-y-8">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les paramètres. {error}
+        </div>
+      )}
+
       {/* Settings Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -51,7 +130,9 @@ export default function InfirmarySettings() {
             <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
               <div>
                 <p className="font-bold text-slate-900">Motifs de visite par défaut</p>
-                <p className="text-xs text-slate-500">Maux de tête, Fièvre, Blessure, Douleurs, etc.</p>
+                <p className="text-xs text-slate-500">
+                  {(settings?.defaultVisitReasons || DEFAULT_SETTINGS.defaultVisitReasons!).join(', ')}.
+                </p>
               </div>
               <button className="text-blue-600 text-xs font-black uppercase tracking-widest hover:underline">Modifier la liste</button>
             </div>
@@ -61,7 +142,7 @@ export default function InfirmarySettings() {
                 <p className="text-xs text-slate-500">Notification automatique quand le stock est critique.</p>
               </div>
               <div className="flex items-center space-x-2">
-                <input type="number" defaultValue={5} className="w-16 px-3 py-1 bg-white border border-slate-200 rounded-lg text-sm font-bold text-center" />
+                <input type="number" defaultValue={stockThreshold} className="w-16 px-3 py-1 bg-white border border-slate-200 rounded-lg text-sm font-bold text-center" />
                 <span className="text-xs font-bold text-slate-400 uppercase">Unités</span>
               </div>
             </div>
@@ -70,8 +151,8 @@ export default function InfirmarySettings() {
                 <p className="font-bold text-slate-900">Exiger validation pour médicaments</p>
                 <p className="text-xs text-slate-500">Forcer le personnel à cocher l'autorisation parentale avant l'administration.</p>
               </div>
-              <div className="w-12 h-6 bg-blue-600 rounded-full relative cursor-pointer shadow-inner">
-                <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full shadow-md" />
+              <div className={`w-12 h-6 ${requireAuth ? 'bg-blue-600' : 'bg-slate-200'} rounded-full relative cursor-pointer shadow-inner`}>
+                <div className={`absolute top-1 ${requireAuth ? 'right-1' : 'left-1'} w-4 h-4 bg-white rounded-full shadow-md`} />
               </div>
             </div>
           </div>
@@ -91,8 +172,8 @@ export default function InfirmarySettings() {
                     <MessageSquare className="w-4 h-4" />
                     SMS aux Parents
                   </div>
-                  <div className="w-10 h-5 bg-slate-200 rounded-full relative cursor-pointer">
-                    <div className="absolute left-1 top-1 w-3 h-3 bg-white rounded-full" />
+                  <div className={`w-10 h-5 ${smsNotif ? 'bg-blue-600' : 'bg-slate-200'} rounded-full relative cursor-pointer`}>
+                    <div className={`absolute top-1 ${smsNotif ? 'right-1' : 'left-1'} w-3 h-3 bg-white rounded-full`} />
                   </div>
                 </div>
                 <p className="text-[10px] text-slate-400 font-medium">Envoyer un SMS automatique pour chaque passage à l'infirmerie.</p>
@@ -103,8 +184,8 @@ export default function InfirmarySettings() {
                     <AlertCircle className="w-4 h-4" />
                     Alertes Urgence (Email)
                   </div>
-                  <div className="w-10 h-5 bg-blue-600 rounded-full relative cursor-pointer">
-                    <div className="absolute right-1 top-1 w-3 h-3 bg-white rounded-full" />
+                  <div className={`w-10 h-5 ${emailAlerts ? 'bg-blue-600' : 'bg-slate-200'} rounded-full relative cursor-pointer`}>
+                    <div className={`absolute top-1 ${emailAlerts ? 'right-1' : 'left-1'} w-3 h-3 bg-white rounded-full`} />
                   </div>
                 </div>
                 <p className="text-[10px] text-slate-400 font-medium">Notifier immédiatement la direction et les parents par email en cas d'urgence.</p>

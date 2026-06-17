@@ -1,29 +1,85 @@
 /**
  * ============================================================================
- * LIBRARY RETURNS (RETOURS)
+ * LIBRARY RETURNS (RETOURS) — Branché sur backend réel
+ * ============================================================================
+ *
+ * Endpoint : GET /modules-complementaires/library/loans?status=returned&academicYearId=...
  * ============================================================================
  */
 
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowDownCircle, CheckCircle2, AlertCircle, Calendar, ShieldCheck, Search, Filter } from 'lucide-react';
+import { ArrowDownCircle, CheckCircle2, AlertCircle, Calendar, ShieldCheck, Search, Loader2 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface LoanItem {
+  id: string;
+  reader?: string;
+  readerName?: string;
+  student?: string;
+  user?: string;
+  book?: string;
+  bookTitle?: string;
+  title?: string;
+  date?: string;
+  returnDate?: string;
+  returnedAt?: string;
+  condition?: string;
+  state?: string;
+  penalty?: string;
+  penaltyAmount?: number;
+  fee?: number;
+  [key: string]: any;
+}
 
 export default function LibraryReturns() {
-  const returns = [
-    { id: 'RE-1001', reader: 'Saliou Diallo', book: 'L\'Enfant Noir', date: '15/05/2026', condition: 'CONFORME', penalty: '0 F CFA' },
-    { id: 'RE-1002', reader: 'Mme. Koffi', book: 'Physique-Chimie 3ème', date: '14/05/2026', condition: 'ABÎMÉ', penalty: '5 000 F CFA' },
-    { id: 'RE-1003', reader: 'Jean Lawson', book: 'Le Petit Prince', date: '13/05/2026', condition: 'RETARD', penalty: '1 500 F CFA' },
-  ];
+  const { academicYear } = useModuleContext();
+  const [search, setSearch] = useState('');
+  const { data: returns, loading, error } = useModulesList<LoanItem>(
+    'library',
+    'loans',
+    academicYear?.id,
+    { status: 'returned', ...(search ? { search } : {}) },
+  );
+
+  const formatPenalty = (item: LoanItem) => {
+    if (item.penalty) return item.penalty;
+    const amt = item.penaltyAmount ?? item.fee ?? 0;
+    return amt > 0 ? `${amt.toLocaleString('fr-FR')} F CFA` : '0 F CFA';
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des retours...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les données. {error}
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Historique des Retours</h3>
         <div className="flex gap-2">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input type="text" placeholder="Rechercher..." className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs outline-none shadow-sm" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Rechercher..."
+              className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs outline-none shadow-sm"
+            />
           </div>
           <button className="flex items-center space-x-2 px-6 py-2 bg-navy-900 text-white rounded-xl font-black text-xs uppercase tracking-widest">
             <ArrowDownCircle className="w-4 h-4 text-[#C9A84C]" />
@@ -32,6 +88,11 @@ export default function LibraryReturns() {
         </div>
       </div>
 
+      {returns.length === 0 ? (
+        <div className="text-center py-16 text-gray-500 bg-white rounded-3xl border border-slate-200">
+          Aucun retour enregistré pour cette année scolaire.
+        </div>
+      ) : (
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         <table className="w-full text-left">
@@ -45,7 +106,14 @@ export default function LibraryReturns() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
-            {returns.map((ret, i) => (
+            {returns.map((ret, i) => {
+              const reader = ret.reader ?? ret.readerName ?? ret.student ?? ret.user ?? '—';
+              const bookTitle = ret.book ?? ret.bookTitle ?? ret.title ?? '—';
+              const returnDate = ret.date ?? ret.returnDate ?? ret.returnedAt ?? '—';
+              const condition = (ret.condition ?? ret.state ?? 'CONFORME').toString().toUpperCase();
+              const isConforme = condition === 'CONFORME';
+              const penalty = formatPenalty(ret);
+              return (
               <motion.tr
                 key={ret.id}
                 initial={{ opacity: 0 }}
@@ -55,26 +123,26 @@ export default function LibraryReturns() {
               >
                 <td className="px-8 py-5">
                   <div>
-                    <p className="font-black text-slate-900">{ret.reader}</p>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{ret.book}</p>
+                    <p className="font-black text-slate-900">{reader}</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{bookTitle}</p>
                   </div>
                 </td>
                 <td className="px-8 py-5">
                   <div className="flex items-center text-xs font-bold text-slate-500">
                     <Calendar className="w-4 h-4 mr-2 text-slate-300" />
-                    {ret.date}
+                    {returnDate}
                   </div>
                 </td>
                 <td className="px-8 py-5">
                   <div className={`flex items-center text-[10px] font-black uppercase tracking-widest ${
-                    ret.condition === 'CONFORME' ? 'text-emerald-600' : 'text-amber-600'
+                    isConforme ? 'text-emerald-600' : 'text-amber-600'
                   }`}>
-                    {ret.condition === 'CONFORME' ? <CheckCircle2 className="w-3.5 h-3.5 mr-2" /> : <AlertCircle className="w-3.5 h-3.5 mr-2" />}
-                    {ret.condition}
+                    {isConforme ? <CheckCircle2 className="w-3.5 h-3.5 mr-2" /> : <AlertCircle className="w-3.5 h-3.5 mr-2" />}
+                    {condition}
                   </div>
                 </td>
                 <td className="px-8 py-5">
-                  <span className={`text-sm font-black ${ret.penalty !== '0 F CFA' ? 'text-rose-600' : 'text-slate-900'}`}>{ret.penalty}</span>
+                  <span className={`text-sm font-black ${penalty !== '0 F CFA' ? 'text-rose-600' : 'text-slate-900'}`}>{penalty}</span>
                 </td>
                 <td className="px-8 py-5 text-right">
                   <button className="p-2.5 bg-slate-100 hover:bg-navy-900 hover:text-white rounded-xl text-slate-400 transition-all">
@@ -82,11 +150,13 @@ export default function LibraryReturns() {
                   </button>
                 </td>
               </motion.tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
         </div>
       </div>
+      )}
     </div>
   );
 }

@@ -7,16 +7,65 @@
 'use client';
 
 import React from 'react';
-import { 
-  Wallet, CreditCard, Banknote, History, Search, 
-  Filter, ArrowUpRight, ArrowDownLeft, MoreVertical,
-  Plus, Smartphone, DollarSign, User
-} from 'lucide-react';
+import { Loader2, Wallet, CreditCard, Banknote, History, Search, Filter, ArrowUpRight, ArrowDownLeft, Plus, Smartphone, User } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface SaleItem {
+  id?: string;
+  refNo?: string;
+  reference?: string;
+  type?: string;
+  direction?: string;
+  customerName?: string;
+  clientName?: string;
+  studentName?: string;
+  method?: string;
+  paymentMethod?: string;
+  amount?: number;
+  total?: number;
+  status?: string;
+  date?: string;
+  createdAt?: string;
+}
 
 export default function ShopPayments() {
+  const { academicYear } = useModuleContext();
+  const { data: sales, loading, error } = useModulesList<SaleItem>(
+    'shop',
+    'sales',
+    academicYear?.id,
+  );
+
+  const safeSales = sales ?? [];
+
+  // Calcul du solde global consolidé (somme des montants crédités)
+  const totalBalance = safeSales.reduce((acc: number, s: any) => {
+    const type = (s?.type ?? s?.direction ?? '').toString().toUpperCase();
+    const amount = s?.amount ?? s?.total ?? 0;
+    return type.includes('CRÉDIT') || type.includes('CREDIT') || type === 'IN'
+      ? acc + (amount as number)
+      : acc;
+  }, 0);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des transactions...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les transactions. {error}
+        </div>
+      )}
+
       {/* Wallet Summary */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         <div className="md:col-span-2 bg-gradient-to-br from-navy-900 to-blue-900 rounded-[2.5rem] p-10 text-white shadow-2xl relative overflow-hidden group">
@@ -33,11 +82,11 @@ export default function ShopPayments() {
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-4xl font-black">{formatCurrency(18545000)}</p>
+                <p className="text-4xl font-black">{formatCurrency(totalBalance)}</p>
                 <p className="text-[10px] font-bold text-navy-300 uppercase tracking-widest mt-1">Solde global consolidé</p>
               </div>
             </div>
-            
+
             <div className="grid grid-cols-3 gap-6">
               <QuickAction label="Recharger" icon={Plus} />
               <QuickAction label="Historique" icon={History} />
@@ -68,9 +117,9 @@ export default function ShopPayments() {
           <div className="flex items-center space-x-3">
              <div className="relative">
                <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-               <input 
-                type="text" 
-                placeholder="N° Transac..." 
+               <input
+                type="text"
+                placeholder="N° Transac..."
                 className="pl-11 pr-4 py-2.5 bg-gray-50 border-none rounded-xl text-xs outline-none focus:ring-2 focus:ring-navy-500/20 transition-all font-medium w-48"
                />
              </div>
@@ -93,42 +142,30 @@ export default function ShopPayments() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              <TxRow 
-                type="CRÉDIT" 
-                refNo="TXN-2026-0884" 
-                name="Moussa Fofana" 
-                method="Momo (Topup)" 
-                amount={50000} 
-                status="Succès" 
-                date="Il y a 2 min"
-              />
-              <TxRow 
-                type="DÉBIT" 
-                refNo="TXN-2026-0883" 
-                name="Saliou Diallo" 
-                method="Wallet (Achat)" 
-                amount={12500} 
-                status="Succès" 
-                date="Il y a 15 min"
-              />
-              <TxRow 
-                type="DÉBIT" 
-                refNo="TXN-2026-0882" 
-                name="Awa Konaté" 
-                method="Espèces (Achat)" 
-                amount={4500} 
-                status="Succès" 
-                date="Hier, 17:30"
-              />
-              <TxRow 
-                type="CRÉDIT" 
-                refNo="TXN-2026-0881" 
-                name="Jean Koffi" 
-                method="Carte (Topup)" 
-                amount={100000} 
-                status="En attente" 
-                date="Hier, 16:45"
-              />
+              {safeSales.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-8 py-16 text-center text-gray-500">
+                    Aucune transaction disponible pour cette année scolaire.
+                  </td>
+                </tr>
+              ) : (
+                safeSales.map((sale: any, i: number) => {
+                  const type = (sale?.type ?? sale?.direction ?? 'DÉBIT').toString().toUpperCase();
+                  const isCredit = type.includes('CRÉDIT') || type.includes('CREDIT') || type === 'IN';
+                  return (
+                    <TxRow
+                      key={sale?.id ?? `tx-${i}`}
+                      type={isCredit ? 'CRÉDIT' : 'DÉBIT'}
+                      refNo={sale?.refNo ?? sale?.reference ?? sale?.id ?? `TXN-${i}`}
+                      name={sale?.customerName ?? sale?.clientName ?? sale?.studentName ?? 'Client'}
+                      method={sale?.method ?? sale?.paymentMethod ?? '—'}
+                      amount={sale?.amount ?? sale?.total ?? 0}
+                      status={sale?.status ?? 'Succès'}
+                      date={sale?.date ?? (sale?.createdAt ? new Date(sale.createdAt).toLocaleDateString('fr-FR') : '—')}
+                    />
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>

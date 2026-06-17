@@ -7,15 +7,56 @@
 'use client';
 
 import React from 'react';
-import { 
-  Tag, Percent, Plus, Search, Filter, Calendar, 
-  Trash2, Edit, MoreVertical, CheckCircle2, 
-  AlertCircle, Ticket, ShoppingCart, Zap
-} from 'lucide-react';
+import { Loader2, Percent, Plus, Search, Trash2, Edit, CheckCircle2, Ticket } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface DiscountItem {
+  id?: string;
+  name?: string;
+  code?: string;
+  couponCode?: string;
+  value?: number;
+  amount?: number;
+  type?: string;
+  discountType?: string;
+  usageCount?: number;
+  maxUsage?: number;
+  usageLimit?: number;
+  validUntil?: string;
+  endDate?: string;
+  validFrom?: string;
+  status?: string;
+  active?: boolean;
+}
 
 export default function ShopDiscounts() {
+  const { academicYear } = useModuleContext();
+  const { data: discounts, loading, error } = useModulesList<DiscountItem>(
+    'shop',
+    'discounts',
+    academicYear?.id,
+  );
+
+  const safeDiscounts = discounts ?? [];
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des promotions...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les promotions. {error}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
@@ -54,33 +95,33 @@ export default function ShopDiscounts() {
                       </tr>
                    </thead>
                    <tbody className="divide-y divide-gray-50">
-                      <DiscountRow 
-                        name="Rentrée Précoce" 
-                        code="RENTREE26" 
-                        value="-15%" 
-                        type="CODE PROMO" 
-                        usage="124/500" 
-                        valid="Jusqu'au 31 Mai" 
-                        status="Actif" 
-                      />
-                      <DiscountRow 
-                        name="Remise Fratrie" 
-                        code="SIBLING10" 
-                        value="-10%" 
-                        type="AUTO" 
-                        usage="85/∞" 
-                        valid="Permanent" 
-                        status="Actif" 
-                      />
-                      <DiscountRow 
-                        name="Liquidation Stock 2025" 
-                        code="DESTOCK25" 
-                        value="-50%" 
-                        type="DIRECT" 
-                        usage="45/∞" 
-                        valid="Jusqu'au 15 Juin" 
-                        status="Actif" 
-                      />
+                      {safeDiscounts.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-8 py-16 text-center text-gray-500">
+                            Aucune promotion active pour cette année scolaire.
+                          </td>
+                        </tr>
+                      ) : (
+                        safeDiscounts.map((d: any, i: number) => {
+                          const value = d?.value ?? d?.amount ?? 0;
+                          const maxUsage = d?.maxUsage ?? d?.usageLimit;
+                          const usage = d?.usageCount ?? 0;
+                          const usageDisplay = maxUsage ? `${usage}/${maxUsage}` : `${usage}/∞`;
+                          const valid = d?.validUntil ?? d?.endDate ?? 'Permanent';
+                          return (
+                            <DiscountRow
+                              key={d?.id ?? `disc-${i}`}
+                              name={d?.name ?? `Promotion #${i + 1}`}
+                              code={d?.code ?? d?.couponCode ?? '—'}
+                              value={`-${value}%`}
+                              type={(d?.type ?? d?.discountType ?? 'CODE PROMO').toString().toUpperCase()}
+                              usage={usageDisplay}
+                              valid={valid}
+                              status={d?.active === false ? 'Inactif' : 'Actif'}
+                            />
+                          );
+                        })
+                      )}
                    </tbody>
                 </table>
                 </div>
@@ -99,15 +140,15 @@ export default function ShopDiscounts() {
                     <h3 className="text-lg font-black uppercase tracking-tight">Analyse ORION</h3>
                  </div>
                  <p className="text-xs text-navy-200 font-medium leading-relaxed mb-8">
-                   "La promotion <span className="text-white font-bold">RENTREE26</span> a généré 45% des ventes de kits ce mois-ci. Envisagez de la prolonger d'une semaine pour capturer les retardataires."
+                   "Les analyses prédictives de performance des promotions seront disponibles après quelques semaines d'utilisation."
                  </p>
                  <div className="flex flex-col space-y-3">
                     <div className="flex justify-between text-[10px] font-black uppercase tracking-widest">
                        <span>Conversion</span>
-                       <span className="text-emerald-400">+24%</span>
+                       <span className="text-emerald-400">—</span>
                     </div>
                     <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
-                       <div className="h-full bg-emerald-500 w-[78%]"></div>
+                       <div className="h-full bg-emerald-500 w-0"></div>
                     </div>
                  </div>
               </div>
@@ -116,9 +157,7 @@ export default function ShopDiscounts() {
            <div className="bg-white rounded-[2.5rem] border border-gray-100 p-8 shadow-sm">
               <h3 className="text-lg font-black text-navy-900 uppercase tracking-tight mb-6">Coupons à usage unique</h3>
               <div className="space-y-4">
-                 <CouponItem code="WELCOME-2026-X8Y" used={false} />
-                 <CouponItem code="FIDELITY-AC-P44" used={true} />
-                 <CouponItem code="EXCUSE-ADMIN-01" used={false} />
+                 <CouponItem code="—" used={false} />
               </div>
               <button className="w-full mt-8 py-3 bg-gray-50 text-navy-900 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-gray-100 transition-all">
                  Générer des coupons

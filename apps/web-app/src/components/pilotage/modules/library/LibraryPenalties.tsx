@@ -2,12 +2,17 @@
  * ============================================================================
  * LIBRARY PENALTIES & LOSSES
  * ============================================================================
+ *
+ * TODO: endpoint non disponible — garder mock. Aucun endpoint GET library/penalties
+ * n'est exposé par le backend modules-complementaires. Les pénalités sont
+ * actuellement calculées à la volée sur les prêts retournés (library/loans).
+ * ============================================================================
  */
 
 'use client';
 
 import { motion } from 'framer-motion';
-import { AlertCircle, Search, Filter, MoreVertical, CreditCard, Clock, CheckCircle2, ChevronRight, Ban } from 'lucide-react';
+import { AlertCircle, Search, Filter, MoreVertical, CreditCard, Clock, CheckCircle2, Ban } from 'lucide-react';
 
 export default function LibraryPenalties() {
   const penalties = [

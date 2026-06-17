@@ -7,18 +7,57 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { HardHat, Lock, ShieldCheck, Video, Users, Bell, Eye, Search, Plus, Map, Radio } from 'lucide-react';
+import { HardHat, Lock, ShieldCheck, Video, Users, Bell, Eye, Search, Plus, Map, Radio, Loader2 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface SecurityItem {
+  id: string | number;
+  label?: string;
+  name?: string;
+  title?: string;
+  status?: string;
+  icon?: any;
+  color?: string;
+  bg?: string;
+  lastCheck?: string;
+  lastCheckedAt?: string;
+}
+
+const LABEL_ICONS: Record<string, any> = {
+  Accès: Lock,
+  Vidéo: Video,
+  Alarme: Bell,
+  Éclairage: Eye,
+};
+
+function pickLabelIcon(label?: string) {
+  if (!label) return ShieldCheck;
+  const key = Object.keys(LABEL_ICONS).find((k) => label.includes(k));
+  return key ? LABEL_ICONS[key] : ShieldCheck;
+}
 
 export default function QHSESecurity() {
-  const securityItems = [
-    { id: 1, label: 'Contrôle Accès (Entrée)', status: 'OPERATIONNEL', icon: Lock, color: 'text-emerald-600', bg: 'bg-emerald-50', lastCheck: 'Aujourd\'hui, 07:45' },
-    { id: 2, label: 'Système Vidéo (12/12)', status: 'OPERATIONNEL', icon: Video, color: 'text-emerald-600', bg: 'bg-emerald-50', lastCheck: 'Il y a 10min' },
-    { id: 3, label: 'Alarmes Incendie', status: 'MAINTENANCE', icon: Bell, color: 'text-amber-600', bg: 'bg-amber-50', lastCheck: 'Prévu : 16/05' },
-    { id: 4, label: 'Éclairage Extérieur', status: 'ANOMALIE', icon: Eye, color: 'text-rose-600', bg: 'bg-rose-50', lastCheck: 'Signalé : Hier' },
-  ];
+  const { academicYear } = useModuleContext();
+  const { data: securityItems, loading, error } = useModulesList<SecurityItem>('qhse', 'security', academicYear?.id);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-slate-600">Chargement des équipements de sécurité...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les données. {error}
+        </div>
+      )}
+
       {/* Real-time Monitoring Bar */}
       <div className="bg-navy-900 text-white p-6 rounded-[2rem] flex items-center justify-between shadow-xl shadow-navy-900/20">
         <div className="flex items-center gap-6">
@@ -27,7 +66,7 @@ export default function QHSESecurity() {
             <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Système Live</span>
           </div>
           <div className="flex items-center gap-4 text-xs font-bold text-white/60 uppercase tracking-widest border-l border-white/10 pl-6">
-            <Radio className="w-4 h-4" /> 8 Agents en poste
+            <Radio className="w-4 h-4" /> {securityItems.length} Équipements suivis
           </div>
           <div className="flex items-center gap-4 text-xs font-bold text-white/60 uppercase tracking-widest border-l border-white/10 pl-6">
             <Users className="w-4 h-4" /> 45 Visiteurs déclarés
@@ -38,29 +77,43 @@ export default function QHSESecurity() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {securityItems.map((item, i) => (
-          <motion.div
-            key={item.id}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.1 }}
-            className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col items-center text-center group hover:shadow-xl transition-all"
-          >
-            <div className={`p-5 rounded-3xl ${item.bg} ${item.color} mb-6 group-hover:scale-110 transition-transform`}>
-              <item.icon className="w-8 h-8" />
-            </div>
-            <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight mb-1">{item.label}</h4>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">{item.lastCheck}</p>
-            <span className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border ${
-              item.status === 'OPERATIONNEL' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 
-              item.status === 'MAINTENANCE' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-rose-50 text-rose-600 border-rose-100'
-            }`}>
-              {item.status}
-            </span>
-          </motion.div>
-        ))}
-      </div>
+      {securityItems.length === 0 ? (
+        <div className="text-center py-16 text-slate-500 bg-white rounded-[2.5rem] border border-slate-100">
+          Aucun équipement de sécurité enregistré pour cette année scolaire.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {securityItems.map((item, i) => {
+            const Icon = item.icon || pickLabelIcon(item.label || item.name);
+            const color = item.color || 'text-emerald-600';
+            const bg = item.bg || 'bg-emerald-50';
+            const label = item.label || item.name || item.title || 'Équipement';
+            const status = item.status || 'OPERATIONNEL';
+            const lastCheck = item.lastCheck || item.lastCheckedAt || '—';
+            return (
+              <motion.div
+                key={item.id ?? i}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.1 }}
+                className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col items-center text-center group hover:shadow-xl transition-all"
+              >
+                <div className={`p-5 rounded-3xl ${bg} ${color} mb-6 group-hover:scale-110 transition-transform`}>
+                  <Icon className="w-8 h-8" />
+                </div>
+                <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight mb-1">{label}</h4>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">{lastCheck}</p>
+                <span className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border ${
+                  status === 'OPERATIONNEL' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 
+                  status === 'MAINTENANCE' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-rose-50 text-rose-600 border-rose-100'
+                }`}>
+                  {status}
+                </span>
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Visitors Log */}
@@ -72,6 +125,7 @@ export default function QHSESecurity() {
             <button className="text-emerald-600 font-black text-[10px] uppercase tracking-widest hover:underline">Voir Tout</button>
           </div>
           <div className="space-y-4">
+            {/* TODO: endpoint dédié au registre visiteurs non disponible, données locales */}
             {[
               { id: 1, name: 'Jean Dupont', target: 'Mme Koffi', time: '08:15', type: 'Parent' },
               { id: 2, name: 'Saliou Service', target: 'Direction', time: '09:30', type: 'Fournisseur' },

@@ -7,18 +7,47 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Paperclip, FileText, Download, Link as LinkIcon, Plus, ExternalLink, Search, Filter } from 'lucide-react';
+import { Paperclip, FileText, Download, Link as LinkIcon, Plus, ExternalLink, Search, Filter, Loader2 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface ResourceItem {
+  id: string | number;
+  title?: string;
+  name?: string;
+  associatedWith?: string;
+  parentTitle?: string;
+  linkedContent?: string;
+  type?: string;
+  fileType?: string;
+  mimeType?: string;
+  size?: string;
+  fileSize?: string;
+  url?: string;
+  link?: string;
+}
 
 export default function EduCastResources() {
-  const resources = [
-    { id: 1, title: 'Fiche de cours : Dérivées', associatedWith: 'Calcul des dérivées usuelles', type: 'PDF', size: '1.2 MB' },
-    { id: 2, title: 'Exercices d\'entraînement', associatedWith: 'La photosynthèse expliquée', type: 'DOCX', size: '850 KB' },
-    { id: 3, title: 'Quiz Interactif', associatedWith: 'Les secrets de la grammaire', type: 'LINK', size: '-' },
-    { id: 4, title: 'Document de référence BAC', associatedWith: 'La Révolution Française', type: 'PDF', size: '2.5 MB' },
-  ];
+  const { academicYear } = useModuleContext();
+  const { data: resources, loading, error } = useModulesList<ResourceItem>('educast', 'contents', academicYear?.id);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-slate-600">Chargement des ressources...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les données. {error}
+        </div>
+      )}
+
       <div className="flex justify-between items-center">
         <div className="space-y-1">
           <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter flex items-center">
@@ -32,50 +61,63 @@ export default function EduCastResources() {
         </button>
       </div>
 
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-        <table className="w-full text-left">
-          <thead>
-            <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-              <th className="px-8 py-5">Ressource & Type</th>
-              <th className="px-8 py-5">Contenu Associé</th>
-              <th className="px-8 py-5">Taille / Lien</th>
-              <th className="px-8 py-5 text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-50">
-            {resources.map((res, i) => (
-              <motion.tr
-                key={res.id}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: i * 0.05 }}
-                className="hover:bg-slate-50/50 transition-colors group"
-              >
-                <td className="px-8 py-5">
-                  <div className="flex items-center gap-4">
-                    <div className="p-2.5 bg-slate-100 rounded-xl group-hover:bg-blue-50 transition-colors">
-                      {res.type === 'LINK' ? <LinkIcon className="w-5 h-5 text-blue-600" /> : <FileText className="w-5 h-5 text-rose-600" />}
-                    </div>
-                    <div>
-                      <p className="font-black text-slate-900 leading-tight">{res.title}</p>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{res.type}</p>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-8 py-5 text-xs font-bold text-slate-500 italic">"{res.associatedWith}"</td>
-                <td className="px-8 py-5 text-xs font-black text-slate-900">{res.size}</td>
-                <td className="px-8 py-5 text-right">
-                  <button className="p-3 bg-slate-50 hover:bg-navy-900 hover:text-white rounded-xl text-slate-400 transition-all shadow-sm">
-                    {res.type === 'LINK' ? <ExternalLink className="w-4 h-4" /> : <Download className="w-4 h-4" />}
-                  </button>
-                </td>
-              </motion.tr>
-            ))}
-          </tbody>
-        </table>
+      {resources.length === 0 ? (
+        <div className="text-center py-16 text-slate-500 bg-white rounded-3xl border border-slate-200">
+          Aucune ressource attachée pour cette année scolaire.
         </div>
-      </div>
+      ) : (
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                <th className="px-8 py-5">Ressource & Type</th>
+                <th className="px-8 py-5">Contenu Associé</th>
+                <th className="px-8 py-5">Taille / Lien</th>
+                <th className="px-8 py-5 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {resources.map((res, i) => {
+                const title = res.title || res.name || 'Ressource';
+                const type = (res.type || res.fileType || (res.mimeType && res.mimeType.split('/')[1]?.toUpperCase()) || 'FILE').toUpperCase();
+                const isLink = type === 'LINK' || type === 'URL' || !!res.url || !!res.link;
+                const associatedWith = res.associatedWith || res.parentTitle || res.linkedContent || '—';
+                const size = res.size || res.fileSize || (isLink ? '-' : '—');
+                return (
+                  <motion.tr
+                    key={res.id ?? i}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: i * 0.05 }}
+                    className="hover:bg-slate-50/50 transition-colors group"
+                  >
+                    <td className="px-8 py-5">
+                      <div className="flex items-center gap-4">
+                        <div className="p-2.5 bg-slate-100 rounded-xl group-hover:bg-blue-50 transition-colors">
+                          {isLink ? <LinkIcon className="w-5 h-5 text-blue-600" /> : <FileText className="w-5 h-5 text-rose-600" />}
+                        </div>
+                        <div>
+                          <p className="font-black text-slate-900 leading-tight">{title}</p>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{type}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-8 py-5 text-xs font-bold text-slate-500 italic">"{associatedWith}"</td>
+                    <td className="px-8 py-5 text-xs font-black text-slate-900">{size}</td>
+                    <td className="px-8 py-5 text-right">
+                      <button className="p-3 bg-slate-50 hover:bg-navy-900 hover:text-white rounded-xl text-slate-400 transition-all shadow-sm">
+                        {isLink ? <ExternalLink className="w-4 h-4" /> : <Download className="w-4 h-4" />}
+                      </button>
+                    </td>
+                  </motion.tr>
+                );
+              })}
+            </tbody>
+          </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

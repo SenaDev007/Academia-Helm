@@ -6,16 +6,79 @@
 
 'use client';
 
-import React from 'react';
-import { 
-  Settings, Save, Shield, Bell, CreditCard, 
-  Wallet, Truck, Receipt, Tag, Lock,
-  Zap, MessageSquare, Info
+import React, { useState, useEffect } from 'react';
+import {
+  Loader2, Settings, Save, Bell, CreditCard,
+  Wallet, Truck, Receipt, Lock, Zap
 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+
+interface ShopSettings {
+  lowStockAlertEnabled?: boolean;
+  weeklyInventoryReport?: boolean;
+  defaultLowStockThreshold?: number;
+  allowClientCredit?: boolean;
+  autoPrintReceipt?: boolean;
+  barcodeScannerEnabled?: boolean;
+  receiptHeader?: string;
+  orionPredictiveInventory?: boolean;
+}
 
 export default function ShopSettings() {
+  const { academicYear } = useModuleContext();
+  const [settings, setSettings] = useState<ShopSettings | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!academicYear?.id) {
+      setSettings(null);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await modulesApi.get<ShopSettings>(
+          'shop/settings',
+          buildModulesApiOptions(academicYear.id),
+        );
+        if (!cancelled) setSettings(data?.data ?? data);
+      } catch (e: any) {
+        if (!cancelled) {
+          setError(e?.response?.data?.message ?? e?.message ?? 'Erreur de chargement');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [academicYear?.id]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des paramètres...</span>
+      </div>
+    );
+  }
+
+  const s: ShopSettings = settings ?? {};
+
   return (
     <div className="space-y-8 animate-in fade-in duration-700 max-w-5xl">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les paramètres. Affichage des valeurs par défaut. {error}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -49,19 +112,20 @@ export default function ShopSettings() {
                     <h4 className="font-black text-navy-900 uppercase tracking-tight">Alertes de Stock</h4>
                  </div>
                  <div className="space-y-4">
-                    <ToggleField 
-                      label="Notifications de stock bas" 
-                      description="Envoyer une alerte quand un produit atteint son seuil critique" 
-                      defaultChecked 
+                    <ToggleField
+                      label="Notifications de stock bas"
+                      description="Envoyer une alerte quand un produit atteint son seuil critique"
+                      defaultChecked={s.lowStockAlertEnabled ?? true}
                     />
-                    <ToggleField 
-                      label="Rapport hebdomadaire d'inventaire" 
-                      description="Recevoir un résumé des mouvements de stock par email" 
+                    <ToggleField
+                      label="Rapport hebdomadaire d'inventaire"
+                      description="Recevoir un résumé des mouvements de stock par email"
+                      defaultChecked={s.weeklyInventoryReport ?? false}
                     />
                     <div className="pt-4">
                        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Seuil d'alerte par défaut</label>
                        <div className="flex items-center space-x-4">
-                          <input type="number" defaultValue={10} className="w-24 px-4 py-3 bg-gray-50 border-none rounded-xl text-sm font-black text-navy-900 outline-none focus:ring-2 focus:ring-navy-500/20" />
+                          <input type="number" defaultValue={s.defaultLowStockThreshold ?? 10} className="w-24 px-4 py-3 bg-gray-50 border-none rounded-xl text-sm font-black text-navy-900 outline-none focus:ring-2 focus:ring-navy-500/20" />
                           <span className="text-xs font-bold text-gray-500">Unités</span>
                        </div>
                     </div>
@@ -75,19 +139,20 @@ export default function ShopSettings() {
                     <h4 className="font-black text-navy-900 uppercase tracking-tight">Options Point de Vente (POS)</h4>
                  </div>
                  <div className="space-y-4">
-                    <ToggleField 
-                      label="Autoriser le crédit client" 
-                      description="Permettre aux élèves d'acheter sans solde suffisant (selon limite)" 
+                    <ToggleField
+                      label="Autoriser le crédit client"
+                      description="Permettre aux élèves d'acheter sans solde suffisant (selon limite)"
+                      defaultChecked={s.allowClientCredit ?? false}
                     />
-                    <ToggleField 
-                      label="Impression automatique du reçu" 
-                      description="Lancer l'impression dès la validation de l'encaissement" 
-                      defaultChecked
+                    <ToggleField
+                      label="Impression automatique du reçu"
+                      description="Lancer l'impression dès la validation de l'encaissement"
+                      defaultChecked={s.autoPrintReceipt ?? true}
                     />
-                    <ToggleField 
-                      label="Scanner code-barres activé" 
-                      description="Support natif pour les douchettes de lecture" 
-                      defaultChecked
+                    <ToggleField
+                      label="Scanner code-barres activé"
+                      description="Support natif pour les douchettes de lecture"
+                      defaultChecked={s.barcodeScannerEnabled ?? true}
                     />
                  </div>
               </div>
@@ -101,7 +166,7 @@ export default function ShopSettings() {
                  <div className="space-y-4">
                     <div>
                        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Message d'accueil</label>
-                       <textarea className="w-full px-4 py-3 bg-gray-50 border-none rounded-2xl text-sm font-medium text-navy-900 outline-none focus:ring-2 focus:ring-navy-500/20 h-24" defaultValue="Merci de votre confiance ! Bonne rentrée scolaire." />
+                       <textarea className="w-full px-4 py-3 bg-gray-50 border-none rounded-2xl text-sm font-medium text-navy-900 outline-none focus:ring-2 focus:ring-navy-500/20 h-24" defaultValue={s.receiptHeader ?? "Merci de votre confiance ! Bonne rentrée scolaire."} />
                     </div>
                  </div>
               </div>
@@ -121,7 +186,7 @@ export default function ShopSettings() {
                     </p>
                  </div>
                  <div className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" value="" className="sr-only peer" defaultChecked />
+                    <input type="checkbox" value="" className="sr-only peer" defaultChecked={s.orionPredictiveInventory ?? true} />
                     <div className="w-14 h-8 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-emerald-500"></div>
                  </div>
               </div>
@@ -135,8 +200,8 @@ export default function ShopSettings() {
 function SettingsTab({ icon: Icon, label, active }: any) {
   return (
     <button className={`w-full flex items-center space-x-4 p-4 rounded-2xl transition-all border ${
-      active 
-        ? 'bg-navy-900 text-white border-navy-900 shadow-lg shadow-navy-900/20' 
+      active
+        ? 'bg-navy-900 text-white border-navy-900 shadow-lg shadow-navy-900/20'
         : 'bg-white text-gray-400 border-gray-50 hover:bg-gray-50 hover:text-navy-900 hover:border-gray-100'
     }`}>
       <Icon className={`w-5 h-5 ${active ? 'text-white' : 'text-gray-300'}`} />

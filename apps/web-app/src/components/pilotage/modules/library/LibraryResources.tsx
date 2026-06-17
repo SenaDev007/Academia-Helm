@@ -2,12 +2,17 @@
  * ============================================================================
  * LIBRARY RESOURCES & COPIES
  * ============================================================================
+ *
+ * TODO: endpoint non disponible — garder mock. Aucun endpoint GET library/resources
+ * n'est exposé par le backend modules-complementaires. Les exemplaires sont
+ * actuellement gérés via library/books (et ses copies imbriquées).
+ * ============================================================================
  */
 
 'use client';
 
 import { motion } from 'framer-motion';
-import { Book, Hash, ShieldCheck, AlertCircle, MoreHorizontal, Plus, Download, Barcode } from 'lucide-react';
+import { Book, MoreHorizontal, Plus, Download, Barcode } from 'lucide-react';
 
 export default function LibraryResources() {
   const copies = [

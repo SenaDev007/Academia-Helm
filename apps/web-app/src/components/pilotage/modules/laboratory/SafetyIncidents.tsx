@@ -6,19 +6,23 @@
 
 'use client';
 
+// TODO: endpoint non disponible — GET labs/incidents n'est pas exposé par le backend.
+// Seul POST labs/incidents existe (création). Les données ci-dessous sont des mocks.
+// Une fois l'endpoint GET exposé, brancher via useModulesList('labs', 'incidents', academicYear?.id).
+
 import { motion } from 'framer-motion';
-import { 
-  ShieldAlert, 
-  AlertTriangle, 
-  Search, 
-  FileWarning, 
-  Plus, 
+import {
+  ShieldAlert,
+  AlertTriangle,
+  Search,
+  Plus,
   Eye,
   CheckCircle2,
   Activity
 } from 'lucide-react';
 
 export default function SafetyIncidents() {
+  // MOCK UI — Backend endpoint GET labs/incidents non disponible.
   const incidents = [
     { id: 'INC-402', type: 'CASSE MATÉRIEL', item: 'Éprouvette graduée', severity: 'LOW', date: '14/05/2026', status: 'RESOLVED' },
     { id: 'INC-403', type: 'PRODUIT RENVERSÉ', item: 'Acide Sulfurique', severity: 'HIGH', date: '12/05/2026', status: 'PENDING' },
@@ -28,6 +32,11 @@ export default function SafetyIncidents() {
 
   return (
     <div className="space-y-8">
+      {/* Bannière d'information : données mock */}
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-500">
+        ℹ️ Données de démonstration — l'endpoint backend <code className="px-1 py-0.5 bg-slate-200 rounded">GET labs/incidents</code> n'est pas encore disponible.
+      </div>
+
       {/* Risk Alert Header */}
       <div className="bg-rose-50 border-2 border-rose-100 rounded-3xl p-8 flex items-center gap-8">
         <div className="p-4 bg-white rounded-2xl shadow-sm text-rose-600">
@@ -54,7 +63,7 @@ export default function SafetyIncidents() {
               <input type="text" placeholder="Filtrer..." className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs outline-none" />
             </div>
           </div>
-          
+
           <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
             <table className="w-full text-left">

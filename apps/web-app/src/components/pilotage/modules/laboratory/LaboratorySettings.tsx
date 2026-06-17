@@ -6,21 +6,22 @@
 
 'use client';
 
+// TODO: endpoint non disponible — GET labs/settings n'est pas exposé par le backend.
+// Les sections de configuration ci-dessous restent en mock UI tant que l'endpoint n'existe pas.
+// Une fois l'endpoint disponible, brancher via modulesApi.get('labs/settings', opts).
+
 import { motion } from 'framer-motion';
-import { 
-  Settings, 
-  Shield, 
-  Bell, 
-  Beaker, 
-  Wrench, 
-  AlertTriangle,
+import {
+  Settings,
+  Shield,
+  Beaker,
   Save,
-  Clock,
   Lock,
   Workflow
 } from 'lucide-react';
 
 export default function LaboratorySettings() {
+  // MOCK UI — Backend endpoint GET labs/settings non disponible.
   const sections = [
     {
       title: 'Gestion des Laboratoires',
@@ -58,6 +59,11 @@ export default function LaboratorySettings() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 pb-12">
+      {/* Bannière d'information : données mock */}
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-500">
+        ℹ️ Données de démonstration — l'endpoint backend <code className="px-1 py-0.5 bg-slate-200 rounded">GET labs/settings</code> n'est pas encore disponible.
+      </div>
+
       <div className="flex justify-between items-center">
         <div className="space-y-1">
           <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Configuration du Module</h3>

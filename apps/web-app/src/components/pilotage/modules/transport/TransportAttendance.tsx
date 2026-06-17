@@ -2,6 +2,9 @@
 
 import { Users, CheckCircle2, XCircle, Clock, Search, Filter, Calendar } from 'lucide-react';
 
+// TODO: endpoint non disponible — garder mock
+// Le backend expose uniquement POST transport/attendances (pas de GET).
+// Les présences restent en données statiques en attendant un endpoint de lecture.
 export default function TransportAttendance() {
   const attendance = [
     { id: '1', name: 'Fatou Sow', route: 'Circuit Nord', stop: 'Rond-point Central', status: 'PRESENT', time: '07:15' },

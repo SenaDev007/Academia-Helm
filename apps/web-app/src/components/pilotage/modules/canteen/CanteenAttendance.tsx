@@ -1,13 +1,76 @@
+/**
+ * ============================================================================
+ * CANTEEN ATTENDANCE — Branché sur backend réel
+ * ============================================================================
+ *
+ * Endpoint : GET /modules-complementaires/canteen/attendance?academicYearId=...
+ * ============================================================================
+ */
+
 import React from 'react';
-import { 
-  UtensilsCrossed, Search, Filter, Download, 
-  Activity, CheckCircle2, XCircle, AlertCircle,
-  Scan, Tablet, UserCheck, Calendar, Clock
+import {
+  Search,
+  Activity,
+  AlertCircle,
+  Scan, Tablet, Calendar, Clock, Loader2
 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface AttendanceItem {
+  id: string;
+  student?: string;
+  studentName?: string;
+  class?: string;
+  className?: string;
+  time?: string;
+  servedAt?: string;
+  timestamp?: string;
+  status?: string;
+  type?: string;
+  mealType?: string;
+  note?: string;
+  comment?: string;
+  isSpecial?: boolean;
+  [key: string]: any;
+}
 
 export default function CanteenAttendance() {
+  const { academicYear } = useModuleContext();
+  const { data: attendance, loading, error } = useModulesList<AttendanceItem>(
+    'canteen',
+    'attendance',
+    academicYear?.id,
+  );
+
+  const total = attendance.length;
+  const served = attendance.filter((a) => {
+    const s = (a.status ?? '').toLowerCase();
+    return s.includes('servi') || s.includes('served');
+  }).length;
+  const pending = attendance.filter((a) => {
+    const s = (a.status ?? '').toLowerCase();
+    return s.includes('attente') || s.includes('pending') || s.includes('non');
+  }).length;
+  const serviceRate = total > 0 ? Math.round((served / total) * 100) : 0;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des présences...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les données. {error}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Main Service Area */}
         <div className="lg:col-span-3 bg-white rounded-3xl border border-gray-100 shadow-xl shadow-gray-200/50 overflow-hidden">
@@ -20,17 +83,17 @@ export default function CanteenAttendance() {
                 <h3 className="font-black text-navy-900 text-xl tracking-tight">Pointage en Direct</h3>
                 <div className="flex items-center space-x-2 mt-1">
                   <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>
-                  <p className="text-red-500 text-[10px] font-black uppercase tracking-widest">Service du Midi en cours</p>
+                  <p className="text-red-500 text-[10px] font-black uppercase tracking-widest">Service en cours</p>
                 </div>
               </div>
             </div>
-            
+
             <div className="flex items-center space-x-3">
               <div className="relative group">
                 <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-navy-600 transition-colors" />
-                <input 
-                  type="text" 
-                  placeholder="Numéro de badge, QR, Nom..." 
+                <input
+                  type="text"
+                  placeholder="Numéro de badge, QR, Nom..."
                   className="pl-11 pr-4 py-2.5 bg-white border border-gray-100 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-navy-500/20 w-64 transition-all"
                 />
               </div>
@@ -41,6 +104,11 @@ export default function CanteenAttendance() {
             </div>
           </div>
 
+          {attendance.length === 0 ? (
+            <div className="text-center py-16 text-gray-500">
+              Aucun pointage enregistré pour cette année scolaire.
+            </div>
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
@@ -53,39 +121,22 @@ export default function CanteenAttendance() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                <AttendanceRow 
-                  student="Bakary Sylla"
-                  class="CM2-B"
-                  time="12:45:12"
-                  status="Servi"
-                  type="Standard"
-                />
-                <AttendanceRow 
-                  student="Fatima Zahra"
-                  class="6ème 1"
-                  time="12:44:05"
-                  status="Servi"
-                  type="Végétarien"
-                  isSpecial={true}
-                />
-                <AttendanceRow 
-                  student="Lucas Mendy"
-                  class="CP1"
-                  time="12:42:30"
-                  status="Non Servi"
-                  type="Standard"
-                />
-                <AttendanceRow 
-                  student="Aminata Sow"
-                  class="Terminale D"
-                  time="12:40:15"
-                  status="Refusé"
-                  type="Standard"
-                  note="Badge invalide"
-                />
+                {attendance.map((row) => (
+                  <AttendanceRow
+                    key={row.id}
+                    student={row.student ?? row.studentName ?? '—'}
+                    class={row.class ?? row.className ?? '—'}
+                    time={row.time ?? row.servedAt ?? row.timestamp ?? '—'}
+                    status={row.status ?? 'Non Servi'}
+                    type={row.type ?? row.mealType ?? 'Standard'}
+                    isSpecial={row.isSpecial}
+                    note={row.note ?? row.comment}
+                  />
+                ))}
               </tbody>
             </table>
           </div>
+          )}
         </div>
 
         {/* Sidebar Statistics */}
@@ -96,17 +147,17 @@ export default function CanteenAttendance() {
               <span>Synthèse Direct</span>
             </h4>
             <div className="space-y-6">
-              <ProgressStat label="Prévus" value="450" total={450} color="gray" />
-              <ProgressStat label="Servis" value="312" total={450} color="emerald" />
-              <ProgressStat label="En Attente" value="138" total={450} color="amber" />
+              <ProgressStat label="Prévus" value={String(total)} total={total || 1} color="gray" />
+              <ProgressStat label="Servis" value={String(served)} total={total || 1} color="emerald" />
+              <ProgressStat label="En Attente" value={String(pending)} total={total || 1} color="amber" />
             </div>
             <div className="mt-8 pt-8 border-t border-gray-50">
               <div className="flex justify-between items-end mb-2">
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Taux de Service</p>
-                <p className="text-xl font-black text-emerald-600">69%</p>
+                <p className="text-xl font-black text-emerald-600">{serviceRate}%</p>
               </div>
               <div className="w-full h-3 bg-gray-100 rounded-full overflow-hidden">
-                <div className="h-full bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.4)]" style={{ width: '69%' }}></div>
+                <div className="h-full bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.4)]" style={{ width: `${serviceRate}%` }}></div>
               </div>
             </div>
           </div>
@@ -116,7 +167,7 @@ export default function CanteenAttendance() {
               <Calendar className="w-5 h-5 text-navy-300" />
               <span>Planning</span>
             </h4>
-            <p className="text-xs text-navy-200 leading-relaxed mb-6">Service de demain prévu à <span className="text-white font-bold">12:00</span> pour <span className="text-white font-bold">425 élèves</span>.</p>
+            <p className="text-xs text-navy-200 leading-relaxed mb-6">Service de demain prévu à <span className="text-white font-bold">12:00</span> pour <span className="text-white font-bold">{total || '—'} élèves</span>.</p>
             <button className="w-full py-3 bg-white/10 hover:bg-white/20 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all">Consulter l'historique</button>
           </div>
         </div>
@@ -131,13 +182,14 @@ function AttendanceRow({ student, class: className, time, status, type, isSpecia
     'Non Servi': 'bg-amber-50 text-amber-600 border-amber-100',
     'Refusé': 'bg-red-50 text-red-600 border-red-100',
   };
+  const statusStyle = statusColors[status] ?? statusColors['Non Servi'];
 
   return (
     <tr className="group hover:bg-navy-50/30 transition-all duration-300">
       <td className="px-8 py-6">
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-center text-navy-600 font-black text-xs group-hover:bg-white transition-all shadow-sm">
-            {student.split(' ').map((n: string) => n[0]).join('')}
+            {typeof student === 'string' ? student.split(' ').map((n: string) => n[0]).join('') : '—'}
           </div>
           <div>
             <p className="text-sm font-black text-navy-900">{student}</p>
@@ -152,7 +204,7 @@ function AttendanceRow({ student, class: className, time, status, type, isSpecia
         </div>
       </td>
       <td className="px-8 py-6">
-        <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border w-fit ${statusColors[status]}`}>
+        <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border w-fit ${statusStyle}`}>
           {status}
         </div>
         {note && <p className="text-[9px] text-red-400 font-bold mt-1 uppercase">{note}</p>}
@@ -178,7 +230,7 @@ function ProgressStat({ label, value, total, color }: any) {
     amber: 'bg-amber-500',
     gray: 'bg-gray-300',
   };
-  const percentage = (parseInt(value) / total) * 100;
+  const percentage = total > 0 ? (parseInt(value) / total) * 100 : 0;
   return (
     <div className="space-y-2">
       <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest">

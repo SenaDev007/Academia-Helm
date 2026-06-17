@@ -2,12 +2,17 @@
  * ============================================================================
  * LIBRARY READERS (LECTEURS)
  * ============================================================================
+ *
+ * TODO: endpoint non disponible — garder mock. Aucun endpoint GET library/readers
+ * n'est exposé par le backend modules-complementaires. Les lecteurs sont
+ * actuellement déduits des prêts (library/loans) côté backend.
+ * ============================================================================
  */
 
 'use client';
 
 import { motion } from 'framer-motion';
-import { Users, Search, Filter, Star, BookOpen, Clock, AlertCircle, ChevronRight } from 'lucide-react';
+import { Search, Filter, Star, BookOpen, ChevronRight } from 'lucide-react';
 
 export default function LibraryReaders() {
   const readers = [

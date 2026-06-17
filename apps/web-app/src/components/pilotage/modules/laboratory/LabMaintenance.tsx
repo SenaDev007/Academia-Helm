@@ -7,28 +7,53 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { 
-  Wrench, 
-  Calendar, 
-  Clock, 
-  AlertCircle, 
-  CheckCircle2, 
-  Settings,
-  Shield,
-  ChevronRight,
-  Plus
-} from 'lucide-react';
+import { Loader2, Wrench, Calendar, Shield, ChevronRight, Plus } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface MaintenanceItem {
+  id?: string;
+  item?: string;
+  equipmentName?: string;
+  equipment?: string;
+  type?: string;
+  maintenanceType?: string;
+  date?: string;
+  scheduledAt?: string;
+  maintenanceDate?: string;
+  provider?: string;
+  serviceProvider?: string;
+  technician?: string;
+  status?: string;
+}
 
 export default function LabMaintenance() {
-  const maintenances = [
-    { id: 'MNT-101', item: 'Microscope Binoculaire X400', type: 'PRÉVENTIVE', date: '12/06/2026', provider: 'Sérigraphie Tech', status: 'PLANNED' },
-    { id: 'MNT-102', item: 'Centrifugeuse SVT', type: 'CORRECTIVE', date: '18/05/2026', provider: 'Maint. Interne', status: 'IN_PROGRESS' },
-    { id: 'MNT-103', item: 'Oscilloscope Physique', type: 'CALIBRATION', date: '10/05/2026', provider: 'Labo National', status: 'COMPLETED' },
-    { id: 'MNT-104', item: 'Balances de Chimie (Série)', type: 'NETTOYAGE', date: '05/05/2026', provider: 'Responsable Lab', status: 'COMPLETED' },
-  ];
+  const { academicYear } = useModuleContext();
+  const { data: maintenances, loading, error } = useModulesList<MaintenanceItem>(
+    'labs',
+    'maintenance',
+    academicYear?.id,
+  );
+
+  const safeMaintenances = maintenances ?? [];
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des maintenances...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les maintenances. {error}
+        </div>
+      )}
+
       <div className="flex justify-between items-center">
         <div className="space-y-1">
           <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter flex items-center">
@@ -43,51 +68,65 @@ export default function LabMaintenance() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {maintenances.map((mnt, i) => (
-          <motion.div
-            key={mnt.id}
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: i * 0.1 }}
-            className="bg-white rounded-3xl border border-slate-200 p-8 shadow-sm hover:shadow-lg transition-all group border-l-4"
-            style={{ borderLeftColor: mnt.status === 'PLANNED' ? '#3B82F6' : mnt.status === 'IN_PROGRESS' ? '#F59E0B' : '#10B981' }}
-          >
-            <div className="flex justify-between items-start mb-6">
-              <div className="space-y-1">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{mnt.type}</p>
-                <h4 className="text-xl font-black text-slate-900">{mnt.item}</h4>
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-tighter">{mnt.id}</p>
-              </div>
-              <div className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest ${
-                mnt.status === 'PLANNED' ? 'bg-blue-50 text-blue-600' : 
-                mnt.status === 'IN_PROGRESS' ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'
-              }`}>
-                {mnt.status}
-              </div>
-            </div>
+      {safeMaintenances.length === 0 ? (
+        <div className="text-center py-16 text-gray-500">
+          Aucune intervention de maintenance planifiée pour cette année scolaire.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {safeMaintenances.map((mnt: any, i: number) => {
+            const id = mnt?.id ?? `MNT-${i}`;
+            const item = mnt?.item ?? mnt?.equipmentName ?? mnt?.equipment ?? 'Équipement';
+            const type = mnt?.type ?? mnt?.maintenanceType ?? 'PRÉVENTIVE';
+            const date = mnt?.date ?? mnt?.maintenanceDate ?? (mnt?.scheduledAt ? new Date(mnt.scheduledAt).toLocaleDateString('fr-FR') : '—');
+            const provider = mnt?.provider ?? mnt?.serviceProvider ?? mnt?.technician ?? '—';
+            const status = (mnt?.status ?? 'PLANNED').toString().toUpperCase();
+            return (
+              <motion.div
+                key={id}
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: i * 0.1 }}
+                className="bg-white rounded-3xl border border-slate-200 p-8 shadow-sm hover:shadow-lg transition-all group border-l-4"
+                style={{ borderLeftColor: status === 'PLANNED' ? '#3B82F6' : status === 'IN_PROGRESS' ? '#F59E0B' : '#10B981' }}
+              >
+                <div className="flex justify-between items-start mb-6">
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{type}</p>
+                    <h4 className="text-xl font-black text-slate-900">{item}</h4>
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-tighter">{id}</p>
+                  </div>
+                  <div className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest ${
+                    status === 'PLANNED' ? 'bg-blue-50 text-blue-600' :
+                    status === 'IN_PROGRESS' ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'
+                  }`}>
+                    {status}
+                  </div>
+                </div>
 
-            <div className="grid grid-cols-2 gap-6">
-              <div className="flex items-center text-sm font-bold text-slate-600">
-                <Calendar className="w-4 h-4 mr-3 text-slate-300" />
-                {mnt.date}
-              </div>
-              <div className="flex items-center text-sm font-bold text-slate-600">
-                <Shield className="w-4 h-4 mr-3 text-slate-300" />
-                {mnt.provider}
-              </div>
-            </div>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="flex items-center text-sm font-bold text-slate-600">
+                    <Calendar className="w-4 h-4 mr-3 text-slate-300" />
+                    {date}
+                  </div>
+                  <div className="flex items-center text-sm font-bold text-slate-600">
+                    <Shield className="w-4 h-4 mr-3 text-slate-300" />
+                    {provider}
+                  </div>
+                </div>
 
-            <div className="mt-8 pt-6 border-t border-slate-100 flex items-center justify-between">
-              <button className="text-xs font-black uppercase tracking-widest text-slate-400 hover:text-navy-900 transition-colors">Modifier</button>
-              <button className="flex items-center text-blue-600 font-black text-xs uppercase tracking-widest hover:translate-x-2 transition-transform">
-                Rapport Technique
-                <ChevronRight className="w-4 h-4 ml-1" />
-              </button>
-            </div>
-          </motion.div>
-        ))}
-      </div>
+                <div className="mt-8 pt-6 border-t border-slate-100 flex items-center justify-between">
+                  <button className="text-xs font-black uppercase tracking-widest text-slate-400 hover:text-navy-900 transition-colors">Modifier</button>
+                  <button className="flex items-center text-blue-600 font-black text-xs uppercase tracking-widest hover:translate-x-2 transition-transform">
+                    Rapport Technique
+                    <ChevronRight className="w-4 h-4 ml-1" />
+                  </button>
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

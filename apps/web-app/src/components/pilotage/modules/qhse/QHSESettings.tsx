@@ -6,10 +6,38 @@
 
 'use client';
 
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Settings, Shield, Bell, Lock, Database, Trash2, Save, Globe, Eye } from 'lucide-react';
+import { Settings, Shield, Bell, Lock, Database, Trash2, Save, Globe, Eye, Loader2 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 export default function QHSESettings() {
+  const { academicYear } = useModuleContext();
+  const [settings, setSettings] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!academicYear?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await modulesApi.get('qhse/settings', buildModulesApiOptions(academicYear.id));
+        if (!cancelled) setSettings(data);
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message || 'Erreur de chargement');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [academicYear?.id]);
+
   const sections = [
     { title: 'Configuration Générale', icon: Settings, desc: 'Paramètres du module et seuils de criticité.' },
     { title: 'Notifications & Alertes', icon: Bell, desc: 'Canaux de diffusion et destinataires des urgences.' },
@@ -17,8 +45,23 @@ export default function QHSESettings() {
     { title: 'Archivage & Données', icon: Database, desc: 'Conservation des registres et exportations légales.' },
   ];
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-slate-600">Chargement des paramètres QHSE...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-5xl space-y-10">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les paramètres. {error}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         {/* Sidebar Nav */}
         <div className="lg:col-span-1 space-y-2">
@@ -50,8 +93,8 @@ export default function QHSESettings() {
                   <p className="text-sm font-black text-slate-900 uppercase tracking-tight">Signalement Mobile</p>
                   <p className="text-xs text-slate-400 font-medium">Autoriser les enseignants à signaler des incidents via l'application mobile.</p>
                 </div>
-                <div className="w-12 h-6 bg-emerald-500 rounded-full relative cursor-pointer shadow-inner">
-                   <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm" />
+                <div className={`w-12 h-6 rounded-full relative cursor-pointer shadow-inner ${settings?.mobileReporting ? 'bg-emerald-500' : 'bg-slate-200'}`}>
+                   <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${settings?.mobileReporting ? 'right-1' : 'left-1'}`} />
                 </div>
               </div>
 
@@ -60,16 +103,16 @@ export default function QHSESettings() {
                   <p className="text-sm font-black text-slate-900 uppercase tracking-tight">Anonymat des Risques</p>
                   <p className="text-xs text-slate-400 font-medium">Permettre le signalement anonyme des risques par le personnel.</p>
                 </div>
-                <div className="w-12 h-6 bg-slate-200 rounded-full relative cursor-pointer shadow-inner">
-                   <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm" />
+                <div className={`w-12 h-6 rounded-full relative cursor-pointer shadow-inner ${settings?.anonymousRisks ? 'bg-emerald-500' : 'bg-slate-200'}`}>
+                   <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${settings?.anonymousRisks ? 'right-1' : 'left-1'}`} />
                 </div>
               </div>
 
               <div className="space-y-4 pt-6 border-t border-slate-50">
                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Seuil d'Alerte Critique (Score)</p>
                  <div className="flex items-center gap-6">
-                    <input type="range" className="flex-1 accent-emerald-600 h-1 bg-slate-100 rounded-full appearance-none" />
-                    <span className="text-xl font-black text-emerald-600 tracking-tighter">75%</span>
+                    <input type="range" defaultValue={settings?.criticalThreshold ?? 75} className="flex-1 accent-emerald-600 h-1 bg-slate-100 rounded-full appearance-none" />
+                    <span className="text-xl font-black text-emerald-600 tracking-tighter">{settings?.criticalThreshold ?? 75}%</span>
                  </div>
               </div>
             </div>

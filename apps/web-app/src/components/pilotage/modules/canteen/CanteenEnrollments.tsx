@@ -1,33 +1,94 @@
-import React from 'react';
-import { 
-  ClipboardCheck, Search, Filter, Download, 
-  CheckCircle2, XCircle, Clock, AlertTriangle,
-  User, Calendar, CreditCard, ChevronRight,
-  Plus
+/**
+ * ============================================================================
+ * CANTEEN ENROLLMENTS — Branché sur backend réel
+ * ============================================================================
+ *
+ * Endpoint : GET /modules-complementaires/canteen/enrollments?academicYearId=...
+ * Endpoint : POST /modules-complementaires/canteen/enrollments
+ * ============================================================================
+ */
+
+import React, { useState } from 'react';
+import {
+  Search, Filter,
+  CheckCircle2, XCircle, Clock,
+  Calendar, CreditCard, ChevronRight,
+  Plus, AlertTriangle, Loader2
 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface EnrollmentItem {
+  id: string;
+  date?: string;
+  requestDate?: string;
+  createdAt?: string;
+  student?: string;
+  studentName?: string;
+  class?: string;
+  className?: string;
+  parent?: string;
+  parentName?: string;
+  plan?: string;
+  subscriptionPlan?: string;
+  diet?: string;
+  dietType?: string;
+  allergy?: string;
+  allergies?: string;
+  status?: string;
+  [key: string]: any;
+}
 
 export default function CanteenEnrollments() {
+  const { academicYear } = useModuleContext();
+  const [search, setSearch] = useState('');
+  const { data: enrollments, loading, error } = useModulesList<EnrollmentItem>(
+    'canteen',
+    'enrollments',
+    academicYear?.id,
+    search ? { search } : undefined,
+  );
+
+  const pendingCount = enrollments.filter((e) => (e.status ?? '').toLowerCase().includes('attente') || (e.status ?? '').toLowerCase().includes('pending')).length;
+  const acceptedCount = enrollments.filter((e) => (e.status ?? '').toLowerCase().includes('valid') || (e.status ?? '').toLowerCase().includes('accept')).length;
+  const acceptanceRate = enrollments.length > 0 ? Math.round((acceptedCount / enrollments.length) * 100) : 0;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des inscriptions...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les données. {error}
+        </div>
+      )}
+
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <SummaryCard 
-          title="Demandes en attente" 
-          value="24" 
-          icon={Clock} 
-          color="amber" 
+        <SummaryCard
+          title="Demandes en attente"
+          value={String(pendingCount)}
+          icon={Clock}
+          color="amber"
         />
-        <SummaryCard 
-          title="Nouvelles Inscriptions (Mois)" 
-          value="115" 
-          icon={Plus} 
-          color="blue" 
+        <SummaryCard
+          title="Inscriptions (Total)"
+          value={String(enrollments.length)}
+          icon={Plus}
+          color="blue"
         />
-        <SummaryCard 
-          title="Taux d'Acceptation" 
-          value="94%" 
-          icon={CheckCircle2} 
-          color="green" 
+        <SummaryCard
+          title="Taux d'Acceptation"
+          value={`${acceptanceRate}%`}
+          icon={CheckCircle2}
+          color="green"
         />
       </div>
 
@@ -37,13 +98,15 @@ export default function CanteenEnrollments() {
             <h3 className="font-black text-navy-900 text-xl tracking-tight">Gestion des Inscriptions</h3>
             <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mt-1">Validez les demandes d'accès à la restauration</p>
           </div>
-          
+
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative group">
               <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-navy-600 transition-colors" />
-              <input 
-                type="text" 
-                placeholder="Élève, parent, classe..." 
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Élève, parent, classe..."
                 className="pl-11 pr-4 py-2.5 bg-gray-50/50 border border-gray-100 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-navy-500/20 w-64 transition-all"
               />
             </div>
@@ -58,6 +121,11 @@ export default function CanteenEnrollments() {
           </div>
         </div>
 
+        {enrollments.length === 0 ? (
+          <div className="text-center py-16 text-gray-500">
+            Aucune inscription pour cette année scolaire.
+          </div>
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
@@ -71,46 +139,23 @@ export default function CanteenEnrollments() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              <EnrollmentRow 
-                date="14 Mai 2026"
-                student="Ismael Sylla"
-                class="CM2-B"
-                parent="M. Sylla"
-                plan="Mensuel"
-                diet="Standard"
-                status="En attente"
-              />
-              <EnrollmentRow 
-                date="13 Mai 2026"
-                student="Mariam Konaté"
-                class="6ème A"
-                parent="Mme Konaté"
-                plan="Trimestriel"
-                diet="Végétarien"
-                allergy="Arachides"
-                status="En attente"
-              />
-              <EnrollmentRow 
-                date="12 Mai 2026"
-                student="Jean-Paul Gbe"
-                class="CP1"
-                parent="M. Gbe"
-                plan="Hebdomadaire"
-                diet="Sans Porc"
-                status="Validé"
-              />
-              <EnrollmentRow 
-                date="11 Mai 2026"
-                student="Saliou Diop"
-                class="Terminale S"
-                parent="M. Diop"
-                plan="Mensuel"
-                diet="Standard"
-                status="Rejeté"
-              />
+              {enrollments.map((enr) => (
+                <EnrollmentRow
+                  key={enr.id}
+                  date={enr.date ?? enr.requestDate ?? enr.createdAt ?? '—'}
+                  student={enr.student ?? enr.studentName ?? '—'}
+                  class={enr.class ?? enr.className ?? '—'}
+                  parent={enr.parent ?? enr.parentName ?? '—'}
+                  plan={enr.plan ?? enr.subscriptionPlan ?? '—'}
+                  diet={enr.diet ?? enr.dietType ?? 'Standard'}
+                  allergy={enr.allergy ?? enr.allergies}
+                  status={enr.status ?? 'En attente'}
+                />
+              ))}
             </tbody>
           </table>
         </div>
+        )}
       </div>
     </div>
   );
@@ -141,6 +186,7 @@ function EnrollmentRow({ date, student, class: className, parent, plan, diet, al
     'Validé': 'bg-emerald-50 text-emerald-600 border-emerald-100',
     'Rejeté': 'bg-red-50 text-red-600 border-red-100',
   };
+  const statusStyle = statusStyles[status] ?? statusStyles['En attente'];
 
   return (
     <tr className="group hover:bg-navy-50/30 transition-all duration-300">
@@ -153,7 +199,7 @@ function EnrollmentRow({ date, student, class: className, parent, plan, diet, al
       <td className="px-8 py-6">
         <div className="flex items-center space-x-3">
           <div className="w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center text-gray-500 font-black text-xs group-hover:bg-white transition-colors">
-            {student.split(' ').map((n: string) => n[0]).join('')}
+            {typeof student === 'string' ? student.split(' ').map((n: string) => n[0]).join('') : '—'}
           </div>
           <div>
             <p className="text-sm font-black text-navy-900">{student}</p>
@@ -182,7 +228,7 @@ function EnrollmentRow({ date, student, class: className, parent, plan, diet, al
         </div>
       </td>
       <td className="px-8 py-6">
-        <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border w-fit ${statusStyles[status]}`}>
+        <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border w-fit ${statusStyle}`}>
           {status}
         </div>
       </td>

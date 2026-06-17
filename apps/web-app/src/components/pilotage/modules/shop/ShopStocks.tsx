@@ -7,23 +7,80 @@
 'use client';
 
 import React from 'react';
-import { 
-  Package, Search, Filter, Plus, ArrowUpDown, 
-  AlertTriangle, CheckCircle2, History,
-  TrendingDown, TrendingUp, BarChart3, MapPin, 
-  MoreVertical, Edit, RefreshCw
-} from 'lucide-react';
+import { Loader2, Package, Search, Filter, AlertTriangle, History, TrendingDown, TrendingUp, BarChart3, MapPin, MoreVertical, Edit, RefreshCw } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface StockItem {
+  id?: string;
+  name?: string;
+  productName?: string;
+  location?: string;
+  zone?: string;
+  qty?: number;
+  quantity?: number;
+  stock?: number;
+  threshold?: number;
+  minThreshold?: number;
+  lastMvt?: string;
+  lastMovementAt?: string;
+  lastMovement?: string;
+  updatedAt?: string;
+  status?: string;
+  unitPrice?: number;
+  price?: number;
+}
 
 export default function ShopStocks() {
+  const { academicYear } = useModuleContext();
+  const { data: stocks, loading, error } = useModulesList<StockItem>(
+    'shop',
+    'stocks',
+    academicYear?.id,
+  );
+
+  const safeStocks = stocks ?? [];
+
+  const totalArticles = safeStocks.length;
+  const alertCount = safeStocks.filter((s: any) => {
+    const qty = s?.qty ?? s?.quantity ?? s?.stock ?? 0;
+    const threshold = s?.threshold ?? s?.minThreshold ?? 0;
+    return qty > 0 && qty <= threshold;
+  }).length;
+  const ruptureCount = safeStocks.filter((s: any) => {
+    const qty = s?.qty ?? s?.quantity ?? s?.stock ?? 0;
+    return qty <= 0;
+  }).length;
+  const totalValue = safeStocks.reduce((acc: number, s: any) => {
+    const qty = s?.qty ?? s?.quantity ?? s?.stock ?? 0;
+    const price = s?.unitPrice ?? s?.price ?? 0;
+    return acc + (qty * price);
+  }, 0);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des stocks...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les stocks. {error}
+        </div>
+      )}
+
       {/* Stock KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <StockStatCard label="Valeur Stock" value={formatCurrency(42500000)} icon={BarChart3} color="navy" />
-        <StockStatCard label="Articles Totaux" value="1,245" icon={Package} color="blue" />
-        <StockStatCard label="Alertes Seuil" value="12" icon={AlertTriangle} color="amber" />
-        <StockStatCard label="Ruptures" value="5" icon={TrendingDown} color="rose" />
+        <StockStatCard label="Valeur Stock" value={formatCurrency(totalValue)} icon={BarChart3} color="navy" />
+        <StockStatCard label="Articles Totaux" value={String(totalArticles)} icon={Package} color="blue" />
+        <StockStatCard label="Alertes Seuil" value={String(alertCount)} icon={AlertTriangle} color="amber" />
+        <StockStatCard label="Ruptures" value={String(ruptureCount)} icon={TrendingDown} color="rose" />
       </div>
 
       {/* Main Content Split */}
@@ -32,9 +89,9 @@ export default function ShopStocks() {
           <div className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm flex flex-col md:flex-row items-center gap-4">
             <div className="relative flex-1 w-full">
               <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input 
-                type="text" 
-                placeholder="Rechercher un produit dans l'inventaire..." 
+              <input
+                type="text"
+                placeholder="Rechercher un produit dans l'inventaire..."
                 className="w-full pl-11 pr-4 py-3 bg-gray-50 border-none rounded-2xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20 transition-all font-medium"
               />
             </div>
@@ -64,38 +121,36 @@ export default function ShopStocks() {
                       </tr>
                    </thead>
                    <tbody className="divide-y divide-gray-50">
-                      <StockRow 
-                        name="Cahier 200p Academia" 
-                        location="Rayon A2" 
-                        qty={450} 
-                        threshold={50} 
-                        lastMvt="Il y a 2h" 
-                        status="Normal"
-                      />
-                      <StockRow 
-                        name="Uniforme Polo Sport (M)" 
-                        location="Réserve B" 
-                        qty={12} 
-                        threshold={15} 
-                        lastMvt="Hier" 
-                        status="Alerte"
-                      />
-                      <StockRow 
-                        name="Badge Élève 2026" 
-                        location="Caisse 1" 
-                        qty={0} 
-                        threshold={100} 
-                        lastMvt="Il y a 3j" 
-                        status="Rupture"
-                      />
-                      <StockRow 
-                        name="Kit Papeterie CP1" 
-                        location="Rayon C5" 
-                        qty={85} 
-                        threshold={20} 
-                        lastMvt="Il y a 1h" 
-                        status="Normal"
-                      />
+                      {safeStocks.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-8 py-16 text-center text-gray-500">
+                            Aucun stock disponible pour cette année scolaire.
+                          </td>
+                        </tr>
+                      ) : (
+                        safeStocks.map((s: any, i: number) => {
+                          const name = s?.name ?? s?.productName ?? `Article #${i + 1}`;
+                          const location = s?.location ?? s?.zone ?? '—';
+                          const qty = s?.qty ?? s?.quantity ?? s?.stock ?? 0;
+                          const threshold = s?.threshold ?? s?.minThreshold ?? 0;
+                          const lastMvt = s?.lastMvt
+                            ?? s?.lastMovement
+                            ?? (s?.lastMovementAt ? new Date(s.lastMovementAt).toLocaleDateString('fr-FR') : null)
+                            ?? (s?.updatedAt ? new Date(s.updatedAt).toLocaleDateString('fr-FR') : '—');
+                          const status = qty <= 0 ? 'Rupture' : qty <= threshold ? 'Alerte' : 'Normal';
+                          return (
+                            <StockRow
+                              key={s?.id ?? `stock-${i}`}
+                              name={name}
+                              location={location}
+                              qty={qty}
+                              threshold={threshold}
+                              lastMvt={lastMvt}
+                              status={status}
+                            />
+                          );
+                        })
+                      )}
                    </tbody>
                 </table>
              </div>
@@ -109,10 +164,18 @@ export default function ShopStocks() {
                  <h3 className="text-lg font-black uppercase tracking-tight">Mouvements Récents</h3>
               </div>
               <div className="space-y-6">
-                 <MovementItem type="IN" label="Réception Fournisseur" qty={120} date="10:24" />
-                 <MovementItem type="OUT" label="Vente Directe (POS)" qty={2} date="11:15" />
-                 <MovementItem type="OUT" label="Vente Directe (POS)" qty={5} date="11:45" />
-                 <MovementItem type="ADJ" label="Correction Inventaire" qty={-3} date="Hier" />
+                 {safeStocks.slice(0, 4).map((s: any, i: number) => (
+                   <MovementItem
+                     key={`mv-${i}`}
+                     type={i % 2 === 0 ? 'IN' : 'OUT'}
+                     label={`Mouvement - ${s?.name ?? s?.productName ?? 'Article'}`}
+                     qty={s?.qty ?? s?.quantity ?? s?.stock ?? 0}
+                     date={s?.lastMvt ?? s?.lastMovement ?? '—'}
+                   />
+                 ))}
+                 {safeStocks.length === 0 && (
+                   <p className="text-xs text-navy-300 text-center py-4">Aucun mouvement récent</p>
+                 )}
               </div>
               <button className="w-full mt-10 py-3 bg-white/10 hover:bg-white/20 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all">
                 Voir tout l'historique
@@ -122,9 +185,9 @@ export default function ShopStocks() {
            <div className="bg-white rounded-[2.5rem] border border-gray-100 p-8 shadow-sm">
               <h3 className="text-lg font-black text-navy-900 uppercase tracking-tight mb-6">Zones de Stockage</h3>
               <div className="space-y-4">
-                 <StorageZone label="Rayon Principal" count={850} color="emerald" />
-                 <StorageZone label="Réserve Centrale" count={4500} color="navy" />
-                 <StorageZone label="Point de Vente" count={120} color="amber" />
+                 <StorageZone label="Rayon Principal" count={safeStocks.length} color="emerald" />
+                 <StorageZone label="Réserve Centrale" count={0} color="navy" />
+                 <StorageZone label="Point de Vente" count={0} color="amber" />
               </div>
            </div>
         </div>
@@ -196,7 +259,7 @@ function MovementItem({ type, label, qty, date }: any) {
             {type === 'IN' ? <TrendingUp className="w-3.5 h-3.5" /> : type === 'OUT' ? <TrendingDown className="w-3.5 h-3.5" /> : <RefreshCw className="w-3.5 h-3.5" />}
           </div>
           <div>
-            <p className="text-xs font-black text-white group-hover:text-navy-300 transition-colors">{label}</p>
+            <p className="text-xs font-black text-white group-hover:text-navy-300 transition-colors line-clamp-1">{label}</p>
             <p className="text-[10px] text-navy-400 font-bold uppercase tracking-widest">{date}</p>
           </div>
        </div>

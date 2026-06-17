@@ -7,22 +7,69 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { 
-  Plus, 
-  Search, 
-  Calendar as CalendarIcon, 
+import { Loader2 } from 'lucide-react';
+import {
+  Plus,
+  Search,
+  Calendar as CalendarIcon,
   Filter,
   CheckCircle2,
   Clock,
   ExternalLink,
   UserCheck,
   Home,
-  AlertTriangle
+  AlertTriangle,
 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface VisitItem {
+  id: string;
+  student?: string;
+  studentName?: string;
+  class?: string;
+  className?: string;
+  time?: string;
+  visitTime?: string;
+  reason?: string;
+  visitReason?: string;
+  action?: string;
+  actionTaken?: string;
+  status?: string;
+  visitStatus?: string;
+  [key: string]: any;
+}
+
+const STATUS_META: Record<string, { icon: any; color: string; statusLabel: string }> = {
+  IN_PROGRESS: { icon: Clock, color: 'text-amber-600 bg-amber-50 border-amber-100', statusLabel: 'En observation' },
+  COMPLETED: { icon: UserCheck, color: 'text-emerald-600 bg-emerald-50 border-emerald-100', statusLabel: 'Retour en classe' },
+  TRANSFERRED: { icon: Home, color: 'text-rose-600 bg-rose-50 border-rose-100', statusLabel: 'Transféré / Foyer' },
+  EMERGENCY: { icon: AlertTriangle, color: 'text-red-700 bg-red-50 border-red-200', statusLabel: 'Urgence Vitale' },
+};
 
 export default function InfirmaryVisits() {
+  const { academicYear } = useModuleContext();
+  const { data, loading, error } = useModulesList<VisitItem>('infirmary', 'visits', academicYear?.id);
+
+  const visits = data ?? [];
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-slate-600">Chargement...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les données. {error}
+        </div>
+      )}
+
       {/* Action Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center space-x-2">
@@ -35,12 +82,12 @@ export default function InfirmaryVisits() {
             Aujourd'hui
           </button>
         </div>
-        
+
         <div className="flex items-center space-x-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input 
-              type="text" 
+            <input
+              type="text"
               placeholder="Rechercher une visite..."
               className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
             />
@@ -52,95 +99,66 @@ export default function InfirmaryVisits() {
       </div>
 
       {/* Visits Log */}
-      <div className="grid grid-cols-1 gap-4">
-        {[
-          { 
-            student: 'Jean Dupont', 
-            class: '6ème A', 
-            time: '14:20', 
-            reason: 'Maux de tête', 
-            action: 'Repos 30min + Paracétamol', 
-            status: 'IN_PROGRESS',
-            statusLabel: 'En observation',
-            icon: Clock,
-            color: 'text-amber-600 bg-amber-50 border-amber-100'
-          },
-          { 
-            student: 'Marie Kassa', 
-            class: 'CM2 B', 
-            time: '13:45', 
-            reason: 'Chute cour de récré', 
-            action: 'Désinfection + Pansement', 
-            status: 'COMPLETED',
-            statusLabel: 'Retour en classe',
-            icon: UserCheck,
-            color: 'text-emerald-600 bg-emerald-50 border-emerald-100'
-          },
-          { 
-            student: 'Sarah Lawson', 
-            class: '3ème B', 
-            time: '10:15', 
-            reason: 'Douleur abdominale sévère', 
-            action: 'Appel parents + Transfert', 
-            status: 'TRANSFERRED',
-            statusLabel: 'Transféré / Foyer',
-            icon: Home,
-            color: 'text-rose-600 bg-rose-50 border-rose-100'
-          },
-          { 
-            student: 'Marc Yao', 
-            class: 'CE1', 
-            time: '09:30', 
-            reason: 'Réaction allergique', 
-            action: 'Épi-pen administré + SAMU', 
-            status: 'EMERGENCY',
-            statusLabel: 'Urgence Vitale',
-            icon: AlertTriangle,
-            color: 'text-red-700 bg-red-50 border-red-200'
-          },
-        ].map((visit, i) => (
-          <motion.div 
-            key={i}
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: i * 0.05 }}
-            className={`p-5 rounded-2xl border bg-white shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 border-l-4 ${visit.color.split(' ')[2]}`}
-          >
-            <div className="flex items-start space-x-4">
-              <div className={`mt-1 p-2 rounded-xl ${visit.color.split(' ')[0]} ${visit.color.split(' ')[1]}`}>
-                <visit.icon className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="flex items-center space-x-2">
-                  <h4 className="font-bold text-slate-900">{visit.student}</h4>
-                  <span className="text-xs font-medium text-slate-400">• {visit.time}</span>
+      {visits.length === 0 ? (
+        <div className="text-center py-16 text-slate-500">
+          Aucune donnée disponible pour cette année scolaire.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4">
+          {visits.map((visit, i) => {
+            const status = visit.status || visit.visitStatus || 'IN_PROGRESS';
+            const meta = STATUS_META[status] ?? STATUS_META.IN_PROGRESS;
+            const Icon = meta.icon;
+            const student = visit.student || visit.studentName || `Élève ${visit.id}`;
+            const className = visit.class || visit.className || '';
+            const time = visit.time || visit.visitTime || '—';
+            const reason = visit.reason || visit.visitReason || '—';
+            const action = visit.action || visit.actionTaken || '—';
+            return (
+              <motion.div
+                key={visit.id ?? i}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: i * 0.05 }}
+                className={`p-5 rounded-2xl border bg-white shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 border-l-4 ${meta.color.split(' ')[2]}`}
+              >
+                <div className="flex items-start space-x-4">
+                  <div className={`mt-1 p-2 rounded-xl ${meta.color.split(' ')[0]} ${meta.color.split(' ')[1]}`}>
+                    <Icon className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <h4 className="font-bold text-slate-900">{student}</h4>
+                      <span className="text-xs font-medium text-slate-400">• {time}</span>
+                    </div>
+                    <p className="text-xs text-slate-500 font-medium mb-2">{className}</p>
+                    <div className="flex flex-col space-y-1">
+                      <p className="text-sm text-slate-700"><span className="font-bold">Motif:</span> {reason}</p>
+                      <p className="text-sm text-slate-600 italic"><span className="font-bold not-italic">Action:</span> {action}</p>
+                    </div>
+                  </div>
                 </div>
-                <p className="text-xs text-slate-500 font-medium mb-2">{visit.class}</p>
-                <div className="flex flex-col space-y-1">
-                  <p className="text-sm text-slate-700"><span className="font-bold">Motif:</span> {visit.reason}</p>
-                  <p className="text-sm text-slate-600 italic"><span className="font-bold not-italic">Action:</span> {visit.action}</p>
-                </div>
-              </div>
-            </div>
 
-            <div className="flex items-center justify-between md:justify-end gap-3 pt-4 md:pt-0 border-t md:border-t-0 border-slate-100">
-              <div className="text-right">
-                <span className={`text-[10px] uppercase tracking-widest font-black px-3 py-1 rounded-full ${visit.color.split(' ')[0]} ${visit.color.split(' ')[1]}`}>
-                  {visit.statusLabel}
-                </span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <button className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-blue-600 transition-colors">
-                  <ExternalLink className="w-4 h-4" />
-                </button>
-                <button className="px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl text-xs font-bold transition-colors">
-                  Détails
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        ))}
-      </div>
+                <div className="flex items-center justify-between md:justify-end gap-3 pt-4 md:pt-0 border-t md:border-t-0 border-slate-100">
+                  <div className="text-right">
+                    <span className={`text-[10px] uppercase tracking-widest font-black px-3 py-1 rounded-full ${meta.color.split(' ')[0]} ${meta.color.split(' ')[1]}`}>
+                      {meta.statusLabel}
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <button className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-blue-600 transition-colors">
+                      <ExternalLink className="w-4 h-4" />
+                    </button>
+                    <button className="px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl text-xs font-bold transition-colors">
+                      Détails
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
 
       <button className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 text-sm font-bold hover:border-slate-300 hover:text-slate-500 transition-all">
         Afficher les visites des jours précédents

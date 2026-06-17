@@ -7,16 +7,56 @@
 'use client';
 
 import React from 'react';
-import { 
-  Package, Bookmark, Layers, Plus, Search, Filter,
-  CheckCircle2, ChevronRight, MoreVertical, Edit,
-  Users, Trash2, Info, Star
-} from 'lucide-react';
+import { Loader2, Package, Layers, Plus, Edit, Trash2 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface KitItem {
+  id?: string;
+  name?: string;
+  level?: string;
+  grade?: string;
+  className?: string;
+  itemsCount?: number;
+  items?: number;
+  itemCount?: number;
+  price?: number;
+  total?: number;
+  popularity?: string;
+  promoted?: boolean;
+  isPromoted?: boolean;
+}
+
+const COLOR_BY_INDEX = ['emerald', 'navy', 'blue', 'amber', 'emerald', 'navy'];
 
 export default function ShopKits() {
+  const { academicYear } = useModuleContext();
+  const { data: kits, loading, error } = useModulesList<KitItem>(
+    'shop',
+    'kits',
+    academicYear?.id,
+  );
+
+  const safeKits = kits ?? [];
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des kits...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les kits. {error}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
@@ -30,41 +70,26 @@ export default function ShopKits() {
       </div>
 
       {/* Kits Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-        <KitCard 
-          level="CP1 / 11ème" 
-          name="Kit Essentiel Primaire" 
-          items={12} 
-          price={18500} 
-          popularity="Forte"
-          color="emerald"
-        />
-        <KitCard 
-          level="6ème" 
-          name="Pack Rentrée Collège" 
-          items={18} 
-          price={45000} 
-          popularity="Très Forte"
-          color="navy"
-          isPromoted
-        />
-        <KitCard 
-          level="Tle S1/S2" 
-          name="Kit Scientifique Expert" 
-          items={15} 
-          price={32000} 
-          popularity="Moyenne"
-          color="blue"
-        />
-        <KitCard 
-          level="Maternelle" 
-          name="Kit Éveil & Loisirs" 
-          items={8} 
-          price={12500} 
-          popularity="Stable"
-          color="amber"
-        />
-      </div>
+      {safeKits.length === 0 ? (
+        <div className="text-center py-16 text-gray-500">
+          Aucun kit scolaire configuré pour cette année scolaire.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+          {safeKits.map((kit: any, i: number) => (
+            <KitCard
+              key={kit?.id ?? `kit-${i}`}
+              level={kit?.level ?? kit?.grade ?? kit?.className ?? 'Niveau'}
+              name={kit?.name ?? `Kit #${i + 1}`}
+              items={kit?.itemsCount ?? kit?.items ?? kit?.itemCount ?? 0}
+              price={kit?.price ?? kit?.total ?? 0}
+              popularity={kit?.popularity ?? 'Stable'}
+              color={COLOR_BY_INDEX[i % COLOR_BY_INDEX.length]}
+              isPromoted={kit?.isPromoted ?? kit?.promoted ?? false}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Composition Preview (Bottom Section) */}
       <div className="bg-white rounded-[2.5rem] border border-gray-100 p-8 shadow-sm">
@@ -78,13 +103,15 @@ export default function ShopKits() {
               <button className="px-4 py-2 text-gray-400 rounded-lg text-[10px] font-black uppercase hover:text-navy-900 transition-all">Stocks Liés</button>
            </div>
         </div>
-        
+
         <div className="space-y-4">
-           <KitItemRow name="Cahier de dessin (A4)" qty={2} price={1500} />
-           <KitItemRow name="Boite de craies (12 couleurs)" qty={1} price={2500} />
-           <KitItemRow name="Gourde Academia 500ml" qty={1} price={5500} />
-           <KitItemRow name="Ensemble de géométrie" qty={1} price={3500} />
-           <KitItemRow name="Tablier de peinture" qty={1} price={4500} isOptional />
+          {safeKits.length === 0 ? (
+            <p className="text-center text-gray-400 text-sm py-8">
+              Aucun article à afficher. Créez un kit pour commencer.
+            </p>
+          ) : (
+            <KitItemRow name={`Articles du kit : ${safeKits[0]?.name ?? 'Kit sélectionné'}`} qty={safeKits[0]?.itemsCount ?? safeKits[0]?.items ?? 0} price={safeKits[0]?.price ?? safeKits[0]?.total ?? 0} />
+          )}
         </div>
       </div>
     </div>
@@ -106,14 +133,14 @@ function KitCard({ level, name, items, price, popularity, color, isPromoted }: a
           Best-Seller
         </div>
       )}
-      
+
       <div className={`p-4 rounded-2xl w-fit mb-6 border ${colors[color]} group-hover:scale-110 transition-transform`}>
         <Package className="w-8 h-8" />
       </div>
-      
+
       <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">{level}</p>
       <h4 className="text-xl font-black text-navy-900 mb-6 group-hover:text-navy-600 transition-colors">{name}</h4>
-      
+
       <div className="space-y-4 mb-8">
          <div className="flex items-center justify-between text-xs font-bold text-gray-600">
             <span className="flex items-center space-x-2">

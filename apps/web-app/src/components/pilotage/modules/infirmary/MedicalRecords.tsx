@@ -8,18 +8,22 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { 
-  Search, 
-  Filter, 
-  User, 
-  Heart, 
-  ShieldAlert, 
+import {
+  Search,
+  Filter,
+  User,
+  Heart,
+  ShieldAlert,
   ChevronRight,
   MoreVertical,
   Plus,
   Download
 } from 'lucide-react';
 
+// TODO: endpoint non disponible en mode liste — garder mock
+// Le backend expose uniquement GET infirmary/medical-records/:studentId (par élève).
+// Pour afficher une liste globale, il faudrait un endpoint GET infirmary/medical-records
+// ou récupérer la liste des élèves puis charger chaque dossier individuellement.
 export default function MedicalRecords() {
   const [searchQuery, setSearchQuery] = useState('');
 

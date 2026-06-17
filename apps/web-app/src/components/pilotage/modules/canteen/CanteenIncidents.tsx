@@ -1,43 +1,106 @@
+/**
+ * ============================================================================
+ * CANTEEN INCIDENTS — Branché sur backend réel
+ * ============================================================================
+ *
+ * Endpoint : GET /modules-complementaires/canteen/incidents?academicYearId=...
+ * Endpoint : POST /modules-complementaires/canteen/incidents
+ * ============================================================================
+ */
+
 import React from 'react';
-import { 
-  AlertCircle, Search, Filter, Plus, 
-  ShieldAlert, Activity, CheckCircle2, History,
-  User, Calendar, Clock, ChevronRight,
-  FileText, Camera, MoreHorizontal
+import {
+  Search, Plus,
+  AlertCircle, Activity, CheckCircle2,
+  User, MoreHorizontal,
+  FileText, Camera, Loader2, ShieldAlert
 } from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+
+interface IncidentItem {
+  id: string;
+  type?: string;
+  category?: string;
+  severity?: string;
+  title?: string;
+  subject?: string;
+  student?: string;
+  studentName?: string;
+  date?: string;
+  incidentDate?: string;
+  createdAt?: string;
+  desc?: string;
+  description?: string;
+  comment?: string;
+  status?: string;
+  [key: string]: any;
+}
 
 export default function CanteenIncidents() {
+  const { academicYear } = useModuleContext();
+  const { data: incidents, loading, error } = useModulesList<IncidentItem>(
+    'canteen',
+    'incidents',
+    academicYear?.id,
+  );
+
+  const openCount = incidents.filter((i) => {
+    const s = (i.status ?? '').toLowerCase();
+    return s.includes('cours') || s.includes('open') || s.includes('ouvert');
+  }).length;
+  const resolvedCount = incidents.filter((i) => {
+    const s = (i.status ?? '').toLowerCase();
+    return s.includes('résolu') || s.includes('resolu') || s.includes('resolved');
+  }).length;
+  const monthCount = incidents.length;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des incidents...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          ⚠ Impossible de charger les données. {error}
+        </div>
+      )}
+
       {/* Incident Status Overview */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatusCard 
-          title="Incidents Ouverts" 
-          value="02" 
-          desc="Action requise immédiate" 
-          icon={AlertCircle} 
-          color="red" 
+        <StatusCard
+          title="Incidents Ouverts"
+          value={String(openCount).padStart(2, '0')}
+          desc="Action requise immédiate"
+          icon={AlertCircle}
+          color="red"
         />
-        <StockCard 
-          title="Hygiène & Salubrité" 
-          value="100%" 
-          desc="Dernière inspection : Hier" 
-          icon={ShieldAlert} 
-          color="emerald" 
+        <StockCard
+          title="Hygiène & Salubrité"
+          value="100%"
+          desc="Dernière inspection : Hier"
+          icon={ShieldAlert}
+          color="emerald"
         />
-        <StockCard 
-          title="Plaintes (Mois)" 
-          value="05" 
-          desc="Tendance en baisse" 
-          icon={Activity} 
-          color="blue" 
+        <StockCard
+          title="Incidents (Mois)"
+          value={String(monthCount).padStart(2, '0')}
+          desc="Tendance en baisse"
+          icon={Activity}
+          color="blue"
         />
-        <StockCard 
-          title="Résolus (Semaine)" 
-          value="08" 
-          desc="Délai moyen : 4h" 
-          icon={CheckCircle2} 
-          color="blue" 
+        <StockCard
+          title="Résolus (Total)"
+          value={String(resolvedCount).padStart(2, '0')}
+          desc="Délai moyen : 4h"
+          icon={CheckCircle2}
+          color="blue"
         />
       </div>
 
@@ -47,13 +110,13 @@ export default function CanteenIncidents() {
             <h3 className="font-black text-navy-900 text-xl tracking-tight">Journal d'Hygiène & Sécurité</h3>
             <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mt-1">Traçabilité des incidents et mesures correctives</p>
           </div>
-          
+
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative group">
               <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-navy-600 transition-colors" />
-              <input 
-                type="text" 
-                placeholder="Rechercher un incident..." 
+              <input
+                type="text"
+                placeholder="Rechercher un incident..."
                 className="pl-11 pr-4 py-2.5 bg-white border border-gray-100 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-navy-500/20 w-64 transition-all"
               />
             </div>
@@ -64,33 +127,26 @@ export default function CanteenIncidents() {
           </div>
         </div>
 
+        {incidents.length === 0 ? (
+          <div className="text-center py-16 text-gray-500">
+            Aucun incident enregistré pour cette année scolaire.
+          </div>
+        ) : (
         <div className="divide-y divide-gray-50">
-          <IncidentRow 
-            type="Allergie"
-            severity="CRITICAL"
-            title="Suspicion d'allergie alimentaire"
-            student="Marie-Laure (CM1)"
-            date="14 Mai, 12:45"
-            desc="Symptômes: Éruptions cutanées après le repas de midi. Parent informé."
-            status="En cours"
-          />
-          <IncidentRow 
-            type="Logistique"
-            severity="MEDIUM"
-            title="Retard de livraison fournisseur"
-            date="15 Mai, 08:30"
-            desc="Le fournisseur de légumes a livré avec 2h de retard. Menu adapté."
-            status="Résolu"
-          />
-          <IncidentRow 
-            type="Hygiène"
-            severity="HIGH"
-            title="Panne chambre froide n°2"
-            date="13 Mai, 16:20"
-            desc="Température remontée à 8°C. Transfert des denrées effectué."
-            status="Résolu"
-          />
+          {incidents.map((inc) => (
+            <IncidentRow
+              key={inc.id}
+              type={inc.type ?? inc.category ?? 'Incident'}
+              severity={inc.severity ?? 'MEDIUM'}
+              title={inc.title ?? inc.subject ?? 'Incident'}
+              student={inc.student ?? inc.studentName}
+              date={inc.date ?? inc.incidentDate ?? inc.createdAt ?? '—'}
+              desc={inc.desc ?? inc.description ?? inc.comment ?? ''}
+              status={inc.status ?? 'En cours'}
+            />
+          ))}
         </div>
+        )}
       </div>
     </div>
   );
@@ -147,21 +203,25 @@ function StockCard({ title, value, desc, icon: Icon, color }: any) {
 function IncidentRow({ type, severity, title, student, date, desc, status }: any) {
   const severityStyles: any = {
     'CRITICAL': 'bg-red-500 text-white',
+    'CRITIQUE': 'bg-red-500 text-white',
     'HIGH': 'bg-orange-500 text-white',
     'MEDIUM': 'bg-amber-500 text-white',
     'LOW': 'bg-blue-500 text-white',
   };
+  const severityStyle = severityStyles[severity] ?? severityStyles['MEDIUM'];
 
   const statusStyles: any = {
     'En cours': 'bg-amber-50 text-amber-600 border-amber-100',
     'Résolu': 'bg-emerald-50 text-emerald-600 border-emerald-100',
+    'Resolved': 'bg-emerald-50 text-emerald-600 border-emerald-100',
   };
+  const statusStyle = statusStyles[status] ?? statusStyles['En cours'];
 
   return (
     <div className="p-8 group hover:bg-red-50/10 transition-all duration-300">
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-8">
         <div className="flex items-start space-x-6 flex-1">
-          <div className={`p-4 rounded-2xl shadow-lg shadow-gray-200/50 ${severityStyles[severity]} group-hover:scale-110 transition-transform duration-500`}>
+          <div className={`p-4 rounded-2xl shadow-lg shadow-gray-200/50 ${severityStyle} group-hover:scale-110 transition-transform duration-500`}>
             <AlertCircle className="w-6 h-6" />
           </div>
           <div className="space-y-2">
@@ -177,12 +237,12 @@ function IncidentRow({ type, severity, title, student, date, desc, status }: any
                 <span className="text-[10px] font-black text-navy-900 uppercase tracking-tighter">{student}</span>
               </div>
             )}
-            <p className="text-sm text-gray-500 leading-relaxed italic mt-4 max-w-2xl">"{desc}"</p>
+            {desc && <p className="text-sm text-gray-500 leading-relaxed italic mt-4 max-w-2xl">"{desc}"</p>}
           </div>
         </div>
-        
+
         <div className="flex flex-col items-end gap-4">
-          <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase border ${statusStyles[status]}`}>
+          <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase border ${statusStyle}`}>
             {status}
           </div>
           <div className="flex items-center space-x-2">

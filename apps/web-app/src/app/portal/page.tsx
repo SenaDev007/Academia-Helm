@@ -77,12 +77,6 @@ const GOLD = '#f5b335';
  */
 const PORTAL_DEFINITIONS = [
   {
-    type: 'PLATFORM' as const,
-    title: 'Plateforme',
-    description: 'Administration SaaS globale',
-    Icon: Shield,
-  },
-  {
     type: 'SCHOOL' as const,
     title: 'École',
     description: 'Gestion de l\'établissement',

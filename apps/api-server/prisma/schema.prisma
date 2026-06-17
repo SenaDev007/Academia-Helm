@@ -14000,3 +14000,32 @@ model OrganigramNode {
   @@index([schoolLevelCode])
   @@map("organigram_nodes")
 }
+
+// ─── Platform Owner Access Requests ───────────────────────────────────────────
+// Demandes d'accès des PLATFORM_OWNER aux portails des écoles.
+// Le directeur ou le promoteur de l'école doit approuver avant que
+// le PLATFORM_OWNER puisse opérer sur l'établissement.
+
+model PlatformOwnerAccessRequest {
+  id                String    @id @default(uuid())
+  tenantId          String
+  platformOwnerId   String
+  portalType        String    @default("SCHOOL") // SCHOOL, TEACHER, PARENT
+  status            String    @default("PENDING") // PENDING, APPROVED, REJECTED, REVOKED
+  requestedAt       DateTime  @default(now())
+  reviewedAt        DateTime?
+  reviewedBy        String?
+  reviewNote        String?
+  revokedAt         DateTime?
+  revokedBy         String?
+
+  tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  platformOwner     User      @relation("PlatformOwnerAccessRequests", fields: [platformOwnerId], references: [id], onDelete: Cascade)
+  reviewer          User?     @relation("AccessRequestReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  revoker           User?     @relation("AccessRequestRevoker", fields: [revokedBy], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([platformOwnerId])
+  @@index([status])
+  @@map("platform_owner_access_requests")
+}

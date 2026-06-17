@@ -499,6 +499,14 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
         // Erreur de portail inadéquat — extraire le message du backend
         const match = rawMessage.match(/PORTAL_MISMATCH:\s*(.*)/);
         userMessage = match?.[1] || 'Ce compte n\'est pas autorisé sur ce portail. Veuillez utiliser le portail correspondant à votre profil.';
+      } else if (rawMessage.includes('PORTAL_ACCESS_REQUESTED')) {
+        // PLATFORM_OWNER : demande d'accès envoyée au directeur
+        const match = rawMessage.match(/PORTAL_ACCESS_REQUESTED:\s*(.*)/);
+        userMessage = match?.[1] || 'Votre demande d\'accès a été envoyée au directeur de l\'établissement. Vous recevrez une notification par email dès qu\'elle sera approuvée.';
+      } else if (rawMessage.includes('PORTAL_ACCESS_PENDING')) {
+        // PLATFORM_OWNER : demande déjà en attente
+        const match = rawMessage.match(/PORTAL_ACCESS_PENDING:\s*(.*)/);
+        userMessage = match?.[1] || 'Votre demande d\'accès est en attente d\'approbation du directeur.';
       } else if (rawMessage.includes('403') || rawMessage.includes('Forbidden')) {
         // Autres erreurs 403 — vérifier si c'est une erreur de portail
         if (rawMessage.includes('PLATFORM_OWNER') || rawMessage.includes('PLATFORM portal')) {

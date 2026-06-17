@@ -9,6 +9,7 @@ import { LoginDto, PortalType } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { AccessRequestsService } from '../access-requests/access-requests.service';
 
 export type SessionPersistMeta = {
   ipAddress?: string;
@@ -44,6 +45,7 @@ export class AuthService {
     private prisma: PrismaService,
     private configService: ConfigService,
     private emailService: EmailService,
+    private accessRequestsService: AccessRequestsService,
   ) {}
 
   async register(registerDto: RegisterDto, meta?: SessionPersistMeta) {
@@ -188,8 +190,23 @@ export class AuthService {
       }
 
       // Vérifier que l'utilisateur appartient à ce tenant
-      if (user.tenantId !== resolvedTenantId) {
+      // SAUF si c'est un PLATFORM_OWNER → il peut demander un accès
+      const isPlatformOwner = this.isPlatformOwner(user);
+
+      if (!isPlatformOwner && user.tenantId !== resolvedTenantId) {
         throw new ForbiddenException('User does not belong to the specified tenant');
+      }
+
+      // ── PLATFORM_OWNER : vérifier l'accès approuvé ──
+      if (isPlatformOwner && user.tenantId !== resolvedTenantId) {
+        await this.accessRequestsService.checkOrCreateAccessRequest({
+          platformOwnerId: user.id,
+          tenantId: resolvedTenantId,
+          portalType: loginDto.portal_type,
+          platformOwnerEmail: user.email,
+          platformOwnerName: `${user.firstName} ${user.lastName}`.trim() || user.email,
+        });
+        // Si on arrive ici, l'accès est APPROVED → continuer
       }
 
       // Remplacer le tenant_id par l'UUID résolu pour la suite du traitement

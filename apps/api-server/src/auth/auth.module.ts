@@ -8,6 +8,7 @@ import { Module } from '@nestjs/common';
 import { PassportModule } from '@nestjs/passport';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { AccessRequestsModule } from '../access-requests/access-requests.module';
 import { PrismaService } from '../database/prisma.service';
 import { UsersModule } from '../users/users.module';
 import { CommunicationModule } from '../communication/communication.module';
@@ -31,6 +32,7 @@ import { RolesGuard } from './guards/roles.guard';
     PassportModule,
     UsersModule,
     CommunicationModule,
+    AccessRequestsModule,
     JwtModule.registerAsync({
       imports: [ConfigModule], // Nécessaire pour JwtModule.registerAsync
       useFactory: async (configService: ConfigService) => ({

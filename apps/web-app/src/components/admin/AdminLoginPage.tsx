@@ -6,142 +6,60 @@
  * Système d'auth SÉPARÉ de celui des tenants Academia Helm.
  *
  * Flow :
- *   1. L'utilisateur choisit Google Sign-In OU email/password (si activé)
- *   2. Après validation du 1er facteur → on affiche l'écran OTP (6 chiffres)
- *   3. L'utilisateur saisit le code reçu par email
- *   4. Si valide → cookie `academia_admin_session` posé → redirect /admin
+ *   1. L'utilisateur choisit Google Sign-In OU email/password
+ *   2. Connexion directe (pas de 2FA/OTP) → cookie academia_admin_session → redirect /admin
  *
- * Design : navy foncé + accents dorés — distinct de la page de login tenant
- * (qui est sur fond clair). Look "back-office sécurisé".
+ * Design : navy foncé + accents dorés — distinct de la page de login tenant.
  * ============================================================================
  */
 
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Shield,
   Loader2,
   AlertCircle,
   Lock,
   Mail,
-  ArrowLeft,
+  Shield,
   ArrowRight,
-  KeyRound,
-  Smartphone,
 } from 'lucide-react';
-
-type Step = 'credentials' | 'otp' | 'success';
-type Method = 'google' | 'password';
-
-interface AdminUser {
-  id: string;
-  email: string;
-  name: string;
-  picture?: string;
-  role: string;
-}
 
 export default function AdminLoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectPath = searchParams.get('redirect') || '/admin';
 
-  const [step, setStep] = useState<Step>('credentials');
-  const [method, setMethod] = useState<Method | null>(null);
-
   // Identifiants
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
-  const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  // État serveur
-  const [pendingToken, setPendingToken] = useState<string | null>(null);
-  const [pendingEmail, setPendingEmail] = useState<string>('');
+  // Mot de passe oublié
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotSent, setForgotSent] = useState(false);
 
   // UI
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [googleConfigured, setGoogleConfigured] = useState(true);
-  const [passwordEnabled, setPasswordEnabled] = useState(false);
 
-  // Vérifier la config (Google dispo ? password activé ?)
+  // Vérifier la config Google
   useEffect(() => {
-    // Pas d'API dédiée pour checker la config — on l'infère à la première
-    // interaction. Par défaut, on affiche Google et on cache password.
-    // Si Google init renvoie 503, on sait qu'il n'est pas configuré.
     fetch('/api/admin-auth/google/init', { method: 'POST' })
       .then((r) => setGoogleConfigured(r.ok || r.status !== 503))
       .catch(() => setGoogleConfigured(false));
-    // Pour password : on tente de savoir en checkant un endpoint simple
-    // (en l'absence d'endpoint dédié, on l'affiche toujours — l'API renverra 503 si désactivé)
-    setPasswordEnabled(true);
   }, []);
 
-  // ─── Handlers ───────────────────────────────────────────────────────────
-
-  const handleGoogleLogin = async () => {
-    setError(null);
-    setIsLoading(true);
-    setMethod('google');
-    try {
-      const res = await fetch('/api/admin-auth/google/init', { method: 'POST' });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Erreur init Google OAuth');
-      }
-      const { authUrl } = (await res.json()) as { authUrl: string };
-      // Rediriger vers Google
-      window.location.href = authUrl;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur Google OAuth');
-      setIsLoading(false);
-      setMethod(null);
-    }
-  };
-
-  const handlePasswordLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setIsLoading(true);
-    setMethod('password');
-    try {
-      const res = await fetch('/api/admin-auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Identifiants invalides');
-      setPendingToken(data.pendingToken);
-      setPendingEmail(data.email);
-      setStep('otp');
-      // Focus premier input OTP
-      setTimeout(() => otpRefs.current[0]?.focus(), 100);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur de connexion');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Callback Google : si on revient avec ?code=...&state=... dans l'URL
-  // Cette page /admin-login ne gère PLUS que le flow admin.
-  // Le flow school est géré par LoginPage.tsx sur academiahelm.com/login
-  // (redirect URI séparé : GOOGLE_OAUTH_SCHOOL_REDIRECT_URI)
+  // Callback Google : si on revient avec ?code=...&state=...
   useEffect(() => {
     const code = searchParams.get('code');
     const state = searchParams.get('state');
     if (code && state) {
-      // Flow admin uniquement
-      setStep('otp');
-      setMethod('google');
       setIsLoading(true);
-      sessionStorage.setItem('admin_login_flow', 'admin');
       fetch('/api/admin-auth/google/callback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -150,127 +68,83 @@ export default function AdminLoginPage() {
         .then(async (res) => {
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Erreur callback Google');
-          setPendingToken(data.pendingToken);
-          setPendingEmail(data.email);
-          setError(null);
-          setTimeout(() => otpRefs.current[0]?.focus(), 100);
+          // Connexion directe sans OTP — la session est posée par le callback
+          router.push(redirectPath);
+          router.refresh();
         })
         .catch((err) => {
           setError(err instanceof Error ? err.message : 'Erreur callback Google');
-          setStep('credentials');
-          setMethod(null);
         })
         .finally(() => setIsLoading(false));
     }
-  }, [searchParams]);
+  }, [searchParams, router, redirectPath]);
 
-  const handleOtpChange = (index: number, value: string) => {
-    // N'autoriser que les chiffres
-    const digit = value.replace(/\D/g, '').slice(-1);
-    const newOtp = [...otp];
-    newOtp[index] = digit;
-    setOtp(newOtp);
-    // Auto-focus next
-    if (digit && index < 5) {
-      otpRefs.current[index + 1]?.focus();
-    }
-  };
+  // ─── Handlers ───────────────────────────────────────────────────────────
 
-  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Backspace' && !otp[index] && index > 0) {
-      otpRefs.current[index - 1]?.focus();
-    }
-  };
-
-  const handleOtpPaste = (e: React.ClipboardEvent) => {
-    e.preventDefault();
-    // Nettoyer : ne garder que les chiffres (au cas où l'utilisateur copie
-    // depuis un email avec espaces, retours ligne, caractères spéciaux, etc.)
-    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
-    if (pasted.length) {
-      const newOtp = ['', '', '', '', '', ''];
-      for (let i = 0; i < pasted.length; i++) newOtp[i] = pasted[i];
-      setOtp(newOtp);
-      // Focus sur le dernier champ rempli (ou le suivant si incomplet)
-      otpRefs.current[Math.min(pasted.length, 5)]?.focus();
-      // ── Validation AUTOMATIQUE si 6 chiffres collés ──
-      // Permet à l'utilisateur de coller le code reçu par email et d'être
-      // authentifié sans avoir à cliquer sur "Vérifier le code".
-      if (pasted.length === 6) {
-        // setTimeout 0 pour laisser le state se mettre à jour avant verifyOtp
-        setTimeout(() => verifyOtp(pasted), 0);
-      }
-    }
-  };
-
-  /**
-   * Vérifie l'OTP auprès du backend.
-   * Accepte un code optionnel (utilisé par le paste automatique) — sinon
-   * utilise le state `otp`.
-   *
-   * Détecte le flow (admin vs school) via sessionStorage pour appeler
-   * le bon endpoint :
-   *   - admin → /api/admin-auth/verify-otp → cookie academia_admin_session → /admin
-   *   - school → /api/school-auth/verify-otp → cookie academia_session → /app
-   */
-  const verifyOtp = async (codeOverride?: string) => {
+  const handleGoogleLogin = async () => {
     setError(null);
-    const otpCode = codeOverride || otp.join('');
-    if (otpCode.length !== 6) {
-      setError('Veuillez saisir les 6 chiffres du code');
-      return;
-    }
-    if (!pendingToken) {
-      setError('Session invalide. Veuillez recommencer.');
-      setStep('credentials');
-      return;
-    }
-
-    // Flow admin uniquement — le flow school est géré par LoginPage.tsx
     setIsLoading(true);
     try {
-      const res = await fetch('/api/admin-auth/verify-otp', {
+      const res = await fetch('/api/admin-auth/google/init', { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Erreur init Google OAuth');
+      }
+      const { authUrl } = (await res.json()) as { authUrl: string };
+      window.location.href = authUrl;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur Google OAuth');
+      setIsLoading(false);
+    }
+  };
+
+  const handlePasswordLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/admin-auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pendingToken, otp: otpCode }),
+        body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Code OTP invalide');
-      setStep('success');
-
-      // Redirection vers /admin (back-office)
-      setTimeout(() => {
-        sessionStorage.removeItem('admin_login_flow');
-        router.push(redirectPath);
-        router.refresh();
-      }, 800);
+      if (!res.ok) throw new Error(data.error || 'Identifiants invalides');
+      // Connexion directe — la session est posée par /api/admin-auth/login
+      router.push(redirectPath);
+      router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur vérification OTP');
-      setOtp(['', '', '', '', '', '']);
-      otpRefs.current[0]?.focus();
+      setError(err instanceof Error ? err.message : 'Erreur de connexion');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleVerifyOtp = async (e: React.FormEvent) => {
+  const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    await verifyOtp();
-  };
-
-  const handleBackToCredentials = () => {
-    setStep('credentials');
-    setOtp(['', '', '', '', '', '']);
     setError(null);
-    setPendingToken(null);
-    setMethod(null);
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/admin-auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erreur');
+      setForgotSent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // ─── Render ─────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-[#0a1d3f] via-[#0b2f73] to-[#071d49] px-4 py-8 relative overflow-hidden">
-      {/* Décor — grille + halos */}
+      {/* Décor */}
       <div
         aria-hidden
         className="absolute inset-0 opacity-[0.05] bg-[linear-gradient(rgba(255,255,255,0.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.6)_1px,transparent_1px)] [background-size:48px_48px]"
@@ -291,7 +165,7 @@ export default function AdminLoginPage() {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: 0.35, ease: 'easeOut' }}
         >
-          {/* Logo + Header */}
+          {/* Logo couleur + Header */}
           <div className="text-center mb-7">
             <motion.div
               className="inline-flex items-center justify-center mb-4"
@@ -299,7 +173,7 @@ export default function AdminLoginPage() {
               transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
             >
               <Image
-                src="/images/logo-Academia-Helm.svg"
+                src="/images/logo-Academia Hub.png"
                 alt="Academia Helm"
                 width={64}
                 height={64}
@@ -313,14 +187,6 @@ export default function AdminLoginPage() {
             <p className="text-xs md:text-sm text-slate-600">
               Accès réservé aux administrateurs plateforme
             </p>
-          </div>
-
-          {/* Badge sécurité */}
-          <div className="mb-6 flex items-center justify-center gap-2 rounded-lg bg-[#0b2f73]/5 border border-[#0b2f73]/10 px-3 py-2">
-            <Shield className="w-3.5 h-3.5 text-[#0b2f73]" />
-            <span className="text-[11px] font-semibold text-[#0b2f73] uppercase tracking-wide">
-              Authentification 2 facteurs
-            </span>
           </div>
 
           {/* Error */}
@@ -339,10 +205,85 @@ export default function AdminLoginPage() {
           </AnimatePresence>
 
           <AnimatePresence mode="wait">
-            {/* ─── Étape 1 : Credentials ─── */}
-            {step === 'credentials' && (
+            {/* ─── Étape : Mot de passe oublié ─── */}
+            {showForgotPassword ? (
               <motion.div
-                key="credentials"
+                key="forgot"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.25 }}
+              >
+                {forgotSent ? (
+                  <div className="text-center py-6">
+                    <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-emerald-50 border-2 border-emerald-200 mb-4">
+                      <Mail className="w-7 h-7 text-emerald-600" />
+                    </div>
+                    <h2 className="text-lg font-bold text-[#0b2f73] mb-2">Email envoyé</h2>
+                    <p className="text-sm text-slate-600 mb-6">
+                      Si un compte admin existe avec cette adresse, un email de réinitialisation a été envoyé à <strong>{forgotEmail}</strong>.
+                    </p>
+                    <button
+                      onClick={() => {
+                        setShowForgotPassword(false);
+                        setForgotSent(false);
+                        setForgotEmail('');
+                      }}
+                      className="text-sm font-semibold text-[#0b2f73] hover:underline"
+                    >
+                      ← Retour à la connexion
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => setShowForgotPassword(false)}
+                      className="mb-4 text-xs font-semibold text-slate-500 hover:text-[#0b2f73] transition-colors"
+                    >
+                      ← Retour
+                    </button>
+                    <h2 className="text-lg font-bold text-[#0b2f73] mb-2">Mot de passe oublié</h2>
+                    <p className="text-xs text-slate-500 mb-4">
+                      Saisissez votre email administrateur pour recevoir un lien de réinitialisation.
+                    </p>
+                    <form onSubmit={handleForgotPassword} className="space-y-4">
+                      <div>
+                        <div className="relative">
+                          <Mail className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none w-5 h-5 text-slate-400 my-auto" />
+                          <input
+                            type="email"
+                            required
+                            value={forgotEmail}
+                            onChange={(e) => setForgotEmail(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2.5 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-[#0b2f73] focus:border-[#0b2f73] transition-all text-sm"
+                            placeholder="votre.email@exemple.com"
+                          />
+                        </div>
+                      </div>
+                      <motion.button
+                        type="submit"
+                        disabled={isLoading}
+                        whileHover={{ y: -1.5 }}
+                        whileTap={{ scale: 0.99 }}
+                        className="w-full bg-[#0b2f73] text-white px-6 py-3 rounded-xl font-bold hover:bg-[#144798] transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg"
+                      >
+                        {isLoading ? (
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                        ) : (
+                          <>
+                            Envoyer le lien
+                            <ArrowRight className="w-5 h-5" />
+                          </>
+                        )}
+                      </motion.button>
+                    </form>
+                  </>
+                )}
+              </motion.div>
+            ) : (
+              /* ─── Étape : Login ─── */
+              <motion.div
+                key="login"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
@@ -359,7 +300,7 @@ export default function AdminLoginPage() {
                       whileTap={{ scale: 0.99 }}
                       className="w-full bg-white text-[#0b2f73] border-2 border-[#0b2f73]/15 px-6 py-3 rounded-xl font-semibold hover:bg-slate-50 hover:border-[#0b2f73]/30 transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm mb-4"
                     >
-                      {isLoading && method === 'google' ? (
+                      {isLoading ? (
                         <Loader2 className="w-5 h-5 animate-spin" />
                       ) : (
                         <svg className="w-5 h-5" viewBox="0 0 24 24">
@@ -372,7 +313,6 @@ export default function AdminLoginPage() {
                       Continuer avec Google
                     </motion.button>
 
-                    {/* Séparateur */}
                     <div className="flex items-center gap-3 my-4">
                       <div className="h-px flex-1 bg-slate-200" />
                       <span className="text-xs text-slate-400 uppercase tracking-wider">ou</span>
@@ -381,178 +321,79 @@ export default function AdminLoginPage() {
                   </>
                 )}
 
-                {/* Email/password (si activé) */}
-                {passwordEnabled ? (
-                  <form onSubmit={handlePasswordLogin} className="space-y-4">
-                    <div>
-                      <label htmlFor="email" className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        Email administrateur
-                      </label>
-                      <div className="relative">
-                        <Mail className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none w-5 h-5 text-slate-400 my-auto" />
-                        <input
-                          type="email"
-                          id="email"
-                          required
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          className="w-full pl-10 pr-4 py-2.5 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-[#0b2f73] focus:border-[#0b2f73] transition-all text-sm"
-                          placeholder="admin@academiahelm.com"
-                          autoComplete="email"
-                        />
-                      </div>
+                {/* Email/password */}
+                <form onSubmit={handlePasswordLogin} className="space-y-4">
+                  <div>
+                    <label htmlFor="email" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Email administrateur
+                    </label>
+                    <div className="relative">
+                      <Mail className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none w-5 h-5 text-slate-400 my-auto" />
+                      <input
+                        type="email"
+                        id="email"
+                        required
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2.5 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-[#0b2f73] focus:border-[#0b2f73] transition-all text-sm"
+                        placeholder="votre.email@exemple.com"
+                        autoComplete="email"
+                      />
                     </div>
+                  </div>
 
-                    <div>
-                      <label htmlFor="password" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label htmlFor="password" className="block text-xs font-semibold text-slate-700">
                         Mot de passe
                       </label>
-                      <div className="relative">
-                        <Lock className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none w-5 h-5 text-slate-400 my-auto" />
-                        <input
-                          type="password"
-                          id="password"
-                          required
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          className="w-full pl-10 pr-4 py-2.5 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-[#0b2f73] focus:border-[#0b2f73] transition-all text-sm"
-                          placeholder="••••••••"
-                          autoComplete="current-password"
-                        />
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowForgotPassword(true);
+                          setForgotEmail(email);
+                          setError(null);
+                        }}
+                        className="text-xs font-medium text-[#0b2f73] hover:underline transition-colors"
+                      >
+                        Mot de passe oublié ?
+                      </button>
                     </div>
-
-                    <motion.button
-                      type="submit"
-                      disabled={isLoading}
-                      whileHover={{ y: -1.5 }}
-                      whileTap={{ scale: 0.99 }}
-                      className="w-full bg-[#0b2f73] text-white px-6 py-3 rounded-xl font-bold hover:bg-[#144798] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
-                    >
-                      {isLoading && method === 'password' ? (
-                        <>
-                          <Loader2 className="w-5 h-5 animate-spin" />
-                          Connexion...
-                        </>
-                      ) : (
-                        <>
-                          <Shield className="w-5 h-5" />
-                          Continuer
-                        </>
-                      )}
-                    </motion.button>
-                  </form>
-                ) : !googleConfigured ? (
-                  <div className="text-center py-6 text-sm text-slate-500">
-                    Aucune méthode d'authentification configurée.
-                    <br />
-                    Contactez l'administrateur technique.
-                  </div>
-                ) : null}
-              </motion.div>
-            )}
-
-            {/* ─── Étape 2 : OTP ─── */}
-            {step === 'otp' && (
-              <motion.div
-                key="otp"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.25 }}
-              >
-                <button
-                  type="button"
-                  onClick={handleBackToCredentials}
-                  className="mb-4 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-[#0b2f73] transition-colors"
-                >
-                  <ArrowLeft className="w-3.5 h-3.5" />
-                  Retour
-                </button>
-
-                <div className="text-center mb-6">
-                  <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-[#f5b335]/15 border border-[#f5b335]/30 mb-3">
-                    <KeyRound className="w-7 h-7 text-[#a67410]" />
-                  </div>
-                  <h2 className="text-xl font-bold text-[#0b2f73] mb-1">
-                    Vérification 2 facteurs
-                  </h2>
-                  <p className="text-xs text-slate-600">
-                    Code à 6 chiffres envoyé par email à
-                    <br />
-                    <span className="font-semibold text-[#0b2f73]">{pendingEmail}</span>
-                  </p>
-                </div>
-
-                <form onSubmit={handleVerifyOtp}>
-                  {/* 6 inputs OTP */}
-                  <div className="flex justify-center gap-2 mb-5" onPaste={handleOtpPaste}>
-                    {otp.map((digit, i) => (
+                    <div className="relative">
+                      <Lock className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none w-5 h-5 text-slate-400 my-auto" />
                       <input
-                        key={i}
-                        ref={(el) => { otpRefs.current[i] = el; }}
-                        type="text"
-                        inputMode="numeric"
-                        pattern="\d*"
-                        maxLength={1}
-                        value={digit}
-                        onChange={(e) => handleOtpChange(i, e.target.value)}
-                        onKeyDown={(e) => handleOtpKeyDown(i, e)}
-                        className="w-11 h-14 text-center text-2xl font-bold border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-[#f5b335] focus:border-[#f5b335] transition-all text-[#0b2f73]"
-                        aria-label={`Chiffre ${i + 1}`}
+                        type="password"
+                        id="password"
+                        required
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2.5 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-[#0b2f73] focus:border-[#0b2f73] transition-all text-sm"
+                        placeholder="••••••••"
+                        autoComplete="current-password"
                       />
-                    ))}
+                    </div>
                   </div>
 
                   <motion.button
                     type="submit"
-                    disabled={isLoading || otp.join('').length !== 6}
+                    disabled={isLoading}
                     whileHover={{ y: -1.5 }}
                     whileTap={{ scale: 0.99 }}
-                    className="w-full bg-[#f5b335] text-[#0b2f73] px-6 py-3 rounded-xl font-bold hover:bg-[#f7c359] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+                    className="w-full bg-[#0b2f73] text-white px-6 py-3 rounded-xl font-bold hover:bg-[#144798] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
                   >
                     {isLoading ? (
                       <>
                         <Loader2 className="w-5 h-5 animate-spin" />
-                        Vérification...
+                        Connexion...
                       </>
                     ) : (
                       <>
-                        Vérifier le code
-                        <ArrowRight className="w-5 h-5" />
+                        <Shield className="w-5 h-5" />
+                        Se connecter
                       </>
                     )}
                   </motion.button>
                 </form>
-
-                <p className="mt-4 text-center text-xs text-slate-500">
-                  Le code est valide 10 minutes. Vérifiez vos spams si vous ne le recevez pas.
-                </p>
-              </motion.div>
-            )}
-
-            {/* ─── Étape 3 : Success ─── */}
-            {step === 'success' && (
-              <motion.div
-                key="success"
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.3 }}
-                className="text-center py-8"
-              >
-                <motion.div
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{ type: 'spring', stiffness: 200, damping: 15, delay: 0.1 }}
-                  className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-50 border-2 border-emerald-200 mb-4"
-                >
-                  <svg className="w-8 h-8 text-emerald-600" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                </motion.div>
-                <h2 className="text-xl font-bold text-[#0b2f73] mb-1">Authentification réussie</h2>
-                <p className="text-sm text-slate-600">Redirection en cours...</p>
-                <Loader2 className="w-5 h-5 animate-spin text-[#0b2f73] mx-auto mt-4" />
               </motion.div>
             )}
           </AnimatePresence>

@@ -1,21 +1,19 @@
 /**
  * POST /api/admin-auth/google/callback
  *
- * Échange le code Google contre les infos utilisateur, vérifie la whitelist
- * admin, puis envoie un OTP par email et crée une session pending.
+ * Échange le code Google, vérifie la whitelist admin,
+ * pose le cookie academia_admin_session directement (sans OTP/2FA).
  *
  * Body : { code: string, state: string }
- * Réponse : { pendingToken: string, email: string } — l'utilisateur doit
- *           ensuite appeler /verify-otp avec le code reçu par email.
+ * Réponse : { success: true } + cookie academia_admin_session
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  createPendingSession,
+  createAdminSessionFromGoogle,
   exchangeGoogleCode,
   isEmailAdminWhitelisted,
-  sendOtpEmail,
-  serializeAdminPendingCookie,
+  serializeAdminSessionCookie,
 } from '@/lib/admin/admin-auth-server';
 
 export const dynamic = 'force-dynamic';
@@ -53,28 +51,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Créer la session pending + générer l'OTP
-  const { pendingToken, otp } = createPendingSession({
+  // Connexion directe — créer la session admin sans OTP
+  const session = createAdminSessionFromGoogle({
+    id: `admin-${userInfo.email}`,
     email: userInfo.email,
     name: userInfo.name,
     picture: userInfo.picture,
   });
 
-  // Envoyer l'OTP par email
-  const sent = await sendOtpEmail(userInfo.email, otp, userInfo.name);
-  if (!sent) {
-    return NextResponse.json(
-      { error: "Impossible d'envoyer le code OTP par email. Réessayez plus tard." },
-      { status: 500 },
-    );
-  }
-
-  const res = NextResponse.json({
-    pendingToken,
-    email: userInfo.email,
-    message: 'Code OTP envoyé par email. Vérifiez votre boîte de réception.',
-  });
-  res.headers.set('Set-Cookie', serializeAdminPendingCookie(pendingToken));
+  const res = NextResponse.json({ success: true });
+  res.headers.set('Set-Cookie', serializeAdminSessionCookie(session));
   res.cookies.delete('admin_oauth_state');
   return res;
 }

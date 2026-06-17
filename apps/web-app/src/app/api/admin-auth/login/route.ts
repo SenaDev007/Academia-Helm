@@ -1,20 +1,19 @@
 /**
  * POST /api/admin-auth/login
  *
- * Première étape du login email/password : vérifie email + password, puis
- * envoie un OTP par email.
+ * Login email/password direct (sans OTP/2FA).
+ * Vérifie email + password, pose le cookie academia_admin_session directement.
  *
  * Body : { email: string, password: string }
- * Réponse : { pendingToken: string, email: string, message: string }
+ * Réponse : { success: true } + cookie academia_admin_session
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  createPendingSession,
+  createAdminSessionFromGoogle,
   isEmailAdminWhitelisted,
   isPasswordAuthEnabled,
-  sendOtpEmail,
-  serializeAdminPendingCookie,
+  serializeAdminSessionCookie,
   verifyAdminPassword,
 } from '@/lib/admin/admin-auth-server';
 
@@ -31,20 +30,13 @@ export async function POST(request: NextRequest) {
 
   // Vérifier la whitelist admin
   if (!isEmailAdminWhitelisted(email)) {
-    // Sécurité : ne pas révéler si l'email existe ou non — message générique.
-    return NextResponse.json(
-      { error: 'Identifiants invalides.' },
-      { status: 401 },
-    );
+    return NextResponse.json({ error: 'Identifiants invalides.' }, { status: 401 });
   }
 
   // Vérifier que l'auth password est activée
   if (!isPasswordAuthEnabled()) {
     return NextResponse.json(
-      {
-        error:
-          "L'authentification par mot de passe est désactivée. Utilisez Google Sign-In.",
-      },
+      { error: "L'authentification par mot de passe est désactivée. Utilisez Google Sign-In." },
       { status: 503 },
     );
   }
@@ -55,26 +47,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Identifiants invalides.' }, { status: 401 });
   }
 
-  // Créer session pending + générer OTP
-  const { pendingToken, otp } = createPendingSession({
+  // Connexion directe — créer la session admin sans OTP
+  const session = createAdminSessionFromGoogle({
+    id: `admin-${email}`,
     email,
     name: email.split('@')[0],
   });
 
-  // Envoyer l'OTP par email
-  const sent = await sendOtpEmail(email, otp);
-  if (!sent) {
-    return NextResponse.json(
-      { error: "Impossible d'envoyer le code OTP par email. Réessayez plus tard." },
-      { status: 500 },
-    );
-  }
-
-  const res = NextResponse.json({
-    pendingToken,
-    email,
-    message: 'Code OTP envoyé par email. Vérifiez votre boîte de réception.',
-  });
-  res.headers.set('Set-Cookie', serializeAdminPendingCookie(pendingToken));
+  const res = NextResponse.json({ success: true });
+  res.headers.set('Set-Cookie', serializeAdminSessionCookie(session));
   return res;
 }

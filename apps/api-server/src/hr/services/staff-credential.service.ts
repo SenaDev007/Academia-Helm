@@ -249,6 +249,203 @@ export class StaffCredentialService {
   }
 
   /**
+   * Génère (ou régénère) les credentials de connexion pour un staff.
+   * 
+   * Contrairement à `createCredentialsForStaff` qui échoue si un user existe déjà,
+   * cette méthode est idempotente :
+   *   - Si aucun user n'existe pour l'email du staff → crée un nouvel user
+   *   - Si un user existe déjà → met à jour son passwordHash (et son rôle/tenant si nécessaire)
+   * 
+   * Déclenchée manuellement par l'admin via le bouton "Générer Identifiant"
+   * du module RH > Contrats.
+   * 
+   * @returns { success, message, userId?, username?, email?, emailSent?, error? }
+   */
+  async generateOrRegenerateCredentials(
+    staffId: string,
+    tenantId: string,
+    triggeredByUserId?: string,
+  ): Promise<{
+    success: boolean;
+    message: string;
+    userId?: string;
+    username?: string;
+    email?: string;
+    emailSent?: boolean;
+    error?: string;
+  }> {
+    try {
+      // 1. Récupérer le staff avec toutes les infos nécessaires
+      const staff = await this.prisma.staff.findFirst({
+        where: { id: staffId, tenantId },
+        include: {
+          schoolLevel: { select: { id: true, name: true, code: true } },
+        },
+      });
+
+      if (!staff) {
+        return {
+          success: false,
+          message: 'Personnel introuvable',
+          error: 'Personnel introuvable',
+        };
+      }
+
+      // 2. Vérifier que le staff a un statut actif (ACTIVE ou PENDING_SIGNATURE)
+      const allowedStatuses = ['ACTIVE', 'PENDING_SIGNATURE'];
+      if (!allowedStatuses.includes(staff.status || '')) {
+        return {
+          success: false,
+          message: `Le personnel doit avoir un statut ACTIVE ou PENDING_SIGNATURE (actuel: ${staff.status || 'inconnu'})`,
+          error: `Statut invalide: ${staff.status}`,
+        };
+      }
+
+      // 3. Vérifier qu'on a un email
+      if (!staff.email || !staff.email.trim()) {
+        return {
+          success: false,
+          message: 'Aucune adresse email renseignée pour ce personnel. Veuillez d\'abord renseigner son email.',
+          error: 'Email manquant',
+        };
+      }
+
+      const normalizedEmail = staff.email.trim().toLowerCase();
+
+      // 4. Déterminer le rôle plateforme et l'identifiant de connexion
+      const userRole = refineUserRole(staff.roleType, staff.position);
+      const portal = ROLE_PORTAL_MAP[userRole] || Portal.ECOLE;
+      const isTeacher = staff.roleType === 'TEACHER';
+      const username = isTeacher
+        ? (staff.tenantMatricule || staff.globalMatricule || staff.employeeNumber || normalizedEmail)
+        : normalizedEmail;
+
+      // 5. Générer un mot de passe temporaire sécurisé et le hasher
+      const tempPassword = this.generateSecurePassword();
+      const hashedPassword = await bcrypt.hash(tempPassword, 10);
+
+      // 6. Chercher si un user existe déjà avec cet email
+      const existingUser = await this.prisma.user.findFirst({
+        where: { email: normalizedEmail },
+      });
+
+      let userId: string;
+      let action: 'created' | 'updated';
+
+      if (existingUser) {
+        // ── Mise à jour du passwordHash (et du rôle / tenant / statut si nécessaire) ──
+        await this.prisma.user.update({
+          where: { id: existingUser.id },
+          data: {
+            passwordHash: hashedPassword,
+            role: userRole,
+            tenantId: existingUser.tenantId || tenantId,
+            status: 'active',
+            firstName: existingUser.firstName || staff.firstName || '',
+            lastName: existingUser.lastName || staff.lastName || '',
+          },
+        });
+        userId = existingUser.id;
+        action = 'updated';
+        this.logger.log(`🔐 User updated: ${userId} (${normalizedEmail}) — password reset by admin${triggeredByUserId ? ` (${triggeredByUserId})` : ''}`);
+      } else {
+        // ── Création d'un nouvel user ──
+        const newUser = await this.prisma.user.create({
+          data: {
+            email: normalizedEmail,
+            passwordHash: hashedPassword,
+            firstName: staff.firstName || '',
+            lastName: staff.lastName || '',
+            role: userRole,
+            tenantId,
+            status: 'active',
+          },
+        });
+        userId = newUser.id;
+        action = 'created';
+        this.logger.log(`✅ User created: ${userId} (${normalizedEmail}) with role ${userRole}`);
+      }
+
+      // 7. Récupérer les infos du tenant pour l'email (nom, sous-domaine, logo)
+      const tenant = await this.prisma.tenant.findFirst({
+        where: { id: tenantId },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          subdomain: true,
+          abbreviation: true,
+          schoolSettings: { select: { logoUrl: true, schoolName: true, phone: true, email: true, address: true } },
+        },
+      });
+
+      const schoolSubdomain = tenant?.subdomain || tenant?.slug || '';
+      const schoolName = tenant?.schoolSettings?.schoolName || tenant?.name || 'Academia Helm';
+      const schoolLogoUrl = tenant?.schoolSettings?.logoUrl || null;
+      const baseDomain = process.env.APP_PUBLIC_URL || process.env.FRONTEND_URL || 'https://academiahelm.com';
+
+      // Construire l'URL de connexion
+      let loginUrl: string;
+      if (schoolSubdomain) {
+        const domain = baseDomain.replace(/^https?:\/\//, '');
+        loginUrl = `https://${schoolSubdomain}.${domain}/login`;
+      } else {
+        loginUrl = `${baseDomain}/login`;
+      }
+
+      // 8. Envoyer l'email avec les credentials (même si l'user existait déjà — c'est une régénération)
+      let emailSent = false;
+      try {
+        await this.sendCredentialEmail({
+          to: normalizedEmail,
+          staffFirstName: staff.firstName || '',
+          staffLastName: staff.lastName || '',
+          username,
+          password: tempPassword,
+          userRole,
+          portal,
+          schoolName,
+          loginUrl,
+          isTeacher,
+          schoolLevel: staff.schoolLevel?.name || null,
+          logoUrl: schoolLogoUrl,
+          schoolContacts: tenant?.schoolSettings
+            ? {
+                phone: tenant.schoolSettings.phone || null,
+                email: tenant.schoolSettings.email || null,
+                address: tenant.schoolSettings.address || null,
+              }
+            : null,
+          isRegeneration: action === 'updated',
+        });
+        emailSent = true;
+        this.logger.log(`📧 Credential ${action === 'updated' ? 'reset' : 'creation'} email sent to ${normalizedEmail}`);
+      } catch (emailErr: any) {
+        this.logger.error(`Failed to send credential email to ${normalizedEmail}: ${emailErr?.message}`);
+        // Non-blocking — les credentials sont créés/mis à jour même si l'email échoue
+      }
+
+      return {
+        success: true,
+        message: emailSent
+          ? `Identifiants ${action === 'updated' ? 'régénérés' : 'générés'} et envoyés par email à ${normalizedEmail}`
+          : `Identifiants ${action === 'updated' ? 'régénérés' : 'générés'} (l'envoi email a échoué — vérifiez la configuration SMTP)`,
+        userId,
+        username,
+        email: normalizedEmail,
+        emailSent,
+      };
+    } catch (error: any) {
+      this.logger.error(`Error generating credentials for staff ${staffId}: ${error?.message}`);
+      return {
+        success: false,
+        message: error?.message || 'Erreur lors de la génération des identifiants',
+        error: error?.message,
+      };
+    }
+  }
+
+  /**
    * Génère un mot de passe temporaire sécurisé et mémorable.
    * Format : MotAdjectif3Chiffres (ex: "BraveLion742")
    */
@@ -285,6 +482,9 @@ export class StaffCredentialService {
     loginUrl: string;
     isTeacher: boolean;
     schoolLevel?: string | null;
+    logoUrl?: string | null;
+    schoolContacts?: { phone?: string | null; email?: string | null; address?: string | null } | null;
+    isRegeneration?: boolean;
   }): Promise<void> {
     const {
       to,
@@ -298,6 +498,9 @@ export class StaffCredentialService {
       loginUrl,
       isTeacher,
       schoolLevel,
+      logoUrl,
+      schoolContacts,
+      isRegeneration = false,
     } = params;
 
     const roleLabel = ROLE_LABELS[userRole] || userRole;
@@ -305,13 +508,30 @@ export class StaffCredentialService {
     const displayName = `${staffFirstName} ${staffLastName}`.trim() || 'Collaborateur';
     const loginLabel = isTeacher ? 'Matricule' : 'Adresse email';
 
+    const logoBlock = logoUrl
+      ? `<img src="${logoUrl}" alt="${schoolName}" style="max-height: 56px; max-width: 200px; margin: 0 auto 8px; display: block; object-fit: contain;" />`
+      : '';
+
+    const welcomeIntro = isRegeneration
+      ? `Bonjour <strong>${displayName}</strong>, votre compte sur <strong>Academia Helm</strong> a été réinitialisé par l'administration de <strong>${schoolName}</strong>. Vous trouverez ci-dessous vos nouveaux identifiants de connexion.`
+      : `Votre intégration au sein de <strong>${schoolName}</strong> est désormais finalisée. Votre contrat a été signé et votre dossier est activé sur la plateforme <strong>Academia Helm</strong>. Vous trouverez ci-dessous vos identifiants de connexion qui vous permettent d'accéder à votre espace personnel dès maintenant.`;
+
+    const contactsBlock = schoolContacts && (schoolContacts.phone || schoolContacts.email || schoolContacts.address)
+      ? `
+    <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.15); font-size: 11px; color: rgba(255, 255, 255, 0.65); line-height: 1.6;">
+      ${schoolContacts.address ? `<div style="margin-bottom: 4px;">&#128205; ${schoolContacts.address}</div>` : ''}
+      ${schoolContacts.phone ? `<div style="margin-bottom: 4px;">&#128222; ${schoolContacts.phone}</div>` : ''}
+      ${schoolContacts.email ? `<div style="margin-bottom: 4px;">&#9993; ${schoolContacts.email}</div>` : ''}
+    </div>`
+      : '';
+
     const html = `
 <!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Vos identifiants Academia Helm</title>
+  <title>Vos identifiants de connexion — ${schoolName}</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
@@ -557,18 +777,16 @@ export class StaffCredentialService {
   <div class="email-container">
     <!-- Header -->
     <div class="header">
+      ${logoBlock}
       <div class="header-logo">Academia <span>Helm</span></div>
-      <div class="header-tagline">Plateforme de pilotage éducatif</div>
+      <div class="header-tagline">${schoolName}</div>
     </div>
 
     <!-- Welcome -->
     <div class="welcome-section">
-      <div class="welcome-greeting">Bienvenue, ${displayName}.</div>
+      <div class="welcome-greeting">${isRegeneration ? 'Réinitialisation de vos identifiants' : 'Vos identifiants de connexion'}</div>
       <div class="welcome-text">
-        Votre intégration au sein de <strong>${schoolName}</strong> est désormais finalisée. 
-        Votre contrat a été signé et votre dossier est activé sur la plateforme 
-        <strong>Academia Helm</strong>. Vous trouverez ci-dessous vos identifiants de connexion 
-        qui vous permettent d'accéder à votre espace personnel dès maintenant.
+        ${welcomeIntro}
       </div>
     </div>
 
@@ -621,20 +839,24 @@ export class StaffCredentialService {
 
     <!-- Footer -->
     <div class="footer">
-      <div class="footer-brand">Academia <span>Helm</span></div>
+      <div class="footer-brand">${schoolName}</div>
+      <div class="footer-brand" style="font-size: 13px; margin-top: 4px;">Academia <span>Helm</span></div>
       <div class="footer-copyright">&copy; 2021-2026 YEHI OR Tech. Tous droits réservés.</div>
       <div class="footer-tagline">Prenez le gouvernail de votre institution</div>
+      ${contactsBlock}
     </div>
   </div>
 </body>
 </html>`;
 
     const text = `
-Academia Helm — Vos identifiants de connexion
+${schoolName} — ${isRegeneration ? 'Réinitialisation de vos identifiants' : 'Vos identifiants de connexion'} Academia Helm
 
 Bonjour ${displayName},
 
-Votre intégration au sein de ${schoolName} est finalisée. Voici vos identifiants pour accéder à la plateforme Academia Helm :
+${isRegeneration ? `Votre compte sur Academia Helm a été réinitialisé par l'administration de ${schoolName}.` : `Votre intégration au sein de ${schoolName} est finalisée.`}
+
+Voici vos identifiants pour accéder à la plateforme Academia Helm :
 
 ${loginLabel} : ${username}
 Mot de passe : ${password}
@@ -646,13 +868,15 @@ Connectez-vous : ${loginUrl}
 
 IMPORTANT : Ce mot de passe est temporaire. Veuillez le modifier dès votre première connexion. Ne partagez jamais vos identifiants.
 
-— Academia Helm
+— ${schoolName} — Academia Helm
 © 2021-2026 YEHI OR Tech
+${schoolContacts?.phone ? `Tél : ${schoolContacts.phone}` : ''}
+${schoolContacts?.email ? `Email : ${schoolContacts.email}` : ''}
 `;
 
     await this.emailService.sendEmail({
       to,
-      subject: `${schoolName} — Vos identifiants Academia Helm`,
+      subject: `${schoolName} — ${isRegeneration ? 'Réinitialisation de vos identifiants' : 'Vos identifiants de connexion'}`,
       html,
       text,
       from: process.env.EMAIL_FROM_NOREPLY || 'noreply@academiahelm.com',

@@ -21,6 +21,8 @@
  *   PUT    /hr/staff/:id/documents/:docId/validate — Validate/reject a document
  *
  *   POST   /hr/staff/:id/generate-matricules — Generate missing matricules
+ *
+ *   POST   /hr/staff/:id/generate-credentials — Génère identifiants + email (bouton "Générer Identifiant")
  * ============================================================================
  */
 
@@ -437,5 +439,38 @@ export class StaffPrismaController {
       throw new BadRequestException('Tenant ID requis pour cette opération');
     }
     return this.staffService.generateMissingMatricules(staffId, tid);
+  }
+
+  // ─── CREDENTIALS (Générer Identifiant) ─────────────────────────────────────
+
+  /**
+   * POST /api/hr/staff/:id/generate-credentials
+   *
+   * Génère (ou régénère) les identifiants de connexion d'un staff dont le contrat
+   * est signé. Crée ou met à jour l'utilisateur dans la table `users`, hashe le
+   * mot de passe avec bcrypt, et envoie un email professionnel au staff avec ses
+   * identifiants. Le mot de passe en clair n'est JAMAIS retourné au frontend —
+   * seul l'email le contient.
+   *
+   * Déclenché par le bouton "Générer Identifiant" du module RH > Contrats.
+   */
+  @Post(':id/generate-credentials')
+  async generateCredentials(
+    @GetTenant() tenant: any,
+    @Param('id') staffId: string,
+    @Req() req: any,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    const triggeredByUserId = req?.user?.id;
+    const result = await this.staffService.generateCredentials(tid, staffId, triggeredByUserId);
+
+    if (!result.success) {
+      throw new BadRequestException(result.message || 'Erreur lors de la génération des identifiants');
+    }
+    return result;
   }
 }

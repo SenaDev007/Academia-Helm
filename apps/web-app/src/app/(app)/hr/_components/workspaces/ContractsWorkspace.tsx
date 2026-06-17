@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import {
   Plus, Search, FileText, Calendar, DollarSign, AlertCircle,
-  FileCheck, Files, Download, PenTool, Loader2, X, FileX2,
+  FileCheck, Files, Download, PenTool, Loader2, X, FileX2, KeyRound,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -286,6 +286,7 @@ export function ContractsWorkspace() {
 
 function ContractRow({ contract, index, tenantId, onTerminate }: { contract: any; index: number; tenantId: string; onTerminate: (contract: any) => void }) {
   const [generating, setGenerating] = useState(false);
+  const [generatingId, setGeneratingId] = useState(false);
 
   const isExpiringSoon = () => {
     if (!contract.endDate || contract.status !== 'ACTIVE') return false;
@@ -294,6 +295,10 @@ function ContractRow({ contract, index, tenantId, onTerminate }: { contract: any
   };
   const status = STATUS_CONFIG[contract.status] || { label: contract.status || 'Inconnu', className: 'bg-amber-50 text-amber-600 border border-amber-200' };
   const isSigned = !!contract.signedAt;
+
+  // "Générer Identifiant" ne s'affiche que pour les contrats signés (ACTIVE) et si le staff a un email
+  const staffEmail: string | undefined = contract.staff?.email;
+  const canGenerateCredentials = contract.status === 'ACTIVE' && !!staffEmail && !!contract.staffId;
 
   async function handleGeneratePdf() {
     try {
@@ -304,6 +309,49 @@ function ContractRow({ contract, index, tenantId, onTerminate }: { contract: any
       toast({ variant: 'error', title: 'Erreur lors de la génération PDF.' });
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function handleGenerateCredentials() {
+    if (!staffEmail) {
+      toast({
+        variant: 'warning',
+        title: 'Email manquant',
+        description: "Ce staff n'a pas d'email. Veuillez d'abord renseigner son email dans sa fiche.",
+      });
+      return;
+    }
+    if (!contract.staffId) {
+      toast({ variant: 'error', title: 'Identifiant staff manquant' });
+      return;
+    }
+    const confirmed = window.confirm(
+      `Générer des identifiants de connexion et envoyer un email à ${staffEmail} ?\n\n` +
+      `Si un compte existe déjà, son mot de passe sera réinitialisé.`,
+    );
+    if (!confirmed) return;
+
+    try {
+      setGeneratingId(true);
+      const result = await hrFetch<{ success: boolean; message: string; email?: string; emailSent?: boolean }>(
+        hrUrl(`staff/${contract.staffId}/generate-credentials`, { tenantId }),
+        { method: 'POST' },
+      );
+      toast({
+        variant: 'success',
+        title: 'Identifiants générés',
+        description: result?.emailSent
+          ? `Un email a été envoyé à ${result.email || staffEmail}.`
+          : (result?.message || `Identifiants générés (l'envoi email a échoué).`),
+      });
+    } catch (err: any) {
+      toast({
+        variant: 'error',
+        title: 'Erreur lors de la génération',
+        description: err?.message || 'Erreur inconnue',
+      });
+    } finally {
+      setGeneratingId(false);
     }
   }
 
@@ -368,6 +416,25 @@ function ContractRow({ contract, index, tenantId, onTerminate }: { contract: any
           >
             {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
           </button>
+          {canGenerateCredentials && (
+            <button
+              onClick={handleGenerateCredentials}
+              disabled={generatingId}
+              className="flex items-center gap-1.5 flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{
+                color: PRIMARY,
+                borderColor: PRIMARY + '40',
+                backgroundColor: PRIMARY + '08',
+              }}
+              title="Générer un identifiant de connexion et envoyer les credentials par email au staff"
+            >
+              {generatingId ? (
+                <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Génération…</>
+              ) : (
+                <><KeyRound className="h-3.5 w-3.5" /> Générer Identifiant</>
+              )}
+            </button>
+          )}
           {contract.status === 'ACTIVE' && (
             <button
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); onTerminate(contract); }}

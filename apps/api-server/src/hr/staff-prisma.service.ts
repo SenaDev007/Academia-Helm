@@ -17,6 +17,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../database/prisma.service';
 import { StaffMatriculeService } from './staff-matricule.service';
 import { StorageService } from '../common/services/storage.service';
+import { StaffCredentialService } from './services/staff-credential.service';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 import { BatchAssignLevelDto } from './dto/index';
 
@@ -66,6 +67,7 @@ export class StaffPrismaService {
     private readonly prisma: PrismaService,
     private readonly matriculeService: StaffMatriculeService,
     private readonly storageService: StorageService,
+    private readonly credentialService: StaffCredentialService,
   ) {}
 
   /**
@@ -1092,5 +1094,38 @@ export class StaffPrismaService {
       category: 'PEDAGOGICAL',
       staffCode: t.employeeNumber || t.globalMatricule,
     }));
+  }
+
+  /**
+   * Génère (ou régénère) les identifiants de connexion pour un staff.
+   *
+   * Délégué à StaffCredentialService.generateOrRegenerateCredentials().
+   * Appelé par l'admin via le bouton "Générer Identifiant" du module RH > Contrats.
+   *
+   * Étapes (côté StaffCredentialService) :
+   *   1. Récupère le staff (email, matricule, firstName, lastName)
+   *   2. Vérifie le statut actif (ACTIVE ou PENDING_SIGNATURE)
+   *   3. Génère un mot de passe aléatoire sécurisé
+   *   4. Hash le mot de passe avec bcrypt (10 rounds)
+   *   5. Cherche un user existant avec cet email :
+   *        - Si oui → met à jour son passwordHash
+   *        - Si non → crée un nouvel user (email, passwordHash, firstName, lastName, role, tenantId, status)
+   *   6. Envoie un email au staff avec ses identifiants (logo école, nom du tenant, identifiant + mot de passe)
+   *   7. Le mot de passe en clair n'est JAMAIS retourné au frontend — seul l'email le contient
+   *
+   * @returns { success, message, email?, userId?, emailSent? }
+   */
+  async generateCredentials(
+    tenantId: string,
+    staffId: string,
+    triggeredByUserId?: string,
+  ): Promise<{
+    success: boolean;
+    message: string;
+    email?: string;
+    userId?: string;
+    emailSent?: boolean;
+  }> {
+    return this.credentialService.generateOrRegenerateCredentials(staffId, tenantId, triggeredByUserId);
   }
 }

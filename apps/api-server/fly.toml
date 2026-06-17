@@ -32,6 +32,8 @@ primary_region = 'fra'
     type = 'http'
     interval = '30s'
     timeout = '10s'
-    grace_period = '30s'
+    # 60s grace period — NestJS avec 534 modèles Prisma + 60+ modules
+    # peut mettre 30-45s à démarrer sur shared-cpu-1x
+    grace_period = '60s'
     method = 'GET'
     path = '/health'

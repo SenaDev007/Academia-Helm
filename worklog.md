@@ -809,3 +809,52 @@ Stage Summary:
 - Les notifications email informent automatiquement les directeurs lors des rollovers
 - La UI guide l'utilisateur en fin d'année avec une bannière contextuelle
 - Le code legacy est marqué @deprecated pour préparer un futur nettoyage
+
+---
+Task ID: ah-academic-year-strict-analysis
+Agent: Main Agent
+Task: (1) Exécuter migration SchoolCalendarConfig sur Neon, (2) Analyser système année scolaire stricte, (3) Faire le point avant implémentation
+
+Work Log:
+
+1. Migration SchoolCalendarConfig exécutée sur Neon :
+- Créé /home/z/my-project/scripts/run-migration-school-calendar.py
+- Exécuté avec succès sur la base Neon (AcademiaHelm)
+- Table `school_calendar_configs` créée avec 16 colonnes + 2 index + 1 FK vers tenants
+- Tous les tenants utilisent actuellement les valeurs par défaut (Bénin) — aucun enregistrement custom
+
+2. Analyse approfondie du système d'année scolaire stricte via subagent Explore :
+- Rapport de 6000+ mots couvrant tous les modules/onglets/sous-onglets
+- Identification des forces et faiblesses du système actuel
+
+Diagnostic résumé :
+- ✅ Infrastructure de base existe (sélecteur header, contexte, localStorage corrigé H3, intercepteur Axios, garde backend, décorateur)
+- ❌ FAILLE CRITIQUE : Le garde backend `AcademicYearEnforcementGuard` est DÉSACTIVÉ en pratique car `@RequireTenant()` n'est posé que sur 1 contrôleur (context.controller.ts). Toutes les routes métier court-circuitent le check d'année.
+- ❌ Aucune invalidation TanStack Query au changement d'année → caches servent potentiellement des données périmées
+- ❌ 8 modules complémentaires frontend (Library, Transport, Canteen, Infirmary, QHSE, EduCast, Shop, Laboratory) sont 100% MOCK UI — backend prêt, frontend à brancher
+- ❌ 2 bugs localStorage dans StudentMatriculesSection et StudentIdCardsSection (mauvaises clés)
+- ⚠️ Schéma Prisma partiel : 57 modèles avec academicYearId optionnel, 273 modèles sans champ (dont ~120 métier critiques)
+- ⚠️ Services backend `findAll*` ont un filtre optionnel (`if (filters?.academicYearId)`) — à durcir en filtre obligatoire
+- ✅ Module Pedagogy = référence (implémentation complète et correcte)
+- ✅ Modules complémentaires backend = référence (academicYearId requis dans ~80 endpoints)
+
+Modules frontend — consommation année scolaire :
+- Dashboard (Director, Accountant, Qhs) : ✅
+- Dashboard (Teacher, Admin, Parent) : ❌ UI sans fetch
+- Students : ✅ (avec 2 bugs localStorage)
+- Finance : ✅ (sauf ExpensesManagement)
+- HR : ⚠️ 5/14 workspaces seulement (Planning, Payroll, Attendance, Cnss, Reporting, Leaves)
+- Pedagogy : ✅ complet (référence)
+- Exams : ✅
+- Communication : ⚠️ messages optionnel
+- Library/Transport/Canteen/Infirmary/QHSE/EduCast/Shop/Laboratory : ❌ mock UI
+
+Plan de correction proposé (11-20 jours-homme total) :
+- Critique (1-2j) : C1 activer garde backend, C2 activer interceptor, C3 invalidation TanStack, C4 corriger bugs localStorage Students
+- Haute (5-10j) : H1 brancher 8 modules complémentaires frontend, H2 durcir findAll backend, H3 ajouter academicYearId à CreateClassDto, H4 corriger ExpensesManagement, H5 brancher 9 workspaces HR manquants, H6 rendre Teacher/Admin/Parent dashboards fonctionnels, H7 durcir schéma Prisma (57 modèles optionnels → requis)
+- Moyenne (5-8j) : M1 ajouter academicYearId aux 120 modèles métier Prisma sans champ, M2 étendre décorateur @AcademicYearId(), M3 event académique, M4 warning UI si pas d'année, M5 doc routes exemptées, M6 tests E2E, M7 audit fetch() directs
+
+Stage Summary:
+- Migration exécutée sur Neon ✅
+- Rapport d'analyse complet fourni à l'utilisateur
+- En attente de validation du plan par l'utilisateur avant implémentation

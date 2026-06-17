@@ -2303,6 +2303,7 @@ model Class {
   academicYearId             String
   schoolLevelId              String
   academicTrackId            String?
+  language                   String?
   name                       String
   code                       String
   capacity                   Int?
@@ -2416,6 +2417,7 @@ model Exam {
   academicYearId  String
   schoolLevelId   String
   academicTrackId String?
+  language        String?
   examSessionId   String?
   quarterId       String?
   classSubjectId  String?

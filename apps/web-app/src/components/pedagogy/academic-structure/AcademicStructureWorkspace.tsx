@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import BaseModal from '@/components/modules/blueprint/modals/BaseModal';
 import { useAppSession } from '@/contexts/AppSessionContext';
+import { useBilingual } from '@/contexts/BilingualContext';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useAcademicYear } from '@/hooks/useAcademicYear';
 import { getBilingualSettings } from '@/services/settings.service';
@@ -138,6 +139,7 @@ export function AcademicStructureWorkspace() {
   const { user, tenant } = useAppSession();
   const { academicYear } = useModuleContext();
   const { availableYears } = useAcademicYear();
+  const { isEnabled: bilingualCtxEnabled, currentTrack, setCurrentTrack } = useBilingual();
   const yearId = academicYear?.id ?? '';
 
   /** Aligné Paramètres : PO / admin plateforme peuvent cibler un tenant (URL ?tenant_id=) ; sinon JWT / session. */
@@ -784,6 +786,7 @@ export function AcademicStructureWorkspace() {
   const openCreateClass = () => {
     const lvl = levels[0];
     const cy = cycles.find((c) => c.level?.id === lvl?.id) ?? cycles[0];
+    const bilingualActive = bilingualCtxEnabled || bilingualEnabled;
     setClassForm({
       levelId: lvl?.id ?? '',
       cycleId: cy?.id ?? '',
@@ -791,7 +794,7 @@ export function AcademicStructureWorkspace() {
       code: '',
       capacity: '',
       roomId: '',
-      languageTrack: '',
+      languageTrack: bilingualActive ? currentTrack : '',
     });
     setClassModal({ mode: 'create' });
   };
@@ -1105,6 +1108,21 @@ export function AcademicStructureWorkspace() {
     { id: 'series', label: 'Séries', icon: GraduationCap },
     { id: 'rooms', label: 'Salles', icon: Building2 },
   ];
+
+  /**
+   * Classes visibles dans l'onglet "Classes".
+   * En mode bilingue, on filtre par `languageTrack` selon le track courant.
+   * Les classes sans piste (`languageTrack` null/undefined) sont rattachées
+   * par défaut à la langue `defaultLanguage` (FR le plus souvent).
+   */
+  const visibleClasses = useMemo(() => {
+    if (!bilingualCtxEnabled) return classes;
+    return classes.filter((c) => {
+      const raw = (c.languageTrack ?? '').toUpperCase();
+      const track = raw || (bilingualSettings?.defaultLanguage ?? 'FR').toUpperCase();
+      return track === currentTrack;
+    });
+  }, [classes, bilingualCtxEnabled, currentTrack, bilingualSettings?.defaultLanguage]);
 
   const addAction = () => {
     if (tab === 'levels') openCreateLevel();
@@ -1486,7 +1504,7 @@ export function AcademicStructureWorkspace() {
 
       {!loading && tab === 'classes' && (
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-3">
+          <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-slate-600">
               Les classes pédagogiques correspondent aux <strong>grades</strong> de la{' '}
               <Link href={settingsHref} className="font-semibold underline" style={{ color: PRIMARY }}>
@@ -1494,6 +1512,43 @@ export function AcademicStructureWorkspace() {
               </Link>{' '}
               (niveaux → cycles → grades). Libellés, codes, rattachements niveau/cycle et capacité (somme des classes physiques du grade pour cette année en paramètres) sont resynchronisés à chaque chargement de cet onglet.
             </p>
+            {bilingualCtxEnabled && (
+              <div
+                className="flex items-center gap-1 self-start rounded-xl border border-slate-200 bg-white p-1 sm:self-center"
+                role="group"
+                aria-label="Sélecteur de vue linguistique"
+              >
+                <span className="px-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                  Vue
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCurrentTrack('FR')}
+                  className={cn(
+                    'px-3 py-1.5 rounded-lg text-xs font-bold transition-all',
+                    currentTrack === 'FR'
+                      ? 'bg-white shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800',
+                  )}
+                  style={currentTrack === 'FR' ? { color: PRIMARY } : undefined}
+                >
+                  Vue FR
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentTrack('EN')}
+                  className={cn(
+                    'px-3 py-1.5 rounded-lg text-xs font-bold transition-all',
+                    currentTrack === 'EN'
+                      ? 'bg-white shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800',
+                  )}
+                  style={currentTrack === 'EN' ? { color: PRIMARY } : undefined}
+                >
+                  Vue EN
+                </button>
+              </div>
+            )}
           </div>
           <table className="min-w-full text-sm">
             <thead>
@@ -1509,14 +1564,14 @@ export function AcademicStructureWorkspace() {
               </tr>
             </thead>
             <tbody>
-              {classes.length === 0 ? (
+              {visibleClasses.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-10 text-center text-slate-500">
                     Aucune classe. Définissez les grades dans la structure pédagogique (paramètres) ou ajoutez une classe manuellement.
                   </td>
                 </tr>
               ) : (
-                classes.map((c) => (
+                visibleClasses.map((c) => (
                   <tr key={c.id} className="border-b border-slate-100 hover:bg-slate-50/80">
                     <td className="px-4 py-3 font-medium text-slate-900">
                       {c.name}

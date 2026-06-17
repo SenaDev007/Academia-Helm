@@ -50,12 +50,14 @@ export class SubjectsPrismaController {
     @Query('academicYearId') academicYearId?: string,
     @Query('schoolLevelId') schoolLevelId?: string,
     @Query('academicTrackId') academicTrackId?: string,
+    @Query('language') language?: string,
     @Query('search') search?: string,
   ) {
     return this.subjectsService.findAllSubjects(tenantId, {
       academicYearId,
       schoolLevelId,
       academicTrackId,
+      language,
       search,
     });
   }

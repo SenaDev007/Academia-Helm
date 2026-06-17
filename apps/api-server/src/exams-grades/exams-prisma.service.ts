@@ -29,6 +29,7 @@ export class ExamsPrismaService {
     academicYearId: string;
     schoolLevelId: string;
     academicTrackId?: string;
+    language?: string;
     quarterId?: string;
     classSubjectId?: string;
     subjectId: string;
@@ -70,9 +71,13 @@ export class ExamsPrismaService {
       }
     }
 
+    // Déduire la langue depuis la matière si non fournie (mode bilingue)
+    const examLanguage = data.language || subject.language || 'FR';
+
     return this.prisma.exam.create({
       data: {
         ...data,
+        language: examLanguage,
         maxScore: data.maxScore || 20.0,
         coefficient: data.coefficient || 1.0,
       },
@@ -95,6 +100,7 @@ export class ExamsPrismaService {
       academicYearId?: string;
       schoolLevelId?: string;
       academicTrackId?: string;
+      language?: string;
       quarterId?: string;
       classId?: string;
       subjectId?: string;
@@ -116,6 +122,11 @@ export class ExamsPrismaService {
 
     if (filters?.academicTrackId !== undefined) {
       where.academicTrackId = filters.academicTrackId;
+    }
+
+    // Mode bilingue : filtrer par langue (FR/EN)
+    if (filters?.language) {
+      where.language = filters.language;
     }
 
     if (filters?.quarterId) {

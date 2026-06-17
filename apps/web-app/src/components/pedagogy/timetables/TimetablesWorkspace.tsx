@@ -40,6 +40,7 @@ import {
   ConfirmModal 
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { useBilingual } from '@/contexts/BilingualContext';
 import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
@@ -88,6 +89,7 @@ const HOURS = Array.from({ length: 11 }, (_, i) => i + 8); // 8:00 to 18:00
 
 export default function TimetablesWorkspace() {
   const { academicYear, schoolLevel } = useModuleContext();
+  const { isEnabled: isBilingual, currentTrack, setCurrentTrack } = useBilingual();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   
@@ -408,13 +410,26 @@ export default function TimetablesWorkspace() {
   // --- Filtered Entries for Grid ---
   const filteredEntries = useMemo(() => {
     if (!selectedId) return entries;
-    return entries.filter(e => {
+    const base = entries.filter(e => {
       if (viewMode === 'class') return e.class?.id === selectedId;
       if (viewMode === 'teacher') return e.teacher?.id === selectedId;
       if (viewMode === 'room') return e.room?.id === selectedId;
       return true;
     });
-  }, [entries, viewMode, selectedId]);
+
+    // ── Filtre bilingue ──────────────────────────────────────────────────
+    // En mode bilingue, on ne montre que les cours dont la matière
+    // correspond à la track sélectionnée (FR ou EN). On se base sur le
+    // `language` du Subject (déduit du code suffixé _EN ou via la colonne
+    // language retournée par l'API).
+    if (!isBilingual) return base;
+    return base.filter(e => {
+      const subjectLang =
+        (e.subject as any)?.language ||
+        ((e.subject?.code || '').endsWith('_EN') ? 'EN' : 'FR');
+      return subjectLang === currentTrack;
+    });
+  }, [entries, viewMode, selectedId, isBilingual, currentTrack]);
 
   // --- Actions ---
 
@@ -516,6 +531,25 @@ export default function TimetablesWorkspace() {
 
   return (
     <div className="flex h-[calc(100vh-12rem)] gap-6 overflow-hidden">
+      {/* Bilingual track selector — affiché en haut si bilingue activé */}
+      {isBilingual && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-slate-100 rounded-xl p-1 shadow-md">
+          <button
+            type="button"
+            onClick={() => setCurrentTrack('FR')}
+            className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentTrack === 'FR' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+          >
+            Français
+          </button>
+          <button
+            type="button"
+            onClick={() => setCurrentTrack('EN')}
+            className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentTrack === 'EN' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+          >
+            English
+          </button>
+        </div>
+      )}
       {/* Sidebar de contrôle */}
       <div className="w-72 bg-white rounded-3xl border border-gray-100 flex flex-col shadow-sm">
         <div className="p-6 border-b border-gray-50 space-y-4">

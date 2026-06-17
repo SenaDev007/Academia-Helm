@@ -21,13 +21,13 @@ import type { SettingsBootstrapPayload } from '@/lib/query/fetch-settings-bootst
 import { useSettingsBootstrapQuery } from '@/hooks/useSettingsBootstrapQuery';
 import { useSearchParams, usePathname, useRouter } from 'next/navigation';
 import NextImage from 'next/image';
-import { 
-  Globe, Shield, Brain, MessageSquare, CloudOff, History, 
-  ToggleLeft, ToggleRight, Stamp, GraduationCap, Languages, 
+import {
+  Globe, Shield, Brain, MessageSquare, CloudOff, History,
+  ToggleLeft, ToggleRight, Stamp, GraduationCap, Languages,
   Bell, Users, Calendar, Save, Loader2, CheckCircle, AlertCircle,
   Mail, UserCog, Lock, Key, Smartphone, CreditCard, Receipt, RefreshCw,
   Upload, Image, CalendarDays, UserCircle, School, Archive, CalendarRange,
-  Pencil, CopyPlus, Layers, FastForward
+  Pencil, CopyPlus, Layers, FastForward, BookOpen, Plus
 } from 'lucide-react';
 import { ModuleHeader } from '@/components/modules/blueprint';
 import GeneratedStampsSignatures from '@/components/settings/GeneratedStampsSignatures';
@@ -1137,6 +1137,89 @@ export default function SettingsPage() {
       showToast('error', error.message || 'Erreur lors de l\'enregistrement');
     } finally {
       setSaving(false);
+    }
+  };
+
+  // ── Créer les matières EN par défaut ───────────────────────────────────────
+  // Fetch les matières FR existantes et crée une matière EN correspondante
+  // pour chacune (même nom + " (EN)", code + "_EN", language='EN').
+  const [creatingEnSubjects, setCreatingEnSubjects] = useState(false);
+  const handleCreateDefaultEnSubjects = async () => {
+    try {
+      setCreatingEnSubjects(true);
+      // 1. Récupérer l'année académique active
+      const activeYear = await settingsService.getActiveAcademicYear(effectiveTenantId ?? undefined);
+      if (!activeYear?.id) {
+        showToast('error', 'Aucune année académique active trouvée.');
+        return;
+      }
+
+      // 2. Fetch les matières existantes
+      const response = await fetch(`/api/pedagogy/subjects?academicYearId=${activeYear.id}`, {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('Impossible de récupérer les matières existantes.');
+      }
+      const subjects = await response.json();
+      if (!Array.isArray(subjects) || subjects.length === 0) {
+        showToast('error', 'Aucune matière FR trouvée. Ajoutez d\'abord des matières FR.');
+        return;
+      }
+
+      // 3. Filtrer les matières FR (language === 'FR' ou null, et exclure déjà les EN)
+      const frSubjects = subjects.filter((s: any) => {
+        const lang = s.language || (s.code?.endsWith('_EN') ? 'EN' : 'FR');
+        return lang === 'FR';
+      });
+
+      if (frSubjects.length === 0) {
+        showToast('error', 'Aucune matière FR à dupliquer.');
+        return;
+      }
+
+      // 4. Pour chaque matière FR, créer une matière EN correspondante
+      let created = 0;
+      let skipped = 0;
+      for (const subject of frSubjects) {
+        const newCode = `${subject.code}_EN`;
+        // Vérifier si une matière EN avec le même code existe déjà
+        const existingEn = subjects.find((s: any) => s.code === newCode);
+        if (existingEn) {
+          skipped++;
+          continue;
+        }
+        try {
+          await fetch('/api/pedagogy/subjects', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: `${subject.name} (EN)`,
+              code: newCode,
+              language: 'EN',
+              coefficient: subject.coefficient ?? 1,
+              academicYearId: activeYear.id,
+            }),
+          });
+          created++;
+        } catch (err) {
+          // Continuer en cas d'erreur sur une matière
+          console.warn(`Failed to create EN subject for ${subject.code}:`, err);
+        }
+      }
+
+      if (created > 0) {
+        showToast('success', `${created} matière(s) EN créée(s)${skipped > 0 ? ` (${skipped} déjà existante(s) ignorée(s))` : ''}.`);
+      } else if (skipped > 0) {
+        showToast('success', `Toutes les matières EN existent déjà (${skipped} ignorée(s)).`);
+      } else {
+        showToast('error', 'Aucune matière EN n\'a pu être créée.');
+      }
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur lors de la création des matières EN.');
+    } finally {
+      setCreatingEnSubjects(false);
     }
   };
 
@@ -2977,6 +3060,37 @@ export default function SettingsPage() {
                   )}
                 </div>
               )}
+
+              {/* Créer les matières EN par défaut */}
+              {bilingualForm.isEnabled && (
+                <div className="mt-4 p-4 bg-violet-50 border border-violet-200 rounded-lg space-y-3">
+                  <div className="flex items-start gap-3">
+                    <BookOpen className="w-5 h-5 text-violet-600 mt-0.5 shrink-0" />
+                    <div>
+                      <h4 className="text-sm font-semibold text-violet-900">Catalogue de matières EN par défaut</h4>
+                      <p className="text-sm text-violet-700 mt-1">
+                        Crée automatiquement, pour chaque matière FR existante, une matière EN correspondante
+                        (même nom + &quot;(EN)&quot;, code suffixé <code className="bg-violet-100 px-1 rounded text-xs">_EN</code>, langue = EN).
+                        Les matières EN déjà existantes sont ignorées.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCreateDefaultEnSubjects}
+                    disabled={creatingEnSubjects}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-md hover:bg-violet-700 disabled:opacity-50 text-sm font-medium"
+                  >
+                    {creatingEnSubjects ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Plus className="w-4 h-4" />
+                    )}
+                    Créer les matières EN par défaut
+                  </button>
+                </div>
+              )}
+
               <div className="mt-6 flex justify-end">
                 <button
                   onClick={handleSaveBilingual}

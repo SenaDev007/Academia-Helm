@@ -1,19 +1,30 @@
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
 import { BilingualValidationService } from '../../tenant-features/bilingual-validation.service';
+import { TenantFeaturesService } from '../../tenant-features/tenant-features.service';
+import { FeatureCode } from '../../tenant-features/entities/tenant-feature.entity';
 
 /**
  * Service pour la gestion de l'option bilingue (mode académique structurant).
  * Impacte : structure pédagogique, matières, notes, bulletins, statistiques, tarification, ORION.
+ *
+ * SOURCE DE VÉRITÉ UNIQUE : SettingsBilingual.isEnabled
+ * Quand isEnabled change, on synchronise automatiquement :
+ * - TenantFeature.BILINGUAL_TRACK (feature flag pour le frontend)
+ * - Subscription.bilingualEnabled (pour la facturation)
+ * - AcademicTrack EN (créé/supprimé via TenantFeaturesService)
  */
 @Injectable()
 export class BilingualSettingsService {
+  private readonly logger = new Logger(BilingualSettingsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly historyService: SettingsHistoryService,
     private readonly bilingualValidation: BilingualValidationService,
+    private readonly tenantFeaturesService: TenantFeaturesService,
   ) {}
 
   /**
@@ -115,6 +126,38 @@ export class BilingualSettingsService {
         where: { tenantId },
         data: { bilingualEnabled: data.isEnabled },
       });
+
+      // ─── Synchroniser le feature flag BILINGUAL_TRACK ───
+      // C'est la source de vérité pour le frontend (useFeature, AcademicTrackSelector, etc.)
+      try {
+        const isEnabled = await this.tenantFeaturesService.isFeatureEnabled(
+          FeatureCode.BILINGUAL_TRACK,
+          tenantId,
+        );
+        if (data.isEnabled && !isEnabled) {
+          // Activer le feature flag → crée aussi l'AcademicTrack EN via onFeatureEnabled
+          await this.tenantFeaturesService.enableFeature(
+            FeatureCode.BILINGUAL_TRACK,
+            tenantId,
+            userId,
+            'Activated via Settings → Bilingual',
+          );
+          this.logger.log(`BILINGUAL_TRACK feature enabled for tenant ${tenantId}`);
+        } else if (!data.isEnabled && isEnabled) {
+          // Désactiver le feature flag
+          // La vérification des données EN a déjà été faite ci-dessus
+          await this.tenantFeaturesService.disableFeature(
+            FeatureCode.BILINGUAL_TRACK,
+            tenantId,
+            userId,
+            'Deactivated via Settings → Bilingual',
+          );
+          this.logger.log(`BILINGUAL_TRACK feature disabled for tenant ${tenantId}`);
+        }
+      } catch (syncErr: any) {
+        // Non-bloquant : si le sync échoue (ex: feature déjà activée), on logge et continue
+        this.logger.warn(`Failed to sync BILINGUAL_TRACK feature flag: ${syncErr.message}`);
+      }
     }
 
     await this.historyService.logSettingChange(

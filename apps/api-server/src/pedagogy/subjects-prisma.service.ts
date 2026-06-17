@@ -69,6 +69,7 @@ export class SubjectsPrismaService {
       academicYearId?: string;
       schoolLevelId?: string;
       academicTrackId?: string;
+      language?: string;
       search?: string;
     }
   ) {
@@ -88,6 +89,11 @@ export class SubjectsPrismaService {
 
     if (filters?.academicTrackId) {
       where.academicTrackId = filters.academicTrackId;
+    }
+
+    // Mode bilingue : filtrer par langue (FR/EN)
+    if (filters?.language) {
+      where.language = filters.language;
     }
 
     if (filters?.search) {

@@ -14,6 +14,7 @@ import { SettingsBootstrapPrefetch } from '@/components/settings/SettingsBootstr
 import { AppSessionProvider } from '@/contexts/AppSessionContext';
 import { AcademicYearProvider } from '@/contexts/AcademicYearContext';
 import { SchoolLevelProvider } from '@/contexts/SchoolLevelContext';
+import { BilingualProvider } from '@/contexts/BilingualContext';
 import { SessionManagerProvider } from '@/contexts/SessionManagerContext';
 import SessionInactivityModal from '@/components/auth/SessionInactivityModal';
 import SessionLockScreen from '@/components/auth/SessionLockScreen';
@@ -59,11 +60,13 @@ export default function AppLayoutClient({
             <Suspense fallback={null}>
               <AcademicYearProvider>
                 <SchoolLevelProvider>
-                  <ReviewPromptHost user={user} tenant={tenant}>
-                    <PostLoginFlowWrapper user={user} tenant={tenant}>
-                      {children}
-                    </PostLoginFlowWrapper>
-                  </ReviewPromptHost>
+                  <BilingualProvider>
+                    <ReviewPromptHost user={user} tenant={tenant}>
+                      <PostLoginFlowWrapper user={user} tenant={tenant}>
+                        {children}
+                      </PostLoginFlowWrapper>
+                    </ReviewPromptHost>
+                  </BilingualProvider>
                 </SchoolLevelProvider>
               </AcademicYearProvider>
             </Suspense>

@@ -41,6 +41,7 @@ import {
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useAuth } from '@/hooks/useAuth';
+import { useBilingual, BilingualTrack } from '@/contexts/BilingualContext';
 import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
 import { pedagogyService } from '@/services/pedagogy.service';
 import { useToast } from '@/components/ui/use-toast';
@@ -149,6 +150,7 @@ type SubTab = 'catalogue' | 'classes' | 'programs';
 export default function SubjectsWorkspace() {
   const { academicYear, tenantId } = useModuleContext();
   const { user } = useAuth();
+  const { isEnabled: bilingualEnabled, currentTrack, setCurrentTrack } = useBilingual();
   const { toast } = useToast();
   const [tab, setTab] = useState<SubTab>('catalogue');
   const [loading, setLoading] = useState(false);
@@ -174,6 +176,7 @@ export default function SubjectsWorkspace() {
     weeklyHours: 4,
     schoolLevelId: '',
     description: '',
+    language: '' as string,
   });
 
   // Mass Assignment State
@@ -282,14 +285,22 @@ export default function SubjectsWorkspace() {
     if (!academicYear?.id) return;
     setLoading(true);
     try {
-      const data = await pedagogyService.getSubjects(academicYear.id);
-      setSubjects(data || []);
+      if (bilingualEnabled) {
+        // Mode bilingue : on filtre côté backend par la langue du track courant.
+        const params = new URLSearchParams({ academicYearId: academicYear.id });
+        if (bilingualEnabled) params.append('language', currentTrack);
+        const data = await pedagogyFetch<Subject[]>(`/api/subjects?${params.toString()}`);
+        setSubjects(Array.isArray(data) ? data : []);
+      } else {
+        const data = await pedagogyService.getSubjects(academicYear.id);
+        setSubjects(data || []);
+      }
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
-  }, [academicYear?.id]);
+  }, [academicYear?.id, bilingualEnabled, currentTrack]);
 
   const loadClasses = useCallback(async () => {
     if (!academicYear?.id) return;
@@ -446,6 +457,7 @@ export default function SubjectsWorkspace() {
           coefficient: Number(subjectForm.coefficient) || 1.0,
           weeklyHours: Number(subjectForm.weeklyHours) || 0,
           description: subjectForm.description,
+          ...(bilingualEnabled && subjectForm.language ? { language: subjectForm.language } : {}),
         });
         toast({
           title: "Succès",
@@ -459,6 +471,7 @@ export default function SubjectsWorkspace() {
           coefficient: Number(subjectForm.coefficient) || 1.0,
           weeklyHours: Number(subjectForm.weeklyHours) || 0,
           description: subjectForm.description,
+          ...(bilingualEnabled ? { language: subjectForm.language || null } : {}),
         });
         toast({
           title: "Succès",
@@ -500,6 +513,7 @@ export default function SubjectsWorkspace() {
           abbreviation: suggestion.abbreviation,
           coefficient: bulkCoefficient,
           weeklyHours: bulkWeeklyHours,
+          ...(bilingualEnabled && subjectForm.language ? { language: subjectForm.language } : {}),
         });
         created++;
       } catch {
@@ -649,6 +663,36 @@ export default function SubjectsWorkspace() {
           <p className="text-lg font-semibold text-slate-900">{academicYear?.label || 'Chargement...'}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {bilingualEnabled && (
+            <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1" role="group" aria-label="Sélecteur de piste linguistique">
+              <button
+                type="button"
+                onClick={() => setCurrentTrack('FR')}
+                className={cn(
+                  'px-3 py-1.5 rounded-lg text-xs font-bold transition-all',
+                  currentTrack === 'FR'
+                    ? 'bg-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800',
+                )}
+                style={currentTrack === 'FR' ? { color: PRIMARY } : undefined}
+              >
+                Français
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentTrack('EN')}
+                className={cn(
+                  'px-3 py-1.5 rounded-lg text-xs font-bold transition-all',
+                  currentTrack === 'EN'
+                    ? 'bg-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800',
+                )}
+                style={currentTrack === 'EN' ? { color: PRIMARY } : undefined}
+              >
+                English
+              </button>
+            </div>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -661,6 +705,7 @@ export default function SubjectsWorkspace() {
                 weeklyHours: 4,
                 schoolLevelId: schoolLevels[0]?.id || '',
                 description: '',
+                language: bilingualEnabled ? currentTrack : '',
               });
               setModal('create-subject');
             }}
@@ -933,6 +978,19 @@ export default function SubjectsWorkspace() {
                                       {subject.abbreviation}
                                     </span>
                                   )}
+                                  {bilingualEnabled && subject.language && (
+                                    <span
+                                      className={cn(
+                                        'px-1.5 py-0.5 rounded text-[10px] font-bold border uppercase',
+                                        subject.language.toUpperCase() === 'EN'
+                                          ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                          : 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                                      )}
+                                      title={`Piste linguistique : ${subject.language}`}
+                                    >
+                                      {subject.language}
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="text-xs text-slate-400 uppercase">{subject.code}</div>
                               </div>
@@ -959,6 +1017,7 @@ export default function SubjectsWorkspace() {
                                     weeklyHours: subject.weeklyHours || 0,
                                     schoolLevelId: subject.schoolLevel?.id || subject.schoolLevelId || (subject as any).level || '',
                                     description: subject.description || '',
+                                    language: subject.language || '',
                                   });
                                   setModal('edit-subject');
                                 }}
@@ -1350,6 +1409,26 @@ export default function SubjectsWorkspace() {
                </select>
             </div>
           </div>
+
+          {/* Langue (FR/EN) — visible uniquement en mode bilingue */}
+          {bilingualEnabled && (
+            <div className="space-y-1">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Piste linguistique
+              </label>
+              <select
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white"
+                value={subjectForm.language || currentTrack}
+                onChange={(e) => setSubjectForm({ ...subjectForm, language: e.target.value })}
+              >
+                <option value="FR">Français (FR)</option>
+                <option value="EN">Anglais (EN)</option>
+              </select>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                La matière sera rattachée à la piste sélectionnée et ne sera proposée qu&apos;aux classes de la même piste.
+              </p>
+            </div>
+          )}
 
           {/* ── Suggestions de matières par défaut (multi-sélection) ──────── */}
           {modal === 'create-subject' && defaultSuggestionsForLevel.length > 0 && (

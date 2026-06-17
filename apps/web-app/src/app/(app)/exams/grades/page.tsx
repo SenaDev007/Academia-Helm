@@ -50,6 +50,7 @@ import {
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useAcademicSettings } from '@/hooks/useAcademicSettings';
 import { academicSettingsService } from '@/services/academic-settings.service';
+import { useBilingual } from '@/contexts/BilingualContext';
 import { toast } from '@/components/ui/toast';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { cn } from '@/lib/utils';
@@ -118,6 +119,7 @@ function getStatusBadge(status: string) {
 export default function GradesPage() {
   const { academicYear, schoolLevel } = useModuleContext();
   const { config: academicConfig, getScoreColor, getAppreciation } = useAcademicSettings();
+  const { isEnabled: isBilingual, currentTrack, setCurrentTrack } = useBilingual();
 
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
   const [selectedEvaluation, setSelectedEvaluation] = useState<Evaluation | null>(null);
@@ -136,8 +138,13 @@ export default function GradesPage() {
     if (!schoolLevel?.id || !academicYear?.id) return;
     setLoadingEvals(true);
     try {
+      const params = new URLSearchParams({
+        schoolLevelId: schoolLevel.id,
+        academicYearId: academicYear.id,
+      });
+      if (isBilingual) params.append('language', currentTrack);
       const res = await fetch(
-        `/api/exams/evaluations?schoolLevelId=${schoolLevel.id}&academicYearId=${academicYear.id}`,
+        `/api/exams/evaluations?${params.toString()}`,
         { credentials: 'include' }
       ).then((r) => r.json());
       setEvaluations(Array.isArray(res) ? res : []);
@@ -146,7 +153,7 @@ export default function GradesPage() {
     } finally {
       setLoadingEvals(false);
     }
-  }, [schoolLevel?.id, academicYear?.id]);
+  }, [schoolLevel?.id, academicYear?.id, isBilingual, currentTrack]);
 
   useEffect(() => { loadEvaluations(); }, [loadEvaluations]);
 
@@ -630,6 +637,26 @@ export default function GradesPage() {
         layout: 'full',
         children: (
           <div className="space-y-4">
+            {/* Bilingual track selector */}
+            {isBilingual && (
+              <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1 mb-4">
+                <button
+                  type="button"
+                  onClick={() => setCurrentTrack('FR')}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentTrack === 'FR' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+                >
+                  Français
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentTrack('EN')}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentTrack === 'EN' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+                >
+                  English
+                </button>
+              </div>
+            )}
+
             {/* Config status */}
             {academicConfig && (
               <motion.div

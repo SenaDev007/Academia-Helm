@@ -44,6 +44,7 @@ import {
   ConfirmModal,
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { useBilingual } from '@/contexts/BilingualContext';
 import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
 import { pedagogyService } from '@/services/pedagogy.service';
 import { useToast } from '@/components/ui/use-toast';
@@ -97,6 +98,7 @@ const isHomeroomLevel = (levelName?: string): boolean => {
 
 export default function AssignmentsWorkspace() {
   const { academicYear, tenantId } = useModuleContext();
+  const { isEnabled: isBilingual, currentTrack, setCurrentTrack } = useBilingual();
   const syncStatuses = useEntitySyncStatusBatch('CLASS', tenantId ?? undefined);
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
@@ -156,15 +158,29 @@ export default function AssignmentsWorkspace() {
   const selectedClass = classes.find(c => c.id === selectedClassId);
   const isHomeroom = isHomeroomLevel(selectedClass?.level?.name);
 
+  // ── Filtre bilingue : en mode bilingue, on ne montre que les matières
+  //    correspondant à la track courante (FR ou EN). On se base sur le
+  //    `language` du Subject (déduit du code suffixé _EN ou via la colonne
+  //    language retournée par l'API).
+  const visibleClassSubjects = useMemo(() => {
+    if (!isBilingual) return classSubjects;
+    return classSubjects.filter(cs => {
+      const lang =
+        (cs.subject as any)?.language ||
+        ((cs.subject?.code || '').endsWith('_EN') ? 'EN' : 'FR');
+      return lang === currentTrack;
+    });
+  }, [classSubjects, isBilingual, currentTrack]);
+
   // Titulaire courant (Maternelle/Primaire) : le prof du premier classSubject assigné
   const currentHomeroom = useMemo(() => {
     if (!isHomeroom) return null;
-    const assigned = classSubjects.find(cs => cs.assignments.length > 0);
+    const assigned = visibleClassSubjects.find(cs => cs.assignments.length > 0);
     return assigned?.assignments[0]?.teacher || null;
-  }, [isHomeroom, classSubjects]);
+  }, [isHomeroom, visibleClassSubjects]);
 
-  const homeroomFullyAssigned = isHomeroom && classSubjects.length > 0 &&
-    classSubjects.every(cs => cs.assignments.length > 0);
+  const homeroomFullyAssigned = isHomeroom && visibleClassSubjects.length > 0 &&
+    visibleClassSubjects.every(cs => cs.assignments.length > 0);
 
   // --- Actions ---
 
@@ -187,16 +203,16 @@ export default function AssignmentsWorkspace() {
 
   /** MATERNELLE/PRIMAIRE : affecter le titulaire à TOUTES les matières de la classe */
   const handleAssignHomeroom = async (teacherId: string) => {
-    if (!academicYear?.id || classSubjects.length === 0) return;
+    if (!academicYear?.id || visibleClassSubjects.length === 0) return;
     setBulkAssigning(true);
     try {
-      // Supprimer d'abord toutes les affectations existantes
-      const removePromises = classSubjects
+      // Supprimer d'abord toutes les affectations existantes (sur les matières visibles)
+      const removePromises = visibleClassSubjects
         .flatMap(cs => cs.assignments.map(a => pedagogyService.deleteTeacherAssignment(a.id)));
       await Promise.all(removePromises);
 
-      // Créer une affectation pour chaque matière
-      const assignPromises = classSubjects.map(cs =>
+      // Créer une affectation pour chaque matière visible
+      const assignPromises = visibleClassSubjects.map(cs =>
         pedagogyService.createTeacherAssignment({
           academicYearId: academicYear.id,
           teacherId,
@@ -209,7 +225,7 @@ export default function AssignmentsWorkspace() {
       setSearch('');
       toast({
         title: '✅ Titulaire affecté',
-        description: `Le titulaire a été assigné à toutes les ${classSubjects.length} matières de la classe.`,
+        description: `Le titulaire a été assigné à toutes les ${visibleClassSubjects.length} matières de la classe.`,
       });
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message || "Impossible d'affecter le titulaire.", variant: 'destructive' });
@@ -223,7 +239,7 @@ export default function AssignmentsWorkspace() {
     if (!academicYear?.id) return;
     setBulkAssigning(true);
     try {
-      const removePromises = classSubjects
+      const removePromises = visibleClassSubjects
         .flatMap(cs => cs.assignments.map(a => pedagogyService.deleteTeacherAssignment(a.id)));
       await Promise.all(removePromises);
       await loadClassSubjects();
@@ -354,6 +370,26 @@ export default function AssignmentsWorkspace() {
       {/* ── Zone principale ── */}
       <div className="flex-1 flex flex-col gap-0 bg-white overflow-hidden">
 
+        {/* Bilingual track selector */}
+        {isBilingual && (
+          <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1 mx-4 mt-4 mb-2 self-start">
+            <button
+              type="button"
+              onClick={() => setCurrentTrack('FR')}
+              className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentTrack === 'FR' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+            >
+              Français
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentTrack('EN')}
+              className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentTrack === 'EN' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+            >
+              English
+            </button>
+          </div>
+        )}
+
         {/* Header */}
         <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between">
           <div>
@@ -385,10 +421,10 @@ export default function AssignmentsWorkspace() {
                   {isHomeroom ? 'Maternelle / Primaire' : 'Secondaire'}
                 </p>
                 <p className="text-[10px] font-medium text-slate-500 mt-0.5">
-                  {classSubjects.length} matière{classSubjects.length > 1 ? 's' : ''}
+                  {visibleClassSubjects.length} matière{visibleClassSubjects.length > 1 ? 's' : ''}
                   {' '}• {isHomeroom
                     ? (homeroomFullyAssigned ? '✅ Titulaire affecté' : '⚠️ Sans titulaire')
-                    : `${classSubjects.filter(cs => cs.assignments.length > 0).length}/${classSubjects.length} affectées`
+                    : `${visibleClassSubjects.filter(cs => cs.assignments.length > 0).length}/${visibleClassSubjects.length} affectées`
                   }
                 </p>
               </div>
@@ -417,7 +453,7 @@ export default function AssignmentsWorkspace() {
                   <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed font-medium">
                     En Maternelle et en Primaire, <strong>un seul enseignant titulaire</strong> gère l'ensemble
                     des matières de sa classe. Définissez-le ici — il sera automatiquement affecté
-                    à toutes les {classSubjects.length} matières de <strong>{selectedClass.name}</strong>.
+                    à toutes les {visibleClassSubjects.length} matières de <strong>{selectedClass.name}</strong>.
                   </p>
                 </div>
               </div>
@@ -477,7 +513,7 @@ export default function AssignmentsWorkspace() {
                         Matières gérées
                       </p>
                       <div className="grid grid-cols-2 gap-2">
-                        {classSubjects.map(cs => (
+                        {visibleClassSubjects.map(cs => (
                           <div key={cs.id} className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 text-xs bg-white">
                             <div className="w-7 h-7 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-center font-bold text-[9px] text-slate-600 flex-shrink-0">
                               {cs.subject.code}
@@ -538,7 +574,7 @@ export default function AssignmentsWorkspace() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {classSubjects.map(cs => {
+                {visibleClassSubjects.map(cs => {
                   const assigned = cs.assignments[0]?.teacher;
                   return (
                     <motion.div
@@ -611,7 +647,7 @@ export default function AssignmentsWorkspace() {
                 })}
               </div>
 
-              {classSubjects.length === 0 && (
+              {visibleClassSubjects.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <BookOpen className="w-10 h-10 text-slate-300 mb-4" />
                   <p className="text-slate-500 text-xs font-bold">Aucune matière configurée</p>
@@ -640,7 +676,7 @@ export default function AssignmentsWorkspace() {
               <p className="text-xs font-bold text-slate-900">Titulaire de {selectedClass?.name}</p>
               <p className="text-[11px] text-slate-500 mt-0.5 font-medium">
                 Cet enseignant gérera toutes les{' '}
-                <strong>{classSubjects.length} matières</strong> de la classe.
+                <strong>{visibleClassSubjects.length} matières</strong> de la classe.
               </p>
             </div>
           </div>

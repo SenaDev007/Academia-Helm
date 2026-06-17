@@ -74,8 +74,8 @@ export default function AdminLoginPage() {
         .then(async (res) => {
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Erreur callback Google');
-          router.push(redirectPath);
-          router.refresh();
+          // Forcer un rechargement complet pour que le cookie soit lu côté serveur
+          window.location.href = redirectPath;
         })
         .catch((err) => setError(err instanceof Error ? err.message : 'Erreur'))
         .finally(() => setIsLoading(false));
@@ -110,8 +110,8 @@ export default function AdminLoginPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Identifiants invalides');
-      router.push(redirectPath);
-      router.refresh();
+      // Forcer un rechargement complet pour que le cookie soit lu côté serveur
+      window.location.href = redirectPath;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur');
     } finally {

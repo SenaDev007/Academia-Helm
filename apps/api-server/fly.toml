@@ -1,7 +1,4 @@
-# fly.toml app configuration file generated for academia-helm-api on 2026-06-17T08:05:54Z
-#
-# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
-#
+# fly.toml app configuration file for academia-helm-api
 
 app = 'academia-helm-api'
 primary_region = 'fra'
@@ -16,7 +13,6 @@ primary_region = 'fra'
 [http_service]
   internal_port = 3000
   force_https = true
-  # Garder la machine toujours active en développement (évite les 503)
   auto_stop_machines = false
   auto_start_machines = true
   min_machines_running = 1
@@ -26,24 +22,3 @@ primary_region = 'fra'
   cpu_kind = 'shared'
   cpus = 1
   memory_mb = 1024
-
-[[vm]]
-  cpu_kind = 'shared'
-  cpus = 4
-  memory_mb = 8192
-  memory = '8gb'
-  processes = ['app']
-  size = 'shared-cpu-4x'
-
-[checks]
-
-  [checks.health]
-    port = 3000
-    type = 'http'
-    interval = '30s'
-    timeout = '10s'
-    # 60s grace period — NestJS avec 534 modèles Prisma + 60+ modules
-    # peut mettre 30-45s à démarrer sur shared-cpu-1x
-    grace_period = '60s'
-    method = 'GET'
-    path = '/health'

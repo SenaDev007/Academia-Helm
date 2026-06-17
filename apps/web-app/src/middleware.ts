@@ -249,10 +249,15 @@ function safeRedirect(url: URL | string, request: NextRequest, currentDepth: num
     return errorResponse;
   }
   const redirectResponse = NextResponse.redirect(url);
+  // Définir le cookie sur le domaine parent pour qu'il persiste
+  // across subdomains (évite les boucles quand la redirection change de domaine)
+  const host = request.headers.get('host') || '';
+  const domainMatch = host.match(/\.[^.]+\.[^.]+$/); // .academiahelm.com
   redirectResponse.cookies.set('x-redirect-depth', String(nextDepth), {
     path: '/',
     maxAge: 30, // 30 secondes — expire rapidement si pas de boucle
     sameSite: 'lax',
+    ...(domainMatch ? { domain: domainMatch[0] } : {}),
   });
   return redirectResponse;
 }
@@ -566,8 +571,21 @@ export async function middleware(request: NextRequest) {
       const tenant = await resolveTenant(tenantIdentifier);
 
       if (!tenant) {
-        const mainDomain = getAppBaseUrl();
-        return safeRedirect(new URL('/tenant-not-found', mainDomain), request, redirectDepth);
+        // MODE RÉSILIENT : si le tenant n'est pas trouvé, NE PAS rediriger
+        // vers /tenant-not-found (cela cause des boucles de redirection quand
+        // l'API est down). À la place, laisser passer la requête avec un
+        // header d'avertissement. La page rendra et les composants géreront
+        // l'erreur gracieusement.
+        console.warn('TENANT_RESOLUTION_FAILED (non-blocking)', {
+          tenantIdentifier,
+          endpoint: pathname,
+          reason: 'Tenant not found — allowing request without tenant context',
+        });
+        const fallbackResponse = withAntiCacheHeaders(NextResponse.next());
+        if (user) {
+          fallbackResponse.headers.set('X-User-ID', user.id);
+        }
+        return fallbackResponse;
       }
 
       // Vérifier que le tenant est actif
@@ -595,17 +613,26 @@ export async function middleware(request: NextRequest) {
         tenantResponse.headers.set('X-Portal-Type', user.portalType);
       }
 
-      // Cache the resolved tenant info in cookies for future requests (30 minutes)
-      const maxAge = 30 * 60; // 30 minutes
+      // Cache the resolved tenant info in cookies for future requests (2 hours)
+      // Étendu de 30min à 2h pour réduire les appels API et éviter les boucles
+      // de redirection quand l'API est temporairement down.
+      const maxAge = 2 * 60 * 60; // 2 hours
       tenantResponse.cookies.set('x-resolved-tenant-id', tenant.id, { path: '/', maxAge, sameSite: 'lax' });
       tenantResponse.cookies.set('x-resolved-tenant-slug', tenant.slug, { path: '/', maxAge, sameSite: 'lax' });
       tenantResponse.cookies.set('x-resolved-tenant-subdomain', tenantIdentifier, { path: '/', maxAge, sameSite: 'lax' });
 
       return tenantResponse;
     } catch (error) {
-      console.error('Error resolving tenant in middleware:', error);
-      const mainDomain = getAppBaseUrl();
-      return safeRedirect(new URL('/tenant-not-found', mainDomain), request, redirectDepth);
+      // MODE RÉSILIENT : si l'API est down (Fly.io OOM, réseau, etc.),
+      // NE PAS rediriger vers /tenant-not-found. Cela cause des boucles de
+      // redirection infinies. À la place, laisser passer la requête —
+      // la page rendra et les composants géreront l'erreur d'API gracieusement.
+      console.error('Error resolving tenant in middleware (non-blocking):', error);
+      const fallbackResponse = withAntiCacheHeaders(NextResponse.next());
+      if (user) {
+        fallbackResponse.headers.set('X-User-ID', user.id);
+      }
+      return fallbackResponse;
     }
   }
 

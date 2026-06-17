@@ -82,6 +82,13 @@ export const PEDAGOGY_SUBMODULE_TABS = [
     roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'director', 'admin'],
   },
   {
+    id: 'aggregation',
+    label: 'Agrégation & Bilan Global',
+    path: '/app/pedagogy/aggregation',
+    icon: BarChart3,
+    roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'director', 'admin'],
+  },
+  {
     id: 'global-library',
     label: 'Bibliothèque virtuelle',
     path: '/app/pedagogy/global-library',

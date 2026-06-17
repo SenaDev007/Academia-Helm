@@ -68,6 +68,12 @@ export const EXAMS_SUB_MODULES = [
     icon: FileText 
   },
   { 
+    id: 'aggregation', 
+    label: 'Agrégation & Stats Globales', 
+    href: '/app/exams/aggregation', 
+    icon: BarChart3 
+  },
+  { 
     id: 'analytics', 
     label: 'Statistiques', 
     href: '/app/exams/analytics', 

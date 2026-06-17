@@ -810,6 +810,21 @@ export async function closeAcademicYear(id: string, tenantId?: string | null) {
   });
 }
 
+/**
+ * PROMOTE — Clôture l'année active courante ET active la suivante en une seule
+ * transaction. Crée aussi les enrollments PROMOTION pour chaque élève actif.
+ * C'est l'action "Passer à l'année suivante".
+ *
+ * Différent de closeAcademicYear() qui refuse de clôturer l'année active.
+ * Utiliser promoteAcademicYear() pour le workflow naturel fin d'année → rentrée.
+ */
+export async function promoteAcademicYear(id: string, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/academic-years/${id}/promote${qs}`, {
+    method: 'POST',
+  });
+}
+
 export async function generateNextAcademicYear(tenantId?: string | null) {
   const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
   return fetchWithAuth(`${BASE_URL}/academic-years/generate-next${qs}`, {
@@ -884,7 +899,7 @@ export async function getAcademicYearPeriods(academicYearId: string, tenantId?: 
 /** Crée les 3 trimestres par défaut pour une année qui n'a pas encore de périodes. */
 export async function createDefaultAcademicPeriods(academicYearId: string, tenantId?: string | null): Promise<AcademicPeriod[]> {
   const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
-  const res = await fetchWithAuth(`${BASE_URL}/academic-years/${academicYearId}/periods/bootstrap${qs}`, { method: 'POST' });
+  const res = await fetchWithAuth(`${BASE_URL}/academic-years/${academicYearId}/periods/create-default${qs}`, { method: 'POST' });
   return Array.isArray(res) ? res : [];
 }
 

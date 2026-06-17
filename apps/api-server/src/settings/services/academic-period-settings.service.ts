@@ -239,8 +239,18 @@ export class AcademicPeriodSettingsService {
   }
 
   /**
-   * Crée par défaut les 3 trimestres pour une année scolaire (début/fin répartis en 3 parts égales).
-   * Appelé automatiquement après création d'une année. Les périodes restent modifiables et activables (une seule active à la fois).
+   * Crée par défaut les 3 trimestres pour une année scolaire selon le
+   * calendrier type Bénin :
+   *   - T1 : pré-rentrée (ou startDate) → 31 décembre (année de début)
+   *   - T2 : 1er janvier → 31 mars (année de fin)
+   *   - T3 : 1er avril → endDate (dernier vendredi de juin)
+   *
+   * Si l'année scolaire ne respecte pas le pattern sept→juin (override
+   * manuel), on retombe sur une division en 3 parts égales pour garantir
+   * un découpage cohérent.
+   *
+   * Appelé automatiquement après création d'une année. Les périodes restent
+   * modifiables et activables (une seule active à la fois).
    */
   async createDefaultTrimestersForYear(
     tenantId: string,
@@ -250,22 +260,53 @@ export class AcademicPeriodSettingsService {
     userId: string,
   ): Promise<void> {
     const start = new Date(startDate);
-    const end = new Date(endDate);
     start.setUTCHours(0, 0, 0, 0);
+    const end = new Date(endDate);
     end.setUTCHours(23, 59, 59, 999);
-    const totalMs = end.getTime() - start.getTime();
-    const thirdMs = Math.floor(totalMs / 3);
 
-    const t1End = new Date(start.getTime() + thirdMs);
-    const t2Start = new Date(start.getTime() + thirdMs);
-    const t2End = new Date(start.getTime() + 2 * thirdMs);
-    const t3Start = new Date(start.getTime() + 2 * thirdMs);
+    // Détection du pattern sept→juin :
+    // - startDate.month === 8 (septembre)
+    // - endDate.month === 5 (juin)
+    // - endDate.year === startDate.year + 1
+    const isBeninPattern =
+      start.getUTCMonth() === 8 && // sept
+      end.getUTCMonth() === 5 &&  // juin
+      end.getUTCFullYear() === start.getUTCFullYear() + 1;
 
-    const periods = [
-      { name: 'Trimestre 1', order: 1, startDate: start, endDate: t1End },
-      { name: 'Trimestre 2', order: 2, startDate: t2Start, endDate: t2End },
-      { name: 'Trimestre 3', order: 3, startDate: t3Start, endDate: end },
-    ];
+    let periods: Array<{ name: string; order: number; startDate: Date; endDate: Date }>;
+
+    if (isBeninPattern) {
+      // Calendrier type Bénin : T1 sept→déc, T2 janv→mars, T3 avr→juin
+      const startYear = start.getUTCFullYear();
+      const endYear = end.getUTCFullYear();
+
+      const t1Start = new Date(start);
+      const t1End = new Date(Date.UTC(startYear, 11, 31, 23, 59, 59, 999)); // 31 déc
+      const t2Start = new Date(Date.UTC(endYear, 0, 1, 0, 0, 0, 0)); // 1er janv
+      const t2End = new Date(Date.UTC(endYear, 2, 31, 23, 59, 59, 999)); // 31 mars
+      const t3Start = new Date(Date.UTC(endYear, 3, 1, 0, 0, 0, 0)); // 1er avr
+      const t3End = new Date(end);
+
+      periods = [
+        { name: 'Trimestre 1', order: 1, startDate: t1Start, endDate: t1End },
+        { name: 'Trimestre 2', order: 2, startDate: t2Start, endDate: t2End },
+        { name: 'Trimestre 3', order: 3, startDate: t3Start, endDate: t3End },
+      ];
+    } else {
+      // Fallback : année non-standard → division en 3 parts égales en durée
+      const totalMs = end.getTime() - start.getTime();
+      const thirdMs = Math.floor(totalMs / 3);
+      const t1End = new Date(start.getTime() + thirdMs);
+      const t2Start = new Date(start.getTime() + thirdMs);
+      const t2End = new Date(start.getTime() + 2 * thirdMs);
+      const t3Start = new Date(start.getTime() + 2 * thirdMs);
+
+      periods = [
+        { name: 'Trimestre 1', order: 1, startDate: start, endDate: t1End },
+        { name: 'Trimestre 2', order: 2, startDate: t2Start, endDate: t2End },
+        { name: 'Trimestre 3', order: 3, startDate: t3Start, endDate: end },
+      ];
+    }
 
     for (const p of periods) {
       await this.prisma.academicPeriod.create({
@@ -289,7 +330,7 @@ export class AcademicPeriodSettingsService {
       null,
       'academic_period',
       'academic_period',
-      { default_trimesters_created: { old: null, new: { academicYearId, names: periods.map((p) => p.name) } } },
+      { default_trimesters_created: { old: null, new: { academicYearId, names: periods.map((p) => p.name), pattern: isBeninPattern ? 'benin' : 'equal-thirds' } } },
       userId,
     );
   }

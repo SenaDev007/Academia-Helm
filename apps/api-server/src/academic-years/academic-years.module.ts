@@ -5,6 +5,7 @@ import { AcademicYearsRepository } from './academic-years.repository';
 import { DatabaseModule } from '../database/database.module';
 import { AcademicYearCalculatorService } from './academic-year-calculator.service';
 import { AcademicYearsPrismaService } from './academic-years-prisma.service';
+import { AcademicYearRolloverService } from './academic-year-rollover.service';
 
 @Module({
   imports: [
@@ -16,12 +17,16 @@ import { AcademicYearsPrismaService } from './academic-years-prisma.service';
     AcademicYearsRepository,
     AcademicYearCalculatorService,
     AcademicYearsPrismaService,
+    // Cron job d'auto-rollover des années scolaires (tourne chaque jour à 2h00)
+    AcademicYearRolloverService,
   ],
   exports: [
     AcademicYearsService,
     AcademicYearsPrismaService,
     AcademicYearCalculatorService,
+    AcademicYearRolloverService,
   ],
 })
 export class AcademicYearsModule {}
+
 

@@ -1364,6 +1364,27 @@ export class SettingsController {
     return this.academicYearSettingsService.close(tid, id, user.id);
   }
 
+  /**
+   * PROMOTE — Clôture l'année active courante ET active la suivante en une
+   * transaction atomique. Crée aussi les enrollments PROMOTION pour chaque
+   * élève actif. C'est l'action "Passer à l'année suivante".
+   *
+   * Différent de /close qui refuse de clôturer l'année active.
+   */
+  @Post('academic-years/:id/promote')
+  async promoteAcademicYear(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Param('id') id: string,
+  ) {
+    const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
+    const fromHeader = req?.headers?.['x-tenant-id'];
+    const tid = tenantId ?? fromUser ?? (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader);
+    if (!tid || typeof tid !== 'string') throw new BadRequestException('Contexte tenant manquant.');
+    return this.academicYearSettingsService.promote(tid, id, user.id);
+  }
+
   @Get('academic-years/:id/stats')
   async getAcademicYearStats(
     @TenantId() tenantId: string,

@@ -16,7 +16,19 @@ import type { AcademicYear } from '@/types/academic-year';
 
 export type { AcademicYear };
 
-const STORAGE_KEY = 'currentAcademicYearId';
+/**
+ * Clés localStorage utilisées pour la persistance de l'année scolaire :
+ * - STORAGE_KEY_ID ('currentAcademicYearId') : juste l'ID, lu par ce contexte
+ *   pour restaurer la sélection utilisateur entre les rechargements.
+ * - STORAGE_KEY_OBJ ('academicYear') : l'objet année JSON complet, lu par
+ *   l'intercepteur Axios (`lib/api/client.ts`) pour injecter le header
+ *   `x-academic-year-id` dans toutes les requêtes API sortantes.
+ *
+ * Les DEUX clés doivent être écrites en parallèle pour éviter le bug où
+ * l'intercepteur ne trouve pas l'année (header jamais injecté).
+ */
+const STORAGE_KEY_ID = 'currentAcademicYearId';
+const STORAGE_KEY_OBJ = 'academicYear';
 
 interface AcademicYearContextType {
   currentYear: AcademicYear | null;
@@ -53,18 +65,31 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!availableYears.length) {
-      if (!isLoading) setCurrentYearState(null);
+      if (!isLoading) {
+        setCurrentYearState(null);
+        // Nettoyer aussi le localStorage quand aucune année n'est disponible
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(STORAGE_KEY_ID);
+          localStorage.removeItem(STORAGE_KEY_OBJ);
+        }
+      }
       return;
     }
     const activeYear = availableYears.find((y) => y.isCurrent);
-    const savedYearId = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
+    const savedYearId = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_ID) : null;
     const selectedYear =
       activeYear ?? (savedYearId ? availableYears.find((y) => y.id === savedYearId) : null) ?? availableYears[0] ?? null;
 
     if (selectedYear) {
       setCurrentYearState(selectedYear);
       if (typeof window !== 'undefined') {
-        localStorage.setItem(STORAGE_KEY, selectedYear.id);
+        localStorage.setItem(STORAGE_KEY_ID, selectedYear.id);
+        // Synchroniser aussi l'objet JSON complet pour l'intercepteur Axios
+        try {
+          localStorage.setItem(STORAGE_KEY_OBJ, JSON.stringify(selectedYear));
+        } catch {
+          /* ignore quota errors */
+        }
       }
     }
   }, [availableYears, isLoading]);
@@ -75,7 +100,13 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
     if (year) {
       setCurrentYearState(year);
       if (typeof window !== 'undefined') {
-        localStorage.setItem(STORAGE_KEY, yearId);
+        localStorage.setItem(STORAGE_KEY_ID, yearId);
+        // Synchroniser aussi l'objet JSON complet pour l'intercepteur Axios
+        try {
+          localStorage.setItem(STORAGE_KEY_OBJ, JSON.stringify(year));
+        } catch {
+          /* ignore quota errors */
+        }
       }
     }
   }, []);

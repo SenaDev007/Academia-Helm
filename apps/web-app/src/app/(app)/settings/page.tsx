@@ -27,7 +27,7 @@ import {
   Bell, Users, Calendar, Save, Loader2, CheckCircle, AlertCircle,
   Mail, UserCog, Lock, Key, Smartphone, CreditCard, Receipt, RefreshCw,
   Upload, Image, CalendarDays, UserCircle, School, Archive, CalendarRange,
-  Pencil, CopyPlus, Layers
+  Pencil, CopyPlus, Layers, FastForward
 } from 'lucide-react';
 import { ModuleHeader } from '@/components/modules/blueprint';
 import GeneratedStampsSignatures from '@/components/settings/GeneratedStampsSignatures';
@@ -143,7 +143,7 @@ export default function SettingsPage() {
   const [historySearchFilter, setHistorySearchFilter] = useState<string | null>(null);
   const [academicYears, setAcademicYears] = useState<any[]>([]);
   const [activeAcademicYear, setActiveAcademicYear] = useState<any>(null);
-  const [academicYearAction, setAcademicYearAction] = useState<'activate' | 'close' | 'generate' | null>(null);
+  const [academicYearAction, setAcademicYearAction] = useState<'activate' | 'close' | 'generate' | 'promote' | null>(null);
   const [academicYearTargetId, setAcademicYearTargetId] = useState<string | null>(null);
   const [academicYearBusy, setAcademicYearBusy] = useState(false);
   const [editingYearId, setEditingYearId] = useState<string | null>(null);
@@ -654,6 +654,12 @@ export default function SettingsPage() {
       } else if (academicYearAction === 'close' && academicYearTargetId) {
         await settingsService.closeAcademicYear(academicYearTargetId, effectiveTenantId);
         showToast('success', 'Année clôturée. Elle est désormais en lecture seule.');
+      } else if (academicYearAction === 'promote' && academicYearTargetId) {
+        const result = await settingsService.promoteAcademicYear(academicYearTargetId, effectiveTenantId);
+        showToast(
+          'success',
+          `Année ${result.previousYearLabel} clôturée. Année ${result.nextYearLabel} activée. Les élèves ont été promus automatiquement.`,
+        );
       }
       setAcademicYearAction(null);
       setAcademicYearTargetId(null);
@@ -1955,6 +1961,13 @@ export default function SettingsPage() {
                   {academicYearAction === 'close' && academicYearTargetId && (
                     <p className="text-gray-900 font-medium">Clôturer cette année ? Elle passera en lecture seule.</p>
                   )}
+                  {academicYearAction === 'promote' && academicYearTargetId && (
+                    <p className="text-gray-900 font-medium">
+                      Passer à l'année suivante ? L'année courante sera clôturée, la suivante activée,
+                      et tous les élèves actifs seront automatiquement promus (création d'un enrollment
+                      PROMOTION dans la nouvelle année).
+                    </p>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -2086,6 +2099,24 @@ export default function SettingsPage() {
                           <Archive className="w-3.5 h-3.5" aria-hidden />
                           Clôturer
                         </button>
+                        {/* PROMOTE — Clôture + active la suivante en une seule action.
+                            Disponible uniquement pour l'année active non clôturée.
+                            C'est le workflow naturel fin d'année → rentrée. */}
+                        {year.isActive && !year.isClosed && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAcademicYearAction('promote');
+                              setAcademicYearTargetId(year.id);
+                            }}
+                            disabled={academicYearBusy}
+                            title="Clôturer cette année et activer la suivante. Les élèves seront promus automatiquement."
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <FastForward className="w-3.5 h-3.5" aria-hidden />
+                            Passer à l'année suivante
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}

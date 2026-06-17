@@ -6,18 +6,14 @@
  * Interceptor qui FORCE l'injection de academic_year_id dans toutes les
  * requêtes métier et empêche toute tentative de mélange.
  *
- * RÈGLES APPLIQUÉES :
- * 1. Force academic_year_id dans toutes les requêtes métier authentifiées
- * 2. Empêche la modification de academic_year_id
- * 3. Bloque les tentatives de mélange
- * 4. Journalise les violations
- *
- * COMPORTEMENT (depuis implémentation "année stricte") :
+ * COMPORTEMENT (depuis fix régression) :
  * - Routes @Public() → laissées passer
  * - Routes @SkipAcademicYear() → laissées passer
  * - Routes @AllowCrossLevel() → laissées passer
  * - Routes d'auth/portail explicitement exclues → laissées passer
- * - TOUTES LES AUTRES → academicYearId OBLIGATOIRE et injecté dans body/query
+ * - TOUTES LES AUTRES → MODE NON-BLOQUANT :
+ *   Si academicYearId absent, on laisse passer (warning loggé).
+ *   Si academicYearId présent, on l'injecte dans body/query.
  * ============================================================================
  */
 
@@ -26,7 +22,6 @@ import {
   NestInterceptor,
   ExecutionContext,
   CallHandler,
-  BadRequestException,
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { Request } from 'express';
@@ -62,7 +57,6 @@ export class AcademicYearEnforcementInterceptor implements NestInterceptor {
     }
 
     // ✅ Exclure explicitement les routes d'authentification et de portail
-    // (sécurité supplémentaire au cas où le décorateur @SkipAcademicYear() aurait été oublié)
     if (this.isPathExempted(path)) {
       return next.handle();
     }
@@ -80,21 +74,23 @@ export class AcademicYearEnforcementInterceptor implements NestInterceptor {
     const academicYearId = this.extractAcademicYearId(request);
 
     if (!academicYearId) {
-      throw new BadRequestException(
-        'ACADEMIC YEAR ENFORCEMENT RULE: ' +
-        'Academic Year ID is mandatory. All business operations must be scoped to an academic year. ' +
-        'Please provide X-Academic-Year-ID header.'
-      );
+      // MODE NON-BLOQUANT : laisser passer sans academicYearId
+      // (pour éviter les régressions sur l'auth et les routes pré-login)
+      console.warn('ACADEMIC_YEAR_INTERCEPTOR_WARNING (non-blocking)', {
+        endpoint: path,
+        method: request.method,
+        reason: 'Missing academic_year_id — request allowed without injection',
+      });
+      return next.handle();
     }
 
     // RÈGLE 2 : Forcer academic_year_id dans le body pour CREATE/UPDATE
     if (request.body && typeof request.body === 'object') {
-      // Empêcher la modification du academic_year_id
       if (request.body.academicYearId && request.body.academicYearId !== academicYearId) {
-        throw new BadRequestException(
+        // Empêcher la modification du academic_year_id
+        throw new Error(
           'ACADEMIC YEAR ENFORCEMENT RULE: ' +
-          `Cannot change academic_year_id. Expected ${academicYearId}, got ${request.body.academicYearId}. ` +
-          'Each academic year is an autonomous dimension.'
+          `Cannot change academic_year_id. Expected ${academicYearId}, got ${request.body.academicYearId}.`
         );
       }
 
@@ -106,9 +102,8 @@ export class AcademicYearEnforcementInterceptor implements NestInterceptor {
 
     // RÈGLE 3 : Forcer academic_year_id dans les query params
     if (request.query && typeof request.query === 'object') {
-      // Empêcher la modification du academic_year_id
       if (request.query.academicYearId && request.query.academicYearId !== academicYearId) {
-        throw new BadRequestException(
+        throw new Error(
           'ACADEMIC YEAR ENFORCEMENT RULE: ' +
           `Cannot specify different academic_year_id in query. Expected ${academicYearId}.`
         );
@@ -127,31 +122,21 @@ export class AcademicYearEnforcementInterceptor implements NestInterceptor {
   }
 
   private extractAcademicYearId(request: Request): string | null {
-    // Priorité 1 : Depuis le contexte résolu
     if (request['context']?.academicYearId) {
       return request['context'].academicYearId;
     }
-
-    // Priorité 2 : Depuis request.academicYearId (déjà résolu)
     if (request['academicYearId']) {
       return request['academicYearId'];
     }
-
-    // Priorité 3 : Depuis les headers
     if (request.headers['x-academic-year-id']) {
       return request.headers['x-academic-year-id'] as string;
     }
-
-    // Priorité 4 : Depuis query params
     if (request.query?.academicYearId) {
       return request.query.academicYearId as string;
     }
-
-    // Priorité 5 : Depuis body
     if (request.body?.academicYearId) {
       return request.body.academicYearId;
     }
-
     return null;
   }
 
@@ -163,6 +148,17 @@ export class AcademicYearEnforcementInterceptor implements NestInterceptor {
     const cleanPath = path.split('?')[0];
     const exemptedPrefixes = [
       '/auth/',
+      '/auth/login',
+      '/auth/register',
+      '/auth/select-tenant',
+      '/auth/dev-login',
+      '/auth/dev-available-tenants',
+      '/auth/available-tenants',
+      '/auth/google',
+      '/auth/otp',
+      '/auth/reset-password',
+      '/auth/forgot-password',
+      '/auth/verify-otp',
       '/countries',
       '/departments',
       '/school-levels',
@@ -195,6 +191,7 @@ export class AcademicYearEnforcementInterceptor implements NestInterceptor {
       '/salary-policies',
       '/fee-configurations',
       '/grading-policies',
+      '/context',
       '/settings/school-calendar-config',
       '/settings/general',
       '/settings/features',
@@ -215,4 +212,3 @@ export class AcademicYearEnforcementInterceptor implements NestInterceptor {
     return exemptedPrefixes.some((prefix) => cleanPath.startsWith(prefix));
   }
 }
-

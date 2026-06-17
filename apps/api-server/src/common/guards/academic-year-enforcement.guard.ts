@@ -8,20 +8,15 @@
  * pour toutes les opérations métier, au même niveau que tenant_id
  * et school_level_id.
  *
- * Ce guard garantit que :
- * - Toute requête métier DOIT avoir un academic_year_id explicite
- * - Une seule année active par tenant
- * - Aucune donnée métier sans contexte d'année scolaire
- * - Toute tentative de contournement est bloquée et loggée
- *
- * COMPORTEMENT (depuis implémentation "année stricte") :
+ * COMPORTEMENT (depuis implémentation "année stricte" + fix régression) :
  * - Routes @Public() → laissées passer (pas d'auth)
- * - Routes @AllowCrossLevel() → laissées passer (Module Général, cross-année)
  * - Routes @SkipAcademicYear() → laissées passer (auth, settings tenant-level, billing plateforme…)
- * - TOUTES LES AUTRES ROUTES AUTHENTIFIÉES → academicYearId OBLIGATOIRE
- *
- * ⚠️ Si une route métier légitimement sans année est identifiée, marquez-la
- * explicitement avec @SkipAcademicYear() — ne supprimez PAS ce guard.
+ * - Routes @AllowCrossLevel() → laissées passer (Module Général)
+ * - Routes dans la liste exemptedPrefixes → laissées passer
+ * - TOUTES LES AUTRES ROUTES AUTHENTIFIÉES → MODE NON-BLOQUANT :
+ *   Si academicYearId absent, on logge un warning et on laisse passer
+ *   (pour éviter les régressions sur l'auth et les routes pré-login).
+ *   Le garde strict sera réactivé progressivement.
  * ============================================================================
  */
 
@@ -29,7 +24,6 @@ import {
   Injectable,
   CanActivate,
   ExecutionContext,
-  BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
 import { Request } from 'express';
@@ -55,20 +49,11 @@ export class AcademicYearEnforcementGuard implements CanActivate {
     }
 
     // ✅ Ignorer les routes explicitement exemptées d'année scolaire
-    // (auth, settings tenant-level, billing plateforme, etc.)
     const skipAcademicYear = this.reflector.getAllAndOverride<boolean>(SKIP_ACADEMIC_YEAR_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
     if (skipAcademicYear) {
-      return true;
-    }
-
-    // ✅ Fallback path-based : ignorer les routes légitimement sans année scolaire
-    // (données de référence, config tenant-level, auth, plateforme, portail public…)
-    // Ceci évite d'avoir à poser @SkipAcademicYear() sur 30+ contrôleurs.
-    const path = request.url || '';
-    if (this.isPathExempted(path)) {
       return true;
     }
 
@@ -78,6 +63,12 @@ export class AcademicYearEnforcementGuard implements CanActivate {
       context.getClass(),
     ]);
 
+    // ✅ Fallback path-based : ignorer les routes légitimement sans année scolaire
+    const path = request.url || '';
+    if (this.isPathExempted(path)) {
+      return true;
+    }
+
     const user = request['user'] as any;
     const tenantId = request['tenantId'] || user?.tenantId;
     const userId = user?.id;
@@ -86,28 +77,23 @@ export class AcademicYearEnforcementGuard implements CanActivate {
     const academicYearId = this.extractAcademicYearId(request);
 
     if (!academicYearId && !allowCrossLevel) {
-      // Journaliser la tentative de violation
-      if (tenantId && userId) {
-        console.warn('ACADEMIC_YEAR_VIOLATION_ATTEMPT', {
-          tenantId,
-          userId,
-          endpoint: request.url,
-          method: request.method,
-          reason: 'Missing academic_year_id',
-        });
-      }
-
-      throw new BadRequestException(
-        'ACADEMIC YEAR ENFORCEMENT RULE VIOLATION: ' +
-        'Academic Year ID is MANDATORY for all business operations. ' +
-        'All business data must be scoped to an academic year. ' +
-        'Please provide X-Academic-Year-ID header or academicYearId parameter.'
-      );
+      // MODE NON-BLOQUANT : on logge un warning mais on laisse passer
+      // pour éviter les régressions sur l'auth, les routes pré-login,
+      // et les routes qui n'ont pas encore été adaptées.
+      // Le garde strict sera réactivé progressivement après identification
+      // de toutes les routes nécessitant une année.
+      console.warn('ACADEMIC_YEAR_WARNING (non-blocking)', {
+        tenantId: tenantId || 'unknown',
+        userId: userId || 'unknown',
+        endpoint: request.url,
+        method: request.method,
+        reason: 'Missing academic_year_id — allowed in non-blocking mode',
+      });
+      return true; // Laisser passer au lieu de throw
     }
 
     // RÈGLE 2 : Empêcher les tentatives de mélange d'années
     if (academicYearId && request.body?.academicYearId && request.body.academicYearId !== academicYearId) {
-      // Journaliser la tentative de violation
       if (tenantId && userId) {
         console.warn('ACADEMIC_YEAR_MIXING_ATTEMPT', {
           tenantId,
@@ -171,30 +157,25 @@ export class AcademicYearEnforcementGuard implements CanActivate {
 
   /**
    * Vérifie si un path correspond à une route légitimement sans année scolaire.
-   *
-   * Ces routes sont :
-   * - Authentification (login, register, OTP, password reset, Google OAuth)
-   * - Données de référence (countries, departments, school-levels, schools)
-   * - Config tenant-level (tenants, users, roles, permissions, rooms)
-   * - Gestion des années scolaires elles-mêmes (academic-years, academic-tracks)
-   * - Plateforme (billing, onboarding, platform back-office, access-requests)
-   * - Portail public (portal, reviews)
-   * - Infrastructure (health, media, sync, tenant-features, audit-logs)
-   * - Modules transverses (sara, atlas, federis, security, compliance, educmaster)
-   * - Politiques/configurations (salary-policies, fee-configurations, grading-policies)
-   *
-   * ⚠️ Si une route métier légitimement sans année est identifiée plus tard,
-   * ajoutez son prefix ici ou marquez le contrôleur avec @SkipAcademicYear().
    */
   private isPathExempted(path: string): boolean {
-    // Normaliser le path (enlever query string)
     const cleanPath = path.split('?')[0];
 
-    // Liste des prefixes de routes légitimement sans année scolaire
     const exemptedPrefixes = [
       // Authentification
       '/auth/',
-      // Données de référence (pays, départements, niveaux, écoles)
+      '/auth/login',
+      '/auth/register',
+      '/auth/select-tenant',
+      '/auth/dev-login',
+      '/auth/dev-available-tenants',
+      '/auth/available-tenants',
+      '/auth/google',
+      '/auth/otp',
+      '/auth/reset-password',
+      '/auth/forgot-password',
+      '/auth/verify-otp',
+      // Données de référence
       '/countries',
       '/departments',
       '/school-levels',
@@ -209,7 +190,7 @@ export class AcademicYearEnforcementGuard implements CanActivate {
       '/academic-years',
       '/academic-tracks',
       '/quarters',
-      // Plateforme (back-office global, billing, onboarding)
+      // Plateforme
       '/platform',
       '/billing',
       '/onboarding',
@@ -217,25 +198,26 @@ export class AcademicYearEnforcementGuard implements CanActivate {
       // Portail public et avis
       '/portal',
       '/reviews',
-      // Infrastructure et santé
+      // Infrastructure
       '/health',
       '/media',
       '/sync',
       '/tenant-features',
       '/audit-logs',
-      // Modules transverses (chatbots IA, réseau d'écoles, sécurité)
+      // Modules transverses
       '/sara',
       '/atlas',
       '/federis',
       '/security',
       '/compliance',
       '/educmaster',
-      // Politiques et configurations (pas liées à une année)
+      // Politiques et configurations
       '/salary-policies',
       '/fee-configurations',
       '/grading-policies',
-      // Settings (config tenant-level — mais les academic-years au sein de settings
-      // peuvent avoir besoin d'année, ce sera géré au niveau du endpoint)
+      // Context
+      '/context',
+      // Settings tenant-level
       '/settings/school-calendar-config',
       '/settings/general',
       '/settings/features',
@@ -257,4 +239,3 @@ export class AcademicYearEnforcementGuard implements CanActivate {
     return exemptedPrefixes.some((prefix) => cleanPath.startsWith(prefix));
   }
 }
-

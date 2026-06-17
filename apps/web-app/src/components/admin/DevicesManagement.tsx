@@ -24,6 +24,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import apiClient from '@/lib/api/client';
+import { getRoleDisplayLabel } from '@/lib/auth/role-portal-map';
 
 interface Device {
   id: string;
@@ -267,7 +268,7 @@ export default function DevicesManagement() {
                         </p>
                         <p className="text-xs text-gray-500">{device.user.email}</p>
                         {device.user.role && (
-                          <p className="text-xs text-gray-400 capitalize">{device.user.role.toLowerCase()}</p>
+                          <p className="text-xs text-gray-400">{getRoleDisplayLabel(device.user.role)}</p>
                         )}
                       </div>
                     </td>

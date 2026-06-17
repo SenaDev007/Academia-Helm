@@ -58,44 +58,44 @@ const PLATFORM_ROLES: RolePortalEntry[] = [
   {
     role: 'PLATFORM_OWNER',
     portal: 'PLATFORM',
-    functionLabel: 'Platform Owner',
+    functionLabel: 'Propriétaire de la Plateforme',
     accreditations: ['ALL_LEVELS'],
     permissions: ['ALL'],
   },
   {
     role: 'PLATFORM_SUPER_ADMIN',
     portal: 'PLATFORM',
-    functionLabel: 'Super Admin Plateforme',
+    functionLabel: 'Super Administrateur de la Plateforme',
     permissions: ['TENANT_MANAGE', 'PLAN_CONFIGURE', 'ROLE_MANAGE', 'SECURITY_AUDIT', 'SYSTEM_DIAGNOSE'],
   },
   {
     role: 'PLATFORM_ADMIN',
     portal: 'PLATFORM',
-    functionLabel: 'Admin Plateforme',
+    functionLabel: 'Administrateur de la Plateforme',
     permissions: ['TENANT_VIEW', 'TENANT_SUPPORT', 'INCIDENT_MANAGE', 'CONFIG_LIMITED'],
   },
   {
     role: 'BILLING_MANAGER',
     portal: 'PLATFORM',
-    functionLabel: 'Billing Manager',
+    functionLabel: 'Gestionnaire de Facturation',
     permissions: ['SUBSCRIPTION_MANAGE', 'INVOICE_MANAGE', 'PAYMENT_VIEW', 'SUSPENSION_TRIGGER', 'REPORT_FINANCIAL'],
   },
   {
     role: 'SUPPORT_AGENT',
     portal: 'PLATFORM',
-    functionLabel: 'Support Agent',
+    functionLabel: 'Agent de Support',
     permissions: ['TICKET_MANAGE', 'TENANT_VIEW_LIMITED', 'INCIDENT_CREATE', 'USER_ASSIST'],
   },
   {
     role: 'TECHNICAL_OPERATOR',
     portal: 'PLATFORM',
-    functionLabel: 'Technical Operator / DevOps',
+    functionLabel: 'Opérateur Technique / DevOps',
     permissions: ['INFRA_MANAGE', 'LOG_ACCESS', 'BACKUP_MANAGE', 'SECURITY_TECHNICAL', 'INTEGRATION_MANAGE'],
   },
   {
     role: 'PLATFORM_AUDITOR',
     portal: 'PLATFORM',
-    functionLabel: 'Auditeur Plateforme',
+    functionLabel: 'Auditeur de la Plateforme',
     permissions: ['AUDIT_LOG_VIEW', 'COMPLIANCE_REPORT', 'ACCESS_ANALYSIS'],
   },
 ];
@@ -104,6 +104,10 @@ const PLATFORM_ROLES: RolePortalEntry[] = [
 
 const SCHOOL_ROLES: RolePortalEntry[] = [
   // 3.1 — Gouvernance et Direction Générale
+  // PROMOTER est l'alias canonique du "Promoteur / Fondateur" — rôle stocké en DB
+  // pour les comptes promoteurs créés via les scripts d'insertion. Il bénéficie
+  // des mêmes permissions que SCHOOL_OWNER (accès à tous les modules école).
+  { role: 'PROMOTER', portal: 'SCHOOL', functionLabel: 'Promoteur / Fondateur', accreditations: ['ALL_LEVELS'], permissions: ['ALL_VIEW', 'STRATEGIC_REPORT', 'FINANCE_CONSOLIDATED', 'DECISION_VALIDATE'] },
   { role: 'SCHOOL_OWNER', portal: 'SCHOOL', functionLabel: 'Promoteur / Fondateur', accreditations: ['ALL_LEVELS'], permissions: ['ALL_VIEW', 'STRATEGIC_REPORT', 'FINANCE_CONSOLIDATED', 'DECISION_VALIDATE'] },
   { role: 'BOARD_PRESIDENT', portal: 'SCHOOL', functionLabel: 'Président CA', accreditations: ['ALL_LEVELS'], permissions: ['REPORT_VIEW', 'FINANCE_VIEW', 'GOVERNANCE_AUDIT', 'STRATEGIC_VALIDATE'] },
   { role: 'DIRECTOR_GENERAL', portal: 'SCHOOL', functionLabel: 'Directeur Général', accreditations: ['ALL_LEVELS'], permissions: ['ALL_MANAGE', 'INCIDENT_MANAGE', 'REPORT_FULL', 'DECISION_VALIDATE'] },
@@ -114,7 +118,7 @@ const SCHOOL_ROLES: RolePortalEntry[] = [
   { role: 'SCHOOL_ADMIN', portal: 'SCHOOL', functionLabel: 'Secrétaire Général', permissions: ['DOCUMENT_MANAGE', 'ARCHIVE_MANAGE', 'SECRETARIAT_SUPERVISE', 'MAIL_MANAGE'] },
   { role: 'ADMIN_AGENT', portal: 'SCHOOL', functionLabel: 'Agent Administratif', permissions: ['DATA_ENTRY', 'DOCUMENT_PREPARE', 'ARCHIVE_VIEW', 'TASK_LIMITED'] },
   { role: 'RESP_SCOLARITE', portal: 'SCHOOL', functionLabel: 'Responsable Scolarité Générale', permissions: ['STUDENT_MANAGE', 'ADMISSION_MANAGE', 'ENROLLMENT_MANAGE', 'STAT_ACADEMIC', 'LEVEL_SUPERVISE'] },
-  { role: 'DATA_MANAGER', portal: 'SCHOOL', functionLabel: 'Data Manager', permissions: ['DATA_IMPORT', 'DATA_EXPORT', 'DATA_CLEAN', 'DUPLICATE_MANAGE', 'CONSOLIDATION'] },
+  { role: 'DATA_MANAGER', portal: 'SCHOOL', functionLabel: 'Gestionnaire de Données', permissions: ['DATA_IMPORT', 'DATA_EXPORT', 'DATA_CLEAN', 'DUPLICATE_MANAGE', 'CONSOLIDATION'] },
   { role: 'INTERNAL_AUDITOR', portal: 'SCHOOL', functionLabel: 'Auditeur Interne', permissions: ['AUDIT_LOG_VIEW', 'ACCESS_REVIEW', 'FINANCE_AUDIT', 'SCOLARITE_AUDIT'] },
 
   // 3.3 — Maternelle
@@ -195,7 +199,7 @@ const PUBLIC_ROLES: RolePortalEntry[] = [
   { role: 'VISITOR', portal: 'PUBLIC', functionLabel: 'Visiteur', permissions: ['PUBLIC_VIEW', 'CONTACT_REQUEST', 'PRE_ENROLLMENT_START'] },
   { role: 'PROSPECT_PARENT', portal: 'PUBLIC', functionLabel: 'Parent Prospect', permissions: ['INFO_REQUEST', 'CHILD_PRE_ENROLL', 'DOCUMENT_UPLOAD', 'APPLICATION_TRACK', 'ADMISSION_MESSAGE_RECEIVE'] },
   { role: 'APPLICANT', portal: 'PUBLIC', functionLabel: 'Candidat Élève', levelScopes: ['MATERNELLE', 'PRIMARY', 'SECONDARY'], permissions: ['PRE_ENROLLMENT', 'DOCUMENT_SUBMIT', 'APPLICATION_STATUS', 'ENROLLMENT_FINALIZE'] },
-  { role: 'SPONSOR', portal: 'PUBLIC', functionLabel: 'Sponsor', permissions: ['PUBLIC_VIEW', 'CONTACT_REQUEST'] },
+  { role: 'SPONSOR', portal: 'PUBLIC', functionLabel: 'Sponsor / Donateur', permissions: ['PUBLIC_VIEW', 'CONTACT_REQUEST'] },
   { role: 'AMBASSADOR', portal: 'PUBLIC', functionLabel: 'Ambassadeur', permissions: ['PUBLIC_VIEW', 'CONTACT_REQUEST', 'REFERRAL_MANAGE'] },
 ];
 
@@ -348,6 +352,63 @@ export function hasPermission(role: string, permission: string): boolean {
 }
 
 /**
+ * Retourne le libellé français affichable d'un rôle technique.
+ *
+ * Utilisé partout dans le frontend pour afficher le rôle d'un utilisateur
+ * (tableaux de bord, listes d'utilisateurs, devices, etc.) sans jamais
+ * exposer la valeur technique brute en anglais (PROMOTER, PLATFORM_OWNER, ...).
+ *
+ * 1. Cherche d'abord dans ROLE_TO_ENTRY (mapping canonique).
+ * 2. Cherche ensuite dans le dictionnaire des rôles legacy / variations.
+ * 3. Fallback : retourne le rôle tel quel.
+ *
+ * Exemples :
+ *   getRoleDisplayLabel('PROMOTER')        → 'Promoteur / Fondateur'
+ *   getRoleDisplayLabel('PLATFORM_OWNER')  → 'Propriétaire de la Plateforme'
+ *   getRoleDisplayLabel('director')        → 'Directeur'
+ *   getRoleDisplayLabel('SUPER_DIRECTOR')  → 'Super Directeur'
+ */
+const ROLE_LABEL_FALLBACK: Record<string, string> = {
+  // Rôles legacy / variations courantes
+  'admin': 'Administrateur',
+  'director': 'Directeur',
+  'teacher': 'Enseignant',
+  'secretary': 'Secrétaire',
+  'accountant': 'Comptable',
+  'parent': 'Parent',
+  'student': 'Élève',
+  'SUPER_ADMIN': 'Super Administrateur',
+  'SUPER_DIRECTOR': 'Super Directeur',
+  'DIRECTEUR': 'Directeur',
+  'DIRECTEUR_GENERAL': 'Directeur Général',
+  'DIRECTEUR_ETABLISSEMENT': "Directeur d'Établissement",
+  'ENSEIGNANT': 'Enseignant',
+  'PROMOTEUR': 'Promoteur / Fondateur',
+  'SECRETAIRE': 'Secrétaire',
+  'SECRETAIRE_COMPTABLE': 'Secrétaire-Comptable',
+  'COMPTABLE': 'Comptable',
+  'CENSEUR': 'Censeur',
+  'SURVEILLANT': 'Surveillant',
+  'ECONOME': 'Économe',
+  'CAISSIER': 'Caissier',
+  'SCOLARITE': 'Scolarité',
+  'PATRONAT_ADMIN': 'Administrateur Patronat',
+  'PATRONAT_USER': 'Utilisateur Patronat',
+};
+
+export function getRoleDisplayLabel(role: string | undefined | null): string {
+  if (!role) return '';
+  // 1. Mapping canonique (PROMOTER, SCHOOL_OWNER, PLATFORM_OWNER, etc.)
+  const entry = ROLE_TO_ENTRY.get(role);
+  if (entry?.functionLabel) return entry.functionLabel;
+  // 2. Fallback legacy / variations
+  const fallback = ROLE_LABEL_FALLBACK[role];
+  if (fallback) return fallback;
+  // 3. Dernier recours : retourner le rôle tel quel
+  return role;
+}
+
+/**
  * Retourne les modules de la sidebar visibles selon le rôle et le portail.
  * Utilisé par PilotageSidebar pour filtrer les éléments de navigation.
  */
@@ -439,15 +500,15 @@ export function getVisibleModulesForRole(role: string): {
   // École : accès selon le rôle et les accréditations
   return {
     showPlatformModules: false,
-    showDirectionModules: hasAll || ['SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR'].includes(role),
-    showFinanceModules: hasAll || ['CFO', 'FINANCE_MANAGER', 'ACCOUNTANT', 'CASHIER', 'RECOVERY_MANAGER'].includes(role),
-    showPedagogyModules: hasAll || ['PEDAGOGIC_DIRECTOR', 'CENSOR', 'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE', 'PEDAGOGIC_COORDINATOR'].includes(role),
-    showHrModules: hasAll || ['HR_MANAGER', 'PAYROLL_MANAGER'].includes(role),
-    showCommunicationModules: hasAll || ['COMMUNICATION_MANAGER', 'COMMUNICATION_AGENT', 'SCHOOL_LIFE_MANAGER'].includes(role),
+    showDirectionModules: hasAll || ['PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR'].includes(role),
+    showFinanceModules: hasAll || ['PROMOTER', 'CFO', 'FINANCE_MANAGER', 'ACCOUNTANT', 'CASHIER', 'RECOVERY_MANAGER'].includes(role),
+    showPedagogyModules: hasAll || ['PROMOTER', 'PEDAGOGIC_DIRECTOR', 'CENSOR', 'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE', 'PEDAGOGIC_COORDINATOR'].includes(role),
+    showHrModules: hasAll || ['PROMOTER', 'HR_MANAGER', 'PAYROLL_MANAGER'].includes(role),
+    showCommunicationModules: hasAll || ['PROMOTER', 'COMMUNICATION_MANAGER', 'COMMUNICATION_AGENT', 'SCHOOL_LIFE_MANAGER'].includes(role),
     showStudentModules: hasAll || true, // La plupart des rôles école ont accès aux élèves
-    showExamModules: hasAll || ['CENSOR', 'EXAM_MANAGER', 'RESP_SECONDAIRE', 'PEDAGOGIC_COORDINATOR'].includes(role),
+    showExamModules: hasAll || ['PROMOTER', 'CENSOR', 'EXAM_MANAGER', 'RESP_SECONDAIRE', 'PEDAGOGIC_COORDINATOR'].includes(role),
     showParentModules: false,
-    showSettingsModules: hasAll || ['IT_MANAGER', 'SETTINGS_MANAGER'].includes(role),
+    showSettingsModules: hasAll || ['PROMOTER', 'IT_MANAGER', 'SETTINGS_MANAGER'].includes(role),
     showSupplementaryModules: !!hasAll,
   };
 }

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -65,6 +66,25 @@ export class ReviewsService {
         select: { id: true },
       });
       if (tenant) {
+        // ─── Contrôle ONE-REVIEW-PER-TENANT ───
+        // Une école tenante ne peut déposer qu'un seul avis/témoignage.
+        // Si un avis (PENDING, APPROVED ou ARCHIVED) existe déjà pour ce tenant,
+        // on refuse la création avec une 409 Conflict + message français.
+        // (Un avis REJECTED n'est pas pris en compte — l'utilisateur peut
+        // soumettre un nouvel avis pour remplacer celui qui a été rejeté.)
+        const existing = await this.prisma.review.findFirst({
+          where: {
+            tenantId: dto.tenantId,
+            status: { not: ReviewStatus.REJECTED },
+          },
+          select: { id: true },
+        });
+        if (existing) {
+          throw new ConflictException(
+            "Votre école a déjà soumis un avis. Il n'est possible de soumettre qu'un seul témoignage par école. Si vous souhaitez le modifier, contactez le support Academia Helm.",
+          );
+        }
+
         tenantVerified = true;
         status = ReviewStatus.APPROVED;
         publishedAt = new Date();
@@ -91,6 +111,37 @@ export class ReviewsService {
         source: tenantVerified ? ReviewSource.IN_APP : ReviewSource.MANUAL,
       },
     });
+  }
+
+  /**
+   * Vérifie si un tenant a déjà soumis un avis.
+   * Utilisé par le frontend pour désactiver le bouton "Donner mon avis"
+   * avant même d'ouvrir le modal — UX pro-active plutôt que de laisser
+   * l'utilisateur remplir le formulaire pour se faire rejeter.
+   *
+   * Renvoie `{ hasReview: true, review: {...} }` si un avis existe
+   * (PENDING, APPROVED ou ARCHIVED — pas REJECTED), sinon `{ hasReview: false }`.
+   * On ne renvoie que les champs publics (pas d'info sensible).
+   */
+  async checkTenantReview(tenantId: string) {
+    const review = await this.prisma.review.findFirst({
+      where: {
+        tenantId,
+        status: { not: ReviewStatus.REJECTED },
+      },
+      select: {
+        id: true,
+        authorName: true,
+        schoolName: true,
+        rating: true,
+        status: true,
+        publishedAt: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!review) return { hasReview: false };
+    return { hasReview: true, review };
   }
 
   async getPublished(limit = 9, minRating = 4) {

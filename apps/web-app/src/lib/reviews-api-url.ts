@@ -1,7 +1,7 @@
 /**
  * URLs des avis publics : toujours en same-origin via les routes Next
  * (`/api/public/...`) pour éviter CORS et ne pas dépendre des rewrites next.config
- * (`/reviews/*` → API) qui peuvent être absents si l’origine API n’est pas résolue.
+ * (`/reviews/*` → API) qui peuvent être absents si l'origine API n'est pas résolue.
  */
 
 export function buildReviewsPublishedUrl(): string {
@@ -10,4 +10,12 @@ export function buildReviewsPublishedUrl(): string {
 
 export function buildReviewsSubmitUrl(): string {
   return '/api/public/reviews';
+}
+
+/**
+ * URL BFF pour vérifier si un tenant a déjà soumis un avis.
+ * `tenantId` est injecté dans le path.
+ */
+export function buildReviewsCheckTenantUrl(tenantId: string): string {
+  return `/api/public/reviews/check-tenant/${encodeURIComponent(tenantId)}`;
 }

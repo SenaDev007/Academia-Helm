@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { Star, X, CheckCircle, MessageSquare } from 'lucide-react';
-import { buildReviewsSubmitUrl } from '@/lib/reviews-api-url';
+import { useState, useEffect } from 'react';
+import { Star, X, CheckCircle, MessageSquare, Info } from 'lucide-react';
+import { buildReviewsSubmitUrl, buildReviewsCheckTenantUrl } from '@/lib/reviews-api-url';
 
 interface InAppReviewModalProps {
   isOpen: boolean;
@@ -15,7 +15,17 @@ interface InAppReviewModalProps {
   tenantId?: string;
 }
 
-type Step = 'rating' | 'form' | 'success';
+type Step = 'loading' | 'rating' | 'form' | 'success' | 'already-submitted';
+
+interface ExistingReviewInfo {
+  id: string;
+  authorName: string;
+  schoolName: string;
+  rating: number;
+  status: string;
+  publishedAt: string | null;
+  createdAt: string;
+}
 
 export default function InAppReviewModal({
   isOpen,
@@ -38,6 +48,47 @@ export default function InAppReviewModal({
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [existingReview, setExistingReview] = useState<ExistingReviewInfo | null>(null);
+
+  // ─── Contrôle ONE-REVIEW-PER-TENANT ───
+  // Quand le modal s'ouvre pour un tenant connecté, on appelle le backend
+  // pour vérifier si un avis a déjà été soumis. Si oui, on affiche directement
+  // l'écran "already-submitted" au lieu du formulaire. Cela évite à
+  // l'utilisateur de remplir tout le formulaire pour se faire rejeter.
+  useEffect(() => {
+    if (!isOpen) return;
+    if (!tenantId) {
+      // Pas de tenantId = soumission publique (landing page) → pas de
+      // restriction one-per-tenant. On va directement à l'écran de notation.
+      setStep('rating');
+      return;
+    }
+    setStep('loading');
+    setExistingReview(null);
+    setError('');
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(buildReviewsCheckTenantUrl(tenantId), {
+          cache: 'no-store',
+        });
+        if (!res.ok) throw new Error('check failed');
+        const data: { hasReview: boolean; review?: ExistingReviewInfo } = await res.json();
+        if (cancelled) return;
+        if (data.hasReview && data.review) {
+          setExistingReview(data.review);
+          setStep('already-submitted');
+        } else {
+          setStep('rating');
+        }
+      } catch {
+        if (!cancelled) setStep('rating');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, tenantId]);
 
   if (!isOpen) return null;
 
@@ -69,6 +120,20 @@ export default function InAppReviewModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
+
+      // ─── Gestion du 409 Conflict (avis déjà soumis) ───
+      // Le backend a refusé la création car un avis existe déjà pour ce tenant.
+      // On parse le message d'erreur et on bascule sur l'écran "already-submitted".
+      if (res.status === 409) {
+        let message = "Votre école a déjà soumis un avis.";
+        try {
+          const errData = await res.json();
+          if (errData?.message) message = errData.message;
+        } catch {}
+        setError(message);
+        setStep('already-submitted');
+        return;
+      }
       if (!res.ok) throw new Error('Erreur réseau');
 
       // Marquer l'avis comme donné dans localStorage
@@ -97,6 +162,7 @@ export default function InAppReviewModal({
     setRating(0);
     setHoverRating(0);
     setError('');
+    setExistingReview(null);
     onClose();
   };
 
@@ -129,6 +195,14 @@ export default function InAppReviewModal({
             </div>
           </div>
         </div>
+
+        {/* Step: Loading (vérification initiale one-per-tenant) */}
+        {step === 'loading' && (
+          <div className="p-8 text-center">
+            <div className="mx-auto w-12 h-12 border-4 border-gray-200 border-t-blue-500 rounded-full animate-spin mb-4" />
+            <p className="text-gray-600 text-sm">Vérification de votre éligibilité...</p>
+          </div>
+        )}
 
         {/* Step: Rating */}
         {step === 'rating' && (
@@ -262,6 +336,37 @@ export default function InAppReviewModal({
             </p>
             <button
               onClick={() => { setStep('rating'); setRating(0); onClose(); }}
+              className="px-6 py-2 rounded-lg text-white font-semibold text-sm"
+              style={{ background: `linear-gradient(135deg, ${NAVY}, #2D5A8E)` }}
+            >
+              Fermer
+            </button>
+          </div>
+        )}
+
+        {/* Step: Already submitted */}
+        {step === 'already-submitted' && (
+          <div className="p-6 text-center">
+            <div className="mx-auto w-16 h-16 rounded-full flex items-center justify-center mb-4" style={{ background: '#FEF3C7' }}>
+              <Info className="w-8 h-8 text-amber-600" />
+            </div>
+            <h4 className="text-lg font-bold text-gray-900 mb-2">Avis déjà soumis</h4>
+            <p className="text-gray-600 text-sm mb-4">
+              Votre école a déjà soumis un avis sur Academia Helm.
+              Il n'est possible de soumettre qu'un seul témoignage par école.
+              {existingReview?.rating ? (
+                <>
+                  {' '}Votre témoignage actuel est noté <strong>{existingReview.rating} étoile{existingReview.rating > 1 ? 's' : ''}</strong>
+                  {existingReview.authorName ? ` par ${existingReview.authorName}` : ''}.
+                </>
+              ) : null}
+              {' '}Si vous souhaitez le modifier, contactez le support Academia Helm.
+            </p>
+            {error && (
+              <p className="text-red-500 text-xs mb-3">{error}</p>
+            )}
+            <button
+              onClick={() => { setStep('rating'); setRating(0); setExistingReview(null); onClose(); }}
               className="px-6 py-2 rounded-lg text-white font-semibold text-sm"
               style={{ background: `linear-gradient(135deg, ${NAVY}, #2D5A8E)` }}
             >

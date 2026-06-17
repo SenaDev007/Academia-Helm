@@ -49,6 +49,21 @@ export class ReviewsController {
   }
 
   /**
+   * Vérifie si un tenant a déjà soumis un avis/témoignage.
+   * Endpoint public (pas d'auth requise) — utilisé par le frontend
+   * pour désactiver pro-activement le bouton "Donner mon avis" sans
+   * attendre que l'utilisateur remplisse le formulaire.
+   *
+   * Réponse : `{ hasReview: boolean, review?: {...} }`
+   */
+  @Public()
+  @Throttle({ medium: { limit: 30, ttl: 60000 } })
+  @Get('check-tenant/:tenantId')
+  checkTenant(@Param('tenantId') tenantId: string) {
+    return this.reviewsService.checkTenantReview(tenantId);
+  }
+
+  /**
    * Upload public d'une photo de profil pour un avis déposé depuis le landing
    * page public (enseignant / parent / élève). L'URL retournée doit ensuite
    * être passée dans `photoUrl` du POST /reviews.

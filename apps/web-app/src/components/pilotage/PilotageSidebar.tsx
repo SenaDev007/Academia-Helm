@@ -243,14 +243,14 @@ interface PilotageSidebarProps {
 /** Mapping path → featureCode (optionnel). Sans featureCode = toujours affiché. */
 const MAIN_MODULES = [
   { path: '/app', label: 'Tableau de pilotage', icon: LayoutDashboard },
-  { path: '/app/orion', label: 'ORION — Pilotage Direction', icon: Zap, featureCode: 'ORION', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'CENSEUR', 'director', 'admin'] },
+  { path: '/app/orion', label: 'ORION — Pilotage Direction', icon: Zap, featureCode: 'ORION', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'CENSEUR', 'director', 'admin'] },
   { path: '/app/meetings', label: 'Réunions', icon: Calendar },
-  { path: '/app/students', label: 'Élèves & Scolarité', icon: Users, featureCode: 'STUDENTS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'SCOLARITE', 'admin'] },
-  { path: '/app/finance', label: 'Finances & Économat', icon: Calculator, featureCode: 'FINANCE', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_BILLING', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'CAISSIER', 'COMPTABLE', 'ECONOME', 'DIRECTEUR_GENERAL', 'accountant', 'admin'] },
-  { path: '/app/exams', label: 'Examens, Notes & Bulletins', icon: BookOpen, featureCode: 'EXAMS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'CENSEUR', 'TEACHER', 'TEACHER_RESP', 'admin'] },
-  { path: '/app/aggregation', label: 'Agrégation & Décision', icon: BarChart3, featureCode: 'AGGREGATION', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'director', 'admin'] },
+  { path: '/app/students', label: 'Élèves & Scolarité', icon: Users, featureCode: 'STUDENTS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'SCOLARITE', 'admin'] },
+  { path: '/app/finance', label: 'Finances & Économat', icon: Calculator, featureCode: 'FINANCE', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_BILLING', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'CAISSIER', 'COMPTABLE', 'ECONOME', 'DIRECTEUR_GENERAL', 'accountant', 'admin'] },
+  { path: '/app/exams', label: 'Examens, Notes & Bulletins', icon: BookOpen, featureCode: 'EXAMS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'CENSEUR', 'TEACHER', 'TEACHER_RESP', 'admin'] },
+  { path: '/app/aggregation', label: 'Agrégation & Décision', icon: BarChart3, featureCode: 'AGGREGATION', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'director', 'admin'] },
   { path: '/app/pedagogy', label: 'Organisation Pédagogique', icon: Building, featureCode: 'PEDAGOGY' },
-  { path: '/app/hr', label: 'Personnel, RH & Paie', icon: UserCheck, featureCode: 'HR_PAYROLL', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'SCOLARITE', 'admin'] },
+  { path: '/app/hr', label: 'Personnel, RH & Paie', icon: UserCheck, featureCode: 'HR_PAYROLL', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'SCOLARITE', 'admin'] },
   { path: '/app/communication', label: 'Communication', icon: MessageSquare, featureCode: 'COMMUNICATION' },
 ];
 
@@ -331,6 +331,7 @@ export default function PilotageSidebar({
     user?.role === 'SUPER_DIRECTOR' || 
     user?.role === 'PLATFORM_OWNER' || 
     user?.role === 'PLATFORM_SUPER_ADMIN' || 
+    user?.role === 'PROMOTER' || 
     user?.role === 'SCHOOL_OWNER' || 
     user?.role === 'SCHOOL_ADMIN' ||
     user?.role === 'DIRECTEUR_GENERAL' ||
@@ -664,30 +665,6 @@ export default function PilotageSidebar({
 
         {/* ── Bottom Links ── */}
         <div className="mt-auto pt-3 border-t border-white/[0.06]">
-          {/* Donner mon avis — visible pour tous les utilisateurs tenant
-              connectés (sauf sur le sous-domaine admin qui est réservé au
-              back-office plateforme). Ouvre le modal InAppReviewModal qui
-              soumet l'avis avec tenantId → auto-approuvé → visible immédiatement
-              sur la landing page publique. */}
-          {!isAdminSubdomain && tenantId && (
-            <button
-              type="button"
-              onClick={() => {
-                setReviewModalOpen(true);
-                onCloseMobileDrawer?.();
-              }}
-              className="group w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-gold-300/90 hover:bg-gold-500/10 hover:text-gold-200 border border-gold-500/20 mb-1"
-              title={!effectiveOpen ? 'Donner mon avis' : undefined}
-            >
-              <Star className="w-[18px] h-[18px] flex-shrink-0 transition-transform duration-200 group-hover:scale-110" />
-              {effectiveOpen && (
-                <div className="flex-1 min-w-0 text-left">
-                  <div className="text-[13px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">Donner mon avis</div>
-                  <div className="text-[9px] text-gold-400/60 uppercase tracking-wider">Partagez votre expérience</div>
-                </div>
-              )}
-            </button>
-          )}
           {/* Back-Office Academia Helm (admin.academiahelm.com) — visible uniquement
               pour les platform owners qui ne sont PAS déjà sur le sous-domaine admin. */}
           {isPlatformOwner && !isAdminSubdomain && (
@@ -747,6 +724,31 @@ export default function PilotageSidebar({
               <div className="ml-auto w-1.5 h-1.5 bg-gold-400 rounded-full flex-shrink-0" />
             )}
           </Link>
+          {/* Donner mon avis — visible pour tous les utilisateurs tenant
+              connectés (sauf sur le sous-domaine admin qui est réservé au
+              back-office plateforme). Ouvre le modal InAppReviewModal qui
+              soumet l'avis avec tenantId → auto-approuvé → visible immédiatement
+              sur la landing page publique.
+              POSITION : en tout dernier de la sidebar, après Paramètres. */}
+          {!isAdminSubdomain && tenantId && (
+            <button
+              type="button"
+              onClick={() => {
+                setReviewModalOpen(true);
+                onCloseMobileDrawer?.();
+              }}
+              className="group w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-gold-300/90 hover:bg-gold-500/10 hover:text-gold-200 border border-gold-500/20 mt-1"
+              title={!effectiveOpen ? 'Donner mon avis' : undefined}
+            >
+              <Star className="w-[18px] h-[18px] flex-shrink-0 transition-transform duration-200 group-hover:scale-110" />
+              {effectiveOpen && (
+                <div className="flex-1 min-w-0 text-left">
+                  <div className="text-[13px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">Donner mon avis</div>
+                  <div className="text-[9px] text-gold-400/60 uppercase tracking-wider">Partagez votre expérience</div>
+                </div>
+              )}
+            </button>
+          )}
         </div>
       </nav>
 
@@ -843,6 +845,20 @@ export default function PilotageSidebar({
           >
             <Settings className={`w-[18px] h-[18px] flex-shrink-0 ${isActive('/app/settings') ? 'text-gold-400' : ''}`} />
           </Link>
+          {/* Donner mon avis — en dernier, après Paramètres (cohérent avec la sidebar desktop) */}
+          {!isAdminSubdomain && tenantId && (
+            <button
+              type="button"
+              onClick={() => {
+                setReviewModalOpen(true);
+                onCloseMobileDrawer?.();
+              }}
+              className="flex items-center justify-center p-2.5 rounded-xl transition-all duration-200 text-gold-300/90 hover:bg-gold-500/10 hover:text-gold-200 border border-gold-500/20 min-h-[44px] min-w-[44px]"
+              title="Donner mon avis"
+            >
+              <Star className="w-[18px] h-[18px] flex-shrink-0" />
+            </button>
+          )}
         </div>
       </aside>
 

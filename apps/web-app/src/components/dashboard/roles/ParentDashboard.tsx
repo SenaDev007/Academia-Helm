@@ -20,7 +20,7 @@ export function ParentDashboard() {
   return (
     <div className="p-8">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold">Dashboard Parent</h1>
+        <h1 className="text-3xl font-bold">Tableau de bord Parent</h1>
         <p className="text-gray-600 mt-2">
           {context.tenant.school?.name || context.tenant.name}
           {context.academicYear && ` - ${context.academicYear.name}`}

@@ -70,7 +70,7 @@ export default function DashboardHeader({ user, tenant }: DashboardHeaderProps) 
               {user.firstName} {user.lastName}
             </p>
             <p className="text-xs text-slate-600">{user.email}</p>
-            {(user.role === 'SUPER_DIRECTOR' || user.role === 'PLATFORM_OWNER') && (
+            {(user.role === 'SUPER_DIRECTOR' || user.role === 'PLATFORM_OWNER' || user.role === 'PROMOTER' || user.role === 'SCHOOL_OWNER') && (
               <p className="text-xs text-soft-gold font-semibold">
                 {user.role === 'PLATFORM_OWNER' ? 'Propriétaire plateforme' : 'Promoteur'}
               </p>

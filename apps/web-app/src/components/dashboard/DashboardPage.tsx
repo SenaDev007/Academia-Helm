@@ -9,6 +9,7 @@
 
 import Link from 'next/link';
 import type { User, Tenant, SubscriptionStatus } from '@/types';
+import { getRoleDisplayLabel } from '@/lib/auth/role-portal-map';
 import {
   Users,
   Calculator,
@@ -263,7 +264,7 @@ export default function DashboardPage({ user, tenant, subdomain }: DashboardPage
           <div className="text-right">
             <p className="text-sm text-slate-600">Connecté en tant que</p>
             <p className="text-base font-semibold text-navy-900">{user.firstName} {user.lastName}</p>
-            <p className="text-xs text-slate-500">{user.role}</p>
+            <p className="text-xs text-slate-500">{getRoleDisplayLabel(user.role)}</p>
           </div>
         </div>
       </div>

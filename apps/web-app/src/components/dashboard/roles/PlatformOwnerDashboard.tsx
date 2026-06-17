@@ -20,7 +20,7 @@ export function PlatformOwnerDashboard() {
   return (
     <div className="p-8">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold">Dashboard PLATFORM_OWNER</h1>
+        <h1 className="text-3xl font-bold">Tableau de bord Propriétaire de la Plateforme</h1>
         <p className="text-gray-600 mt-2">
           Contrôle global de la plateforme Academia Helm
         </p>

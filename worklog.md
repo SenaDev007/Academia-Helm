@@ -565,3 +565,84 @@ Stage Summary:
 - Badge "École vérifiée" maintenant vert avec couronne — cohérent avec le badge "Avis vérifié" public
 - Ville toujours visible (plus jamais tronquée) sur sa propre ligne avec icône localisation
 - Aucune dépendance ajoutée, aucun fichier backend touché
+
+---
+Task ID: ah-promoter-sidebar-fix
+Agent: Main Agent
+Task: Fix sidebar visibility for PROMOTER role + reorder "Donner mon avis" after "Paramètres"
+
+Work Log:
+- Constaté via requête DB Neon que les 2 promoteurs (salumerhel2036@gmail.com, dawesakpovi@gmail.com) ont été insérés avec role='PROMOTER' (et non 'SCHOOL_OWNER' comme attendu par le frontend).
+- Investigué le frontend (apps/web-app) :
+  * `src/lib/auth/role-portal-map.ts` ne connaissait que 'SCHOOL_OWNER' (labellisé "Promoteur / Fondateur") — 'PROMOTER' n'était pas dans SCHOOL_ROLES.
+  * `getRoleEntry('PROMOTER')` retournait undefined → hasAll=false → toutes les catégories showXxxModules=false (sauf showStudentModules=true via `|| true`).
+  * Mais le filtre `roles: [...]` dans MAIN_MODULES (PilotageSidebar.tsx) bloquait aussi /app/students, /app/finance, etc. car 'PROMOTER' n'était pas dans ces listes.
+  * Résultat : seul le Dashboard (/app, sans filtre) + les liens statiques du bas (Donner mon avis, Visiter le site, Paramètres) apparaissaient — exactement ce que l'utilisateur a rapporté.
+- Constaté que le backend (apps/api-server/src/common/guards/portal-access.guard.ts) reconnaît déjà 'PROMOTER' → UserRole.PROMOTEUR (Portal.ECOLE), donc le problème était purement frontend.
+- Constaté que l'ordre des liens en bas de sidebar était : Donner mon avis → Back-Office → Visiter le site → Paramètres. L'utilisateur voulait : Visiter le site → Paramètres → Donner mon avis.
+
+Backend fixes (apps/api-server) :
+- Aucune modification backend nécessaire — PROMOTER y est déjà reconnu.
+
+Frontend fixes (apps/web-app) :
+- `src/lib/auth/role-portal-map.ts` :
+  * Ajouté une entrée explicite pour 'PROMOTER' dans SCHOOL_ROLES (mêmes permissions que SCHOOL_OWNER : ALL_VIEW, STRATEGIC_REPORT, FINANCE_CONSOLIDATED, DECISION_VALIDATE).
+  * Ajouté 'PROMOTER' à toutes les listes de rôles explicites dans getVisibleModulesForRole (showDirectionModules, showFinanceModules, showPedagogyModules, showHrModules, showCommunicationModules, showExamModules, showSettingsModules) — double sécurité même si hasAll=true.
+- `src/components/pilotage/PilotageSidebar.tsx` :
+  * Ajouté 'PROMOTER' aux tableaux `roles` de tous les MAIN_MODULES où 'SCHOOL_OWNER' apparaissait : /app/orion, /app/students, /app/finance, /app/exams, /app/aggregation, /app/hr.
+  * Ajouté 'PROMOTER' à la liste `isSuperDirector` (pour que le Module Général direction soit visible).
+  * Réordonné les liens du bas : Back-Office (si platform owner) → Visiter le site → Paramètres → Donner mon avis (ce dernier en tout dernier, avec `mt-1` pour le séparer visuellement).
+  * Ajouté le bouton icône "Donner mon avis" dans la vue tablette (md→lg, icônes seules), après Paramètres — il était absent de cette vue avant.
+
+Verification:
+- Scripts Babel parser sur les 2 fichiers modifiés → OK (0 erreur syntaxe).
+- Simulation logique getVisibleModulesForRole('PROMOTER') → toutes les catégories visibles sauf showPlatformModules et showParentModules (correct : PROMOTER est un rôle école, pas plateforme/parent).
+- Simulation du filtre MAIN_MODULES pour PROMOTER → 10/10 modules visibles (Tableau de pilotage, ORION, Réunions, Élèves, Finances, Examens, Agrégation, Pédagogie, RH, Communication).
+- Vérification non-régression : PLATFORM_OWNER (tous modules visibles sauf parent), SCHOOL_OWNER (hasAll=true inchangé), TEACHER (visibilité limitée inchangée).
+
+Stage Summary:
+- 2 fichiers modifiés (role-portal-map.ts, PilotageSidebar.tsx)
+- PROMOTER voit maintenant TOUS les modules école dans la sidebar (comme attendu pour un promoteur / fondateur d'école)
+- "Donner mon avis" est maintenant en dernier dans la sidebar, après "Paramètres" — cohérent sur desktop ET tablette
+- Aucune régression pour les autres rôles (PLATFORM_OWNER, SCHOOL_OWNER, TEACHER, etc.)
+- Aucune modification backend nécessaire
+
+---
+Task ID: ah-french-labels-and-one-review-per-tenant
+Agent: Main Agent
+Task: (1) Tous les noms de rôles doivent être en français côté frontend, (2) one-review-per-tenant pour les avis, (3) commit + push
+
+Work Log:
+- Investigué `apps/web-app/src/lib/auth/role-portal-map.ts` : trouvé 5 libellés en anglais dans PLATFORM_ROLES (Platform Owner, Super Admin Plateforme, Admin Plateforme, Billing Manager, Support Agent, Technical Operator / DevOps) + 1 dans SCHOOL_ROLES (Data Manager) + 1 dans PUBLIC_ROLES (Sponsor). Tous passés en français (Propriétaire de la Plateforme, Super Administrateur de la Plateforme, Administrateur de la Plateforme, Gestionnaire de Facturation, Agent de Support, Opérateur Technique / DevOps, Gestionnaire de Données, Sponsor / Donateur).
+- Ajouté un helper `getRoleDisplayLabel(role)` exporté depuis role-portal-map.ts qui :
+  1. Cherche dans ROLE_TO_ENTRY (mapping canonique 45+ rôles)
+  2. Cherche dans ROLE_LABEL_FALLBACK (rôles legacy : admin, director, teacher, secretary, accountant, parent, student, SUPER_ADMIN, SUPER_DIRECTOR, DIRECTEUR, ENSEIGNANT, PROMOTEUR, SECRETAIRE, COMPTABLE, CENSEUR, SURVEILLANT, ECONOME, CAISSIER, SCOLARITE, PATRONAT_ADMIN/USER)
+  3. Fallback : retourne le rôle tel quel
+- Branché `getRoleDisplayLabel` dans :
+  * DashboardPage.tsx ( ligne `{user.role}` → `{getRoleDisplayLabel(user.role)}` )
+  * DevicesManagement.tsx ( ligne `{device.user.role.toLowerCase()}` → `{getRoleDisplayLabel(device.user.role)}` )
+- Ajouté 'PROMOTER' et 'SCHOOL_OWNER' à la condition d'affichage du badge doré dans DashboardHeader.tsx (avant : seulement SUPER_DIRECTOR et PLATFORM_OWNER).
+- Passé tous les titres 'Dashboard X' en 'Tableau de bord X' dans les 7 dashboards par rôle (PromoterDashboard, DirectorDashboard, ParentDashboard, PlatformOwnerDashboard, TeacherDashboard, AccountantDashboard, StudentDashboard).
+
+- Investigué le système d'avis : `apps/api-server/src/reviews/reviews.service.ts` `create()` n'avait AUCUN contrôle one-per-tenant. Un tenant pouvait soumettre un nombre illimité d'avis.
+- Implémenté le contrôle one-review-per-tenant :
+  * Backend `reviews.service.ts` : import ConflictException, ajout d'un `findFirst` avant la création qui cherche un avis existant (status ≠ REJECTED) pour ce tenantId. Si trouvé → throw ConflictException avec message français explicatif.
+  * Backend `reviews.service.ts` : ajout d'une nouvelle méthode `checkTenantReview(tenantId)` qui renvoie `{ hasReview, review? }` (champs publics seulement) pour permettre au frontend de vérifier pro-activement.
+  * Backend `reviews.controller.ts` : nouvel endpoint public `GET /reviews/check-tenant/:tenantId` (throttle 30 req/min).
+  * Frontend BFF : nouvelle route `apps/web-app/src/app/api/public/reviews/check-tenant/[tenantId]/route.ts` qui proxy la requête vers le backend NestJS.
+  * Frontend `lib/reviews-api-url.ts` : ajout de `buildReviewsCheckTenantUrl(tenantId)`.
+  * Frontend `components/reviews/InAppReviewModal.tsx` : réécrit pour gérer 4 étapes : 'loading' (vérification initiale), 'rating' (notation), 'form' (formulaire), 'success' (succès), 'already-submitted' (avis déjà soumis). Au `isOpen=true`, fetch le check-tenant endpoint. Si hasReview=true, bascule directement sur l'écran 'already-submitted' qui affiche un message clair + la note de l'avis existant + suggestion de contacter le support. En cas de race condition, l'erreur 409 du submit est aussi gérée et bascule sur le même écran.
+
+- Vérification syntaxique Babel parser sur 17 fichiers modifiés → 0 erreur.
+- Simulation de getRoleDisplayLabel sur 45+ rôles → tous en français (Examinateur et Mentor sont des mots français valides, faussement flaggés par l'heuristic).
+
+Stage Summary:
+- 11 fichiers frontend modifiés (role-portal-map.ts, PilotageSidebar déjà fait session précédente, DashboardPage.tsx, DashboardHeader.tsx, 7 dashboards par rôle, DevicesManagement.tsx, InAppReviewModal.tsx, reviews-api-url.ts)
+- 1 nouveau fichier frontend BFF (check-tenant/[tenantId]/route.ts)
+- 2 fichiers backend modifiés (reviews.service.ts, reviews.controller.ts)
+- Aucun mock data, aucune dépendance ajoutée
+- One-review-per-tenant enforced à 2 niveaux : check pro-actif à l'ouverture du modal + safety net sur le submit (409 Conflict)
+
+Commit & Push :
+- Commit 90d593ef créé localement avec message détaillé (inclut changements des sessions précédentes non pushés)
+- Push vers origin/main a ÉCHOUÉ : aucune credential GitHub configurée dans l'environnement (pas de gh CLI, pas de ~/.git-credentials, pas de token env). L'utilisateur doit soit fournir un PAT, soit push depuis sa propre machine.

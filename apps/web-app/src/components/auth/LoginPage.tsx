@@ -960,12 +960,28 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     setError(null);
     setIsLoading(true);
     try {
+      // Récupérer le nom de l'école depuis sessionStorage (mis par /portal)
+      // ou depuis les infos de branding
+      let schoolName = '';
+      try {
+        const raw = sessionStorage.getItem('academia_portal_school');
+        if (raw) {
+          const info = JSON.parse(raw) as { name?: string };
+          schoolName = info.name || '';
+        }
+      } catch { /* ignore */ }
+      // Fallback : utiliser le branding client si disponible
+      if (!schoolName && clientBranding?.name) {
+        schoolName = clientBranding.name;
+      }
+
       const res = await fetch('/api/school-auth/google/init', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tenantId: tenantIdFromUrl,
           tenantSlug: tenantSlug || undefined,
+          schoolName: schoolName || undefined,
         }),
       });
       const data = await res.json();

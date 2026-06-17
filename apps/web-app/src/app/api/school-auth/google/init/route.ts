@@ -3,13 +3,11 @@
  *
  * Initialise le flow Google OAuth pour le portail ÉCOLE.
  *
- * Body : { tenantId?: string, tenantSlug?: string }
+ * Body : { tenantId?: string, tenantSlug?: string, schoolName?: string }
  * Réponse : { authUrl: string }
  *
- * Le state CSRF contient le tenant pour qu'au callback on sache pour quel
- * établissement l'utilisateur tente de se connecter.
+ * Le state CSRF contient le tenant + schoolName pour personnaliser l'email OTP.
  */
-
 import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { buildGoogleAuthUrl, isGoogleConfigured } from '@/lib/auth/school-google-auth-server';
@@ -31,6 +29,7 @@ export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => ({}))) as {
     tenantId?: string;
     tenantSlug?: string;
+    schoolName?: string;
   };
 
   if (!body.tenantId && !body.tenantSlug) {
@@ -40,14 +39,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // State CSRF contenant le tenant + marqueur de flow 'school'
-  // Le marqueur 'f: school' permet à la page /admin-login (qui reçoit le
-  // callback Google) de distinguer le flow school du flow admin et de
-  // router vers /api/school-auth/google/callback au lieu de /api/admin-auth/google/callback.
+  // State CSRF contenant le tenant + schoolName + marqueur de flow 'school'
   const statePayload = {
-    f: 'school', // flow marker — 'school' ou absent (admin)
+    f: 'school',
     t: body.tenantId || body.tenantSlug,
     s: body.tenantSlug || '',
+    sn: body.schoolName || '', // schoolName pour personnaliser l'email OTP
     n: crypto.randomUUID(),
   };
   const state = Buffer.from(JSON.stringify(statePayload)).toString('base64url');
@@ -55,9 +52,6 @@ export async function POST(request: NextRequest) {
   const url = buildGoogleAuthUrl(state);
 
   const res = NextResponse.json({ authUrl: url });
-  // Cookie school_oauth_state — posé sur le domaine courant (academiahelm.com)
-  // Pas besoin de domain=.academiahelm.com car le flow school reste
-  // entièrement sur academiahelm.com (init + callback sur le même domaine).
   res.cookies.set('school_oauth_state', state, {
     path: '/',
     httpOnly: true,

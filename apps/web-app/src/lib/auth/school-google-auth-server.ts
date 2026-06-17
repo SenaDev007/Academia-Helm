@@ -53,6 +53,7 @@ export interface SchoolPendingSession {
   picture?: string;
   tenantId: string;
   tenantSlug: string;
+  schoolName: string;
   otpHash: string;
   otpExpiresAt: string;
   attempts: number;
@@ -229,6 +230,7 @@ export function createSchoolPendingSession(params: {
   picture?: string;
   tenantId: string;
   tenantSlug: string;
+  schoolName: string;
 }): { pendingToken: string; otp: string } {
   // Nettoyer un éventuel pending précédent pour cet email + tenant
   for (const [key, val] of pendingStore.entries()) {
@@ -244,6 +246,7 @@ export function createSchoolPendingSession(params: {
     picture: params.picture,
     tenantId: params.tenantId,
     tenantSlug: params.tenantSlug,
+    schoolName: params.schoolName,
     otpHash: hashOtp(otp),
     otpExpiresAt: new Date(Date.now() + OTP_VALIDITY_MINUTES * 60 * 1000).toISOString(),
     attempts: 0,
@@ -286,6 +289,7 @@ export async function sendSchoolOtpEmail(
   email: string,
   otp: string,
   name?: string,
+  schoolName?: string,
 ): Promise<boolean> {
   const resendApiKey = process.env.RESEND_API_KEY;
 
@@ -340,8 +344,9 @@ export async function sendSchoolOtpEmail(
     name,
     otp,
     validityMinutes: OTP_VALIDITY_MINUTES,
+    schoolName,
   });
-  const text = renderSchoolOtpEmailText({ name, otp, validityMinutes: OTP_VALIDITY_MINUTES });
+  const text = renderSchoolOtpEmailText({ name, otp, validityMinutes: OTP_VALIDITY_MINUTES, schoolName });
 
   const fromEmail =
     process.env.ADMIN_EMAIL_FROM ||

@@ -32,6 +32,11 @@ interface OtpEmailParams {
   validityMinutes?: number;
 }
 
+interface SchoolOtpEmailParams extends OtpEmailParams {
+  /** Nom de l'établissement (ex: "Collège Saint-Joseph"). */
+  schoolName?: string;
+}
+
 /** Construit l'URL absolue du logo Academia Helm (couleurs originales). */
 function getLogoUrl(): string {
   const baseUrl =
@@ -133,7 +138,7 @@ export function renderAdminOtpEmailHtml(params: OtpEmailParams): string {
           <!-- Signature -->
           <tr>
             <td style="text-align:left;">
-              <p style="margin:0 0 2px;font-size:16px;color:#1e293b;">Merci,</p>
+              <p style="margin:0 0 2px;font-size:16px;color:#1e293b;">Bien cordialement,</p>
               <p style="margin:0;font-size:16px;font-weight:600;color:#0b2f73;">&Eacute;quipe Academia Helm</p>
             </td>
           </tr>
@@ -175,7 +180,7 @@ ${otp}
 Ce code est valable ${validityMinutes} minutes et ne peut être utilisé qu'une seule fois.
 Veuillez ne pas partager ce code avec personne : nous ne vous le demanderons jamais par téléphone ni par courriel.
 
-Merci,
+Bien cordialement,
 Équipe Academia Helm
 
 Vous recevez ce courriel car un code de vérification a été demandé pour accéder au back-office Academia Helm.
@@ -188,10 +193,11 @@ Si vous n'êtes pas à l'origine de cette demande, veuillez ignorer ce courriel.
 // TEMPLATE 2 : PORTAIL ÉCOLE (personnel de l'établissement)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function renderSchoolOtpEmailHtml(params: OtpEmailParams): string {
-  const { name, otp, validityMinutes = 10 } = params;
+export function renderSchoolOtpEmailHtml(params: SchoolOtpEmailParams): string {
+  const { name, otp, validityMinutes = 10, schoolName } = params;
   const displayName = name || 'cher utilisateur';
   const logoUrl = getLogoUrl();
+  const schoolDisplay = schoolName ? escapeHtml(schoolName) : 'votre &eacute;tablissement';
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -229,7 +235,7 @@ export function renderSchoolOtpEmailHtml(params: OtpEmailParams): string {
           <tr>
             <td style="padding-bottom:20px;text-align:left;">
               <p style="margin:0;font-size:16px;color:#475569;line-height:1.6;">
-                Vous avez demand&eacute; &agrave; vous connecter &agrave; votre &eacute;tablissement sur Academia Helm. Voici votre code de v&eacute;rification :
+                Vous avez demand&eacute; &agrave; vous connecter &agrave; <strong style="color:#0b2f73;">${schoolDisplay}</strong> sur Academia Helm. Voici votre code de v&eacute;rification :
               </p>
             </td>
           </tr>
@@ -277,7 +283,7 @@ export function renderSchoolOtpEmailHtml(params: OtpEmailParams): string {
           <tr>
             <td style="padding-top:20px;border-top:1px solid #e2e8f0;">
               <p style="margin:0;font-size:13px;color:#94a3b8;line-height:1.5;text-align:center;">
-                Vous recevez ce courriel car un code de v&eacute;rification a &eacute;t&eacute; demand&eacute; pour vous connecter &agrave; votre &eacute;tablissement sur Academia Helm.<br>
+                Vous recevez ce courriel car un code de v&eacute;rification a &eacute;t&eacute; demand&eacute; pour vous connecter &agrave; ${schoolDisplay} sur Academia Helm.<br>
                 Si vous n'&ecirc;tes pas &agrave; l'origine de cette demande, veuillez ignorer ce courriel.
               </p>
               <p style="margin:12px 0 0;font-size:12px;color:#cbd5e1;text-align:center;">
@@ -295,22 +301,23 @@ export function renderSchoolOtpEmailHtml(params: OtpEmailParams): string {
 </html>`;
 }
 
-export function renderSchoolOtpEmailText(params: OtpEmailParams): string {
-  const { name, otp, validityMinutes = 10 } = params;
+export function renderSchoolOtpEmailText(params: SchoolOtpEmailParams): string {
+  const { name, otp, validityMinutes = 10, schoolName } = params;
   const displayName = name || 'cher utilisateur';
+  const schoolDisplay = schoolName || 'votre établissement';
   return `Veuillez vérifier votre identité, ${displayName}
 
-Vous avez demandé à vous connecter à votre établissement sur Academia Helm. Voici votre code de vérification :
+Vous avez demandé à vous connecter à ${schoolDisplay} sur Academia Helm. Voici votre code de vérification :
 
 ${otp}
 
 Ce code est valable ${validityMinutes} minutes et ne peut être utilisé qu'une seule fois.
 Veuillez ne pas partager ce code avec personne : nous ne vous le demanderons jamais par téléphone ni par courriel.
 
-Cordialement,
-Academia Helm
+Merci,
+Équipe Academia Helm
 
-Vous recevez ce courriel car un code de vérification a été demandé pour vous connecter à votre établissement sur Academia Helm.
+Vous recevez ce courriel car un code de vérification a été demandé pour vous connecter à ${schoolDisplay} sur Academia Helm.
 Si vous n'êtes pas à l'origine de cette demande, veuillez ignorer ce courriel.
 
 © ${new Date().getFullYear()} Academia Helm · academiahelm.com`;

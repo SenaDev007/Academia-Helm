@@ -31,15 +31,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'State CSRF invalide' }, { status: 400 });
   }
 
-  // Décoder le state pour récupérer le tenant
+  // Décoder le state pour récupérer le tenant + schoolName
   let tenantId: string;
   let tenantSlug: string;
+  let schoolName: string;
   try {
     const decoded = JSON.parse(
       Buffer.from(body.state, 'base64url').toString('utf-8'),
-    ) as { t: string; s: string };
+    ) as { t: string; s: string; sn?: string };
     tenantId = decoded.t;
     tenantSlug = decoded.s || decoded.t;
+    schoolName = decoded.sn || '';
   } catch {
     return NextResponse.json({ error: 'State CSRF corrompu' }, { status: 400 });
   }
@@ -73,10 +75,11 @@ export async function POST(request: NextRequest) {
     picture: userInfo.picture,
     tenantId,
     tenantSlug,
+    schoolName,
   });
 
-  // Envoyer l'OTP par email
-  const sent = await sendSchoolOtpEmail(userInfo.email, otp, userInfo.name);
+  // Envoyer l'OTP par email (avec schoolName pour personnalisation)
+  const sent = await sendSchoolOtpEmail(userInfo.email, otp, userInfo.name, schoolName);
   if (!sent) {
     return NextResponse.json(
       { error: "Impossible d'envoyer le code OTP par email. Réessayez plus tard." },

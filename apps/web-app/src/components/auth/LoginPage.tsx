@@ -980,35 +980,53 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   };
 
   /**
-   * Hook : si on revient de Google avec ?google_callback=school&code=...&state=...,
-   * on appelle automatiquement le callback pour envoyer l'OTP.
+   * Hook : si on revient de Google avec ?code=...&state=... sur /login,
+   * on détecte le flow school en décodant le state (base64url JSON avec
+   * f: 'school') et on appelle /api/school-auth/google/callback.
+   *
+   * Le redirect URI Google est https://academiahelm.com/login (configuré
+   * via GOOGLE_OAUTH_SCHOOL_REDIRECT_URI) — SÉPARÉ du flow admin qui
+   * utilise https://admin.academiahelm.com/admin-login.
    */
   useEffect(() => {
-    const googleCallback = searchParams?.get('google_callback');
     const code = searchParams?.get('code');
     const state = searchParams?.get('state');
-    if (googleCallback === 'school' && code && state && !schoolGooglePending) {
-      setIsLoading(true);
-      fetch('/api/school-auth/google/callback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, state }),
-      })
-        .then(async (res) => {
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'Erreur callback Google');
-          setSchoolGooglePendingToken(data.pendingToken);
-          setSchoolGoogleEmail(data.email);
-          setSchoolGooglePending(true);
-          setError(null);
-          // Focus premier input OTP
-          setTimeout(() => schoolOtpRefs.current[0]?.focus(), 100);
-        })
-        .catch((err) => {
-          setError(err instanceof Error ? err.message : 'Erreur callback Google');
-        })
-        .finally(() => setIsLoading(false));
+    if (!code || !state || schoolGooglePending) return;
+
+    // ── Détecter le flow school en décodant le state ──
+    // Le state school contient { f: 'school', t, s, n } en base64url
+    let isSchoolFlow = false;
+    try {
+      const b64 = state.replace(/-/g, '+').replace(/_/g, '/');
+      const decoded = JSON.parse(atob(b64)) as { f?: string };
+      isSchoolFlow = decoded?.f === 'school';
+    } catch {
+      // Si le state n'est pas du JSON base64url, ce n'est pas le flow school
+      return;
     }
+
+    if (!isSchoolFlow) return;
+
+    setIsLoading(true);
+    fetch('/api/school-auth/google/callback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, state }),
+    })
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Erreur callback Google');
+        setSchoolGooglePendingToken(data.pendingToken);
+        setSchoolGoogleEmail(data.email);
+        setSchoolGooglePending(true);
+        setError(null);
+        // Focus premier input OTP
+        setTimeout(() => schoolOtpRefs.current[0]?.focus(), 100);
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : 'Erreur callback Google');
+      })
+      .finally(() => setIsLoading(false));
   }, [searchParams, schoolGooglePending]);
 
   /** Change un chiffre OTP SCHOOL. */

@@ -55,20 +55,15 @@ export async function POST(request: NextRequest) {
   const url = buildGoogleAuthUrl(state);
 
   const res = NextResponse.json({ authUrl: url });
-  // Cookie dédié au flow school (distinct du cookie admin_oauth_state)
-  // ⚠️ domain=.academiahelm.com pour qu'il soit accessible depuis
-  // admin.academiahelm.com (où Google redirige le callback).
-  // Sans cela, le cookie posé sur academiahelm.com ne serait pas envoyé
-  // vers admin.academiahelm.com → "State CSRF invalide".
-  const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN || 'academiahelm.com';
-  const cookieDomain = baseDomain.includes('localhost') ? undefined : `.${baseDomain}`;
+  // Cookie school_oauth_state — posé sur le domaine courant (academiahelm.com)
+  // Pas besoin de domain=.academiahelm.com car le flow school reste
+  // entièrement sur academiahelm.com (init + callback sur le même domaine).
   res.cookies.set('school_oauth_state', state, {
     path: '/',
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
     maxAge: 10 * 60,
-    ...(cookieDomain ? { domain: cookieDomain } : {}),
   });
   return res;
 }

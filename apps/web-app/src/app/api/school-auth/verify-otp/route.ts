@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
 
   if (!sessionResult.ok) {
     return NextResponse.json(
-      { error: sessionResult.reason },
+      { error: sessionResult.reason || 'Erreur lors de la création de session. Le serveur est peut-être indisponible.' },
       { status: 500 },
     );
   }

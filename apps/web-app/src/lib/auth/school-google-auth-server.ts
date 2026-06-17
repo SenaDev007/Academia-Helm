@@ -154,6 +154,7 @@ export async function exchangeGoogleCode(code: string): Promise<SchoolGoogleUser
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body,
+      signal: AbortSignal.timeout(15000), // 15s timeout
     });
     if (!res.ok) return null;
     const tokens = (await res.json()) as { id_token?: string };
@@ -421,6 +422,7 @@ export async function createSchoolSessionViaGoogle(params: {
         tenant_id: params.tenantId,
         portal_type: 'SCHOOL',
       }),
+      signal: AbortSignal.timeout(10000), // 10s timeout
     });
 
     if (!res.ok) {
@@ -439,7 +441,10 @@ export async function createSchoolSessionViaGoogle(params: {
       serverSessionId?: string;
     };
     return { ok: true, ...data };
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
+      return { ok: false, reason: 'Le serveur met trop de temps à répondre. Veuillez réessayer.' };
+    }
     return { ok: false, reason: 'Erreur réseau lors de la création de session' };
   }
 }

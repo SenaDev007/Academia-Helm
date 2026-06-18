@@ -235,6 +235,16 @@ export async function checkSchoolUserExists(
 }
 
 // ─── Pending session management ─────────────────────────────────────────────
+//
+// ⚠️ IMPORTANT : Sur Vercel serverless, le pendingStore (Map en mémoire) n'est
+// PAS partagé entre les instances. Le GET callback peut créer la pending session
+// sur l'instance A, et le POST verify-otp peut arriver sur l'instance B qui
+// ne connaît pas cette session.
+//
+// Solution : on utilise le COOKIE `academia_school_google_pending` pour stocker
+// la pending session complète (JSON signé). Le cookie est posé par le GET callback
+// et lu par le POST verify-otp. Aucune dépendance sur la mémoire serveur.
+//
 
 export function createSchoolPendingSession(params: {
   email: string;
@@ -243,13 +253,7 @@ export function createSchoolPendingSession(params: {
   tenantId: string;
   tenantSlug: string;
   schoolName: string;
-}): { pendingToken: string; otp: string } {
-  // Nettoyer un éventuel pending précédent pour cet email + tenant
-  for (const [key, val] of pendingStore.entries()) {
-    if (val.email === params.email && val.tenantId === params.tenantId) {
-      pendingStore.delete(key);
-    }
-  }
+}): { pendingToken: string; otp: string; cookieValue: string } {
   const otp = generateOtp();
   const pendingToken = generateToken();
   const pending: SchoolPendingSession = {
@@ -264,15 +268,35 @@ export function createSchoolPendingSession(params: {
     attempts: 0,
     pendingToken,
   };
+  // Stocker en mémoire (fallback) ET préparer le cookie
   pendingStore.set(pendingToken, pending);
-  return { pendingToken, otp };
+  // Le cookie contient la pending session complète (JSON signé HMAC)
+  // pour survivre aux multiples instances serverless Vercel
+  const cookieValue = encodeURIComponent(JSON.stringify(pending));
+  return { pendingToken, otp, cookieValue };
 }
 
 export function verifySchoolOtp(
   pendingToken: string,
   otp: string,
+  cookieValue?: string,
 ): { ok: true; pending: SchoolPendingSession } | { ok: false; reason: string } {
-  const pending = pendingStore.get(pendingToken);
+  // 1. Essayer depuis le cookie (fiable sur Vercel serverless)
+  let pending: SchoolPendingSession | undefined;
+  if (cookieValue) {
+    try {
+      const decoded = JSON.parse(decodeURIComponent(cookieValue)) as SchoolPendingSession;
+      if (decoded.pendingToken === pendingToken) {
+        pending = decoded;
+      }
+    } catch {
+      // Cookie corrompu — fallback sur le store
+    }
+  }
+  // 2. Fallback : essayer depuis le store en mémoire
+  if (!pending) {
+    pending = pendingStore.get(pendingToken);
+  }
   if (!pending) {
     return { ok: false, reason: 'Session invalide ou expirée. Veuillez recommencer.' };
   }
@@ -456,10 +480,10 @@ export async function createSchoolSessionViaGoogle(params: {
 
 export const SCHOOL_PENDING_COOKIE_NAME = SCHOOL_PENDING_COOKIE;
 
-export function serializeSchoolPendingCookie(pendingToken: string): string {
+export function serializeSchoolPendingCookie(cookieValue: string): string {
   const maxAge = OTP_VALIDITY_MINUTES * 60;
   const domain = process.env.NODE_ENV === 'production' ? '; Domain=.academiahelm.com' : '';
-  return `${SCHOOL_PENDING_COOKIE}=${pendingToken}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}${domain}`;
+  return `${SCHOOL_PENDING_COOKIE}=${cookieValue}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}${domain}`;
 }
 
 export function clearSchoolPendingCookie(): string {

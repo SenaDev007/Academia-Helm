@@ -1174,10 +1174,9 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
           quality={85}
           sizes="100vw"
         />
-        {/* Overlay pour la lisibilité du formulaire */}
+        {/* Overlay — TRANSPARENT pour laisser l'image de fond visible */}
         <div
-          className="absolute inset-0 backdrop-blur-[2px]"
-          style={{ backgroundColor: `${NAVY}B3` }}
+          className="absolute inset-0"
         />
       </div>
 

@@ -27,8 +27,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Vérifier l'OTP
-  const result = verifySchoolOtp(body.pendingToken, body.otp.trim());
+  // Lire le cookie pending (contient la session complète pour Vercel serverless)
+  const pendingCookie = request.cookies.get('academia_school_google_pending')?.value;
+
+  // Vérifier l'OTP (avec cookieValue pour Vercel serverless)
+  const result = verifySchoolOtp(body.pendingToken, body.otp.trim(), pendingCookie);
   if (!result.ok) {
     return NextResponse.json({ error: result.reason }, { status: 400 });
   }

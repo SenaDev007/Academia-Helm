@@ -167,7 +167,7 @@ export async function GET(request: NextRequest) {
   }
 
   // ── Créer la session pending + générer OTP ──
-  const { pendingToken, otp } = createSchoolPendingSession({
+  const { pendingToken, otp, cookieValue } = createSchoolPendingSession({
     email: userInfo.email,
     name: userInfo.name,
     picture: userInfo.picture,
@@ -200,8 +200,8 @@ export async function GET(request: NextRequest) {
     tenant: tenantSlug,
   });
   const res = NextResponse.redirect(new URL(target, request.url), 302);
-  // Pose le cookie pending (Domain=.academiahelm.com en prod, SameSite=Lax)
-  res.headers.set('Set-Cookie', serializeSchoolPendingCookie(pendingToken));
+  // Pose le cookie pending contenant la session complète (pour Vercel serverless)
+  res.headers.set('Set-Cookie', serializeSchoolPendingCookie(cookieValue));
   // Supprime le cookie state CSRF (utilisé)
   res.cookies.delete('school_oauth_state');
   return res;
@@ -251,7 +251,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Créer la session pending + générer OTP
-  const { pendingToken, otp } = createSchoolPendingSession({
+  const { pendingToken, otp, cookieValue } = createSchoolPendingSession({
     email: userInfo.email,
     name: userInfo.name,
     picture: userInfo.picture,
@@ -274,7 +274,7 @@ export async function POST(request: NextRequest) {
     email: userInfo.email,
     message: 'Code OTP envoyé par email. Vérifiez votre boîte de réception.',
   });
-  res.headers.set('Set-Cookie', serializeSchoolPendingCookie(pendingToken));
+  res.headers.set('Set-Cookie', serializeSchoolPendingCookie(cookieValue));
   res.cookies.delete('school_oauth_state');
   return res;
 }

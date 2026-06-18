@@ -25,7 +25,6 @@ import { clearClientSessionSync } from '@/lib/auth/client-access-token';
 import AcademicYearSelector from './AcademicYearSelector';
 import SchoolLevelSelector from './SchoolLevelSelector';
 import AcademicTrackSelector from '../dashboard/AcademicTrackSelector';
-import { LanguageSwitcher } from '@/components/i18n/GoogleTranslateSwitcher';
 import { useOffline, useSyncStatus } from '@/hooks/useOffline';
 import InAppReviewModal from '@/components/reviews/InAppReviewModal';
 import type { User, Tenant } from '@/types';
@@ -265,15 +264,11 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
               <AcademicYearSelector />
               <SchoolLevelSelector />
               <AcademicTrackSelector />
-              <LanguageSwitcher />
             </div>
           </div>
 
           {/* Droite : Actions & Profil */}
           <div className="flex items-center space-x-2 sm:space-x-3">
-            {/* Language Switcher (visible on all screen sizes) */}
-            <LanguageSwitcher />
-
             {/* Indicateur Offline/Online */}
             <div className="flex items-center space-x-2">
               {isOnline ? (

@@ -43,6 +43,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useAcademicSettings } from '@/hooks/useAcademicSettings';
+import { useBilingual } from '@/contexts/BilingualContext';
 import { toast } from '@/components/ui/toast';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { cn } from '@/lib/utils';
@@ -77,6 +78,7 @@ export default function BulletinsPage() {
     passingScore,
     decimals,
   } = useAcademicSettings();
+  const { isEnabled: isBilingual, currentTrack, setCurrentTrack } = useBilingual();
 
   const [bulletins, setBulletins] = useState<BulletinEntry[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
@@ -145,8 +147,14 @@ export default function BulletinsPage() {
     if (!selectedClassId || !selectedPeriodId) return;
     setLoading(true);
     try {
+      const params = new URLSearchParams({
+        classId: selectedClassId,
+        periodId: selectedPeriodId,
+        academicYearId: academicYear?.id ?? '',
+      });
+      if (isBilingual) params.append('language', currentTrack);
       const res = await fetch(
-        `/api/exams/bulletins?classId=${selectedClassId}&periodId=${selectedPeriodId}&academicYearId=${academicYear?.id ?? ''}`,
+        `/api/exams/bulletins?${params.toString()}`,
         { credentials: 'include' }
       ).then((r) => r.json());
       setBulletins(Array.isArray(res) ? res : []);
@@ -155,7 +163,7 @@ export default function BulletinsPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedClassId, selectedPeriodId, academicYear?.id]);
+  }, [selectedClassId, selectedPeriodId, academicYear?.id, isBilingual, currentTrack]);
 
   useEffect(() => { if (selectedClassId && selectedPeriodId) loadBulletins(); }, [loadBulletins]);
 
@@ -164,15 +172,17 @@ export default function BulletinsPage() {
     if (!selectedClassId || !selectedPeriodId) return;
     setGenerating(true);
     try {
+      const payload: any = {
+        classId: selectedClassId,
+        periodId: selectedPeriodId,
+        academicYearId: academicYear?.id,
+      };
+      if (isBilingual) payload.language = currentTrack;
       await fetch('/api/exams/generate-report-cards', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          classId: selectedClassId,
-          periodId: selectedPeriodId,
-          academicYearId: academicYear?.id,
-        }),
+        body: JSON.stringify(payload),
       });
       toast({ title: 'Bulletins générés', description: 'Les bulletins ont été calculés selon le paramétrage actif.' });
       loadBulletins();
@@ -188,15 +198,17 @@ export default function BulletinsPage() {
     if (!selectedClassId || !selectedPeriodId) return;
     setPublishingAll(true);
     try {
+      const payload: any = {
+        classId: selectedClassId,
+        periodId: selectedPeriodId,
+        academicYearId: academicYear?.id,
+      };
+      if (isBilingual) payload.language = currentTrack;
       await fetch('/api/exams/bulletins/publish', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          classId: selectedClassId,
-          periodId: selectedPeriodId,
-          academicYearId: academicYear?.id,
-        }),
+        body: JSON.stringify(payload),
       });
       toast({ title: 'Bulletins publiés', description: 'Les bulletins sont maintenant accessibles.' });
       loadBulletins();
@@ -211,8 +223,10 @@ export default function BulletinsPage() {
   const handleDownload = async (bulletinId: string, studentName: string) => {
     setDownloadingId(bulletinId);
     try {
+      const params = new URLSearchParams({ periodId: selectedPeriodId });
+      if (isBilingual) params.append('language', currentTrack);
       const res = await fetch(
-        `/api/exams/bulletins/${bulletinId}/pdf?periodId=${selectedPeriodId}`,
+        `/api/exams/bulletins/${bulletinId}/pdf?${params.toString()}`,
         { credentials: 'include' }
       );
       if (!res.ok) {
@@ -257,6 +271,26 @@ export default function BulletinsPage() {
         layout: 'full',
         children: (
           <div className="space-y-5">
+            {/* Bilingual track selector */}
+            {isBilingual && (
+              <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1 mb-4">
+                <button
+                  type="button"
+                  onClick={() => setCurrentTrack('FR')}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentTrack === 'FR' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+                >
+                  Français
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentTrack('EN')}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentTrack === 'EN' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+                >
+                  English
+                </button>
+              </div>
+            )}
+
             {/* No config warning */}
             {noConfig && (
               <motion.div

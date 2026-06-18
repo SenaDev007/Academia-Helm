@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { ModuleHeader } from '@/components/modules/blueprint';
 import GeneratedStampsSignatures from '@/components/settings/GeneratedStampsSignatures';
+import SchoolCalendarConfigSection from '@/components/settings/SchoolCalendarConfigSection';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import * as settingsService from '@/services/settings.service';
 import {
@@ -68,11 +69,11 @@ function formatRoleDisplayName(name: string | null | undefined): string {
   return String(name).replace(/_/g, ' ');
 }
 
-type TabId = 'identity' | 'academic-year' | 'structure' | 'bilingual' | 'features' | 
+type TabId = 'identity' | 'academic-year' | 'school-calendar' | 'structure' | 'bilingual' | 'features' | 
              'roles' | 'communication' | 'billing' | 'security' | 'seals' | 'orion' | 'atlas' | 'offline' | 'appareils' | 'history';
 
 const SETTINGS_TAB_IDS: TabId[] = [
-  'identity', 'academic-year', 'structure', 'bilingual', 'features',
+  'identity', 'academic-year', 'school-calendar', 'structure', 'bilingual', 'features',
   'roles', 'communication', 'billing', 'security', 'seals', 'orion', 'atlas', 'offline', 'appareils', 'history',
 ];
 
@@ -1444,7 +1445,9 @@ export default function SettingsPage() {
     { id: 'identity' as TabId, label: 'Identité', icon: Globe },
     { id: 'academic-year' as TabId, label: 'Année scolaire', icon: Calendar },
     { id: 'structure' as TabId, label: 'Structure', icon: GraduationCap },
-    { id: 'bilingual' as TabId, label: 'Bilingue', icon: Languages },
+    { id: 'school-calendar' as TabId, label: 'Calendrier scolaire', icon: CalendarRange },
+    // M3 — Masquer l'onglet Bilingue si le plan ne l'autorise pas
+    ...(billingSettings?.planDetails?.bilingualAllowed !== false ? [{ id: 'bilingual' as TabId, label: 'Bilingue', icon: Languages }] : []),
     { id: 'features' as TabId, label: 'Modules', icon: ToggleLeft },
     { id: 'roles' as TabId, label: 'Rôles', icon: UserCog },
     { id: 'communication' as TabId, label: 'Communication', icon: Mail },
@@ -2384,6 +2387,9 @@ export default function SettingsPage() {
             )}
           </div>
         );
+
+      case 'school-calendar':
+        return <SchoolCalendarConfigSection tenantId={effectiveTenantId} showToast={showToast} />;
 
       case 'structure':
         const levels = educationStructure?.levels ?? [];

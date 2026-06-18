@@ -6,11 +6,11 @@
 
 'use client';
 
-import { 
-  BarChart3, 
-  TrendingUp, 
-  Users, 
-  Target, 
+import {
+  BarChart3,
+  TrendingUp,
+  Users,
+  Target,
   AlertCircle,
   Zap,
   TrendingDown,
@@ -22,9 +22,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
+import { useBilingual } from '@/contexts/BilingualContext';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 
 export default function AnalyticsPage() {
+  const { isEnabled: isBilingual, currentTrack, setCurrentTrack } = useBilingual();
   return (
     <ModuleContainer
       header={{
@@ -32,7 +34,7 @@ export default function AnalyticsPage() {
         description: 'Analyse prédictive et suivi des performances académiques.',
         icon: 'barChart3',
       }}
-      subModules={{ 
+      subModules={{
         modules: EXAMS_SUB_MODULES,
         activeModuleId: 'analytics'
       }}
@@ -40,6 +42,26 @@ export default function AnalyticsPage() {
         layout: 'full',
         children: (
           <div className="space-y-6">
+            {/* Bilingual track selector */}
+            {isBilingual && (
+              <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1 mb-4">
+                <button
+                  type="button"
+                  onClick={() => setCurrentTrack('FR')}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentTrack === 'FR' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+                >
+                  Français
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentTrack('EN')}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentTrack === 'EN' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+                >
+                  English
+                </button>
+              </div>
+            )}
+
             {/* Orion Insights */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                <Card className="border-l-4 border-l-amber-500 shadow-sm overflow-hidden bg-amber-50/30">

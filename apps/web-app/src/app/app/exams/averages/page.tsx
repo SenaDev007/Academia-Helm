@@ -40,6 +40,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useAcademicSettings } from '@/hooks/useAcademicSettings';
+import { useBilingual } from '@/contexts/BilingualContext';
 import { toast } from '@/components/ui/toast';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { cn } from '@/lib/utils';
@@ -82,6 +83,7 @@ export default function AveragesPage() {
     passingScore,
     decimals,
   } = useAcademicSettings();
+  const { isEnabled: isBilingual, currentTrack, setCurrentTrack } = useBilingual();
 
   const [classes, setClasses] = useState<any[]>([]);
   const [periods, setPeriods] = useState<any[]>([]);
@@ -152,8 +154,14 @@ export default function AveragesPage() {
     if (!selectedClassId || !selectedPeriodId) return;
     setLoading(true);
     try {
+      const params = new URLSearchParams({
+        classId: selectedClassId,
+        periodId: selectedPeriodId,
+        academicYearId: academicYear?.id ?? '',
+      });
+      if (isBilingual) params.append('language', currentTrack);
       const res = await fetch(
-        `/api/exams/averages?classId=${selectedClassId}&periodId=${selectedPeriodId}&academicYearId=${academicYear?.id ?? ''}`,
+        `/api/exams/averages?${params.toString()}`,
         { credentials: 'include' }
       ).then((r) => r.json());
       setResults(Array.isArray(res) ? res : []);
@@ -162,7 +170,7 @@ export default function AveragesPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedClassId, selectedPeriodId, academicYear?.id]);
+  }, [selectedClassId, selectedPeriodId, academicYear?.id, isBilingual, currentTrack]);
 
   useEffect(() => { if (selectedClassId && selectedPeriodId) loadResults(); }, [loadResults]);
 
@@ -171,15 +179,17 @@ export default function AveragesPage() {
     if (!selectedClassId || !selectedPeriodId || !academicYear?.id) return;
     setCalculating(true);
     try {
+      const payload: any = {
+        classId: selectedClassId,
+        periodId: selectedPeriodId,
+        academicYearId: academicYear.id,
+      };
+      if (isBilingual) payload.language = currentTrack;
       const res = await fetch('/api/exams/calculate-averages', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          classId: selectedClassId,
-          periodId: selectedPeriodId,
-          academicYearId: academicYear.id,
-        }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -231,6 +241,26 @@ export default function AveragesPage() {
         layout: 'full',
         children: (
           <div className="space-y-6 p-1">
+            {/* Bilingual track selector */}
+            {isBilingual && (
+              <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1 mb-4">
+                <button
+                  type="button"
+                  onClick={() => setCurrentTrack('FR')}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentTrack === 'FR' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+                >
+                  Français
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentTrack('EN')}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentTrack === 'EN' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+                >
+                  English
+                </button>
+              </div>
+            )}
+
             {/* No config banner */}
             {noConfig && (
               <motion.div

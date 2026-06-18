@@ -64,7 +64,7 @@ import StudentSettingsContent from '@/components/students/StudentSettingsContent
 import StudentAuditContent from '@/components/students/StudentAuditContent';
 import StudentTransferContent from '@/components/students/StudentTransferContent';
 import StudentSaraAssistant from '@/components/students/StudentSaraAssistant';
-import { ArrowRightLeft } from 'lucide-react';
+import { ArrowRightLeft, BarChart3 } from 'lucide-react';
 import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
 import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
 
@@ -472,6 +472,7 @@ export default function StudentsModulePage() {
             { id: 'analytics', label: 'ORION & Stats', icon: <Activity className="w-4 h-4" /> },
             { id: 'settings', label: 'Paramétrage', icon: <Edit className="w-4 h-4" /> },
             { id: 'audit', label: 'Audit & Conformité', icon: <Fingerprint className="w-4 h-4" /> },
+            { id: 'aggregation', label: 'Agrégation & Bilan Global', icon: <BarChart3 className="w-4 h-4" /> },
             { id: 'transfers', label: 'Transferts & Mobilité', icon: <ArrowRightLeft className="w-4 h-4" /> },
           ],
         }}
@@ -556,6 +557,19 @@ export default function StudentsModulePage() {
             ? {
                 layout: 'default',
                 children: <StudentTransferContent />,
+              }
+            : activeSubModuleId === 'aggregation'
+            ? {
+                layout: 'default',
+                children: (
+                  <div className="p-6">
+                    <iframe
+                      src="/app/students/aggregation"
+                      className="w-full h-[calc(100vh-200px)] border-0"
+                      title="Agrégation Élèves"
+                    />
+                  </div>
+                ),
               }
             : activeSubModuleId === 'cards'
             ? {

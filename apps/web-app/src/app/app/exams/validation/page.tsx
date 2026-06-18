@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { useBilingual } from '@/contexts/BilingualContext';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -41,6 +42,7 @@ import { EXAMS_SUB_MODULES } from '../sub-modules';
 
 export default function ValidationPage() {
   const { academicYear, schoolLevel } = useModuleContext();
+  const { isEnabled: isBilingual, currentTrack, setCurrentTrack } = useBilingual();
   const [batches, setBatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedBatch, setSelectedBatch] = useState<any>(null);
@@ -54,7 +56,14 @@ export default function ValidationPage() {
       try {
         setLoading(true);
         const res = await institutionalExamsService.getPendingValidations(schoolLevel.id, academicYear.id);
-        setBatches(res);
+        // Filtrer par langue si bilingue (le service ne supporte pas encore le param language)
+        const filtered = isBilingual
+          ? (Array.isArray(res) ? res : []).filter((b: any) => {
+              const lang = b?.evaluation?.subject?.language || b?.evaluation?.language;
+              return lang ? lang === currentTrack : true;
+            })
+          : res;
+        setBatches(filtered);
       } catch (error) {
         console.error('Error loading validations', error);
       } finally {
@@ -62,7 +71,7 @@ export default function ValidationPage() {
       }
     }
     loadData();
-  }, [schoolLevel, academicYear]);
+  }, [schoolLevel, academicYear, isBilingual, currentTrack]);
 
   const handleApprove = async () => {
     try {
@@ -105,6 +114,26 @@ export default function ValidationPage() {
         layout: 'full',
         children: (
           <div className="space-y-4">
+            {/* Bilingual track selector */}
+            {isBilingual && (
+              <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1 mb-4">
+                <button
+                  type="button"
+                  onClick={() => setCurrentTrack('FR')}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentTrack === 'FR' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+                >
+                  Français
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentTrack('EN')}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentTrack === 'EN' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+                >
+                  English
+                </button>
+              </div>
+            )}
+
             <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex items-start space-x-3">
               <ShieldCheck className="w-6 h-6 text-blue-600 mt-0.5" />
               <div>

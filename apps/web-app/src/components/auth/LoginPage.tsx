@@ -38,6 +38,7 @@ import {
   GraduationCap,
   Users,
   ArrowLeft,
+  ArrowRight,
   Home,
   Shield,
   Globe,

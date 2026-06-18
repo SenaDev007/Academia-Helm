@@ -1986,7 +1986,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             )}
 
             {/* ── Submit button — palette Helm unifiée ── */}
-            {!(portalType === 'public' && preEnrollmentSubmitted) && !schoolGooglePending && (
+            {!(portalType === 'public' && preEnrollmentSubmitted) && (
               <motion.button
                 type="submit"
                 disabled={isLoading}
@@ -2022,7 +2022,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             )}
 
             {/* ── Bouton Google Sign-In — UNIQUEMENT pour le portail ÉCOLE ── */}
-            {portalType === 'school' && !schoolGooglePending && (
+            {portalType === 'school' && (
               <>
                 <div className="relative my-2">
                   <div className="absolute inset-0 flex items-center">
@@ -2057,92 +2057,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
               </>
             )}
 
-            {/* ── Écran OTP SCHOOL (après Google) — UNIQUEMENT portail ÉCOLE ── */}
-            {portalType === 'school' && schoolGooglePending && (
-              <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="space-y-4"
-              >
-                <div className="text-center">
-                  <div
-                    className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl"
-                    style={{ background: `${GOLD}22` }}
-                  >
-                    <KeyRound className="h-7 w-7" style={{ color: NAVY }} />
-                  </div>
-                  <h3 className="text-lg font-bold" style={{ color: NAVY }}>
-                    Vérification 2 facteurs
-                  </h3>
-                  <p className="mt-1 text-xs text-slate-600">
-                    Code à 6 chiffres envoyé par email à
-                    <br />
-                    <span className="font-semibold" style={{ color: NAVY }}>
-                      {schoolGoogleEmail}
-                    </span>
-                  </p>
-                </div>
-
-                {/* 6 inputs OTP */}
-                <div className="flex justify-center gap-2" onPaste={handleSchoolOtpPaste}>
-                  {schoolOtp.map((digit, i) => (
-                    <input
-                      key={i}
-                      ref={(el) => { schoolOtpRefs.current[i] = el; }}
-                      type="text"
-                      inputMode="numeric"
-                      pattern="\d*"
-                      maxLength={1}
-                      value={digit}
-                      onChange={(e) => handleSchoolOtpChange(i, e.target.value)}
-                      onKeyDown={(e) => handleSchoolOtpKeyDown(i, e)}
-                      className="h-14 w-11 rounded-xl border-2 border-slate-200 text-center text-2xl font-bold transition-all focus:ring-2 min-h-[44px]"
-                      style={{
-                        '--tw-ring-color': `${GOLD}40`,
-                        color: NAVY,
-                      } as React.CSSProperties}
-                      aria-label={`Chiffre ${i + 1}`}
-                    />
-                  ))}
-                </div>
-
-                <motion.button
-                  type="button"
-                  onClick={handleSchoolVerifyOtp}
-                  disabled={isLoading || schoolOtp.join('').length !== 6}
-                  whileHover={shouldReduceMotion ? undefined : { scale: 1.01 }}
-                  whileTap={shouldReduceMotion ? undefined : { scale: 0.99 }}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3.5 font-semibold text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-50 min-h-[44px]"
-                  style={{
-                    background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
-                  }}
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader className="h-5 w-5 animate-spin" />
-                      Vérification...
-                    </>
-                  ) : (
-                    <>
-                      Vérifier le code
-                      <ArrowRight className="h-5 w-5" />
-                    </>
-                  )}
-                </motion.button>
-
-                <button
-                  type="button"
-                  onClick={handleSchoolGoogleCancel}
-                  className="w-full text-center text-xs font-medium text-slate-500 hover:text-slate-700 transition-colors min-h-[44px]"
-                >
-                  ← Retour
-                </button>
-
-                <p className="text-center text-xs text-slate-500">
-                  Le code est valide 10 minutes. Vérifiez vos spams si vous ne le recevez pas.
-                </p>
-              </motion.div>
-            )}
+            {/* ── Écran OTP SCHOOL — SUPPRIMÉ du formulaire, déplacé en modal overlay ── */}
           </form>
 
           {/* ── Footer links ── */}
@@ -2192,6 +2107,116 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
           </motion.div>
         </motion.div>
       </div>
+
+      {/* ── Modal OTP SCHOOL (overlay séparé) — UNIQUEMENT portail ÉCOLE ── */}
+      <AnimatePresence>
+        {portalType === 'school' && schoolGooglePending && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+            onClick={handleSchoolGoogleCancel}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 10 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="relative bg-white rounded-3xl shadow-2xl max-w-md w-full p-8"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Bouton fermer */}
+              <button
+                type="button"
+                onClick={handleSchoolGoogleCancel}
+                className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors"
+                aria-label="Fermer"
+              >
+                <XCircle className="h-5 w-5" />
+              </button>
+
+              <div className="text-center mb-6">
+                <div
+                  className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl"
+                  style={{ background: `${GOLD}22` }}
+                >
+                  <KeyRound className="h-8 w-8" style={{ color: NAVY }} />
+                </div>
+                <h3 className="text-xl font-bold" style={{ color: NAVY }}>
+                  Vérification 2 facteurs
+                </h3>
+                <p className="mt-2 text-sm text-slate-600">
+                  Code à 6 chiffres envoyé par email à
+                  <br />
+                  <span className="font-semibold" style={{ color: NAVY }}>
+                    {schoolGoogleEmail}
+                  </span>
+                </p>
+              </div>
+
+              {/* 6 inputs OTP */}
+              <div className="flex justify-center gap-2 mb-6" onPaste={handleSchoolOtpPaste}>
+                {schoolOtp.map((digit, i) => (
+                  <input
+                    key={i}
+                    ref={(el) => { schoolOtpRefs.current[i] = el; }}
+                    type="text"
+                    inputMode="numeric"
+                    pattern="\d*"
+                    maxLength={1}
+                    value={digit}
+                    onChange={(e) => handleSchoolOtpChange(i, e.target.value)}
+                    onKeyDown={(e) => handleSchoolOtpKeyDown(i, e)}
+                    className="h-14 w-12 rounded-xl border-2 border-slate-200 text-center text-2xl font-bold transition-all focus:ring-2 focus:border-blue-400 min-h-[44px]"
+                    style={{
+                      '--tw-ring-color': `${GOLD}40`,
+                      color: NAVY,
+                    } as React.CSSProperties}
+                    aria-label={`Chiffre ${i + 1}`}
+                  />
+                ))}
+              </div>
+
+              <motion.button
+                type="button"
+                onClick={handleSchoolVerifyOtp}
+                disabled={isLoading || schoolOtp.join('').length !== 6}
+                whileHover={shouldReduceMotion ? undefined : { scale: 1.01 }}
+                whileTap={shouldReduceMotion ? undefined : { scale: 0.99 }}
+                className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3.5 font-semibold text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-50 min-h-[44px] mb-3"
+                style={{
+                  background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
+                }}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader className="h-5 w-5 animate-spin" />
+                    Vérification...
+                  </>
+                ) : (
+                  <>
+                    Vérifier le code
+                    <ArrowRight className="h-5 w-5" />
+                  </>
+                )}
+              </motion.button>
+
+              <button
+                type="button"
+                onClick={handleSchoolGoogleCancel}
+                className="w-full text-center text-xs font-medium text-slate-500 hover:text-slate-700 transition-colors min-h-[44px] mb-2"
+              >
+                ← Annuler et revenir au formulaire
+              </button>
+
+              <p className="text-center text-xs text-slate-400">
+                Le code est valide 10 minutes. Vérifiez vos spams si vous ne le recevez pas.
+              </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

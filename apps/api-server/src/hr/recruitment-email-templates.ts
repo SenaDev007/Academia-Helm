@@ -93,9 +93,19 @@ export interface RecruitmentEmailData {
  */
 function renderHeader(branding: TenantBranding): string {
   const schoolName = escHtml(branding.schoolName || 'Établissement');
-  const logoBlock = branding.schoolLogo
-    ? `<img src="${escHtml(branding.schoolLogo)}" alt="${schoolName}" style="max-height:56px;max-width:180px;object-fit:contain;" />`
-    : `<div style="width:52px;height:52px;border:2px solid #c9a227;border-radius:10px;text-align:center;vertical-align:middle;background:rgba(201,162,39,0.12);line-height:48px;">
+  // Logo de l'école :
+  // - Si URL http(s) → img directe (fonctionne dans tous les clients email)
+  // - Si base64 (data:image) ET < 30 KB → img directe (fonctionne dans la plupart des clients)
+  // - Si base64 ET > 30 KB → fallback initiales (Gmail/Outlook bloquent les base64 volumineux)
+  // - Si null → fallback initiales
+  const isUrl = branding.schoolLogo && branding.schoolLogo.startsWith('http');
+  const isBase64 = branding.schoolLogo && branding.schoolLogo.startsWith('data:');
+  const base64Size = isBase64 ? branding.schoolLogo.length : 0;
+  const canUseLogo = branding.schoolLogo && (isUrl || (isBase64 && base64Size < 30000));
+
+  const logoBlock = canUseLogo
+    ? `<img src="${escHtml(branding.schoolLogo)}" alt="${schoolName}" style="max-height:48px;max-width:160px;object-fit:contain;" />`
+    : `<div style="width:48px;height:48px;border:2px solid #c9a227;border-radius:10px;text-align:center;vertical-align:middle;background:rgba(201,162,39,0.12);line-height:44px;">
          <span style="font-size:18px;font-weight:bold;color:#f5e6b8;letter-spacing:1px;">${escHtml((branding.schoolName || 'EC').substring(0, 2).toUpperCase())}</span>
        </div>`;
 
@@ -155,10 +165,10 @@ function renderFooter(branding: TenantBranding): string {
       <td style="background:#0c1a33;padding:24px 28px;text-align:center;border-top:3px solid #c9a227;">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 12px;">
           <tr>
-            <td style="width:38px;height:38px;border:2px solid #c9a227;border-radius:8px;text-align:center;vertical-align:middle;background:rgba(201,162,39,0.12);">
-              <span style="font-size:13px;font-weight:bold;color:#f5e6b8;letter-spacing:1px;">AH</span>
+            <td style="vertical-align:middle;padding-right:12px;text-align:left;">
+              <img src="https://www.academiahelm.com/images/logo-Academia-Helm.svg" alt="Academia Helm" style="height:36px;width:auto;max-width:120px;object-fit:contain;" />
             </td>
-            <td style="padding-left:12px;text-align:left;vertical-align:middle;">
+            <td style="padding-left:4px;text-align:left;vertical-align:middle;">
               <div style="font-size:15px;font-weight:bold;color:#ffffff;">Academia Helm</div>
               <div style="font-size:11px;color:#c9a227;margin-top:2px;">Plateforme de pilotage éducatif</div>
             </td>

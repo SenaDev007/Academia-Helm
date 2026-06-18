@@ -1019,9 +1019,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     const code = searchParams?.get('code');
     const state = searchParams?.get('state');
     if (!code || !state || schoolGooglePending) return;
-    // Empêcher la double exécution (React Strict Mode ou re-render)
     if (googleCallbackDone.current) return;
-    googleCallbackDone.current = true;
 
     // ── Détecter le flow school en décodant le state ──
     // Le state school contient { f: 'school', t, s, n } en base64url
@@ -1032,14 +1030,13 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       isSchoolFlow = decoded?.f === 'school';
     } catch {
       // Si le state n'est pas du JSON base64url, ce n'est pas le flow school
-      googleCallbackDone.current = false; // Reset pour permettre un autre flow
       return;
     }
 
-    if (!isSchoolFlow) {
-      googleCallbackDone.current = false; // Reset pour permettre un autre flow
-      return;
-    }
+    if (!isSchoolFlow) return;
+
+    // Marquer comme fait pour empêcher la ré-exécution (anti-boucle)
+    googleCallbackDone.current = true;
 
     setIsLoading(true);
     fetch('/api/school-auth/google/callback', {
@@ -1048,33 +1045,24 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       body: JSON.stringify({ code, state }),
     })
       .then(async (res) => {
+        // Vérifier que la réponse est bien du JSON (pas une page HTML d'erreur)
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          throw new Error('Le serveur a renvoyé une réponse invalide. Veuillez réessayer.');
+        }
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Erreur callback Google');
         setSchoolGooglePendingToken(data.pendingToken);
         setSchoolGoogleEmail(data.email);
         setSchoolGooglePending(true);
         setError(null);
-        // Nettoyer l'URL seulement APRÈS succès (le modal OTP est affiché)
-        if (typeof window !== 'undefined') {
-          const url = new URL(window.location.href);
-          url.searchParams.delete('code');
-          url.searchParams.delete('state');
-          window.history.replaceState({}, '', url.toString());
-        }
         // Focus premier input OTP
         setTimeout(() => schoolOtpRefs.current[0]?.focus(), 100);
       })
       .catch((err) => {
         setError(err instanceof Error ? err.message : 'Erreur callback Google');
-        // Reset le ref pour permettre de réessayer
+        // Reset pour permettre de réessayer
         googleCallbackDone.current = false;
-        // Nettoyer l'URL en cas d'erreur pour éviter la boucle
-        if (typeof window !== 'undefined') {
-          const url = new URL(window.location.href);
-          url.searchParams.delete('code');
-          url.searchParams.delete('state');
-          window.history.replaceState({}, '', url.toString());
-        }
       })
       .finally(() => setIsLoading(false));
   }, [searchParams, schoolGooglePending]);

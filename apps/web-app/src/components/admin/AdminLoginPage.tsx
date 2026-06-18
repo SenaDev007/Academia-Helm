@@ -68,7 +68,6 @@ export default function AdminLoginPage() {
     const code = searchParams.get('code');
     const state = searchParams.get('state');
     if (code && state && !resetToken) {
-      // Empêcher la double exécution (React Strict Mode ou re-render)
       if (googleCallbackDone.current) return;
       googleCallbackDone.current = true;
 
@@ -79,29 +78,19 @@ export default function AdminLoginPage() {
         body: JSON.stringify({ code, state }),
       })
         .then(async (res) => {
+          // Vérifier que la réponse est bien du JSON (pas une page HTML d'erreur)
+          const contentType = res.headers.get('content-type') || '';
+          if (!contentType.includes('application/json')) {
+            throw new Error('Le serveur a renvoyé une réponse invalide. Veuillez réessayer.');
+          }
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Erreur callback Google');
-          // Nettoyer l'URL APRÈS succès
-          if (typeof window !== 'undefined') {
-            const url = new URL(window.location.href);
-            url.searchParams.delete('code');
-            url.searchParams.delete('state');
-            window.history.replaceState({}, '', url.toString());
-          }
           // Forcer un rechargement complet pour que le cookie soit lu côté serveur
           window.location.href = redirectPath;
         })
         .catch((err) => {
           setError(err instanceof Error ? err.message : 'Erreur');
-          // Reset le ref pour permettre de réessayer
           googleCallbackDone.current = false;
-          // Nettoyer l'URL en cas d'erreur
-          if (typeof window !== 'undefined') {
-            const url = new URL(window.location.href);
-            url.searchParams.delete('code');
-            url.searchParams.delete('state');
-            window.history.replaceState({}, '', url.toString());
-          }
         })
         .finally(() => setIsLoading(false));
     }

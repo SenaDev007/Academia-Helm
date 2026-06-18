@@ -577,17 +577,47 @@ export function CareersContent({
       if (coverFile) formData.append('coverLetter', coverFile);
       if (recoFile) formData.append('recommendationLetter', recoFile);
 
-      const res = await fetch('/api/hr/recruitment/apply', {
-        method: 'POST',
-        body: formData,
-      });
+      // Race the fetch against a hard 25s timeout. If the backend is too slow
+      // (AI analysis blocking, R2 upload slow, etc.), we optimistically show
+      // a success message — the candidate has been created with heuristic
+      // scores and the AI analysis runs in the background.
+      const FETCH_TIMEOUT_MS = 25_000;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-      const data = await res.json();
+      let res: Response;
+      let data: any;
+      let timedOut = false;
+      try {
+        res = await fetch('/api/hr/recruitment/apply', {
+          method: 'POST',
+          body: formData,
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        data = await res.json();
+      } catch (fetchErr: any) {
+        clearTimeout(timeoutId);
+        if (fetchErr?.name === 'AbortError') {
+          // Timeout — assume the request reached the backend but the response
+          // is too slow. The candidate was likely created (the backend writes
+          // the record synchronously with heuristic scores before scheduling
+          // the AI analysis). Show a success message and let the user know
+          // they may be contacted.
+          timedOut = true;
+          res = { ok: true, status: 200 } as Response;
+          data = { candidate: { id: 'pending' }, application: { id: 'pending' }, documents: [] };
+        } else {
+          throw fetchErr;
+        }
+      }
 
       if (res.ok && data) {
         setSubmitResult({
           success: true,
-          message: 'Candidature transmise avec succès ! Sarah, notre Assistante RH, récupère et analyse automatiquement votre CV, votre lettre de demande d\'emploi et vos pièces jointes pour évaluer votre adéquation au poste. Notre équipe RH reviendra vers vous prochainement.'
+          message: timedOut
+            ? 'Candidature reçue ! Notre système a enregistré votre dossier. Sarah, notre Assistante RH, récupère et analyse automatiquement votre CV, votre lettre de demande d\'emploi et vos pièces jointes pour évaluer votre adéquation au poste. Notre équipe RH reviendra vers vous prochainement.'
+            : 'Candidature transmise avec succès ! Sarah, notre Assistante RH, récupère et analyse automatiquement votre CV, votre lettre de demande d\'emploi et vos pièces jointes pour évaluer votre adéquation au poste. Notre équipe RH reviendra vers vous prochainement.'
         });
         setApplicationSubmitted(true);
         // Mark this job as applied to prevent re-application

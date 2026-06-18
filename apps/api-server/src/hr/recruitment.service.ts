@@ -1502,6 +1502,7 @@ export class RecruitmentPrismaService {
 
   async applyJob(body: any, files: any) {
     const tenantId = body.tenantId;
+    const startTime = Date.now();
 
     // ─── Duplicate prevention ──────────────────────────────────────────────
     // Reject if the same email has already applied to the same job within
@@ -1554,13 +1555,20 @@ export class RecruitmentPrismaService {
     const hasApplicationLetter = files?.applicationLetter && files.applicationLetter.length > 0;
     const hasLetter = files?.coverLetter && files.coverLetter.length > 0;
 
-    // ─── AI-powered scoring via OpenRouter HDIE ────────────────────────────
-    // If OpenRouter is configured, use real AI analysis. Otherwise, fall back
-    // to heuristic scoring based on the presence of documents and profile data.
     const cvName = hasCV ? files.cv[0].originalname : 'Profil LinkedIn / Candidature Simplifiée';
     const applicationLetterName = hasApplicationLetter ? files.applicationLetter[0].originalname : '';
     const letterName = hasLetter ? files.coverLetter[0].originalname : 'Pitch de motivation intégré';
 
+    // ─── FAST PATH: compute heuristic scores SYNCHRONOUSLY ────────────────
+    // The candidate is created IMMEDIATELY with heuristic scores so the user
+    // gets a sub-second response. The AI analysis (OpenRouter HDIE) runs in
+    // the BACKGROUND and updates the record when complete — see
+    // `scheduleAiAnalysis()` below.
+    //
+    // This is critical because:
+    //   1. OpenRouter calls take 15-60s (LLM inference)
+    //   2. Vercel function timeout is 10s (Hobby) / 60s (Pro)
+    //   3. The user expects "fraction of a second" UX for button clicks
     let scoreCV: number;
     let scoreLetter: number;
     let scoreMatching: number;
@@ -1568,141 +1576,101 @@ export class RecruitmentPrismaService {
     let matchDetail: string;
     let risks: string;
     let riskDetail: string | null;
-    let aiReportContent: string | null = null;
 
-    if (this.openRouter.isConfigured()) {
-      // Real AI analysis via OpenRouter
-      try {
-        // Fetch job details for context
-        const job = await this.prisma.hrJob.findUnique({
-          where: { id: body.jobId },
-          select: { title: true, dept: true, description: true, skillsRequired: true, experience: true, academicLevel: true },
-        });
+    ({
+      scoreCV,
+      scoreLetter,
+      scoreMatching,
+      score,
+      matchDetail,
+      risks,
+      riskDetail,
+    } = this.generateHeuristicScores(
+      hasCV,
+      hasApplicationLetter,
+      hasLetter,
+      cvName,
+      applicationLetterName,
+      letterName,
+      skills,
+      experiences,
+      education,
+    ));
 
-        const candidateProfile = [
-          `Nom: ${body.firstName} ${body.lastName}`,
-          `Email: ${body.email}`,
-          skills.length > 0 ? `Compétences: ${skills.join(', ')}` : null,
-          experiences.length > 0 ? `Expériences: ${experiences.map(e => e.title || e.position || '').filter(Boolean).join(', ')}` : null,
-          education.length > 0 ? `Formation: ${education.map(e => e.degree || e.diploma || '').filter(Boolean).join(', ')}` : null,
-          pitch ? `Motivation: ${pitch.substring(0, 300)}` : null,
-          hasCV ? `CV fourni: ${cvName}` : 'CV non fourni',
-          hasApplicationLetter ? `Lettre de demande d'emploi fournie: ${applicationLetterName}` : null,
-          hasLetter ? `Lettre de motivation fournie: ${letterName}` : 'Lettre de motivation non fournie',
-        ].filter(Boolean).join('\n');
+    this.logger.log(
+      `applyJob: heuristic scores computed in ${Date.now() - startTime}ms — scoreCV=${scoreCV}, scoreLetter=${scoreLetter}, scoreMatching=${scoreMatching}`,
+    );
 
-        const jobContext = job
-          ? `Poste: ${job.title} — Département: ${job.dept || 'N/A'}\nDescription: ${(job.description || '').substring(0, 300)}\nCompétences requises: ${job.skillsRequired || 'N/A'}\nExpérience requise: ${job.experience || 'N/A'}\nNiveau académique: ${job.academicLevel || 'N/A'}`
-          : 'Poste non spécifié';
+    // ─── Parallel file uploads ────────────────────────────────────────────
+    // Previously: 4 sequential uploads × 2-5s each = 8-20s
+    // Now: 4 parallel uploads ≈ 2-5s total
+    const uploadPromises: Array<Promise<{ type: string; file: Express.Multer.File | null; path: string | null }>> = [];
 
-        const aiResult = await this.openRouter.structuredChat<{
-          scoreCV: number;
-          scoreLetter: number;
-          scoreMatching: number;
-          matchDetail: string;
-          risks: string;
-          riskDetail: string | null;
-          analysis: string;
-        }>(
-          `Analyse ce profil de candidat pour un poste dans l'enseignement et évalue son adéquation.\n\nPROFIL DU CANDIDAT:\n${candidateProfile}\n\nPOSTE VISÉ:\n${jobContext}`,
-          `Tu es le moteur HDIE (Helm Document Intelligence Engine) d'Academia Helm. Tu analyses des candidatures pour des postes dans l'enseignement.
-Tu évalues l'adéquation du candidat au poste en te basant sur les informations fournies, y compris le CV, la lettre de demande d'emploi (courrier formel de candidature) et la lettre de motivation (lettre d'argumentation personnelle).
-
-RÈGLES DE SCORING:
-- scoreCV (0-100): Qualité et pertinence du CV/Profil par rapport au poste. Si pas de CV, base-toi sur les compétences déclarées (max 70).
-- scoreLetter (0-100): Qualité globale des lettres fournies (lettre de demande d'emploi ET lettre de motivation). Si une seule lettre est fournie, évalue celle-ci (max 80). Si les deux sont fournies, valorise la complétude (jusqu'à 100). Si aucune lettre mais un pitch, évalue le pitch (max 60). Si rien, max 40.
-- scoreMatching (0-100): Adéquation globale du profil avec les exigences du poste.
-- matchDetail: Résumé en 2-3 phrases de l'analyse d'adéquation.
-- risks: "Aucun", "Faible", "Moyen", ou "Élevé" selon les incohérences détectées.
-- riskDetail: Description du risque si risks !== "Aucun", sinon null.
-- analysis: Analyse détaillée du profil en 3-5 phrases couvrant le CV, la lettre de demande d'emploi et la lettre de motivation.
-
-Réponds UNIQUEMENT en JSON valide.`,
-          'HDIE',
-        );
-
-        if (aiResult.data && !aiResult.isPlaceholder) {
-          scoreCV = Math.max(0, Math.min(100, aiResult.data.scoreCV));
-          scoreLetter = Math.max(0, Math.min(100, aiResult.data.scoreLetter));
-          scoreMatching = Math.max(0, Math.min(100, aiResult.data.scoreMatching));
-          matchDetail = aiResult.data.matchDetail || `Candidature analysée par HDIE. CV: ${cvName}. Présentation: ${letterName}.`;
-          risks = ['Aucun', 'Faible', 'Moyen', 'Élevé'].includes(aiResult.data.risks) ? aiResult.data.risks : 'Aucun';
-          riskDetail = aiResult.data.riskDetail || null;
-          aiReportContent = JSON.stringify(aiResult.data);
-          this.logger.log(`HDIE AI analysis complete: scoreCV=${scoreCV}, scoreLetter=${scoreLetter}, scoreMatching=${scoreMatching}, risks=${risks}`);
-        } else {
-          // AI call succeeded but JSON parsing failed — use heuristic fallback
-          this.logger.warn('HDIE AI response was not valid JSON, using heuristic scores');
-          ({ scoreCV, scoreLetter, scoreMatching, score, matchDetail, risks, riskDetail } = this.generateHeuristicScores(hasCV, hasApplicationLetter, hasLetter, cvName, applicationLetterName, letterName, skills, experiences, education));
-        }
-      } catch (aiErr: any) {
-        // AI call failed — use heuristic fallback
-        this.logger.warn(`HDIE AI analysis failed: ${aiErr.message}, using heuristic scores`);
-        ({ scoreCV, scoreLetter, scoreMatching, score, matchDetail, risks, riskDetail } = this.generateHeuristicScores(hasCV, hasApplicationLetter, hasLetter, cvName, applicationLetterName, letterName, skills, experiences, education));
-      }
-    } else {
-      // OpenRouter not configured — use heuristic scoring
-      ({ scoreCV, scoreLetter, scoreMatching, score, matchDetail, risks, riskDetail } = this.generateHeuristicScores(hasCV, hasApplicationLetter, hasLetter, cvName, applicationLetterName, letterName, skills, experiences, education));
+    if (hasCV) {
+      uploadPromises.push(
+        this.storageService
+          .uploadFile(files.cv[0], `candidate-docs/${tenantId}/pending/cv`)
+          .then((path) => ({ type: 'cv', file: files.cv[0] as Express.Multer.File, path }))
+          .catch((err) => {
+            this.logger.error(`CV upload failed: ${err.message}`);
+            return { type: 'cv', file: files.cv[0] as Express.Multer.File, path: null };
+          }),
+      );
     }
 
-    // Calculate final composite score
-    score = Math.round((scoreCV * 0.4) + (scoreLetter * 0.2) + (scoreMatching * 0.4));
-
-    // ─── Upload files OUTSIDE the transaction first ───────────────────────
-    // Previously, uploads ran inside the Prisma transaction, which caused
-    // transaction timeouts (P2024) or internal errors when the storage backend
-    // (R2/S3/Vercel Blob) was slow or misconfigured.
-    let cvPath: string | null = null;
-    let applicationLetterPath: string | null = null;
-    let letterPath: string | null = null;
-    let recoPath: string | null = null;
-    let cvFile: Express.Multer.File | null = null;
-    let applicationLetterFile: Express.Multer.File | null = null;
-    let letterFile: Express.Multer.File | null = null;
-    let recoFile: Express.Multer.File | null = null;
-
-    try {
-      if (hasCV) {
-        cvFile = files.cv[0];
-        cvPath = await this.storageService.uploadFile(
-          cvFile,
-          `candidate-docs/${tenantId}/pending/cv`,
-        );
-        this.logger.log(`CV uploaded: ${cvPath}`);
-      }
-      if (hasApplicationLetter) {
-        applicationLetterFile = files.applicationLetter[0];
-        applicationLetterPath = await this.storageService.uploadFile(
-          applicationLetterFile,
-          `candidate-docs/${tenantId}/pending/application-letter`,
-        );
-        this.logger.log(`Application letter (lettre de demande d'emploi) uploaded: ${applicationLetterPath}`);
-      }
-      if (hasLetter) {
-        letterFile = files.coverLetter[0];
-        letterPath = await this.storageService.uploadFile(
-          letterFile,
-          `candidate-docs/${tenantId}/pending/cover-letter`,
-        );
-        this.logger.log(`Cover letter uploaded: ${letterPath}`);
-      }
-      if (files?.recommendationLetter && files.recommendationLetter.length > 0) {
-        recoFile = files.recommendationLetter[0];
-        recoPath = await this.storageService.uploadFile(
-          recoFile,
-          `candidate-docs/${tenantId}/pending/recommendation`,
-        );
-        this.logger.log(`Recommendation letter uploaded: ${recoPath}`);
-      }
-    } catch (uploadErr: any) {
-      this.logger.error(`File upload failed during applyJob: ${uploadErr.message}`, uploadErr.stack);
-      // Continue without files — the candidate can still be created,
-      // just without the document references
+    if (hasApplicationLetter) {
+      uploadPromises.push(
+        this.storageService
+          .uploadFile(files.applicationLetter[0], `candidate-docs/${tenantId}/pending/application-letter`)
+          .then((path) => ({ type: 'applicationLetter', file: files.applicationLetter[0] as Express.Multer.File, path }))
+          .catch((err) => {
+            this.logger.error(`Application letter upload failed: ${err.message}`);
+            return { type: 'applicationLetter', file: files.applicationLetter[0] as Express.Multer.File, path: null };
+          }),
+      );
     }
+
+    if (hasLetter) {
+      uploadPromises.push(
+        this.storageService
+          .uploadFile(files.coverLetter[0], `candidate-docs/${tenantId}/pending/cover-letter`)
+          .then((path) => ({ type: 'coverLetter', file: files.coverLetter[0] as Express.Multer.File, path }))
+          .catch((err) => {
+            this.logger.error(`Cover letter upload failed: ${err.message}`);
+            return { type: 'coverLetter', file: files.coverLetter[0] as Express.Multer.File, path: null };
+          }),
+      );
+    }
+
+    if (files?.recommendationLetter && files.recommendationLetter.length > 0) {
+      uploadPromises.push(
+        this.storageService
+          .uploadFile(files.recommendationLetter[0], `candidate-docs/${tenantId}/pending/recommendation`)
+          .then((path) => ({ type: 'recommendationLetter', file: files.recommendationLetter[0] as Express.Multer.File, path }))
+          .catch((err) => {
+            this.logger.error(`Recommendation letter upload failed: ${err.message}`);
+            return { type: 'recommendationLetter', file: files.recommendationLetter[0] as Express.Multer.File, path: null };
+          }),
+      );
+    }
+
+    const uploadResults = await Promise.all(uploadPromises);
+    const uploadMap = new Map(uploadResults.map((r) => [r.type, r]));
+    const cvFile = uploadMap.get('cv')?.file ?? null;
+    const cvPath = uploadMap.get('cv')?.path ?? null;
+    const applicationLetterFile = uploadMap.get('applicationLetter')?.file ?? null;
+    const applicationLetterPath = uploadMap.get('applicationLetter')?.path ?? null;
+    const letterFile = uploadMap.get('coverLetter')?.file ?? null;
+    const letterPath = uploadMap.get('coverLetter')?.path ?? null;
+    const recoFile = uploadMap.get('recommendationLetter')?.file ?? null;
+    const recoPath = uploadMap.get('recommendationLetter')?.path ?? null;
+
+    this.logger.log(`applyJob: file uploads completed in ${Date.now() - startTime}ms`);
 
     // ─── Prisma transaction: DB writes only (fast, no external I/O) ───────
+    let result: any;
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      result = await this.prisma.$transaction(async (tx) => {
         // 1. Create candidate
         const candidate = await tx.hrCandidate.create({
           data: {
@@ -1730,7 +1698,7 @@ Réponds UNIQUEMENT en JSON valide.`,
           }
         });
 
-        // 3. Create application
+        // 3. Create application with HEURISTIC scores (AI updates later)
         const application = await tx.hrApplication.create({
           data: {
             ...prismaCreateDefaults(),
@@ -1748,25 +1716,7 @@ Réponds UNIQUEMENT en JSON valide.`,
           }
         });
 
-        // 4. Save AI report if available
-        if (aiReportContent) {
-          try {
-            await tx.hrAiReport.create({
-              data: {
-                id: uuid(),  // HrAiReport has only id + generatedAt, no createdAt/updatedAt
-                candidateId: candidate.id,
-                applicationId: application.id,
-                reportType: 'APPLICATION_ANALYSIS',
-                content: aiReportContent,
-                generatedAt: new Date(),
-              }
-            });
-          } catch (reportErr: any) {
-            this.logger.warn(`Failed to save AI report: ${reportErr.message}`);
-          }
-        }
-
-        // 5. Save document references (paths already uploaded)
+        // 4. Save document references (paths already uploaded)
         const documentRecords: any[] = [];
 
         if (cvFile && cvPath) {
@@ -1850,6 +1800,200 @@ Réponds UNIQUEMENT en JSON valide.`,
       throw new BadRequestException(
         `Échec de l'enregistrement de la candidature : ${txErr.message || 'erreur inconnue'}`
       );
+    }
+
+    const totalMs = Date.now() - startTime;
+    this.logger.log(
+      `applyJob: candidate ${result.candidate.id} created in ${totalMs}ms — scheduling AI analysis in background`,
+    );
+
+    // ─── BACKGROUND AI ANALYSIS (fire-and-forget) ─────────────────────────
+    // The candidate is already saved with heuristic scores. We now schedule
+    // the AI analysis to run ASYNCHRONOUSLY — when it completes, it updates
+    // the HrApplication record with AI-driven scores and saves an HrAiReport.
+    //
+    // We DO NOT await this — the response is sent immediately to the user.
+    // Errors are logged but do NOT affect the user's submission.
+    this.scheduleAiAnalysis({
+      candidateId: result.candidate.id,
+      applicationId: result.application.id,
+      jobId: body.jobId,
+      tenantId,
+      firstName: body.firstName,
+      lastName: body.lastName,
+      email: body.email,
+      skills,
+      experiences,
+      education,
+      pitch,
+      hasCV,
+      hasApplicationLetter,
+      hasLetter,
+      cvName,
+      applicationLetterName,
+      letterName,
+    }).catch((err) => {
+      this.logger.error(
+        `applyJob: background AI analysis failed for candidate ${result.candidate.id}: ${err.message}`,
+        err.stack,
+      );
+    });
+
+    return result;
+  }
+
+  /**
+   * Schedule AI analysis in the background (fire-and-forget).
+   *
+   * This method is NOT awaited by applyJob — the user's HTTP response is sent
+   * immediately with heuristic scores. When the AI analysis completes (or fails),
+   * the candidate's HrApplication record is updated with the AI-driven scores
+   * and an HrAiReport is saved.
+   *
+   * The OpenRouter call has a 90s timeout (longer than the request, since we're
+   * no longer blocking the user). On any error, the heuristic scores remain in
+   * place — the candidate is not affected.
+   */
+  private async scheduleAiAnalysis(params: {
+    candidateId: string;
+    applicationId: string;
+    jobId: string;
+    tenantId: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    skills: string[];
+    experiences: any[];
+    education: any[];
+    pitch: string;
+    hasCV: boolean;
+    hasApplicationLetter: boolean;
+    hasLetter: boolean;
+    cvName: string;
+    applicationLetterName: string;
+    letterName: string;
+  }): Promise<void> {
+    if (!this.openRouter.isConfigured()) {
+      this.logger.log('scheduleAiAnalysis: OpenRouter not configured — skipping AI analysis');
+      return;
+    }
+
+    const aiStart = Date.now();
+
+    try {
+      // Fetch job details for context
+      const job = await this.prisma.hrJob.findUnique({
+        where: { id: params.jobId },
+        select: { title: true, dept: true, description: true, skillsRequired: true, experience: true, academicLevel: true },
+      });
+
+      const candidateProfile = [
+        `Nom: ${params.firstName} ${params.lastName}`,
+        `Email: ${params.email}`,
+        params.skills.length > 0 ? `Compétences: ${params.skills.join(', ')}` : null,
+        params.experiences.length > 0
+          ? `Expériences: ${params.experiences.map(e => e.title || e.position || '').filter(Boolean).join(', ')}`
+          : null,
+        params.education.length > 0
+          ? `Formation: ${params.education.map(e => e.degree || e.diploma || '').filter(Boolean).join(', ')}`
+          : null,
+        params.pitch ? `Motivation: ${params.pitch.substring(0, 300)}` : null,
+        params.hasCV ? `CV fourni: ${params.cvName}` : 'CV non fourni',
+        params.hasApplicationLetter ? `Lettre de demande d'emploi fournie: ${params.applicationLetterName}` : null,
+        params.hasLetter ? `Lettre de motivation fournie: ${params.letterName}` : 'Lettre de motivation non fournie',
+      ].filter(Boolean).join('\n');
+
+      const jobContext = job
+        ? `Poste: ${job.title} — Département: ${job.dept || 'N/A'}\nDescription: ${(job.description || '').substring(0, 300)}\nCompétences requises: ${job.skillsRequired || 'N/A'}\nExpérience requise: ${job.experience || 'N/A'}\nNiveau académique: ${job.academicLevel || 'N/A'}`
+        : 'Poste non spécifié';
+
+      const aiResult = await this.openRouter.structuredChat<{
+        scoreCV: number;
+        scoreLetter: number;
+        scoreMatching: number;
+        matchDetail: string;
+        risks: string;
+        riskDetail: string | null;
+        analysis: string;
+      }>(
+        `Analyse ce profil de candidat pour un poste dans l'enseignement et évalue son adéquation.\n\nPROFIL DU CANDIDAT:\n${candidateProfile}\n\nPOSTE VISÉ:\n${jobContext}`,
+        `Tu es le moteur HDIE (Helm Document Intelligence Engine) d'Academia Helm. Tu analyses des candidatures pour des postes dans l'enseignement.
+Tu évalues l'adéquation du candidat au poste en te basant sur les informations fournies, y compris le CV, la lettre de demande d'emploi (courrier formel de candidature) et la lettre de motivation (lettre d'argumentation personnelle).
+
+RÈGLES DE SCORING:
+- scoreCV (0-100): Qualité et pertinence du CV/Profil par rapport au poste. Si pas de CV, base-toi sur les compétences déclarées (max 70).
+- scoreLetter (0-100): Qualité globale des lettres fournies (lettre de demande d'emploi ET lettre de motivation). Si une seule lettre est fournie, évalue celle-ci (max 80). Si les deux sont fournies, valorise la complétude (jusqu'à 100). Si aucune lettre mais un pitch, évalue le pitch (max 60). Si rien, max 40.
+- scoreMatching (0-100): Adéquation globale du profil avec les exigences du poste.
+- matchDetail: Résumé en 2-3 phrases de l'analyse d'adéquation.
+- risks: "Aucun", "Faible", "Moyen", ou "Élevé" selon les incohérences détectées.
+- riskDetail: Description du risque si risks !== "Aucun", sinon null.
+- analysis: Analyse détaillée du profil en 3-5 phrases couvrant le CV, la lettre de demande d'emploi et la lettre de motivation.
+
+Réponds UNIQUEMENT en JSON valide.`,
+        'HDIE',
+      );
+
+      if (!aiResult.data || aiResult.isPlaceholder) {
+        this.logger.warn(
+          `scheduleAiAnalysis: AI returned placeholder for candidate ${params.candidateId} — keeping heuristic scores`,
+        );
+        return;
+      }
+
+      // ─── Update application with AI scores ────────────────────────────────
+      const aiScoreCV = Math.max(0, Math.min(100, aiResult.data.scoreCV));
+      const aiScoreLetter = Math.max(0, Math.min(100, aiResult.data.scoreLetter));
+      const aiScoreMatching = Math.max(0, Math.min(100, aiResult.data.scoreMatching));
+      const aiScore = Math.round((aiScoreCV * 0.4) + (aiScoreLetter * 0.2) + (aiScoreMatching * 0.4));
+      const aiRisks = ['Aucun', 'Faible', 'Moyen', 'Élevé'].includes(aiResult.data.risks) ? aiResult.data.risks : 'Aucun';
+      const aiRiskDetail = aiResult.data.riskDetail || null;
+      const aiMatchDetail = aiResult.data.matchDetail || `Candidature analysée par HDIE. CV: ${params.cvName}. Présentation: ${params.letterName}.`;
+      const aiReportContent = JSON.stringify(aiResult.data);
+
+      await this.prisma.$transaction(async (tx) => {
+        // Update application with AI scores
+        await tx.hrApplication.update({
+          where: { id: params.applicationId },
+          data: {
+            ...prismaUpdateDefaults(),
+            score: aiScore,
+            scoreCV: aiScoreCV,
+            scoreLetter: aiScoreLetter,
+            scoreMatching: aiScoreMatching,
+            risks: aiRisks,
+            riskDetail: aiRiskDetail,
+            matchDetail: aiMatchDetail,
+          },
+        });
+
+        // Save AI report
+        try {
+          await tx.hrAiReport.create({
+            data: {
+              id: uuid(),
+              candidateId: params.candidateId,
+              applicationId: params.applicationId,
+              reportType: 'APPLICATION_ANALYSIS',
+              content: aiReportContent,
+              generatedAt: new Date(),
+            }
+          });
+        } catch (reportErr: any) {
+          this.logger.warn(`scheduleAiAnalysis: failed to save AI report: ${reportErr.message}`);
+        }
+      }, {
+        maxWait: 5_000,
+        timeout: 15_000,
+      });
+
+      this.logger.log(
+        `scheduleAiAnalysis: AI analysis complete for candidate ${params.candidateId} in ${Date.now() - aiStart}ms — scoreCV=${aiScoreCV}, scoreLetter=${aiScoreLetter}, scoreMatching=${aiScoreMatching}, risks=${aiRisks}`,
+      );
+    } catch (aiErr: any) {
+      this.logger.warn(
+        `scheduleAiAnalysis: AI analysis failed for candidate ${params.candidateId} in ${Date.now() - aiStart}ms — ${aiErr.message}. Keeping heuristic scores.`,
+      );
+      // Heuristic scores are already in the DB — nothing to do.
     }
   }
 

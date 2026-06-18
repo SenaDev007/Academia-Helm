@@ -279,10 +279,24 @@ export function isEmailAdminWhitelisted(email: string): boolean {
 // ─── Google OAuth helpers ───────────────────────────────────────────────────
 
 export function getGoogleOAuthConfig() {
+  // Le redirect URI DOIT pointer vers la route GET callback (server-side).
+  // Anciennement : https://admin.academiahelm.com/admin-login (client-side)
+  // Maintenant : https://admin.academiahelm.com/api/admin-auth/google/callback
+  //
+  // Si l'env var pointe encore vers /admin-login, on l'override.
+  const envRedirectUri =
+    process.env.GOOGLE_OAUTH_ADMIN_REDIRECT_URI ||
+    process.env.GOOGLE_OAUTH_REDIRECT_URI ||
+    '';
+
+  const redirectUri = envRedirectUri.includes('/admin-login')
+    ? 'https://admin.academiahelm.com/api/admin-auth/google/callback'
+    : envRedirectUri;
+
   return {
     clientId: process.env.GOOGLE_OAUTH_CLIENT_ID || '',
     clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET || '',
-    redirectUri: process.env.GOOGLE_OAUTH_REDIRECT_URI || '',
+    redirectUri,
   };
 }
 

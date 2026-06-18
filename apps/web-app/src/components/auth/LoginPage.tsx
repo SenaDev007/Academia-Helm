@@ -1004,67 +1004,47 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   };
 
   /**
-   * Hook : si on revient de Google avec ?code=...&state=... sur /login,
-   * on détecte le flow school en décodant le state (base64url JSON avec
-   * f: 'school') et on appelle /api/school-auth/google/callback.
+   * Hook : détection du retour du callback Google SCHOOL (server-side).
    *
-   * Le redirect URI Google est https://academiahelm.com/login (configuré
-   * via GOOGLE_OAUTH_SCHOOL_REDIRECT_URI) — SÉPARÉ du flow admin qui
-   * utilise https://admin.academiahelm.com/admin-login.
+   * Nouveau flow (server-side callback) :
+   *   Google → /api/school-auth/google/callback (GET) →
+   *     échange le code, vérifie l'utilisateur, génère OTP, envoie email,
+   *     pose le cookie `academia_school_google_pending`, puis redirige (302)
+   *     vers `/login?otp_pending=1&email=...&token=...&tenant=...&portal=school`.
+   *
+   * Ici on se contente de lire les query params et d'afficher le modal OTP
+   * directement — AUCUN fetch côté client, AUCUN useEffect qui détecte
+   * `code`/`state`. Le `pendingToken` est passé dans l'URL (`?token=...`)
+   * et stocké en state pour la vérification OTP ultérieure.
+   *
+   * Si l'URL contient `?google_error=...` (erreur gérée côté serveur pendant
+   * le callback GET), on l'affiche comme erreur.
    */
-  // Ref pour empêcher la ré-exécution du callback Google (anti-boucle)
-  const googleCallbackDone = useRef(false);
-
   useEffect(() => {
-    const code = searchParams?.get('code');
-    const state = searchParams?.get('state');
-    if (!code || !state || schoolGooglePending) return;
-    if (googleCallbackDone.current) return;
+    if (!searchParams) return;
+    // Si l'OTP modal est déjà affiché, ne pas re-traiter
+    if (schoolGooglePending) return;
 
-    // ── Détecter le flow school en décodant le state ──
-    // Le state school contient { f: 'school', t, s, n } en base64url
-    let isSchoolFlow = false;
-    try {
-      const b64 = state.replace(/-/g, '+').replace(/_/g, '/');
-      const decoded = JSON.parse(atob(b64)) as { f?: string };
-      isSchoolFlow = decoded?.f === 'school';
-    } catch {
-      // Si le state n'est pas du JSON base64url, ce n'est pas le flow school
-      return;
-    }
-
-    if (!isSchoolFlow) return;
-
-    // Marquer comme fait pour empêcher la ré-exécution (anti-boucle)
-    googleCallbackDone.current = true;
-
-    setIsLoading(true);
-    fetch('/api/school-auth/google/callback', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code, state }),
-    })
-      .then(async (res) => {
-        // Vérifier que la réponse est bien du JSON (pas une page HTML d'erreur)
-        const contentType = res.headers.get('content-type') || '';
-        if (!contentType.includes('application/json')) {
-          throw new Error('Le serveur a renvoyé une réponse invalide. Veuillez réessayer.');
-        }
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Erreur callback Google');
-        setSchoolGooglePendingToken(data.pendingToken);
-        setSchoolGoogleEmail(data.email);
+    const otpPending = searchParams.get('otp_pending') === '1';
+    if (otpPending) {
+      const token = searchParams.get('token');
+      const email = searchParams.get('email');
+      if (token && email) {
         setSchoolGooglePending(true);
+        setSchoolGooglePendingToken(token);
+        setSchoolGoogleEmail(email);
         setError(null);
         // Focus premier input OTP
         setTimeout(() => schoolOtpRefs.current[0]?.focus(), 100);
-      })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : 'Erreur callback Google');
-        // Reset pour permettre de réessayer
-        googleCallbackDone.current = false;
-      })
-      .finally(() => setIsLoading(false));
+      }
+      return;
+    }
+
+    // Erreur gérée côté serveur pendant le callback GET
+    const googleError = searchParams.get('google_error');
+    if (googleError) {
+      setError(googleError);
+    }
   }, [searchParams, schoolGooglePending]);
 
   /** Change un chiffre OTP SCHOOL. */

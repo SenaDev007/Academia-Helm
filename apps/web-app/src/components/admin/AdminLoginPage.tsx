@@ -3,10 +3,16 @@
  * AdminLoginPage — page d'authentification du back-office Academia Helm
  * ============================================================================
  *
- * Flow :
- *   1. Google Sign-In OU email/password → connexion directe (sans 2FA)
- *   2. "Mot de passe oublié ?" → email avec lien de reset
- *   3. Lien de reset → formulaire nouveau mot de passe
+ * Flow (server-side callback) :
+ *   1. POST /api/admin-auth/google/init → renvoie authUrl → redirige vers Google
+ *   2. Google redirige vers /api/admin-auth/google/callback?code=...&state=... (GET)
+ *   3. La route GET échange le code, vérifie la whitelist admin, pose le cookie
+ *      academia_admin_session (Domain=.academiahelm.com, SameSite=Lax), puis
+ *      redirige (302) vers /admin en cas de succès, ou /admin-login?google_error=...
+ *      en cas d'erreur.
+ *   4. Ici, on se contente d'afficher l'éventuelle erreur `google_error`;
+ *      AUCUN useEffect qui détecte `code`/`state`, AUCUN fetch client.
+ *   5. Email/password (sans Google) reste fonctionnel via /api/admin-auth/login.
  *
  * Design : navy foncé + accents dorés
  * ============================================================================
@@ -14,8 +20,8 @@
 
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -31,7 +37,6 @@ import {
 type View = 'login' | 'forgot' | 'reset' | 'success';
 
 export default function AdminLoginPage() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const redirectPath = searchParams.get('redirect') || '/admin';
   const resetToken = searchParams.get('reset');
@@ -60,41 +65,23 @@ export default function AdminLoginPage() {
       .catch(() => setGoogleConfigured(false));
   }, []);
 
-  // Ref pour empêcher la ré-exécution du callback Google (anti-boucle)
-  const googleCallbackDone = useRef(false);
-
-  // Google callback
+  // ── Détection de l'erreur gérée côté serveur pendant le callback GET ──
+  //
+  // Nouveau flow server-side : Google → /api/admin-auth/google/callback (GET)
+  // → la route GET fait TOUT (échange code, vérifie whitelist, pose cookie,
+  // redirige 302 vers /admin). En cas d'erreur, elle redirige vers
+  // /admin-login?google_error=<msg>.
+  //
+  // Ici on se contente d'afficher ce message d'erreur — AUCUN fetch client,
+  // AUCUN useEffect qui détecte `code`/`state`. Les cookies posés côté serveur
+  // avec Domain=.academiahelm.com survivent aux éventuelles 307 Vercel
+  // (academiahelm.com → www.academiahelm.com).
   useEffect(() => {
-    const code = searchParams.get('code');
-    const state = searchParams.get('state');
-    if (code && state && !resetToken) {
-      if (googleCallbackDone.current) return;
-      googleCallbackDone.current = true;
-
-      setIsLoading(true);
-      fetch('/api/admin-auth/google/callback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, state }),
-      })
-        .then(async (res) => {
-          // Vérifier que la réponse est bien du JSON (pas une page HTML d'erreur)
-          const contentType = res.headers.get('content-type') || '';
-          if (!contentType.includes('application/json')) {
-            throw new Error('Le serveur a renvoyé une réponse invalide. Veuillez réessayer.');
-          }
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'Erreur callback Google');
-          // Forcer un rechargement complet pour que le cookie soit lu côté serveur
-          window.location.href = redirectPath;
-        })
-        .catch((err) => {
-          setError(err instanceof Error ? err.message : 'Erreur');
-          googleCallbackDone.current = false;
-        })
-        .finally(() => setIsLoading(false));
+    const googleError = searchParams.get('google_error');
+    if (googleError) {
+      setError(googleError);
     }
-  }, [searchParams, router, redirectPath, resetToken]);
+  }, [searchParams]);
 
   // ─── Handlers ───────────────────────────────────────────────────────────
 

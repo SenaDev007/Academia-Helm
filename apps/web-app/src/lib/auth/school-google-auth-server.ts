@@ -102,22 +102,25 @@ function generateToken(): string {
 // ─── Google OAuth config ────────────────────────────────────────────────────
 
 export function getGoogleOAuthConfig() {
+  // Le redirect URI DOIT pointer vers la route GET callback (server-side).
+  // Anciennement : https://academiahelm.com/login (client-side callback)
+  // Maintenant : https://academiahelm.com/api/school-auth/google/callback (server-side)
+  //
+  // Si GOOGLE_OAUTH_SCHOOL_REDIRECT_URI pointe encore vers /login (ancienne config),
+  // on l'override automatiquement avec la nouvelle route callback.
+  const envRedirectUri =
+    process.env.GOOGLE_OAUTH_SCHOOL_REDIRECT_URI ||
+    process.env.GOOGLE_OAUTH_REDIRECT_URI ||
+    '';
+
+  const redirectUri = envRedirectUri.includes('/login')
+    ? 'https://academiahelm.com/api/school-auth/google/callback'
+    : envRedirectUri;
+
   return {
     clientId: process.env.GOOGLE_OAUTH_CLIENT_ID || '',
     clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET || '',
-    // Redirect URI : on réutilise la MÊME que pour l'admin
-    // (https://admin.academiahelm.com/admin-login) car Google Cloud Console
-    // exige une URI exacte. La page /admin-login détecte si le state CSRF
-    // contient un tenant (flow school) ou non (flow admin) et route vers
-    // le bon endpoint (/api/school-auth/google/callback ou /api/admin-auth/google/callback).
-    //
-    // Pour configurer un redirect URI séparé pour school (ex: https://academiahelm.com/login),
-    // définir GOOGLE_OAUTH_SCHOOL_REDIRECT_URI dans Vercel + l'ajouter dans
-    // Google Cloud Console > Credentials.
-    redirectUri:
-      process.env.GOOGLE_OAUTH_SCHOOL_REDIRECT_URI ||
-      process.env.GOOGLE_OAUTH_REDIRECT_URI ||
-      '',
+    redirectUri,
   };
 }
 

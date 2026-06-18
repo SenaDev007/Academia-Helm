@@ -7,11 +7,15 @@
 'use client';
 
 import { ModuleContainer } from '@/components/modules/blueprint';
-import { PEDAGOGY_SUBMODULE_TABS } from '@/components/pedagogy/pedagogy-tabs';
+import { getVisiblePedagogyTabs } from '@/components/pedagogy/pedagogy-tabs';
+import { useAppSession } from '@/contexts/AppSessionContext';
 import TeachersAcademicWorkspace from '@/components/pedagogy/teachers/TeachersAcademicWorkspace';
 import { useModuleContext } from '@/hooks/useModuleContext';
 
 export default function TeachersPage() {
+  const { user } = useAppSession();
+  const userRole = user?.role || '';
+
   const { academicYear } = useModuleContext();
 
   return (
@@ -29,7 +33,7 @@ export default function TeachersPage() {
         ]
       }}
       subModules={{
-        modules: PEDAGOGY_SUBMODULE_TABS.map((tab) => {
+        modules: getVisiblePedagogyTabs(userRole).map((tab) => {
           const Icon = tab.icon;
           return {
             id: tab.id,

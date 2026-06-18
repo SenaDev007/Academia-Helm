@@ -29,7 +29,7 @@ import {
   usePedagogyDashboardQueries,
   useInvalidatePedagogyDashboard,
 } from '@/hooks/usePedagogyDashboardQueries';
-import { PEDAGOGY_SUBMODULE_TABS } from '@/components/pedagogy/pedagogy-tabs';
+import { getVisiblePedagogyTabs } from '@/components/pedagogy/pedagogy-tabs';
 import ParentTasksView from '@/components/pedagogy/tasks/ParentTasksView';
 import { cn } from '@/lib/utils';
 
@@ -306,8 +306,9 @@ export function PedagogyModuleDashboard() {
     return <ParentTasksView />;
   }
 
-  const shortcuts = PEDAGOGY_SUBMODULE_TABS
-    .filter((tab) => tab.id !== 'dashboard' && (!tab.roles || (tab.roles as unknown as string[]).includes(userRole)))
+  // Filtrage permissif (fail-open) — voir tabMatchesRole dans pedagogy-tabs.tsx
+  const shortcuts = getVisiblePedagogyTabs(userRole)
+    .filter((tab) => tab.id !== 'dashboard')
     .slice(0, 6);
 
   return (

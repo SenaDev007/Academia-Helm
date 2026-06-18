@@ -2,9 +2,13 @@
 
 import { GlobalLibraryHub } from '@/components/pedagogy/library/GlobalLibraryHub';
 import { ModuleContainer } from '@/components/modules/blueprint';
-import { PEDAGOGY_SUBMODULE_TABS } from '@/components/pedagogy/pedagogy-tabs';
+import { getVisiblePedagogyTabs } from '@/components/pedagogy/pedagogy-tabs';
+import { useAppSession } from '@/contexts/AppSessionContext';
 
 export default function GlobalLibraryPage() {
+  const { user } = useAppSession();
+  const userRole = user?.role || '';
+
   return (
     <ModuleContainer
       header={{
@@ -13,7 +17,7 @@ export default function GlobalLibraryPage() {
         icon: 'book',
       }}
       subModules={{
-        modules: PEDAGOGY_SUBMODULE_TABS.map((tab) => {
+        modules: getVisiblePedagogyTabs(userRole).map((tab) => {
           const Icon = tab.icon;
           return {
             id: tab.id,

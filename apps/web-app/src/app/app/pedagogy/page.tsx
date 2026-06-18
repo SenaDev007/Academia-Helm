@@ -7,7 +7,7 @@
 'use client';
 
 import { ModuleContainer } from '@/components/modules/blueprint';
-import { PEDAGOGY_SUBMODULE_TABS } from '@/components/pedagogy/pedagogy-tabs';
+import { getVisiblePedagogyTabs } from '@/components/pedagogy/pedagogy-tabs';
 import PedagogyModuleDashboard from '@/components/pedagogy/PedagogyModuleDashboard';
 import { useAppSession } from '@/contexts/AppSessionContext';
 
@@ -15,17 +15,18 @@ export default function PedagogyPage() {
   const { user } = useAppSession();
   const userRole = user?.role || '';
 
-  const navModules = PEDAGOGY_SUBMODULE_TABS
-    .filter((tab) => !tab.roles || (tab.roles as unknown as string[]).includes(userRole))
-    .map((tab) => {
-      const Icon = tab.icon;
-      return {
-        id: tab.id,
-        label: tab.label,
-        href: tab.path,
-        icon: <Icon className="h-4 w-4" />,
-      };
-    });
+  // Filtrage permissif (fail-open) : voir tabMatchesRole dans pedagogy-tabs.tsx
+  const visibleTabs = getVisiblePedagogyTabs(userRole);
+
+  const navModules = visibleTabs.map((tab) => {
+    const Icon = tab.icon;
+    return {
+      id: tab.id,
+      label: tab.label,
+      href: tab.path,
+      icon: <Icon className="h-4 w-4" />,
+    };
+  });
 
   return (
     <ModuleContainer

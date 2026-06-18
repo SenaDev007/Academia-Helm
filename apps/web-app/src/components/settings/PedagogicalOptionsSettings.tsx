@@ -7,7 +7,7 @@
  *
  * Conservé temporairement pour référence — sera supprimé dans une future version.
  *
- * Voir : apps/web-app/src/app/(app)/settings/page.tsx → onglet 'bilingual'
+ * Voir : apps/web-app/src/app/app/settings/page.tsx → onglet 'bilingual'
  * Voir : apps/api-server/src/settings/services/bilingual-settings.service.ts
  */
 

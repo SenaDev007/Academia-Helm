@@ -6,7 +6,8 @@ import { CalendarDays, Plus, AlertTriangle, Send, CheckCircle, Loader2, AlertCir
 import { ModuleContainer, FormModal } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
-import { PEDAGOGY_SUBMODULE_TABS } from '@/components/pedagogy/pedagogy-tabs';
+import { getVisiblePedagogyTabs } from '@/components/pedagogy/pedagogy-tabs';
+import { useAppSession } from '@/contexts/AppSessionContext';
 
 interface DailyEntry {
   id: string;
@@ -59,6 +60,9 @@ const SEVERITY_LEVELS = [
 ];
 
 export default function SemainierPage() {
+  const { user } = useAppSession();
+  const userRole = user?.role || '';
+
   const confirmDialog = useConfirmDialog();
   const { academicYear, schoolLevel } = useModuleContext();
   const [assignment, setAssignment] = useState<CurrentAssignment | null | undefined>(undefined);
@@ -200,7 +204,7 @@ export default function SemainierPage() {
           icon: 'bookOpen',
         }}
         subModules={{
-          modules: PEDAGOGY_SUBMODULE_TABS.map((tab) => {
+          modules: getVisiblePedagogyTabs(userRole).map((tab) => {
             const Icon = tab.icon;
             return { id: tab.id, label: tab.label, href: tab.path, icon: <Icon className="w-4 h-4" /> };
           }),

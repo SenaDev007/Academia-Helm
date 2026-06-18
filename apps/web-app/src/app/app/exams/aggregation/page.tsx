@@ -5,7 +5,7 @@ import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { Loader2, BarChart3, FileText, CheckCircle2, AlertTriangle, TrendingUp } from 'lucide-react';
 import { AggregationPageShell } from '@/components/aggregation/AggregationPageShell';
-import { EXAMS_SUB_MODULES } from '../../sub-modules';
+import { EXAMS_SUB_MODULES } from '../sub-modules';
 
 const LEVEL_LABELS: Record<string, string> = {
   MATERNELLE: 'Maternelle',

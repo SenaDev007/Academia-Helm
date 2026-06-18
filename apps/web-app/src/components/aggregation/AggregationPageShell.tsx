@@ -26,7 +26,7 @@
  *     tabs={FINANCE_SUBMODULE_TABS}
  *     activeTabId="aggregation"
  *   >
- *     {/* aggregation page content */}
+ *     (aggregation page content goes here)
  *   </AggregationPageShell>
  * ============================================================================
  */

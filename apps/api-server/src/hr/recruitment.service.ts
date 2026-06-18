@@ -2792,5 +2792,78 @@ Réponds UNIQUEMENT en JSON valide.`,
       message: `Staff réaffecté au poste "${newJob.title}". Un nouveau contrat (PENDING) a été créé et le candidat a été notifié par email.`,
     };
   }
+
+  /**
+   * TEST — Renvoie l'email de notification de candidature à un candidat existant.
+   * Endpoint temporaire pour tester l'envoi d'email. À supprimer après validation.
+   */
+  async testResendApplicationEmail(candidateId: string, tenantId: string) {
+    this.logger.log(`testResendApplicationEmail: candidateId=${candidateId}, tenantId=${tenantId}`);
+
+    // 1. Récupérer le candidat
+    const candidate = await this.prisma.hrCandidate.findFirst({
+      where: { id: candidateId, tenantId },
+      include: {
+        applications: {
+          include: { job: true },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+        academicProfile: true,
+        documents: true,
+      },
+    });
+
+    if (!candidate) {
+      throw new NotFoundException(`Candidat ${candidateId} non trouvé`);
+    }
+
+    const primaryApp = candidate.applications?.[0];
+    if (!primaryApp) {
+      throw new NotFoundException(`Aucune candidature trouvée pour ce candidat`);
+    }
+
+    // 2. Parser les données structurées
+    let skills: string[] = [];
+    let experiences: any[] = [];
+    let education: any[] = [];
+    let pitch = '';
+    if (candidate.academicProfile?.pedagogicalExperience) {
+      try {
+        const parsed = JSON.parse(candidate.academicProfile.pedagogicalExperience);
+        experiences = parsed.experiences || [];
+        education = parsed.education || [];
+        pitch = parsed.pitch || '';
+      } catch (e) {}
+    }
+    skills = candidate.academicProfile?.subjects || [];
+
+    const documentsSubmitted = (candidate.documents || []).map(d => ({
+      type: d.documentType,
+      fileName: d.fileName,
+    }));
+
+    this.logger.log(`testResendApplicationEmail: sending to ${candidate.email}, job=${primaryApp.job?.title}`);
+
+    // 3. Envoyer la notification email
+    await this.notificationService.notifyApplicationReceived({
+      candidateId: candidate.id,
+      tenantId,
+      jobId: primaryApp.jobId,
+      experiences,
+      education,
+      skills,
+      pitch,
+      documentsSubmitted,
+    });
+
+    return {
+      success: true,
+      message: `Email de notification envoyé à ${candidate.email}`,
+      candidate: `${candidate.firstName} ${candidate.lastName}`,
+      email: candidate.email,
+      job: primaryApp.job?.title,
+    };
+  }
 }
 

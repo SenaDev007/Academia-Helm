@@ -375,4 +375,19 @@ export class RecruitmentPrismaController {
   ) {
     return this.service.reassignApplication(id, tenant?.id ?? tenantIdFallback, body);
   }
+
+  // ============================================================================
+  // TEST — Renvoyer l'email de notification de candidature à un candidat existant
+  // Endpoint temporaire pour tester l'envoi d'email sans soumettre une nouvelle
+  // candidature. À supprimer après validation.
+  // ============================================================================
+
+  @Post('test-resend-email/:candidateId')
+  async testResendEmail(
+    @Param('candidateId') candidateId: string,
+    @GetTenant() tenant: any,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    return this.service.testResendApplicationEmail(candidateId, tenant?.id ?? tenantIdFallback);
+  }
 }

@@ -2093,7 +2093,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                     className="font-semibold transition-colors hover:underline inline-flex items-center min-h-[44px]"
                     style={{ color: NAVY }}
                   >
-                    Activer Academia Helm
+                    Créer mon école
                   </Link>
                 </p>
               </>

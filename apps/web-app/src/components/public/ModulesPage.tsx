@@ -532,7 +532,7 @@ export default function ModulesPage() {
             href="/signup"
             className="inline-flex items-center gap-2 px-10 py-4 bg-[#f5b335] text-[#0b2f73] font-bold rounded-xl text-lg shadow-lg shadow-[#f5b335]/25 hover:bg-[#f7c359] hover:shadow-xl hover:shadow-[#f5b335]/30 hover:-translate-y-0.5 transition-all duration-300"
           >
-            Activer Academia Helm maintenant
+            Créer mon école maintenant
             <ArrowRight className="w-5 h-5" />
           </Link>
         </div>

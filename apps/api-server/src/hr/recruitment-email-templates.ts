@@ -109,7 +109,7 @@ function renderHeader(branding: TenantBranding): string {
     branding.schoolEmail ? `Email : ${branding.schoolEmail}` : null,
   ]
     .filter(Boolean)
-    .map((s) => `<div style="font-size:11px;color:#94a3b8;margin-top:2px;">${escHtml(s)}</div>`)
+    .map((s) => `<div style="font-size:11px;color:#c7d2fe;margin-top:2px;">${escHtml(s)}</div>`)
     .join('');
 
   return `
@@ -140,6 +140,12 @@ function renderHeader(branding: TenantBranding): string {
  */
 function renderFooter(branding: TenantBranding): string {
   // Signature personnalisée du recruteur (optionnelle)
+  // Le functionLabel est déjà inclus dans la signature la plupart du temps,
+  // on ne l'affiche séparément que s'il n'est PAS déjà dans la signature
+  const showFunctionLabel = branding.signatureText &&
+    branding.recruiterFunction &&
+    !branding.signatureText.includes(branding.recruiterFunction);
+
   const recruiterSignatureBlock = branding.signatureText
     ? `
     <!-- Signature personnalisée du recruteur -->
@@ -148,7 +154,7 @@ function renderFooter(branding: TenantBranding): string {
         <div style="font-size:13px;color:#0f172a;line-height:1.6;">
           ${escHtml(branding.signatureText).replace(/\n/g, '<br />')}
         </div>
-        ${branding.recruiterFunction ? `<div style="font-size:11px;color:#64748b;margin-top:6px;">${escHtml(branding.recruiterFunction)}</div>` : ''}
+        ${showFunctionLabel ? `<div style="font-size:11px;color:#64748b;margin-top:6px;">${escHtml(branding.recruiterFunction)}</div>` : ''}
       </td>
     </tr>`
     : '';
@@ -272,19 +278,27 @@ export function renderApplicationReceived(
         <p style="margin:0 0 12px;font-size:13px;color:#334155;"><strong>Établissement :</strong> ${escHtml(data.branding.schoolName)}</p>
         <p style="margin:0 0 16px;font-size:13px;color:#334155;"><strong>Candidat :</strong> ${escHtml(data.candidateName)}</p>
 
+        ${data.experiences.length > 0 ? `
         <h4 style="margin:0 0 8px;color:#0D1F6E;font-size:12px;text-transform:uppercase;">💼 Expériences professionnelles</h4>
         <ul style="margin:0 0 16px;padding-left:20px;font-size:13px;color:#334155;">${experiencesHtml}</ul>
+        ` : ''}
 
+        ${data.education.length > 0 ? `
         <h4 style="margin:0 0 8px;color:#0D1F6E;font-size:12px;text-transform:uppercase;">🎓 Formations</h4>
         <ul style="margin:0 0 16px;padding-left:20px;font-size:13px;color:#334155;">${educationHtml}</ul>
+        ` : ''}
 
+        ${data.skills.length > 0 ? `
         <h4 style="margin:0 0 8px;color:#0D1F6E;font-size:12px;text-transform:uppercase;">⭐ Compétences</h4>
         <div style="margin:0 0 16px;">${skillsHtml}</div>
+        ` : ''}
 
-        ${data.pitch ? `<h4 style="margin:0 0 8px;color:#0D1F6E;font-size:12px;text-transform:uppercase;">💭 Motivation</h4><p style="margin:0 0 16px;font-size:13px;color:#334155;background:#f8fafc;border-left:3px solid #0D1F6E;padding:10px 14px;border-radius:4px;font-style:italic;">${escHtml(data.pitch)}</p>` : ''}
+        ${data.pitch ? `<h4 style="margin:0 0 8px;color:#0D1F6E;font-size:12px;text-transform:uppercase;">💭 Motivation</h4><p style="margin:0 0 16px;font-size:13px;color:#334155;background:#f8fafc;border-left:3px solid #0D1F6E;padding:10px 14px;border-radius:4px;font-style:italic;white-space:pre-line;">${escHtml(data.pitch)}</p>` : ''}
 
+        ${data.documentsSubmitted.length > 0 ? `
         <h4 style="margin:0 0 8px;color:#0D1F6E;font-size:12px;text-transform:uppercase;">📎 Documents soumis</h4>
-        <ul style="margin:0;padding-left:20px;font-size:13px;color:#334155;">${docsHtml}</ul>
+        <ul style="margin:0 0 0;padding-left:20px;font-size:13px;color:#334155;">${docsHtml}</ul>
+        ` : ''}
       </td></tr>
     </table>
 

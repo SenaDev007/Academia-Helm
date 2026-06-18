@@ -72,7 +72,18 @@ export async function compressLogoForEmail(
 
   try {
     // Import dynamique de sharp (évite les erreurs si sharp n'est pas installé)
-    const sharp = (await import('sharp')).default;
+    let sharp: any;
+    try {
+      sharp = (await import('sharp')).default;
+    } catch (importErr: any) {
+      logger.warn(`sharp non disponible sur cette instance — le logo ne sera pas compressé: ${importErr.message}`);
+      // Sans sharp, on ne peut pas compresser. Si le logo est trop volumineux,
+      // on retourne null (le template affichera les initiales à la place).
+      if (base64DataUrl.length > 50000) {
+        return null;
+      }
+      return base64DataUrl;
+    }
 
     // Extraire le type MIME et les données base64
     const matches = base64DataUrl.match(/^data:(image\/[\w+]+);base64,(.+)$/);

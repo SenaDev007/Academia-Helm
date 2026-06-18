@@ -725,3 +725,100 @@ body {
   color: #0b2f73;
   text-decoration: underline;
 }
+
+/* ============================================================================
+   GOOGLE TRANSLATE — Hide ALL Google Translate UI elements
+   Applied globally so they never appear, even before React mounts.
+   ============================================================================ */
+
+/* Top banner frame (the main bar that pushes content down) */
+.goog-te-banner-frame.skiptranslate,
+iframe.goog-te-banner-frame,
+iframe.skiptranslate {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  width: 0 !important;
+  opacity: 0 !important;
+}
+
+/* Reset body top offset (Google Translate adds top: 40px to body) */
+body {
+  top: 0 !important;
+  position: static !important;
+}
+
+/* Gadget container (the dropdown/icon widget) */
+.goog-te-gadget,
+.goog-te-gadget-simple,
+.goog-te-gadget-icon,
+.goog-te-gadget-img {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* The hidden widget container */
+#google_translate_element {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* Google logo + "translated by" text */
+.goog-logo-link,
+.goog-te-balloon-frame,
+.goog-te-balloon {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* Tooltips and highlight overlays */
+.goog-tooltip,
+.goog-tooltip:hover,
+.goog-text-highlight {
+  background-color: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* Floating tab (bottom corner) */
+.goog-te-ftab-float,
+.goog-te-floating-tab {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* Spinner / loading indicator */
+.goog-te-spinner,
+.goog-te-spinner-pos {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* Any remaining skiptranslate elements */
+.skiptranslate {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* But keep the translated content visible (don't hide .notranslate) */
+.goog-te-checker,
+.goog-te-check {
+  display: none !important;
+}
+
+/* Google Translate tooltip popup */
+#goog-gt-tt,
+.goog-te-ftab,
+.goog-gt-vit {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* "Restore" / "Show original" floating bar */
+.goog-te-ftab-float img,
+.goog-te-ftab-link {
+  display: none !important;
+  visibility: hidden !important;
+}

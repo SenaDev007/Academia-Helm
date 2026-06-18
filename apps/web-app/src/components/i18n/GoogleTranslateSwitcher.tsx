@@ -119,6 +119,7 @@ function injectGoogleTranslate() {
 
 /**
  * Injects CSS to hide the Google Translate banner (top bar).
+ * Most CSS is already in globals.css, this is a backup.
  */
 function injectGTHideStyles() {
   if (typeof document === 'undefined') return;
@@ -127,20 +128,67 @@ function injectGTHideStyles() {
   const style = document.createElement('style');
   style.id = 'gt-hide-styles';
   style.textContent = `
-    /* Hide Google Translate top banner */
-    .goog-te-banner-frame.skiptranslate { display: none !important; }
-    .goog-te-gadget { display: none !important; }
-    body { top: 0 !important; }
-    .goog-tooltip { display: none !important; }
-    .goog-tooltip:hover { display: none !important; }
-    .goog-text-highlight {
-      background-color: transparent !important;
-      box-shadow: none !important;
+    /* Force-hide ALL Google Translate UI elements */
+    .goog-te-banner-frame.skiptranslate,
+    iframe.goog-te-banner-frame,
+    iframe.skiptranslate,
+    .goog-te-gadget,
+    .goog-te-gadget-simple,
+    .goog-te-gadget-icon,
+    .goog-te-gadget-img,
+    #google_translate_element,
+    #goog-gt-tt,
+    .goog-logo-link,
+    .goog-te-balloon-frame,
+    .goog-te-balloon,
+    .goog-te-ftab-float,
+    .goog-te-floating-tab,
+    .goog-te-spinner,
+    .goog-te-spinner-pos,
+    .skiptranslate {
+      display: none !important;
+      visibility: hidden !important;
+      height: 0 !important;
+      width: 0 !important;
+      opacity: 0 !important;
     }
-    /* Hide the "translated by Google" text */
-    .goog-logo-link, .goog-te-balloon-frame { display: none !important; }
+    body { top: 0 !important; position: static !important; }
+    .goog-tooltip, .goog-tooltip:hover, .goog-text-highlight {
+      background: transparent !important;
+      box-shadow: none !important;
+      border: none !important;
+    }
   `;
   document.head.appendChild(style);
+
+  // Also use a MutationObserver to catch any GT elements added dynamically
+  // after the page loads (Google Translate injects iframes/bars asynchronously)
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      for (const node of mutation.addedNodes) {
+        if (node instanceof HTMLElement) {
+          // Check if the added node is a GT element
+          if (
+            node.classList?.contains('skiptranslate') ||
+            node.classList?.contains('goog-te-banner-frame') ||
+            node.classList?.contains('goog-te-gadget') ||
+            node.id === 'goog-gt-tt' ||
+            (node.tagName === 'IFRAME' && node.classList?.contains('skiptranslate'))
+          ) {
+            node.style.display = 'none';
+            node.style.visibility = 'hidden';
+            node.style.height = '0';
+            node.style.width = '0';
+          }
+        }
+      }
+    }
+  });
+
+  observer.observe(document.body, { childList: true, subtree: true });
+
+  // Stop observing after 30 seconds (GT should have finished by then)
+  setTimeout(() => observer.disconnect(), 30000);
 }
 
 /**

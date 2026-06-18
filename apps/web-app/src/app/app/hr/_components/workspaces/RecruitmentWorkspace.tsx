@@ -49,6 +49,7 @@ import { useModuleContext } from '@/hooks/useModuleContext';
 import { toast } from '@/components/ui/toast';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import RichTextEditor from '@/components/ui/RichTextEditor';
+import RichContent from '@/components/ui/RichContent';
 
 const PRIMARY = '#1A2BA6';
 
@@ -2580,11 +2581,11 @@ export function RecruitmentWorkspace() {
                                   )}
                                 </div>
                                 <h4 className="font-bold text-slate-900 mt-2 text-sm">{test.name}</h4>
-                                {test.description && <p className="text-xs text-slate-500 mt-1 leading-relaxed">{test.description}</p>}
+                                {test.description && <div className="text-xs text-slate-500 mt-1 leading-relaxed"><RichContent html={test.description} /></div>}
                                 {test.instructions && (
                                   <div className="mt-2 bg-slate-50 border border-slate-100 rounded-lg p-2.5">
                                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Consignes</span>
-                                    <p className="text-[11px] text-slate-600 mt-0.5 whitespace-pre-line">{test.instructions}</p>
+                                    <div className="text-[11px] text-slate-600 mt-0.5"><RichContent html={test.instructions} /></div>
                                   </div>
                                 )}
                               </div>

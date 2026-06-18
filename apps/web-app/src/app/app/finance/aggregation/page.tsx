@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { Loader2, TrendingUp, TrendingDown, Wallet, AlertCircle, BarChart3 } from 'lucide-react';
+import { AggregationPageShell } from '@/components/aggregation/AggregationPageShell';
+import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
 
 const LEVEL_LABELS: Record<string, string> = {
   MATERNELLE: 'Maternelle',
@@ -111,16 +113,13 @@ export default function FinanceAggregationPage() {
 
   const formatAmount = (n: number) => new Intl.NumberFormat('fr-FR').format(n) + ' FCFA';
 
-  if (loading) {
-    return (
+
+  const content = loading ? (
       <div className="flex items-center justify-center py-16">
         <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
         <span className="ml-2 text-gray-600">Chargement du bilan global...</span>
       </div>
-    );
-  }
-
-  return (
+  ) : (
     <div className="space-y-6 p-6">
       <div className="flex items-center gap-3 mb-2">
         <BarChart3 className="w-6 h-6 text-blue-600" />
@@ -227,5 +226,16 @@ export default function FinanceAggregationPage() {
         </div>
       )}
     </div>
+  );
+  return (
+    <AggregationPageShell
+      moduleTitle='Finances & Économat'
+      moduleDescription='Pilotage financier : frais, comptes élèves, encaissements, recouvrement, dépenses, clôture, rapports et paramétrage.'
+      moduleIcon='finance'
+      tabs={FINANCE_SUBMODULE_TABS}
+      activeTabId='aggregation'
+    >
+      {content}
+    </AggregationPageShell>
   );
 }

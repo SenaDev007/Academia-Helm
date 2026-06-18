@@ -3,7 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
+import { useAppSession } from '@/contexts/AppSessionContext';
 import { Loader2, BarChart3, Layers, Users, BookOpen, CalendarDays } from 'lucide-react';
+import { AggregationPageShell } from '@/components/aggregation/AggregationPageShell';
+import { getVisiblePedagogyTabs } from '@/components/pedagogy/pedagogy-tabs';
 
 const LEVEL_LABELS: Record<string, string> = {
   MATERNELLE: 'Maternelle',
@@ -24,6 +27,8 @@ interface LevelPedagogyStats {
 export default function PedagogyAggregationPage() {
   const { academicYear, tenant } = useModuleContext();
   const { availableLevels } = useSchoolLevel();
+  const { user } = useAppSession();
+  const userRole = user?.role || '';
   const [stats, setStats] = useState<LevelPedagogyStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -98,16 +103,13 @@ export default function PedagogyAggregationPage() {
     { totalClasses: 0, totalTeachers: 0, totalSubjects: 0, totalTimetableSlots: 0 },
   );
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-16">
-        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-        <span className="ml-2 text-gray-600">Chargement du bilan global...</span>
-      </div>
-    );
-  }
-
-  return (
+  // The aggregation page content (rendered INSIDE the parent module's tab bar)
+  const content = loading ? (
+    <div className="flex items-center justify-center py-16">
+      <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+      <span className="ml-2 text-gray-600">Chargement du bilan global...</span>
+    </div>
+  ) : (
     <div className="space-y-6 p-6">
       <div className="flex items-center gap-3 mb-2">
         <BarChart3 className="w-6 h-6 text-blue-600" />
@@ -169,5 +171,17 @@ export default function PedagogyAggregationPage() {
         </div>
       )}
     </div>
+  );
+
+  return (
+    <AggregationPageShell
+      moduleTitle="Organisation Pédagogique & Études"
+      moduleDescription="Vue consolidée : complétion, affectations, structure, workflow documents et veille ORION"
+      moduleIcon="bookOpen"
+      tabs={getVisiblePedagogyTabs(userRole)}
+      activeTabId="aggregation"
+    >
+      {content}
+    </AggregationPageShell>
   );
 }

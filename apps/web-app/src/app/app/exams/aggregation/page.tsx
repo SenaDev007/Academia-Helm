@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { Loader2, BarChart3, FileText, CheckCircle2, AlertTriangle, TrendingUp } from 'lucide-react';
+import { AggregationPageShell } from '@/components/aggregation/AggregationPageShell';
+import { EXAMS_SUB_MODULES } from '../../sub-modules';
 
 const LEVEL_LABELS: Record<string, string> = {
   MATERNELLE: 'Maternelle',
@@ -91,16 +93,13 @@ export default function ExamsAggregationPage() {
   const globalAverage = stats.length > 0 ? (stats.reduce((sum, s) => sum + s.averageScore, 0) / stats.length) : 0;
   const globalPassRate = stats.length > 0 ? (stats.reduce((sum, s) => sum + s.passRate, 0) / stats.length) : 0;
 
-  if (loading) {
-    return (
+
+  const content = loading ? (
       <div className="flex items-center justify-center py-16">
         <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
         <span className="ml-2 text-gray-600">Chargement des statistiques globales...</span>
       </div>
-    );
-  }
-
-  return (
+  ) : (
     <div className="space-y-6 p-6">
       <div className="flex items-center gap-3 mb-2">
         <BarChart3 className="w-6 h-6 text-blue-600" />
@@ -170,5 +169,16 @@ export default function ExamsAggregationPage() {
         </div>
       )}
     </div>
+  );
+  return (
+    <AggregationPageShell
+      moduleTitle='Examens & Notes'
+      moduleDescription='Gestion des examens, évaluations, bulletins, moyennes et conseils de classe.'
+      moduleIcon='fileText'
+      tabs={EXAMS_SUB_MODULES}
+      activeTabId='aggregation'
+    >
+      {content}
+    </AggregationPageShell>
   );
 }

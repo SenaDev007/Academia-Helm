@@ -3,7 +3,11 @@
 import { useState, useEffect } from 'react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
-import { Loader2, BarChart3, Users, GraduationCap, UserPlus, UserCheck } from 'lucide-react';
+import {
+  Loader2, BarChart3, Users, GraduationCap, UserPlus, UserCheck,
+  LayoutDashboard, FileText, Calendar, Shield, IdCard, ArrowRightLeft, User,
+} from 'lucide-react';
+import { AggregationPageShell } from '@/components/aggregation/AggregationPageShell';
 
 const LEVEL_LABELS: Record<string, string> = {
   MATERNELLE: 'Maternelle',
@@ -20,6 +24,24 @@ interface LevelStudentStats {
   activeStudents: number;
   transferredOut: number;
 }
+
+// Sub-modules inline (the students module doesn't have a separate tabs file —
+// these mirror the tabs defined in StudentsModulePage.tsx so the aggregation
+// page renders INSIDE the same tab bar as the parent module).
+const STUDENTS_SUBMODULE_TABS = [
+  { id: 'dashboard', label: 'Tableau de Bord', path: '/app/students', icon: LayoutDashboard },
+  { id: 'enrollments', label: 'Inscriptions', path: '/app/students/enrollments', icon: GraduationCap },
+  { id: 'dossiers', label: 'Dossiers Élèves', path: '/app/students', icon: FileText },
+  { id: 'classes', label: 'Classes', path: '/app/students/classes', icon: Users },
+  { id: 'attendance', label: 'Présences', path: '/app/students/attendance', icon: Calendar },
+  { id: 'discipline', label: 'Discipline', path: '/app/students/discipline', icon: Shield },
+  { id: 'documents', label: 'Documents', path: '/app/students/documents', icon: FileText },
+  { id: 'matricules', label: 'Matricules', path: '/app/students/matricules', icon: IdCard },
+  { id: 'transfers', label: 'Transferts', path: '/app/students/transfers', icon: ArrowRightLeft },
+  { id: 'guardians', label: 'Tuteurs', path: '/app/students/guardians', icon: User },
+  { id: 'id-cards', label: 'Cartes Scolaires', path: '/app/students/id-cards', icon: IdCard },
+  { id: 'aggregation', label: 'Agrégation & Bilan Global', path: '/app/students/aggregation', icon: BarChart3 },
+];
 
 export default function StudentsAggregationPage() {
   const { academicYear, tenant } = useModuleContext();
@@ -86,16 +108,12 @@ export default function StudentsAggregationPage() {
     { totalStudents: 0, newEnrollments: 0, activeStudents: 0, transferredOut: 0 },
   );
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-16">
-        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-        <span className="ml-2 text-gray-600">Chargement du bilan global...</span>
-      </div>
-    );
-  }
-
-  return (
+  const content = loading ? (
+    <div className="flex items-center justify-center py-16">
+      <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+      <span className="ml-2 text-gray-600">Chargement du bilan global...</span>
+    </div>
+  ) : (
     <div className="space-y-6 p-6">
       <div className="flex items-center gap-3 mb-2">
         <BarChart3 className="w-6 h-6 text-blue-600" />
@@ -157,5 +175,17 @@ export default function StudentsAggregationPage() {
         </div>
       )}
     </div>
+  );
+
+  return (
+    <AggregationPageShell
+      moduleTitle="Module Élèves"
+      moduleDescription="Gestion des élèves : admissions, inscriptions, dossiers, familles, affectations et historique scolaire."
+      moduleIcon="graduationCap"
+      tabs={STUDENTS_SUBMODULE_TABS}
+      activeTabId="aggregation"
+    >
+      {content}
+    </AggregationPageShell>
   );
 }

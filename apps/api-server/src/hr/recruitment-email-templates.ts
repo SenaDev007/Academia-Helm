@@ -106,10 +106,10 @@ function renderHeader(branding: TenantBranding): string {
   const contactInfo = [
     branding.schoolAddress,
     branding.schoolPhone ? `Tél : ${branding.schoolPhone}` : null,
-    branding.schoolEmail ? `Email : ${branding.schoolEmail}` : null,
+    branding.schoolEmail ? `<a href="mailto:${escHtml(branding.schoolEmail)}" style="color:#c7d2fe;text-decoration:none;">Email : ${escHtml(branding.schoolEmail)}</a>` : null,
   ]
     .filter(Boolean)
-    .map((s) => `<div style="font-size:11px;color:#c7d2fe;margin-top:2px;">${escHtml(s)}</div>`)
+    .map((s) => `<div style="font-size:11px;color:#c7d2fe;margin-top:2px;">${s}</div>`)
     .join('');
 
   return `

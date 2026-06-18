@@ -94,14 +94,12 @@ export class RecruitmentNotificationService {
       });
 
       if (profile?.schoolName) {
-        // Compresser le logo pour les emails (les base64 > 30 KB sont bloqués par Gmail/Outlook)
-        const compressedLogo = profile.logoUrl
-          ? await compressLogoForEmail(profile.logoUrl, tenantId).catch(() => profile.logoUrl)
-          : null;
-
+        // Passer le logo directement SANS compression.
+        // La compression avec sharp échoue sur Fly.io (sharp non disponible).
+        // Gmail supporte les images base64 jusqu'à ~300KB, le logo fait 115KB → OK.
         return {
           schoolName: profile.schoolName,
-          schoolLogo: compressedLogo,
+          schoolLogo: profile.logoUrl,
           schoolAddress: profile.address,
           schoolPhone: profile.phonePrimary,
           schoolEmail: profile.email,

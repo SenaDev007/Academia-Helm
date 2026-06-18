@@ -25,6 +25,7 @@ import {
 import { buildHreflangLanguages } from '@/lib/seo/locales';
 import { cn } from "@/lib/utils";
 import { ToastContainer } from '@/components/ui/toast';
+import I18nWrapper from '@/components/i18n/I18nWrapper';
 
 // ✅ POLICES LOCALES - Téléchargées depuis Google Fonts et stockées localement
 // 
@@ -199,7 +200,9 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-title" content="Academia Helm" />
       </head>
       <body className={`${inter.className} antialiased overflow-x-hidden`}>
-        {children}
+        <I18nWrapper>
+          {children}
+        </I18nWrapper>
         <ServiceWorkerCleanup />
         <ToastContainer />
         <Script

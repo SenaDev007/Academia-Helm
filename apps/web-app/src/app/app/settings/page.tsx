@@ -27,11 +27,12 @@ import {
   Bell, Users, Calendar, Save, Loader2, CheckCircle, AlertCircle,
   Mail, UserCog, Lock, Key, Smartphone, CreditCard, Receipt, RefreshCw,
   Upload, Image, CalendarDays, UserCircle, School, Archive, CalendarRange,
-  Pencil, CopyPlus, Layers
+  Pencil, CopyPlus, Layers, Building2
 } from 'lucide-react';
 import { ModuleHeader } from '@/components/modules/blueprint';
 import GeneratedStampsSignatures from '@/components/settings/GeneratedStampsSignatures';
 import SchoolCalendarConfigSection from '@/components/settings/SchoolCalendarConfigSection';
+import DepartmentsManagement from '@/components/settings/DepartmentsManagement';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import * as settingsService from '@/services/settings.service';
 import {
@@ -69,11 +70,11 @@ function formatRoleDisplayName(name: string | null | undefined): string {
   return String(name).replace(/_/g, ' ');
 }
 
-type TabId = 'identity' | 'academic-year' | 'school-calendar' | 'structure' | 'bilingual' | 'features' | 
+type TabId = 'identity' | 'academic-year' | 'school-calendar' | 'structure' | 'departments' | 'bilingual' | 'features' | 
              'roles' | 'communication' | 'billing' | 'security' | 'seals' | 'orion' | 'atlas' | 'offline' | 'appareils' | 'history';
 
 const SETTINGS_TAB_IDS: TabId[] = [
-  'identity', 'academic-year', 'school-calendar', 'structure', 'bilingual', 'features',
+  'identity', 'academic-year', 'school-calendar', 'structure', 'departments', 'bilingual', 'features',
   'roles', 'communication', 'billing', 'security', 'seals', 'orion', 'atlas', 'offline', 'appareils', 'history',
 ];
 
@@ -1445,6 +1446,7 @@ export default function SettingsPage() {
     { id: 'identity' as TabId, label: 'Identité', icon: Globe },
     { id: 'academic-year' as TabId, label: 'Année scolaire', icon: Calendar },
     { id: 'structure' as TabId, label: 'Structure', icon: GraduationCap },
+    { id: 'departments' as TabId, label: 'Départements', icon: Building2 },
     { id: 'school-calendar' as TabId, label: 'Calendrier scolaire', icon: CalendarRange },
     // M3 — Masquer l'onglet Bilingue si le plan ne l'autorise pas
     ...(billingSettings?.planDetails?.bilingualAllowed !== false ? [{ id: 'bilingual' as TabId, label: 'Bilingue', icon: Languages }] : []),
@@ -2390,6 +2392,9 @@ export default function SettingsPage() {
 
       case 'school-calendar':
         return <SchoolCalendarConfigSection tenantId={effectiveTenantId} showToast={showToast} />;
+
+      case 'departments':
+        return <DepartmentsManagement tenantId={effectiveTenantId} showToast={showToast} />;
 
       case 'structure':
         const levels = educationStructure?.levels ?? [];

@@ -2086,15 +2086,6 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             ) : null}
             {isStandardLogin ? (
               <>
-                <div>
-                  <Link
-                    href={forgotPasswordHref}
-                    className="text-sm font-medium transition-colors hover:underline inline-flex items-center min-h-[44px]"
-                    style={{ color: BLUE }}
-                  >
-                    Mot de passe oublié ?
-                  </Link>
-                </div>
                 <p className="text-sm text-slate-600">
                   Pas encore de compte ?{' '}
                   <Link

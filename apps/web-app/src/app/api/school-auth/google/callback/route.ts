@@ -96,9 +96,10 @@ function buildLoginRedirectUrl(params: {
   error?: string;
 }): string {
   const url = new URL('/login', 'http://placeholder');
+  // Toujours ajouter portal=school pour que le bouton Google reste visible
+  url.searchParams.set('portal', 'school');
   if (params.otpPending) {
     url.searchParams.set('otp_pending', '1');
-    url.searchParams.set('portal', 'school');
   }
   if (params.email) url.searchParams.set('email', params.email);
   if (params.token) url.searchParams.set('token', params.token);

@@ -30,6 +30,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { EmailService } from '../communication/services/email.service';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
 import {
   renderApplicationReceived,
@@ -50,6 +51,7 @@ export class RecruitmentNotificationService {
   constructor(
     private readonly emailService: EmailService,
     private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
   ) {}
 
   /**
@@ -185,27 +187,19 @@ export class RecruitmentNotificationService {
     html: string,
     options?: { fromName?: string; fromEmail?: string },
   ): Promise<void> {
-    try {
-      // Le fromEmail doit être sur un domaine vérifié dans Resend.
-      // On utilise le recruiterEmail SEULEMENT s'il est sur un domaine vérifié.
-      // Sinon, on laisse l'EmailService utiliser son default (EMAIL_FROM_NOREPLY / SMTP_FROM).
-      // TOUJOURS utiliser l’expéditeur par défaut (noreply@academiahelm.com)
-      // Le recruiterEmail n’est pas utilisé comme from car son domaine
-      // (ex: gmail.com) n’est pas vérifié dans Resend → rejeté.
-      // Le nom du recruteur est dans fromName pour l’affichage.
-      await this.emailService.sendEmail({
-        to,
-        subject,
-        html,
-        fromName: options?.fromName || 'Academia Helm — Recrutement',
-        // Pas de from → l’EmailService utilise son default vérifié
-      });
-      this.logger.log(`📧 Email sent to ${to} — subject: "${subject.substring(0, 80)}"`);
-    } catch (err: any) {
-      this.logger.error(
-        `📧 Failed to send email to ${to} — subject: "${subject}" — error: ${err.message}`,
-      );
-    }
+    // IMPORTANT : On passe explicitement le from pour étre sûr que
+    // l'EmailService l'utilise (même logique que auth.service.ts pour l'OTP).
+    // Sans from explicite, l'EmailService peut tomber sur un fallback différent.
+    const fromEmail = this.configService.get<string>('EMAIL_FROM_NOREPLY') || 'noreply@academiahelm.com';
+    
+    await this.emailService.sendEmail({
+      to,
+      subject,
+      html,
+      from: fromEmail,
+      fromName: options?.fromName || 'Academia Helm — Recrutement',
+    });
+    this.logger.log(`📧 Email sent to ${to} — subject: "${subject.substring(0, 80)}" — from=${fromEmail}`);
   }
 
   // ─── 1. CANDIDATURE REÇUE ──────────────────────────────────────────────────

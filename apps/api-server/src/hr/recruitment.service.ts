@@ -2845,25 +2845,47 @@ Réponds UNIQUEMENT en JSON valide.`,
 
     this.logger.log(`testResendApplicationEmail: sending to ${candidate.email}, job=${primaryApp.job?.title}`);
 
-    // 3. Envoyer la notification email
-    await this.notificationService.notifyApplicationReceived({
-      candidateId: candidate.id,
-      tenantId,
-      jobId: primaryApp.jobId,
-      experiences,
-      education,
-      skills,
-      pitch,
-      documentsSubmitted,
-    });
+    // 3. Envoyer l'email DIRECTEMENT (sans passer par notifyApplicationReceived
+    // qui catche les erreurs silencieusement). On veut voir l'erreur réelle.
+    try {
+      const { renderApplicationReceived } = await import('./recruitment-email-templates');
+      const branding = await this.notificationService['getTenantBranding'](tenantId);
+      const { subject, html } = renderApplicationReceived({
+        branding,
+        candidateName: `${candidate.firstName} ${candidate.lastName}`,
+        candidateFirstName: candidate.firstName || 'candidat(e)',
+        jobTitle: primaryApp.job?.title || 'Poste non spécifié',
+        experiences,
+        education,
+        skills,
+        pitch,
+        documentsSubmitted,
+      });
 
-    return {
-      success: true,
-      message: `Email de notification envoyé à ${candidate.email}`,
-      candidate: `${candidate.firstName} ${candidate.lastName}`,
-      email: candidate.email,
-      job: primaryApp.job?.title,
-    };
+      // Appel direct à sendEmail (sans try-catch qui avale l'erreur)
+      await this.notificationService['sendEmail'](candidate.email, subject, html, {
+        fromName: branding.recruiterName
+          ? `${branding.recruiterName} — ${branding.schoolName}`
+          : 'Academia Helm — Recrutement',
+      });
+
+      return {
+        success: true,
+        message: `Email envoyé à ${candidate.email}`,
+        candidate: `${candidate.firstName} ${candidate.lastName}`,
+        email: candidate.email,
+        job: primaryApp.job?.title,
+      };
+    } catch (err: any) {
+      this.logger.error(`testResendApplicationEmail FAILED: ${err.message}`, err.stack);
+      return {
+        success: false,
+        error: err.message,
+        candidate: `${candidate.firstName} ${candidate.lastName}`,
+        email: candidate.email,
+        job: primaryApp.job?.title,
+      };
+    }
   }
 }
 

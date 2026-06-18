@@ -15,6 +15,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.service';
 import { StorageService } from '../../common/services/storage.service';
 import { StaffCredentialService } from './staff-credential.service';
+import { RecruitmentNotificationService } from '../recruitment-notification.service';
 import * as Handlebars from 'handlebars';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -59,6 +60,8 @@ export class ContractPdfService {
     private readonly storageService: StorageService,
     @Inject(forwardRef(() => StaffCredentialService))
     private readonly credentialService: StaffCredentialService,
+    @Inject(forwardRef(() => RecruitmentNotificationService))
+    private readonly notificationService: RecruitmentNotificationService,
   ) {
     this.loadDependencies();
   }
@@ -751,6 +754,53 @@ export class ContractPdfService {
     }
 
     this.logger.log(`Contrat ${contractId} signé par l'employé: ${data.signerName}`);
+
+    // ─── EMAIL NOTIFICATION — contrat signé ──────────────────────────────
+    // Fire-and-forget — never blocks the response.
+    try {
+      const contractWithStaff = await this.prisma.contract.findFirst({
+        where: { id: contractId, tenantId },
+        select: {
+          type: true,
+          signedAt: true,
+          staffId: true,
+        },
+      });
+      if (contractWithStaff?.staffId) {
+        // Find the candidate that became this staff member (via email match)
+        // OR find the staff's email directly.
+        const staff = await this.prisma.staff.findUnique({
+          where: { id: contractWithStaff.staffId },
+          select: { email: true, firstName: true, lastName: true },
+        });
+        if (staff?.email) {
+          // Try to find a HrCandidate with the same email (covers the recruit→hire path)
+          const candidate = await this.prisma.hrCandidate.findFirst({
+            where: { email: staff.email },
+            select: { id: true },
+          });
+          if (candidate?.id) {
+            const jobId = await this.notificationService.getJobIdForCandidate(candidate.id);
+            if (jobId) {
+              this.notificationService
+                .notifyContractSigned({
+                  candidateId: candidate.id,
+                  tenantId,
+                  jobId,
+                  contractType: contractWithStaff.type || undefined,
+                  signedAt: contractWithStaff.signedAt || signedAt,
+                })
+                .catch((err) => {
+                  this.logger.error(`signContract: failed to send notification: ${err.message}`);
+                });
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      this.logger.warn(`signContract: notification pre-check failed: ${err.message}`);
+    }
+
     return {
       ...updatedContract,
       _signResult: { signed: true, signerRole: 'EMPLOYE', contractStatus: 'ACTIVE' },

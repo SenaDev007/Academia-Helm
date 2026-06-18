@@ -662,9 +662,16 @@ export class ApplyJobDto {
   @IsOptional() @IsString() city?: string;
   @IsOptional() @IsString() gender?: string;
   @IsUUID() tenantId: string;
-  @IsOptional() @IsString() skills?: string;
-  @IsOptional() @IsString() experiences?: string;
-  @IsOptional() @IsString() education?: string;
+  /**
+   * Skills, experiences, and education are sent as JSON strings from the
+   * frontend (FormData). They MAY also arrive as already-parsed arrays
+   * if a middleware transforms them — the service handles both cases.
+   * Using `@IsOptional()` without `@IsString()` avoids the validation
+   * pipe stripping/rejecting these fields when they are arrays.
+   */
+  @IsOptional() skills?: any;
+  @IsOptional() experiences?: any;
+  @IsOptional() education?: any;
   @IsOptional() @IsString() pitch?: string;
   @IsOptional() @IsString() linkedinUrl?: string;
 }

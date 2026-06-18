@@ -35,6 +35,7 @@ import { CNSSPrismaController } from './cnss-prisma.controller';
 import { HrOverviewController } from './hr-overview.controller';
 import { RecruitmentPrismaService } from './recruitment.service';
 import { RecruitmentPrismaController } from './recruitment.controller';
+import { RecruitmentNotificationService } from './recruitment-notification.service';
 import { SchedulesPrismaService } from './schedules-prisma.service';
 import { SchedulesPrismaController } from './schedules-prisma.controller';
 import { IaPrismaService } from './ia-prisma.service';
@@ -67,6 +68,7 @@ import { StaffCredentialService } from './services/staff-credential.service';
     TerminationPdfService,
     HrKpiService,
     RecruitmentPrismaService,
+    RecruitmentNotificationService,
     SchedulesPrismaService,
     IaPrismaService,
     OrganigramPrismaService,
@@ -106,6 +108,7 @@ import { StaffCredentialService } from './services/staff-credential.service';
     TerminationPdfService,
     HrKpiService,
     RecruitmentPrismaService,
+    RecruitmentNotificationService,
     SchedulesPrismaService,
     IaPrismaService,
     OrganigramPrismaService,

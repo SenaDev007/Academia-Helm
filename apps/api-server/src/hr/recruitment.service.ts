@@ -4,6 +4,7 @@ import { StorageService } from '../common/services/storage.service';
 import { OpenRouterService } from '../common/services/openrouter.service';
 import { ContractsPrismaService } from './contracts-prisma.service';
 import { StaffMatriculeService } from './staff-matricule.service';
+import { RecruitmentNotificationService } from './recruitment-notification.service';
 import { prismaCreateDefaults, prismaUpdateDefaults, prismaCreateNoCreatedAt, prismaCreateNoUpdatedAt, prismaCreateIdOnly, uuid, now } from '../common/utils/prisma-helpers';
 import { Prisma } from '@prisma/client';
 
@@ -30,6 +31,7 @@ export class RecruitmentPrismaService {
     private readonly contractsService: ContractsPrismaService,
     private readonly matriculeService: StaffMatriculeService,
     private readonly openRouter: OpenRouterService,
+    private readonly notificationService: RecruitmentNotificationService,
   ) {}
 
   // Job Offers CRUD
@@ -990,6 +992,34 @@ export class RecruitmentPrismaService {
           }
 
           return { ...updatedApp, staff: staffRecord, contract };
+        }).then(async (hireResult) => {
+          // ─── EMAIL NOTIFICATION — embauche ──────────────────────────────
+          // Fire-and-forget — never blocks the hire process.
+          try {
+            const app = await this.prisma.hrApplication.findUnique({
+              where: { id },
+              select: { candidateId: true, tenantId: true, jobId: true, candidate: { select: { email: true } } },
+            });
+            if (app?.candidateId && app?.tenantId && app?.jobId) {
+              this.notificationService
+                .notifyHired({
+                  candidateId: app.candidateId,
+                  tenantId: app.tenantId,
+                  jobId: app.jobId,
+                  contractType: (hireResult as any)?.contract?.type,
+                  startDate: (hireResult as any)?.contract?.startDate,
+                  salary: (hireResult as any)?.contract?.baseSalary
+                    ? String((hireResult as any).contract.baseSalary)
+                    : undefined,
+                })
+                .catch((err) => {
+                  this.logger.error(`EMBAUCHÉ: failed to send notification: ${err.message}`);
+                });
+            }
+          } catch (err: any) {
+            this.logger.warn(`EMBAUCHÉ: notification pre-check failed: ${err.message}`);
+          }
+          return hireResult;
         });
       } catch (txErr: any) {
         // If it's already an HttpException (BadRequestException, etc.), re-throw it
@@ -1005,7 +1035,7 @@ export class RecruitmentPrismaService {
     }
 
     // ─── 4. Non-EMBAUCHÉ — simple status update ────────────────────────────
-    return this.prisma.hrApplication.update({
+    const updated = await this.prisma.hrApplication.update({
       where: { id },
       data: { 
         ...prismaUpdateDefaults(),
@@ -1017,6 +1047,23 @@ export class RecruitmentPrismaService {
         job: true,
       }
     });
+
+    // ─── EMAIL NOTIFICATION — rejet ──────────────────────────────────────
+    // If the application was just rejected, notify the candidate.
+    if (status === 'REJETÉ' && updated.candidateId && updated.tenantId && updated.jobId) {
+      this.notificationService
+        .notifyRejected({
+          candidateId: updated.candidateId,
+          tenantId: updated.tenantId,
+          jobId: updated.jobId,
+          reason: review,
+        })
+        .catch((err) => {
+          this.logger.error(`REJETÉ: failed to send notification: ${err.message}`);
+        });
+    }
+
+    return updated;
   }
 
   async deleteApplication(id: string) {
@@ -1133,6 +1180,27 @@ export class RecruitmentPrismaService {
       this.logger.warn(`Failed to auto-advance application to ENTRETIEN: ${advanceErr.message}`);
     }
 
+    // ─── EMAIL NOTIFICATION — entretien programmé ─────────────────────────
+    // Fire-and-forget — never blocks the response.
+    this.notificationService
+      .getJobIdForCandidate(data.candidateId)
+      .then((jobId) => {
+        if (!jobId) return null;
+        return this.notificationService.notifyInterviewScheduled({
+          candidateId: data.candidateId,
+          tenantId,
+          jobId,
+          interviewDate: parsedDate,
+          interviewTime: data.time,
+          format: data.format || 'Visioconférence',
+          evaluator: data.evaluator,
+          type: data.type,
+        });
+      })
+      .catch((err) => {
+        this.logger.error(`createInterview: failed to send notification: ${err.message}`);
+      });
+
     return interview;
   }
 
@@ -1196,6 +1264,29 @@ export class RecruitmentPrismaService {
       } catch (err: any) {
         this.logger.warn(`Failed to auto-advance application after interview update: ${err.message}`);
       }
+    }
+
+    // ─── EMAIL NOTIFICATION — résultat entretien ──────────────────────────
+    // Only send if interview was just TERMINATED (status=TERMINÉ + result provided)
+    if (data.status === 'TERMINÉ' && data.result && updated.candidateId && updated.tenantId) {
+      this.notificationService
+        .getJobIdForCandidate(updated.candidateId)
+        .then((jobId) => {
+          if (!jobId) return null;
+          return this.notificationService.notifyInterviewResult({
+            candidateId: updated.candidateId,
+            tenantId: updated.tenantId,
+            jobId,
+            result: data.result,
+            score: typeof data.score === 'number' ? data.score : undefined,
+            feedback: data.feedback,
+            evaluator: updated.evaluator,
+            interviewDate: updated.date,
+          });
+        })
+        .catch((err) => {
+          this.logger.error(`updateInterview: failed to send result notification: ${err.message}`);
+        });
     }
 
     return updated;
@@ -1439,6 +1530,43 @@ export class RecruitmentPrismaService {
       }
 
       return testResult;
+    }).then(async (testResult) => {
+      // ─── EMAIL NOTIFICATION — résultat test ──────────────────────────────
+      // Notify candidate of test result (fire-and-forget).
+      try {
+        const candidate = await this.prisma.hrCandidate.findUnique({
+          where: { id: data.candidateId },
+          select: { tenantId: true },
+        });
+        if (candidate?.tenantId) {
+          const jobId = await this.notificationService.getJobIdForCandidate(data.candidateId);
+          if (jobId) {
+            // Fetch test details for context
+            const test = await this.prisma.hrTest.findUnique({
+              where: { id: data.testId },
+              select: { name: true, type: true, maxScore: true, passingScore: true },
+            });
+            this.notificationService
+              .notifyTestResult({
+                candidateId: data.candidateId,
+                tenantId: candidate.tenantId,
+                jobId,
+                result: data.result || 'RÉUSSI',
+                score,
+                maxScore: test?.maxScore,
+                passingScore: test?.passingScore,
+                testName: test?.name,
+                feedback: data.notes,
+              })
+              .catch((err) => {
+                this.logger.error(`createTestResult: failed to send notification: ${err.message}`);
+              });
+          }
+        }
+      } catch (err: any) {
+        this.logger.warn(`createTestResult: notification pre-check failed: ${err.message}`);
+      }
+      return testResult;
     });
   }
 
@@ -1536,19 +1664,55 @@ export class RecruitmentPrismaService {
     }
 
     // Parse structured data from request body
+    // ─── Robust parsing ────────────────────────────────────────────────────
+    // The frontend sends these as JSON strings (FormData.append('x', JSON.stringify(...)))
+    // but in some edge cases (e.g. empty array → "[]"), the validation pipe or
+    // multer may pass them as already-parsed objects. We handle both cases.
     let skills: string[] = [];
     let experiences: any[] = [];
     let education: any[] = [];
     try {
-      if (body.skills) skills = JSON.parse(body.skills);
-      if (body.experiences) experiences = JSON.parse(body.experiences);
-      if (body.education) education = JSON.parse(body.education);
+      // Helper: accept string (JSON), array, or object — return parsed value or []
+      const parseField = (val: any, fieldName: string): any[] => {
+        if (val == null || val === '') return [];
+        if (Array.isArray(val)) return val;
+        if (typeof val === 'string') {
+          const trimmed = val.trim();
+          if (!trimmed) return [];
+          try {
+            const parsed = JSON.parse(trimmed);
+            return Array.isArray(parsed) ? parsed : [];
+          } catch (e) {
+            this.logger.warn(`Failed parsing ${fieldName}: "${trimmed.substring(0, 200)}" — ${e.message}`);
+            return [];
+          }
+        }
+        // Object (not array) — return as single-element array
+        if (typeof val === 'object') return [val];
+        return [];
+      };
+
+      skills = parseField(body.skills, 'skills');
+      experiences = parseField(body.experiences, 'experiences');
+      education = parseField(body.education, 'education');
+
+      // ─── DEBUG LOG — trace what we received ──────────────────────────────
+      // Helps diagnose if the frontend is sending the right shape or if the
+      // validation pipe strips fields.
+      this.logger.log(
+        `applyJob structured data: skills=${JSON.stringify(skills).substring(0, 200)} (${skills.length} items), ` +
+        `experiences=${JSON.stringify(experiences).substring(0, 200)} (${experiences.length} items), ` +
+        `education=${JSON.stringify(education).substring(0, 200)} (${education.length} items), ` +
+        `pitch=${(body.pitch || '').substring(0, 100).length} chars, ` +
+        `linkedinUrl=${body.linkedinUrl || 'N/A'}`,
+      );
     } catch (e) {
       this.logger.warn('Failed parsing structured profile details:', e);
     }
 
     const pitch = body.pitch || '';
-    const pedagogicalExperience = JSON.stringify({ experiences, pitch, education, linkedinUrl: body.linkedinUrl || '' });
+    const linkedinUrl = body.linkedinUrl || '';
+    const pedagogicalExperience = JSON.stringify({ experiences, pitch, education, linkedinUrl });
 
     // Generate scores and detail reports based on files
     const hasCV = files?.cv && files.cv.length > 0;
@@ -1838,6 +2002,36 @@ export class RecruitmentPrismaService {
         err.stack,
       );
     });
+
+    // ─── EMAIL NOTIFICATION (fire-and-forget) ─────────────────────────────
+    // Send "candidature reçue" email to the candidate with a full récap of
+    // the data they submitted (experiences, education, skills, pitch, docs).
+    // Fire-and-forget — never blocks the HTTP response.
+    const documentsSubmitted: Array<{ type: string; fileName: string }> = [];
+    if (cvFile && cvPath) documentsSubmitted.push({ type: 'CV', fileName: cvFile.originalname });
+    if (applicationLetterFile && applicationLetterPath)
+      documentsSubmitted.push({ type: 'Lettre de demande d\'emploi', fileName: applicationLetterFile.originalname });
+    if (letterFile && letterPath)
+      documentsSubmitted.push({ type: 'Lettre de motivation', fileName: letterFile.originalname });
+    if (recoFile && recoPath)
+      documentsSubmitted.push({ type: 'Lettre de recommandation', fileName: recoFile.originalname });
+
+    this.notificationService
+      .notifyApplicationReceived({
+        candidateId: result.candidate.id,
+        tenantId,
+        jobId: body.jobId,
+        experiences,
+        education,
+        skills,
+        pitch,
+        documentsSubmitted,
+      })
+      .catch((err) => {
+        this.logger.error(
+          `applyJob: failed to send candidature-reçue email to ${body.email}: ${err.message}`,
+        );
+      });
 
     return result;
   }

@@ -382,12 +382,12 @@ export class RecruitmentPrismaController {
   // candidature. À supprimer après validation.
   // ============================================================================
 
+  @Public()
   @Post('test-resend-email/:candidateId')
   async testResendEmail(
     @Param('candidateId') candidateId: string,
-    @GetTenant() tenant: any,
-    @Query('tenantId') tenantIdFallback?: string,
+    @Query('tenantId') tenantId: string,
   ) {
-    return this.service.testResendApplicationEmail(candidateId, tenant?.id ?? tenantIdFallback);
+    return this.service.testResendApplicationEmail(candidateId, tenantId);
   }
 }

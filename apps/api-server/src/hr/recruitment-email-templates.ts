@@ -94,16 +94,11 @@ export interface RecruitmentEmailData {
 function renderHeader(branding: TenantBranding): string {
   const schoolName = escHtml(branding.schoolName || 'Établissement');
   // Logo de l'école :
-  // - Si URL http(s) → img directe (fonctionne dans tous les clients email)
-  // - Si base64 (data:image) ET < 30 KB → img directe (fonctionne dans la plupart des clients)
-  // - Si base64 ET > 30 KB → fallback initiales (Gmail/Outlook bloquent les base64 volumineux)
+  // - Si URL http(s) → img directe
+  // - Si base64 (data:image) → img directe (le logo est compressé par logo-compressor.ts
+  //   avant d'arriver ici, donc toujours < 30 KB)
   // - Si null → fallback initiales
-  const isUrl = branding.schoolLogo && branding.schoolLogo.startsWith('http');
-  const isBase64 = branding.schoolLogo && branding.schoolLogo.startsWith('data:');
-  const base64Size = isBase64 ? branding.schoolLogo.length : 0;
-  const canUseLogo = branding.schoolLogo && (isUrl || (isBase64 && base64Size < 30000));
-
-  const logoBlock = canUseLogo
+  const logoBlock = branding.schoolLogo
     ? `<img src="${escHtml(branding.schoolLogo)}" alt="${schoolName}" style="max-height:48px;max-width:160px;object-fit:contain;" />`
     : `<div style="width:48px;height:48px;border:2px solid #c9a227;border-radius:10px;text-align:center;vertical-align:middle;background:rgba(201,162,39,0.12);line-height:44px;">
          <span style="font-size:18px;font-weight:bold;color:#f5e6b8;letter-spacing:1px;">${escHtml((branding.schoolName || 'EC').substring(0, 2).toUpperCase())}</span>

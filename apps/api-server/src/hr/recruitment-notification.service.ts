@@ -32,6 +32,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { EmailService } from '../communication/services/email.service';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
+import { compressLogoForEmail } from './logo-compressor';
 import {
   renderApplicationReceived,
   renderInterviewScheduled,
@@ -93,9 +94,14 @@ export class RecruitmentNotificationService {
       });
 
       if (profile?.schoolName) {
+        // Compresser le logo pour les emails (les base64 > 30 KB sont bloqués par Gmail/Outlook)
+        const compressedLogo = profile.logoUrl
+          ? await compressLogoForEmail(profile.logoUrl, tenantId).catch(() => profile.logoUrl)
+          : null;
+
         return {
           schoolName: profile.schoolName,
-          schoolLogo: profile.logoUrl,
+          schoolLogo: compressedLogo,
           schoolAddress: profile.address,
           schoolPhone: profile.phonePrimary,
           schoolEmail: profile.email,

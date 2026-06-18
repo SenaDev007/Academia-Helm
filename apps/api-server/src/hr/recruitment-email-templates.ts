@@ -95,13 +95,12 @@ function renderHeader(branding: TenantBranding): string {
   const schoolName = escHtml(branding.schoolName || 'Établissement');
   // Logo de l'école :
   // - Si URL http(s) → img directe
-  // - Si base64 (data:image) → img directe (le logo est compressé par logo-compressor.ts
-  //   avant d'arriver ici, donc toujours < 30 KB)
+  // - Si base64 (data:image) → img directe (le logo est compressé par logo-compressor.ts)
   // - Si null → fallback initiales
   const logoBlock = branding.schoolLogo
     ? `<img src="${escHtml(branding.schoolLogo)}" alt="${schoolName}" style="max-height:48px;max-width:160px;object-fit:contain;" />`
-    : `<div style="width:48px;height:48px;border:2px solid #c9a227;border-radius:10px;text-align:center;vertical-align:middle;background:rgba(201,162,39,0.12);line-height:44px;">
-         <span style="font-size:18px;font-weight:bold;color:#f5e6b8;letter-spacing:1px;">${escHtml((branding.schoolName || 'EC').substring(0, 2).toUpperCase())}</span>
+    : `<div style="width:48px;height:48px;border:2px solid #F5A623;border-radius:10px;text-align:center;vertical-align:middle;background:rgba(245,166,35,0.12);line-height:44px;">
+         <span style="font-size:18px;font-weight:bold;color:#F2C94C;letter-spacing:1px;">${escHtml((branding.schoolName || 'EC').substring(0, 2).toUpperCase())}</span>
        </div>`;
 
   const contactInfo = [
@@ -114,9 +113,9 @@ function renderHeader(branding: TenantBranding): string {
     .join('');
 
   return `
-    <!-- Header bleu marine + accent doré -->
+    <!-- Header bleu navy Academia Helm + accent doré -->
     <tr>
-      <td style="background:linear-gradient(160deg,#0c1a33 0%,#152a52 100%);padding:28px 24px 22px;text-align:center;border-bottom:3px solid #c9a227;">
+      <td style="background:linear-gradient(160deg,#0D1F6E 0%,#0D3B85 100%);padding:28px 24px 22px;text-align:center;border-bottom:3px solid #F5A623;">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 16px;">
           <tr>
             <td style="vertical-align:middle;padding-right:14px;text-align:left;">
@@ -124,11 +123,11 @@ function renderHeader(branding: TenantBranding): string {
             </td>
             <td style="padding-left:14px;text-align:left;vertical-align:middle;">
               <div style="font-size:22px;font-weight:bold;color:#ffffff;letter-spacing:0.5px;">${schoolName}</div>
-              <div style="font-size:13px;color:#c9a227;margin-top:4px;">Recrutement</div>
+              <div style="font-size:13px;color:#F5A623;margin-top:4px;">Recrutement</div>
             </td>
           </tr>
         </table>
-        <div style="height:2px;width:72px;background:#c9a227;margin:0 auto;border-radius:1px;"></div>
+        <div style="height:2px;width:72px;background:#F5A623;margin:0 auto;border-radius:1px;"></div>
         ${contactInfo ? `<div style="margin-top:12px;">${contactInfo}</div>` : ''}
       </td>
     </tr>`;
@@ -157,15 +156,15 @@ function renderFooter(branding: TenantBranding): string {
   return `${recruiterSignatureBlock}
     <!-- Footer Academia Helm -->
     <tr>
-      <td style="background:#0c1a33;padding:24px 28px;text-align:center;border-top:3px solid #c9a227;">
+      <td style="background:#0D1F6E;padding:24px 28px;text-align:center;border-top:3px solid #F5A623;">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 12px;">
           <tr>
             <td style="vertical-align:middle;padding-right:12px;text-align:left;">
-              <img src="https://www.academiahelm.com/images/logo-academia-helm-email.png" alt="Academia Helm" style="height:36px;width:auto;max-width:120px;object-fit:contain;" />
+              <img src="https://www.academiahelm.com/images/logo-Academia%20Hub.png" alt="Academia Helm" style="height:36px;width:auto;max-width:120px;object-fit:contain;" />
             </td>
             <td style="padding-left:4px;text-align:left;vertical-align:middle;">
               <div style="font-size:15px;font-weight:bold;color:#ffffff;">Academia Helm</div>
-              <div style="font-size:11px;color:#c9a227;margin-top:2px;">Plateforme de pilotage éducatif</div>
+              <div style="font-size:11px;color:#F5A623;margin-top:2px;">Plateforme de pilotage éducatif</div>
             </td>
           </tr>
         </table>
@@ -264,27 +263,27 @@ export function renderApplicationReceived(
   const body = `
     ${renderBadge('green', '✅ Candidature reçue')}
     <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;">Bonjour ${escHtml(data.candidateFirstName)},</h2>
-    <p style="margin:0 0 16px;color:#475569;line-height:1.6;">Nous avons bien reçu votre candidature pour le poste de <strong style="color:#1A2BA6;">${escHtml(data.jobTitle)}</strong>. Sarah, notre Assistante RH, analyse automatiquement votre dossier. Voici le récapitulatif des informations transmises :</p>
+    <p style="margin:0 0 16px;color:#475569;line-height:1.6;">Nous avons bien reçu votre candidature pour le poste de <strong style="color:#0D1F6E;">${escHtml(data.jobTitle)}</strong>. Sarah, notre Assistante RH, analyse automatiquement votre dossier. Voici le récapitulatif des informations transmises :</p>
 
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:20px;">
       <tr><td style="padding:16px 20px;">
-        <h3 style="margin:0 0 12px;color:#1A2BA6;font-size:14px;text-transform:uppercase;letter-spacing:0.5px;">📋 Récapitulatif</h3>
+        <h3 style="margin:0 0 12px;color:#0D1F6E;font-size:14px;text-transform:uppercase;letter-spacing:0.5px;">📋 Récapitulatif</h3>
         <p style="margin:0 0 12px;font-size:13px;color:#334155;"><strong>Poste visé :</strong> ${escHtml(data.jobTitle)}</p>
         <p style="margin:0 0 12px;font-size:13px;color:#334155;"><strong>Établissement :</strong> ${escHtml(data.branding.schoolName)}</p>
         <p style="margin:0 0 16px;font-size:13px;color:#334155;"><strong>Candidat :</strong> ${escHtml(data.candidateName)}</p>
 
-        <h4 style="margin:0 0 8px;color:#1A2BA6;font-size:12px;text-transform:uppercase;">💼 Expériences professionnelles</h4>
+        <h4 style="margin:0 0 8px;color:#0D1F6E;font-size:12px;text-transform:uppercase;">💼 Expériences professionnelles</h4>
         <ul style="margin:0 0 16px;padding-left:20px;font-size:13px;color:#334155;">${experiencesHtml}</ul>
 
-        <h4 style="margin:0 0 8px;color:#1A2BA6;font-size:12px;text-transform:uppercase;">🎓 Formations</h4>
+        <h4 style="margin:0 0 8px;color:#0D1F6E;font-size:12px;text-transform:uppercase;">🎓 Formations</h4>
         <ul style="margin:0 0 16px;padding-left:20px;font-size:13px;color:#334155;">${educationHtml}</ul>
 
-        <h4 style="margin:0 0 8px;color:#1A2BA6;font-size:12px;text-transform:uppercase;">⭐ Compétences</h4>
+        <h4 style="margin:0 0 8px;color:#0D1F6E;font-size:12px;text-transform:uppercase;">⭐ Compétences</h4>
         <div style="margin:0 0 16px;">${skillsHtml}</div>
 
-        ${data.pitch ? `<h4 style="margin:0 0 8px;color:#1A2BA6;font-size:12px;text-transform:uppercase;">💭 Motivation</h4><p style="margin:0 0 16px;font-size:13px;color:#334155;background:#f8fafc;border-left:3px solid #1A2BA6;padding:10px 14px;border-radius:4px;font-style:italic;">${escHtml(data.pitch)}</p>` : ''}
+        ${data.pitch ? `<h4 style="margin:0 0 8px;color:#0D1F6E;font-size:12px;text-transform:uppercase;">💭 Motivation</h4><p style="margin:0 0 16px;font-size:13px;color:#334155;background:#f8fafc;border-left:3px solid #0D1F6E;padding:10px 14px;border-radius:4px;font-style:italic;">${escHtml(data.pitch)}</p>` : ''}
 
-        <h4 style="margin:0 0 8px;color:#1A2BA6;font-size:12px;text-transform:uppercase;">📎 Documents soumis</h4>
+        <h4 style="margin:0 0 8px;color:#0D1F6E;font-size:12px;text-transform:uppercase;">📎 Documents soumis</h4>
         <ul style="margin:0;padding-left:20px;font-size:13px;color:#334155;">${docsHtml}</ul>
       </td></tr>
     </table>
@@ -311,11 +310,11 @@ export function renderInterviewScheduled(
   const body = `
     ${renderBadge('blue', '📅 Entretien programmé')}
     <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;">Bonjour ${escHtml(data.candidateFirstName)},</h2>
-    <p style="margin:0 0 20px;color:#475569;line-height:1.6;">Votre candidature pour le poste de <strong style="color:#1A2BA6;">${escHtml(data.jobTitle)}</strong> a retenu notre attention. Nous vous convoquons à un entretien.</p>
+    <p style="margin:0 0 20px;color:#475569;line-height:1.6;">Votre candidature pour le poste de <strong style="color:#0D1F6E;">${escHtml(data.jobTitle)}</strong> a retenu notre attention. Nous vous convoquons à un entretien.</p>
 
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:20px;">
       <tr><td style="padding:16px 20px;">
-        <h3 style="margin:0 0 12px;color:#1A2BA6;font-size:14px;text-transform:uppercase;letter-spacing:0.5px;">📋 Détails de l'entretien</h3>
+        <h3 style="margin:0 0 12px;color:#0D1F6E;font-size:14px;text-transform:uppercase;letter-spacing:0.5px;">📋 Détails de l'entretien</h3>
         <p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>📅 Date :</strong> ${formatDateFR(data.interviewDate)}</p>
         ${data.interviewTime ? `<p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>⏰ Heure :</strong> ${escHtml(formatTimeFR(data.interviewTime))}</p>` : ''}
         <p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>🎯 Format :</strong> ${escHtml(data.format)}</p>
@@ -347,11 +346,11 @@ export function renderTestScheduled(
   const body = `
     ${renderBadge('orange', '📝 Test à passer')}
     <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;">Bonjour ${escHtml(data.candidateFirstName)},</h2>
-    <p style="margin:0 0 20px;color:#475569;line-height:1.6;">Dans le cadre de votre candidature pour le poste de <strong style="color:#1A2BA6;">${escHtml(data.jobTitle)}</strong>, vous êtes convié(e) à passer un test d'évaluation.</p>
+    <p style="margin:0 0 20px;color:#475569;line-height:1.6;">Dans le cadre de votre candidature pour le poste de <strong style="color:#0D1F6E;">${escHtml(data.jobTitle)}</strong>, vous êtes convié(e) à passer un test d'évaluation.</p>
 
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:20px;">
       <tr><td style="padding:16px 20px;">
-        <h3 style="margin:0 0 12px;color:#1A2BA6;font-size:14px;text-transform:uppercase;letter-spacing:0.5px;">📋 Détails du test</h3>
+        <h3 style="margin:0 0 12px;color:#0D1F6E;font-size:14px;text-transform:uppercase;letter-spacing:0.5px;">📋 Détails du test</h3>
         <p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>📝 Nom du test :</strong> ${escHtml(data.testName)}</p>
         ${data.testType ? `<p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>🎯 Type :</strong> ${escHtml(data.testType)}</p>` : ''}
         ${data.duration ? `<p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>⏱️ Durée :</strong> ${data.duration} minutes</p>` : ''}
@@ -384,11 +383,11 @@ export function renderInterviewResult(
   const body = `
     ${renderBadge(isPassed ? 'green' : 'red', isPassed ? '✅ Entretien réussi' : '❌ Entretien non concluant')}
     <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;">Bonjour ${escHtml(data.candidateFirstName)},</h2>
-    <p style="margin:0 0 20px;color:#475569;line-height:1.6;">Nous revenons vers vous suite à votre entretien pour le poste de <strong style="color:#1A2BA6;">${escHtml(data.jobTitle)}</strong>.</p>
+    <p style="margin:0 0 20px;color:#475569;line-height:1.6;">Nous revenons vers vous suite à votre entretien pour le poste de <strong style="color:#0D1F6E;">${escHtml(data.jobTitle)}</strong>.</p>
 
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:20px;">
       <tr><td style="padding:16px 20px;">
-        <h3 style="margin:0 0 12px;color:#1A2BA6;font-size:14px;text-transform:uppercase;letter-spacing:0.5px;">📋 Résultat de l'entretien</h3>
+        <h3 style="margin:0 0 12px;color:#0D1F6E;font-size:14px;text-transform:uppercase;letter-spacing:0.5px;">📋 Résultat de l'entretien</h3>
         <p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>Résultat :</strong> <span style="color:${isPassed ? '#047857' : '#b91c1c'};font-weight:bold;">${escHtml(data.result)}</span></p>
         ${data.score != null ? `<p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>Score obtenu :</strong> ${data.score}/100</p>` : ''}
         ${data.evaluator ? `<p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>Évaluateur :</strong> ${escHtml(data.evaluator)}</p>` : ''}
@@ -420,11 +419,11 @@ export function renderTestResult(
   const body = `
     ${renderBadge(isPassed ? 'green' : 'red', isPassed ? '✅ Test réussi' : '❌ Test non réussi')}
     <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;">Bonjour ${escHtml(data.candidateFirstName)},</h2>
-    <p style="margin:0 0 20px;color:#475569;line-height:1.6;">Nous vous informons des résultats de votre test pour le poste de <strong style="color:#1A2BA6;">${escHtml(data.jobTitle)}</strong>.</p>
+    <p style="margin:0 0 20px;color:#475569;line-height:1.6;">Nous vous informons des résultats de votre test pour le poste de <strong style="color:#0D1F6E;">${escHtml(data.jobTitle)}</strong>.</p>
 
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:20px;">
       <tr><td style="padding:16px 20px;">
-        <h3 style="margin:0 0 12px;color:#1A2BA6;font-size:14px;text-transform:uppercase;letter-spacing:0.5px;">📋 Résultat du test</h3>
+        <h3 style="margin:0 0 12px;color:#0D1F6E;font-size:14px;text-transform:uppercase;letter-spacing:0.5px;">📋 Résultat du test</h3>
         ${data.testName ? `<p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>Test :</strong> ${escHtml(data.testName)}</p>` : ''}
         <p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>Résultat :</strong> <span style="color:${isPassed ? '#047857' : '#b91c1c'};font-weight:bold;">${escHtml(data.result)}</span></p>
         ${data.score != null ? `<p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>Score obtenu :</strong> ${data.score}${data.maxScore ? `/${data.maxScore}` : '/100'}</p>` : ''}
@@ -453,11 +452,11 @@ export function renderHired(
   const body = `
     ${renderBadge('green', '🎉 Embauche confirmée')}
     <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;">Félicitations ${escHtml(data.candidateFirstName)} !</h2>
-    <p style="margin:0 0 20px;color:#475569;line-height:1.6;">Nous avons le plaisir de vous informer que votre candidature pour le poste de <strong style="color:#1A2BA6;">${escHtml(data.jobTitle)}</strong> a été retenue. Bienvenue dans l'équipe de <strong>${escHtml(data.branding.schoolName)}</strong> !</p>
+    <p style="margin:0 0 20px;color:#475569;line-height:1.6;">Nous avons le plaisir de vous informer que votre candidature pour le poste de <strong style="color:#0D1F6E;">${escHtml(data.jobTitle)}</strong> a été retenue. Bienvenue dans l'équipe de <strong>${escHtml(data.branding.schoolName)}</strong> !</p>
 
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:20px;">
       <tr><td style="padding:16px 20px;">
-        <h3 style="margin:0 0 12px;color:#1A2BA6;font-size:14px;text-transform:uppercase;letter-spacing:0.5px;">📋 Détails de l'embauche</h3>
+        <h3 style="margin:0 0 12px;color:#0D1F6E;font-size:14px;text-transform:uppercase;letter-spacing:0.5px;">📋 Détails de l'embauche</h3>
         <p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>Poste :</strong> ${escHtml(data.jobTitle)}</p>
         ${data.contractType ? `<p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>Type de contrat :</strong> ${escHtml(data.contractType)}</p>` : ''}
         ${data.startDate ? `<p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>Date de début :</strong> ${formatDateFR(data.startDate)}</p>` : ''}
@@ -472,7 +471,7 @@ export function renderHired(
       </p>
     </div>
 
-    ${data.contractUrl ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto 20px;"><tr><td style="background:#1A2BA6;border-radius:8px;"><a href="${escHtml(data.contractUrl)}" style="display:inline-block;padding:12px 28px;color:#ffffff;text-decoration:none;font-weight:bold;font-size:14px;">✍️ Signer mon contrat</a></td></tr></table>` : ''}
+    ${data.contractUrl ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto 20px;"><tr><td style="background:#0D1F6E;border-radius:8px;"><a href="${escHtml(data.contractUrl)}" style="display:inline-block;padding:12px 28px;color:#ffffff;text-decoration:none;font-weight:bold;font-size:14px;">✍️ Signer mon contrat</a></td></tr></table>` : ''}
 
     <p style="margin:0;color:#475569;font-size:13px;line-height:1.6;">Nous sommes ravis de vous compter parmi nous et restons à votre disposition pour toute question.</p>
   `;
@@ -493,18 +492,18 @@ export function renderContractSigned(
   const body = `
     ${renderBadge('green', '✅ Contrat signé')}
     <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;">Bienvenue dans l'équipe, ${escHtml(data.candidateFirstName)} !</h2>
-    <p style="margin:0 0 20px;color:#475569;line-height:1.6;">Votre contrat de travail pour le poste de <strong style="color:#1A2BA6;">${escHtml(data.jobTitle)}</strong> a été signé avec succès. Vous faites désormais officiellement partie de l'équipe de <strong>${escHtml(data.branding.schoolName)}</strong>.</p>
+    <p style="margin:0 0 20px;color:#475569;line-height:1.6;">Votre contrat de travail pour le poste de <strong style="color:#0D1F6E;">${escHtml(data.jobTitle)}</strong> a été signé avec succès. Vous faites désormais officiellement partie de l'équipe de <strong>${escHtml(data.branding.schoolName)}</strong>.</p>
 
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:20px;">
       <tr><td style="padding:16px 20px;">
-        <h3 style="margin:0 0 12px;color:#1A2BA6;font-size:14px;text-transform:uppercase;letter-spacing:0.5px;">📋 Récapitulatif</h3>
+        <h3 style="margin:0 0 12px;color:#0D1F6E;font-size:14px;text-transform:uppercase;letter-spacing:0.5px;">📋 Récapitulatif</h3>
         <p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>Poste :</strong> ${escHtml(data.jobTitle)}</p>
         ${data.contractType ? `<p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>Type de contrat :</strong> ${escHtml(data.contractType)}</p>` : ''}
         ${data.signedAt ? `<p style="margin:0;font-size:13px;color:#334155;"><strong>Date de signature :</strong> ${formatDateFR(data.signedAt)}</p>` : ''}
       </td></tr>
     </table>
 
-    ${data.contractUrl ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto 20px;"><tr><td style="background:#1A2BA6;border-radius:8px;"><a href="${escHtml(data.contractUrl)}" style="display:inline-block;padding:12px 28px;color:#ffffff;text-decoration:none;font-weight:bold;font-size:14px;">📄 Télécharger mon contrat</a></td></tr></table>` : ''}
+    ${data.contractUrl ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto 20px;"><tr><td style="background:#0D1F6E;border-radius:8px;"><a href="${escHtml(data.contractUrl)}" style="display:inline-block;padding:12px 28px;color:#ffffff;text-decoration:none;font-weight:bold;font-size:14px;">📄 Télécharger mon contrat</a></td></tr></table>` : ''}
 
     <p style="margin:0;color:#475569;font-size:13px;line-height:1.6;">L'équipe RH vous contactera prochainement pour les formalités d'accueil. Encore bienvenue et à très bientôt !</p>
   `;
@@ -523,11 +522,11 @@ export function renderRejected(
   const body = `
     ${renderBadge('orange', 'Candidature non retenue')}
     <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;">Bonjour ${escHtml(data.candidateFirstName)},</h2>
-    <p style="margin:0 0 20px;color:#475569;line-height:1.6;">Nous vous remercions de l'intérêt que vous avez porté à <strong>${escHtml(data.branding.schoolName)}</strong> et du temps que vous avez consacré à votre candidature pour le poste de <strong style="color:#1A2BA6;">${escHtml(data.jobTitle)}</strong>.</p>
+    <p style="margin:0 0 20px;color:#475569;line-height:1.6;">Nous vous remercions de l'intérêt que vous avez porté à <strong>${escHtml(data.branding.schoolName)}</strong> et du temps que vous avez consacré à votre candidature pour le poste de <strong style="color:#0D1F6E;">${escHtml(data.jobTitle)}</strong>.</p>
 
     <p style="margin:0 0 20px;color:#475569;font-size:13px;line-height:1.6;">Après examen de votre dossier, nous regrettons de vous informer que nous ne pourrons pas donner une suite favorable à votre candidature à ce stade.</p>
 
-    ${data.reason ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:20px;"><tr><td style="padding:16px 20px;"><h3 style="margin:0 0 8px;color:#1A2BA6;font-size:12px;text-transform:uppercase;">Motif</h3><p style="margin:0;font-size:13px;color:#334155;">${escHtml(data.reason)}</p></td></tr></table>` : ''}
+    ${data.reason ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:20px;"><tr><td style="padding:16px 20px;"><h3 style="margin:0 0 8px;color:#0D1F6E;font-size:12px;text-transform:uppercase;">Motif</h3><p style="margin:0;font-size:13px;color:#334155;">${escHtml(data.reason)}</p></td></tr></table>` : ''}
 
     <p style="margin:0;color:#475569;font-size:13px;line-height:1.6;">Nous vous souhaitons plein de succès dans vos prochaines démarches et espérons avoir l'opportunité de collaborer à l'avenir.</p>
   `;

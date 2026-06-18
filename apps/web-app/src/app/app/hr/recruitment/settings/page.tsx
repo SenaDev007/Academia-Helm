@@ -1,7 +1,7 @@
 'use client';
 
 import { ModuleContainer } from '@/components/modules/blueprint';
-import { HR_SUBMODULE_TABS } from '../../../hr-tabs';
+import { HR_SUBMODULE_TABS } from '../../hr-tabs';
 import RecruiterSettingsWorkspace from '@/components/hr/RecruiterSettingsWorkspace';
 
 export default function RecruiterSettingsPage() {

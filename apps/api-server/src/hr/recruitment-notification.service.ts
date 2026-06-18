@@ -174,6 +174,10 @@ export class RecruitmentNotificationService {
    *
    * Si `fromName` n'est pas fourni, on utilise "Academia Helm — Recrutement"
    * par défaut. Le fromName peut être personnalisé via le RecruiterProfile.
+   *
+   * IMPORTANT : Le fromEmail DOIT être un domaine vérifié dans Resend.
+   * Si le recruiterEmail n'est pas sur un domaine vérifié, on utilise
+   * noreply@academiahelm.com (ou EMAIL_FROM_NOREPLY) comme fallback.
    */
   private async sendEmail(
     to: string,
@@ -182,12 +186,19 @@ export class RecruitmentNotificationService {
     options?: { fromName?: string; fromEmail?: string },
   ): Promise<void> {
     try {
+      // Le fromEmail doit être sur un domaine vérifié dans Resend.
+      // On utilise le recruiterEmail SEULEMENT s'il est sur un domaine vérifié.
+      // Sinon, on laisse l'EmailService utiliser son default (EMAIL_FROM_NOREPLY / SMTP_FROM).
+      // TOUJOURS utiliser l’expéditeur par défaut (noreply@academiahelm.com)
+      // Le recruiterEmail n’est pas utilisé comme from car son domaine
+      // (ex: gmail.com) n’est pas vérifié dans Resend → rejeté.
+      // Le nom du recruteur est dans fromName pour l’affichage.
       await this.emailService.sendEmail({
         to,
         subject,
         html,
         fromName: options?.fromName || 'Academia Helm — Recrutement',
-        ...(options?.fromEmail ? { from: options.fromEmail } : {}),
+        // Pas de from → l’EmailService utilise son default vérifié
       });
       this.logger.log(`📧 Email sent to ${to} — subject: "${subject.substring(0, 80)}"`);
     } catch (err: any) {

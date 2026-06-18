@@ -1101,13 +1101,14 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       const res = await fetch('/api/school-auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           pendingToken: schoolGooglePendingToken,
           otp: otpCode,
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Code OTP invalide');
+      if (!res.ok) throw new Error(data.error || data.message || 'Code OTP invalide');
       // Persiste la session (compatible avec le système existant)
       persistClientSession({
         accessToken: data.accessToken,
@@ -1143,6 +1144,15 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     setSchoolGoogleEmail('');
     setSchoolOtp(['', '', '', '', '', '']);
     setError(null);
+    // Nettoyer l'URL pour empêcher l'useEffect de re-ouvrir le modal
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('otp_pending');
+      url.searchParams.delete('token');
+      url.searchParams.delete('email');
+      url.searchParams.delete('portal');
+      window.history.replaceState({}, '', url.toString());
+    }
   };
 
   const formBlockKey = portalType || 'standard';
@@ -2176,6 +2186,13 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                   />
                 ))}
               </div>
+
+              {/* Affichage de l'erreur DANS le modal */}
+              {error && (
+                <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700 text-center">
+                  {error}
+                </div>
+              )}
 
               <motion.button
                 type="button"

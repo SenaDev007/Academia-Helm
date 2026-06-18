@@ -240,6 +240,22 @@ export function RecruitmentWorkspace() {
   // Tenant identity (for auto-filling job location)
   const [tenantAddress, setTenantAddress] = useState<string>('');
 
+  // RecruiterProfile (fetched from /api/hr/recruitment/recruiter-profile)
+  // Used to pre-fill interview format, evaluator, and default delay
+  const [recruiterProfile, setRecruiterProfile] = useState<{
+    fullName?: string;
+    defaultInterviewFormat?: string;
+    defaultInterviewDelayHr?: number;
+  } | null>(null);
+
+  // Staff list (for the interview evaluator selector)
+  const [staffList, setStaffList] = useState<Array<{
+    id: string;
+    firstName: string;
+    lastName: string;
+    position?: string | null;
+  }>>([]);
+
   // Hire Confirmation State
   const [hireCandidate, setHireCandidate] = useState<Candidate | null>(null);
   const [hiring, setHiring] = useState(false);
@@ -556,6 +572,40 @@ export function RecruitmentWorkspace() {
       .catch(() => {/* non-critical */});
   }, [tenant?.id]);
 
+  // Load recruiter profile (for pre-filling interview form: format, evaluator, delay)
+  useEffect(() => {
+    if (!tenant?.id) return;
+    fetch(`/api/hr/recruitment/recruiter-profile?tenantId=${encodeURIComponent(tenant.id)}`, { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && data.isActive) {
+          setRecruiterProfile({
+            fullName: data.fullName,
+            defaultInterviewFormat: data.defaultInterviewFormat,
+            defaultInterviewDelayHr: data.defaultInterviewDelayHr,
+          });
+        }
+      })
+      .catch(() => {/* non-critical */});
+  }, [tenant?.id]);
+
+  // Load staff list (for the interview evaluator selector)
+  useEffect(() => {
+    if (!tenant?.id) return;
+    fetch(`/api/hr/staff?tenantId=${encodeURIComponent(tenant.id)}`, { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => {
+        const list = Array.isArray(data) ? data : data?.data ?? [];
+        setStaffList(list.map((s: any) => ({
+          id: s.id,
+          firstName: s.firstName || '',
+          lastName: s.lastName || '',
+          position: s.position || null,
+        })));
+      })
+      .catch(() => setStaffList([]));
+  }, [tenant?.id]);
+
   // Create or Update Job
   const handleSaveJob = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -791,6 +841,39 @@ export function RecruitmentWorkspace() {
       status: int.status || '',
       result: int.result || '',
       feedback: int.feedback || '',
+    });
+    setIsAddInterviewOpen(true);
+  };
+
+  /**
+   * Opens the interview scheduling modal with smart defaults from RecruiterProfile:
+   * - Format: recruiterProfile.defaultInterviewFormat (fallback: Visioconférence)
+   * - Évaluateur: recruiterProfile.fullName (fallback: empty)
+   * - Date: today + recruiterProfile.defaultInterviewDelayHr hours (fallback: today)
+   * - Heure: 10:00 (business hour default)
+   * - Candidate: optional pre-selected candidateId (when opening from candidate card)
+   */
+  const openNewInterview = (preselectedCandidateId?: string) => {
+    setEditingInterview(null);
+
+    // Calculate default date: today + delay hours
+    const delayHr = recruiterProfile?.defaultInterviewDelayHr ?? 48;
+    const defaultDate = new Date();
+    defaultDate.setHours(defaultDate.getHours() + delayHr);
+    const dateStr = defaultDate.toISOString().split('T')[0]; // YYYY-MM-DD
+
+    setNewInterview({
+      candidateId: preselectedCandidateId || '',
+      type: 'RH',
+      date: dateStr,
+      time: '10:00',
+      format: recruiterProfile?.defaultInterviewFormat || 'Visioconférence',
+      evaluator: recruiterProfile?.fullName || '',
+      score: '0',
+      comments: '',
+      status: '',
+      result: '',
+      feedback: '',
     });
     setIsAddInterviewOpen(true);
   };
@@ -2034,7 +2117,7 @@ export function RecruitmentWorkspace() {
               <div className="flex justify-between items-center">
                 <h3 className="text-base font-bold text-slate-900">Calendrier des Entretiens</h3>
                 <button
-                  onClick={() => { setEditingInterview(null); setNewInterview({ candidateId: '', type: 'RH', date: '', time: '', format: 'Visioconférence', evaluator: '', score: '0', comments: '', status: '', result: '', feedback: '' }); setIsAddInterviewOpen(true); }}
+                  onClick={() => openNewInterview()}
                   className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition"
                   style={{ backgroundColor: PRIMARY }}
                 >
@@ -2194,7 +2277,7 @@ export function RecruitmentWorkspace() {
                       <div className="grid grid-cols-3 gap-3">
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Date</label>
-                          <input type="date" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newInterview.date} onChange={(e) => setNewInterview({ ...newInterview, date: e.target.value })} required />
+                          <input type="date" min={new Date().toISOString().split('T')[0]} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newInterview.date} onChange={(e) => setNewInterview({ ...newInterview, date: e.target.value })} required />
                         </div>
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Heure</label>
@@ -2208,8 +2291,32 @@ export function RecruitmentWorkspace() {
 
                       <div className="grid grid-cols-2 gap-3">
                         <div className="col-span-2">
-                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Évaluateur (RH/Manager)</label>
-                          <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newInterview.evaluator} onChange={(e) => setNewInterview({ ...newInterview, evaluator: e.target.value })} required placeholder="Sarah G. / Dev Lead" />
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                            Évaluateur (RH/Manager)
+                            {recruiterProfile?.fullName && !editingInterview && (
+                              <span className="ml-1 text-[9px] text-emerald-600 normal-case font-medium">⚡ depuis Profil Recruteur</span>
+                            )}
+                          </label>
+                          {staffList.length > 0 ? (
+                            <select
+                              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs bg-white"
+                              value={newInterview.evaluator}
+                              onChange={(e) => setNewInterview({ ...newInterview, evaluator: e.target.value })}
+                              required
+                            >
+                              <option value="">— Sélectionner un évaluateur —</option>
+                              {recruiterProfile?.fullName && (
+                                <option value={recruiterProfile.fullName}>{recruiterProfile.fullName} (Recruteur par défaut)</option>
+                              )}
+                              {staffList.map((s) => (
+                                <option key={s.id} value={`${s.firstName} ${s.lastName}`}>
+                                  {s.firstName} {s.lastName}{s.position ? ` (${s.position})` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newInterview.evaluator} onChange={(e) => setNewInterview({ ...newInterview, evaluator: e.target.value })} required placeholder="Nom de l'évaluateur" />
+                          )}
                         </div>
                       </div>
 

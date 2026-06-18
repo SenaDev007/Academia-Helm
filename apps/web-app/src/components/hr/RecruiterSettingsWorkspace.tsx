@@ -327,7 +327,7 @@ export default function RecruiterSettingsWorkspace() {
             type="text"
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
-            placeholder="Ex: Erhel DEGBE"
+            placeholder="Ex: Jean Dupont"
             className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
@@ -381,7 +381,7 @@ export default function RecruiterSettingsWorkspace() {
           <textarea
             value={signatureText}
             onChange={(e) => setSignatureText(e.target.value)}
-            placeholder={'Ex:\nErhel DEGBE\nPromoteur / Fondateur\nCSPEB Éveil d\'Afrique Education'}
+            placeholder={'Ex:\nJean Dupont\nPromoteur / Fondateur\nMon École'}
             rows={4}
             className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />

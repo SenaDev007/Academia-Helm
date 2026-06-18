@@ -7,7 +7,7 @@ import { MenuToggleIcon } from '@/components/ui/menu-toggle-icon';
 import { useScroll } from '@/components/ui/use-scroll';
 import LogoCircle from '@/components/ui/LogoCircle';
 import { DoorOpen, ArrowRight } from 'lucide-react';
-import { LanguageSwitcher } from '@/contexts/I18nContext';
+import { LanguageSwitcher } from '@/components/i18n/GoogleTranslateSwitcher';
 
 // ── Keyframe injectée pour la pulsation dorée du bouton portail ──
 if (typeof document !== 'undefined' && !document.getElementById('portal-pulse-style')) {
@@ -227,7 +227,7 @@ export function Header() {
           <LimelightTextNav items={navItems} />
 
           {/* Icône portail / Retour app */}
-          <div className="ml-4 pl-4 border-l border-white/20 flex-shrink-0">
+          <div className="ml-4 pl-4 border-l border-white/20 flex-shrink-0 flex items-center gap-2">
             {cameFromApp ? (
               <Link
                 href={appReturnUrl}

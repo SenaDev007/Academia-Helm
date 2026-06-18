@@ -25,7 +25,7 @@ import { clearClientSessionSync } from '@/lib/auth/client-access-token';
 import AcademicYearSelector from './AcademicYearSelector';
 import SchoolLevelSelector from './SchoolLevelSelector';
 import AcademicTrackSelector from '../dashboard/AcademicTrackSelector';
-import { LanguageSwitcher } from '@/contexts/I18nContext';
+import { LanguageSwitcher } from '@/components/i18n/GoogleTranslateSwitcher';
 import { useOffline, useSyncStatus } from '@/hooks/useOffline';
 import InAppReviewModal from '@/components/reviews/InAppReviewModal';
 import type { User, Tenant } from '@/types';

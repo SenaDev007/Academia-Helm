@@ -271,6 +271,9 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
 
           {/* Droite : Actions & Profil */}
           <div className="flex items-center space-x-2 sm:space-x-3">
+            {/* Language Switcher (visible on all screen sizes) */}
+            <LanguageSwitcher />
+
             {/* Indicateur Offline/Online */}
             <div className="flex items-center space-x-2">
               {isOnline ? (

@@ -7,6 +7,7 @@ import { MenuToggleIcon } from '@/components/ui/menu-toggle-icon';
 import { useScroll } from '@/components/ui/use-scroll';
 import LogoCircle from '@/components/ui/LogoCircle';
 import { DoorOpen, ArrowRight } from 'lucide-react';
+import { LanguageSwitcher } from '@/contexts/I18nContext';
 
 // ── Keyframe injectée pour la pulsation dorée du bouton portail ──
 if (typeof document !== 'undefined' && !document.getElementById('portal-pulse-style')) {
@@ -258,6 +259,7 @@ export function Header() {
                 <DoorOpen className="w-7 h-7" style={{ animation: 'portalIconGlow 2s ease-in-out infinite' }} />
               </Link>
             )}
+            <LanguageSwitcher className="bg-white/10" />
           </div>
         </div>
 
@@ -330,6 +332,10 @@ export function Header() {
               <DoorOpen className="w-7 h-7" style={{ animation: 'portalIconGlow 2s ease-in-out infinite' }} />
             </Link>
           )}
+
+          <div className="mt-3">
+            <LanguageSwitcher className="bg-white/10" />
+          </div>
         </div>
       </MobileMenu>
     </header>

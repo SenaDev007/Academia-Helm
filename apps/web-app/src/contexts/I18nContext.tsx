@@ -145,7 +145,13 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 export function useI18n(): I18nContextType {
   const context = useContext(I18nContext);
   if (context === undefined) {
-    // Return a stub if provider is not mounted (avoids crash)
+    // Return a functional stub if provider is not mounted (avoids crash).
+    // This should not happen in normal usage — the I18nProvider is in the
+    // root layout and the app layout-client. If you see this warning, make
+    // sure the component using useI18n is rendered inside an I18nProvider.
+    if (typeof console !== 'undefined') {
+      console.warn('[i18n] useI18n() called outside I18nProvider — using stub. Translations will not work.');
+    }
     return {
       locale: 'fr',
       setLocale: () => {},

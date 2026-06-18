@@ -404,7 +404,7 @@ export function RecruitmentWorkspace() {
   const [isAddTestResultOpen, setIsAddTestResultOpen] = useState(false);
   const [editingTestResult, setEditingTestResult] = useState<{ id: string; testId: string; candidateId: string; score: string; result: string; notes: string; evaluatedAt: string } | null>(null);
   const [newTestResult, setNewTestResult] = useState({
-    testId: '', candidateId: '', score: '50', result: 'RÉUSSI', notes: '', evaluatedAt: ''
+    testId: '', candidateId: '', score: '50', result: 'RÉUSSI', notes: '', evaluatedAt: new Date().toISOString().split('T')[0]
   });
 
   // Test Filter State
@@ -1031,7 +1031,7 @@ export function RecruitmentWorkspace() {
       }
       setIsAddTestResultOpen(false);
       setEditingTestResult(null);
-      setNewTestResult({ testId: '', candidateId: '', score: '50', result: 'RÉUSSI', notes: '', evaluatedAt: '' });
+      setNewTestResult({ testId: '', candidateId: '', score: '50', result: 'RÉUSSI', notes: '', evaluatedAt: new Date().toISOString().split('T')[0] });
       loadData();
     } catch (err: any) {
       console.error('Failed to save test result:', err);
@@ -2444,7 +2444,7 @@ export function RecruitmentWorkspace() {
                 </div>
                 <div className="flex gap-3">
                   <button
-                    onClick={() => { setEditingTestResult(null); setNewTestResult({ testId: '', candidateId: '', score: '50', result: 'RÉUSSI', notes: '', evaluatedAt: '' }); setIsAddTestResultOpen(true); }}
+                    onClick={() => { setEditingTestResult(null); setNewTestResult({ testId: '', candidateId: '', score: '50', result: 'RÉUSSI', notes: '', evaluatedAt: new Date().toISOString().split('T')[0] }); setIsAddTestResultOpen(true); }}
                     className="flex items-center gap-2 border border-[#1A2BA6] text-[#1A2BA6] rounded-xl px-4 py-2.5 text-xs font-bold transition hover:bg-indigo-50"
                   >
                     <PenTool className="h-3.5 w-3.5" /> Saisir un résultat
@@ -2632,7 +2632,7 @@ export function RecruitmentWorkspace() {
                                 Candidats ayant passé ce test ({test.results?.length || 0})
                               </span>
                               <button
-                                onClick={() => { setEditingTestResult(null); setNewTestResult({ testId: test.id, candidateId: '', score: '50', result: 'RÉUSSI', notes: '', evaluatedAt: '' }); setIsAddTestResultOpen(true); }}
+                                onClick={() => { setEditingTestResult(null); setNewTestResult({ testId: test.id, candidateId: '', score: '50', result: 'RÉUSSI', notes: '', evaluatedAt: new Date().toISOString().split('T')[0] }); setIsAddTestResultOpen(true); }}
                                 className="flex items-center gap-1 text-[10px] font-bold text-[#1A2BA6] hover:underline"
                               >
                                 <Plus className="h-3 w-3" /> Ajouter un résultat
@@ -2741,13 +2741,23 @@ export function RecruitmentWorkspace() {
                       {/* Row 2: Description */}
                       <div>
                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Description / Objectifs</label>
-                        <textarea className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-20 focus:outline-none focus:ring-2 focus:ring-[#1A2BA6]/20 focus:border-[#1A2BA6]" value={newTest.description} onChange={(e) => setNewTest({ ...newTest, description: e.target.value })} placeholder="Décrivez les objectifs et le contenu du test..." />
+                        <RichTextEditor
+                          value={newTest.description}
+                          onChange={(html) => setNewTest({ ...newTest, description: html })}
+                          placeholder="Décrivez les objectifs et le contenu du test... (utilisez les puces pour structurer)"
+                          minHeight={80}
+                        />
                       </div>
 
                       {/* Row 3: Instructions */}
                       <div>
                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Consignes / Instructions</label>
-                        <textarea className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-20 focus:outline-none focus:ring-2 focus:ring-[#1A2BA6]/20 focus:border-[#1A2BA6]" value={newTest.instructions} onChange={(e) => setNewTest({ ...newTest, instructions: e.target.value })} placeholder="Instructions spécifiques pour les candidats (ex: durée, documents autorisés, etc.)..." />
+                        <RichTextEditor
+                          value={newTest.instructions}
+                          onChange={(html) => setNewTest({ ...newTest, instructions: html })}
+                          placeholder="Instructions spécifiques pour les candidats (durée, documents autorisés, etc.)... (utilisez les puces)"
+                          minHeight={80}
+                        />
                       </div>
 
                       {/* Row 4: Duration + Status */}
@@ -2928,11 +2938,11 @@ export function RecruitmentWorkspace() {
                       {/* Notes / Commentaires */}
                       <div>
                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Commentaires / Observations</label>
-                        <textarea
-                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-20 focus:outline-none focus:ring-2 focus:ring-[#1A2BA6]/20 focus:border-[#1A2BA6]"
+                        <RichTextEditor
                           value={newTestResult.notes}
-                          onChange={(e) => setNewTestResult({ ...newTestResult, notes: e.target.value })}
-                          placeholder="Observations sur la performance du candidat, points forts, axes d'amélioration..."
+                          onChange={(html) => setNewTestResult({ ...newTestResult, notes: html })}
+                          placeholder="Observations sur la performance du candidat, points forts, axes d'amélioration... (utilisez les puces)"
+                          minHeight={80}
                         />
                       </div>
 

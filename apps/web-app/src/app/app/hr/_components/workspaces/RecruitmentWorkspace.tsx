@@ -49,7 +49,6 @@ import { useModuleContext } from '@/hooks/useModuleContext';
 import { toast } from '@/components/ui/toast';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import RichTextEditor from '@/components/ui/RichTextEditor';
-import TagsInput, { tagsToString, stringToTags } from '@/components/ui/TagsInput';
 
 const PRIMARY = '#1A2BA6';
 
@@ -1311,12 +1310,7 @@ export function RecruitmentWorkspace() {
 
                       <div className="grid grid-cols-3 gap-3">
                         <div>
-                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                            Localisation
-                            {tenantAddress && !editingJob && (
-                              <span className="ml-1 text-[9px] text-emerald-600 normal-case font-medium">⚡ auto-rempli depuis Paramètres</span>
-                            )}
-                          </label>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Localisation</label>
                           <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newJob.loc} onChange={(e) => setNewJob({ ...newJob, loc: e.target.value })} placeholder="Adresse de l'école" required />
                         </div>
                         <div>
@@ -1390,24 +1384,24 @@ export function RecruitmentWorkspace() {
                         </div>
                       </div>
 
-                      {/* Tags inputs for skills and assets */}
+                      {/* Rich text editors for skills and assets */}
                       <div className="grid grid-cols-1 gap-3">
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Compétences recherchées</label>
-                          <TagsInput
+                          <RichTextEditor
                             value={newJob.skillsRequired || ''}
-                            onChange={(tags) => setNewJob({ ...newJob, skillsRequired: tagsToString(tags) })}
-                            placeholder="Ex: Excel, Pédagogie, Gestion de classe... (Entrée pour ajouter)"
-                            color="blue"
+                            onChange={(html) => setNewJob({ ...newJob, skillsRequired: html })}
+                            placeholder="Listez les compétences recherchées (utilisez la liste à puces)."
+                            minHeight={100}
                           />
                         </div>
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Atouts (bonus points)</label>
-                          <TagsInput
+                          <RichTextEditor
                             value={newJob.assets || ''}
-                            onChange={(tags) => setNewJob({ ...newJob, assets: tagsToString(tags) })}
-                            placeholder="Ex: Bilingue, Expérience internationale, Leadership... (Entrée pour ajouter)"
-                            color="amber"
+                            onChange={(html) => setNewJob({ ...newJob, assets: html })}
+                            placeholder="Listez les atouts souhaités (utilisez la liste à puces)."
+                            minHeight={100}
                           />
                         </div>
                       </div>

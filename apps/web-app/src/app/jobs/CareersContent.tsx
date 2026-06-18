@@ -1367,21 +1367,13 @@ export function CareersContent({
                             {selectedJob.skillsRequired && (
                               <div>
                                 <h4 className="text-xs font-bold text-slate-800 mb-2 uppercase tracking-wider">Compétences recherchées</h4>
-                                <div className="flex flex-wrap gap-2 mt-1">
-                                  {selectedJob.skillsRequired.split(',').map((skill, i) => (
-                                    <span key={i} className="px-2.5 py-1 bg-[#0b2f73]/5 text-[#0b2f73] text-[10px] font-semibold rounded-lg">{skill.trim()}</span>
-                                  ))}
-                                </div>
+                                <RichContent html={selectedJob.skillsRequired} />
                               </div>
                             )}
                             {selectedJob.assets && (
                               <div>
                                 <h4 className="text-xs font-bold text-slate-800 mb-2 uppercase tracking-wider">Atouts (bonus points)</h4>
-                                <div className="flex flex-wrap gap-2 mt-1">
-                                  {selectedJob.assets.split(',').map((asset, i) => (
-                                    <span key={i} className="px-2.5 py-1 bg-amber-50 text-amber-700 text-[10px] font-semibold rounded-lg border border-amber-200">{asset.trim()}</span>
-                                  ))}
-                                </div>
+                                <RichContent html={selectedJob.assets} />
                               </div>
                             )}
 

@@ -14,7 +14,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -60,19 +60,17 @@ export default function AdminLoginPage() {
       .catch(() => setGoogleConfigured(false));
   }, []);
 
+  // Ref pour empêcher la ré-exécution du callback Google (anti-boucle)
+  const googleCallbackDone = useRef(false);
+
   // Google callback
   useEffect(() => {
     const code = searchParams.get('code');
     const state = searchParams.get('state');
     if (code && state && !resetToken) {
-      // ── Nettoyer les paramètres code/state de l'URL IMMÉDIATEMENT ──
-      // pour éviter que l'useEffect se ré-exécute en boucle si la requête échoue.
-      if (typeof window !== 'undefined') {
-        const url = new URL(window.location.href);
-        url.searchParams.delete('code');
-        url.searchParams.delete('state');
-        window.history.replaceState({}, '', url.toString());
-      }
+      // Empêcher la double exécution (React Strict Mode ou re-render)
+      if (googleCallbackDone.current) return;
+      googleCallbackDone.current = true;
 
       setIsLoading(true);
       fetch('/api/admin-auth/google/callback', {
@@ -83,10 +81,28 @@ export default function AdminLoginPage() {
         .then(async (res) => {
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Erreur callback Google');
+          // Nettoyer l'URL APRÈS succès
+          if (typeof window !== 'undefined') {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('code');
+            url.searchParams.delete('state');
+            window.history.replaceState({}, '', url.toString());
+          }
           // Forcer un rechargement complet pour que le cookie soit lu côté serveur
           window.location.href = redirectPath;
         })
-        .catch((err) => setError(err instanceof Error ? err.message : 'Erreur'))
+        .catch((err) => {
+          setError(err instanceof Error ? err.message : 'Erreur');
+          // Reset le ref pour permettre de réessayer
+          googleCallbackDone.current = false;
+          // Nettoyer l'URL en cas d'erreur
+          if (typeof window !== 'undefined') {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('code');
+            url.searchParams.delete('state');
+            window.history.replaceState({}, '', url.toString());
+          }
+        })
         .finally(() => setIsLoading(false));
     }
   }, [searchParams, router, redirectPath, resetToken]);

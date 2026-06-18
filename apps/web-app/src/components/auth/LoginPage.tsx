@@ -1012,10 +1012,16 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
    * via GOOGLE_OAUTH_SCHOOL_REDIRECT_URI) — SÉPARÉ du flow admin qui
    * utilise https://admin.academiahelm.com/admin-login.
    */
+  // Ref pour empêcher la ré-exécution du callback Google (anti-boucle)
+  const googleCallbackDone = useRef(false);
+
   useEffect(() => {
     const code = searchParams?.get('code');
     const state = searchParams?.get('state');
     if (!code || !state || schoolGooglePending) return;
+    // Empêcher la double exécution (React Strict Mode ou re-render)
+    if (googleCallbackDone.current) return;
+    googleCallbackDone.current = true;
 
     // ── Détecter le flow school en décodant le state ──
     // Le state school contient { f: 'school', t, s, n } en base64url
@@ -1026,19 +1032,13 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       isSchoolFlow = decoded?.f === 'school';
     } catch {
       // Si le state n'est pas du JSON base64url, ce n'est pas le flow school
+      googleCallbackDone.current = false; // Reset pour permettre un autre flow
       return;
     }
 
-    if (!isSchoolFlow) return;
-
-    // ── Nettoyer les paramètres code/state de l'URL IMMÉDIATEMENT ──
-    // pour éviter que l'useEffect se ré-exécute en boucle si la requête échoue.
-    // On utilise window.history.replaceState pour ne pas déclencher de re-render.
-    if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      url.searchParams.delete('code');
-      url.searchParams.delete('state');
-      window.history.replaceState({}, '', url.toString());
+    if (!isSchoolFlow) {
+      googleCallbackDone.current = false; // Reset pour permettre un autre flow
+      return;
     }
 
     setIsLoading(true);
@@ -1054,13 +1054,27 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
         setSchoolGoogleEmail(data.email);
         setSchoolGooglePending(true);
         setError(null);
+        // Nettoyer l'URL seulement APRÈS succès (le modal OTP est affiché)
+        if (typeof window !== 'undefined') {
+          const url = new URL(window.location.href);
+          url.searchParams.delete('code');
+          url.searchParams.delete('state');
+          window.history.replaceState({}, '', url.toString());
+        }
         // Focus premier input OTP
         setTimeout(() => schoolOtpRefs.current[0]?.focus(), 100);
       })
       .catch((err) => {
         setError(err instanceof Error ? err.message : 'Erreur callback Google');
-        // Ne PAS cacher les boutons — l'utilisateur doit pouvoir réessayer
-        // schoolGooglePending reste false → boutons visibles
+        // Reset le ref pour permettre de réessayer
+        googleCallbackDone.current = false;
+        // Nettoyer l'URL en cas d'erreur pour éviter la boucle
+        if (typeof window !== 'undefined') {
+          const url = new URL(window.location.href);
+          url.searchParams.delete('code');
+          url.searchParams.delete('state');
+          window.history.replaceState({}, '', url.toString());
+        }
       })
       .finally(() => setIsLoading(false));
   }, [searchParams, schoolGooglePending]);

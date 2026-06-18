@@ -676,6 +676,30 @@ export class ApplyJobDto {
   @IsOptional() @IsString() linkedinUrl?: string;
 }
 
+// ─── Recruiter Profile DTO ───────────────────────────────────────────────────
+
+export class UpsertRecruiterProfileDto {
+  @IsString() recruiterType: string; // PROMOTER | DEDICATED_RH | DELEGATED
+  @IsOptional() @IsString() staffId?: string;
+  @IsString() fullName: string;
+  @IsOptional() @IsString() functionLabel?: string;
+  @IsString() email: string;
+  @IsOptional() @IsString() phone?: string;
+  @IsOptional() @IsString() signatureText?: string;
+  @IsOptional() @IsString() signatureLogoUrl?: string;
+  @IsOptional() @IsString() defaultInterviewFormat?: string;
+  @IsOptional() @IsInt() defaultInterviewDelayHr?: number;
+  @IsOptional() @IsBoolean() isActive?: boolean;
+}
+
+// ─── Reassign Application DTO (multi-postulation / réaffectation) ────────────
+
+export class ReassignApplicationDto {
+  @IsUUID() newJobId: string;
+  @IsOptional() @IsString() newContractType?: string;
+  @IsOptional() @IsString() reason?: string; // motif de réaffectation
+}
+
 // ─── Missing Update DTOs (for controllers still using @Body() body: any) ─────
 
 export class UpdateContractTemplateDto {

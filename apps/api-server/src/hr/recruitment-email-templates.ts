@@ -65,6 +65,13 @@ export interface TenantBranding {
   schoolAddress?: string | null;
   schoolPhone?: string | null;
   schoolEmail?: string | null;
+  // RecruiterProfile fields (optional — used to personalize from + signature)
+  recruiterName?: string | null;
+  recruiterEmail?: string | null;
+  recruiterFunction?: string | null;
+  recruiterPhone?: string | null;
+  signatureText?: string | null;
+  signatureLogoUrl?: string | null;
 }
 
 export interface RecruitmentEmailData {
@@ -124,9 +131,25 @@ function renderHeader(branding: TenantBranding): string {
 
 /**
  * Footer commun à tous les emails — signature Academia Helm.
+ * Si un RecruiterProfile est configuré avec une signature personnalisée,
+ * elle est affichée en plus de la signature AH par défaut.
  */
-function renderFooter(): string {
-  return `
+function renderFooter(branding: TenantBranding): string {
+  // Signature personnalisée du recruteur (optionnelle)
+  const recruiterSignatureBlock = branding.signatureText
+    ? `
+    <!-- Signature personnalisée du recruteur -->
+    <tr>
+      <td style="background:#f8fafc;padding:20px 28px;border-bottom:1px solid #e2e8f0;">
+        <div style="font-size:13px;color:#0f172a;line-height:1.6;">
+          ${escHtml(branding.signatureText).replace(/\n/g, '<br />')}
+        </div>
+        ${branding.recruiterFunction ? `<div style="font-size:11px;color:#64748b;margin-top:6px;">${escHtml(branding.recruiterFunction)}</div>` : ''}
+      </td>
+    </tr>`
+    : '';
+
+  return `${recruiterSignatureBlock}
     <!-- Footer Academia Helm -->
     <tr>
       <td style="background:#0c1a33;padding:24px 28px;text-align:center;border-top:3px solid #c9a227;">
@@ -168,7 +191,7 @@ function renderEmail(
             ${bodyContent}
           </td>
         </tr>
-        ${renderFooter()}
+        ${renderFooter(branding)}
       </table>
     </td>
   </tr>

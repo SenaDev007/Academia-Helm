@@ -2498,5 +2498,297 @@ Réponds UNIQUEMENT en JSON valide.`,
 
     return { fixed: results.length, details: results };
   }
+
+  // ============================================================================
+  // RECRUITER PROFILE — Configuration du recruteur par tenant
+  // ============================================================================
+
+  /**
+   * Récupère le profil de recruteur actif pour ce tenant.
+   * Retourne null si aucun profil n'est configuré.
+   */
+  async getRecruiterProfile(tenantId: string) {
+    try {
+      const profile = await this.prisma.recruiterProfile.findFirst({
+        where: { tenantId, isActive: true },
+      });
+      return profile;
+    } catch (err: any) {
+      this.logger.warn(`getRecruiterProfile failed: ${err.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Crée ou met à jour le profil de recruteur pour ce tenant (upsert).
+   * Un tenant ne peut avoir qu'un seul profil actif à la fois (unique sur tenantId).
+   */
+  async upsertRecruiterProfile(tenantId: string, data: {
+    recruiterType: string; // PROMOTER | DEDICATED_RH | DELEGATED
+    staffId?: string | null;
+    fullName: string;
+    functionLabel?: string | null;
+    email: string;
+    phone?: string | null;
+    signatureText?: string | null;
+    signatureLogoUrl?: string | null;
+    defaultInterviewFormat?: string;
+    defaultInterviewDelayHr?: number;
+    isActive?: boolean;
+    createdBy?: string;
+  }) {
+    // Validation : si DEDICATED_RH ou DELEGATED, staffId est requis
+    if ((data.recruiterType === 'DEDICATED_RH' || data.recruiterType === 'DELEGATED') && !data.staffId) {
+      throw new BadRequestException(
+        `staffId est requis pour le type de recruteur "${data.recruiterType}".`,
+      );
+    }
+
+    // Validation : recruiterType doit être dans l'énumération
+    if (!['PROMOTER', 'DEDICATED_RH', 'DELEGATED'].includes(data.recruiterType)) {
+      throw new BadRequestException(
+        `recruiterType invalide : "${data.recruiterType}". Valeurs autorisées : PROMOTER, DEDICATED_RH, DELEGATED.`,
+      );
+    }
+
+    // Si staffId fourni, vérifier qu'il existe et appartient au tenant
+    if (data.staffId) {
+      const staff = await this.prisma.staff.findFirst({
+        where: { id: data.staffId, tenantId },
+        select: { id: true, firstName: true, lastName: true, email: true, position: true },
+      });
+      if (!staff) {
+        throw new NotFoundException(`Staff avec l'ID ${data.staffId} non trouvé pour ce tenant.`);
+      }
+      // Auto-remplir fullName/email si vides (depuis le staff)
+      if (!data.fullName) {
+        data.fullName = `${staff.firstName || ''} ${staff.lastName || ''}`.trim();
+      }
+      if (!data.email && staff.email) {
+        data.email = staff.email;
+      }
+    }
+
+    // Upsert (insert or update) — basé sur tenantId unique
+    const existing = await this.prisma.recruiterProfile.findFirst({
+      where: { tenantId },
+    });
+
+    if (existing) {
+      // Update
+      const updated = await this.prisma.recruiterProfile.update({
+        where: { id: existing.id },
+        data: {
+          ...prismaUpdateDefaults(),
+          recruiterType: data.recruiterType,
+          staffId: data.staffId || null,
+          fullName: data.fullName,
+          functionLabel: data.functionLabel || null,
+          email: data.email,
+          phone: data.phone || null,
+          signatureText: data.signatureText || null,
+          signatureLogoUrl: data.signatureLogoUrl || null,
+          defaultInterviewFormat: data.defaultInterviewFormat || 'Visioconférence',
+          defaultInterviewDelayHr: data.defaultInterviewDelayHr ?? 48,
+          isActive: data.isActive ?? true,
+        },
+      });
+      this.logger.log(`RecruiterProfile updated for tenant ${tenantId}: ${updated.fullName} (${updated.recruiterType})`);
+      return updated;
+    } else {
+      // Create
+      const created = await this.prisma.recruiterProfile.create({
+        data: {
+          ...prismaCreateDefaults(),
+          tenantId,
+          recruiterType: data.recruiterType,
+          staffId: data.staffId || null,
+          fullName: data.fullName,
+          functionLabel: data.functionLabel || null,
+          email: data.email,
+          phone: data.phone || null,
+          signatureText: data.signatureText || null,
+          signatureLogoUrl: data.signatureLogoUrl || null,
+          defaultInterviewFormat: data.defaultInterviewFormat || 'Visioconférence',
+          defaultInterviewDelayHr: data.defaultInterviewDelayHr ?? 48,
+          isActive: data.isActive ?? true,
+          createdBy: data.createdBy || null,
+        },
+      });
+      this.logger.log(`RecruiterProfile created for tenant ${tenantId}: ${created.fullName} (${created.recruiterType})`);
+      return created;
+    }
+  }
+
+  /**
+   * Désactive le profil de recruteur (soft-delete — on garde l'historique).
+   */
+  async deactivateRecruiterProfile(tenantId: string) {
+    const existing = await this.prisma.recruiterProfile.findFirst({
+      where: { tenantId },
+    });
+    if (!existing) {
+      throw new NotFoundException(`Aucun profil de recruteur configuré pour ce tenant.`);
+    }
+    return this.prisma.recruiterProfile.update({
+      where: { id: existing.id },
+      data: { ...prismaUpdateDefaults(), isActive: false },
+    });
+  }
+
+  // ============================================================================
+  // REAFFECTATION — Multi-postulation / réaffectation après embauche
+  // ============================================================================
+
+  /**
+   * Réaffecte un candidat déjà embauché à un NOUVEAU poste.
+   *
+   * Cas d'usage :
+   *   - Un staff enseignant est réaffecté à un poste administratif (ex: secrétaire comptable)
+   *   - Le staff GARDE son poste existant (les deux postes coexistent)
+   *   - Une nouvelle HrApplication est créée pour le nouveau poste
+   *   - Un nouveau contrat (PENDING) est généré pour le nouveau poste
+   *   - Le candidat est notifié (email "nouveau contrat à signer")
+   *
+   * Prérequis :
+   *   - L'application source doit être EMBAUCHÉ (staffId non null)
+   *   - Le nouveau job doit exister et appartenir au même tenant
+   *   - Le staff ne doit pas avoir déjà une application EMBAUCHÉ pour ce même job
+   */
+  async reassignApplication(
+    applicationId: string,
+    tenantId: string,
+    data: { newJobId: string; newContractType?: string; reason?: string; createdBy?: string },
+  ) {
+    // 1. Vérifier l'application source
+    const sourceApp = await this.prisma.hrApplication.findFirst({
+      where: { id: applicationId, tenantId },
+      include: {
+        candidate: true,
+        job: true,
+        staff: true,
+      },
+    });
+    if (!sourceApp) {
+      throw new NotFoundException(`Candidature ${applicationId} non trouvée.`);
+    }
+    if (sourceApp.status !== 'EMBAUCHÉ' || !sourceApp.staffId) {
+      throw new BadRequestException(
+        `La candidature source doit être au statut EMBAUCHÉ (statut actuel : ${sourceApp.status}). ` +
+          `La réaffectation n'est possible qu'après une première embauche.`,
+      );
+    }
+
+    // 2. Vérifier le nouveau job
+    const newJob = await this.prisma.hrJob.findFirst({
+      where: { id: data.newJobId, tenantId },
+    });
+    if (!newJob) {
+      throw new NotFoundException(`Nouveau poste ${data.newJobId} non trouvé pour ce tenant.`);
+    }
+
+    // 3. Vérifier qu'il n'y a pas déjà une application EMBAUCHÉ pour ce job + ce staff
+    const existingApp = await this.prisma.hrApplication.findFirst({
+      where: {
+        staffId: sourceApp.staffId,
+        jobId: data.newJobId,
+        status: 'EMBAUCHÉ',
+      },
+    });
+    if (existingApp) {
+      throw new BadRequestException(
+        `Le staff est déjà embauché pour ce poste (${newJob.title}). ` +
+          `Impossible de créer une seconde candidature EMBAUCHÉ pour le même poste.`,
+      );
+    }
+
+    // 4. Créer une nouvelle HrApplication pour le nouveau poste, liée au même staffId
+    const newApp = await this.prisma.hrApplication.create({
+      data: {
+        ...prismaCreateDefaults(),
+        tenantId,
+        jobId: data.newJobId,
+        candidateId: sourceApp.candidateId,
+        staffId: sourceApp.staffId, // Lien vers le staff existant
+        status: 'EMBAUCHÉ', // Directement embauché (staff déjà créé)
+        score: sourceApp.score,
+        scoreCV: sourceApp.scoreCV,
+        scoreLetter: sourceApp.scoreLetter,
+        scoreMatching: sourceApp.scoreMatching,
+        risks: sourceApp.risks,
+        riskDetail: sourceApp.riskDetail,
+        matchDetail: `Réaffecté depuis le poste "${sourceApp.job?.title || 'N/A'}" — ${data.reason || 'pas de motif fourni'}`,
+      },
+    });
+
+    this.logger.log(
+      `Réaffectation: nouvelle application ${newApp.id} créée pour le staff ${sourceApp.staffId} sur le poste "${newJob.title}" (depuis "${sourceApp.job?.title}")`,
+    );
+
+    // 5. Créer un nouveau contrat PENDING pour le nouveau poste
+    let newContract = null;
+    try {
+      const contractType = data.newContractType || newJob.contractType || 'CDI';
+      let baseSalary = new Prisma.Decimal(0);
+      if (newJob.salary) {
+        const num = parseFloat(String(newJob.salary));
+        if (!isNaN(num) && isFinite(num)) {
+          baseSalary = new Prisma.Decimal(num);
+        }
+      }
+      // Use the existing staff's salary if the job doesn't specify one
+      if (baseSalary.toNumber() === 0 && sourceApp.staff?.salary) {
+        baseSalary = sourceApp.staff.salary;
+      }
+
+      newContract = await this.prisma.contract.create({
+        data: {
+          ...prismaCreateDefaults(),
+          tenantId,
+          staffId: sourceApp.staffId,
+          type: contractType,
+          status: 'PENDING',
+          startDate: new Date(),
+          baseSalary,
+          terms: {
+            position: newJob.title,
+            department: newJob.dept || null,
+            contractType,
+            reason: data.reason || 'Réaffectation',
+            sourceApplicationId: applicationId,
+            newApplicationId: newApp.id,
+          } as any,
+        },
+      });
+      this.logger.log(`Nouveau contrat ${newContract.id} créé (PENDING) pour le staff ${sourceApp.staffId} sur le poste "${newJob.title}"`);
+    } catch (contractErr: any) {
+      this.logger.error(
+        `Réaffectation: échec création contrat pour staff ${sourceApp.staffId} — ${contractErr.message}`,
+        contractErr.stack,
+      );
+      // L'application est créée même si le contrat échoue — le recruteur pourra créer le contrat manuellement
+    }
+
+    // 6. Notification email (fire-and-forget)
+    this.notificationService
+      .notifyHired({
+        candidateId: sourceApp.candidateId,
+        tenantId,
+        jobId: data.newJobId,
+        contractType: newContract?.type || data.newContractType || newJob.contractType,
+        startDate: newContract?.startDate || new Date(),
+        salary: newContract?.baseSalary ? String(newContract.baseSalary) : undefined,
+      })
+      .catch((err) => {
+        this.logger.error(`Réaffectation: notification email échouée — ${err.message}`);
+      });
+
+    return {
+      newApplication: newApp,
+      newContract,
+      staffId: sourceApp.staffId,
+      message: `Staff réaffecté au poste "${newJob.title}". Un nouveau contrat (PENDING) a été créé et le candidat a été notifié par email.`,
+    };
+  }
 }
 

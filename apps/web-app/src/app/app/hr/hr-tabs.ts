@@ -10,6 +10,7 @@ import {
   Briefcase,
   Users,
   UserCircle,
+  UserCog,
   FileCheck,
   Brain,
   Clock,
@@ -35,6 +36,12 @@ export const HR_SUBMODULE_TABS = [
     label: 'Recrutement',
     path: '/app/hr/recruitment',
     icon: Briefcase,
+  },
+  {
+    id: 'recruiter-settings',
+    label: 'Recruteur',
+    path: '/app/hr/recruitment/settings',
+    icon: UserCog,
   },
   {
     id: 'staff',

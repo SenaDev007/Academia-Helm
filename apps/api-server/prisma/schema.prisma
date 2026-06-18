@@ -310,6 +310,7 @@ model Tenant {
   questionBankResources            QuestionBankResource[]            @relation("QuestionBankTenant")
   rankings                         Ranking[]
   recoveryReminders                RecoveryReminder[]
+  recruiterProfile                 RecruiterProfile?
   reportCardItems                  ReportCardItem[]
   reportCards                      ReportCard[]
   resourceAccessSchoolTenants      ResourceAccessLog[]               @relation("ResourceAccessSchoolTenant")
@@ -13547,6 +13548,48 @@ model TenantResourceAnnotation {
   @@index([resourceId])
   @@index([teacherId])
   @@map("tenant_resource_annotations")
+}
+
+// ============================================================================
+// RECRUITER PROFILE — Configuration du recruteur par tenant
+// ============================================================================
+// Permet à chaque école de configurer QUI recrute :
+//   - PROMOTER     : le promoteur/fondateur gère lui-même le RH
+//   - DEDICATED_RH : un responsable RH dédié (lié à un Staff)
+//   - DELEGATED    : un autre membre du staff délégué par le promoteur
+//
+// Utilisé par RecruitmentNotificationService pour personnaliser les emails
+// aux candidats (from email, signature, format d'entretien par défaut).
+// ============================================================================
+model RecruiterProfile {
+  id                      String   @id @default(uuid())
+  tenantId                String   @unique
+  // Type de recruteur
+  recruiterType           String   @default("PROMOTER") // PROMOTER | DEDICATED_RH | DELEGATED
+  // Lien vers Staff (requis pour DEDICATED_RH et DELEGATED, null pour PROMOTER)
+  staffId                 String?
+  // Identité du recruteur (dénormalisée pour faciliter l'affichage)
+  fullName                String
+  functionLabel           String?  // ex: "Promoteur / Fondateur", "Responsable RH"
+  // Coordonnées (utilisées comme from dans les emails aux candidats)
+  email                   String
+  phone                   String?
+  // Signature personnalisée pour les emails
+  signatureText           String?  // signature texte (ex: "Erhel DEGBE\nPromoteur")
+  signatureLogoUrl        String?  // logo base64 optionnel
+  // Préférences de recrutement
+  defaultInterviewFormat  String   @default("Visioconférence") // Présentiel | Visioconférence | Téléphone
+  defaultInterviewDelayHr Int      @default(48) // délai minimum (heures) entre candidature et entretien
+  // Métadonnées
+  isActive                Boolean  @default(true)
+  createdBy               String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  tenant                  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("recruiter_profiles")
 }
 
 model HrJob {

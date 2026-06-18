@@ -54,12 +54,31 @@ export class RecruitmentNotificationService {
 
   /**
    * Récupère le branding (logo + nom + contact) du tenant.
-   * Cherche d'abord dans `tenant_identity_profiles` (table active),
-   * puis fallback sur le `Tenant.name`.
+   * Cherche d'abord dans `recruiter_profiles` (config recruteur) pour l'email
+   * et la signature, puis dans `tenant_identity_profiles` (identité école)
+   * pour le logo et le nom, puis fallback sur le `Tenant.name`.
+   *
+   * Si un `RecruiterProfile` est configuré, son email/signature sont utilisés
+   * pour personnaliser l'envoi (from, signature dans le footer).
    */
   private async getTenantBranding(tenantId: string): Promise<TenantBranding> {
     try {
-      // 1. Essayer tenant_identity_profiles (version active)
+      // 0. Récupérer le RecruiterProfile (config recruteur) pour l'email + signature
+      const recruiterProfile = await this.prisma.recruiterProfile
+        .findFirst({
+          where: { tenantId, isActive: true },
+          select: {
+            fullName: true,
+            email: true,
+            phone: true,
+            functionLabel: true,
+            signatureText: true,
+            signatureLogoUrl: true,
+          },
+        })
+        .catch(() => null);
+
+      // 1. Essayer tenant_identity_profiles (identité école)
       const profile = await this.prisma.tenantIdentityProfile.findFirst({
         where: { tenantId, isActive: true },
         select: {
@@ -78,6 +97,13 @@ export class RecruitmentNotificationService {
           schoolAddress: profile.address,
           schoolPhone: profile.phonePrimary,
           schoolEmail: profile.email,
+          // RecruiterProfile fields (optional — may be null)
+          recruiterName: recruiterProfile?.fullName,
+          recruiterEmail: recruiterProfile?.email,
+          recruiterFunction: recruiterProfile?.functionLabel,
+          recruiterPhone: recruiterProfile?.phone,
+          signatureText: recruiterProfile?.signatureText,
+          signatureLogoUrl: recruiterProfile?.signatureLogoUrl,
         };
       }
 
@@ -88,6 +114,12 @@ export class RecruitmentNotificationService {
       });
       return {
         schoolName: tenant?.name || 'Établissement',
+        recruiterName: recruiterProfile?.fullName,
+        recruiterEmail: recruiterProfile?.email,
+        recruiterFunction: recruiterProfile?.functionLabel,
+        recruiterPhone: recruiterProfile?.phone,
+        signatureText: recruiterProfile?.signatureText,
+        signatureLogoUrl: recruiterProfile?.signatureLogoUrl,
       };
     } catch (err: any) {
       this.logger.warn(`getTenantBranding failed for tenant ${tenantId}: ${err.message}`);
@@ -139,14 +171,23 @@ export class RecruitmentNotificationService {
   /**
    * Envoie un email via EmailService — wrapper qui log les erreurs.
    * Ne JAMAIS throw — les erreurs sont catchées et loggées.
+   *
+   * Si `fromName` n'est pas fourni, on utilise "Academia Helm — Recrutement"
+   * par défaut. Le fromName peut être personnalisé via le RecruiterProfile.
    */
-  private async sendEmail(to: string, subject: string, html: string): Promise<void> {
+  private async sendEmail(
+    to: string,
+    subject: string,
+    html: string,
+    options?: { fromName?: string; fromEmail?: string },
+  ): Promise<void> {
     try {
       await this.emailService.sendEmail({
         to,
         subject,
         html,
-        fromName: 'Academia Helm — Recrutement',
+        fromName: options?.fromName || 'Academia Helm — Recrutement',
+        ...(options?.fromEmail ? { from: options.fromEmail } : {}),
       });
       this.logger.log(`📧 Email sent to ${to} — subject: "${subject.substring(0, 80)}"`);
     } catch (err: any) {
@@ -186,7 +227,12 @@ export class RecruitmentNotificationService {
         pitch: params.pitch,
         documentsSubmitted: params.documentsSubmitted,
       });
-      await this.sendEmail(candidate.email, subject, html);
+      await this.sendEmail(candidate.email, subject, html, {
+        fromName: branding.recruiterName
+          ? `${branding.recruiterName} — ${branding.schoolName}`
+          : 'Academia Helm — Recrutement',
+        fromEmail: branding.recruiterEmail || undefined,
+      });
     } catch (err: any) {
       this.logger.error(`notifyApplicationReceived failed: ${err.message}`, err.stack);
     }

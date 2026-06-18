@@ -34,6 +34,8 @@ import {
   UpdateTestResultDto,
   AddToTalentPoolDto,
   ApplyJobDto,
+  UpsertRecruiterProfileDto,
+  ReassignApplicationDto,
 } from './dto';
 
 @Controller('hr/recruitment')
@@ -329,5 +331,48 @@ export class RecruitmentPrismaController {
   @Post('fix/application-statuses')
   async fixApplicationStatuses(@GetTenant() tenant: any, @Query('tenantId') tenantIdFallback?: string) {
     return this.service.fixApplicationStatuses(tenant?.id ?? tenantIdFallback);
+  }
+
+  // ============================================================================
+  // RECRUITER PROFILE — Configuration du recruteur par tenant
+  // ============================================================================
+
+  @Get('recruiter-profile')
+  async getRecruiterProfile(
+    @GetTenant() tenant: any,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    return this.service.getRecruiterProfile(tenant?.id ?? tenantIdFallback);
+  }
+
+  @Put('recruiter-profile')
+  async upsertRecruiterProfile(
+    @GetTenant() tenant: any,
+    @Body() body: UpsertRecruiterProfileDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    return this.service.upsertRecruiterProfile(tenant?.id ?? tenantIdFallback, body);
+  }
+
+  @Delete('recruiter-profile')
+  async deactivateRecruiterProfile(
+    @GetTenant() tenant: any,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    return this.service.deactivateRecruiterProfile(tenant?.id ?? tenantIdFallback);
+  }
+
+  // ============================================================================
+  // REASSIGN APPLICATION — Multi-postulation / réaffectation après embauche
+  // ============================================================================
+
+  @Post('applications/:id/reassign')
+  async reassignApplication(
+    @Param('id') id: string,
+    @GetTenant() tenant: any,
+    @Body() body: ReassignApplicationDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    return this.service.reassignApplication(id, tenant?.id ?? tenantIdFallback, body);
   }
 }

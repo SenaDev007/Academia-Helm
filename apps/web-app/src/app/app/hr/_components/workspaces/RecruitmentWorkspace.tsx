@@ -120,6 +120,20 @@ interface Candidate {
     pedagogicalExperience?: string;
   };
   documents?: CandidateDocument[];
+  /** Toutes les candidatures du candidat (multi-postulation) */
+  applications?: Array<{
+    id: string;
+    jobId: string;
+    jobTitle?: string;
+    status: string;
+    score: number;
+    scoreCV: number;
+    scoreLetter: number;
+    scoreMatching: number;
+    staffId?: string | null;
+    createdAt?: string;
+    matchDetail?: string;
+  }>;
 }
 
 interface Interview {
@@ -206,7 +220,7 @@ export function RecruitmentWorkspace() {
 
   // Detailed Modal/Form states
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
-  const [activeCandidateTab, setActiveCandidateTab] = useState<'identity' | 'profile' | 'documents' | 'ia' | 'history'>('profile');
+  const [activeCandidateTab, setActiveCandidateTab] = useState<'identity' | 'profile' | 'documents' | 'ia' | 'history' | 'applications'>('profile');
   const [recruiterRating, setRecruiterRating] = useState<number>(0);
   const [recruiterComment, setRecruiterComment] = useState<string>('');
 
@@ -441,6 +455,19 @@ export function RecruitmentWorkspace() {
             history: primaryApp?.history || [{ action: 'Profil créé', date: new Date().toISOString().replace('T', ' ').slice(0, 16), user: 'Système' }],
             academicProfile: c.academicProfile || null,
             documents: c.documents || [],
+            applications: (c.applications || []).map((app: any) => ({
+              id: app.id,
+              jobId: app.jobId,
+              jobTitle: app.job?.title || '',
+              status: app.status || 'NOUVEAU',
+              score: app.score || 0,
+              scoreCV: app.scoreCV || 0,
+              scoreLetter: app.scoreLetter || 0,
+              scoreMatching: app.scoreMatching || 0,
+              staffId: app.staffId || null,
+              createdAt: app.createdAt,
+              matchDetail: app.matchDetail || '',
+            })),
           };
         }));
       }
@@ -1459,6 +1486,7 @@ export function RecruitmentWorkspace() {
                     <div className="flex gap-4 border-b border-slate-100 pb-2 mb-4">
                       {[
                         { id: 'profile', label: 'Profil Carrière' },
+                        { id: 'applications', label: 'Candidatures' },
                         { id: 'identity', label: 'Contact' },
                         { id: 'documents', label: 'Documents' },
                         { id: 'ia', label: 'Analyse IA' },
@@ -1629,6 +1657,71 @@ export function RecruitmentWorkspace() {
                           </div>
                         );
                       })()}
+                      {activeCandidateTab === 'applications' && (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <h5 className="font-bold text-slate-800 uppercase tracking-wider text-[9px] text-[#1A2BA6]">Toutes les candidatures ({selectedCandidate.applications?.length || 0})</h5>
+                          </div>
+                          {selectedCandidate.applications && selectedCandidate.applications.length > 0 ? (
+                            <div className="space-y-2">
+                              {selectedCandidate.applications.map((app, i) => (
+                                <div key={app.id} className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                                  <div className="flex items-start justify-between">
+                                    <div>
+                                      <p className="font-bold text-slate-800 text-xs">{app.jobTitle || 'Poste non spécifié'}</p>
+                                      <p className="text-[10px] text-slate-500 mt-1">
+                                        Statut: <span className="font-bold">{app.status}</span> · Score: {app.score}%
+                                      </p>
+                                      {app.createdAt && (
+                                        <p className="text-[9px] text-slate-400 mt-1">
+                                          Postulé le {new Date(app.createdAt).toLocaleDateString('fr-FR')}
+                                        </p>
+                                      )}
+                                      {app.matchDetail && (
+                                        <p className="text-[10px] text-slate-500 mt-1 italic">{app.matchDetail.substring(0, 200)}</p>
+                                      )}
+                                    </div>
+                                    {app.status === 'EMBAUCHÉ' && (
+                                      <button
+                                        onClick={() => {
+                                          const newJobId = prompt('ID du nouveau poste (jobId) pour la réaffectation :');
+                                          if (newJobId) {
+                                            fetch(`/api/hr/recruitment/applications/${app.id}/reassign?tenantId=${tenant?.id || ''}`, {
+                                              method: 'POST',
+                                              headers: { 'Content-Type': 'application/json' },
+                                              credentials: 'include',
+                                              body: JSON.stringify({ newJobId }),
+                                            })
+                                              .then((r) => r.json())
+                                              .then((data) => {
+                                                if (data?.message) {
+                                                  alert(data.message);
+                                                  loadData();
+                                                } else {
+                                                  alert('Erreur: ' + (data?.message || 'réaffectation échouée'));
+                                                }
+                                              })
+                                              .catch((err) => alert('Erreur réseau: ' + err.message));
+                                          }
+                                        }}
+                                        className="px-3 py-1 rounded-lg text-[10px] font-bold text-white bg-[#1A2BA6] hover:opacity-90 transition"
+                                      >
+                                        🔄 Réaffecter
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-slate-400 italic text-[10px]">Aucune candidature enregistrée.</p>
+                          )}
+                          <p className="text-[10px] text-slate-400 mt-3">
+                            💡 Un candidat peut postuler à plusieurs postes. Chaque candidature suit son propre flux d'entretien/test.
+                            La réaffectation permet d'attribuer un nouveau poste à un staff déjà embauché (multi-postes).
+                          </p>
+                        </div>
+                      )}
                       {activeCandidateTab === 'identity' && (
                         <div className="space-y-3">
                           {(() => {

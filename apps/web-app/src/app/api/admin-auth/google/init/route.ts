@@ -28,12 +28,16 @@ export async function POST() {
   const url = buildGoogleAuthUrl(state);
 
   const res = NextResponse.json({ authUrl: url });
+  // Le cookie doit persister across www et non-www car Vercel redirige
+  // admin.academiahelm.com peut aussi être affecté.
+  const cookieDomain = process.env.NODE_ENV === 'production' ? '.academiahelm.com' : undefined;
   res.cookies.set('admin_oauth_state', state, {
     path: '/',
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    maxAge: 10 * 60, // 10 min
+    sameSite: 'lax',
+    maxAge: 10 * 60,
+    ...(cookieDomain ? { domain: cookieDomain } : {}),
   });
   return res;
 }

@@ -463,20 +463,24 @@ export const ADMIN_SESSION_DURATION_HOURS = SESSION_DURATION_HOURS;
 export function serializeAdminSessionCookie(session: AdminSession): string {
   const value = JSON.stringify(session);
   const maxAge = SESSION_DURATION_HOURS * 60 * 60;
-  return `${ADMIN_SESSION_COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAge}`;
+  const domain = process.env.NODE_ENV === 'production' ? '; Domain=.academiahelm.com' : '';
+  return `${ADMIN_SESSION_COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}${domain}`;
 }
 
 export function serializeAdminPendingCookie(pendingToken: string): string {
   const maxAge = OTP_VALIDITY_MINUTES * 60;
-  return `${ADMIN_PENDING_COOKIE}=${pendingToken}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAge}`;
+  const domain = process.env.NODE_ENV === 'production' ? '; Domain=.academiahelm.com' : '';
+  return `${ADMIN_PENDING_COOKIE}=${pendingToken}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}${domain}`;
 }
 
 export function clearAdminSessionCookie(): string {
-  return `${ADMIN_SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`;
+  const domain = process.env.NODE_ENV === 'production' ? '; Domain=.academiahelm.com' : '';
+  return `${ADMIN_SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0${domain}`;
 }
 
 export function clearAdminPendingCookie(): string {
-  return `${ADMIN_PENDING_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`;
+  const domain = process.env.NODE_ENV === 'production' ? '; Domain=.academiahelm.com' : '';
+  return `${ADMIN_PENDING_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0${domain}`;
 }
 
 // ─── Email/password fallback (optionnel) ────────────────────────────────────

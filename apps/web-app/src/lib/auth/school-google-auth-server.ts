@@ -455,9 +455,11 @@ export const SCHOOL_PENDING_COOKIE_NAME = SCHOOL_PENDING_COOKIE;
 
 export function serializeSchoolPendingCookie(pendingToken: string): string {
   const maxAge = OTP_VALIDITY_MINUTES * 60;
-  return `${SCHOOL_PENDING_COOKIE}=${pendingToken}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAge}`;
+  const domain = process.env.NODE_ENV === 'production' ? '; Domain=.academiahelm.com' : '';
+  return `${SCHOOL_PENDING_COOKIE}=${pendingToken}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}${domain}`;
 }
 
 export function clearSchoolPendingCookie(): string {
-  return `${SCHOOL_PENDING_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`;
+  const domain = process.env.NODE_ENV === 'production' ? '; Domain=.academiahelm.com' : '';
+  return `${SCHOOL_PENDING_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0${domain}`;
 }

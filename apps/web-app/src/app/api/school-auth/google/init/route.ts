@@ -52,12 +52,17 @@ export async function POST(request: NextRequest) {
   const url = buildGoogleAuthUrl(state);
 
   const res = NextResponse.json({ authUrl: url });
+  // Le cookie doit persister across www et non-www car Vercel redirige
+  // academiahelm.com → www.academiahelm.com (307). Sans domain=.academiahelm.com,
+  // le cookie serait perdu lors de la redirection.
+  const cookieDomain = process.env.NODE_ENV === 'production' ? '.academiahelm.com' : undefined;
   res.cookies.set('school_oauth_state', state, {
     path: '/',
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    sameSite: 'lax', // 'lax' au lieu de 'strict' pour permettre la redirection
     maxAge: 10 * 60,
+    ...(cookieDomain ? { domain: cookieDomain } : {}),
   });
   return res;
 }

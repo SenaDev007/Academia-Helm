@@ -13607,6 +13607,8 @@ model HrJob {
   academicLevel    String?
   experience       String?
   skillsRequired   String?
+  /// Atouts / Bonus points recherchés (séparés par virgules ou texte libre)
+  assets           String?
   salary           String?
   contractType     String?
   publishedAt      DateTime?

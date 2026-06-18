@@ -48,6 +48,8 @@ import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { toast } from '@/components/ui/toast';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
+import RichTextEditor from '@/components/ui/RichTextEditor';
+import TagsInput, { tagsToString, stringToTags } from '@/components/ui/TagsInput';
 
 const PRIMARY = '#1A2BA6';
 
@@ -67,6 +69,7 @@ interface Job {
   academicLevel?: string;
   experience?: string;
   skillsRequired?: string;
+  assets?: string;
   salary?: string;
   contractType?: string;
 }
@@ -229,8 +232,14 @@ export function RecruitmentWorkspace() {
   const [isAddJobOpen, setIsAddJobOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [newJob, setNewJob] = useState<Partial<Job>>({
-    title: '', dept: '', loc: '', status: 'PUBLIÉE', contractType: 'CDI', salary: '', academicLevel: '', experience: '', skillsRequired: '', description: '', missions: '', responsibilities: '',
+    title: '', dept: '', loc: '', status: 'PUBLIÉE', contractType: 'CDI', salary: '', academicLevel: '', experience: '', skillsRequired: '', assets: '', description: '', missions: '', responsibilities: '',
   });
+
+  // Department list (fetched from /api/departments) for the job modal selector
+  const [departments, setDepartments] = useState<Array<{ id: string; name: string }>>([]);
+
+  // Tenant identity (for auto-filling job location)
+  const [tenantAddress, setTenantAddress] = useState<string>('');
 
   // Hire Confirmation State
   const [hireCandidate, setHireCandidate] = useState<Candidate | null>(null);
@@ -515,6 +524,39 @@ export function RecruitmentWorkspace() {
     loadData();
   }, [tenant?.id]);
 
+  // Load departments list (for the job modal selector)
+  useEffect(() => {
+    if (!tenant?.id) return;
+    fetch(`/api/departments?tenantId=${encodeURIComponent(tenant.id)}`, { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => {
+        const list = Array.isArray(data) ? data : data?.data ?? [];
+        setDepartments(list.map((d: any) => ({ id: d.id, name: d.name })));
+      })
+      .catch(() => setDepartments([]));
+  }, [tenant?.id]);
+
+  // Load tenant identity profile (for auto-filling the job location field)
+  useEffect(() => {
+    if (!tenant?.id) return;
+    fetch(`/api/settings/identity?tenantId=${encodeURIComponent(tenant.id)}`, { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data) return;
+        // Build a readable address from the available fields
+        const parts = [
+          data.address,
+          data.city,
+          data.department,
+          data.country === 'BJ' ? 'Bénin' : data.country,
+        ].filter(Boolean);
+        if (parts.length > 0) {
+          setTenantAddress(parts.join(', '));
+        }
+      })
+      .catch(() => {/* non-critical */});
+  }, [tenant?.id]);
+
   // Create or Update Job
   const handleSaveJob = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -540,7 +582,7 @@ export function RecruitmentWorkspace() {
       }
       setIsAddJobOpen(false);
       setEditingJob(null);
-      setNewJob({ title: '', dept: '', loc: '', status: 'PUBLIÉE', contractType: 'CDI', salary: '', academicLevel: '', experience: '', skillsRequired: '', description: '', missions: '', responsibilities: '' });
+      setNewJob({ title: '', dept: '', loc: '', status: 'PUBLIÉE', contractType: 'CDI', salary: '', academicLevel: '', experience: '', skillsRequired: '', assets: '', description: '', missions: '', responsibilities: '' });
       loadData();
     } catch (err) {
       console.error('Failed to save job:', err);
@@ -555,8 +597,9 @@ export function RecruitmentWorkspace() {
       title: job.title, dept: job.dept, loc: job.loc, status: job.status,
       contractType: job.contractType || 'CDI', salary: job.salary || '',
       academicLevel: job.academicLevel || '', experience: job.experience || '',
-      skillsRequired: job.skillsRequired || '', description: job.description || '',
-      missions: job.missions || '', responsibilities: job.responsibilities || '',
+      skillsRequired: job.skillsRequired || '', assets: job.assets || '',
+      description: job.description || '', missions: job.missions || '',
+      responsibilities: job.responsibilities || '',
     });
     setIsAddJobOpen(true);
   };
@@ -1147,7 +1190,7 @@ export function RecruitmentWorkspace() {
               <div className="flex justify-between items-center">
                 <h3 className="text-base font-bold text-slate-900">Offres d'emploi actives</h3>
                 <button
-                  onClick={() => { setEditingJob(null); setNewJob({ title: '', dept: '', loc: '', status: 'PUBLIÉE', contractType: 'CDI', salary: '', academicLevel: '', experience: '', skillsRequired: '', description: '', missions: '', responsibilities: '' }); setIsAddJobOpen(true); }}
+                  onClick={() => { setEditingJob(null); setNewJob({ title: '', dept: '', loc: tenantAddress || '', status: 'PUBLIÉE', contractType: 'CDI', salary: '', academicLevel: '', experience: '', skillsRequired: '', assets: '', description: '', missions: '', responsibilities: '' }); setIsAddJobOpen(true); }}
                   className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition"
                   style={{ backgroundColor: PRIMARY }}
                 >
@@ -1227,9 +1270,9 @@ export function RecruitmentWorkspace() {
               {/* Create Job Modal */}
               {isAddJobOpen && (
                 <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-                  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl border border-slate-100 my-8">
+                  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl max-w-3xl w-full p-6 shadow-xl border border-slate-100 my-8">
                     <h3 className="font-bold text-slate-900 text-base mb-4">{editingJob ? 'Modifier l\'offre d\'emploi' : 'Créer une offre d\'emploi détaillée'}</h3>
-                    <form onSubmit={handleSaveJob} className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+                    <form onSubmit={handleSaveJob} className="space-y-4 max-h-[75vh] overflow-y-auto pr-2">
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Intitulé du poste</label>
@@ -1237,14 +1280,44 @@ export function RecruitmentWorkspace() {
                         </div>
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Département</label>
-                          <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newJob.dept} onChange={(e) => setNewJob({ ...newJob, dept: e.target.value })} required />
+                          {departments.length > 0 ? (
+                            <select
+                              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs bg-white"
+                              value={newJob.dept}
+                              onChange={(e) => setNewJob({ ...newJob, dept: e.target.value })}
+                              required
+                            >
+                              <option value="">— Sélectionner —</option>
+                              {departments.map((d) => (
+                                <option key={d.id} value={d.name}>{d.name}</option>
+                              ))}
+                              {/* Allow "Other" — falls back to free text below */}
+                              {newJob.dept && !departments.some((d) => d.name === newJob.dept) && (
+                                <option value={newJob.dept}>{newJob.dept} (personnalisé)</option>
+                              )}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs"
+                              value={newJob.dept}
+                              onChange={(e) => setNewJob({ ...newJob, dept: e.target.value })}
+                              placeholder="Aucun département configuré — saisissez librement"
+                              required
+                            />
+                          )}
                         </div>
                       </div>
 
                       <div className="grid grid-cols-3 gap-3">
                         <div>
-                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Localisation</label>
-                          <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newJob.loc} onChange={(e) => setNewJob({ ...newJob, loc: e.target.value })} required />
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                            Localisation
+                            {tenantAddress && !editingJob && (
+                              <span className="ml-1 text-[9px] text-emerald-600 normal-case font-medium">⚡ auto-rempli depuis Paramètres</span>
+                            )}
+                          </label>
+                          <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newJob.loc} onChange={(e) => setNewJob({ ...newJob, loc: e.target.value })} placeholder="Adresse de l'école" required />
                         </div>
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Type de Contrat</label>
@@ -1285,19 +1358,57 @@ export function RecruitmentWorkspace() {
                         </div>
                       </div>
 
+                      {/* Rich text editors for description, missions, responsibilities */}
                       <div>
                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Description générale</label>
-                        <textarea className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-16" value={newJob.description} onChange={(e) => setNewJob({ ...newJob, description: e.target.value })} />
+                        <RichTextEditor
+                          value={newJob.description || ''}
+                          onChange={(html) => setNewJob({ ...newJob, description: html })}
+                          placeholder="Présentez le poste, le contexte, les enjeux... Utilisez les puces pour structurer."
+                          minHeight={100}
+                        />
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 gap-3">
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Missions clés</label>
-                          <textarea className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-16" value={newJob.missions} onChange={(e) => setNewJob({ ...newJob, missions: e.target.value })} />
+                          <RichTextEditor
+                            value={newJob.missions || ''}
+                            onChange={(html) => setNewJob({ ...newJob, missions: html })}
+                            placeholder="Listez les missions principales (utilisez la liste à puces)."
+                            minHeight={100}
+                          />
                         </div>
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Responsabilités</label>
-                          <textarea className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-16" value={newJob.responsibilities} onChange={(e) => setNewJob({ ...newJob, responsibilities: e.target.value })} />
+                          <RichTextEditor
+                            value={newJob.responsibilities || ''}
+                            onChange={(html) => setNewJob({ ...newJob, responsibilities: html })}
+                            placeholder="Décrivez les responsabilités du poste (utilisez la liste à puces)."
+                            minHeight={100}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Tags inputs for skills and assets */}
+                      <div className="grid grid-cols-1 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Compétences recherchées</label>
+                          <TagsInput
+                            value={newJob.skillsRequired || ''}
+                            onChange={(tags) => setNewJob({ ...newJob, skillsRequired: tagsToString(tags) })}
+                            placeholder="Ex: Excel, Pédagogie, Gestion de classe... (Entrée pour ajouter)"
+                            color="blue"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Atouts (bonus points)</label>
+                          <TagsInput
+                            value={newJob.assets || ''}
+                            onChange={(tags) => setNewJob({ ...newJob, assets: tagsToString(tags) })}
+                            placeholder="Ex: Bilingue, Expérience internationale, Leadership... (Entrée pour ajouter)"
+                            color="amber"
+                          />
                         </div>
                       </div>
 

@@ -37,6 +37,7 @@ import {
 import { Header } from '@/components/ui/header-1';
 import { JobCardSkeleton } from '@/components/loading/Skeleton';
 import { JobCardSkeletonMobile } from '@/components/loading/SkeletonMobile';
+import RichContent from '@/components/ui/RichContent';
 
 
 const PRIMARY = '#0b2f73';
@@ -95,6 +96,8 @@ interface Job {
   academicLevel?: string;
   experience?: string;
   skillsRequired?: string;
+  /** Atouts / Bonus points (séparés par virgules) */
+  assets?: string;
   salary?: string;
   contractType?: string;
   _count?: { applications: number };
@@ -1346,27 +1349,37 @@ export function CareersContent({
                             {selectedJob.description && (
                               <div>
                                 <h4 className="text-xs font-bold text-slate-800 mb-2 uppercase tracking-wider">Description</h4>
-                                <p className="text-sm text-slate-600 whitespace-pre-line leading-relaxed">{selectedJob.description}</p>
+                                <RichContent html={selectedJob.description} />
                               </div>
                             )}
                             {selectedJob.missions && (
                               <div>
                                 <h4 className="text-xs font-bold text-slate-800 mb-2 uppercase tracking-wider">Missions</h4>
-                                <p className="text-sm text-slate-600 whitespace-pre-line leading-relaxed">{selectedJob.missions}</p>
+                                <RichContent html={selectedJob.missions} />
                               </div>
                             )}
                             {selectedJob.responsibilities && (
                               <div>
                                 <h4 className="text-xs font-bold text-slate-800 mb-2 uppercase tracking-wider">Responsabilités</h4>
-                                <p className="text-sm text-slate-600 whitespace-pre-line leading-relaxed">{selectedJob.responsibilities}</p>
+                                <RichContent html={selectedJob.responsibilities} />
                               </div>
                             )}
                             {selectedJob.skillsRequired && (
                               <div>
-                                <h4 className="text-xs font-bold text-slate-800 mb-2 uppercase tracking-wider">Compétences requises</h4>
+                                <h4 className="text-xs font-bold text-slate-800 mb-2 uppercase tracking-wider">Compétences recherchées</h4>
                                 <div className="flex flex-wrap gap-2 mt-1">
                                   {selectedJob.skillsRequired.split(',').map((skill, i) => (
                                     <span key={i} className="px-2.5 py-1 bg-[#0b2f73]/5 text-[#0b2f73] text-[10px] font-semibold rounded-lg">{skill.trim()}</span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {selectedJob.assets && (
+                              <div>
+                                <h4 className="text-xs font-bold text-slate-800 mb-2 uppercase tracking-wider">Atouts (bonus points)</h4>
+                                <div className="flex flex-wrap gap-2 mt-1">
+                                  {selectedJob.assets.split(',').map((asset, i) => (
+                                    <span key={i} className="px-2.5 py-1 bg-amber-50 text-amber-700 text-[10px] font-semibold rounded-lg border border-amber-200">{asset.trim()}</span>
                                   ))}
                                 </div>
                               </div>

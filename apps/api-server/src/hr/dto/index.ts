@@ -479,6 +479,8 @@ export class CreateJobDto {
   /** Alias: frontend forms may send 'requiredExperience' */
   @IsOptional() @IsString() requiredExperience?: string;
   @IsOptional() @IsString() skillsRequired?: string;
+  /** Atouts / Bonus points recherchés (séparés par virgules ou texte libre) */
+  @IsOptional() @IsString() assets?: string;
   @IsOptional() @IsString() salary?: string;
   @IsOptional() @IsString() contractType?: string;
   /** Date when the job was published — set automatically on publish/republish */
@@ -504,6 +506,8 @@ export class UpdateJobDto {
   @IsOptional() @IsString() experience?: string;
   @IsOptional() @IsString() requiredExperience?: string;
   @IsOptional() @IsString() skillsRequired?: string;
+  /** Atouts / Bonus points recherchés (séparés par virgules ou texte libre) */
+  @IsOptional() @IsString() assets?: string;
   @IsOptional() @IsString() salary?: string;
   @IsOptional() @IsString() contractType?: string;
   /** Date when the job was published — updated automatically on republish */

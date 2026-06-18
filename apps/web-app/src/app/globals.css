@@ -665,3 +665,63 @@ body {
   border-color: rgba(11, 47, 115, 0.18);
   box-shadow: 0 2px 8px -2px rgba(11, 47, 115, 0.10);
 }
+/* ============================================================================
+   RICH CONTENT — Styles for Tiptap-generated HTML (job descriptions, etc.)
+   ============================================================================ */
+.rich-content {
+  font-size: 14px;
+  color: #475569;
+  line-height: 1.6;
+}
+.rich-content p {
+  margin: 0 0 0.6em 0;
+}
+.rich-content p:last-child {
+  margin-bottom: 0;
+}
+.rich-content ul {
+  list-style: disc;
+  padding-left: 1.5em;
+  margin: 0 0 0.6em 0;
+}
+.rich-content ol {
+  list-style: decimal;
+  padding-left: 1.5em;
+  margin: 0 0 0.6em 0;
+}
+.rich-content li {
+  margin: 0.3em 0;
+}
+.rich-content li > p {
+  margin: 0;
+}
+.rich-content h2 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 1em 0 0.5em 0;
+}
+.rich-content h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0.8em 0 0.4em 0;
+}
+.rich-content blockquote {
+  border-left: 3px solid #0b2f73;
+  padding-left: 1em;
+  margin: 0.6em 0;
+  color: #64748b;
+  font-style: italic;
+}
+.rich-content strong {
+  font-weight: 700;
+  color: #1e293b;
+}
+.rich-content em {
+  font-style: italic;
+}
+.rich-content a {
+  color: #0b2f73;
+  text-decoration: underline;
+}

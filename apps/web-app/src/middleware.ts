@@ -226,10 +226,9 @@ function withAntiCacheHeaders(response: NextResponse): NextResponse {
   return response;
 }
 
-// Routes admin (ne nécessitent pas de subdomain)
-const adminRoutes = [
-  '/admin',
-];
+// Routes admin-login (ne nécessitent pas de subdomain)
+// L'ancien /admin a été supprimé — le backoffice est maintenant /app/platform/*
+const adminRoutes: string[] = [];
 
 /** Nombre maximal de redirections internes avant de considérer une boucle. */
 const MAX_REDIRECT_DEPTH = 5;
@@ -415,19 +414,7 @@ export async function middleware(request: NextRequest) {
 
   const response = withAntiCacheHeaders(NextResponse.next());
 
-  // Routes admin : pas de vérification de subdomain
-  if (pathname.startsWith('/admin')) {
-    // La vérification du rôle SUPER_ADMIN se fait dans le layout
-    // Ajouter le pathname dans les headers pour le layout
-    const adminResponse = withAntiCacheHeaders(NextResponse.next());
-    adminResponse.headers.set('x-pathname', pathname);
-    if (user) {
-      adminResponse.headers.set('x-user-id', user.id);
-    }
-    return adminResponse;
-  }
-
-  // Route admin-login : toujours accessible, même avec subdomain
+  // Routes /admin-login : toujours accessibles (page de connexion backoffice)
   if (pathname === '/admin-login' || pathname.startsWith('/admin-login')) {
     return response;
   }
@@ -477,7 +464,7 @@ export async function middleware(request: NextRequest) {
     }
 
     // Autres routes publiques sur sous-domaine : accessibles si session valide
-    if (subdomain && !pathname.startsWith('/app') && !pathname.startsWith('/admin')) {
+    if (subdomain && !pathname.startsWith('/app')) {
       // Si l'utilisateur a une session valide, laisser passer
       if (user?.id) {
         return response;

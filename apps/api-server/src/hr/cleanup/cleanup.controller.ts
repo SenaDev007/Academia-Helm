@@ -35,7 +35,7 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
-import { Public } from '../auth/decorators/public.decorator';
+import { Public } from '../../auth/decorators/public.decorator';
 import { PrismaService } from '../../database/prisma.service';
 
 @Controller('hr/cleanup')

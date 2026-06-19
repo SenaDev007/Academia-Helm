@@ -190,16 +190,17 @@ function writeModuleLastPath(moduleRoot: string, path: string): void {
 
 /**
  * Détermine l'URL cible lorsqu'on clique sur l'entrée sidebar d'un module.
- * - Pour les modules à sous-onglets : renvoie le dernier sous-onglet visité,
- *   ou la racine du module si rien n'est mémorisé.
- * - Pour les autres modules : renvoie le path tel quel.
+ *
+ * Comportement actuel : navigue TOUJOURS vers la racine du module (tableau de bord).
+ *
+ * Anciennement, le clic mémorisait le dernier sous-onglet visité et y revenait.
+ * Ce comportement a été retiré car il était contre-intuitif — l'utilisateur
+ * s'attend à voir le tableau de bord du module quand il clique sur son entrée
+ * dans la sidebar, pas à être redirigé vers un sous-onglet qu'il a visité
+ * précédemment.
  */
 function resolveSidebarHref(itemPath: string): string {
-  if (typeof window === 'undefined') return itemPath;
-  const isModuleWithSubtabs = MODULE_ROOTS_WITH_SUBTABS.includes(itemPath);
-  if (!isModuleWithSubtabs) return itemPath;
-  const remembered = readModuleLastPath(itemPath);
-  return remembered || itemPath;
+  return itemPath;
 }
 
 /**
@@ -418,17 +419,20 @@ export default function PilotageSidebar({
     onCloseMobileDrawer?.();
   }, [pathname, onCloseMobileDrawer]);
 
-  // ── Mémoriser le dernier sous-onglet visité pour chaque module racine ──
-  // Permet au clic sur l'entrée sidebar du module de revenir à l'onglet courant
-  // plutôt que de sauter sur le tableau de bord du module.
-  useEffect(() => {
-    if (!pathname) return;
-    for (const root of MODULE_ROOTS_WITH_SUBTABS) {
-      if (pathname.startsWith(root + '/')) {
-        writeModuleLastPath(root, pathname);
-      }
-    }
-  }, [pathname]);
+  // ── Mémorisation du dernier sous-onglet visité DÉSACTIVÉE ──
+  // Anciennement, le clic sur l'entrée sidebar d'un module revenait au dernier
+  // sous-onglet visité. Ce comportement a été retiré — le clic va maintenant
+  // toujours à la racine du module (tableau de bord).
+  // Le code de mémorisation est conservé ci-dessous en commentaire pour référence.
+  //
+  // useEffect(() => {
+  //   if (!pathname) return;
+  //   for (const root of MODULE_ROOTS_WITH_SUBTABS) {
+  //     if (pathname.startsWith(root + '/')) {
+  //       writeModuleLastPath(root, pathname);
+  //     }
+  //   }
+  // }, [pathname]);
 
   // Sur mobile drawer ou PC étendu : afficher les libellés
   const effectiveOpen = mobileDrawerOpen || isOpen;

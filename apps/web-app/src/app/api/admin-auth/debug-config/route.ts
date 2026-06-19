@@ -12,23 +12,26 @@ import { NextResponse } from 'next/server';
 import {
   isEmailAdminWhitelisted,
   isPasswordAuthEnabled,
-  getAdminEmailsWhitelist,
 } from '@/lib/admin/admin-auth-server';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 export async function GET() {
-  const whitelist = getAdminEmailsWhitelist();
-  const whitelistArray = Array.from(whitelist);
+  // Reconstituer la whitelist depuis env var (la fonction n'est pas exportée du module)
+  const rawWhitelist = process.env.ADMIN_EMAILS || '';
+  const whitelistArray = rawWhitelist
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
 
   return NextResponse.json({
     timestamp: new Date().toISOString(),
     nodeEnv: process.env.NODE_ENV,
 
     // Whitelist
-    adminEmailsConfigured: whitelist.size > 0,
-    adminEmailsCount: whitelist.size,
+    adminEmailsConfigured: whitelistArray.length > 0,
+    adminEmailsCount: whitelistArray.length,
     adminEmailsList: whitelistArray, // pour vérifier que l'email est bien là
 
     // Password auth

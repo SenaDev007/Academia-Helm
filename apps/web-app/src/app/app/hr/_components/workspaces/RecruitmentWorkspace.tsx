@@ -1988,6 +1988,7 @@ export function RecruitmentWorkspace() {
                             selectedCandidate.documents.map((doc) => {
                               const typeLabel: Record<string, string> = {
                                 CV: 'Curriculum Vitae',
+                                APPLICATION_LETTER: 'Lettre de demande d\'emploi',
                                 COVER_LETTER: 'Lettre de Motivation',
                                 RECOMMENDATION: 'Lettre de Recommandation',
                                 DIPLOMA: 'Diplôme',
@@ -1996,6 +1997,7 @@ export function RecruitmentWorkspace() {
                               };
                               const typeIcon: Record<string, string> = {
                                 CV: '📄',
+                                APPLICATION_LETTER: '✉️',
                                 COVER_LETTER: '✉️',
                                 RECOMMENDATION: '🏅',
                                 DIPLOMA: '🎓',

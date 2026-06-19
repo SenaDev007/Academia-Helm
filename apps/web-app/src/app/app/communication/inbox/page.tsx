@@ -68,7 +68,6 @@ function getAvatarColor(seed: string) {
 export default function CommunicationInboxPage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [selectedInboundId, setSelectedInboundId] = useState<string | null>(null);
 
   // Debounce search

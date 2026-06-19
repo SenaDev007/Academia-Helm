@@ -420,4 +420,39 @@ export class RecruitmentPrismaController {
   ) {
     return this.service.testResendTestResultEmail(testResultId, tenantId);
   }
+
+  // ============================================================================
+  // TEST — Renvoyer l'email "Résultat entretien" en retrouvant l'entretien
+  // le plus récent d'un candidat par son email.
+  // Endpoint temporaire pour tester sans connaître l'interviewId. À supprimer
+  // après validation.
+  //
+  // Usage :
+  //   POST /api/hr/recruitment/test-resend-interview-result-by-email
+  //        ?email=aurore@example.com&tenantId=...
+  // ============================================================================
+
+  @Public()
+  @Post('test-resend-interview-result-by-email')
+  async testResendInterviewResultByEmail(
+    @Query('email') email: string,
+    @Query('tenantId') tenantId: string,
+  ) {
+    return this.service.testResendInterviewResultByEmail(email, tenantId);
+  }
+
+  // ============================================================================
+  // TEST — Renvoyer l'email "Résultat test" en retrouvant le test result le
+  // plus récent d'un candidat par son email.
+  // Endpoint temporaire pour tester sans connaître le testResultId.
+  // ============================================================================
+
+  @Public()
+  @Post('test-resend-test-result-by-email')
+  async testResendTestResultByEmail(
+    @Query('email') email: string,
+    @Query('tenantId') tenantId: string,
+  ) {
+    return this.service.testResendTestResultByEmail(email, tenantId);
+  }
 }

@@ -3114,5 +3114,209 @@ Réponds UNIQUEMENT en JSON valide.`,
       };
     }
   }
+
+  /**
+   * TEST — Renvoie l'email "Résultat entretien" en retrouvant l'entretien le
+   * plus récent d'un candidat par son email.
+   *
+   * Endpoint temporaire pour tester sans connaître l'interviewId.
+   * À supprimer après validation.
+   */
+  async testResendInterviewResultByEmail(email: string, tenantId: string) {
+    this.logger.log(`testResendInterviewResultByEmail: email=${email}, tenantId=${tenantId}`);
+
+    if (!email || !tenantId) {
+      throw new BadRequestException('email et tenantId sont requis');
+    }
+
+    // 1. Retrouver le candidat par email + tenant
+    const candidate = await this.prisma.hrCandidate.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' }, tenantId },
+      include: {
+        applications: {
+          include: { job: true },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+        interviews: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!candidate) {
+      throw new NotFoundException(`Aucun candidat trouvé pour l'email "${email}" sur ce tenant`);
+    }
+
+    const interview = candidate.interviews?.[0];
+    if (!interview) {
+      throw new NotFoundException(
+        `Aucun entretien trouvé pour ${candidate.firstName} ${candidate.lastName} (${email})`,
+      );
+    }
+
+    const primaryApp = candidate.applications?.[0];
+    if (!primaryApp) {
+      throw new NotFoundException(
+        `Aucune candidature trouvée pour ce candidat — impossible de déterminer le poste`,
+      );
+    }
+
+    const result = interview.result || 'RÉUSSI';
+    this.logger.log(
+      `testResendInterviewResultByEmail: found interview ${interview.id} (result=${result}), sending to ${candidate.email}`,
+    );
+
+    try {
+      const branding = await this.notificationService['getTenantBranding'](tenantId);
+      const { renderInterviewResult } = await import('./recruitment-email-templates');
+      const { subject, html } = renderInterviewResult({
+        branding,
+        candidateName: `${candidate.firstName} ${candidate.lastName}`,
+        candidateFirstName: candidate.firstName || 'candidat(e)',
+        jobTitle: primaryApp.job?.title || 'Poste non spécifié',
+        result,
+        score: interview.score ?? undefined,
+        feedback: interview.feedback || undefined,
+        evaluator: interview.evaluator || undefined,
+        interviewDate: interview.date,
+      });
+
+      await this.notificationService['sendEmail'](candidate.email, subject, html, {
+        fromName: branding.recruiterName
+          ? `${branding.recruiterName} — ${branding.schoolName}`
+          : branding.schoolName || 'Academia Helm — Recrutement',
+      });
+
+      return {
+        success: true,
+        message: `Email de résultat d'entretien envoyé à ${candidate.email}`,
+        candidate: `${candidate.firstName} ${candidate.lastName}`,
+        email: candidate.email,
+        candidateId: candidate.id,
+        interviewId: interview.id,
+        job: primaryApp.job?.title,
+        result,
+        score: interview.score,
+        feedback: interview.feedback,
+        evaluator: interview.evaluator,
+        interviewDate: interview.date,
+      };
+    } catch (err: any) {
+      this.logger.error(`testResendInterviewResultByEmail FAILED: ${err.message}`, err.stack);
+      return {
+        success: false,
+        error: err.message,
+        candidate: `${candidate.firstName} ${candidate.lastName}`,
+        email: candidate.email,
+        candidateId: candidate.id,
+        interviewId: interview.id,
+        result,
+      };
+    }
+  }
+
+  /**
+   * TEST — Renvoie l'email "Résultat test" en retrouvant le test result le
+   * plus récent d'un candidat par son email.
+   *
+   * Endpoint temporaire pour tester sans connaître le testResultId.
+   * À supprimer après validation.
+   */
+  async testResendTestResultByEmail(email: string, tenantId: string) {
+    this.logger.log(`testResendTestResultByEmail: email=${email}, tenantId=${tenantId}`);
+
+    if (!email || !tenantId) {
+      throw new BadRequestException('email et tenantId sont requis');
+    }
+
+    // 1. Retrouver le candidat par email + tenant
+    const candidate = await this.prisma.hrCandidate.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' }, tenantId },
+      include: {
+        applications: {
+          include: { job: true },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+        testResults: {
+          include: { test: true },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!candidate) {
+      throw new NotFoundException(`Aucun candidat trouvé pour l'email "${email}" sur ce tenant`);
+    }
+
+    const testResult = candidate.testResults?.[0];
+    if (!testResult) {
+      throw new NotFoundException(
+        `Aucun résultat de test trouvé pour ${candidate.firstName} ${candidate.lastName} (${email})`,
+      );
+    }
+
+    const primaryApp = candidate.applications?.[0];
+    if (!primaryApp) {
+      throw new NotFoundException(
+        `Aucune candidature trouvée pour ce candidat — impossible de déterminer le poste`,
+      );
+    }
+
+    this.logger.log(
+      `testResendTestResultByEmail: found testResult ${testResult.id} (test=${testResult.test?.name}), sending to ${candidate.email}`,
+    );
+
+    try {
+      const branding = await this.notificationService['getTenantBranding'](tenantId);
+      const { renderTestResult } = await import('./recruitment-email-templates');
+      const { subject, html } = renderTestResult({
+        branding,
+        candidateName: `${candidate.firstName} ${candidate.lastName}`,
+        candidateFirstName: candidate.firstName || 'candidat(e)',
+        jobTitle: primaryApp.job?.title || 'Poste non spécifié',
+        result: testResult.result || 'RÉUSSI',
+        score: testResult.score,
+        maxScore: testResult.test?.maxScore,
+        passingScore: testResult.test?.passingScore,
+        testName: testResult.test?.name,
+        feedback: testResult.notes || undefined,
+      });
+
+      await this.notificationService['sendEmail'](candidate.email, subject, html, {
+        fromName: branding.recruiterName
+          ? `${branding.recruiterName} — ${branding.schoolName}`
+          : branding.schoolName || 'Academia Helm — Recrutement',
+      });
+
+      return {
+        success: true,
+        message: `Email de résultat de test envoyé à ${candidate.email}`,
+        candidate: `${candidate.firstName} ${candidate.lastName}`,
+        email: candidate.email,
+        candidateId: candidate.id,
+        testResultId: testResult.id,
+        job: primaryApp.job?.title,
+        test: testResult.test?.name,
+        result: testResult.result,
+        score: testResult.score,
+        feedback: testResult.notes,
+      };
+    } catch (err: any) {
+      this.logger.error(`testResendTestResultByEmail FAILED: ${err.message}`, err.stack);
+      return {
+        success: false,
+        error: err.message,
+        candidate: `${candidate.firstName} ${candidate.lastName}`,
+        email: candidate.email,
+        candidateId: candidate.id,
+        testResultId: testResult.id,
+        test: testResult.test?.name,
+      };
+    }
+  }
 }
 

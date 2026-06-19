@@ -53,6 +53,117 @@ export class EmailLogController {
   // ─── LIST & DETAIL ────────────────────────────────────────────────────────
 
   /**
+   * GET /communication/debug-email-log?tenantId=...
+   *
+   * Endpoint temporaire de diagnostic. Tente d'insérer un EmailLog de test
+   * et retourne l'erreur détaillée si ça échoue. Permet de vérifier que la
+   * table email_logs a bien toutes les nouvelles colonnes.
+   *
+   * À SUPPRIMER APRÈS DIAGNOSTIC.
+   */
+  @Public()
+  @Get('debug-email-log')
+  async debugEmailLog(@Query('tenantId') tenantId: string) {
+    if (!tenantId) {
+      return { error: 'tenantId requis' };
+    }
+
+    const result: any = {
+      timestamp: new Date().toISOString(),
+      tenantId,
+      steps: [],
+    };
+
+    // Step 1: Vérifier que la table email_logs existe et a les colonnes
+    try {
+      const columns = await this.prisma.$queryRaw`
+        SELECT column_name, data_type
+        FROM information_schema.columns
+        WHERE table_name = 'email_logs'
+        ORDER BY ordinal_position
+      `;
+      result.steps.push({
+        step: 'check_columns',
+        success: true,
+        columns: columns,
+      });
+    } catch (err: any) {
+      result.steps.push({
+        step: 'check_columns',
+        success: false,
+        error: err.message,
+      });
+    }
+
+    // Step 2: Tenter d'insérer un EmailLog de test
+    try {
+      const testLog = await this.prisma.emailLog.create({
+        data: {
+          tenantId,
+          category: 'SYSTEM',
+          subCategory: 'debug_test',
+          module: 'communication',
+          fromEmail: 'debug@academiahelm.com',
+          fromName: 'Debug Test',
+          recipient: 'debug-test@example.com',
+          recipientName: 'Debug Test',
+          recipientType: 'EXTERNE',
+          subject: '[DEBUG] Test EmailLog creation',
+          content: '<p>Test debug</p>',
+          textContent: 'Test debug',
+          status: 'SENT',
+          provider: 'debug',
+          threadId: 'debug-test-thread',
+          replyTo: 'log_debugtest@replies.academiahelm.com',
+          replyToToken: 'debugtest',
+          triggeredBy: 'SYSTEM',
+          sentAt: new Date(),
+        },
+      });
+      result.steps.push({
+        step: 'insert_test_log',
+        success: true,
+        logId: testLog.id,
+      });
+
+      // Step 3: Supprimer le log de test
+      await this.prisma.emailLog.delete({ where: { id: testLog.id } });
+      result.steps.push({
+        step: 'delete_test_log',
+        success: true,
+      });
+    } catch (err: any) {
+      result.steps.push({
+        step: 'insert_test_log',
+        success: false,
+        error: err.message,
+        code: err.code,
+        meta: err.meta,
+      });
+    }
+
+    // Step 4: Compter les EmailLogs existants
+    try {
+      const count = await this.prisma.emailLog.count({
+        where: { tenantId },
+      });
+      result.steps.push({
+        step: 'count_existing_logs',
+        success: true,
+        count,
+      });
+    } catch (err: any) {
+      result.steps.push({
+        step: 'count_existing_logs',
+        success: false,
+        error: err.message,
+      });
+    }
+
+    return result;
+  }
+
+  /**
    * Liste les EmailLogs d'un tenant avec filtres + pagination.
    *
    * Endpoint @Public — la sécurité repose sur le tenantId passé en query

@@ -166,7 +166,7 @@ function renderFooter(branding: TenantBranding): string {
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 12px;">
           <tr>
             <td style="vertical-align:middle;padding-right:12px;text-align:left;">
-              <img src="https://www.academiahelm.com/images/logo-academia-helm-email.png" alt="Academia Helm" style="height:36px;width:auto;max-width:120px;object-fit:contain;" />
+              <img src="https://www.academiahelm.com/images/logo-Academia%20Hub.png" alt="Academia Helm" style="height:36px;width:auto;max-width:120px;object-fit:contain;" />
             </td>
             <td style="padding-left:4px;text-align:left;vertical-align:middle;">
               <div style="font-size:15px;font-weight:bold;color:#ffffff;">Academia Helm</div>

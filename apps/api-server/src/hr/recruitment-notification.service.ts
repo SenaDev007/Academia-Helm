@@ -94,12 +94,20 @@ export class RecruitmentNotificationService {
       });
 
       if (profile?.schoolName) {
-        // Passer le logo directement SANS compression.
-        // La compression avec sharp échoue sur Fly.io (sharp non disponible).
-        // Gmail supporte les images base64 jusqu'à ~300KB, le logo fait 115KB → OK.
+        // Utiliser l'URL publique du logo au lieu du base64.
+        // L'API backend sert le logo via GET /api/tenants/:tenantId/logo
+        // qui retourne l'image directement (Buffer) avec le bon Content-Type.
+        // Ça permet à Gmail/Outlook de charger l'image comme une URL normale
+        // au lieu d'un base64 volumineux (115KB) qui est souvent bloqué.
+        const apiBaseUrl = this.configService.get<string>('APP_PUBLIC_URL')
+          || 'https://academia-helm-api.fly.dev';
+        const logoUrl = profile.logoUrl
+          ? `${apiBaseUrl}/api/tenants/${tenantId}/logo`
+          : null;
+
         return {
           schoolName: profile.schoolName,
-          schoolLogo: profile.logoUrl,
+          schoolLogo: logoUrl,
           schoolAddress: profile.address,
           schoolPhone: profile.phonePrimary,
           schoolEmail: profile.email,

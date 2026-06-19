@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, Logger } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, Logger, Res } from '@nestjs/common';
 import { TenantsService } from './tenants.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Public } from '../auth/decorators/public.decorator';
@@ -238,6 +238,51 @@ export class TenantsController {
   @Get('by-subdomain/:subdomain')
   findBySubdomain(@Param('subdomain') subdomain: string) {
     return this.tenantsService.findBySubdomain(subdomain);
+  }
+
+  /**
+   * Sert le logo d'un tenant directement en tant qu'image.
+   * Endpoint public (pas d'auth requis) utilisé par les emails pour
+   * afficher le logo de l'école via une URL au lieu d'un base64.
+   *
+   * URL: GET /api/tenants/:tenantId/logo
+   * Retourne: image/jpeg ou image/png (redirection 302 si URL externe)
+   */
+  @Public()
+  @Get(':tenantId/logo')
+  async getTenantLogo(@Param('tenantId') tenantId: string, @Res() res: any) {
+    try {
+      const profile = await this.prisma.tenantIdentityProfile.findFirst({
+        where: { tenantId, isActive: true },
+        select: { logoUrl: true },
+      });
+
+      if (!profile?.logoUrl) {
+        // Pas de logo → retourner 404
+        return res.status(404).send('No logo');
+      }
+
+      // Si c'est une URL http(s) → rediriger
+      if (profile.logoUrl.startsWith('http')) {
+        return res.redirect(302, profile.logoUrl);
+      }
+
+      // Si c'est du base64 (data:image/...) → extraire et servir directement
+      const matches = profile.logoUrl.match(/^data:(image\/[\w+]+);base64,(.+)$/);
+      if (matches) {
+        const mimeType = matches[1];
+        const base64Data = matches[2];
+        const buffer = Buffer.from(base64Data, 'base64');
+        res.set('Content-Type', mimeType);
+        res.set('Cache-Control', 'public, max-age=86400'); // Cache 24h
+        return res.send(buffer);
+      }
+
+      return res.status(404).send('Invalid logo format');
+    } catch (err: any) {
+      this.logger.error(`getTenantLogo failed: ${err.message}`);
+      return res.status(404).send('Logo error');
+    }
   }
 
   @UseGuards(JwtAuthGuard)

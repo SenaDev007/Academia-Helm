@@ -51,16 +51,57 @@ export default async function AppLayout({
     const adminSession = await getAdminServerSession();
     if (adminSession) {
       // ─── MODE ADMIN PLATFORM ───
-      // Pour l'admin, on NE PASSE PAS par AppLayoutClient ni PilotageLayout
-      // car ces composants font des fetch vers /api/auth/* (session tenant)
-      // qui échouent en 401 (l'admin n'a pas de cookie academia_session).
-      // PostLoginFlowWrapper détecte l'erreur AUTH_ERROR et redirige vers /login.
+      // L'admin a une session valide (cookie academia_admin_session).
+      // On construit un user + tenant "virtuels" pour le back-office plateforme
+      // et on utilise PlatformAdminLayoutClient (version simplifiée de
+      // AppLayoutClient sans les providers qui font des fetch tenant).
       //
-      // À la place, on retourne directement {children} qui sera le
-      // PlatformLayout (de /app/app/platform/layout.tsx) → PlatformLayoutClient.
-      // Ce dernier a son propre layout admin dédié (sidebar, header, etc.)
-      // sans dépendre des providers tenant.
-      return <>{children}</>;
+      // IMPORTANT : on NE PASSE PAS par AppLayoutClient standard car il
+      // contient PostLoginFlowWrapper qui fetch /api/auth/* (session tenant)
+      // → 401 → AUTH_ERROR → redirect vers /login (portail école).
+      //
+      // PlatformAdminLayoutClient garde :
+      //   - QueryProvider (react-query)
+      //   - I18nProvider (traductions)
+      //   - AppSessionProvider (contexte user/tenant)
+      //   - PilotageLayout (layout complet avec sidebar, topbar, etc.)
+      //
+      // Et retire :
+      //   - PostLoginFlowWrapper (redirige vers /login si AUTH_ERROR)
+      //   - SessionManagerProvider (gère l'inactivité, refresh token)
+      //   - SettingsBootstrapPrefetch (fetch settings tenant)
+      //   - AcademicYearProvider / SchoolLevelProvider (fetch données tenant)
+      const adminUser: User = {
+        id: adminSession.id,
+        email: adminSession.email,
+        firstName: adminSession.name,
+        lastName: '',
+        role: 'PLATFORM_SUPER_ADMIN',
+        isPlatformOwner: true,
+        tenantId: '',
+        // @ts-expect-error — champs optionnels selon le type User
+        adminRole: adminSession.role,
+      } as User;
+
+      const platformTenant: Tenant = {
+        id: 'platform',
+        name: 'Academia Helm Platform',
+        slug: 'platform',
+        subdomain: 'admin',
+        status: 'active',
+        subscriptionStatus: 'ACTIVE_SUBSCRIBED',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        trialEndsAt: undefined,
+        nextPaymentDueAt: undefined,
+      } as Tenant;
+
+      const { default: PlatformAdminLayoutClient } = await import('./platform/admin-layout-client');
+      return (
+        <PlatformAdminLayoutClient user={adminUser} tenant={platformTenant}>
+          {children}
+        </PlatformAdminLayoutClient>
+      );
     }
 
     // Ni session tenant ni session admin → rediriger vers /login

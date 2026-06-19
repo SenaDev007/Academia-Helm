@@ -5,6 +5,7 @@ import { OpenRouterService } from '../common/services/openrouter.service';
 import { ContractsPrismaService } from './contracts-prisma.service';
 import { StaffMatriculeService } from './staff-matricule.service';
 import { RecruitmentNotificationService } from './recruitment-notification.service';
+import { ContractSignTokenService } from './services/contract-sign-token.service';
 import { prismaCreateDefaults, prismaUpdateDefaults, prismaCreateNoCreatedAt, prismaCreateNoUpdatedAt, prismaCreateIdOnly, uuid, now } from '../common/utils/prisma-helpers';
 import { Prisma } from '@prisma/client';
 
@@ -32,6 +33,7 @@ export class RecruitmentPrismaService {
     private readonly matriculeService: StaffMatriculeService,
     private readonly openRouter: OpenRouterService,
     private readonly notificationService: RecruitmentNotificationService,
+    private readonly contractSignTokenService: ContractSignTokenService,
   ) {}
 
   // Job Offers CRUD
@@ -1003,16 +1005,40 @@ export class RecruitmentPrismaService {
               select: { candidateId: true, tenantId: true, jobId: true, candidate: { select: { email: true } } },
             });
             if (app?.candidateId && app?.tenantId && app?.jobId) {
+              // ─── Générer le token de signature du contrat ───
+              // Si un contrat a été créé lors de l'embauche, on génère un token
+              // qui permet au candidat de signer électroniquement via un lien magique.
+              let contractUrl: string | undefined;
+              const contractId = (hireResult as any)?.contract?.id;
+              if (contractId) {
+                try {
+                  const tokenResult = await this.contractSignTokenService.generateToken(
+                    contractId,
+                    app.tenantId,
+                  );
+                  contractUrl = tokenResult.signUrl;
+                  this.logger.log(
+                    `Token de signature généré pour contrat ${contractId} — URL: ${contractUrl}`,
+                  );
+                } catch (tokenErr: any) {
+                  this.logger.error(
+                    `Échec génération token de signature pour contrat ${contractId}: ${tokenErr.message}`,
+                  );
+                  // Non-bloquant — l'email partira sans le lien de signature
+                }
+              }
+
               this.notificationService
                 .notifyHired({
                   candidateId: app.candidateId,
                   tenantId: app.tenantId,
                   jobId: app.jobId,
-                  contractType: (hireResult as any)?.contract?.type,
+                  contractType: (hireResult as any)?.contract?.contractType,
                   startDate: (hireResult as any)?.contract?.startDate,
                   salary: (hireResult as any)?.contract?.baseSalary
                     ? String((hireResult as any).contract.baseSalary)
                     : undefined,
+                  contractUrl,
                 })
                 .catch((err) => {
                   this.logger.error(`EMBAUCHÉ: failed to send notification: ${err.message}`);
@@ -2813,14 +2839,34 @@ Réponds UNIQUEMENT en JSON valide.`,
     }
 
     // 6. Notification email (fire-and-forget)
+    // Si un nouveau contrat a été créé, générer un token de signature
+    let contractUrl: string | undefined;
+    if (newContract?.id) {
+      try {
+        const tokenResult = await this.contractSignTokenService.generateToken(
+          newContract.id,
+          tenantId,
+        );
+        contractUrl = tokenResult.signUrl;
+        this.logger.log(
+          `Token de signature généré pour nouveau contrat ${newContract.id} (réaffectation) — URL: ${contractUrl}`,
+        );
+      } catch (tokenErr: any) {
+        this.logger.error(
+          `Réaffectation: échec génération token de signature pour contrat ${newContract.id}: ${tokenErr.message}`,
+        );
+      }
+    }
+
     this.notificationService
       .notifyHired({
         candidateId: sourceApp.candidateId,
         tenantId,
         jobId: data.newJobId,
-        contractType: newContract?.type || data.newContractType || newJob.contractType,
+        contractType: newContract?.contractType || data.newContractType || newJob.contractType,
         startDate: newContract?.startDate || new Date(),
         salary: newContract?.baseSalary ? String(newContract.baseSalary) : undefined,
+        contractUrl,
       })
       .catch((err) => {
         this.logger.error(`Réaffectation: notification email échouée — ${err.message}`);

@@ -112,6 +112,7 @@ model Tenant {
   educationSeries                  EducationSeries[]
   emailLogs                        EmailLog[]
   inboundEmails                    InboundEmail[]
+  contractSignTokens               ContractSignToken[]
   employeeCNSS                     EmployeeCNSS[]
   contracts                        Contract[]
   contractAmendments               ContractAmendment[]
@@ -5156,6 +5157,7 @@ model Contract {
   template          ContractTemplate?   @relation(fields: [templateId], references: [id])
   tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   amendments        ContractAmendment[]
+  signTokens        ContractSignToken[]
 
   @@index([tenantId])
   @@index([staffId])
@@ -5164,6 +5166,34 @@ model Contract {
   @@index([tenantId, status])
   @@index([staffId, tenantId, status])
   @@map("employment_contracts")
+}
+
+/// Token de signature électronique d'un contrat.
+/// Permet à un candidat de signer son contrat via un lien magique envoyé
+/// par email, sans nécessiter de compte utilisateur préalable.
+model ContractSignToken {
+  id               String    @id @default(uuid())
+  contractId       String
+  tenantId         String
+  /// Token UUID 32 chars hex (128 bits d'entropie)
+  token            String    @unique
+  /// Expiration (default: +30 jours après création)
+  expiresAt        DateTime
+  /// Null tant que non utilisé ; set à now() après signature
+  usedAt           DateTime?
+  /// IP de la personne qui a signé (audit)
+  signedByIp       String?
+  /// User-Agent de la personne qui a signé (audit)
+  signedByUserAgent String?
+  createdAt        DateTime  @default(now())
+
+  contract         Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  tenant           Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([contractId])
+  @@index([tenantId])
+  @@index([expiresAt])
+  @@map("contract_sign_tokens")
 }
 
 model ContractTemplate {

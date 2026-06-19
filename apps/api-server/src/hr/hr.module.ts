@@ -22,10 +22,12 @@ import { PayrollTaxService } from './services/payroll-tax.service';
 import { PayrollPdfService } from './services/payroll-pdf.service';
 import { HROrionService } from './services/hr-orion.service';
 import { ContractPdfService } from './services/contract-pdf.service';
+import { ContractSignTokenService } from './services/contract-sign-token.service';
 import { TerminationPdfService } from './services/termination-pdf.service';
 import { HrKpiService } from './hr-kpi.service';
 import { StaffPrismaController } from './staff-prisma.controller';
 import { ContractsPrismaController } from './contracts-prisma.controller';
+import { ContractPublicSignController } from './contract-public-sign.controller';
 import { AttendancePrismaController } from './attendance-prisma.controller';
 import { LeavesPrismaController } from './leaves-prisma.controller';
 import { AllowancesPrismaController } from './allowances-prisma.controller';
@@ -65,6 +67,7 @@ import { StaffCredentialService } from './services/staff-credential.service';
     PayrollPdfService,
     HROrionService,
     ContractPdfService,
+    ContractSignTokenService,
     TerminationPdfService,
     HrKpiService,
     RecruitmentPrismaService,
@@ -77,6 +80,7 @@ import { StaffCredentialService } from './services/staff-credential.service';
   controllers: [
     StaffPrismaController,
     ContractsPrismaController,
+    ContractPublicSignController,
     AttendancePrismaController,
     LeavesPrismaController,
     AllowancesPrismaController,
@@ -105,6 +109,7 @@ import { StaffCredentialService } from './services/staff-credential.service';
     PayrollPdfService,
     HROrionService,
     ContractPdfService,
+    ContractSignTokenService,
     TerminationPdfService,
     HrKpiService,
     RecruitmentPrismaService,

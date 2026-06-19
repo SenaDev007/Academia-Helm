@@ -316,6 +316,25 @@ async function bootstrap() {
       `CREATE INDEX IF NOT EXISTS "inbound_emails_threadId_idx" ON "inbound_emails"("threadId")`,
       `CREATE INDEX IF NOT EXISTS "inbound_emails_tenantId_receivedAt_idx" ON "inbound_emails"("tenantId", "receivedAt")`,
 
+      // ─── contract_sign_tokens table (migration 20260619160000) ───
+      // Tokens pour signature électronique de contrat par lien magique (email).
+      `CREATE TABLE IF NOT EXISTS "contract_sign_tokens" (
+        "id" TEXT NOT NULL,
+        "contractId" TEXT NOT NULL,
+        "tenantId" TEXT NOT NULL,
+        "token" TEXT NOT NULL,
+        "expiresAt" TIMESTAMP(3) NOT NULL,
+        "usedAt" TIMESTAMP(3),
+        "signedByIp" TEXT,
+        "signedByUserAgent" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "contract_sign_tokens_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "contract_sign_tokens_token_key" ON "contract_sign_tokens"("token")`,
+      `CREATE INDEX IF NOT EXISTS "contract_sign_tokens_contractId_idx" ON "contract_sign_tokens"("contractId")`,
+      `CREATE INDEX IF NOT EXISTS "contract_sign_tokens_tenantId_idx" ON "contract_sign_tokens"("tenantId")`,
+      `CREATE INDEX IF NOT EXISTS "contract_sign_tokens_expiresAt_idx" ON "contract_sign_tokens"("expiresAt")`,
+
       // ─── Staff columns (migration 20260606120000 + later additions) ───
       // These columns are referenced by Prisma Client when including staff in queries
       // (e.g. contract generation, staff list). If the deployed DB doesn't have them,

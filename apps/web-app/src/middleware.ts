@@ -200,6 +200,7 @@ const publicRoutes = [
   '/public/pre-enrollment', // Portail Public : pré-inscription (aucune auth requise)
   '/portal', // Page de sélection des portails
   '/school-portal', // Sélection portail spécifique à l'école (sous-domaine)
+  '/sign/contract', // Signature électronique de contrat par lien magique (token)
 ];
 
 /**

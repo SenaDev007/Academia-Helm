@@ -111,6 +111,7 @@ model Tenant {
   educationLevels                  EducationLevel[]
   educationSeries                  EducationSeries[]
   emailLogs                        EmailLog[]
+  inboundEmails                    InboundEmail[]
   employeeCNSS                     EmployeeCNSS[]
   contracts                        Contract[]
   contractAmendments               ContractAmendment[]
@@ -7774,23 +7775,115 @@ model SmsLog {
 model EmailLog {
   id           String    @id @default(uuid())
   tenantId     String
-  recipient    String
+
+  // ─── Catégorisation ───
+  category        String?   // RECRUTEMENT | PEDAGOGIE | FINANCE | ADMINISTRATIF | COMMUNICATION | SYSTEM
+  subCategory     String?   // candidature_recue | entretien_planifie | resultat_entretien | ...
+  module          String?   // hr | finance | students | communication (module source)
+
+  // ─── Expéditeur & Destinataire ───
+  fromEmail       String?
+  fromName        String?
+  recipient       String
+  recipientName   String?
+  recipientType   String?   // CANDIDAT | PARENT | STAFF | ENSEIGNANT | EXTERNE
+  recipientId     String?   // FK optionnelle vers HrCandidate / Parent / Staff
+  cc              String?   // JSON array
+  bcc             String?   // JSON array
+
+  // ─── Contenu ───
   subject      String
   content      String
-  status       String
+  textContent  String?
+
+  // ─── Statut & Provider ───
+  status       String     @default("PENDING") // PENDING | SENT | DELIVERED | BOUNCED | FAILED | OPENED | CLICKED
   provider     String?
   providerId   String?
+
+  // ─── Threading (conversation) ───
+  threadId     String?
+  inReplyTo    String?
+  references   String?    @map("references")
+
+  // ─── Reply-to personnalisé (Volet 2) ───
+  replyTo      String?
+  replyToToken String?
+
+  // ─── Tracking ───
   sentAt       DateTime?
   deliveredAt  DateTime?
   bouncedAt    DateTime?
+  openedAt     DateTime?
+  clickedAt    DateTime?
+  openCount    Int        @default(0)
+  clickCount   Int        @default(0)
   errorMessage String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // ─── Métadonnées ───
+  triggeredBy       String?   // SYSTEM | STAFF | AUTOMATION | SARA
+  triggeredByUserId String?   // ID de l'utilisateur qui a déclenché l'email
+  templateId        String?
+  relatedEntityId   String?
+  relatedEntityType String?
+
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  // ─── Relations ───
+  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  replies   InboundEmail[] // Réponses reçues sur cet email
 
   @@index([tenantId])
-  @@index([status])
+  @@index([tenantId, category])
+  @@index([tenantId, status])
+  @@index([tenantId, recipient])
+  @@index([threadId])
+  @@index([replyToToken])
+  @@index([tenantId, createdAt])
   @@map("email_logs")
+}
+
+model InboundEmail {
+  id              String    @id @default(uuid())
+  tenantId        String
+
+  // ─── Lien vers l'email original ───
+  originalEmailId String?   // FK vers EmailLog (null si pas de match)
+  threadId        String?
+
+  // ─── Expéditeur (le candidat qui répond) ───
+  fromEmail       String
+  fromName        String?
+  toEmail         String    // L'adresse replies.xxx@academiahelm.com
+
+  // ─── Contenu ───
+  subject         String
+  textContent     String?
+  htmlContent     String?
+  attachments     String?   // JSON array d'URLs S3
+
+  // ─── Provider (Resend Inbound) ───
+  providerId      String?
+  rawHeaders      String?
+
+  // ─── Traitement ───
+  status          String    @default("RECEIVED") // RECEIVED | PROCESSED | FAILED | ARCHIVED
+  errorMessage    String?
+
+  receivedAt      DateTime  @default(now())
+  processedAt     DateTime?
+
+  // ─── Relations ───
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  originalEmail EmailLog? @relation(fields: [originalEmailId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([originalEmailId])
+  @@index([fromEmail])
+  @@index([threadId])
+  @@index([tenantId, receivedAt])
+  @@map("inbound_emails")
 }
 
 model WhatsappLog {

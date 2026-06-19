@@ -4,13 +4,16 @@
  * ============================================================================
  * 
  * Module pour les services de communication (Email, WhatsApp, SMS)
+ * + Traçabilité catégorisée (EmailLogService) + Inbound (Volet 2)
  * 
  * ============================================================================
  */
 
-import { Module } from '@nestjs/common';
+import { Module, OnModuleInit } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { EmailService } from './services/email.service';
+import { EmailLogService } from './services/email-log.service';
+import { InboundEmailService } from './services/inbound-email.service';
 import { WhatsAppService } from './services/whatsapp.service';
 import { SmsService } from './services/sms.service';
 import { VoiceService } from './services/voice.service';
@@ -31,6 +34,7 @@ import { AutomationPrismaController } from './automation-prisma.controller';
 import { AutomationPrismaService } from './automation-prisma.service';
 import { TemplatesPrismaController } from './templates-prisma.controller';
 import { TemplatesPrismaService } from './templates-prisma.service';
+import { EmailLogController } from './email-log.controller';
 import { DatabaseModule } from '../database/database.module';
 
 @Module({
@@ -42,9 +46,12 @@ import { DatabaseModule } from '../database/database.module';
     SchedulingPrismaController,
     AutomationPrismaController,
     TemplatesPrismaController,
+    EmailLogController,
   ],
   providers: [
     EmailService, 
+    EmailLogService,
+    InboundEmailService,
     WhatsAppService, 
     SmsService, 
     VoiceService,
@@ -63,6 +70,8 @@ import { DatabaseModule } from '../database/database.module';
   ],
   exports: [
     EmailService, 
+    EmailLogService,
+    InboundEmailService,
     WhatsAppService, 
     SmsService, 
     VoiceService,
@@ -79,4 +88,18 @@ import { DatabaseModule } from '../database/database.module';
     TemplatesPrismaService,
   ],
 })
-export class CommunicationModule {}
+export class CommunicationModule implements OnModuleInit {
+  constructor(
+    private readonly emailService: EmailService,
+    private readonly emailLogService: EmailLogService,
+  ) {}
+
+  /**
+   * Injecte EmailLogService dans EmailService pour éviter la circular
+   * dependency. EmailService peut alors appeler emailLogService.createLog()
+   * sans dépendre statiquement de lui.
+   */
+  onModuleInit() {
+    this.emailService.setEmailLogService(this.emailLogService);
+  }
+}

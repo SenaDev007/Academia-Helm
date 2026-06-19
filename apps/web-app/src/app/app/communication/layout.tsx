@@ -1,22 +1,23 @@
 'use client';
 
 import React from 'react';
-import { 
-  MessageSquare, 
-  Smartphone, 
-  Calendar, 
-  Zap, 
-  FileText, 
-  LayoutDashboard, 
-  Bell, 
-  Share2, 
-  Users, 
-  User, 
-  GraduationCap, 
-  ShieldCheck, 
-  History, 
-  BarChart3, 
-  Settings 
+import {
+  MessageSquare,
+  Smartphone,
+  Calendar,
+  Zap,
+  FileText,
+  LayoutDashboard,
+  Bell,
+  Share2,
+  Users,
+  User,
+  GraduationCap,
+  ShieldCheck,
+  History,
+  BarChart3,
+  Settings,
+  Inbox,
 } from 'lucide-react';
 import { ModuleHeader, SubModuleNavigation } from '@/components/modules/blueprint';
 import { usePathname } from 'next/navigation';
@@ -30,6 +31,7 @@ export default function CommunicationLayout({
 
   const subModuleTabs = [
     { id: 'dashboard', label: 'Pilotage', path: '/app/communication/dashboard', icon: LayoutDashboard },
+    { id: 'inbox', label: 'Boîte de réception', path: '/app/communication/inbox', icon: Inbox },
     { id: 'messages', label: 'Messagerie', path: '/app/communication/messages', icon: MessageSquare },
     { id: 'announcements', label: 'Annonces', path: '/app/communication/announcements', icon: Bell },
     { id: 'automated-notifications', label: 'Automatisations', path: '/app/communication/automated-notifications', icon: Zap },

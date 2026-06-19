@@ -20,6 +20,7 @@ export interface EmailRequest {
   text?: string;
   from?: string;
   fromName?: string;
+  replyTo?: string; // Adresse reply-to personnalisée (ex: log_xxx@replies.academiahelm.com)
   cc?: string | string[];
   bcc?: string | string[];
   attachments?: Array<{
@@ -144,6 +145,7 @@ export class EmailService {
       subject: request.subject,
       text: request.text,
       html: request.html || request.text,
+      replyTo: request.replyTo,
       cc: request.cc ? (Array.isArray(request.cc) ? request.cc.join(', ') : request.cc) : undefined,
       bcc: request.bcc ? (Array.isArray(request.bcc) ? request.bcc.join(', ') : request.bcc) : undefined,
       attachments: request.attachments,
@@ -197,6 +199,9 @@ export class EmailService {
         subject: request.subject,
         html: request.html ?? request.text,
         text: request.text,
+        ...(request.replyTo ? { reply_to: request.replyTo } : {}),
+        ...(request.cc ? { cc: Array.isArray(request.cc) ? request.cc : [request.cc] } : {}),
+        ...(request.bcc ? { bcc: Array.isArray(request.bcc) ? request.bcc : [request.bcc] } : {}),
       }),
     });
 
@@ -382,5 +387,128 @@ L'équipe Academia Helm
     `.trim();
 
     return { subject, html, text };
+  }
+
+  // ============================================================================
+  // MÉTHODE sendCategorized() — Wrapper avec traçabilité
+  // ============================================================================
+  //
+  // Cette méthode orchestre :
+  //   1. La création d'une entrée EmailLog (status=PENDING) avec catégorisation
+  //   2. L'envoi de l'email via sendEmail() avec le reply-to personnalisé
+  //   3. La mise à jour de l'EmailLog (status=SENT ou FAILED)
+  //
+  // Elle ne JAMAIS throw — les erreurs sont loggées et l'EmailLog est marqué
+  // FAILED. Le caller peut vérifier le retour pour diagnostic.
+  //
+  // Pour migrer un service existant :
+  //   AVANT : await this.emailService.sendEmail({ to, subject, html, fromName })
+  //   APRÈS : await this.emailService.sendCategorized({ tenantId, category, to, subject, html, ... })
+  //
+  // Le EmailLogService est résolu via ModuleRef (lazy) pour éviter une
+  // circular dependency entre EmailService → EmailLogService → PrismaService.
+  // ============================================================================
+
+  private _emailLogService: any = null;
+
+  /**
+   * Injecte le EmailLogService (appelé par CommunicationModule.onModuleInit).
+   * Évite la circular dependency.
+   */
+  setEmailLogService(service: any): void {
+    this._emailLogService = service;
+  }
+
+  /**
+   * Envoie un email catégorisé ET tracé en DB.
+   *
+   * @returns { success, logId, providerId?, error? }
+   *   - success=true : email envoyé et log cré
+   *   - success=false : envoi échoué, log marqué FAILED
+   */
+  async sendCategorized(request: import('./email-log.service').CategorizedEmailRequest): Promise<{
+    success: boolean;
+    logId?: string;
+    providerId?: string;
+    error?: string;
+  }> {
+    // Si EmailLogService n'est pas injecté (config minimale), fallback vers sendEmail
+    if (!this._emailLogService) {
+      this.logger.warn(
+        'sendCategorized called but EmailLogService not injected — falling back to sendEmail (no logging)',
+      );
+      try {
+        const result = await this.sendEmail({
+          to: request.to,
+          subject: request.subject,
+          html: request.html,
+          text: request.text,
+          from: request.fromEmail,
+          fromName: request.fromName,
+          cc: request.cc,
+          bcc: request.bcc,
+        });
+        return { success: result.success, providerId: result.messageId };
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
+    }
+
+    // 1. Créer le log (status=PENDING)
+    let logId: string;
+    let replyTo: string | null;
+    try {
+      const logResult = await this._emailLogService.createLog(request);
+      logId = logResult.logId;
+      replyTo = logResult.replyTo;
+    } catch (err: any) {
+      this.logger.error(`Failed to create EmailLog: ${err.message}`, err.stack);
+      // On continue quand même l'envoi — l'email doit partir même si le log échoue
+      try {
+        const result = await this.sendEmail({
+          to: request.to,
+          subject: request.subject,
+          html: request.html,
+          text: request.text,
+          from: request.fromEmail,
+          fromName: request.fromName,
+        });
+        return { success: result.success, providerId: result.messageId };
+      } catch (sendErr: any) {
+        return { success: false, error: sendErr.message };
+      }
+    }
+
+    // 2. Envoyer l'email avec le reply-to personnalisé
+    try {
+      const result = await this.sendEmail({
+        to: request.to,
+        subject: request.subject,
+        html: request.html,
+        text: request.text,
+        from: request.fromEmail,
+        fromName: request.fromName,
+        replyTo: replyTo || undefined,
+        cc: request.cc,
+        bcc: request.bcc,
+      });
+
+      // 3a. Marquer comme SENT
+      if (result.success) {
+        await this._emailLogService.markAsSent(logId, this.provider, result.messageId);
+        return { success: true, logId, providerId: result.messageId };
+      } else {
+        await this._emailLogService.markAsFailed(logId, 'Provider returned success=false');
+        return { success: false, logId, error: 'Provider returned success=false' };
+      }
+    } catch (err: any) {
+      // 3b. Marquer comme FAILED
+      try {
+        await this._emailLogService.markAsFailed(logId, err.message);
+      } catch (markErr: any) {
+        this.logger.error(`Failed to mark EmailLog ${logId} as FAILED: ${markErr.message}`);
+      }
+      return { success: false, logId, error: err.message };
+    }
   }
 }

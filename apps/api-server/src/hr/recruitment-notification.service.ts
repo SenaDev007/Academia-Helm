@@ -186,12 +186,8 @@ export class RecruitmentNotificationService {
    * Envoie un email via EmailService — wrapper qui log les erreurs.
    * Ne JAMAIS throw — les erreurs sont catchées et loggées.
    *
-   * Si `fromName` n'est pas fourni, on utilise "Academia Helm — Recrutement"
-   * par défaut. Le fromName peut être personnalisé via le RecruiterProfile.
-   *
-   * IMPORTANT : Le fromEmail DOIT être un domaine vérifié dans Resend.
-   * Si le recruiterEmail n'est pas sur un domaine vérifié, on utilise
-   * noreply@academiahelm.com (ou EMAIL_FROM_NOREPLY) comme fallback.
+   * Le fromName affiche le nom de l'école (pas Academia Helm) car c'est
+   * l'école qui recrute. Academia Helm apparaît dans le footer de l'email.
    */
   private async sendEmail(
     to: string,
@@ -199,9 +195,6 @@ export class RecruitmentNotificationService {
     html: string,
     options?: { fromName?: string; fromEmail?: string },
   ): Promise<void> {
-    // IMPORTANT : On passe explicitement le from pour étre sûr que
-    // l'EmailService l'utilise (même logique que auth.service.ts pour l'OTP).
-    // Sans from explicite, l'EmailService peut tomber sur un fallback différent.
     const fromEmail = this.configService.get<string>('EMAIL_FROM_NOREPLY') || 'noreply@academiahelm.com';
     
     await this.emailService.sendEmail({
@@ -211,7 +204,7 @@ export class RecruitmentNotificationService {
       from: fromEmail,
       fromName: options?.fromName || 'Academia Helm — Recrutement',
     });
-    this.logger.log(`📧 Email sent to ${to} — subject: "${subject.substring(0, 80)}" — from=${fromEmail}`);
+    this.logger.log(`📧 Email sent to ${to} — subject: "${subject.substring(0, 80)}" — fromName=${options?.fromName || 'default'}`);
   }
 
   // ─── 1. CANDIDATURE REÇUE ──────────────────────────────────────────────────
@@ -245,9 +238,7 @@ export class RecruitmentNotificationService {
         documentsSubmitted: params.documentsSubmitted,
       });
       await this.sendEmail(candidate.email, subject, html, {
-        fromName: branding.recruiterName
-          ? `${branding.recruiterName} — ${branding.schoolName}`
-          : 'Academia Helm — Recrutement',
+        fromName: branding.schoolName,
         fromEmail: branding.recruiterEmail || undefined,
       });
     } catch (err: any) {
@@ -285,7 +276,7 @@ export class RecruitmentNotificationService {
         evaluator: params.evaluator,
         type: params.type,
       });
-      await this.sendEmail(candidate.email, subject, html);
+      await this.sendEmail(candidate.email, subject, html, { fromName: branding.schoolName });
     } catch (err: any) {
       this.logger.error(`notifyInterviewScheduled failed: ${err.message}`, err.stack);
     }
@@ -325,7 +316,7 @@ export class RecruitmentNotificationService {
         maxScore: params.maxScore,
         passingScore: params.passingScore,
       });
-      await this.sendEmail(candidate.email, subject, html);
+      await this.sendEmail(candidate.email, subject, html, { fromName: branding.schoolName });
     } catch (err: any) {
       this.logger.error(`notifyTestScheduled failed: ${err.message}`, err.stack);
     }
@@ -361,7 +352,7 @@ export class RecruitmentNotificationService {
         evaluator: params.evaluator,
         interviewDate: params.interviewDate,
       });
-      await this.sendEmail(candidate.email, subject, html);
+      await this.sendEmail(candidate.email, subject, html, { fromName: branding.schoolName });
     } catch (err: any) {
       this.logger.error(`notifyInterviewResult failed: ${err.message}`, err.stack);
     }
@@ -399,7 +390,7 @@ export class RecruitmentNotificationService {
         testName: params.testName,
         feedback: params.feedback,
       });
-      await this.sendEmail(candidate.email, subject, html);
+      await this.sendEmail(candidate.email, subject, html, { fromName: branding.schoolName });
     } catch (err: any) {
       this.logger.error(`notifyTestResult failed: ${err.message}`, err.stack);
     }
@@ -433,7 +424,7 @@ export class RecruitmentNotificationService {
         salary: params.salary,
         contractUrl: params.contractUrl,
       });
-      await this.sendEmail(candidate.email, subject, html);
+      await this.sendEmail(candidate.email, subject, html, { fromName: branding.schoolName });
     } catch (err: any) {
       this.logger.error(`notifyHired failed: ${err.message}`, err.stack);
     }
@@ -465,7 +456,7 @@ export class RecruitmentNotificationService {
         signedAt: params.signedAt,
         contractUrl: params.contractUrl,
       });
-      await this.sendEmail(candidate.email, subject, html);
+      await this.sendEmail(candidate.email, subject, html, { fromName: branding.schoolName });
     } catch (err: any) {
       this.logger.error(`notifyContractSigned failed: ${err.message}`, err.stack);
     }
@@ -493,7 +484,7 @@ export class RecruitmentNotificationService {
         jobTitle,
         reason: params.reason,
       });
-      await this.sendEmail(candidate.email, subject, html);
+      await this.sendEmail(candidate.email, subject, html, { fromName: branding.schoolName });
     } catch (err: any) {
       this.logger.error(`notifyRejected failed: ${err.message}`, err.stack);
     }

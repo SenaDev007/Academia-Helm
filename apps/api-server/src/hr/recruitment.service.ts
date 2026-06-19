@@ -3318,5 +3318,108 @@ Réponds UNIQUEMENT en JSON valide.`,
       };
     }
   }
+
+  /**
+   * TEST — Envoie DIRECTEMENT l'email "Résultat entretien" sans lookup DB.
+   * Tous les paramètres sont fournis dans le body. Permet de tester le
+   * template email et le sanitizeHtml rapidement.
+   */
+  async testSendInterviewResultDirect(body: any) {
+    this.logger.log(`testSendInterviewResultDirect: toEmail=${body?.toEmail}, tenantId=${body?.tenantId}`);
+
+    if (!body?.toEmail || !body?.tenantId) {
+      throw new BadRequestException('toEmail et tenantId sont requis dans le body');
+    }
+
+    try {
+      const branding = await this.notificationService['getTenantBranding'](body.tenantId);
+      const { renderInterviewResult } = await import('./recruitment-email-templates');
+      const { subject, html } = renderInterviewResult({
+        branding,
+        candidateName: body.candidateName || 'Candidat Test',
+        candidateFirstName: body.candidateFirstName || 'candidat(e)',
+        jobTitle: body.jobTitle || 'Poste de test',
+        result: body.result || 'RÉUSSI',
+        score: typeof body.score === 'number' ? body.score : undefined,
+        feedback: body.feedback,
+        evaluator: body.evaluator,
+        interviewDate: body.interviewDate,
+      });
+
+      await this.notificationService['sendEmail'](body.toEmail, subject, html, {
+        fromName: branding.recruiterName
+          ? `${branding.recruiterName} — ${branding.schoolName}`
+          : branding.schoolName || 'Academia Helm — Recrutement',
+      });
+
+      return {
+        success: true,
+        message: `Email de résultat d'entretien envoyé à ${body.toEmail}`,
+        toEmail: body.toEmail,
+        subject,
+        feedbackSent: body.feedback,
+        htmlLength: html.length,
+        htmlPreview: html.substring(0, 500) + '...',
+      };
+    } catch (err: any) {
+      this.logger.error(`testSendInterviewResultDirect FAILED: ${err.message}`, err.stack);
+      return {
+        success: false,
+        error: err.message,
+        toEmail: body.toEmail,
+      };
+    }
+  }
+
+  /**
+   * TEST — Envoie DIRECTEMENT l'email "Résultat test" sans lookup DB.
+   */
+  async testSendTestResultDirect(body: any) {
+    this.logger.log(`testSendTestResultDirect: toEmail=${body?.toEmail}, tenantId=${body?.tenantId}`);
+
+    if (!body?.toEmail || !body?.tenantId) {
+      throw new BadRequestException('toEmail et tenantId sont requis dans le body');
+    }
+
+    try {
+      const branding = await this.notificationService['getTenantBranding'](body.tenantId);
+      const { renderTestResult } = await import('./recruitment-email-templates');
+      const { subject, html } = renderTestResult({
+        branding,
+        candidateName: body.candidateName || 'Candidat Test',
+        candidateFirstName: body.candidateFirstName || 'candidat(e)',
+        jobTitle: body.jobTitle || 'Poste de test',
+        result: body.result || 'RÉUSSI',
+        score: typeof body.score === 'number' ? body.score : undefined,
+        maxScore: typeof body.maxScore === 'number' ? body.maxScore : undefined,
+        passingScore: typeof body.passingScore === 'number' ? body.passingScore : undefined,
+        testName: body.testName,
+        feedback: body.feedback,
+      });
+
+      await this.notificationService['sendEmail'](body.toEmail, subject, html, {
+        fromName: branding.recruiterName
+          ? `${branding.recruiterName} — ${branding.schoolName}`
+          : branding.schoolName || 'Academia Helm — Recrutement',
+      });
+
+      return {
+        success: true,
+        message: `Email de résultat de test envoyé à ${body.toEmail}`,
+        toEmail: body.toEmail,
+        subject,
+        feedbackSent: body.feedback,
+        htmlLength: html.length,
+        htmlPreview: html.substring(0, 500) + '...',
+      };
+    } catch (err: any) {
+      this.logger.error(`testSendTestResultDirect FAILED: ${err.message}`, err.stack);
+      return {
+        success: false,
+        error: err.message,
+        toEmail: body.toEmail,
+      };
+    }
+  }
 }
 

@@ -455,4 +455,56 @@ export class RecruitmentPrismaController {
   ) {
     return this.service.testResendTestResultByEmail(email, tenantId);
   }
+
+  // ============================================================================
+  // TEST — Envoie DIRECTEMENT l'email "Résultat entretien" avec les paramètres
+  // fournis dans le body (sans lookup DB). Permet de tester le template
+  // email sans devoir avoir un entretien existant en base.
+  //
+  // Body JSON:
+  //   {
+  //     "tenantId": "...",
+  //     "toEmail": "candidate@example.com",
+  //     "candidateFirstName": "Aurore",
+  //     "candidateName": "Aurore AKPOVI",
+  //     "jobTitle": "Professeur des SVT",
+  //     "result": "RÉUSSI",        // ou "ÉCHEC"
+  //     "score": 85,
+  //     "feedback": "<p>excellent</p>",
+  //     "evaluator": "M. Dupont",
+  //     "interviewDate": "2026-06-19"  // ISO ou YYYY-MM-DD
+  //   }
+  // ============================================================================
+
+  @Public()
+  @Post('test-send-interview-result-direct')
+  async testSendInterviewResultDirect(@Body() body: any) {
+    return this.service.testSendInterviewResultDirect(body);
+  }
+
+  // ============================================================================
+  // TEST — Envoie DIRECTEMENT l'email "Résultat test" avec les paramètres
+  // fournis dans le body (sans lookup DB).
+  //
+  // Body JSON:
+  //   {
+  //     "tenantId": "...",
+  //     "toEmail": "candidate@example.com",
+  //     "candidateFirstName": "Aurore",
+  //     "candidateName": "Aurore AKPOVI",
+  //     "jobTitle": "Professeur des SVT",
+  //     "testName": "Test de connaissances",
+  //     "result": "RÉUSSI",
+  //     "score": 80,
+  //     "maxScore": 100,
+  //     "passingScore": 50,
+  //     "feedback": "<p>excellent</p>"
+  //   }
+  // ============================================================================
+
+  @Public()
+  @Post('test-send-test-result-direct')
+  async testSendTestResultDirect(@Body() body: any) {
+    return this.service.testSendTestResultDirect(body);
+  }
 }

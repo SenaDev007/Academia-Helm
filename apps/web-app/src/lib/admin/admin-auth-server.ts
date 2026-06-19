@@ -544,6 +544,53 @@ export function isPasswordAuthEnabled(): boolean {
   return Boolean(process.env.ADMIN_PASSWORDS);
 }
 
+// ─── Server-side admin session reader (for Server Components) ──────────────
+
+/**
+ * Lit le cookie `academia_admin_session` côté Server Component et retourne
+ * l'utilisateur admin si valide, null sinon.
+ *
+ * À utiliser dans les layouts/pages qui doivent accepter une authentification
+ * admin (en plus de l'authentification tenant standard).
+ *
+ * Exemple d'usage :
+ *   import { getAdminServerSession } from '@/lib/admin/admin-auth-server';
+ *   const admin = await getAdminServerSession();
+ *   if (admin) { /* admin authentifié *\/ }
+ */
+export async function getAdminServerSession(): Promise<{
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  expiresAt: string;
+} | null> {
+  const { cookies } = await import('next/headers');
+  const cookieStore = await cookies();
+  const cookie = cookieStore.get(ADMIN_SESSION_COOKIE)?.value;
+  if (!cookie) return null;
+
+  try {
+    const decoded = JSON.parse(decodeURIComponent(cookie)) as {
+      user?: { id?: string; email?: string; name?: string; role?: string };
+      expiresAt?: string;
+      signature?: string;
+    };
+    if (!decoded.user?.id || !decoded.user?.email || !decoded.signature) return null;
+    if (decoded.expiresAt && new Date(decoded.expiresAt) < new Date()) return null;
+
+    return {
+      id: decoded.user.id,
+      email: decoded.user.email,
+      name: decoded.user.name || decoded.user.email.split('@')[0],
+      role: decoded.user.role || 'PLATFORM_SUPER_ADMIN',
+      expiresAt: decoded.expiresAt || '',
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ─── Password reset (token JWT signé) ───────────────────────────────────────
 
 const RESET_TOKEN_VALIDITY_MINUTES = 30;

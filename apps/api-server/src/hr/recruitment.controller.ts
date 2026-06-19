@@ -507,4 +507,21 @@ export class RecruitmentPrismaController {
   async testSendTestResultDirect(@Body() body: any) {
     return this.service.testSendTestResultDirect(body);
   }
+
+  // ============================================================================
+  // TEST — Vérifier les documents d'un candidat (endpoint temporaire @Public)
+  // Pour diagnostiquer pourquoi les documents n'apparaissent pas dans la fiche.
+  // À supprimer après diagnostic.
+  //
+  // GET /api/hr/recruitment/debug-candidate-documents/:candidateId?tenantId=...
+  // ============================================================================
+
+  @Public()
+  @Get('debug-candidate-documents/:candidateId')
+  async debugCandidateDocuments(
+    @Param('candidateId') candidateId: string,
+    @Query('tenantId') tenantId: string,
+  ) {
+    return this.service.debugCandidateDocuments(candidateId, tenantId);
+  }
 }

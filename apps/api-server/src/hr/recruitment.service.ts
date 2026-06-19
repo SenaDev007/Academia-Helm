@@ -3467,5 +3467,90 @@ Réponds UNIQUEMENT en JSON valide.`,
       };
     }
   }
+
+  /**
+   * TEST — Debug les documents d'un candidat.
+   * Retourne le candidat + ses documents + des métadonnées pour diagnostic.
+   */
+  async debugCandidateDocuments(candidateId: string, tenantId: string) {
+    this.logger.log(`debugCandidateDocuments: candidateId=${candidateId}, tenantId=${tenantId}`);
+
+    // 1. Récupérer le candidat sans include (pour vérifier qu'il existe)
+    const candidateBasic = await this.prisma.hrCandidate.findFirst({
+      where: { id: candidateId, tenantId },
+      select: { id: true, firstName: true, lastName: true, email: true, createdAt: true },
+    });
+
+    if (!candidateBasic) {
+      return {
+        success: false,
+        error: `Candidat ${candidateId} non trouvé pour le tenant ${tenantId}`,
+      };
+    }
+
+    // 2. Compter les documents directement (requete raw pour bypass Prisma client)
+    const rawCount = await this.prisma.$queryRaw`
+      SELECT COUNT(*)::int as count
+      FROM hr_candidate_documents
+      WHERE "candidateId" = ${candidateId}
+    `;
+
+    // 3. Récupérer les documents via Prisma
+    let documentsViaPrisma: any[] = [];
+    try {
+      documentsViaPrisma = await this.prisma.candidateDocument.findMany({
+        where: { candidateId },
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch (err: any) {
+      return {
+        success: false,
+        candidate: candidateBasic,
+        error: `Failed to fetch documents via Prisma: ${err.message}`,
+        code: err.code,
+      };
+    }
+
+    // 4. Récupérer le candidat avec include documents (comme le fait getCandidates)
+    let candidateWithInclude: any = null;
+    try {
+      candidateWithInclude = await this.prisma.hrCandidate.findFirst({
+        where: { id: candidateId, tenantId },
+        include: {
+          documents: {
+            orderBy: { createdAt: 'desc' },
+          },
+        },
+      });
+    } catch (err: any) {
+      return {
+        success: false,
+        candidate: candidateBasic,
+        error: `Failed to fetch candidate with include documents: ${err.message}`,
+        code: err.code,
+      };
+    }
+
+    return {
+      success: true,
+      candidate: candidateBasic,
+      rawCount: Array.isArray(rawCount) ? rawCount[0] : rawCount,
+      documentsViaPrisma: documentsViaPrisma.map((d) => ({
+        id: d.id,
+        documentType: d.documentType,
+        fileName: d.fileName,
+        filePath: d.filePath?.substring(0, 100),
+        fileSize: d.fileSize,
+        mimeType: d.mimeType,
+        createdAt: d.createdAt,
+      })),
+      documentsCountViaInclude: candidateWithInclude?.documents?.length || 0,
+      documentsViaInclude: candidateWithInclude?.documents?.map((d: any) => ({
+        id: d.id,
+        documentType: d.documentType,
+        fileName: d.fileName,
+      })) || [],
+    };
+  }
 }
 

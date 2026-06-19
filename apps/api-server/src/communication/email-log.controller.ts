@@ -75,8 +75,15 @@ export class EmailLogController {
     };
 
     // Step 1: Vérifier que la table email_logs existe et a les colonnes
+    // On passe par emailLogService['prisma'] (le PrismaService est privé dans
+    // le service, mais accessible via bracket notation en TypeScript)
     try {
-      const columns = await this.prisma.$queryRaw`
+      const prisma = (this.emailLogService as any).prisma;
+      if (!prisma) {
+        throw new Error('PrismaService non disponible dans EmailLogService');
+      }
+
+      const columns = await prisma.$queryRaw`
         SELECT column_name, data_type
         FROM information_schema.columns
         WHERE table_name = 'email_logs'
@@ -85,6 +92,7 @@ export class EmailLogController {
       result.steps.push({
         step: 'check_columns',
         success: true,
+        columnsCount: Array.isArray(columns) ? columns.length : 0,
         columns: columns,
       });
     } catch (err: any) {
@@ -95,39 +103,36 @@ export class EmailLogController {
       });
     }
 
-    // Step 2: Tenter d'insérer un EmailLog de test
+    // Step 2: Tenter d'insérer un EmailLog de test via le service dédié
     try {
-      const testLog = await this.prisma.emailLog.create({
-        data: {
-          tenantId,
-          category: 'SYSTEM',
-          subCategory: 'debug_test',
-          module: 'communication',
-          fromEmail: 'debug@academiahelm.com',
-          fromName: 'Debug Test',
-          recipient: 'debug-test@example.com',
-          recipientName: 'Debug Test',
-          recipientType: 'EXTERNE',
-          subject: '[DEBUG] Test EmailLog creation',
-          content: '<p>Test debug</p>',
-          textContent: 'Test debug',
-          status: 'SENT',
-          provider: 'debug',
-          threadId: 'debug-test-thread',
-          replyTo: 'log_debugtest@replies.academiahelm.com',
-          replyToToken: 'debugtest',
-          triggeredBy: 'SYSTEM',
-          sentAt: new Date(),
-        },
+      const { logId, replyTo } = await this.emailLogService.createLog({
+        tenantId,
+        category: 'SYSTEM',
+        subCategory: 'debug_test',
+        module: 'communication',
+        to: 'debug-test@example.com',
+        toName: 'Debug Test',
+        recipientType: 'EXTERNE',
+        fromEmail: 'debug@academiahelm.com',
+        fromName: 'Debug Test',
+        subject: '[DEBUG] Test EmailLog creation',
+        html: '<p>Test debug</p>',
+        text: 'Test debug',
+        triggeredBy: 'SYSTEM',
       });
       result.steps.push({
         step: 'insert_test_log',
         success: true,
-        logId: testLog.id,
+        logId,
+        replyTo,
       });
 
-      // Step 3: Supprimer le log de test
-      await this.prisma.emailLog.delete({ where: { id: testLog.id } });
+      // Step 3: Marquer comme SENT pour le test, puis supprimer
+      await this.emailLogService.markAsSent(logId, 'debug', 'debug-message-id');
+
+      // Récupérer et supprimer le log de test
+      const prisma = (this.emailLogService as any).prisma;
+      await prisma.emailLog.delete({ where: { id: logId } });
       result.steps.push({
         step: 'delete_test_log',
         success: true,
@@ -139,18 +144,19 @@ export class EmailLogController {
         error: err.message,
         code: err.code,
         meta: err.meta,
+        stack: err.stack?.substring(0, 500),
       });
     }
 
     // Step 4: Compter les EmailLogs existants
     try {
-      const count = await this.prisma.emailLog.count({
-        where: { tenantId },
-      });
+      const stats = await this.emailLogService.getStats(tenantId);
       result.steps.push({
         step: 'count_existing_logs',
         success: true,
-        count,
+        total: stats.total,
+        byStatus: stats.byStatus,
+        byCategory: stats.byCategory,
       });
     } catch (err: any) {
       result.steps.push({

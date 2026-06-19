@@ -28,6 +28,64 @@ function escHtml(s: string | number | undefined | null): string {
     .replace(/"/g, '&quot;');
 }
 
+/**
+ * Sanitize un contenu HTML pour insertion sûre dans l'email.
+ *
+ * Pourquoi : les champs "feedback", "instructions", "description" proviennent
+ * souvent d'un RichTextEditor (Tiptap) qui produit du HTML (ex: <p>excellent</p>,
+ * <ul><li>...</li></ul>). Si on les passe à `escHtml`, les balises sont échappées
+ * et s'affichent littéralement dans l'email (« <p>excellent</p> »).
+ *
+ * Cette fonction :
+ *   1. Détecte si le contenu contient du HTML (présence de balises connues).
+ *      → Si non, l'échappe comme avant (comportement historique).
+ *   2. Si oui, supprime les balises dangereuses (script, iframe, object, embed,
+ *      style, link, meta) et leurs contenus.
+ *   3. Supprime les attributs on* (onclick, onerror, onload, etc.).
+ *   4. Nettoie les URLs javascript: dans href/src.
+ *
+ * Le contenu HTML restant (p, ul, ol, li, strong, em, br, h1-h6, blockquote, etc.)
+ * est rendu tel quel — c'est le but recherché pour préserver la mise en forme.
+ */
+function sanitizeHtml(s: string | undefined | null): string {
+  if (!s) return '';
+  let str = String(s).trim();
+  if (!str) return '';
+
+  // Détecter la présence de balises HTML courantes
+  // (on exclut les &lt; &gt; déjà échappés qui ne sont pas du vrai HTML)
+  const htmlTagPattern = /<(p|div|span|ul|ol|li|strong|em|b|i|u|br|h[1-6]|blockquote|a|img|table|tr|td|th|hr|sub|sup|code|pre)\b[^>]*>/i;
+  if (!htmlTagPattern.test(str)) {
+    // Pas de HTML → échapper normalement
+    return escHtml(str);
+  }
+
+  // 1. Supprimer les balises dangereuses ET leur contenu
+  str = str.replace(
+    /<(script|iframe|object|embed|style|link|meta|noscript|template)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,
+    '',
+  );
+  // 2. Supprimer toute balise auto-fermante ou orpheline dangereuse restante
+  str = str.replace(
+    /<(script|iframe|object|embed|style|link|meta|noscript|template)\b[^>]*\/?>/gi,
+    '',
+  );
+  // 3. Supprimer les commentaires HTML (peuvent cacher du code)
+  str = str.replace(/<!--[\s\S]*?-->/g, '');
+  // 4. Supprimer les attributs on* (onclick, onerror, onload, etc.)
+  str = str.replace(
+    /\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi,
+    '',
+  );
+  // 5. Neutraliser les URLs javascript: dans href/src
+  str = str.replace(
+    /(href|src)\s*=\s*("javascript:[^"]*"|'javascript:[^']*'|javascript:[^\s>]*)/gi,
+    '$1="#"',
+  );
+
+  return str;
+}
+
 function formatDateFR(date: Date | string | undefined | null): string {
   if (!date) return 'Date à confirmer';
   try {
@@ -393,8 +451,8 @@ export function renderTestScheduled(
         ${data.duration ? `<p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>⏱️ Durée :</strong> ${data.duration} minutes</p>` : ''}
         ${data.maxScore ? `<p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>📊 Score maximum :</strong> ${data.maxScore}/100</p>` : ''}
         ${data.passingScore ? `<p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>✅ Score requis :</strong> ${data.passingScore}/100</p>` : ''}
-        ${data.description ? `<p style="margin:12px 0 8px;font-size:13px;color:#334155;"><strong>Description :</strong><br />${escHtml(data.description)}</p>` : ''}
-        ${data.instructions ? `<p style="margin:12px 0 0;font-size:13px;color:#334155;"><strong>📌 Instructions :</strong><br />${escHtml(data.instructions)}</p>` : ''}
+        ${data.description ? `<div style="margin:12px 0 8px;font-size:13px;color:#334155;line-height:1.6;"><strong style="display:block;margin-bottom:6px;">Description :</strong><div style="margin:0;">${sanitizeHtml(data.description)}</div></div>` : ''}
+        ${data.instructions ? `<div style="margin:12px 0 0;font-size:13px;color:#334155;line-height:1.6;"><strong style="display:block;margin-bottom:6px;">📌 Instructions :</strong><div style="margin:0;">${sanitizeHtml(data.instructions)}</div></div>` : ''}
       </td></tr>
     </table>
 
@@ -429,7 +487,7 @@ export function renderInterviewResult(
         ${data.score != null ? `<p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>Score obtenu :</strong> ${data.score}/100</p>` : ''}
         ${data.evaluator ? `<p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>Évaluateur :</strong> ${escHtml(data.evaluator)}</p>` : ''}
         ${data.interviewDate ? `<p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>Date de l'entretien :</strong> ${formatDateFR(data.interviewDate)}</p>` : ''}
-        ${data.feedback ? `<p style="margin:12px 0 0;font-size:13px;color:#334155;"><strong>Feedback :</strong><br />${escHtml(data.feedback)}</p>` : ''}
+        ${data.feedback ? `<div style="margin:12px 0 0;padding-top:12px;border-top:1px solid #e2e8f0;font-size:13px;color:#334155;line-height:1.6;"><strong style="display:block;margin-bottom:6px;">Feedback :</strong><div style="margin:0;">${sanitizeHtml(data.feedback)}</div></div>` : ''}
       </td></tr>
     </table>
 
@@ -465,7 +523,7 @@ export function renderTestResult(
         <p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>Résultat :</strong> <span style="color:${isPassed ? '#047857' : '#b91c1c'};font-weight:bold;">${escHtml(data.result)}</span></p>
         ${data.score != null ? `<p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>Score obtenu :</strong> ${data.score}${data.maxScore ? `/${data.maxScore}` : '/100'}</p>` : ''}
         ${data.passingScore != null ? `<p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>Score requis :</strong> ${data.passingScore}/100</p>` : ''}
-        ${data.feedback ? `<p style="margin:12px 0 0;font-size:13px;color:#334155;"><strong>Feedback :</strong><br />${escHtml(data.feedback)}</p>` : ''}
+        ${data.feedback ? `<div style="margin:12px 0 0;padding-top:12px;border-top:1px solid #e2e8f0;font-size:13px;color:#334155;line-height:1.6;"><strong style="display:block;margin-bottom:6px;">Feedback :</strong><div style="margin:0;">${sanitizeHtml(data.feedback)}</div></div>` : ''}
       </td></tr>
     </table>
 

@@ -390,4 +390,34 @@ export class RecruitmentPrismaController {
   ) {
     return this.service.testResendApplicationEmail(candidateId, tenantId);
   }
+
+  // ============================================================================
+  // TEST — Renvoyer l'email de notification "Résultat entretien" à un candidat
+  // Endpoint temporaire pour tester l'envoi d'email sans passer par le bouton
+  // "Valider l'entretien". À supprimer après validation.
+  // ============================================================================
+
+  @Public()
+  @Post('test-resend-interview-result/:interviewId')
+  async testResendInterviewResultEmail(
+    @Param('interviewId') interviewId: string,
+    @Query('tenantId') tenantId: string,
+  ) {
+    return this.service.testResendInterviewResultEmail(interviewId, tenantId);
+  }
+
+  // ============================================================================
+  // TEST — Renvoyer l'email de notification "Résultat test" à un candidat
+  // Endpoint temporaire pour tester l'envoi d'email sans créer un nouveau test
+  // result. À supprimer après validation.
+  // ============================================================================
+
+  @Public()
+  @Post('test-resend-test-result/:testResultId')
+  async testResendTestResultEmail(
+    @Param('testResultId') testResultId: string,
+    @Query('tenantId') tenantId: string,
+  ) {
+    return this.service.testResendTestResultEmail(testResultId, tenantId);
+  }
 }

@@ -1,5 +1,5 @@
 import { Metadata } from 'next';
-import OrionPilotageWorkspace from '@/components/orion/OrionPilotageWorkspace';
+import PlatformOrionWorkspace from '@/components/platform/orion/PlatformOrionWorkspace';
 
 export const metadata: Metadata = {
   title: 'ORION-Pilotage Global | Academia Helm Platform',
@@ -7,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function PlatformOrionPilotagePage() {
-  return <OrionPilotageWorkspace />;
+  return <PlatformOrionWorkspace />;
 }

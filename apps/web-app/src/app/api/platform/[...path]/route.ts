@@ -167,3 +167,39 @@ export async function DELETE(
     );
   }
 }
+
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: { path: string[] } },
+) {
+  const url = new URL(buildBackendUrl(params.path));
+  request.nextUrl.searchParams.forEach((value, key) => {
+    url.searchParams.append(key, value);
+  });
+
+  const headers = await getProxyAuthHeaders(request);
+  let body: any = undefined;
+  try {
+    body = await request.text();
+  } catch {
+    /* no body */
+  }
+
+  try {
+    const response = await fetch(url.toString(), {
+      method: 'PUT',
+      headers,
+      body,
+      cache: 'no-store',
+    });
+
+    const data = await parseBackendJson(response);
+    return NextResponse.json(data, { status: response.status });
+  } catch (error: any) {
+    console.error('[platform/proxy] PUT error:', error);
+    return NextResponse.json(
+      { error: error?.message || 'Erreur interne du proxy platform' },
+      { status: 500 },
+    );
+  }
+}

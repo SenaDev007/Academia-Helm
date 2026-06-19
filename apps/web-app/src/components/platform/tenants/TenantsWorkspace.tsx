@@ -1,36 +1,15 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useMemo, useCallback } from 'react';
 import {
   Search,
-  Plus,
-  ArrowUpRight,
   CheckCircle2,
   XCircle,
-  Clock,
-  MoreVertical,
-  FileText,
-  DollarSign,
-  Download,
-  Filter,
-  ShieldAlert,
-  History,
-  Users,
-  HelpCircle,
-  CreditCard,
-  PieChart,
-  Building,
-  LayoutDashboard,
-  Briefcase,
-  Zap,
-  BarChart3,
-  Lock,
-  Settings,
   Loader2,
   AlertCircle,
   RefreshCw,
-  Inbox,
+  Pause,
+  Play,
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { usePlatformData } from '@/hooks/usePlatformData';
@@ -61,9 +40,33 @@ interface TenantsData {
 export default function TenantsWorkspace() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const { data, loading, error, refetch } = usePlatformData<TenantsData>(
     `/tenants?search=${encodeURIComponent(searchTerm)}&status=${statusFilter}`,
   );
+
+  const handleToggleStatus = useCallback(async (tenantId: string, currentStatus: string) => {
+    setActionLoading(tenantId);
+    setActionError(null);
+    try {
+      const newStatus = currentStatus === 'SUSPENDED' ? 'active' : 'suspended';
+      const res = await fetch(`/api/platform/tenants/${tenantId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.message || `Erreur ${res.status}`);
+      }
+      refetch();
+    } catch (err: any) {
+      setActionError(err.message || 'Erreur lors de la modification du statut');
+    } finally {
+      setActionLoading(null);
+    }
+  }, [refetch]);
 
   return (
     <div className="space-y-6">
@@ -96,6 +99,13 @@ export default function TenantsWorkspace() {
         </div>
       </div>
 
+      {actionError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          <span>{actionError}</span>
+        </div>
+      )}
+
       {loading ? <PlatformLoading label="Chargement des écoles…" /> :
        error ? <PlatformError message={error} onRetry={refetch} /> :
        !data || data.tenants.length === 0 ? <PlatformEmpty title="Aucune école" description="Aucun établissement ne correspond à votre recherche." /> : (
@@ -113,6 +123,7 @@ export default function TenantsWorkspace() {
                   <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Statut</th>
                   <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Élèves</th>
                   <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Expiration</th>
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -141,6 +152,26 @@ export default function TenantsWorkspace() {
                     <td className="px-6 py-4 text-sm font-bold text-slate-900">{t.students}</td>
                     <td className="px-6 py-4 text-xs text-slate-600">
                       {t.expiration ? new Date(t.expiration).toLocaleDateString('fr-FR') : '—'}
+                    </td>
+                    <td className="px-6 py-4">
+                      <button
+                        onClick={() => handleToggleStatus(t.id, t.status)}
+                        disabled={actionLoading === t.id}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition ${
+                          t.status === 'SUSPENDED'
+                            ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                            : 'bg-rose-50 text-rose-600 hover:bg-rose-100'
+                        } disabled:opacity-50`}
+                        title={t.status === 'SUSPENDED' ? 'Réactiver' : 'Suspendre'}
+                      >
+                        {actionLoading === t.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : t.status === 'SUSPENDED' ? (
+                          <><Play className="w-3.5 h-3.5" /> Réactiver</>
+                        ) : (
+                          <><Pause className="w-3.5 h-3.5" /> Suspendre</>
+                        )}
+                      </button>
                     </td>
                   </tr>
                 ))}

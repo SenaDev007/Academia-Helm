@@ -1,12 +1,11 @@
 import { Metadata } from 'next';
-import AggregationWorkspace from '@/components/aggregation/AggregationWorkspace';
+import PlatformAggregationWorkspace from '@/components/platform/aggregation/PlatformAggregationWorkspace';
 
 export const metadata: Metadata = {
   title: 'Agrégation Globale | Academia Helm Platform',
-  description: 'Moteur de consolidation multi-écoles',
+  description: 'Consolidation multi-écoles — effectifs, finances, pédagogie',
 };
 
 export default function PlatformAggregationPage() {
-  // En production, on passerait un prop isGlobal={true} pour changer le contexte
-  return <AggregationWorkspace />;
+  return <PlatformAggregationWorkspace />;
 }

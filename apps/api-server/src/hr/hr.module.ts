@@ -28,6 +28,7 @@ import { HrKpiService } from './hr-kpi.service';
 import { StaffPrismaController } from './staff-prisma.controller';
 import { ContractsPrismaController } from './contracts-prisma.controller';
 import { ContractPublicSignController } from './contract-public-sign.controller';
+import { CleanupController } from './cleanup/cleanup.controller';
 import { AttendancePrismaController } from './attendance-prisma.controller';
 import { LeavesPrismaController } from './leaves-prisma.controller';
 import { AllowancesPrismaController } from './allowances-prisma.controller';
@@ -81,6 +82,7 @@ import { StaffCredentialService } from './services/staff-credential.service';
     StaffPrismaController,
     ContractsPrismaController,
     ContractPublicSignController,
+    CleanupController,
     AttendancePrismaController,
     LeavesPrismaController,
     AllowancesPrismaController,

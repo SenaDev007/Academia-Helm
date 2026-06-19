@@ -50,41 +50,17 @@ export default async function AppLayout({
   if (!session?.user) {
     const adminSession = await getAdminServerSession();
     if (adminSession) {
-      // Construire un user + tenant "virtuels" pour le back-office plateforme
-      const adminUser: User = {
-        id: adminSession.id,
-        email: adminSession.email,
-        firstName: adminSession.name,
-        lastName: '',
-        role: 'PLATFORM_SUPER_ADMIN',
-        isPlatformOwner: true,
-        tenantId: '',
-        // @ts-expect-error — champs optionnels selon le type User
-        adminRole: adminSession.role,
-      } as User;
-
-      const platformTenant: Tenant = {
-        id: 'platform',
-        name: 'Academia Helm Platform',
-        slug: 'platform',
-        subdomain: 'admin',
-        status: 'active',
-        subscriptionStatus: 'ACTIVE_SUBSCRIBED',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        trialEndsAt: undefined,
-        nextPaymentDueAt: undefined,
-      } as Tenant;
-
-      return (
-        <ModalProvider>
-          <AppLayoutClient user={adminUser} tenant={platformTenant}>
-            <PilotageLayout user={adminUser} tenant={platformTenant}>
-              {children}
-            </PilotageLayout>
-          </AppLayoutClient>
-        </ModalProvider>
-      );
+      // ─── MODE ADMIN PLATFORM ───
+      // Pour l'admin, on NE PASSE PAS par AppLayoutClient ni PilotageLayout
+      // car ces composants font des fetch vers /api/auth/* (session tenant)
+      // qui échouent en 401 (l'admin n'a pas de cookie academia_session).
+      // PostLoginFlowWrapper détecte l'erreur AUTH_ERROR et redirige vers /login.
+      //
+      // À la place, on retourne directement {children} qui sera le
+      // PlatformLayout (de /app/app/platform/layout.tsx) → PlatformLayoutClient.
+      // Ce dernier a son propre layout admin dédié (sidebar, header, etc.)
+      // sans dépendre des providers tenant.
+      return <>{children}</>;
     }
 
     // Ni session tenant ni session admin → rediriger vers /login

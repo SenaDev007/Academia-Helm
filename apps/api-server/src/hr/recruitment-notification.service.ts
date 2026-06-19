@@ -256,6 +256,8 @@ export class RecruitmentNotificationService {
     format: string;
     evaluator?: string;
     type?: string;
+    meetingLink?: string;
+    phoneNumber?: string;
   }): Promise<void> {
     try {
       const [branding, jobTitle, candidate] = await Promise.all([
@@ -275,6 +277,8 @@ export class RecruitmentNotificationService {
         format: params.format,
         evaluator: params.evaluator,
         type: params.type,
+        meetingLink: params.meetingLink,
+        phoneNumber: params.phoneNumber,
       });
       await this.sendEmail(candidate.email, subject, html, { fromName: branding.schoolName });
     } catch (err: any) {

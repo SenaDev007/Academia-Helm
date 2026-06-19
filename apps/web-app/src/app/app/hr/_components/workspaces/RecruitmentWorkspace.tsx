@@ -382,7 +382,7 @@ export function RecruitmentWorkspace() {
   const [editingInterview, setEditingInterview] = useState<Interview | null>(null);
   const [newInterview, setNewInterview] = useState({
     candidateId: '', type: 'RH', date: '', time: '', format: 'Visioconférence', evaluator: '', score: '0', comments: '',
-    status: '', result: '', feedback: '',
+    status: '', result: '', feedback: '', meetingLink: '', phoneNumber: '',
   });
 
   // Interview Filter State
@@ -842,6 +842,8 @@ export function RecruitmentWorkspace() {
       status: int.status || '',
       result: int.result || '',
       feedback: int.feedback || '',
+      meetingLink: (int as any).meetingLink || '',
+      phoneNumber: (int as any).phoneNumber || '',
     });
     setIsAddInterviewOpen(true);
   };
@@ -875,6 +877,8 @@ export function RecruitmentWorkspace() {
       status: '',
       result: '',
       feedback: '',
+      meetingLink: '',
+      phoneNumber: recruiterProfile?.phoneNumber || tenantAddress ? (recruiterProfile?.phoneNumber || '') : '',
     });
     setIsAddInterviewOpen(true);
   };
@@ -2325,6 +2329,53 @@ export function RecruitmentWorkspace() {
                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Commentaires</label>
                         <textarea className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-16" value={newInterview.comments} onChange={(e) => setNewInterview({ ...newInterview, comments: e.target.value })} />
                       </div>
+
+                      {/* Dynamic fields based on format */}
+                      {newInterview.format === 'Visioconférence' && (
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                            🔗 Lien de la réunion (Google Meet / Zoom)
+                          </label>
+                          <div className="flex gap-2">
+                            <input
+                              type="url"
+                              className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xs"
+                              value={newInterview.meetingLink}
+                              onChange={(e) => setNewInterview({ ...newInterview, meetingLink: e.target.value })}
+                              placeholder="https://meet.google.com/xxx-xxxx-xxx"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => window.open('https://meet.google.com/new', '_blank')}
+                              className="px-3 py-2 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 whitespace-nowrap"
+                            >
+                              🔗 Générer Meet
+                            </button>
+                          </div>
+                          <p className="text-[9px] text-slate-400 mt-1">Cliquez sur "Générer Meet" pour créer un lien Google Meet, puis copiez-le dans le champ.</p>
+                        </div>
+                      )}
+
+                      {newInterview.format === 'Téléphone' && (
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">📞 Numéro de téléphone</label>
+                          <input
+                            type="tel"
+                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs"
+                            value={newInterview.phoneNumber}
+                            onChange={(e) => setNewInterview({ ...newInterview, phoneNumber: e.target.value })}
+                            placeholder="+229 ..."
+                          />
+                        </div>
+                      )}
+
+                      {newInterview.format === 'Présentiel' && (
+                        <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                          <p className="text-[10px] text-slate-500">
+                            📍 L'adresse de l'établissement ({tenantAddress || 'non configurée'}) sera automatiquement incluse dans l'email envoyé au candidat.
+                          </p>
+                        </div>
+                      )}
 
                       {/* Status / Result / Feedback — only shown when editing an existing interview */}
                       {editingInterview && (

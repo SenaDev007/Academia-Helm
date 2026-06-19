@@ -1155,6 +1155,8 @@ export class RecruitmentPrismaService {
         score,
         comments: data.comments || null,
         status: 'PLANIFIÉ',
+        meetingLink: data.meetingLink || null,
+        phoneNumber: data.phoneNumber || null,
       },
     });
 
@@ -1197,6 +1199,8 @@ export class RecruitmentPrismaService {
           format: data.format || 'Visioconférence',
           evaluator: data.evaluator,
           type: data.type,
+          meetingLink: data.meetingLink || undefined,
+          phoneNumber: data.phoneNumber || undefined,
         });
       })
       .catch((err) => {
@@ -1223,6 +1227,8 @@ export class RecruitmentPrismaService {
     if (data.status !== undefined) updateData.status = data.status;
     if (data.result !== undefined) updateData.result = data.result;
     if (data.feedback !== undefined) updateData.feedback = data.feedback;
+    if (data.meetingLink !== undefined) updateData.meetingLink = data.meetingLink || null;
+    if (data.phoneNumber !== undefined) updateData.phoneNumber = data.phoneNumber || null;
 
     const updated = await this.prisma.hrInterview.update({
       where: { id },

@@ -13683,23 +13683,27 @@ model HrApplication {
 }
 
 model HrInterview {
-  id          String      @id @default(uuid())
-  tenantId    String
-  candidateId String
-  type        String
-  date        DateTime
-  time        String
-  format      String
-  evaluator   String
-  score       Int         @default(0)
-  comments    String?
-  status      String      @default("PLANIFIÉ")
-  result      String?
-  feedback    String?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  candidate   HrCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id           String      @id @default(uuid())
+  tenantId     String
+  candidateId  String
+  type         String
+  date         DateTime
+  time         String
+  format       String
+  evaluator    String
+  score        Int         @default(0)
+  comments     String?
+  status       String      @default("PLANIFIÉ")
+  result       String?
+  feedback     String?
+  /// Lien de la réunion (Google Meet, Zoom) pour les entretiens en visioconférence
+  meetingLink  String?
+  /// Numéro de téléphone pour les entretiens téléphoniques
+  phoneNumber  String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  candidate    HrCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  tenant       Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@index([candidateId])

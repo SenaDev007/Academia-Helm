@@ -572,6 +572,10 @@ export class CreateInterviewDto {
   @IsString() evaluator: string;
   @IsOptional() @IsInt() @Type(() => Number) score?: number;
   @IsOptional() @IsString() comments?: string;
+  /** Lien de réunion (Google Meet, Zoom) pour visioconférence */
+  @IsOptional() @IsString() meetingLink?: string;
+  /** Numéro de téléphone pour entretien téléphonique */
+  @IsOptional() @IsString() phoneNumber?: string;
   /** Frontend may send tenantId — ignored (resolved server-side) */
   @IsOptional() @IsString() tenantId?: string;
 }
@@ -588,6 +592,9 @@ export class UpdateInterviewDto {
   @IsOptional() @IsString() comments?: string;
   @IsOptional() @IsIn(['PLANIFIÉ', 'EN_COURS', 'TERMINÉ']) status?: string;
   @IsOptional() @IsIn(['RÉUSSI', 'ÉCHOUÉ', 'EN_ATTENTE']) result?: string;
+  @IsOptional() @IsString() feedback?: string;
+  @IsOptional() @IsString() meetingLink?: string;
+  @IsOptional() @IsString() phoneNumber?: string;
   @IsOptional() @IsString() feedback?: string;
   /** Frontend may send tenantId — ignored */
   @IsOptional() @IsString() tenantId?: string;

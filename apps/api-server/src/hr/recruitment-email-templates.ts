@@ -318,6 +318,8 @@ export function renderInterviewScheduled(
     format: string;
     evaluator?: string;
     type?: string;
+    meetingLink?: string;
+    phoneNumber?: string;
   },
 ): { subject: string; html: string } {
   const subject = `📅 Entretien programmé — ${data.jobTitle} chez ${data.branding.schoolName}`;
@@ -333,9 +335,30 @@ export function renderInterviewScheduled(
         ${data.interviewTime ? `<p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>⏰ Heure :</strong> ${escHtml(formatTimeFR(data.interviewTime))}</p>` : ''}
         <p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>🎯 Format :</strong> ${escHtml(data.format)}</p>
         ${data.type ? `<p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>📝 Type :</strong> ${escHtml(data.type)}</p>` : ''}
-        ${data.evaluator ? `<p style="margin:0;font-size:13px;color:#334155;"><strong>👤 Évaluateur :</strong> ${escHtml(data.evaluator)}</p>` : ''}
+        ${data.evaluator ? `<p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>👤 Évaluateur :</strong> ${escHtml(data.evaluator)}</p>` : ''}
       </td></tr>
     </table>
+
+    ${data.format === 'Visioconférence' && data.meetingLink ? `
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto 20px;">
+      <tr><td style="background:#0D1F6E;border-radius:8px;">
+        <a href="${escHtml(data.meetingLink)}" style="display:inline-block;padding:12px 28px;color:#ffffff;text-decoration:none;font-weight:bold;font-size:14px;">🔗 Rejoindre la réunion</a>
+      </td></tr>
+    </table>
+    <p style="margin:0 0 20px;font-size:12px;color:#64748b;text-align:center;word-break:break-all;">Lien direct : <a href="${escHtml(data.meetingLink)}" style="color:#0D1F6E;">${escHtml(data.meetingLink)}</a></p>
+    ` : ''}
+
+    ${data.format === 'Téléphone' && data.phoneNumber ? `
+    <div style="margin:0 0 20px;padding:14px 18px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;">
+      <p style="margin:0;font-size:14px;color:#0c4a6e;"><strong>📞 Appelez le :</strong> ${escHtml(data.phoneNumber)}</p>
+    </div>
+    ` : ''}
+
+    ${data.format === 'Présentiel' && data.branding.schoolAddress ? `
+    <div style="margin:0 0 20px;padding:14px 18px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
+      <p style="margin:0;font-size:14px;color:#14532d;"><strong>📍 Adresse :</strong> ${escHtml(data.branding.schoolAddress)}</p>
+    </div>
+    ` : ''}
 
     <p style="margin:0;color:#475569;font-size:13px;line-height:1.6;">Merci de vous présenter à l'heure prévue. En cas d'empêchement, contactez l'établissement dès que possible pour reprogrammer.</p>
   `;

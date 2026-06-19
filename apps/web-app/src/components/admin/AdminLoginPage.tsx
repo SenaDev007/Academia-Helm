@@ -38,7 +38,7 @@ type View = 'login' | 'forgot' | 'reset' | 'success';
 
 export default function AdminLoginPage() {
   const searchParams = useSearchParams();
-  const redirectPath = searchParams.get('redirect') || '/admin';
+  const redirectPath = searchParams.get('redirect') || '/app/platform';
   const resetToken = searchParams.get('reset');
 
   const [view, setView] = useState<View>(resetToken ? 'reset' : 'login');

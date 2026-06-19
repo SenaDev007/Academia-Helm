@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
   // On préserve le paramètre ?redirect=... s'il a été passé par le frontend
   // au moment de l'init (stocké dans le state admin — mais ici on simplifie :
   // on va directement à /admin).
-  const target = '/admin';
+  const target = '/app/platform';
   const res = NextResponse.redirect(new URL(target, request.url), 302);
   // Pose le cookie de session admin (Domain=.academiahelm.com en prod, SameSite=Lax)
   res.headers.set('Set-Cookie', serializeAdminSessionCookie(session));

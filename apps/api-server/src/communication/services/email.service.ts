@@ -410,6 +410,7 @@ L'équipe Academia Helm
   // ============================================================================
 
   private _emailLogService: any = null;
+  private _emailTrackingService: any = null;
 
   /**
    * Injecte le EmailLogService (appelé par CommunicationModule.onModuleInit).
@@ -417,6 +418,14 @@ L'équipe Academia Helm
    */
   setEmailLogService(service: any): void {
     this._emailLogService = service;
+  }
+
+  /**
+   * Injecte le EmailTrackingService (appelé par CommunicationModule.onModuleInit).
+   * Permet à sendCategorized d'injecter le pixel + liens trackés dans le HTML.
+   */
+  setEmailTrackingService(service: any): void {
+    this._emailTrackingService = service;
   }
 
   /**
@@ -479,12 +488,24 @@ L'équipe Academia Helm
       }
     }
 
-    // 2. Envoyer l'email avec le reply-to personnalisé
+    // 1.5 Injecter le tracking pixel + liens trackés dans le HTML
+    // (uniquement si EmailTrackingService est injecté)
+    let htmlToSend = request.html;
+    if (this._emailTrackingService) {
+      try {
+        htmlToSend = this._emailTrackingService.injectTracking(request.html, logId);
+      } catch (err: any) {
+        this.logger.warn(`Failed to inject tracking for log ${logId}: ${err.message} — sending without tracking`);
+        // On continue avec le HTML original
+      }
+    }
+
+    // 2. Envoyer l'email avec le reply-to personnalisé + HTML tracké
     try {
       const result = await this.sendEmail({
         to: request.to,
         subject: request.subject,
-        html: request.html,
+        html: htmlToSend,
         text: request.text,
         from: request.fromEmail,
         fromName: request.fromName,

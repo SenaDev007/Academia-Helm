@@ -776,7 +776,13 @@ export class AuthService {
 
     // Envoyer l'email avec le code OTP
     try {
-      const result = await this.sendPasswordResetOtpEmail(user.email, user.firstName || '', otpCode);
+      const result = await this.sendPasswordResetOtpEmail(
+        user.email,
+        user.firstName || '',
+        otpCode,
+        user.tenantId || undefined,
+        user.id,
+      );
       this.logger.log(`Code OTP de réinitialisation envoyé à ${user.email} (provider: ${this.configService.get<string>('EMAIL_PROVIDER', 'mock')}, success: ${result?.success}, messageId: ${result?.messageId || 'N/A'})`);
       return { ...successMessage, emailSent: true };
     } catch (error: any) {
@@ -988,9 +994,39 @@ export class AuthService {
    * Envoie un email avec le code OTP de réinitialisation
    * Template professionnel aux couleurs Academia Helm avec logo
    */
-  private async sendPasswordResetOtpEmail(to: string, firstName: string, otpCode: string): Promise<{ success: boolean; messageId?: string }> {
+  private async sendPasswordResetOtpEmail(
+    to: string,
+    firstName: string,
+    otpCode: string,
+    tenantId?: string,
+    userId?: string,
+  ): Promise<{ success: boolean; messageId?: string }> {
     const fromEmail = this.configService.get<string>('EMAIL_FROM_NOREPLY') || 'noreply@academiahelm.com';
 
+    // Si on a un tenantId, on catégorise l'email (traçabilité + reply-to)
+    if (tenantId) {
+      const result = await this.emailService.sendCategorized({
+        tenantId,
+        category: 'SYSTEM',
+        subCategory: 'reinitialisation_mot_de_passe_otp',
+        module: 'auth',
+        to,
+        toName: firstName || undefined,
+        fromEmail,
+        fromName: 'Academia Helm',
+        subject: 'Academia Helm — Votre code de vérification',
+        html: this.buildOtpEmailTemplate(firstName, otpCode),
+        text: `Bonjour ${firstName},\n\nVotre code de vérification Academia Helm est : ${otpCode}\n\nCe code expire dans 10 minutes.\n\nSi vous n'avez pas demandé cette réinitialisation, ignorez cet email.\n\nCordialement,\nL'équipe Academia Helm\nhttps://academiahelm.com`,
+        recipientType: 'STAFF',
+        recipientId: userId,
+        triggeredBy: 'SYSTEM',
+        relatedEntityId: userId,
+        relatedEntityType: 'User',
+      });
+      return { success: result.success, messageId: result.providerId };
+    }
+
+    // Fallback legacy (pas de tenantId — utilisateur sans tenant, ex: super admin)
     return await this.emailService.sendEmail({
       to,
       from: fromEmail,

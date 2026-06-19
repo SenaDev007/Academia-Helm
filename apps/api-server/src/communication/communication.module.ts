@@ -14,6 +14,7 @@ import { ConfigModule } from '@nestjs/config';
 import { EmailService } from './services/email.service';
 import { EmailLogService } from './services/email-log.service';
 import { InboundEmailService } from './services/inbound-email.service';
+import { EmailTrackingService } from './services/email-tracking.service';
 import { WhatsAppService } from './services/whatsapp.service';
 import { SmsService } from './services/sms.service';
 import { VoiceService } from './services/voice.service';
@@ -52,6 +53,7 @@ import { DatabaseModule } from '../database/database.module';
     EmailService, 
     EmailLogService,
     InboundEmailService,
+    EmailTrackingService,
     WhatsAppService, 
     SmsService, 
     VoiceService,
@@ -72,6 +74,7 @@ import { DatabaseModule } from '../database/database.module';
     EmailService, 
     EmailLogService,
     InboundEmailService,
+    EmailTrackingService,
     WhatsAppService, 
     SmsService, 
     VoiceService,
@@ -92,14 +95,17 @@ export class CommunicationModule implements OnModuleInit {
   constructor(
     private readonly emailService: EmailService,
     private readonly emailLogService: EmailLogService,
+    private readonly emailTrackingService: EmailTrackingService,
   ) {}
 
   /**
-   * Injecte EmailLogService dans EmailService pour éviter la circular
-   * dependency. EmailService peut alors appeler emailLogService.createLog()
-   * sans dépendre statiquement de lui.
+   * Injecte EmailLogService + EmailTrackingService dans EmailService pour
+   * éviter la circular dependency. EmailService peut alors appeler
+   * emailLogService.createLog() et emailTrackingService.injectTracking()
+   * sans dépendre statiquement d'eux.
    */
   onModuleInit() {
     this.emailService.setEmailLogService(this.emailLogService);
+    this.emailService.setEmailTrackingService(this.emailTrackingService);
   }
 }

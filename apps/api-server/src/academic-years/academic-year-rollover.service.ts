@@ -299,10 +299,17 @@ export class AcademicYearRolloverService {
         </div>
       `;
 
-      const result = await this.emailService.sendEmail({
+      const result = await this.emailService.sendCategorized({
+        tenantId,
+        category: 'ADMINISTRATIF',
+        subCategory: 'rollover_annee_scolaire',
+        module: 'academic-years',
         to: recipientEmails,
         subject,
         html,
+        recipientType: 'STAFF',
+        triggeredBy: 'SYSTEM',
+        relatedEntityType: 'AcademicYear',
       });
 
       if (result.success) {

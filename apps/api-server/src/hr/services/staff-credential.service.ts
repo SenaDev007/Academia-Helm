@@ -226,6 +226,8 @@ export class StaffCredentialService {
           loginUrl,
           isTeacher,
           schoolLevel: staff.schoolLevel?.name || null,
+          tenantId,
+          staffId,
         });
         emailSent = true;
         this.logger.log(`📧 Credential email sent to ${staff.email}`);
@@ -417,6 +419,8 @@ export class StaffCredentialService {
               }
             : null,
           isRegeneration: action === 'updated',
+          tenantId,
+          staffId,
         });
         emailSent = true;
         this.logger.log(`📧 Credential ${action === 'updated' ? 'reset' : 'creation'} email sent to ${normalizedEmail}`);
@@ -485,6 +489,8 @@ export class StaffCredentialService {
     logoUrl?: string | null;
     schoolContacts?: { phone?: string | null; email?: string | null; address?: string | null } | null;
     isRegeneration?: boolean;
+    tenantId?: string;
+    staffId?: string;
   }): Promise<void> {
     const {
       to,
@@ -874,13 +880,25 @@ ${schoolContacts?.phone ? `Tél : ${schoolContacts.phone}` : ''}
 ${schoolContacts?.email ? `Email : ${schoolContacts.email}` : ''}
 `;
 
-    await this.emailService.sendEmail({
+    await this.emailService.sendCategorized({
+      tenantId: params.tenantId || 'unknown',
+      category: 'ADMINISTRATIF',
+      subCategory: params.isRegeneration
+        ? 'reinitialisation_identifiants_staff'
+        : 'creation_identifiants_staff',
+      module: 'hr',
       to,
+      toName: `${staffFirstName} ${staffLastName}`.trim() || undefined,
       subject: `${schoolName} — ${isRegeneration ? 'Réinitialisation de vos identifiants' : 'Vos identifiants de connexion'}`,
       html,
       text,
-      from: process.env.EMAIL_FROM_NOREPLY || 'noreply@academiahelm.com',
+      fromEmail: process.env.EMAIL_FROM_NOREPLY || 'noreply@academiahelm.com',
       fromName: 'Academia Helm',
+      recipientType: 'STAFF',
+      recipientId: params.staffId,
+      triggeredBy: 'SYSTEM',
+      relatedEntityId: params.staffId,
+      relatedEntityType: 'Staff',
     });
   }
 }

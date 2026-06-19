@@ -252,10 +252,19 @@ export class AccessRequestsService {
           <p style="color:#0b2f73;font-weight:600;">Academia Helm</p>
         `;
 
-        await this.emailService.sendEmail({
+        await this.emailService.sendCategorized({
+          tenantId,
+          category: 'ADMINISTRATIF',
+          subCategory: 'demande_acces_plateforme',
+          module: 'access-requests',
           to: director.email,
+          toName: `${director.firstName} ${director.lastName}`,
           subject,
           html,
+          recipientType: 'STAFF',
+          recipientId: director.id,
+          triggeredBy: 'SYSTEM',
+          relatedEntityType: 'AccessRequest',
         });
       }
 
@@ -285,8 +294,13 @@ export class AccessRequestsService {
 
       const schoolName = tenant?.name || 'l\'établissement';
 
-      await this.emailService.sendEmail({
+      await this.emailService.sendCategorized({
+        tenantId,
+        category: 'ADMINISTRATIF',
+        subCategory: 'acces_approuve',
+        module: 'access-requests',
         to: user.email,
+        toName: `${user.firstName} ${user.lastName}`,
         subject: `Accès approuvé — ${schoolName}`,
         html: `
           <h2 style="color:#0b2f73;">Votre accès a été approuvé</h2>
@@ -296,6 +310,10 @@ export class AccessRequestsService {
           <p style="color:#64748b;font-size:14px;">Cet email a été envoyé automatiquement. Merci de ne pas y répondre.</p>
           <p style="color:#0b2f73;font-weight:600;">Équipe Academia Helm</p>
         `,
+        recipientType: 'STAFF',
+        recipientId: user.id,
+        triggeredBy: 'SYSTEM',
+        relatedEntityType: 'AccessRequest',
       });
     } catch (err) {
       this.logger.error(`Failed to notify platform owner: ${err?.message}`);

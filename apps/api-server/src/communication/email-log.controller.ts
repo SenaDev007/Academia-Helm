@@ -24,15 +24,20 @@ import {
   Query,
   Headers,
   Req,
+  Res,
   BadRequestException,
   UnauthorizedException,
   Logger,
+  NotFoundException,
+  StreamableFile,
+  Header,
 } from '@nestjs/common';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { Public } from '../auth/decorators/public.decorator';
 import { EmailLogService } from './services/email-log.service';
 import { InboundEmailService } from './services/inbound-email.service';
+import { EmailTrackingService } from './services/email-tracking.service';
 
 @Controller('communication')
 export class EmailLogController {
@@ -41,6 +46,7 @@ export class EmailLogController {
   constructor(
     private readonly emailLogService: EmailLogService,
     private readonly inboundEmailService: InboundEmailService,
+    private readonly emailTrackingService: EmailTrackingService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -347,5 +353,91 @@ export class EmailLogController {
       this.logger.error(`Failed to process inbound webhook: ${err.message}`, err.stack);
       throw err;
     }
+  }
+
+  // ─── TRACKING (pixel + liens trackés) ──────────────────────────────────────
+
+  /**
+   * Tracking pixel — image invisible 1×1 GIF.
+   *
+   * Quand le client mail charge l'image, on incrémente openCount + set openedAt.
+   * Renvoie toujours le GIF (même si logId invalide) pour ne pas casser l'email.
+   *
+   * URL : /api/communication/track/open/{logId}.gif
+   */
+  @Public()
+  @Get('track/open/:logId.gif')
+  @Header('Content-Type', 'image/gif')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+  @Header('Pragma', 'no-cache')
+  @Header('Expires', '0')
+  async trackOpen(@Param('logId') logId: string, @Res() res: Response) {
+    // Valider le format (UUID v4)
+    if (!this.emailTrackingService.isValidLogId(logId)) {
+      // Renvoyer quand même le pixel (silencieux)
+      const buf = this.emailTrackingService.getTrackingPixelBuffer();
+      res.setHeader('Content-Length', buf.length.toString());
+      res.send(buf);
+      return;
+    }
+
+    // Enregistrer l'ouverture (asynchrone — ne bloque pas la réponse)
+    this.emailTrackingService
+      .recordOpen(logId)
+      .catch((err) => this.logger.error(`trackOpen: ${err.message}`));
+
+    // Renvoyer le GIF
+    const buf = this.emailTrackingService.getTrackingPixelBuffer();
+    res.setHeader('Content-Length', buf.length.toString());
+    res.send(buf);
+  }
+
+  /**
+   * Tracking de clics — redirige vers l'URL finale après tracking.
+   *
+   * URL : /api/communication/track/click?logId=...&url=...
+   *
+   * Réponse : 302 redirect vers l'URL finale
+   * Si logId invalide ou URL manquante → redirect vers la home de l'app
+   */
+  @Public()
+  @Get('track/click')
+  async trackClick(
+    @Query('logId') logId: string,
+    @Query('url') url: string,
+    @Res() res: Response,
+  ) {
+    // URL par défaut si manquante ou invalide
+    const fallbackUrl = 'https://academiahelm.com';
+
+    if (!url) {
+      res.redirect(302, fallbackUrl);
+      return;
+    }
+
+    // Décoder l'URL (qui est encodée en query param)
+    let decodedUrl: string;
+    try {
+      decodedUrl = decodeURIComponent(url);
+    } catch {
+      res.redirect(302, fallbackUrl);
+      return;
+    }
+
+    // Valider que c'est bien une URL http(s)://
+    if (!/^https?:\/\//i.test(decodedUrl)) {
+      res.redirect(302, fallbackUrl);
+      return;
+    }
+
+    // Si logId valide, enregistrer le clic (asynchrone)
+    if (logId && this.emailTrackingService.isValidLogId(logId)) {
+      this.emailTrackingService
+        .recordClick(logId, decodedUrl)
+        .catch((err) => this.logger.error(`trackClick: ${err.message}`));
+    }
+
+    // Rediriger vers l'URL finale
+    res.redirect(302, decodedUrl);
   }
 }

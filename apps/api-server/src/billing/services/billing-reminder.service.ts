@@ -361,11 +361,21 @@ export class BillingReminderService {
           renewalUrl,
         });
 
-        await this.emailService.sendEmail({
+        await this.emailService.sendCategorized({
+          tenantId: subscription.tenantId,
+          category: 'FINANCE',
+          subCategory: 'rappel_renouvellement_abonnement',
+          module: 'billing',
           to: promoter.email,
+          toName: `${promoter.firstName || ''} ${promoter.lastName || ''}`.trim() || undefined,
           subject: emailContent.subject,
           html: emailContent.html,
           text: emailContent.text,
+          recipientType: 'STAFF',
+          recipientId: promoter.id,
+          triggeredBy: 'AUTOMATION',
+          relatedEntityId: subscription.id,
+          relatedEntityType: 'Subscription',
         });
         results.email = true;
         this.logger.log(`✅ Email reminder sent to ${promoter.email}`);

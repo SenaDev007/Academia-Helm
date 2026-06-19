@@ -364,6 +364,14 @@ export async function middleware(request: NextRequest) {
       }
 
       // Admin authentifié → laisser passer
+      // SAUF si on est sur la racine / → rediriger vers /admin (dashboard)
+      if (pathname === '/') {
+        const protocol = request.headers.get('x-forwarded-proto') || 'https';
+        const adminHost = hostParts.join('.');
+        const adminUrl = new URL('/admin', `${protocol}://${adminHost}`);
+        return safeRedirect(adminUrl, request, redirectDepth);
+      }
+
       const adminResponse = withAntiCacheHeaders(NextResponse.next());
       adminResponse.headers.set('x-admin-subdomain', 'true');
       adminResponse.headers.set('x-admin-id', admin.id);

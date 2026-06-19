@@ -53,12 +53,8 @@ export default function CommunicationLayout({
         title="Communication & Engagement"
         description="Gestion complète des communications avec les parents, le personnel et les élèves. Messages, templates, planification et automatisation."
         icon="communication"
-        kpis={[
-          { label: 'Messages envoyés', value: '1,234', unit: 'ce mois' },
-          { label: 'Taux de livraison', value: '98.5%', unit: '' },
-          { label: 'Templates actifs', value: '12', unit: '' },
-          { label: 'Automatisations', value: '8', unit: 'actives' },
-        ]}
+        // Pas de KPIs codés en dur ici — chaque sous-page (Pilotage, Historique,
+        // Boîte de réception) affiche ses propres stats réelles depuis l'API.
         actions={[
           { label: 'Nouveau message', onClick: () => console.log('Open new message modal'), primary: true },
           { label: 'Créer template', onClick: () => console.log('Open create template modal') },

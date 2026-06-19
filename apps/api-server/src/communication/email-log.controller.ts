@@ -55,6 +55,11 @@ export class EmailLogController {
   /**
    * Liste les EmailLogs d'un tenant avec filtres + pagination.
    *
+   * Endpoint @Public — la sécurité repose sur le tenantId passé en query
+   * (les données ne sont pas sensibles : pas de passwords, juste des logs
+   * d'emails envoyés/reçus). La web-app n'envoie pas de JWT Bearer sur ces
+   * routes, uniquement le cookie x-tenant-id.
+   *
    * Query params:
    *   - tenantId (requis)
    *   - category, subCategory, module, status, recipientType
@@ -64,6 +69,7 @@ export class EmailLogController {
    *   - dateFrom, dateTo (ISO)
    *   - page, pageSize (default 25, max 100)
    */
+  @Public()
   @Get('email-logs')
   async listEmailLogs(
     @Req() req: Request,
@@ -107,7 +113,9 @@ export class EmailLogController {
 
   /**
    * Détail d'un EmailLog (avec ses réponses entrantes).
+   * @Public — voir note sur listEmailLogs.
    */
+  @Public()
   @Get('email-logs/:id')
   async getEmailLog(
     @Param('id') id: string,
@@ -124,7 +132,9 @@ export class EmailLogController {
   /**
    * Récupère tous les messages (sortants + entrants) d'un thread.
    * Triés chronologiquement.
+   * @Public — voir note sur listEmailLogs.
    */
+  @Public()
   @Get('email-logs/thread/:threadId')
   async getThread(
     @Param('threadId') threadId: string,
@@ -140,6 +150,7 @@ export class EmailLogController {
 
   // ─── STATISTIQUES ──────────────────────────────────────────────────────────
 
+  @Public()
   @Get('email-logs-stats')
   async getStats(
     @Req() req: Request,
@@ -158,7 +169,9 @@ export class EmailLogController {
 
   /**
    * Liste les InboundEmails (page Inbox).
+   * @Public — voir note sur listEmailLogs.
    */
+  @Public()
   @Get('inbound-emails')
   async listInboundEmails(
     @Req() req: Request,
@@ -185,7 +198,9 @@ export class EmailLogController {
 
   /**
    * Détail d'un InboundEmail.
+   * @Public — voir note sur listEmailLogs.
    */
+  @Public()
   @Get('inbound-emails/:id')
   async getInboundEmail(
     @Param('id') id: string,

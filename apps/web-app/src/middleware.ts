@@ -329,10 +329,28 @@ export async function middleware(request: NextRequest) {
       // Lecture du cookie admin dédié
       const admin = getAdminFromCookie(request);
 
-      // Routes toujours accessibles même sans auth : login admin, login tenant
-      // (fallback), assets, API.
-      const isAdminLoginRoute = pathname === '/admin-login' || pathname.startsWith('/admin-login/');
+      // ─── Séparation stricte des routes d'auth sur admin.academiahelm.com ───
+      // Le back-office admin.academiahelm.com a ses PROPRES routes d'auth :
+      //   - /admin-login (page de connexion admin)
+      //   - /api/admin-auth/* (login, logout, OTP, Google OAuth)
+      //
+      // Les routes /login (portail école) sont BLOQUÉES sur admin.academiahelm.com
+      // pour éviter la confusion entre les deux systèmes d'authentification.
+      // Si un user tente /login sur admin → redirigé vers /admin-login.
       const isRegularLoginRoute = pathname === '/login' || pathname.startsWith('/login/');
+      if (isRegularLoginRoute) {
+        const protocol = request.headers.get('x-forwarded-proto') || 'https';
+        const adminHost = hostParts.join('.');
+        const loginUrl = new URL('/admin-login', `${protocol}://${adminHost}`);
+        if (pathname !== '/login') {
+          // Préserver les query params (ex: redirect=...)
+          loginUrl.search = request.nextUrl.search;
+        }
+        return safeRedirect(loginUrl, request, redirectDepth);
+      }
+
+      // Routes toujours accessibles même sans auth admin : /admin-login, assets, API.
+      const isAdminLoginRoute = pathname === '/admin-login' || pathname.startsWith('/admin-login/');
       const isPublicAsset =
         pathname.startsWith('/images/') ||
         pathname.startsWith('/fonts/') ||
@@ -342,7 +360,7 @@ export async function middleware(request: NextRequest) {
         pathname === '/robots.txt' ||
         pathname === '/favicon.ico';
 
-      if (isAdminLoginRoute || isRegularLoginRoute || isPublicAsset || pathname.startsWith('/api/')) {
+      if (isAdminLoginRoute || isPublicAsset || pathname.startsWith('/api/')) {
         const adminResponse = withAntiCacheHeaders(NextResponse.next());
         adminResponse.headers.set('x-admin-subdomain', 'true');
         if (admin) {
@@ -415,9 +433,15 @@ export async function middleware(request: NextRequest) {
 
   const response = withAntiCacheHeaders(NextResponse.next());
 
-  // Routes /admin-login : toujours accessibles (page de connexion backoffice)
+  // ─── Séparation stricte : /admin-login RÉSERVÉ au sous-domaine admin ───
+  // Si un user tente /admin-login sur le domaine principal ou un sous-domaine
+  // d'école, on le redirige vers admin.academiahelm.com/admin-login.
+  // (Inverse de la règle /login ci-dessus qui est bloquée sur admin.)
   if (pathname === '/admin-login' || pathname.startsWith('/admin-login')) {
-    return response;
+    const protocol = request.headers.get('x-forwarded-proto') || 'https';
+    const mainDomain = hostParts.length >= 2 ? hostParts.slice(1).join('.') : 'academiahelm.com';
+    const adminUrl = new URL(pathname + request.nextUrl.search, `${protocol}://admin.${mainDomain}`);
+    return safeRedirect(adminUrl, request, redirectDepth);
   }
 
   // Assets statiques : ne jamais appliquer le multi-tenant/redirect

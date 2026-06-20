@@ -98,7 +98,9 @@ function getLandingPageUrlFromApp(): string {
 function formatRoleLabel(role?: string) {
   if (!role) return '—';
   const labels: Record<string, string> = {
+    PLATFORM_SUPER_ADMIN: 'Super Admin',
     PLATFORM_OWNER: 'Propriétaire plateforme',
+    PLATFORM_ADMIN: 'Admin plateforme',
     SUPER_DIRECTOR: 'Promoteur',
     DIRECTOR: 'Directeur',
     ADMIN: 'Administrateur',
@@ -111,6 +113,7 @@ function formatRoleLabel(role?: string) {
 export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawerOpen }: PilotageTopBarProps) {
   const router = useRouter();
   const isOnline = useOffline();
+  const isPlatformAdmin = tenant?.subdomain === 'admin' || user?.role === 'PLATFORM_SUPER_ADMIN' || user?.role === 'PLATFORM_OWNER';
   const { isSyncing, pendingCount } = useSyncStatus();
   const [orionAlertsCount, setOrionAlertsCount] = useState(0);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
@@ -323,7 +326,8 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
               </button>
             )}
 
-            {/* Bouton Donner mon avis */}
+            {/* Bouton Donner mon avis — masqué sur le back-office admin */}
+            {!isPlatformAdmin && (
             <button
               onClick={() => setReviewModalOpen(true)}
               className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 hover:scale-105 active:scale-95 border"
@@ -337,6 +341,7 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
               <Star className="w-3.5 h-3.5" fill="#C9A84C" stroke="#C9A84C" />
               <span>Avis</span>
             </button>
+            )}
 
             {/* Profil avec Dropdown */}
             <div className="relative" ref={dropdownRef}>
@@ -374,6 +379,7 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
                   </div>
                   
                   <div className="py-1">
+                    {!isPlatformAdmin && (
                     <button
                       onClick={() => {
                         setReviewModalOpen(true);
@@ -384,6 +390,7 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
                       <Star className="w-4 h-4 text-amber-500" fill="#C9A84C" />
                       <span>Donner mon avis</span>
                     </button>
+                    )}
                     <button
                       onClick={() => {
                         router.push('/app/settings');

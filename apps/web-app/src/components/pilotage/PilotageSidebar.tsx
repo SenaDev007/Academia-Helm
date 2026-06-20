@@ -408,10 +408,14 @@ export default function PilotageSidebar({
     : null;
 
   const isActive = (path: string) => {
-    if (path === '/app') {
-      return pathname === '/app';
+    // Routes racines : correspondance exacte uniquement
+    // (sinon /platform matche /platform/subscriptions, /app matche /app/hr, etc.)
+    if (path === '/app' || path === '/platform') {
+      return pathname === path;
     }
-    return pathname.startsWith(path);
+    // Sous-routes : startsWith avec frontière de segment
+    // ex: /platform/tenants matche /platform/tenants/xxx mais pas /platform/tenants-config
+    return pathname === path || pathname.startsWith(path + '/');
   };
 
   // Fermer le drawer mobile à la navigation

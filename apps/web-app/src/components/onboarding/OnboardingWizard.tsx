@@ -7,7 +7,7 @@
  * 1. Établissement (nom, type, pays, ville, téléphone, email, bilingue, nb écoles, logo)
  * 2. Promoteur (nom, prénom, téléphone, email, password, OTP)
  * 3. Plan & Options (pricing dynamique, mensuel/annuel, total)
- * 4. Paiement Initial (FedaPay)
+ * 4. Paiement Initial (FeexPay)
  * 
  * ============================================================================
  */
@@ -47,9 +47,9 @@ import {
   Sparkles,
   TrendingDown,
 } from 'lucide-react';
-import { HELM_PLANS, getRecommendedPlan, type HelmPlanKey } from '@/lib/services/HelmPricingService';
+import { HELM_PLANS, getRecommendedPlan, type HelmPlanKey, fetchPricingPlans, getPlanForStudentCount, type DynamicPricingPlan } from '@/lib/services/HelmPricingService';
 import { formatCurrency } from '@/lib/utils';
-import FedaPayCheckout from './FedaPayCheckout';
+import FeexPayCheckout from './FeexPayCheckout';
 
 interface OnboardingData {
   // Phase 1: Établissement
@@ -105,9 +105,9 @@ export default function OnboardingWizard() {
     public_key: string;
     transaction: { amount: number; description: string }; // currency n'est PAS dans transaction pour le checkout intégré
     customer: { email: string; lastname: string; firstname?: string; phone_number?: string };
-    transactionId?: string; // ID de la transaction FedaPay
+    transactionId?: string; // ID de la transaction FeeXPay
     paymentId?: string; // ID du paiement dans notre base
-  } | null>(null); // Données pour le checkout intégré (conformes à la doc FedaPay)
+  } | null>(null); // Données pour le checkout intégré (conformes à la doc FeeXPay)
   const [isUploadingLogo, setIsUploadingLogo] = useState(false); // État de l'upload du logo
   const [logoPreview, setLogoPreview] = useState<string | null>(null); // Aperçu du logo
   const [passwordStrength, setPasswordStrength] = useState<{
@@ -137,6 +137,7 @@ export default function OnboardingWizard() {
     error: null,
   });
   const [initialPayment, setInitialPayment] = useState<number | null>(null);
+  const [pricingPlans, setPricingPlans] = useState<DynamicPricingPlan[]>([]);
   const [showDraftChoiceModal, setShowDraftChoiceModal] = useState(false);
   const [existingDraftInfo, setExistingDraftInfo] = useState<{
     id: string;
@@ -172,7 +173,7 @@ export default function OnboardingWizard() {
     password: '',
     confirmPassword: '',
     otp: '',
-    planCode: 'BASIC_MONTHLY',
+    planCode: 'SEED',
     billingPeriod: 'monthly',
     preferredSubdomain: '',
   });
@@ -243,56 +244,39 @@ export default function OnboardingWizard() {
     return () => clearTimeout(timeoutId);
   }, [data.email, step, data.draftId]); // Vérifier quand l'email change
 
-  // Générer le planCode dynamiquement basé sur schoolsCount et billingPeriod
+  // Générer le planCode dynamiquement basé sur estimatedStudentCount
   useEffect(() => {
     const generatePlanCode = () => {
-      const period = data.billingPeriod === 'monthly' ? 'MONTHLY' : 'YEARLY';
-      if (data.schoolsCount === 1) {
-        return `BASIC_${period}`;
-      } else if (data.schoolsCount === 2) {
-        return `GROUP_2_${period}`;
-      } else if (data.schoolsCount === 3) {
-        return `GROUP_3_${period}`;
-      } else {
-        return `GROUP_4_${period}`;
-      }
+      // Nouveau système : SEED (1-150), GROW (151-400), LEAD (401-800), NETWORK (800+)
+      return getRecommendedPlan(data.estimatedStudentCount);
     };
-    
+
     const newPlanCode = generatePlanCode();
     if (newPlanCode !== data.planCode) {
       setData({ ...data, planCode: newPlanCode });
     }
-  }, [data.schoolsCount, data.billingPeriod]);
+  }, [data.estimatedStudentCount]);
 
-  // Charger le prix initial au montage (dynamiquement depuis le backend)
+  // Charger les plans dynamiques depuis l'API au montage
   useEffect(() => {
-    const loadInitialPayment = async () => {
-      try {
-        const response = await fetch('/api/public/pricing/initial');
-        if (response.ok) {
-          const result = await response.json();
-          if (result.amount) {
-            setInitialPayment(result.amount);
-          } else {
-            console.warn('⚠️ Initial payment amount not found in API response');
-          }
-        } else {
-          console.error('Failed to load initial payment:', response.status);
-        }
-      } catch (error) {
-        console.error('Error loading initial payment:', error);
-        // Ne pas définir de fallback hardcodé - le montant doit venir du backend
+    const loadPlans = async () => {
+      const plans = await fetchPricingPlans();
+      setPricingPlans(plans);
+      // L'initial fee vient du plan SEED par défaut
+      const seedPlan = plans.find(p => p.code === 'SEED');
+      if (seedPlan) {
+        setInitialPayment(seedPlan.initialFee);
       }
     };
-    loadInitialPayment();
+    loadPlans();
   }, []);
 
-  // Calculer les prix dynamiquement depuis l'API (mensuel ET annuel)
+  // Calculer les prix dynamiquement depuis les plans (pas d'API call — tout est en mémoire)
   useEffect(() => {
-    if (step >= 3 && data.planCode) {
+    if (step >= 3 && data.planCode && pricingPlans.length > 0) {
       calculatePrices();
     }
-  }, [data.schoolsCount, data.bilingual, data.planCode, step]);
+  }, [data.estimatedStudentCount, data.bilingual, data.planCode, data.billingPeriod, step, pricingPlans]);
 
   // Mettre à jour le code téléphonique quand le pays change
   useEffect(() => {
@@ -508,85 +492,42 @@ export default function OnboardingWizard() {
   };
 
   const calculatePrices = async () => {
-    if (!data.planCode) {
+    if (!data.planCode || pricingPlans.length === 0) {
       return;
     }
 
-    setPriceCalculation(prev => ({ ...prev, isLoading: true, error: null }));
-
-    try {
-      // Calculer les prix pour les deux périodes en parallèle
-      const [monthlyResponse, yearlyResponse] = await Promise.all([
-        fetch('/api/public/pricing/calculate', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            planCode: data.planCode,
-            schoolsCount: data.schoolsCount,
-            bilingual: data.bilingual,
-            cycle: 'MONTHLY',
-          }),
-        }),
-        fetch('/api/public/pricing/calculate', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            planCode: data.planCode,
-            schoolsCount: data.schoolsCount,
-            bilingual: data.bilingual,
-            cycle: 'YEARLY',
-          }),
-        }),
-      ]);
-
-      // Traiter la réponse mensuelle
-      let monthlyData = null;
-      if (monthlyResponse.ok) {
-        const monthlyResult = await monthlyResponse.json();
-        const monthlyBreakdown = monthlyResult.breakdown || {};
-        monthlyData = {
-          basePrice: monthlyBreakdown.basePrice || 0,
-          bilingualPrice: monthlyBreakdown.bilingualPrice || 0,
-          total: monthlyResult.amount || 0,
-        };
-      }
-
-      // Traiter la réponse annuelle
-      let yearlyData = null;
-      if (yearlyResponse.ok) {
-        const yearlyResult = await yearlyResponse.json();
-        const yearlyBreakdown = yearlyResult.breakdown || {};
-        yearlyData = {
-          basePrice: yearlyBreakdown.basePrice || 0,
-          bilingualPrice: yearlyBreakdown.bilingualPrice || 0,
-          total: yearlyResult.amount || 0,
-        };
-      }
-
-      // Vérifier les erreurs
-      if (!monthlyResponse.ok || !yearlyResponse.ok) {
-        const error = await (monthlyResponse.ok ? yearlyResponse : monthlyResponse).json();
-        throw new Error(error.message || 'Erreur lors du calcul des prix');
-      }
-
-      setPriceCalculation({
-        monthly: monthlyData,
-        yearly: yearlyData,
-        isLoading: false,
-        error: null,
-      });
-    } catch (error: any) {
-      console.error('Error calculating prices:', error);
-      setPriceCalculation(prev => ({
-        ...prev,
-        isLoading: false,
-        error: error.message || 'Erreur lors du calcul des prix',
-      }));
+    // Trouver le plan correspondant au planCode (SEED, GROW, LEAD, NETWORK)
+    const plan = pricingPlans.find(p => p.code === data.planCode) || getPlanForStudentCount(pricingPlans, data.estimatedStudentCount);
+    if (!plan) {
+      setPriceCalculation(prev => ({ ...prev, isLoading: false, error: 'Plan introuvable' }));
+      return;
     }
+
+    // L'initial fee dépend du plan sélectionné
+    setInitialPayment(plan.initialFee);
+
+    // Prix de base (mensuel et annuel)
+    const monthlyBase = plan.monthlyAmount || 0;
+    const yearlyBase = plan.yearlyAmount || 0;
+
+    // Prix de l'option bilingue
+    const bilingualMonthly = data.bilingual ? (plan.bilingualMonthly || 10000) : 0;
+    const bilingualYearly = data.bilingual ? (plan.bilingualYearly || 100000) : 0;
+
+    setPriceCalculation({
+      monthly: {
+        basePrice: monthlyBase,
+        bilingualPrice: bilingualMonthly,
+        total: monthlyBase + bilingualMonthly,
+      },
+      yearly: {
+        basePrice: yearlyBase,
+        bilingualPrice: bilingualYearly,
+        total: yearlyBase + bilingualYearly,
+      },
+      isLoading: false,
+      error: null,
+    });
   };
 
   const validateStep = (stepNumber: number): boolean => {
@@ -1152,10 +1093,10 @@ export default function OnboardingWizard() {
   };
 
   const handlePaymentComplete = async (transactionData: any) => {
-    console.log('📥 Callback FedaPay reçu:', transactionData);
+    console.log('📥 Callback FeeXPay reçu:', transactionData);
     
     // ⚠️ CRITIQUE : Ne pas faire confiance au callback frontend
-    // Vérifier le statut réel depuis le backend qui interroge FedaPay
+    // Vérifier le statut réel depuis le backend qui interroge FeeXPay
     if (!data.draftId) {
       setErrors({ submit: 'Draft ID manquant' });
       return;
@@ -1193,7 +1134,7 @@ export default function OnboardingWizard() {
 
   const verifyPaymentStatus = async (paymentId: string) => {
     try {
-      // Appeler le backend pour vérifier le statut réel depuis FedaPay
+      // Appeler le backend pour vérifier le statut réel depuis FeeXPay
       const response = await fetch(`/api/onboarding/payment/${paymentId}/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2875,7 +2816,7 @@ export default function OnboardingWizard() {
                 )}
 
                 {showCheckout && checkoutData ? (
-                  <FedaPayCheckout
+                  <FeexPayCheckout
                     publicKey={checkoutData.public_key}
                     transaction={checkoutData.transaction}
                     customer={checkoutData.customer ?? { email: '', lastname: '' }}
@@ -2903,8 +2844,8 @@ export default function OnboardingWizard() {
                   ) : (
                     <>
                           <img 
-                            src="/images/logoFedaPay.png" 
-                            alt="FedaPay" 
+                            src="/images/logoFeeXPay.png" 
+                            alt="FeeXPay" 
                             className="w-16 h-16 mr-3 object-contain"
                           />
                           Payer {formatCurrency(initialPayment)}
@@ -2920,7 +2861,7 @@ export default function OnboardingWizard() {
                         <div>
                           <p className="text-xs font-medium text-blue-900 mb-1">Paiement sécurisé</p>
                           <p className="text-xs text-graphite-700">
-                            Votre paiement est traité de manière sécurisée via FedaPay directement sur cette page.
+                            Votre paiement est traité de manière sécurisée via FeeXPay directement sur cette page.
                           </p>
                         </div>
                       </div>

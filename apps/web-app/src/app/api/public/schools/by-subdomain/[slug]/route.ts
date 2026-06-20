@@ -19,8 +19,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { extractBrandingFromTenant } from '@/lib/tenant/branding';
 
-/** ISR : revalidate toutes les 30 secondes — les données d'identité changent rarement. */
-export const revalidate = 30;
+/** Force dynamic — ne pas pré-render au build (backend peut être lent). */
+export const dynamic = 'force-dynamic';
 
 /**
  * Extraction du branding depuis la réponse de /public/schools/with-jobs

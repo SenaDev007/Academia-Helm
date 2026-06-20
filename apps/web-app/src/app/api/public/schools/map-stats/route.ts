@@ -6,13 +6,16 @@
  * Proxy BFF vers le backend NestJS : GET /api/public/schools/map-stats
  * Retourne les statistiques temps réel des écoles Academia Helm par département.
  *
+ * ⚠️ BUILD : force-dynamic + fetch avec timeout pour éviter que Vercel ne
+ * timeout pendant le build statique (le backend peut être lent à répondre).
  * ============================================================================
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes, bffHeaders } from '@/lib/utils/api-urls';
 
-export const revalidate = 60;
+// Force dynamic — ne jamais essayer de pré-render cette route au build
+export const dynamic = 'force-dynamic';
 
 export async function GET(_request: NextRequest) {
   try {
@@ -21,10 +24,17 @@ export async function GET(_request: NextRequest) {
 
     console.log('[Map Stats API] Calling backend at:', apiUrl);
 
+    // Fetch avec timeout de 10s pour éviter de bloquer le build
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10_000);
+
     const response = await fetch(apiUrl, {
       method: 'GET',
       headers: bffHeaders(),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({

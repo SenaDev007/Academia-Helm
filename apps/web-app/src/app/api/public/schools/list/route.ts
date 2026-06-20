@@ -6,16 +6,16 @@
  * Proxy BFF (Backend-For-Frontend) vers le endpoint NestJS /api/public/schools/list.
  * Ce endpoint est PUBLIC (@Public) — aucune authentification requise.
  *
- * Utilise le même pattern que /with-jobs (ISR cache + normalizeApiUrl + bffHeaders)
- * pour résilience face aux cold starts Neon DB et au blocage Cloudflare.
+ * ⚠️ BUILD : force-dynamic pour éviter que Vercel ne timeout pendant le build
+ * statique (le backend peut être lent à répondre à cause des cold starts Neon).
  * ============================================================================
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes, normalizeApiUrl, bffHeaders } from '@/lib/utils/api-urls';
 
-/** ISR: revalidate every 60 seconds — school data changes rarely. */
-export const revalidate = 60;
+// Force dynamic — ne jamais essayer de pré-render cette route au build
+export const dynamic = 'force-dynamic';
 
 export async function GET(_request: NextRequest) {
   try {

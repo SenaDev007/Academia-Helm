@@ -15,8 +15,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 
-/** ISR: revalidate every 60 seconds — school data changes rarely. */
-export const revalidate = 60;
+/** Force dynamic — ne pas pré-render au build (backend peut être lent). */
+export const dynamic = 'force-dynamic';
 
 export async function GET(_request: NextRequest) {
   try {

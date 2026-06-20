@@ -1,5 +1,5 @@
 -- ============================================================================
--- Migration: 20260621080000_add_student_enrollment_blocked
+-- Migration: 20260621160000_add_student_enrollment_blocked_v3
 -- ============================================================================
 -- Ajoute un champ `studentEnrollmentBlocked` au modèle Tenant (table "tenants").
 --
@@ -14,10 +14,11 @@
 -- Valeurs :
 --   false (défaut) — ajout d'élèves autorisé
 --   true            — ajout d'élèves bloqué (l'école doit upgrader son plan)
--- ============================================================================
-
+--
 -- Note: la table s'appelle "tenants" (minuscules) en DB car le modèle Prisma
 -- `Tenant` est mappé via @@map("tenants") dans le schema.prisma.
+-- ============================================================================
+
 ALTER TABLE "tenants" ADD COLUMN IF NOT EXISTS "studentEnrollmentBlocked" BOOLEAN NOT NULL DEFAULT false;
 
 -- Index pour permettre une vérification rapide

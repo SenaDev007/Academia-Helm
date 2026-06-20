@@ -3,8 +3,10 @@ import { BillingController } from './billing.controller';
 import { PricingController } from './controllers/pricing.controller';
 import { PricingAdminController } from './controllers/pricing-admin.controller';
 import { SubscriptionLifecycleController } from './subscription-lifecycle.controller';
+import { FeexPayController } from './feexpay.controller';
 import { SubscriptionService } from './services/subscription.service';
 import { SubscriptionLifecycleService } from './services/subscription-lifecycle.service';
+import { FeexPayService } from './services/feexpay.service';
 import { BillingReminderService } from './services/billing-reminder.service';
 import { SubscriptionPlanSeedService } from './services/subscription-plan-seed.service';
 import { PricingConfigSeedService } from './services/pricing-config-seed.service';
@@ -24,10 +26,11 @@ import { OrionModule } from '../orion/orion.module';
     OrionModule,
     forwardRef(() => OnboardingModule),
   ],
-  controllers: [BillingController, PricingController, PricingAdminController, SubscriptionLifecycleController],
+  controllers: [BillingController, PricingController, PricingAdminController, SubscriptionLifecycleController, FeexPayController],
   providers: [
     SubscriptionService,
     SubscriptionLifecycleService,
+    FeexPayService,
     BillingReminderService,
     SubscriptionPlanSeedService,
     PricingConfigSeedService,
@@ -39,6 +42,7 @@ import { OrionModule } from '../orion/orion.module';
   exports: [
     SubscriptionService,
     SubscriptionLifecycleService,
+    FeexPayService,
     BillingReminderService,
     PricingService,
     FedaPayService,

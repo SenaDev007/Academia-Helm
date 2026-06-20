@@ -361,6 +361,20 @@ async function bootstrap() {
       `CREATE INDEX IF NOT EXISTS "pricing_plans_isActive_idx" ON "pricing_plans"("isActive")`,
       `CREATE INDEX IF NOT EXISTS "pricing_plans_sortOrder_idx" ON "pricing_plans"("sortOrder")`,
 
+      // ─── Seed pricing_plans (idempotent — ON CONFLICT DO NOTHING) ───
+      `INSERT INTO "pricing_plans" ("id", "code", "name", "tagline", "description", "studentMin", "studentMax", "initialFee", "monthlyAmount", "yearlyAmount", "bilingualMonthly", "bilingualYearly", "features", "isPopular", "isActive", "sortOrder", "createdAt", "updatedAt")
+       SELECT gen_random_uuid(), 'SEED', 'Helm Seed', 'L''essentiel pour bien démarrer', 'Idéal pour les petites écoles qui démarrent leur transformation numérique.', 1, 150, 75000, 19900, 199000, 10000, 100000, '["Tous les modules principaux et supplémentaires inclus","Jusqu''à 150 élèves","Essai gratuit 30 jours","Support email","Sauvegarde quotidienne"]', false, true, 1, NOW(), NOW()
+       WHERE NOT EXISTS (SELECT 1 FROM "pricing_plans" WHERE "code" = 'SEED')`,
+      `INSERT INTO "pricing_plans" ("id", "code", "name", "tagline", "description", "studentMin", "studentMax", "initialFee", "monthlyAmount", "yearlyAmount", "bilingualMonthly", "bilingualYearly", "features", "isPopular", "isActive", "sortOrder", "createdAt", "updatedAt")
+       SELECT gen_random_uuid(), 'GROW', 'Helm Grow', 'Pilotez votre croissance', 'Pour les écoles en pleine expansion qui ont besoin d''outils avancés.', 151, 400, 100000, 24900, 249000, 10000, 100000, '["Tous les modules principaux et supplémentaires inclus","151 à 400 élèves","Essai gratuit 30 jours","Support prioritaire email + WhatsApp","Sauvegarde quotidienne","Tableaux de bord ORION"]', true, true, 2, NOW(), NOW()
+       WHERE NOT EXISTS (SELECT 1 FROM "pricing_plans" WHERE "code" = 'GROW')`,
+      `INSERT INTO "pricing_plans" ("id", "code", "name", "tagline", "description", "studentMin", "studentMax", "initialFee", "monthlyAmount", "yearlyAmount", "bilingualMonthly", "bilingualYearly", "features", "isPopular", "isActive", "sortOrder", "createdAt", "updatedAt")
+       SELECT gen_random_uuid(), 'LEAD', 'Helm Lead', 'Dominez votre marché', 'Pour les grandes écoles qui veulent un pilotage avancé et l''analytics.', 401, 800, 150000, 39900, 399000, 10000, 100000, '["Tous les modules principaux et supplémentaires inclus","401 à 800 élèves","Essai gratuit 30 jours","Support dédié 7j/7","Sauvegarde horaire","ORION Analytics complet","API d''intégration"]', false, true, 3, NOW(), NOW()
+       WHERE NOT EXISTS (SELECT 1 FROM "pricing_plans" WHERE "code" = 'LEAD')`,
+      `INSERT INTO "pricing_plans" ("id", "code", "name", "tagline", "description", "studentMin", "studentMax", "initialFee", "monthlyAmount", "yearlyAmount", "bilingualMonthly", "bilingualYearly", "features", "isPopular", "isActive", "sortOrder", "createdAt", "updatedAt")
+       SELECT gen_random_uuid(), 'NETWORK', 'Helm Network', 'La catégorie multi-campus', 'Pour les réseaux d''écoles et les établissements multi-campus.', 801, NULL, 200000, NULL, NULL, 10000, 100000, '["Tous les modules principaux et supplémentaires inclus","Plus de 800 élèves","Essai gratuit 30 jours","Account manager dédié","Sauvegarde temps réel","ORION Analytics complet","API d''intégration","Déploiement multi-campus","Formation sur site"]', false, true, 4, NOW(), NOW()
+       WHERE NOT EXISTS (SELECT 1 FROM "pricing_plans" WHERE "code" = 'NETWORK')`,
+
       // ─── Staff columns (migration 20260606120000 + later additions) ───
       // These columns are referenced by Prisma Client when including staff in queries
       // (e.g. contract generation, staff list). If the deployed DB doesn't have them,

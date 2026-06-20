@@ -23,7 +23,13 @@ import {
   ArrowRight,
   Zap,
 } from 'lucide-react';
-import { useTenantContext } from '@/components/context/TenantContext';
+
+// Helper: récupère le tenantId depuis le cookie `x-tenant-id`
+function getTenantIdFromCookie(): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(/(?:^|;\s*)x-tenant-id=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
 
 interface SubscriptionStatus {
   status: string;
@@ -73,22 +79,27 @@ function getStatusColor(status: string): string {
 }
 
 export default function BillingPage() {
-  const { currentTenantId } = useTenantContext() as any;
+  const [currentTenantId, setCurrentTenantId] = useState<string | null>(null);
   const [subStatus, setSubStatus] = useState<SubscriptionStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRenewing, setIsRenewing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!currentTenantId) return;
-    fetch(`/api/billing/subscription-status/${currentTenantId}`, { cache: 'no-store' })
+    const tid = getTenantIdFromCookie();
+    setCurrentTenantId(tid);
+    if (!tid) {
+      setIsLoading(false);
+      return;
+    }
+    fetch(`/api/billing/subscription-status/${tid}`, { cache: 'no-store' })
       .then((r) => r.json())
       .then((data) => {
         setSubStatus(data);
         setIsLoading(false);
       })
       .catch(() => setIsLoading(false));
-  }, [currentTenantId]);
+  }, []);
 
   const handleRenew = async () => {
     setIsRenewing(true);

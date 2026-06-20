@@ -382,16 +382,16 @@ async function bootstrap() {
       `UPDATE "pricing_plans" SET "features" = '["Tous les modules inclus sans restriction","Plus de 800 élèves","Abonnement de 30 jours offert","Account manager dédié","Sauvegarde temps réel + réplication","Tableaux de bord ORION + alertes intelligentes","Gestion multi-écoles","Formation sur site"]', "updatedAt" = NOW() WHERE "code" = 'NETWORK'`,
 
       // ─── HelmSubscription: champs cycle de vie (migration 20260620100000) ───
-      // Table name = "subscriptions" (cf @@map dans le schéma Prisma)
-      `ALTER TABLE "subscriptions" ADD COLUMN IF NOT EXISTS "notified7DaysBefore" TIMESTAMP(3)`,
-      `ALTER TABLE "subscriptions" ADD COLUMN IF NOT EXISTS "notified3DaysBefore" TIMESTAMP(3)`,
-      `ALTER TABLE "subscriptions" ADD COLUMN IF NOT EXISTS "notified1DayBefore" TIMESTAMP(3)`,
-      `ALTER TABLE "subscriptions" ADD COLUMN IF NOT EXISTS "expiredAt" TIMESTAMP(3)`,
-      `ALTER TABLE "subscriptions" ADD COLUMN IF NOT EXISTS "gracePeriodEnd" TIMESTAMP(3)`,
-      `ALTER TABLE "subscriptions" ADD COLUMN IF NOT EXISTS "suspendedAt" TIMESTAMP(3)`,
-      `ALTER TABLE "subscriptions" ADD COLUMN IF NOT EXISTS "blockedAt" TIMESTAMP(3)`,
-      `ALTER TABLE "subscriptions" ADD COLUMN IF NOT EXISTS "notifiedBlockWarning" TIMESTAMP(3)`,
-      `ALTER TABLE "subscriptions" ADD COLUMN IF NOT EXISTS "reactivationFee" INTEGER NOT NULL DEFAULT 5000`,
+      // Pas de @@map sur ce modèle → nom de table = "HelmSubscription" (casse Prisma)
+      `ALTER TABLE "HelmSubscription" ADD COLUMN IF NOT EXISTS "notified7DaysBefore" TIMESTAMP(3)`,
+      `ALTER TABLE "HelmSubscription" ADD COLUMN IF NOT EXISTS "notified3DaysBefore" TIMESTAMP(3)`,
+      `ALTER TABLE "HelmSubscription" ADD COLUMN IF NOT EXISTS "notified1DayBefore" TIMESTAMP(3)`,
+      `ALTER TABLE "HelmSubscription" ADD COLUMN IF NOT EXISTS "expiredAt" TIMESTAMP(3)`,
+      `ALTER TABLE "HelmSubscription" ADD COLUMN IF NOT EXISTS "gracePeriodEnd" TIMESTAMP(3)`,
+      `ALTER TABLE "HelmSubscription" ADD COLUMN IF NOT EXISTS "suspendedAt" TIMESTAMP(3)`,
+      `ALTER TABLE "HelmSubscription" ADD COLUMN IF NOT EXISTS "blockedAt" TIMESTAMP(3)`,
+      `ALTER TABLE "HelmSubscription" ADD COLUMN IF NOT EXISTS "notifiedBlockWarning" TIMESTAMP(3)`,
+      `ALTER TABLE "HelmSubscription" ADD COLUMN IF NOT EXISTS "reactivationFee" INTEGER NOT NULL DEFAULT 5000`,
 
       // ─── Staff columns (migration 20260606120000 + later additions) ───
       // These columns are referenced by Prisma Client when including staff in queries

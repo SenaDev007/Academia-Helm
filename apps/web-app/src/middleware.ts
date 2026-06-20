@@ -228,7 +228,7 @@ function withAntiCacheHeaders(response: NextResponse): NextResponse {
 }
 
 // Routes admin-login (ne nécessitent pas de subdomain)
-// L'ancien /admin a été supprimé — le backoffice est maintenant /app/platform/*
+// L'ancien /admin a été supprimé — le backoffice est maintenant /platform/*
 const adminRoutes: string[] = [];
 
 /** Nombre maximal de redirections internes avant de considérer une boucle. */
@@ -382,11 +382,11 @@ export async function middleware(request: NextRequest) {
       }
 
       // Admin authentifié → laisser passer
-      // SAUF si on est sur la racine / → rediriger vers /app/platform (dashboard backoffice)
+      // SAUF si on est sur la racine / → rediriger vers /platform (dashboard backoffice)
       if (pathname === '/') {
         const protocol = request.headers.get('x-forwarded-proto') || 'https';
         const adminHost = hostParts.join('.');
-        const adminUrl = new URL('/app/platform', `${protocol}://${adminHost}`);
+        const adminUrl = new URL('/platform', `${protocol}://${adminHost}`);
         return safeRedirect(adminUrl, request, redirectDepth);
       }
 
@@ -404,13 +404,14 @@ export async function middleware(request: NextRequest) {
     return safeRedirect(redirectUrl, request, redirectDepth);
   }
 
-  // ── Bloquer l'accès aux routes /app/platform/* hors du sous-domaine admin ──
+  // ── Bloquer l'accès aux routes /platform/* hors du sous-domaine admin ──
   // Le back-office centralisé d'Academia Helm ne doit être accessible QUE via
   // admin.academiahelm.com. Toute tentative d'accès depuis un autre sous-domaine
   // ou le domaine principal est redirigée vers admin.academiahelm.com.
-  if (pathname.startsWith('/app/platform')) {
+  if (pathname.startsWith('/platform')) {
     const protocol = request.headers.get('x-forwarded-proto') || 'https';
     const mainDomain = hostParts.length >= 2 ? hostParts.slice(1).join('.') : 'academiahelm.com';
+    // Convertir /platform/xxx → /platform/xxx (déjà bon)
     const adminUrl = new URL(pathname + request.nextUrl.search, `${protocol}://admin.${mainDomain}`);
     return safeRedirect(adminUrl, request, redirectDepth);
   }

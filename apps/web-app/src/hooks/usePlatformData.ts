@@ -4,7 +4,7 @@
  * usePlatformData — Hook générique pour récupérer les données réelles
  * du back-office Academia Helm via les endpoints /api/platform/*.
  *
- * Utilisé par tous les workspaces /app/platform/* pour remplacer les
+ * Utilisé par tous les workspaces /platform/* pour remplacer les
  * anciennes constantes MOCK_*. Aucune donnée mock n'est plus affichée.
  *
  * Exemple d'usage :

@@ -20,7 +20,7 @@ export default function PlatformSettingsWorkspace() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <a
-          href="/app/platform/rbac"
+          href="/platform/rbac"
           className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm hover:border-indigo-200 transition-all"
         >
           <Shield className="w-6 h-6 text-indigo-600 mb-3" />
@@ -28,7 +28,7 @@ export default function PlatformSettingsWorkspace() {
           <p className="text-xs text-slate-500 mt-1">Gérer le RBAC plateforme</p>
         </a>
         <a
-          href="/app/platform/settings"
+          href="/platform/settings"
           className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm hover:border-indigo-200 transition-all"
         >
           <Globe className="w-6 h-6 text-blue-600 mb-3" />
@@ -36,7 +36,7 @@ export default function PlatformSettingsWorkspace() {
           <p className="text-xs text-slate-500 mt-1">Configuration DNS et domaines</p>
         </a>
         <a
-          href="/app/platform/audit"
+          href="/platform/audit"
           className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm hover:border-indigo-200 transition-all"
         >
           <Database className="w-6 h-6 text-emerald-600 mb-3" />

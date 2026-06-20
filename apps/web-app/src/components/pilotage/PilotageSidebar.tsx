@@ -211,7 +211,7 @@ function filterModuleByVisibility(
   path: string,
   visibility: ReturnType<typeof getVisibleModulesForRole>,
 ): boolean {
-  if (path.startsWith('/app/platform')) return visibility.showPlatformModules;
+  if (path.startsWith('/platform')) return visibility.showPlatformModules;
   if (path.startsWith('/app/orion') || path.startsWith('/app/meetings') || path.startsWith('/app/general'))
     return visibility.showDirectionModules;
   if (path.startsWith('/app/finance')) return visibility.showFinanceModules;
@@ -256,23 +256,23 @@ const MAIN_MODULES = [
 ];
 
 const PLATFORM_MODULES = [
-  { path: '/app/platform', label: 'Tableau de bord global', icon: LayoutDashboard },
-  { path: '/app/platform/tenants', label: 'Écoles / Tenants', icon: Building },
-  { path: '/app/platform/initial-subscriptions', label: 'Souscriptions initiales', icon: Briefcase },
-  { path: '/app/platform/subscriptions', label: 'Abonnements & Plans', icon: CreditCard },
-  { path: '/app/platform/modules', label: 'Modules & Fonctions', icon: Zap },
-  { path: '/app/platform/aggregation', label: 'Agrégation Globale', icon: BarChart3 },
-  { path: '/app/platform/orion-pilotage', label: 'ORION-Pilotage Direction', icon: Zap },
-  { path: '/app/platform/users', label: 'Utilisateurs plateforme', icon: Users },
-  { path: '/app/platform/rbac', label: 'Rôles & Permissions', icon: Lock },
-  { path: '/app/platform/billing', label: 'Facturation SaaS', icon: PieChart },
-  { path: '/app/platform/payments', label: 'Paiements & Transactions', icon: CreditCard },
-  { path: '/app/platform/support', label: 'Support & Tickets', icon: HelpCircle },
-  { path: '/app/platform/monitoring', label: 'Incidents & Monitoring', icon: ShieldAlert },
-  { path: '/app/platform/orion', label: 'ORION Global', icon: Brain },
-  { path: '/app/platform/audit', label: 'Audit & Logs', icon: History },
-  { path: '/app/platform/reviews', label: 'Avis & Témoignages', icon: Star },
-  { path: '/app/platform/settings', label: 'Paramètres plateforme', icon: Settings },
+  { path: '/platform', label: 'Tableau de bord global', icon: LayoutDashboard },
+  { path: '/platform/tenants', label: 'Écoles / Tenants', icon: Building },
+  { path: '/platform/initial-subscriptions', label: 'Souscriptions initiales', icon: Briefcase },
+  { path: '/platform/subscriptions', label: 'Abonnements & Plans', icon: CreditCard },
+  { path: '/platform/modules', label: 'Modules & Fonctions', icon: Zap },
+  { path: '/platform/aggregation', label: 'Agrégation Globale', icon: BarChart3 },
+  { path: '/platform/orion-pilotage', label: 'ORION-Pilotage Direction', icon: Zap },
+  { path: '/platform/users', label: 'Utilisateurs plateforme', icon: Users },
+  { path: '/platform/rbac', label: 'Rôles & Permissions', icon: Lock },
+  { path: '/platform/billing', label: 'Facturation SaaS', icon: PieChart },
+  { path: '/platform/payments', label: 'Paiements & Transactions', icon: CreditCard },
+  { path: '/platform/support', label: 'Support & Tickets', icon: HelpCircle },
+  { path: '/platform/monitoring', label: 'Incidents & Monitoring', icon: ShieldAlert },
+  { path: '/platform/orion', label: 'ORION Global', icon: Brain },
+  { path: '/platform/audit', label: 'Audit & Logs', icon: History },
+  { path: '/platform/reviews', label: 'Avis & Témoignages', icon: Star },
+  { path: '/platform/settings', label: 'Paramètres plateforme', icon: Settings },
 ];
 
 const SUPPLEMENTARY_MODULES = [
@@ -394,7 +394,7 @@ export default function PilotageSidebar({
   const isPlatformOwner =
     user?.role === 'PLATFORM_OWNER' ||
     user?.role === 'PLATFORM_SUPER_ADMIN';
-  // Les modules /app/platform/* (back-office global Academia Helm) ne sont
+  // Les modules /platform/* (back-office global Academia Helm) ne sont
   // accessibles QUE via admin.academiahelm.com. Sur tout autre sous-domaine
   // (y compris le domaine principal), ils sont masqués de la sidebar.
   // Un lien "Back-Office Academia Helm" est proposé en bas de sidebar pour
@@ -677,7 +677,7 @@ export default function PilotageSidebar({
               pour les platform owners qui ne sont PAS déjà sur le sous-domaine admin. */}
           {isPlatformOwner && !isAdminSubdomain && (
             <a
-              href={typeof window !== 'undefined' ? getAdminBackOfficeUrl('/app/platform') : '#'}
+              href={typeof window !== 'undefined' ? getAdminBackOfficeUrl('/platform') : '#'}
               target="_blank"
               rel="noopener noreferrer"
               onClick={onCloseMobileDrawer}

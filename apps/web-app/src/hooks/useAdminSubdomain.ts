@@ -10,7 +10,7 @@ import { useEffect, useState } from 'react';
  * Règle : le back-office centralisé d'Academia Helm n'est accessible QUE via
  * admin.academiahelm.com (configuré dans Vercel + bloqué par le middleware).
  * Cette detection côté client permet à la sidebar (PilotageSidebar) de n'afficher
- * les modules /app/platform/* QUE lorsque l'utilisateur est sur ce sous-domaine.
+ * les modules /platform/* QUE lorsque l'utilisateur est sur ce sous-domaine.
  *
  * En développement local (localhost), on considère qu'on n'est PAS sur admin.*
  * sauf si l'URL contient ?admin=1 ou que le hostname commence par "admin.".
@@ -58,7 +58,7 @@ export function useCurrentHostname(): string | null {
  * En production, on utilise le domaine principal détecté depuis le hostname courant.
  * En développement local, on renvoie localhost avec ?admin=1 pour les tests.
  */
-export function getAdminBackOfficeUrl(path: string = '/app/platform'): string {
+export function getAdminBackOfficeUrl(path: string = '/platform'): string {
   if (typeof window === 'undefined') {
     return `https://admin.academiahelm.com${path}`;
   }

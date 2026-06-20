@@ -289,12 +289,14 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
             {/* Séparateur */}
             <div className="h-7 w-px bg-gradient-to-b from-transparent via-gray-200 to-transparent hidden sm:block" />
 
-            {/* Sélecteurs de Contexte */}
+            {/* Sélecteurs de Contexte — masqués sur le back-office admin */}
+            {!isPlatformAdmin && (
             <div className="hidden sm:flex items-center space-x-2 md:space-x-3">
               <AcademicYearSelector />
               <SchoolLevelSelector />
               <AcademicTrackSelector />
             </div>
+            )}
           </div>
 
           {/* Droite : Actions & Profil */}

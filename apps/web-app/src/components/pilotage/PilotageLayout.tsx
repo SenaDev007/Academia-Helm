@@ -143,8 +143,8 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
 
               {/* Right: Status indicators */}
               <div className="flex items-center space-x-3">
-                {/* Active level badge */}
-                {currentLevel && getLevelLabel(currentLevel.code) && (
+                {/* Active level badge — masqué sur le back-office admin */}
+                {user?.role !== 'PLATFORM_SUPER_ADMIN' && user?.role !== 'PLATFORM_OWNER' && tenant?.subdomain !== 'admin' && currentLevel && getLevelLabel(currentLevel.code) && (
                   <div className="hidden sm:flex items-center space-x-1.5 px-2 py-0.5 bg-blue-50 rounded-md border border-blue-100">
                     <div className={`w-1.5 h-1.5 rounded-full ${
                       currentLevel.code === 'MATERNELLE' ? 'bg-pink-400' :

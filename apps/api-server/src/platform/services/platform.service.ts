@@ -79,7 +79,7 @@ export class PlatformService {
       }),
       this.prisma.billingEvent.groupBy({
         by: ['createdAt'],
-        where: { createdAt: { gte: this.daysAgo(180) }, type: { in: ['PAYMENT_SUCCESS', 'SUBSCRIPTION_RENEWED'] } },
+        where: { createdAt: { gte: this.daysAgo(180) }, type: { in: ['INITIAL_SUBSCRIPTION', 'RENEWAL', 'MANUAL_PAYMENT'] } },
         _sum: { amount: true },
       }),
       this.prisma.tenant.groupBy({
@@ -196,11 +196,9 @@ export class PlatformService {
         include: {
           country: { select: { name: true } },
           schools: { select: { city: true }, take: 1 },
-          // helmSubscriptions est une relation 1-to-1 (singulière) dans le schéma Prisma
+          // helmSubscriptions est une relation 1-to-1 (singulière) — pas de take/orderBy
           helmSubscriptions: {
             select: { plan: true, status: true, currentPeriodEnd: true },
-            orderBy: { createdAt: 'desc' },
-            take: 1,
           },
         },
       }),
@@ -341,7 +339,7 @@ export class PlatformService {
     // BillingEvent n'a pas de relation directe vers Tenant (uniquement tenantId en String).
     // On récupère les events, puis on enrichit avec les tenants séparément.
     const events = await this.prisma.billingEvent.findMany({
-      where: { type: { in: ['PAYMENT_SUCCESS', 'SUBSCRIPTION_RENEWED', 'PAYMENT_FAILED'] } },
+      where: { type: { in: ['INITIAL_SUBSCRIPTION', 'RENEWAL', 'MANUAL_PAYMENT'] } },
       orderBy: { createdAt: 'desc' },
       take: 200,
     });

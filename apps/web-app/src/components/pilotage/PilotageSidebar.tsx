@@ -764,7 +764,8 @@ export default function PilotageSidebar({
         </div>
       </nav>
 
-      {/* ── Footer - Niveau actif ── */}
+      {/* ── Footer - Niveau actif — masqué sur le back-office admin ── */}
+      {!isPlatformPortal && (
       <div className="border-t border-white/[0.06]">
         {effectiveOpen ? (
           <div className="p-4">
@@ -789,6 +790,7 @@ export default function PilotageSidebar({
           )
         )}
       </div>
+      )}
     </div>
   );
 

@@ -1,22 +1,14 @@
 /**
  * ============================================================================
- * PROXY API — PLATFORM BACK-OFFICE (catch-all)
+ * PROXY API — PLATFORM BACK-OFFICE (catch-all) — VERSION ROBUSTE
  * ============================================================================
  *
- * Toutes les requêtes /api/platform/* sont proxysées vers NestJS :
- *   /api/platform/dashboard    →  {API_BASE}/platform/dashboard
- *   /api/platform/tenants      →  {API_BASE}/platform/tenants
- *   etc.
+ * Version alternative qui lit le cookie admin directement depuis la requête
+ * HTTP brute (request.headers.get('cookie')) au lieu d'utiliser next/headers
+ * ou request.cookies qui peuvent être instables en serverless Vercel.
  *
- * AUTHENTIFICATION :
- *   Le proxy vérifie le cookie `academia_admin_session` directement depuis
- *   la requête (request.cookies) plutôt que via next/headers cookies().
- *   Cette approche est plus fiable dans Vercel Edge/Serverless.
- *
- *   Si l'admin est authentifié, le proxy ajoute le header
- *   `x-platform-admin-email` à la requête backend.
- *
- *   Si l'admin n'est PAS authentifié → 401 (avant d'atteindre le backend).
+ * Si le cookie n'est pas trouvé via cette méthode, on tente aussi request.cookies
+ * en fallback.
  * ============================================================================
  */
 
@@ -26,37 +18,49 @@ import { verifyAdminSession } from '@/lib/admin/admin-auth-server';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+export const maxDuration = 30;
 
 function buildBackendUrl(pathSegments: string[]): string {
   const path = pathSegments.length ? pathSegments.join('/') : '';
   return nestControllerUrl(`platform${path ? `/${path}` : ''}`);
 }
 
-async function parseBackendJson(res: Response): Promise<unknown> {
-  const text = await res.text();
-  if (!text.trim()) return {};
+/**
+ * Extrait le cookie academia_admin_session de la requête en lisant
+ * directement le header Cookie brut. Plus fiable que request.cookies
+ * en serverless Vercel.
+ */
+function extractAdminCookie(request: NextRequest): string | null {
+  // Méthode 1 : request.cookies (Next.js API)
   try {
-    return JSON.parse(text) as unknown;
+    const cookie = request.cookies.get('academia_admin_session')?.value;
+    if (cookie) return cookie;
   } catch {
-    return { error: 'Réponse backend invalide' };
+    /* fallback */
   }
+
+  // Méthode 2 : lire le header Cookie brut
+  try {
+    const rawCookie = request.headers.get('cookie') || '';
+    const match = rawCookie.match(/academia_admin_session=([^;]+)/);
+    if (match) {
+      return decodeURIComponent(match[1]);
+    }
+  } catch {
+    /* fallback */
+  }
+
+  return null;
 }
 
-/**
- * Vérifie que l'admin est authentifié et construit les headers à envoyer
- * au backend. Retourne null si non authentifié (→ 401).
- *
- * Lit le cookie directement depuis la requête (request.cookies) plutôt que
- * via next/headers cookies() qui peut être instable en serverless Vercel.
- */
 function getPlatformProxyHeaders(request: NextRequest): Record<string, string> | null {
-  const cookie = request.cookies.get('academia_admin_session')?.value;
-  if (!cookie) {
+  const cookieValue = extractAdminCookie(request);
+  if (!cookieValue) {
     return null;
   }
 
   try {
-    const decoded = JSON.parse(decodeURIComponent(cookie));
+    const decoded = JSON.parse(cookieValue);
     const session = verifyAdminSession(decoded);
     if (!session) {
       return null;
@@ -82,39 +86,20 @@ function unauthorizedResponse() {
   );
 }
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { path: string[] } },
-) {
-  const url = new URL(buildBackendUrl(params.path));
-  request.nextUrl.searchParams.forEach((value, key) => {
-    url.searchParams.append(key, value);
-  });
-
-  const headers = getPlatformProxyHeaders(request);
-  if (!headers) return unauthorizedResponse();
-
+async function parseBackendJson(res: Response): Promise<unknown> {
+  const text = await res.text();
+  if (!text.trim()) return {};
   try {
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers,
-      cache: 'no-store',
-    });
-
-    const data = await parseBackendJson(response);
-    return NextResponse.json(data, { status: response.status });
-  } catch (error: any) {
-    console.error('[platform/proxy] GET error:', error);
-    return NextResponse.json(
-      { error: error?.message || 'Erreur interne du proxy platform' },
-      { status: 500 },
-    );
+    return JSON.parse(text) as unknown;
+  } catch {
+    return { error: 'Réponse backend invalide', raw: text.slice(0, 500) };
   }
 }
 
-export async function POST(
+async function proxyRequest(
   request: NextRequest,
-  { params }: { params: { path: string[] } },
+  params: { path: string[] },
+  method: string,
 ) {
   const url = new URL(buildBackendUrl(params.path));
   request.nextUrl.searchParams.forEach((value, key) => {
@@ -125,15 +110,17 @@ export async function POST(
   if (!headers) return unauthorizedResponse();
 
   let body: any = undefined;
-  try {
-    body = await request.text();
-  } catch {
-    /* no body */
+  if (method !== 'GET' && method !== 'DELETE') {
+    try {
+      body = await request.text();
+    } catch {
+      /* no body */
+    }
   }
 
   try {
     const response = await fetch(url.toString(), {
-      method: 'POST',
+      method,
       headers,
       body,
       cache: 'no-store',
@@ -142,116 +129,33 @@ export async function POST(
     const data = await parseBackendJson(response);
     return NextResponse.json(data, { status: response.status });
   } catch (error: any) {
-    console.error('[platform/proxy] POST error:', error);
+    console.error(`[platform/proxy] ${method} error:`, error?.message);
     return NextResponse.json(
-      { error: error?.message || 'Erreur interne du proxy platform' },
+      {
+        error: error?.message || 'Erreur interne du proxy platform',
+        url: url.toString(),
+      },
       { status: 500 },
     );
   }
 }
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { path: string[] } },
-) {
-  const url = new URL(buildBackendUrl(params.path));
-  request.nextUrl.searchParams.forEach((value, key) => {
-    url.searchParams.append(key, value);
-  });
-
-  const headers = getPlatformProxyHeaders(request);
-  if (!headers) return unauthorizedResponse();
-
-  let body: any = undefined;
-  try {
-    body = await request.text();
-  } catch {
-    /* no body */
-  }
-
-  try {
-    const response = await fetch(url.toString(), {
-      method: 'PATCH',
-      headers,
-      body,
-      cache: 'no-store',
-    });
-
-    const data = await parseBackendJson(response);
-    return NextResponse.json(data, { status: response.status });
-  } catch (error: any) {
-    console.error('[platform/proxy] PATCH error:', error);
-    return NextResponse.json(
-      { error: error?.message || 'Erreur interne du proxy platform' },
-      { status: 500 },
-    );
-  }
+export async function GET(request: NextRequest, { params }: { params: { path: string[] } }) {
+  return proxyRequest(request, params, 'GET');
 }
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { path: string[] } },
-) {
-  const url = new URL(buildBackendUrl(params.path));
-  request.nextUrl.searchParams.forEach((value, key) => {
-    url.searchParams.append(key, value);
-  });
-
-  const headers = getPlatformProxyHeaders(request);
-  if (!headers) return unauthorizedResponse();
-
-  try {
-    const response = await fetch(url.toString(), {
-      method: 'DELETE',
-      headers,
-      cache: 'no-store',
-    });
-
-    const data = await parseBackendJson(response);
-    return NextResponse.json(data, { status: response.status });
-  } catch (error: any) {
-    console.error('[platform/proxy] DELETE error:', error);
-    return NextResponse.json(
-      { error: error?.message || 'Erreur interne du proxy platform' },
-      { status: 500 },
-    );
-  }
+export async function POST(request: NextRequest, { params }: { params: { path: string[] } }) {
+  return proxyRequest(request, params, 'POST');
 }
 
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { path: string[] } },
-) {
-  const url = new URL(buildBackendUrl(params.path));
-  request.nextUrl.searchParams.forEach((value, key) => {
-    url.searchParams.append(key, value);
-  });
+export async function PATCH(request: NextRequest, { params }: { params: { path: string[] } }) {
+  return proxyRequest(request, params, 'PATCH');
+}
 
-  const headers = getPlatformProxyHeaders(request);
-  if (!headers) return unauthorizedResponse();
+export async function DELETE(request: NextRequest, { params }: { params: { path: string[] } }) {
+  return proxyRequest(request, params, 'DELETE');
+}
 
-  let body: any = undefined;
-  try {
-    body = await request.text();
-  } catch {
-    /* no body */
-  }
-
-  try {
-    const response = await fetch(url.toString(), {
-      method: 'PUT',
-      headers,
-      body,
-      cache: 'no-store',
-    });
-
-    const data = await parseBackendJson(response);
-    return NextResponse.json(data, { status: response.status });
-  } catch (error: any) {
-    console.error('[platform/proxy] PUT error:', error);
-    return NextResponse.json(
-      { error: error?.message || 'Erreur interne du proxy platform' },
-      { status: 500 },
-    );
-  }
+export async function PUT(request: NextRequest, { params }: { params: { path: string[] } }) {
+  return proxyRequest(request, params, 'PUT');
 }

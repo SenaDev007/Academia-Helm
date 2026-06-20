@@ -571,7 +571,8 @@ export default function PilotageSidebar({
 
       {/* ── Navigation ── */}
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-        {/* Modules Principaux */}
+        {/* Modules Principaux — MASQUÉS sur le back-office admin */}
+        {!isPlatformPortal && (
         <div className="mb-5">
           {effectiveOpen ? (
             <>
@@ -599,6 +600,7 @@ export default function PilotageSidebar({
             mainModules.map((item) => renderIconItem(item))
           )}
         </div>
+        )}
 
         {/* Modules Plateforme (Administration Globale) */}
         {isPlatformPortal && (
@@ -631,14 +633,15 @@ export default function PilotageSidebar({
           </div>
         )}
 
-        {/* Module Général (Direction) */}
-        {generalModule && (
+        {/* Module Général (Direction) — MASQUÉ sur le back-office admin */}
+        {!isPlatformPortal && generalModule && (
           <div className="mb-5">
             {renderNavItem(generalModule, true)}
           </div>
         )}
 
-        {/* Modules Supplémentaires */}
+        {/* Modules Supplémentaires — MASQUÉS sur le back-office admin */}
+        {!isPlatformPortal && (
         <div className="mb-5">
           {effectiveOpen ? (
             <>
@@ -666,6 +669,7 @@ export default function PilotageSidebar({
             supplementaryModules.map((item) => renderIconItem(item))
           )}
         </div>
+        )}
 
         {/* ── Bottom Links ── */}
         <div className="mt-auto pt-3 border-t border-white/[0.06]">

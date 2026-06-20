@@ -25,6 +25,7 @@ import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import type { User, Tenant } from '@/types';
 import { ReviewPromptHost } from '@/components/reviews/ReviewPromptHost';
 import { CrispChat } from '@/components/CrispChat';
+import { SubscriptionBanner } from '@/components/billing/SubscriptionBanner';
 
 export interface AppLayoutClientProps {
   children: React.ReactNode;
@@ -53,6 +54,8 @@ export default function AppLayoutClient({
         animate={fadeMotion.animate}
         transition={fadeMotion.transition}
       >
+        {/* Bandeau d'abonnement (GRACE_PERIOD / SUSPENDED) */}
+        <SubscriptionBanner tenantId={tenant?.id} />
         <I18nProvider>
           <QueryProvider>
             <AppSessionProvider user={user} tenant={tenant}>

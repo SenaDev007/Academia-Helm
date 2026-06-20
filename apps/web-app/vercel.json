@@ -4,6 +4,12 @@
   "installCommand": "npm install",
   "outputDirectory": ".next",
   "regions": ["cdg1"],
+  "crons": [
+    {
+      "path": "/api/billing/cron-trigger",
+      "schedule": "0 6 * * *"
+    }
+  ],
   "functions": {
     "src/app/api/hr/recruitment/apply/route.ts": {
       "maxDuration": 60,

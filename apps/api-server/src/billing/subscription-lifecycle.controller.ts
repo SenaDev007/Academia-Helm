@@ -566,4 +566,89 @@ export class SubscriptionLifecycleController {
     this.logger.log(`✅ Bilingual option deactivated for tenant ${tenantId} (reason: ${body?.reason || 'N/A'})`);
     return { success: true, message: 'Option bilingue désactivée. La souscription bilingue est arrêtée.' };
   }
+
+  // ============================================================================
+  // ADMIN — Application manuelle des migrations (endpoint de secours)
+  // ============================================================================
+  // Si les migrations Prisma échouent à s'appliquer au démarrage (par exemple
+  // à cause d'une migration déjà marquée comme appliquée dans _prisma_migrations),
+  // cet endpoint permet d'exécuter les ALTER TABLE idempotents manuellement.
+  //
+  // Sécurité : header x-platform-admin-email requis + x-admin-secret (CRON_SECRET).
+  // ============================================================================
+
+  @Public()
+  @Post('admin/apply-migrations')
+  async applyMigrationsManually(
+    @Headers('x-platform-admin-email') adminEmail?: string,
+    @Headers('x-admin-secret') adminSecret?: string,
+  ) {
+    if (!adminEmail) {
+      throw new BadRequestException('Header x-platform-admin-email requis');
+    }
+    const expectedSecret = process.env.CRON_SECRET || 'academia-helm-cron-2026';
+    if (adminSecret !== expectedSecret) {
+      throw new BadRequestException('Header x-admin-secret invalide');
+    }
+
+    this.logger.log(`🔧 Manual migration application triggered by admin ${adminEmail}`);
+    const results: Array<{ migration: string; status: string; error?: string }> = [];
+
+    // 1. studentEnrollmentBlocked sur tenants
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `ALTER TABLE "tenants" ADD COLUMN IF NOT EXISTS "studentEnrollmentBlocked" BOOLEAN NOT NULL DEFAULT false`,
+      );
+      await this.prisma.$executeRawUnsafe(
+        `CREATE INDEX IF NOT EXISTS "tenants_studentEnrollmentBlocked_idx" ON "tenants"("studentEnrollmentBlocked")`,
+      );
+      results.push({ migration: 'studentEnrollmentBlocked', status: 'OK' });
+      this.logger.log('✅ studentEnrollmentBlocked column ensured');
+    } catch (err: any) {
+      results.push({ migration: 'studentEnrollmentBlocked', status: 'FAILED', error: err.message });
+      this.logger.error(`studentEnrollmentBlocked failed: ${err.message}`);
+    }
+
+    // 2. logo_url sur onboarding_drafts
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `ALTER TABLE "onboarding_drafts" ADD COLUMN IF NOT EXISTS "logo_url" TEXT`,
+      );
+      results.push({ migration: 'logo_url', status: 'OK' });
+      this.logger.log('✅ logo_url column ensured');
+    } catch (err: any) {
+      results.push({ migration: 'logo_url', status: 'FAILED', error: err.message });
+      this.logger.error(`logo_url failed: ${err.message}`);
+    }
+
+    // 3. Vérifier que l'enum BillingEventType a les nouveaux types
+    // (ALTER TYPE ne supporte pas IF NOT EXISTS en PG < 10, mais c'est OK depuis 9.3)
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `ALTER TYPE "BillingEventType" ADD VALUE IF NOT EXISTS 'BILINGUAL_ACTIVATION'`,
+      );
+      await this.prisma.$executeRawUnsafe(
+        `ALTER TYPE "BillingEventType" ADD VALUE IF NOT EXISTS 'BILINGUAL_ACTIVATED'`,
+      );
+      await this.prisma.$executeRawUnsafe(
+        `ALTER TYPE "BillingEventType" ADD VALUE IF NOT EXISTS 'BILINGUAL_DEACTIVATED'`,
+      );
+      results.push({ migration: 'BillingEventType enum', status: 'OK' });
+      this.logger.log('✅ BillingEventType enum extended');
+    } catch (err: any) {
+      results.push({ migration: 'BillingEventType enum', status: 'FAILED', error: err.message });
+      this.logger.error(`BillingEventType enum failed: ${err.message}`);
+    }
+
+    // Note: ALTER TYPE ADD VALUE ne peut pas être exécuté dans une transaction.
+    // Si l'erreur est "type already exists", c'est OK.
+    const summary = {
+      applied: results.filter((r) => r.status === 'OK').length,
+      failed: results.filter((r) => r.status === 'FAILED').length,
+      details: results,
+    };
+
+    this.logger.log(`🔧 Migration application summary: ${JSON.stringify(summary)}`);
+    return summary;
+  }
 }

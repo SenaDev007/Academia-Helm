@@ -176,17 +176,33 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
       // Timeout court (3s) — si le backend ne répond pas, on déconnecte quand même
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3000);
-      await fetch('/api/auth/logout', {
-        method: 'POST',
-        signal: controller.signal,
-      }).catch(() => {});
-      clearTimeout(timeoutId);
-      clearClientSessionSync();
-      window.location.href = '/';
+
+      if (isPlatformAdmin) {
+        // Back-office admin : utiliser /api/admin-auth/logout + redirect vers /admin-login
+        await fetch('/api/admin-auth/logout', {
+          method: 'POST',
+          signal: controller.signal,
+        }).catch(() => {});
+        clearTimeout(timeoutId);
+        window.location.href = '/admin-login';
+      } else {
+        // App école : utiliser /api/auth/logout + redirect vers /
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          signal: controller.signal,
+        }).catch(() => {});
+        clearTimeout(timeoutId);
+        clearClientSessionSync();
+        window.location.href = '/';
+      }
     } catch (error) {
       console.error('Error logging out:', error);
-      clearClientSessionSync();
-      window.location.href = '/';
+      if (isPlatformAdmin) {
+        window.location.href = '/admin-login';
+      } else {
+        clearClientSessionSync();
+        window.location.href = '/';
+      }
     }
   };
 

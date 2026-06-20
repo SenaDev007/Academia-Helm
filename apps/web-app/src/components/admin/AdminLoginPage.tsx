@@ -32,6 +32,8 @@ import {
   Shield,
   ArrowRight,
   CheckCircle2,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 type View = 'login' | 'forgot' | 'reset' | 'success';
@@ -46,6 +48,7 @@ export default function AdminLoginPage() {
   // Login
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   // Forgot
   const [forgotEmail, setForgotEmail] = useState('');
@@ -248,7 +251,24 @@ export default function AdminLoginPage() {
                     <label htmlFor="password" className="block text-xs font-semibold text-slate-700 mb-1.5">Mot de passe</label>
                     <div className="relative">
                       <Lock className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none w-5 h-5 text-slate-400 my-auto" />
-                      <input type="password" id="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-10 pr-4 py-2.5 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-[#0b2f73] focus:border-[#0b2f73] transition-all text-sm" placeholder="••••••••" autoComplete="current-password" />
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        id="password"
+                        required
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full pl-10 pr-10 py-2.5 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-[#0b2f73] focus:border-[#0b2f73] transition-all text-sm"
+                        placeholder="••••••••"
+                        autoComplete="current-password"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
+                        title={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                      >
+                        {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                      </button>
                     </div>
                     {/* Mot de passe oublié — en dessous à droite du champ password */}
                     <div className="flex justify-end mt-1.5">

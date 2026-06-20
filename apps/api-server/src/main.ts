@@ -782,6 +782,26 @@ async function bootstrap() {
     logger.warn('Some HR recruitment features may not work');
   }
 
+  // ============================================================================
+  // FALLBACK: Migration studentEnrollmentBlocked sur tenants
+  // ============================================================================
+  // Cette colonne est nécessaire pour StudentCountVerifierService qui bloque
+  // l'ajout d'élèves quand le plan d'abonnement est dépassé. La migration
+  // Prisma 20260621160000 peut échouer à s'appliquer proprement (déjà
+  // marquée comme appliquée dans _prisma_migrations suite à un précédent
+  // échec silencieux). Ce fallback garantit que la colonne existe.
+  try {
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "tenants" ADD COLUMN IF NOT EXISTS "studentEnrollmentBlocked" BOOLEAN NOT NULL DEFAULT false`
+    );
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS "tenants_studentEnrollmentBlocked_idx" ON "tenants"("studentEnrollmentBlocked")`
+    );
+    logger.log('✅ Column tenants.studentEnrollmentBlocked ensured successfully');
+  } catch (studentColErr: any) {
+    logger.warn(`tenantEnrollmentBlocked column warning: ${studentColErr.message}`);
+  }
+
   await app.listen(port, '0.0.0.0');
 
   // Log memory info on startup

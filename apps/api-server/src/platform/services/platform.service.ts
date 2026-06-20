@@ -761,4 +761,95 @@ export class PlatformService {
     }
     return stats;
   }
+
+  // ─── PRICING PLANS ──────────────────────────────────────────────────────────
+
+  async getPricingPlans() {
+    const plans = await this.prisma.pricingPlan.findMany({
+      where: { isActive: true },
+      orderBy: { sortOrder: 'asc' },
+    });
+    return plans.map(p => ({
+      ...p,
+      features: p.features ? JSON.parse(p.features) : [],
+    }));
+  }
+
+  async upsertPricingPlan(data: any) {
+    const features = data.features ? (Array.isArray(data.features) ? JSON.stringify(data.features) : data.features) : null;
+    if (data.id) {
+      // Update
+      return this.prisma.pricingPlan.update({
+        where: { id: data.id },
+        data: {
+          code: data.code,
+          name: data.name,
+          tagline: data.tagline || null,
+          description: data.description || null,
+          studentMin: data.studentMin ?? 0,
+          studentMax: data.studentMax ?? null,
+          initialFee: data.initialFee ?? 0,
+          monthlyAmount: data.monthlyAmount ?? null,
+          yearlyAmount: data.yearlyAmount ?? null,
+          bilingualMonthly: data.bilingualMonthly ?? null,
+          bilingualYearly: data.bilingualYearly ?? null,
+          features,
+          isPopular: data.isPopular ?? false,
+          isActive: data.isActive ?? true,
+          sortOrder: data.sortOrder ?? 0,
+        },
+      });
+    }
+    // Create
+    return this.prisma.pricingPlan.create({
+      data: {
+        code: data.code,
+        name: data.name,
+        tagline: data.tagline || null,
+        description: data.description || null,
+        studentMin: data.studentMin ?? 0,
+        studentMax: data.studentMax ?? null,
+        initialFee: data.initialFee ?? 0,
+        monthlyAmount: data.monthlyAmount ?? null,
+        yearlyAmount: data.yearlyAmount ?? null,
+        bilingualMonthly: data.bilingualMonthly ?? null,
+        bilingualYearly: data.bilingualYearly ?? null,
+        features,
+        isPopular: data.isPopular ?? false,
+        isActive: data.isActive ?? true,
+        sortOrder: data.sortOrder ?? 0,
+      },
+    });
+  }
+
+  async deletePricingPlan(id: string) {
+    return this.prisma.pricingPlan.delete({ where: { id } });
+  }
+
+  /**
+   * Récupère les plans publics pour la page /tarification.
+   * Endpoint @Public — pas d'auth requise.
+   */
+  async getPublicPricingPlans() {
+    const plans = await this.prisma.pricingPlan.findMany({
+      where: { isActive: true },
+      orderBy: { sortOrder: 'asc' },
+    });
+    return plans.map(p => ({
+      id: p.id,
+      code: p.code,
+      name: p.name,
+      tagline: p.tagline,
+      description: p.description,
+      studentMin: p.studentMin,
+      studentMax: p.studentMax,
+      initialFee: p.initialFee,
+      monthlyAmount: p.monthlyAmount,
+      yearlyAmount: p.yearlyAmount,
+      bilingualMonthly: p.bilingualMonthly,
+      bilingualYearly: p.bilingualYearly,
+      features: p.features ? JSON.parse(p.features) : [],
+      isPopular: p.isPopular,
+    }));
+  }
 }

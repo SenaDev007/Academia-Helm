@@ -335,6 +335,32 @@ async function bootstrap() {
       `CREATE INDEX IF NOT EXISTS "contract_sign_tokens_tenantId_idx" ON "contract_sign_tokens"("tenantId")`,
       `CREATE INDEX IF NOT EXISTS "contract_sign_tokens_expiresAt_idx" ON "contract_sign_tokens"("expiresAt")`,
 
+      // ─── pricing_plans table (migration 20260620080000) ───
+      `CREATE TABLE IF NOT EXISTS "pricing_plans" (
+        "id" TEXT NOT NULL,
+        "code" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "tagline" TEXT,
+        "description" TEXT,
+        "studentMin" INTEGER NOT NULL DEFAULT 0,
+        "studentMax" INTEGER,
+        "initialFee" INTEGER NOT NULL DEFAULT 0,
+        "monthlyAmount" INTEGER,
+        "yearlyAmount" INTEGER,
+        "bilingualMonthly" INTEGER,
+        "bilingualYearly" INTEGER,
+        "features" TEXT,
+        "isPopular" BOOLEAN NOT NULL DEFAULT false,
+        "isActive" BOOLEAN NOT NULL DEFAULT true,
+        "sortOrder" INTEGER NOT NULL DEFAULT 0,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "pricing_plans_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "pricing_plans_code_key" ON "pricing_plans"("code")`,
+      `CREATE INDEX IF NOT EXISTS "pricing_plans_isActive_idx" ON "pricing_plans"("isActive")`,
+      `CREATE INDEX IF NOT EXISTS "pricing_plans_sortOrder_idx" ON "pricing_plans"("sortOrder")`,
+
       // ─── Staff columns (migration 20260606120000 + later additions) ───
       // These columns are referenced by Prisma Client when including staff in queries
       // (e.g. contract generation, staff list). If the deployed DB doesn't have them,

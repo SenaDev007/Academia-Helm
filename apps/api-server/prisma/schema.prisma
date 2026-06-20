@@ -12023,6 +12023,34 @@ model PricingConfig {
   @@map("pricing_configs")
 }
 
+/// Plans de tarification dynamiques d'Academia Helm.
+/// Gérables depuis le back-office /platform/subscriptions.
+/// Affichés sur la page publique /tarification via GET /api/public/pricing/plans.
+model PricingPlan {
+  id                String   @id @default(uuid())
+  code              String   @unique              // SEED, GROW, LEAD, NETWORK
+  name              String                         // "Helm Seed"
+  tagline           String?                        // "L'essentiel pour bien démarrer"
+  description       String?
+  studentMin        Int      @default(0)           // 1
+  studentMax        Int?                           // 150 (null = illimité)
+  initialFee        Int      @default(0)           // 75000 FCFA
+  monthlyAmount     Int?                           // 19900 FCFA (null = sur devis)
+  yearlyAmount      Int?                           // 199000 FCFA (optionnel, -2 mois)
+  bilingualMonthly  Int?                           // 10000 FCFA/mois pour l'option bilingue
+  bilingualYearly   Int?                           // 100000 FCFA/an
+  features          String?                        // JSON array de strings
+  isPopular         Boolean  @default(false)       // badge "Populaire" sur la page tarification
+  isActive          Boolean  @default(true)
+  sortOrder         Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([sortOrder])
+  @@map("pricing_plans")
+}
+
 model PricingGroupTier {
   id           String   @id @default(uuid())
   schoolsCount Int      @unique @map("schools_count")

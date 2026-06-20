@@ -232,4 +232,53 @@ export class PlatformController {
     this.assertAdminProxyRequest(adminEmail);
     return this.platformService.deleteReview(id);
   }
+
+  // ─── PRICING PLANS (CRUD) ──────────────────────────────────────────────────
+
+  /**
+   * GET /platform/public/pricing-plans — Plans publics pour la page /tarification
+   * Endpoint @Public (déjà sur la classe) — pas de header admin requis.
+   */
+  @Get('public/pricing-plans')
+  async getPublicPricingPlans() {
+    return this.platformService.getPublicPricingPlans();
+  }
+
+  /** GET /platform/pricing-plans — Liste tous les plans (admin) */
+  @Get('pricing-plans')
+  async getPricingPlans(@Headers('x-platform-admin-email') adminEmail?: string) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.getPricingPlans();
+  }
+
+  /** POST /platform/pricing-plans — Créer un plan */
+  @Post('pricing-plans')
+  async createPricingPlan(
+    @Headers('x-platform-admin-email') adminEmail?: string,
+    @Body() body?: any,
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.upsertPricingPlan(body);
+  }
+
+  /** PATCH /platform/pricing-plans/:id — Mettre à jour un plan */
+  @Patch('pricing-plans/:id')
+  async updatePricingPlan(
+    @Headers('x-platform-admin-email') adminEmail?: string,
+    @Param('id') id?: string,
+    @Body() body?: any,
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.upsertPricingPlan({ ...body, id });
+  }
+
+  /** DELETE /platform/pricing-plans/:id — Supprimer un plan */
+  @Delete('pricing-plans/:id')
+  async deletePricingPlan(
+    @Headers('x-platform-admin-email') adminEmail?: string,
+    @Param('id') id?: string,
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.deletePricingPlan(id!);
+  }
 }

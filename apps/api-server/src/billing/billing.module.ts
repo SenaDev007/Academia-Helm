@@ -2,7 +2,9 @@ import { Module, forwardRef } from '@nestjs/common';
 import { BillingController } from './billing.controller';
 import { PricingController } from './controllers/pricing.controller';
 import { PricingAdminController } from './controllers/pricing-admin.controller';
+import { SubscriptionLifecycleController } from './subscription-lifecycle.controller';
 import { SubscriptionService } from './services/subscription.service';
+import { SubscriptionLifecycleService } from './services/subscription-lifecycle.service';
 import { BillingReminderService } from './services/billing-reminder.service';
 import { SubscriptionPlanSeedService } from './services/subscription-plan-seed.service';
 import { PricingConfigSeedService } from './services/pricing-config-seed.service';
@@ -17,15 +19,15 @@ import { OrionModule } from '../orion/orion.module';
 
 @Module({
   imports: [
-    CommunicationModule, // Pour EmailService et WhatsAppService
-    AuthModule, // Pour SmsService
-    OrionModule, // Pour OrionAlertsService (intégration ORION)
-    forwardRef(() => OnboardingModule), // Pour utiliser OnboardingService dans FedaPayService
+    CommunicationModule,
+    AuthModule,
+    OrionModule,
+    forwardRef(() => OnboardingModule),
   ],
-  controllers: [BillingController, PricingController, PricingAdminController],
-  // FedaPayService avant BillingService : ordre cohérent avec la dépendance (Billing → FedaPay en DI).
+  controllers: [BillingController, PricingController, PricingAdminController, SubscriptionLifecycleController],
   providers: [
     SubscriptionService,
+    SubscriptionLifecycleService,
     BillingReminderService,
     SubscriptionPlanSeedService,
     PricingConfigSeedService,
@@ -36,6 +38,7 @@ import { OrionModule } from '../orion/orion.module';
   ],
   exports: [
     SubscriptionService,
+    SubscriptionLifecycleService,
     BillingReminderService,
     PricingService,
     FedaPayService,

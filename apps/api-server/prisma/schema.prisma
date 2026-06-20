@@ -11821,6 +11821,16 @@ model HelmSubscription {
   fedapaySubId       String?
   lastPaymentDate    DateTime?
   lastPaymentAmount  Int?
+  // ─── Cycle de vie abonnement (notifications + grâce + suspension) ───
+  notified7DaysBefore DateTime?  // J-7 avant expiration
+  notified3DaysBefore DateTime?  // J-3 avant expiration
+  notified1DayBefore  DateTime?  // J-1 (24h) avant expiration
+  expiredAt           DateTime?  // Jour 0 — expiration silencieuse
+  gracePeriodEnd      DateTime?  // J+7 — fin période de grâce → suspension
+  suspendedAt         DateTime?  // J+7 — suspension (lecture seule)
+  blockedAt           DateTime?  // J+37 — blocage définitif
+  notifiedBlockWarning DateTime? // J+23 — notification "blocage dans 7 jours"
+  reactivationFee     Int        @default(5000) // Frais de réactivation (FCFA)
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
   invoices           HelmInvoice[]
@@ -13579,6 +13589,7 @@ enum HelmSubscriptionStatus {
   ACTIVE
   GRACE_PERIOD
   SUSPENDED
+  BLOCKED
   CANCELLED
   TRIALING
 }

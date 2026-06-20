@@ -264,28 +264,26 @@ function PlanCard({ plan, billingCycle }: { plan: PricingPlan; billingCycle: 'mo
 
   return (
     <div
-      className={`relative rounded-3xl overflow-hidden transition-all duration-300 hover:scale-[1.02] ${
+      className={`relative rounded-3xl overflow-hidden transition-all duration-300 hover:scale-[1.02] flex flex-col h-full ${
         plan.isPopular
-          ? 'bg-gradient-to-br from-[#0a1d3f] to-[#0b2f73] text-white shadow-2xl shadow-blue-300/50 ring-2 ring-[#f5b335] animate-[glow_3s_ease-in-out_infinite]'
+          ? 'bg-gradient-to-br from-[#0a1d3f] to-[#0b2f73] text-white shadow-2xl shadow-blue-300/50 ring-2 ring-[#f5b335]'
           : 'bg-white border-2 border-slate-100 shadow-lg hover:shadow-xl'
       }`}
-      style={
-        plan.isPopular
-          ? {
-              animation: 'glowPulse 3s ease-in-out infinite',
-            }
-          : undefined
-      }
     >
-      {/* Badge Populaire */}
+      {/* Badge Populaire — coin droit */}
       {plan.isPopular && (
-        <div className="absolute top-0 left-0 right-0 bg-gradient-to-r from-[#f5b335] via-[#e0a020] to-[#f5b335] text-[#0a1d3f] py-1.5 px-4 flex items-center justify-center gap-1.5 text-xs font-black uppercase tracking-wider">
-          <Star className="w-3.5 h-3.5 fill-[#0a1d3f]" />
-          Populaire
+        <div className="absolute top-3 right-3 z-10">
+          <div
+            className="flex items-center gap-1.5 bg-gradient-to-br from-[#f5b335] to-[#e0a020] text-[#0a1d3f] px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider shadow-lg"
+            style={{ animation: 'badgeFloat 2.5s ease-in-out infinite' }}
+          >
+            <Star className="w-3 h-3 fill-[#0a1d3f]" />
+            Populaire
+          </div>
         </div>
       )}
 
-      <div className={`p-6 ${plan.isPopular ? 'pt-10' : ''}`}>
+      <div className="p-6 flex-1 flex flex-col">
         {/* Nom + tagline */}
         <h3 className={`text-xl font-black mb-1 ${plan.isPopular ? 'text-white' : 'text-[#0b2f73]'}`}>
           {plan.name}
@@ -295,15 +293,15 @@ function PlanCard({ plan, billingCycle }: { plan: PricingPlan; billingCycle: 'mo
         </p>
 
         {/* Nombre d'élèves */}
-        <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold mb-4 ${
+        <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold mb-4 self-start ${
           plan.isPopular ? 'bg-white/10 text-blue-200' : 'bg-blue-50 text-[#0b2f73]'
         }`}>
           <Users className="w-3.5 h-3.5" />
           {studentRange(plan)}
         </div>
 
-        {/* Prix */}
-        <div className="mb-4">
+        {/* Prix abonnement */}
+        <div className="mb-3">
           {isSurDevis ? (
             <div className={`text-3xl font-black ${plan.isPopular ? 'text-[#f5b335]' : 'text-[#0b2f73]'}`}>
               Sur devis
@@ -320,15 +318,33 @@ function PlanCard({ plan, billingCycle }: { plan: PricingPlan; billingCycle: 'mo
           )}
         </div>
 
-        {/* Souscription initiale */}
-        <div className={`text-xs font-medium mb-4 pb-4 border-b ${
-          plan.isPopular ? 'text-blue-200 border-white/10' : 'text-slate-500 border-slate-100'
+        {/* Souscription initiale — MISE EN VALEUR */}
+        <div className={`rounded-xl p-3 mb-4 flex items-center justify-between ${
+          plan.isPopular
+            ? 'bg-[#f5b335]/15 border border-[#f5b335]/30'
+            : 'bg-amber-50 border border-amber-200'
         }`}>
-          Souscription initiale : <span className="font-bold">{formatFCFA(plan.initialFee)}</span>
+          <div>
+            <div className={`text-[10px] font-bold uppercase tracking-wider mb-0.5 ${
+              plan.isPopular ? 'text-[#f5b335]' : 'text-amber-700'
+            }`}>
+              Souscription initiale
+            </div>
+            <div className={`text-lg font-black ${
+              plan.isPopular ? 'text-[#f5b335]' : 'text-amber-900'
+            }`}>
+              {formatFCFA(plan.initialFee)}
+            </div>
+          </div>
+          <div className={`text-[10px] font-medium text-right ${
+            plan.isPopular ? 'text-blue-200' : 'text-amber-600'
+          }`}>
+            Paiement<br />unique
+          </div>
         </div>
 
         {/* Features */}
-        <ul className="space-y-2 mb-6">
+        <ul className="space-y-2 mb-6 flex-1">
           {plan.features.map((feature, i) => (
             <li key={i} className="flex items-start gap-2 text-xs">
               <CheckCircle className={`w-4 h-4 flex-shrink-0 mt-0.5 ${plan.isPopular ? 'text-[#f5b335]' : 'text-emerald-500'}`} />
@@ -337,10 +353,10 @@ function PlanCard({ plan, billingCycle }: { plan: PricingPlan; billingCycle: 'mo
           ))}
         </ul>
 
-        {/* CTA */}
+        {/* CTA — aligné en bas */}
         <Link
           href="/signup"
-          className={`block text-center py-3 rounded-xl font-bold text-sm transition-all ${
+          className={`block text-center py-3 rounded-xl font-bold text-sm transition-all mt-auto ${
             plan.isPopular
               ? 'bg-[#f5b335] text-[#0a1d3f] hover:scale-105'
               : 'bg-[#0b2f73] text-white hover:bg-[#144798]'
@@ -350,16 +366,12 @@ function PlanCard({ plan, billingCycle }: { plan: PricingPlan; billingCycle: 'mo
         </Link>
       </div>
 
-      {/* Animation glow keyframes injectées inline */}
+      {/* Animations */}
       {plan.isPopular && (
         <style jsx>{`
-          @keyframes glowPulse {
-            0%, 100% {
-              box-shadow: 0 0 20px rgba(245, 179, 53, 0.3), 0 0 40px rgba(245, 179, 53, 0.1);
-            }
-            50% {
-              box-shadow: 0 0 30px rgba(245, 179, 53, 0.5), 0 0 60px rgba(245, 179, 53, 0.2);
-            }
+          @keyframes badgeFloat {
+            0%, 100% { transform: translateY(0); box-shadow: 0 4px 12px rgba(245, 179, 53, 0.4); }
+            50% { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(245, 179, 53, 0.6); }
           }
         `}</style>
       )}

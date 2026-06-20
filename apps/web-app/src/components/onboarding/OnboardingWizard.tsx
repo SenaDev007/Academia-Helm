@@ -1824,7 +1824,10 @@ export default function OnboardingWizard() {
                   {data.bilingual && (
                     <div className="mt-2 space-y-1">
                       <p className="text-sm font-semibold text-blue-600">
-                        +5 000 F CFA / mois pour l'option bilingue
+                        +{formatCurrency(pricingPlans.find((p: any) => p.code === 'SEED')?.bilingualMonthly || 10000)} / mois pour l'option bilingue
+                        <span className="text-xs text-slate-500 font-normal ml-1">
+                          (ou {formatCurrency(pricingPlans.find((p: any) => p.code === 'SEED')?.bilingualYearly || 100000)} / an)
+                        </span>
                       </p>
                       <p className="text-xs text-slate-500">
                         Le mode bilingue activera les parcours académiques en Français et en Anglais pour votre école.

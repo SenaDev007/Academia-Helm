@@ -132,10 +132,12 @@ export class InvoiceService {
           to: data.customerEmail,
           subject,
           html: htmlContent,
+          from: 'billing@academiahelm.com',
           fromName: 'Academia Helm — Facturation',
+          replyTo: 'billing@academiahelm.com',
         });
         emailSent = true;
-        this.logger.log(`✅ Invoice ${invoiceNumber} email sent to ${data.customerEmail}`);
+        this.logger.log(`✅ Invoice ${invoiceNumber} email sent to ${data.customerEmail} from billing@academiahelm.com`);
       } catch (emailErr: any) {
         this.logger.error(`Failed to send invoice email: ${emailErr.message}`);
         // Ne pas échouer toute la facture si l'email échoue
@@ -222,7 +224,7 @@ export class InvoiceService {
           <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#64748b;margin-bottom:8px;">Émetteur</div>
           <div style="font-size:14px;font-weight:600;color:#0A2A5E;">Academia Helm</div>
           <div style="font-size:13px;color:#475569;line-height:1.5;margin-top:4px;">
-            contact@academiahelm.com<br>
+            <a href="mailto:billing@academiahelm.com" style="color:#475569;text-decoration:none;">billing@academiahelm.com</a><br>
             Cotonou, Bénin
           </div>
         </div>
@@ -291,7 +293,7 @@ export class InvoiceService {
     <div style="padding:20px 40px;background:#f8fafc;border-top:1px solid #e2e8f0;text-align:center;font-size:11px;color:#94a3b8;line-height:1.5;">
       Academia Helm — Plateforme de pilotage éducatif<br>
       Cette facture est envoyée automatiquement après confirmation de votre paiement.<br>
-      Pour toute question : <a href="mailto:contact@academiahelm.com" style="color:#0A2A5E;">contact@academiahelm.com</a>
+      Pour toute question : <a href="mailto:billing@academiahelm.com" style="color:#0A2A5E;">billing@academiahelm.com</a>
     </div>
   </div>
 </body>

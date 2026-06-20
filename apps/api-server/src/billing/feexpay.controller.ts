@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * FEEXPAY CONTROLLER — Endpoints pour les paiements FeexPay
+ * FEEXPAY CONTROLLER — Endpoints pour les paiements FeexPay v2
  * ============================================================================
  *
  * Endpoints :
@@ -8,7 +8,7 @@
  *   2. POST /api/billing/feexpay/pay — Initier un paiement (Mobile Money ou carte)
  *   3. POST /api/billing/feexpay/payout — Initier un transfert (payout/salaire)
  *   4. GET  /api/billing/feexpay/status/:reference — Vérifier le statut d'une transaction
- *   5. GET  /api/billing/feexpay/shop — Infos marchand
+ *   5. GET  /api/billing/feexpay/shop — Solde du marchand (vérifie la config)
  * ============================================================================
  */
 
@@ -25,7 +25,7 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { Public } from '../auth/decorators/public.decorator';
-import { FeexPayService } from './services/feexpay.service';
+import { FeexPayService, FeexPayOperator } from './services/feexpay.service';
 
 @Controller('billing/feexpay')
 export class FeexPayController {
@@ -37,8 +37,15 @@ export class FeexPayController {
    * POST /api/billing/feexpay/webhook
    *
    * Webhook FeexPay — appelé par FeexPay quand le statut d'une transaction change.
-   * L'URL à configurer dans le dashboard FeexPay :
+   * URL à configurer dans le dashboard FeexPay v2 :
    *   https://api.academiahelm.com/api/billing/feexpay/webhook
+   *
+   * Payload (v2) :
+   *   {
+   *     "reference": "...", "order_id": "...", "status": "SUCCESSFUL"|"FAILED",
+   *     "amount": 250, "email": "...", "phoneNumber": "...", "reseau": "MTN CI",
+   *     "reason": "", "description": "...", "date": "..."
+   *   }
    */
   @Public()
   @Post('webhook')
@@ -57,11 +64,12 @@ export class FeexPayController {
    *     "amount": 75000,
    *     "method": "MOBILE_MONEY" | "CARD",
    *     "phoneNumber": "229XXXXXXXX",   // requis pour Mobile Money
-   *     "operator": "MTN" | "MOOV" | "ORANGE",  // requis pour Mobile Money
+   *     "operator": "MTN" | "MOOV" | "CELTIIS" | "CORIS" | "ORANGE" | "WAVE",
    *     "email": "user@example.com",
    *     "firstName": "Jean",
    *     "lastName": "Dupont",
    *     "description": "Souscription initiale",
+   *     "callbackUrl": "https://...",  // URL de retour (optionnel)
    *     "metadata": { "type": "ONBOARDING", "tenantId": "..." }
    *   }
    */
@@ -81,11 +89,12 @@ export class FeexPayController {
       const result = await this.feexpayService.createMobileMoneyPayment({
         amount: body.amount,
         phoneNumber: body.phoneNumber,
-        operator: body.operator,
+        operator: body.operator as FeexPayOperator,
         email: body.email,
         firstName: body.firstName,
         lastName: body.lastName,
         description: body.description,
+        callbackUrl: body.callbackUrl,
         metadata: body.metadata,
       });
       return result;
@@ -98,6 +107,7 @@ export class FeexPayController {
         firstName: body.firstName,
         lastName: body.lastName,
         description: body.description,
+        callbackUrl: body.callbackUrl,
         metadata: body.metadata,
       });
       return result;
@@ -115,25 +125,21 @@ export class FeexPayController {
    *   {
    *     "amount": 50000,
    *     "phoneNumber": "229XXXXXXXX",
-   *     "operator": "MTN" | "MOOV" | "ORANGE",
-   *     "fullName": "Jean Dupont",
-   *     "email": "jean@example.com",
-   *     "reason": "Salaire mois de juin"
+   *     "operator": "MTN" | "MOOV" | "CELTIIS" | "CORIS" | "ORANGE" | "WAVE",
+   *     "motif": "Salaire mois de juin"
    *   }
    */
   @Public()
   @Post('payout')
   async initiatePayout(@Body() body: any) {
-    if (!body?.amount || !body?.phoneNumber || !body?.operator || !body?.fullName) {
-      throw new BadRequestException('amount, phoneNumber, operator et fullName sont requis');
+    if (!body?.amount || !body?.phoneNumber || !body?.operator) {
+      throw new BadRequestException('amount, phoneNumber et operator sont requis');
     }
     const result = await this.feexpayService.createPayout({
       amount: body.amount,
       phoneNumber: body.phoneNumber,
-      operator: body.operator,
-      fullName: body.fullName,
-      email: body.email,
-      reason: body.reason,
+      operator: body.operator as FeexPayOperator,
+      motif: body.motif || body.reason,
     });
     return result;
   }
@@ -141,7 +147,7 @@ export class FeexPayController {
   /**
    * GET /api/billing/feexpay/status/:reference
    *
-   * Vérifie le statut d'une transaction.
+   * Vérifie le statut d'une transaction Payin.
    */
   @Public()
   @Get('status/:reference')
@@ -150,18 +156,30 @@ export class FeexPayController {
   }
 
   /**
+   * GET /api/billing/feexpay/payout-status/:reference
+   *
+   * Vérifie le statut d'un payout.
+   */
+  @Public()
+  @Get('payout-status/:reference')
+  async getPayoutStatus(@Param('reference') reference: string) {
+    return await this.feexpayService.getPayoutStatus(reference);
+  }
+
+  /**
    * GET /api/billing/feexpay/shop
    *
-   * Récupère les infos du marchand (vérifie que la config est OK).
+   * Récupère le solde du marchand (vérifie que la config est OK).
    */
   @Public()
   @Get('shop')
   async getShopInfo() {
-    const info = await this.feexpayService.getShopInfo();
+    const balance = await this.feexpayService.getShopBalance();
     return {
       configured: this.feexpayService.isConfigured(),
-      shopInfo: info,
+      balance,
       webhookUrl: this.feexpayService.getWebhookUrl(),
     };
   }
 }
+

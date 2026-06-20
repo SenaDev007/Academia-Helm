@@ -1,45 +1,99 @@
 /**
  * ============================================================================
- * FEEXPAY SERVICE — Service de paiement FeexPay
+ * FEEXPAY SERVICE v2 — Service de paiement FeexPay
  * ============================================================================
  *
- * Remplace FedaPay. FeexPay est un agrégateur de paiement basé au Bénin qui
- * supporte :
- *   - Mobile Money (MTN, Moov, Orange) — collection + payout
- *   - Carte bancaire (Visa, Mastercard) — collection
- *   - Transferts vers Mobile Money (payouts) — pour les salaires
+ * Implémentation conforme à la documentation officielle v2 :
+ *   https://docs.feexpay.me/?section=api-rest-integrations&version=v2
  *
- * API endpoints (base: https://api.feexpay.me):
- *   - GET  /api/shop/{shopId}/get_shop — infos marchand
- *   - POST /api/transactions/requesttopay/integration — paiement Mobile Money
- *   - POST /api/transactions/card/inittransact/integration — paiement carte
- *   - GET  /api/transactions/getrequesttopay/integration/{ref} — statut transaction
- *   - POST /api/transactions/disbursement/integration — transfert (payout)
+ * Base URL v2 : https://api-v2.feexpay.me
+ *
+ * Authentification : header `Authorization: Bearer <FEEXPAY_API_KEY>`
+ *
+ * Endpoints utilisés :
+ *   - POST /api/transactions/public/requesttopay/{operator}  — Mobile Money
+ *       operators (Bénin) : mtn, moov, celtiis_bj, coris
+ *       Body : { shop, amount, phoneNumber, return_url? }
+ *       Response : { reference, status, message }
+ *
+ *   - POST /api/public/card  — Paiement carte bancaire
+ *       Body : { shop, amount, currency, first_name, last_name, email, phoneNumber, return_url? }
+ *       Response : { reference, status, message, paymentUrl? }
+ *
+ *   - GET  /api/transactions/public/single/status/{reference}  — Statut Payin
+ *       Response : { reference, status, amount, ... }
+ *
+ *   - POST /api/payouts/public/{operator}  — Payout (Mobile Money)
+ *       operators (Bénin) : mtn, moov, celtiis_bj
+ *       Body : { amount, phoneNumber, shop, motif }
+ *       Response : { reference, status, message }
+ *
+ *   - GET  /api/payouts/status/public/{reference}  — Statut Payout
+ *
+ *   - GET  /api/balance/public/getByShop/{shop_public_id}  — Solde marchand
+ *
+ * Webhook (POST entrant depuis FeexPay) :
+ *   {
+ *     "reference": "1e636dff-6b81-499e-bf8b-64b4a07a02a8",
+ *     "order_id": "1e636dff-6b81-499e-bf8b-64b4a07a02a8",
+ *     "status": "SUCCESSFUL" | "FAILED",
+ *     "amount": 250,
+ *     "callback_info": "",
+ *     "last_name": "",
+ *     "first_name": "",
+ *     "email": "lougbegnona@gmail.com",
+ *     "type": "Paiement",
+ *     "phoneNumber": "2290190877433",
+ *     "date": "2026-05-25T10:06:26.662Z",
+ *     "reseau": "MTN CI",
+ *     "ref_link": "",
+ *     "description": "test de 10",
+ *     "reason": "PAYER_NOT_FOUND",
+ *     "ref_operator": ""
+ *   }
  *
  * Variables d'environnement :
- *   - FEEXPAY_API_KEY — token d'authentification
- *   - FEEXPAY_SHOP_ID — identifiant du marchand
- *   - FEEXPAY_API_URL — base URL (default: https://api.feexpay.me)
+ *   - FEEXPAY_API_KEY    — token d'authentification (Bearer)
+ *   - FEEXPAY_SHOP_ID    — shop_public_id (15 caractères, ex: nGLq7rMBFBVbpuc)
+ *   - FEEXPAY_API_URL    — base URL (défaut: https://api-v2.feexpay.me)
  *
  * 3 cas d'usage :
- *   1. Abonnements (école → Academia Helm) — createPaymentSession
- *   2. Frais de scolarité (parent → école) — createPaymentSession
+ *   1. Abonnements (école → Academia Helm) — createMobileMoneyPayment / createCardPayment
+ *   2. Frais de scolarité (parent → école) — createMobileMoneyPayment / createCardPayment
  *   3. Salaires (école → staff) — createPayout
  * ============================================================================
  */
 
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PrismaService } from '../../database/prisma.service';
+
+/** Opérateurs Mobile Money supportés (collection + payout). */
+export type FeexPayOperator =
+  | 'MTN'
+  | 'MOOV'
+  | 'CELTIIS'
+  | 'CORIS'
+  | 'ORANGE'
+  | 'WAVE';
+
+/** Mapping opérateur → segment URL FeexPay (pour le Bénin : mtn, moov, celtiis_bj, coris). */
+const OPERATOR_PATH: Record<FeexPayOperator, string> = {
+  MTN: 'mtn',
+  MOOV: 'moov',
+  CELTIIS: 'celtiis_bj',
+  CORIS: 'coris',
+  ORANGE: 'orange_sn',
+  WAVE: 'wave_sn',
+};
 
 export interface FeexPayPaymentRequest {
   amount: number; // En FCFA
-  phoneNumber?: string; // Pour Mobile Money (format: 229XXXXXXXX)
-  operator?: 'MTN' | 'MOOV' | 'ORANGE'; // Opérateur Mobile Money
+  phoneNumber?: string; // Pour Mobile Money (format: 229XXXXXXXX, sans +)
+  operator?: FeexPayOperator; // Défaut: MTN
   email: string;
   firstName?: string;
   lastName?: string;
-  callbackUrl?: string;
+  callbackUrl?: string; // URL de retour après paiement (return_url dans l'API)
   description?: string;
   metadata?: Record<string, any>;
 }
@@ -55,10 +109,8 @@ export interface FeexPayPaymentResult {
 export interface FeexPayPayoutRequest {
   amount: number; // En FCFA
   phoneNumber: string; // Numéro du destinataire (format: 229XXXXXXXX)
-  operator: 'MTN' | 'MOOV' | 'ORANGE';
-  fullName: string;
-  email?: string;
-  reason?: string;
+  operator: FeexPayOperator;
+  motif?: string; // Raison du transfert
 }
 
 export interface FeexPayPayoutResult {
@@ -75,40 +127,53 @@ export class FeexPayService {
   private readonly shopId: string;
   private readonly apiUrl: string;
 
-  constructor(
-    private readonly configService: ConfigService,
-    private readonly prisma: PrismaService,
-  ) {
+  constructor(private readonly configService: ConfigService) {
     this.apiKey = this.configService.get<string>('FEEXPAY_API_KEY') || '';
     this.shopId = this.configService.get<string>('FEEXPAY_SHOP_ID') || '';
-    this.apiUrl = this.configService.get<string>('FEEXPAY_API_URL') || 'https://api.feexpay.me';
+    // Base URL v2 par défaut (v1 = https://api.feexpay.me)
+    this.apiUrl = this.configService.get<string>('FEEXPAY_API_URL') || 'https://api-v2.feexpay.me';
 
     if (this.apiKey && this.shopId) {
-      this.logger.log('✅ FeexPay configured');
+      this.logger.log(`✅ FeexPay v2 configured (shop=${this.shopId}, apiUrl=${this.apiUrl})`);
     } else {
       this.logger.warn('⚠️ FeexPay not configured — FEEXPAY_API_KEY or FEEXPAY_SHOP_ID missing');
     }
   }
 
-  /**
-   * Vérifie si FeexPay est configuré.
-   */
+  /** Vérifie si FeexPay est configuré. */
   isConfigured(): boolean {
     return Boolean(this.apiKey && this.shopId);
   }
 
+  /** Headers d'authentification pour les appels API v2. */
+  private authHeaders(): HeadersInit {
+    return {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${this.apiKey}`,
+    };
+  }
+
+  /** Construit l'URL d'un endpoint. */
+  private url(path: string): string {
+    return `${this.apiUrl}${path}`;
+  }
+
   /**
-   * Récupère les infos du marchand (vérifie que le shop est valide).
+   * Récupère le solde du marchand (par shop_public_id).
+   * Endpoint : GET /api/balance/public/getByShop/{shop_public_id}
    */
-  async getShopInfo(): Promise<any> {
+  async getShopBalance(): Promise<any> {
+    if (!this.isConfigured()) {
+      throw new BadRequestException('FeexPay non configuré');
+    }
     try {
-      const response = await fetch(`${this.apiUrl}/api/shop/${this.shopId}/get_shop`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      return await response.json();
+      const response = await fetch(
+        this.url(`/api/balance/public/getByShop/${this.shopId}`),
+        { method: 'GET', headers: this.authHeaders() },
+      );
+      return await response.json() as any;
     } catch (err: any) {
-      this.logger.error(`getShopInfo failed: ${err.message}`);
+      this.logger.error(`getShopBalance failed: ${err.message}`);
       return null;
     }
   }
@@ -116,51 +181,70 @@ export class FeexPayService {
   // ─── PAIEMENT MOBILE MONEY ──────────────────────────────────────────────
 
   /**
-   * Initie un paiement Mobile Money (MTN, Moov, Orange).
+   * Initie un paiement Mobile Money.
+   *
+   * Endpoint v2 : POST /api/transactions/public/requesttopay/{operator}
+   * Body : { shop, amount, phoneNumber, return_url? }
+   * Response : { reference, status, message }
    *
    * Le client reçoit une notification sur son téléphone pour confirmer le paiement.
-   * Pas de redirect — le statut est vérifié via webhook ou polling.
+   * Le statut final est envoyé via webhook (status=SUCCESSFUL|FAILED).
    */
   async createMobileMoneyPayment(data: FeexPayPaymentRequest): Promise<FeexPayPaymentResult> {
     if (!this.isConfigured()) {
       throw new BadRequestException('FeexPay non configuré');
     }
 
+    const operator = data.operator || 'MTN';
+    const operatorPath = OPERATOR_PATH[operator];
+    if (!operatorPath) {
+      throw new BadRequestException(`Opérateur non supporté: ${operator}`);
+    }
+
+    if (!data.phoneNumber) {
+      throw new BadRequestException('Numéro de téléphone requis pour Mobile Money');
+    }
+
     try {
-      const body = {
-        phoneNumber: data.phoneNumber,
-        amount: data.amount,
-        reseau: data.operator,
-        token: this.apiKey,
+      const body: Record<string, any> = {
         shop: this.shopId,
-        first_name: data.firstName || data.email.split('@')[0],
-        email: data.email,
+        amount: data.amount,
+        phoneNumber: this.normalizePhone(data.phoneNumber),
       };
+      if (data.callbackUrl) {
+        body.return_url = data.callbackUrl;
+      }
 
       const response = await fetch(
-        `${this.apiUrl}/api/transactions/requesttopay/integration`,
+        this.url(`/api/transactions/public/requesttopay/${operatorPath}`),
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams(body as any).toString(),
+          headers: this.authHeaders(),
+          body: JSON.stringify(body),
         },
       );
 
       const result = await response.json() as any;
 
-      if (result.status === 'FAILED') {
-        return { success: false, message: 'Numéro de téléphone incorrect' };
+      // Gestion des erreurs API
+      if (!response.ok || result.status === 'FAILED') {
+        const msg = result.message || result.error || `HTTP ${response.status}`;
+        this.logger.warn(`FeexPay MO payment failed: ${msg}`, result);
+        return { success: false, message: msg };
       }
 
-      this.logger.log(`FeexPay Mobile Money payment initiated: ref=${result.reference}, amount=${data.amount}`);
+      this.logger.log(
+        `FeexPay MO payment initiated: ref=${result.reference}, amount=${data.amount}, operator=${operator}`,
+      );
 
       return {
         success: true,
         reference: result.reference,
-        status: 'PENDING',
+        status: result.status || 'PENDING',
+        message: result.message,
       };
     } catch (err: any) {
-      this.logger.error(`createMobileMoneyPayment failed: ${err.message}`);
+      this.logger.error(`createMobileMoneyPayment failed: ${err.message}`, err.stack);
       return { success: false, message: err.message };
     }
   }
@@ -170,8 +254,11 @@ export class FeexPayService {
   /**
    * Initie un paiement par carte bancaire.
    *
+   * Endpoint v2 : POST /api/public/card
+   * Body : { shop, amount, currency, first_name, last_name, email, phoneNumber, return_url? }
+   * Response : { reference, status, message, paymentUrl? }
+   *
    * Retourne une URL vers laquelle rediriger le client pour saisir sa carte.
-   * Après le paiement, FeexPay redirige vers le callbackUrl.
    */
   async createCardPayment(data: FeexPayPaymentRequest): Promise<FeexPayPaymentResult> {
     if (!this.isConfigured()) {
@@ -179,74 +266,92 @@ export class FeexPayService {
     }
 
     try {
-      const body = {
-        phone: data.phoneNumber || '',
-        amount: data.amount,
-        reseau: 'CARD',
-        token: this.apiKey,
+      const body: Record<string, any> = {
         shop: this.shopId,
-        first_name: data.firstName || data.email.split('@')[0],
-        last_name: data.lastName || '',
-        email: data.email,
-        country: data.metadata?.country || 'Bénin',
-        address1: data.metadata?.address || 'Cotonou',
-        district: data.metadata?.district || 'Littoral',
+        amount: data.amount,
         currency: data.metadata?.currency || 'XOF',
+        first_name: data.firstName || data.email.split('@')[0] || 'Client',
+        last_name: data.lastName || 'Academia',
+        email: data.email,
+        phoneNumber: data.phoneNumber ? this.normalizePhone(data.phoneNumber) : '22900000000',
       };
+      if (data.callbackUrl) {
+        body.return_url = data.callbackUrl;
+      }
 
       const response = await fetch(
-        `${this.apiUrl}/api/transactions/card/inittransact/integration`,
+        this.url('/api/public/card'),
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams(body as any).toString(),
+          headers: this.authHeaders(),
+          body: JSON.stringify(body),
         },
       );
 
       const result = await response.json() as any;
 
-      if (result.status === 'FAILED') {
-        return { success: false, message: 'Erreur lors de l\'initialisation du paiement' };
+      if (!response.ok || result.status === 'FAILED') {
+        // Cas particulier : endpoint carte non disponible en v2 (404)
+        if (response.status === 404) {
+          this.logger.warn('FeexPay card endpoint /api/public/card returned 404 — paiement carte non disponible en v2. Utilisez Mobile Money à la place.');
+          return {
+            success: false,
+            message: 'Paiement par carte non disponible actuellement. Veuillez utiliser Mobile Money (MTN, Moov, CelTiis, Coris).',
+          };
+        }
+        const msg = result.message || result.error || `HTTP ${response.status}`;
+        this.logger.warn(`FeexPay card payment failed: ${msg}`, result);
+        return { success: false, message: msg };
       }
 
-      this.logger.log(`FeexPay Card payment initiated: ref=${result.transref}, amount=${data.amount}`);
+      this.logger.log(
+        `FeexPay card payment initiated: ref=${result.reference}, amount=${data.amount}`,
+      );
 
       return {
         success: true,
-        reference: result.transref,
-        paymentUrl: result.url,
-        status: 'PENDING',
+        reference: result.reference,
+        paymentUrl: result.paymentUrl || result.payment_url || result.urlPay,
+        status: result.status || 'PENDING',
+        message: result.message,
       };
     } catch (err: any) {
-      this.logger.error(`createCardPayment failed: ${err.message}`);
+      this.logger.error(`createCardPayment failed: ${err.message}`, err.stack);
       return { success: false, message: err.message };
     }
   }
 
-  // ─── VÉRIFIER LE STATUT ─────────────────────────────────────────────────
+  // ─── VÉRIFIER LE STATUT (PAYIN) ────────────────────────────────────────
 
   /**
-   * Vérifie le statut d'une transaction.
+   * Vérifie le statut d'une transaction Payin (collection).
    *
+   * Endpoint v2 : GET /api/transactions/public/single/status/{reference}
    * Statuts possibles : PENDING, SUCCESSFUL, FAILED
    */
   async getTransactionStatus(reference: string): Promise<{
     status: string;
     amount?: number;
     clientNumber?: string;
+    raw?: any;
   }> {
+    if (!this.isConfigured()) {
+      return { status: 'UNKNOWN' };
+    }
     try {
       const response = await fetch(
-        `${this.apiUrl}/api/transactions/getrequesttopay/integration/${reference}`,
-        { method: 'GET', headers: { 'Content-Type': 'application/json' } },
+        this.url(`/api/transactions/public/single/status/${reference}`),
+        { method: 'GET', headers: this.authHeaders() },
       );
-
       const data = await response.json() as any;
-
+      // La réponse peut être { reference, status, amount, ... } ou
+      // { data: { reference, status, ... } } selon le format
+      const inner = data.data || data;
       return {
-        status: data.status || 'UNKNOWN',
-        amount: data.amount,
-        clientNumber: data.payer?.partyId,
+        status: (inner.status || 'UNKNOWN').toUpperCase(),
+        amount: inner.amount,
+        clientNumber: inner.phoneNumber || inner.payer?.partyId,
+        raw: inner,
       };
     } catch (err: any) {
       this.logger.error(`getTransactionStatus failed for ${reference}: ${err.message}`);
@@ -259,168 +364,173 @@ export class FeexPayService {
   /**
    * Initie un transfert (payout) vers un numéro Mobile Money.
    *
+   * Endpoint v2 : POST /api/payouts/public/{operator}
+   * Body : { amount, phoneNumber, shop, motif }
+   *
    * Utilisé pour :
    *   - Paiement des salaires (école → staff)
    *   - Transferts vers des comptes externes
-   *
-   * L'argent est décaissé du compte marchand FeexPay vers le Mobile Money du destinataire.
    */
   async createPayout(data: FeexPayPayoutRequest): Promise<FeexPayPayoutResult> {
     if (!this.isConfigured()) {
       throw new BadRequestException('FeexPay non configuré');
     }
 
+    const operatorPath = OPERATOR_PATH[data.operator];
+    if (!operatorPath) {
+      throw new BadRequestException(`Opérateur payout non supporté: ${data.operator}`);
+    }
+
     try {
-      const body = {
-        phoneNumber: data.phoneNumber,
+      const body: Record<string, any> = {
         amount: data.amount,
-        reseau: data.operator,
-        token: this.apiKey,
+        phoneNumber: this.normalizePhone(data.phoneNumber),
         shop: this.shopId,
-        first_name: data.fullName,
-        email: data.email || '',
-        reason: data.reason || 'Transfert',
+        motif: data.motif || 'Transfert Academia Helm',
       };
 
       const response = await fetch(
-        `${this.apiUrl}/api/transactions/disbursement/integration`,
+        this.url(`/api/payouts/public/${operatorPath}`),
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams(body as any).toString(),
+          headers: this.authHeaders(),
+          body: JSON.stringify(body),
         },
       );
 
       const result = await response.json() as any;
 
-      if (result.status === 'FAILED') {
-        return { success: false, message: 'Transfert échoué — vérifiez le numéro' };
+      if (!response.ok || result.status === 'FAILED') {
+        const msg = result.message || result.error || `HTTP ${response.status}`;
+        this.logger.warn(`FeexPay payout failed: ${msg}`, result);
+        return { success: false, message: msg };
       }
 
-      this.logger.log(`FeexPay payout initiated: ref=${result.reference}, amount=${data.amount}, to=${data.phoneNumber}`);
+      this.logger.log(
+        `FeexPay payout initiated: ref=${result.reference}, amount=${data.amount}, to=${data.phoneNumber}`,
+      );
 
       return {
         success: true,
         reference: result.reference,
-        status: 'PENDING',
+        status: result.status || 'PENDING',
+        message: result.message,
       };
     } catch (err: any) {
-      this.logger.error(`createPayout failed: ${err.message}`);
+      this.logger.error(`createPayout failed: ${err.message}`, err.stack);
       return { success: false, message: err.message };
+    }
+  }
+
+  /**
+   * Vérifie le statut d'un payout.
+   *
+   * Endpoint v2 : GET /api/payouts/status/public/{reference}
+   */
+  async getPayoutStatus(reference: string): Promise<{
+    status: string;
+    amount?: number;
+    raw?: any;
+  }> {
+    if (!this.isConfigured()) {
+      return { status: 'UNKNOWN' };
+    }
+    try {
+      const response = await fetch(
+        this.url(`/api/payouts/status/public/${reference}`),
+        { method: 'GET', headers: this.authHeaders() },
+      );
+      const data = await response.json() as any;
+      const inner = data.data || data;
+      return {
+        status: (inner.status || 'UNKNOWN').toUpperCase(),
+        amount: inner.amount,
+        raw: inner,
+      };
+    } catch (err: any) {
+      this.logger.error(`getPayoutStatus failed for ${reference}: ${err.message}`);
+      return { status: 'UNKNOWN' };
     }
   }
 
   // ─── WEBHOOK ─────────────────────────────────────────────────────────────
 
   /**
-   * Traite un webhook FeexPay.
+   * Traite un webhook FeexPay entrant.
    *
-   * FeexPay envoie un POST avec les données de la transaction quand le statut change.
-   * Format du payload (approximatif) :
+   * Payload (v2) :
    *   {
-   *     "reference": "REF_xxx",
+   *     "reference": "1e636dff-6b81-499e-bf8b-64b4a07a02a8",
+   *     "order_id": "1e636dff-6b81-499e-bf8b-64b4a07a02a8",
    *     "status": "SUCCESSFUL" | "FAILED",
-   *     "amount": 75000,
-   *     "payer": { "partyId": "229xxxxxxxx" },
-   *     "shop": "shopId"
+   *     "amount": 250,
+   *     "callback_info": "",
+   *     "last_name": "",
+   *     "first_name": "",
+   *     "email": "lougbegnona@gmail.com",
+   *     "type": "Paiement",
+   *     "phoneNumber": "2290190877433",
+   *     "date": "2026-05-25T10:06:26.662Z",
+   *     "reseau": "MTN CI",
+   *     "ref_link": "",
+   *     "description": "test de 10",
+   *     "reason": "PAYER_NOT_FOUND",
+   *     "ref_operator": ""
    *   }
+   *
+   * Pour sécurité, on re-vérifie le statut via l'API (ne pas faire confiance au webhook seul).
    */
   async handleWebhook(payload: any): Promise<{ processed: boolean; action?: string }> {
     try {
-      const reference = payload.reference || payload.transref;
+      const reference = payload.reference || payload.order_id || payload.transref;
       const status = (payload.status || '').toUpperCase();
       const amount = payload.amount;
 
-      this.logger.log(`FeexPay webhook: ref=${reference}, status=${status}, amount=${amount}`);
+      this.logger.log(`FeexPay webhook: ref=${reference}, status=${status}, amount=${amount}, reseau=${payload.reseau}`);
 
       if (!reference) {
         this.logger.warn('FeexPay webhook: no reference in payload');
         return { processed: false };
       }
 
-      // Vérifier le statut réel via l'API (sécurité — ne pas faire confiance au webhook seul)
-      const txStatus = await this.getTransactionStatus(reference);
-      const finalStatus = txStatus.status.toUpperCase();
+      // Si le webhook indique SUCCESSFUL, on re-vérifie via l'API (sécurité)
+      if (status === 'SUCCESSFUL') {
+        const txStatus = await this.getTransactionStatus(reference);
+        const finalStatus = (txStatus.status || '').toUpperCase();
+        if (finalStatus === 'SUCCESSFUL') {
+          return { processed: true, action: 'PAYMENT_SUCCESSFUL' };
+        }
+        this.logger.warn(`Webhook said SUCCESSFUL but API says ${finalStatus} for ref=${reference}`);
+        return { processed: true, action: `API_STATUS_${finalStatus}` };
+      }
 
-      if (finalStatus === 'SUCCESSFUL') {
-        // Paiement réussi — traiter selon le type (onboarding, renouvellement, scolarité, salaire)
-        // Le type est stocké dans les metadata ou dans la référence
-        return await this.processSuccessfulPayment(reference, amount, payload);
-      } else if (finalStatus === 'FAILED') {
-        this.logger.warn(`FeexPay payment failed: ref=${reference}`);
+      if (status === 'FAILED') {
+        this.logger.warn(`FeexPay payment failed: ref=${reference}, reason=${payload.reason}`);
         return { processed: true, action: 'PAYMENT_FAILED' };
       }
 
-      return { processed: true, action: `STATUS_${finalStatus}` };
+      return { processed: true, action: `STATUS_${status}` };
     } catch (err: any) {
       this.logger.error(`handleWebhook failed: ${err.message}`, err.stack);
       return { processed: false };
     }
   }
 
-  /**
-   * Traite un paiement réussi.
-   * Détermine le type de paiement (onboarding, renouvellement, etc.) et
-   * exécute l'action appropriée.
-   */
-  private async processSuccessfulPayment(
-    reference: string,
-    amount: number,
-    payload: any,
-  ): Promise<{ processed: boolean; action?: string }> {
-    // Chercher le paiement dans la DB
-    // Les références peuvent avoir un préfixe: ONBOARD-, RENEW-, SALARY-, SCHOOL-
-    if (reference.startsWith('ONBOARD-') || reference.startsWith('onboard-')) {
-      // Paiement onboarding — activer le tenant
-      this.logger.log(`Processing onboarding payment: ref=${reference}`);
-      // TODO: appeler OnboardingService pour activer le tenant
-      return { processed: true, action: 'ONBOARDING_PAID' };
-    }
-
-    if (reference.startsWith('RENEW-') || reference.startsWith('renew-')) {
-      // Renouvellement d'abonnement
-      this.logger.log(`Processing renewal payment: ref=${reference}`);
-      // TODO: appeler SubscriptionLifecycleService.renewSubscription
-      return { processed: true, action: 'RENEWAL_PAID' };
-    }
-
-    if (reference.startsWith('REACT-') || reference.startsWith('react-')) {
-      // Réactivation de compte bloqué
-      this.logger.log(`Processing reactivation payment: ref=${reference}`);
-      // TODO: appeler SubscriptionLifecycleService.reactivateSubscription
-      return { processed: true, action: 'REACTIVATION_PAID' };
-    }
-
-    if (reference.startsWith('SALARY-') || reference.startsWith('salary-')) {
-      // Paiement de salaire
-      this.logger.log(`Processing salary payout: ref=${reference}`);
-      return { processed: true, action: 'SALARY_PAID' };
-    }
-
-    if (reference.startsWith('SCHOOL-') || reference.startsWith('school-')) {
-      // Frais de scolarité
-      this.logger.log(`Processing school fee payment: ref=${reference}`);
-      return { processed: true, action: 'SCHOOL_FEE_PAID' };
-    }
-
-    // Paiement générique — enregistrer dans billing_events
-    this.logger.log(`Processing generic payment: ref=${reference}, amount=${amount}`);
-    return { processed: true, action: 'GENERIC_PAID' };
-  }
-
   // ─── HELPERS ─────────────────────────────────────────────────────────────
 
   /**
-   * Génère une référence unique pour un paiement.
+   * Normalise un numéro de téléphone au format international sans "+".
+   * Ex: "229 01 67 00 00 00" → "2290167000000"
+   *     "+2290167000000" → "2290167000000"
    */
-  generateReference(prefix: string): string {
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(2, 8).toUpperCase();
-    return `${prefix}-${timestamp}-${random}`;
+  private normalizePhone(phone: string): string {
+    let p = phone.replace(/[\s\-()]/g, '');
+    if (p.startsWith('+')) p = p.substring(1);
+    return p;
   }
 
   /**
-   * URL du webhook (à configurer dans le dashboard FeexPay).
+   * URL du webhook (à configurer dans le dashboard FeexPay → https://app-v2.feexpay.me/webhook).
    */
   getWebhookUrl(): string {
     const publicUrl = this.configService.get<string>('APP_PUBLIC_URL') || 'https://api.academiahelm.com';

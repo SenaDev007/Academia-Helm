@@ -195,7 +195,8 @@ export class PlatformService {
         orderBy: { createdAt: 'desc' },
         include: {
           country: { select: { name: true } },
-          schools: { select: { city: true }, take: 1 },
+          // School est une relation 1-1 (tenantId @unique) — pas de take
+          schools: { select: { city: true } },
           // helmSubscriptions est une relation 1-to-1 (singulière) — pas de take/orderBy
           helmSubscriptions: {
             select: { plan: true, status: true, currentPeriodEnd: true },

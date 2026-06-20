@@ -18,11 +18,11 @@ import {
   ArrowRight,
   Shield,
   Zap,
-  Sparkles,
   Star,
   Loader2,
   AlertCircle,
-  Globe,
+  Languages,
+  Sparkles,
 } from 'lucide-react';
 import { Footer2 } from '@/components/ui/footer-2';
 
@@ -81,7 +81,6 @@ export default function TarificationPage() {
       });
   }, []);
 
-  // Trouver l'option bilingue (prix stocké sur chaque plan)
   const bilingualMonthly = plans[0]?.bilingualMonthly || 10000;
   const bilingualYearly = plans[0]?.bilingualYearly || 100000;
 
@@ -157,57 +156,50 @@ export default function TarificationPage() {
         </section>
 
         {/* ─── Option Bilingue ─── */}
-        <section className="py-12 px-4 bg-gradient-to-r from-blue-50 to-amber-50">
-          <div className="max-w-4xl mx-auto flex flex-col md:flex-row items-center gap-6">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center flex-shrink-0">
-              <Globe className="w-8 h-8 text-white" />
-            </div>
-            <div className="flex-1 text-center md:text-left">
-              <h3 className="text-xl font-black text-[#0b2f73] mb-1">Option Bilingue</h3>
-              <p className="text-sm text-slate-600">
-                Séparation des matières et examens pour les écoles bilingues (français / anglais).
-              </p>
-            </div>
-            <div className="text-center md:text-right">
-              <div className="text-2xl font-black text-[#0b2f73]">
-                {formatFCFA(billingCycle === 'monthly' ? bilingualMonthly : bilingualYearly)}
-              </div>
-              <div className="text-xs text-slate-500 font-medium">
-                {billingCycle === 'monthly' ? 'par mois' : 'par an'}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* ─── Tous les modules inclus ─── */}
         <section className="py-16 px-4">
-          <div className="max-w-4xl mx-auto text-center">
-            <h2 className="text-3xl font-black text-[#0b2f73] mb-4">
-              Tous les modules sont inclus
-            </h2>
-            <p className="text-slate-600 mb-8 max-w-2xl mx-auto">
-              Contrairement à la concurrence, Academia Helm ne limite pas les modules.
-              Vous avez accès à l'intégralité de la plateforme, quel que soit votre plan.
-            </p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {[
-                { icon: Users, label: 'Élèves & Scolarité' },
-                { icon: Shield, label: 'Personnel, RH & Paie' },
-                { icon: Zap, label: 'Finances & Économat' },
-                { icon: Star, label: 'Examens & Bulletins' },
-                { icon: Globe, label: 'Communication' },
-                { icon: Sparkles, label: 'ORION Pilotage' },
-                { icon: Shield, label: 'Agrégation & Décision' },
-                { icon: ArrowRight, label: 'Et bien plus...' },
-              ].map((mod, i) => {
-                const Icon = mod.icon;
-                return (
-                  <div key={i} className="flex flex-col items-center gap-2 p-4 bg-slate-50 rounded-xl">
-                    <Icon className="w-6 h-6 text-[#0b2f73]" />
-                    <span className="text-xs font-bold text-slate-700 text-center">{mod.label}</span>
+          <div className="max-w-4xl mx-auto">
+            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0a1d3f] via-[#0b2f73] to-[#1d4fa5] text-white shadow-2xl">
+              {/* Décor */}
+              <div className="absolute -top-20 -right-20 w-64 h-64 rounded-full bg-[radial-gradient(circle,rgba(245,179,53,0.2),transparent_70%)]" />
+              <div className="absolute -bottom-16 -left-16 w-48 h-48 rounded-full bg-[radial-gradient(circle,rgba(29,79,165,0.3),transparent_70%)]" />
+
+              <div className="relative p-8 md:p-12 flex flex-col md:flex-row items-center gap-8">
+                {/* Icône */}
+                <div className="flex-shrink-0">
+                  <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#f5b335] to-[#e0a020] flex items-center justify-center shadow-xl shadow-amber-500/20">
+                    <Languages className="w-10 h-10 text-[#0a1d3f]" strokeWidth={2.5} />
                   </div>
-                );
-              })}
+                </div>
+
+                {/* Texte */}
+                <div className="flex-1 text-center md:text-left">
+                  <div className="inline-flex items-center gap-1.5 bg-[#f5b335]/20 border border-[#f5b335]/30 rounded-full px-3 py-1 mb-3">
+                    <Sparkles className="w-3.5 h-3.5 text-[#f5b335]" />
+                    <span className="text-[10px] font-bold text-[#f5b335] uppercase tracking-wider">Add-on optionnel</span>
+                  </div>
+                  <h3 className="text-2xl font-black mb-2">Option Bilingue</h3>
+                  <p className="text-blue-100 text-sm leading-relaxed max-w-md">
+                    Séparation des matières et examens pour les écoles bilingues (français / anglais).
+                    Gérez les programmes des deux langues indépendamment, avec des bulletins adaptés.
+                  </p>
+                </div>
+
+                {/* Prix */}
+                <div className="text-center md:text-right flex-shrink-0">
+                  <div className="text-3xl font-black text-[#f5b335] mb-1">
+                    {formatFCFA(billingCycle === 'monthly' ? bilingualMonthly : bilingualYearly)}
+                  </div>
+                  <div className="text-xs text-blue-200 font-medium mb-3">
+                    {billingCycle === 'monthly' ? 'par mois' : 'par an'}
+                  </div>
+                  <Link
+                    href="/signup"
+                    className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all"
+                  >
+                    Ajouter l'option <ArrowRight className="w-3.5 h-3.5" />
+                  </Link>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -230,7 +222,7 @@ export default function TarificationPage() {
           </div>
         </section>
 
-        {/* ─── FAQ rapide ─── */}
+        {/* ─── FAQ ─── */}
         <section className="py-16 px-4">
           <div className="max-w-3xl mx-auto">
             <h2 className="text-2xl font-black text-[#0b2f73] mb-8 text-center">Questions fréquentes</h2>
@@ -271,19 +263,29 @@ function PlanCard({ plan, billingCycle }: { plan: PricingPlan; billingCycle: 'mo
   const isSurDevis = monthly == null;
 
   return (
-    <div className={`relative rounded-3xl overflow-hidden transition-all duration-300 hover:scale-[1.02] ${
-      plan.isPopular
-        ? 'bg-gradient-to-br from-[#0a1d3f] to-[#0b2f73] text-white shadow-2xl shadow-blue-200 ring-2 ring-[#f5b335]'
-        : 'bg-white border-2 border-slate-100 shadow-lg hover:shadow-xl'
-    }`}>
+    <div
+      className={`relative rounded-3xl overflow-hidden transition-all duration-300 hover:scale-[1.02] ${
+        plan.isPopular
+          ? 'bg-gradient-to-br from-[#0a1d3f] to-[#0b2f73] text-white shadow-2xl shadow-blue-300/50 ring-2 ring-[#f5b335] animate-[glow_3s_ease-in-out_infinite]'
+          : 'bg-white border-2 border-slate-100 shadow-lg hover:shadow-xl'
+      }`}
+      style={
+        plan.isPopular
+          ? {
+              animation: 'glowPulse 3s ease-in-out infinite',
+            }
+          : undefined
+      }
+    >
       {/* Badge Populaire */}
       {plan.isPopular && (
-        <div className="absolute top-0 right-0 bg-[#f5b335] text-[#0a1d3f] px-4 py-1.5 rounded-bl-2xl text-xs font-black uppercase tracking-wider">
-          ⭐ Populaire
+        <div className="absolute top-0 left-0 right-0 bg-gradient-to-r from-[#f5b335] via-[#e0a020] to-[#f5b335] text-[#0a1d3f] py-1.5 px-4 flex items-center justify-center gap-1.5 text-xs font-black uppercase tracking-wider">
+          <Star className="w-3.5 h-3.5 fill-[#0a1d3f]" />
+          Populaire
         </div>
       )}
 
-      <div className="p-6">
+      <div className={`p-6 ${plan.isPopular ? 'pt-10' : ''}`}>
         {/* Nom + tagline */}
         <h3 className={`text-xl font-black mb-1 ${plan.isPopular ? 'text-white' : 'text-[#0b2f73]'}`}>
           {plan.name}
@@ -347,6 +349,20 @@ function PlanCard({ plan, billingCycle }: { plan: PricingPlan; billingCycle: 'mo
           {isSurDevis ? 'Demander un devis' : 'Choisir ce plan'}
         </Link>
       </div>
+
+      {/* Animation glow keyframes injectées inline */}
+      {plan.isPopular && (
+        <style jsx>{`
+          @keyframes glowPulse {
+            0%, 100% {
+              box-shadow: 0 0 20px rgba(245, 179, 53, 0.3), 0 0 40px rgba(245, 179, 53, 0.1);
+            }
+            50% {
+              box-shadow: 0 0 30px rgba(245, 179, 53, 0.5), 0 0 60px rgba(245, 179, 53, 0.2);
+            }
+          }
+        `}</style>
+      )}
     </div>
   );
 }

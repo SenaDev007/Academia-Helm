@@ -32,4 +32,9 @@ export class CreateDraftDto {
   @IsOptional()
   @IsString()
   preferredSubdomain?: string;
+
+  /** URL publique du logo uploadé (ex: /uploads/logos/logo-xxx.jpg). Optionnel. */
+  @IsOptional()
+  @IsString()
+  logoUrl?: string;
 }

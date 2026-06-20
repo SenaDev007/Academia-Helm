@@ -567,9 +567,6 @@ export default function OnboardingWizard() {
       if (data.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
         newErrors.email = 'Format d\'email invalide';
       }
-      if (data.schoolsCount < 1 || data.schoolsCount > 4) {
-        newErrors.schoolsCount = 'Le nombre d\'écoles doit être entre 1 et 4';
-      }
       const sub = (data.preferredSubdomain || '').trim();
       if (sub) {
         if (subdomainCheckStatus === 'checking') {
@@ -738,8 +735,8 @@ export default function OnboardingWizard() {
             phone: normalizedPhone,
             email: data.email,
             bilingual: data.bilingual,
-            schoolsCount: data.schoolsCount,
             preferredSubdomain: (data.preferredSubdomain || '').trim() || undefined,
+            logoUrl: data.logoUrl || undefined,
           }),
         });
 
@@ -885,7 +882,6 @@ export default function OnboardingWizard() {
             draftId: data.draftId,
             planCode: data.planCode,
             billingPeriod: data.billingPeriod, // Ajouté pour conversion planCode -> planId
-            schoolsCount: data.schoolsCount, // Ajouté pour conversion planCode -> planId
           }),
         });
 
@@ -1465,16 +1461,20 @@ export default function OnboardingWizard() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50" style={{ marginTop: 0, paddingTop: 0 }}>
-      {/* Progress Bar */}
-      <div className="bg-white border-b border-blue-100 shadow-sm" style={{ marginTop: 0, paddingTop: 0 }}>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50/30" style={{ marginTop: 0, paddingTop: 0 }}>
+      {/* Progress Bar — palette Academia Helm : navy + gold */}
+      <div className="bg-white border-b border-slate-200 shadow-sm" style={{ marginTop: 0, paddingTop: 0 }}>
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pb-4" style={{ paddingTop: 0 }}>
-          {/* Titre centré */}
-          <div className="text-center mb-4">
-            <h1 className="text-xl font-bold text-blue-900">Création de votre école sur Academia Helm</h1>
+          {/* Titre centré — navy institutionnel */}
+          <div className="text-center mb-6 pt-6">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-blue-900 to-blue-800 shadow-md mb-3">
+              <Sparkles className="w-6 h-6 text-gold-500" />
+            </div>
+            <h1 className="text-2xl font-bold text-blue-900">Création de votre école sur Academia Helm</h1>
+            <p className="text-sm text-slate-500 mt-1">Prenez le gouvernail de votre institution en quelques étapes</p>
           </div>
           
-          {/* Progress Steps */}
+          {/* Progress Steps — dots navy/gold */}
           <div className="flex items-center justify-between">
             {[1, 2, 3, 4].map((s) => (
               <div key={s} className="flex items-center flex-1">
@@ -1482,12 +1482,12 @@ export default function OnboardingWizard() {
                   <div className={`flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all font-semibold ${
                     step >= s 
                       ? 'bg-blue-900 border-blue-900 text-white shadow-md' 
-                      : 'bg-white border-blue-300 text-blue-700'
+                      : 'bg-white border-slate-300 text-slate-500'
                   }`}>
-                    {step > s ? <CheckCircle className="w-6 h-6" /> : <span className="text-base font-bold">{s}</span>}
+                    {step > s ? <CheckCircle className="w-6 h-6 text-gold-500" /> : <span className="text-base font-bold">{s}</span>}
                   </div>
                   <span className={`mt-2 text-xs font-medium text-center ${
-                    step >= s ? 'text-blue-900' : 'text-gray-500'
+                    step >= s ? 'text-blue-900' : 'text-slate-500'
                   }`}>
                     {s === 1 && 'Établissement'}
                     {s === 2 && 'Promoteur'}
@@ -1496,8 +1496,8 @@ export default function OnboardingWizard() {
                   </span>
                 </div>
                 {s < 4 && (
-                  <div className={`flex-1 h-1 mx-2 transition-all ${
-                    step > s ? 'bg-blue-900' : 'bg-blue-200'
+                  <div className={`flex-1 h-1 mx-2 transition-all rounded-full ${
+                    step > s ? 'bg-gold-500' : 'bg-slate-200'
                   }`} />
                 )}
               </div>
@@ -1522,12 +1522,16 @@ export default function OnboardingWizard() {
           
           {/* PHASE 1: Établissement */}
           {step === 1 && (
-            <div className="bg-white rounded-lg shadow-lg p-8">
+            <div className="bg-white rounded-xl shadow-lg border border-slate-100 p-8">
               <div className="flex items-center mb-6">
-                <Building className="w-8 h-8 text-blue-900 mr-3" />
-                <h2 className="text-3xl font-bold text-blue-900">Informations de l'établissement</h2>
+                <div className="p-3 bg-gradient-to-br from-blue-900 to-blue-800 rounded-lg mr-4 shadow-sm">
+                  <Building className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-blue-900">Informations de l'établissement</h2>
+                  <p className="text-sm text-slate-500 mt-1">Renseignez les informations de votre établissement scolaire</p>
+                </div>
               </div>
-              <p className="text-slate-600 mb-8">Renseignez les informations de votre établissement scolaire</p>
               
               <div className="space-y-6">
                 <div>
@@ -1821,30 +1825,6 @@ export default function OnboardingWizard() {
                     </div>
                   )}
                 </div>
-
-                <div>
-                  <label className="flex items-center text-sm font-medium text-gray-900 mb-2">
-                    <School className="w-5 h-5 mr-2" />
-                    Nombre d'écoles gérées <span className="text-red-600">*</span>
-                  </label>
-                  <select
-                    value={data.schoolsCount}
-                    onChange={(e) => handleChange('schoolsCount', parseInt(e.target.value))}
-                    aria-label="Nombre d'écoles"
-                    title="Nombre d'écoles"
-                    className={`w-full px-4 py-3 border rounded-md focus:ring-2 focus:ring-blue-600 ${
-                      errors.schoolsCount ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                  >
-                    <option value={1}>1 école</option>
-                    <option value={2}>2 écoles</option>
-                    <option value={3}>3 écoles</option>
-                    <option value={4}>4 écoles</option>
-                  </select>
-                  {errors.schoolsCount && (
-                    <p className="mt-1 text-sm text-red-600">{errors.schoolsCount}</p>
-                  )}
-                </div>
               </div>
 
               {errors.info && (
@@ -1933,12 +1913,16 @@ export default function OnboardingWizard() {
 
           {/* PHASE 2: Promoteur */}
           {step === 2 && (
-            <div className="bg-white rounded-lg shadow-lg p-8">
+            <div className="bg-white rounded-xl shadow-lg border border-slate-100 p-8">
               <div className="flex items-center mb-6">
-                <User className="w-8 h-8 text-blue-900 mr-3" />
-                <h2 className="text-3xl font-bold text-blue-900">Informations du promoteur</h2>
+                <div className="p-3 bg-gradient-to-br from-blue-900 to-blue-800 rounded-lg mr-4 shadow-sm">
+                  <User className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-blue-900">Informations du promoteur</h2>
+                  <p className="text-sm text-slate-500 mt-1">Créez le compte administrateur principal</p>
+                </div>
               </div>
-              <p className="text-slate-600 mb-8">Créez le compte administrateur principal</p>
               
               <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -2655,8 +2639,8 @@ export default function OnboardingWizard() {
                         <div className="flex items-center gap-2 text-sm text-graphite-700 mt-2">
                           <School className="w-4 h-4" />
                           <span>
-                        {data.schoolsCount} école{data.schoolsCount > 1 ? 's' : ''}
-                        {data.bilingual && ' • Bilingue'}
+                        {data.bilingual && 'Bilingue'}
+                            {!data.bilingual && 'Monolingue'}
                             {data.billingPeriod === 'yearly' && ' • Paiement annuel'}
                           </span>
                       </div>

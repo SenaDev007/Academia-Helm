@@ -11913,6 +11913,7 @@ model OnboardingDraft {
   bilingual            Boolean             @default(false)
   schoolsCount         Int                 @default(1) @map("schools_count")
   preferredSubdomain   String?             @map("preferred_subdomain")
+  logoUrl              String?             @map("logo_url")
   promoterFirstName    String?             @map("promoter_first_name")
   promoterLastName     String?             @map("promoter_last_name")
   promoterEmail        String?             @map("promoter_email")

@@ -64,6 +64,7 @@ export class OnboardingService {
     bilingual?: boolean;
     schoolsCount?: number;
     preferredSubdomain?: string;
+    logoUrl?: string;
   }) {
     // Vérifier si un draft existe déjà pour cet email
     const existingDraft = await this.prisma.onboardingDraft.findFirst({
@@ -109,6 +110,7 @@ export class OnboardingService {
           bilingual: data.bilingual || false,
           schoolsCount: data.schoolsCount ?? 1,
           preferredSubdomain,
+          logoUrl: data.logoUrl || null,
           status: 'DRAFT',
         },
       });
@@ -689,6 +691,23 @@ export class OnboardingService {
             },
           },
         });
+
+        // Créer l'entité School associée au tenant pour stocker
+        // les informations collectées pendant l'onboarding (ville, téléphone,
+        // email, logo) qui ne sont pas sur le modèle Tenant lui-même.
+        // Une seule School par tenant (tenantId @unique dans le schéma).
+        await tx.school.create({
+          data: {
+            tenantId: tenant.id,
+            name: tenant.name,
+            city: draft.city || null,
+            primaryPhone: draft.phone || null,
+            primaryEmail: draft.email || null,
+            logo: draft.logoUrl || null,
+            educationLevels: this.getSchoolLevelsForType(draft.schoolType).map(l => l.code),
+          },
+        });
+        this.logger.log(`✅ School created for tenant ${tenant.id} (city=${draft.city || 'N/A'}, logo=${draft.logoUrl ? 'yes' : 'no'})`);
       }
 
       // 3. Créer le promoteur (user avec role PROMOTER) - lié au premier tenant

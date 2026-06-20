@@ -802,6 +802,20 @@ async function bootstrap() {
     logger.warn(`tenantEnrollmentBlocked column warning: ${studentColErr.message}`);
   }
 
+  // ============================================================================
+  // FALLBACK: Migration logoUrl sur onboarding_drafts
+  // ============================================================================
+  // Cette colonne stocke le chemin du logo uploadé pendant l'onboarding.
+  // Migration 20260621170000_add_logo_url_to_onboarding_draft.
+  try {
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "onboarding_drafts" ADD COLUMN IF NOT EXISTS "logo_url" TEXT`
+    );
+    logger.log('✅ Column onboarding_drafts.logo_url ensured successfully');
+  } catch (logoColErr: any) {
+    logger.warn(`onboarding_drafts.logo_url column warning: ${logoColErr.message}`);
+  }
+
   await app.listen(port, '0.0.0.0');
 
   // Log memory info on startup

@@ -224,10 +224,12 @@ export class StudentCountVerifierService {
 
             // Si la période de grâce est expirée → bloquer l'ajout d'élèves
             if (sub.upgradeGraceEnd && new Date() > sub.upgradeGraceEnd) {
-              // Marquer le tenant comme "ajout d'élèves bloqué"
+              // Bloquer uniquement l'ajout d'élèves (pas l'accès global)
+              // Utilise le champ dédié `studentEnrollmentBlocked` plutôt que
+              // `tenant.status='suspended'` qui est utilisé par le billing BLOCKED.
               await this.prisma.tenant.update({
                 where: { id: tenant.id },
-                data: { status: 'suspended' }, // 'suspended' bloque l'ajout mais pas l'accès
+                data: { studentEnrollmentBlocked: true },
               });
               this.logger.warn(
                 `Tenant ${tenant.name}: grace period expired — student enrollment blocked. Must upgrade to ${alignment.recommendedPlan}.`,
@@ -244,12 +246,13 @@ export class StudentCountVerifierService {
                 },
               });
             }
-            // Restaurer le statut si suspended
-            if (tenant.status === 'suspended' && sub.status === 'ACTIVE') {
+            // Restaurer l'ajout d'élèves si bloqué
+            if (tenant.studentEnrollmentBlocked) {
               await this.prisma.tenant.update({
                 where: { id: tenant.id },
-                data: { status: 'active' },
+                data: { studentEnrollmentBlocked: false },
               });
+              this.logger.log(`Tenant ${tenant.name}: enrollment unblocked (plan aligned).`);
             }
           }
         } catch (err: any) {
@@ -309,20 +312,106 @@ export class StudentCountVerifierService {
           alignment.currentPlanLimit.studentMax || 0,
         );
 
-        // Donner 7 jours de grâce
-        const graceEnd = new Date();
-        graceEnd.setDate(graceEnd.getDate() + 7);
+        // Donner 7 jours de grâce (uniquement si pas déjà en grâce)
+        if (!sub.upgradeGraceEnd) {
+          const graceEnd = new Date();
+          graceEnd.setDate(graceEnd.getDate() + 7);
 
-        await this.prisma.helmSubscription.update({
-          where: { id: sub.id },
-          data: {
-            pendingUpgradePlan: alignment.recommendedPlan as any,
-            upgradeGraceEnd: graceEnd,
-          },
+          await this.prisma.helmSubscription.update({
+            where: { id: sub.id },
+            data: {
+              pendingUpgradePlan: alignment.recommendedPlan as any,
+              upgradeGraceEnd: graceEnd,
+            },
+          });
+        }
+      } else {
+        // Le plan correspond — s'assurer que l'ajout d'élèves est débloqué
+        // et réinitialiser les flags d'upgrade en attente
+        const tenant = await this.prisma.tenant.findUnique({
+          where: { id: tenantId },
+          select: { studentEnrollmentBlocked: true },
         });
+
+        if (tenant?.studentEnrollmentBlocked || sub.pendingUpgradePlan) {
+          await this.prisma.tenant.update({
+            where: { id: tenantId },
+            data: { studentEnrollmentBlocked: false },
+          });
+          await this.prisma.helmSubscription.update({
+            where: { id: sub.id },
+            data: {
+              pendingUpgradePlan: null,
+              upgradeGraceEnd: null,
+            },
+          });
+          this.logger.log(`Tenant ${tenantId}: enrollment unblocked, plan aligned (${realCount} students).`);
+        }
       }
     } catch (err: any) {
       this.logger.error(`verifyAfterEnrollment failed for ${tenantId}: ${err.message}`);
+    }
+  }
+
+  /**
+   * Vérifie si un tenant peut inscrire un nouvel élève.
+   * Retourne { allowed: true } si OK, sinon { allowed: false, reason, recommendedPlan, currentCount, planLimit }.
+   *
+   * À appeler AVANT toute création d'élève.
+   */
+  async canEnrollNewStudent(tenantId: string): Promise<{
+    allowed: boolean;
+    reason?: string;
+    recommendedPlan?: string;
+    currentCount?: number;
+    planLimit?: number;
+    currentPlan?: string;
+    graceEndsAt?: Date;
+  }> {
+    try {
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: {
+          studentEnrollmentBlocked: true,
+          name: true,
+          helmSubscriptions: {
+            select: {
+              id: true,
+              plan: true,
+              status: true,
+              upgradeGraceEnd: true,
+              pendingUpgradePlan: true,
+            },
+          },
+        },
+      });
+
+      if (!tenant) {
+        return { allowed: true }; // Tenant introuvable — laisser passer (sera bloqué par TenantGuard)
+      }
+
+      // Si l'ajout d'élèves est explicitement bloqué
+      if (tenant.studentEnrollmentBlocked) {
+        const sub = tenant.helmSubscriptions;
+        const currentCount = await this.countActiveStudents(tenantId);
+        const currentPlan = sub?.plan || 'SEED';
+        const currentPlanLimit = PLAN_LIMITS.find(p => p.code === currentPlan);
+        return {
+          allowed: false,
+          reason: 'PLAN_LIMIT_EXCEEDED_GRACE_EXPIRED',
+          recommendedPlan: sub?.pendingUpgradePlan || undefined,
+          currentCount,
+          planLimit: currentPlanLimit?.studentMax || 0,
+          currentPlan,
+          graceEndsAt: sub?.upgradeGraceEnd || undefined,
+        };
+      }
+
+      return { allowed: true };
+    } catch (err: any) {
+      this.logger.error(`canEnrollNewStudent failed for ${tenantId}: ${err.message}`);
+      // En cas d'erreur, on laisse passer (meilleure disponibilité)
+      return { allowed: true };
     }
   }
 

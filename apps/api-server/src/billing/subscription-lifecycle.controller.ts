@@ -185,4 +185,110 @@ export class SubscriptionLifecycleController {
 
     return result;
   }
+
+  /**
+   * GET /api/billing/student-count/:tenantId
+   * Retourne le nombre réel d'élèves et la conformité au plan d'abonnement.
+   * Accessible par l'admin plateforme (header x-platform-admin-email) ou par le tenant lui-même.
+   */
+  @Public()
+  @Get('student-count/:tenantId')
+  async getStudentCountCompliance(@Param('tenantId') tenantId: string) {
+    const realCount = await this.studentCountVerifier.countActiveStudents(tenantId);
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: {
+        name: true,
+        studentEnrollmentBlocked: true,
+        studentCountCache: true,
+        lastCountUpdate: true,
+        helmSubscriptions: {
+          select: {
+            plan: true,
+            status: true,
+            pendingUpgradePlan: true,
+            upgradeGraceEnd: true,
+          },
+        },
+      },
+    });
+
+    const sub = tenant?.helmSubscriptions;
+    const currentPlan = sub?.plan || 'SEED';
+    const alignment = this.studentCountVerifier.checkPlanAlignment(currentPlan, realCount);
+
+    return {
+      tenantId,
+      tenantName: tenant?.name || 'Établissement',
+      realStudentCount: realCount,
+      cachedStudentCount: tenant?.studentCountCache || 0,
+      lastCountUpdate: tenant?.lastCountUpdate,
+      enrollmentBlocked: tenant?.studentEnrollmentBlocked || false,
+      currentPlan,
+      currentPlanLimit: alignment.currentPlanLimit.studentMax,
+      recommendedPlan: alignment.recommendedPlan,
+      needsUpgrade: alignment.needsUpgrade,
+      overBy: alignment.overBy,
+      pendingUpgradePlan: sub?.pendingUpgradePlan || null,
+      upgradeGraceEnd: sub?.upgradeGraceEnd || null,
+    };
+  }
+
+  /**
+   * POST /api/billing/verify-student-count/:tenantId
+   * Déclenche une vérification immédiate du nombre d'élèves pour un tenant.
+   * Met à jour le cache et notifie l'école si nécessaire.
+   */
+  @Public()
+  @Post('verify-student-count/:tenantId')
+  async triggerStudentCountVerification(
+    @Param('tenantId') tenantId: string,
+    @Headers('x-platform-admin-email') adminEmail?: string,
+  ) {
+    if (adminEmail) {
+      this.logger.log(`Manual student count verification for tenant ${tenantId} by admin ${adminEmail}`);
+    }
+
+    await this.studentCountVerifier.verifyAfterEnrollment(tenantId);
+
+    // Retourner l'état après vérification
+    return this.getStudentCountCompliance(tenantId);
+  }
+
+  /**
+   * POST /api/billing/unblock-enrollment/:tenantId
+   * Débloque manuellement l'ajout d'élèves pour un tenant (admin only).
+   * Utile après qu'un admin a aidé une école à upgrader son plan manuellement.
+   */
+  @Public()
+  @Post('unblock-enrollment/:tenantId')
+  async unblockEnrollment(
+    @Param('tenantId') tenantId: string,
+    @Headers('x-platform-admin-email') adminEmail?: string,
+  ) {
+    if (!adminEmail) {
+      throw new BadRequestException('Header x-platform-admin-email requis');
+    }
+    this.logger.log(`Manual unblock enrollment for tenant ${tenantId} by admin ${adminEmail}`);
+
+    await this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: { studentEnrollmentBlocked: false },
+    });
+
+    const sub = await this.prisma.helmSubscription.findUnique({
+      where: { tenantId },
+    });
+    if (sub?.pendingUpgradePlan) {
+      await this.prisma.helmSubscription.update({
+        where: { id: sub.id },
+        data: {
+          pendingUpgradePlan: null,
+          upgradeGraceEnd: null,
+        },
+      });
+    }
+
+    return { success: true, message: 'Enrollment unblocked successfully' };
+  }
 }

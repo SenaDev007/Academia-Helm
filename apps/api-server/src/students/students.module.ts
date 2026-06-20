@@ -8,6 +8,7 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module'; // ✅ Import
 import { UsersModule } from '../users/users.module'; // ✅ Import pour PermissionsGuard
 import { ModulesModule } from '../modules/modules.module'; // ✅ Import pour ModuleAccessGuard
 import { OrionModule } from '../orion/orion.module';
+import { BillingModule } from '../billing/billing.module'; // ✅ Pour StudentCountVerifierService
 import { StudentsPrismaService } from './students-prisma.service';
 import { StudentsPrismaController } from './students-prisma.controller';
 import { GuardiansPrismaService } from './guardians-prisma.service';
@@ -52,6 +53,7 @@ import { FinanceModule } from '../finance/finance.module';
     ModulesModule, // ✅ Import pour que ModuleAccessGuard puisse résoudre ModulesService
     OrionModule, // Pour intégration ORION sur le cycle de vie élèves
     FinanceModule, // Comptes élèves : création auto StudentAccount à l'admission/réinscription
+    BillingModule, // ✅ Pour StudentCountVerifierService (vérification nb élèves vs plan)
   ],
   controllers: [
     // Specific route controllers MUST be registered BEFORE StudentsPrismaController

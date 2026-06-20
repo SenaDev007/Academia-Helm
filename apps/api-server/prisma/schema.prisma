@@ -26,6 +26,10 @@ model Tenant {
   estimatedStudentCount            Int?
   lastCountUpdate                  DateTime?
   studentCountCache                Int                               @default(0)
+  /// Bloque l'ajout de nouveaux élèves lorsque le nombre réel dépasse la limite
+  /// du plan d'abonnement et que la période de grâce de 7 jours est expirée.
+  /// Orthogonal au statut billing — ne bloque QUE l'ajout d'élèves.
+  studentEnrollmentBlocked         Boolean                           @default(false)
   helmSubscriptions                HelmSubscription?
   absences                         Absence[]
   academicPeriods                  AcademicPeriod[]

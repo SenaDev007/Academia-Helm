@@ -9,10 +9,11 @@
  * ============================================================================
  */
 
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { MatriculeService } from './services/matricule.service';
 import { PublicVerificationService } from './services/public-verification.service';
+import { StudentCountVerifierService } from '../billing/services/student-count-verifier.service';
 
 @Injectable()
 export class StudentsPrismaService {
@@ -20,7 +21,33 @@ export class StudentsPrismaService {
     private readonly prisma: PrismaService,
     private readonly matriculeService: MatriculeService,
     private readonly publicVerificationService: PublicVerificationService,
+    private readonly studentCountVerifier: StudentCountVerifierService,
   ) {}
+
+  /**
+   * Vérifie si le tenant peut inscrire un nouvel élève (plan d'abonnement).
+   * Lance une ForbiddenException si l'ajout est bloqué.
+   */
+  private async assertCanEnroll(tenantId: string): Promise<void> {
+    const check = await this.studentCountVerifier.canEnrollNewStudent(tenantId);
+    if (!check.allowed) {
+      const planLabel = check.currentPlan || 'plan actuel';
+      const recommendedLabel = check.recommendedPlan || 'plan supérieur';
+      const currentCount = check.currentCount ?? 0;
+      const planLimit = check.planLimit ?? 0;
+      throw new ForbiddenException({
+        code: 'STUDENT_ENROLLMENT_BLOCKED',
+        message: `L'ajout de nouveaux élèves est suspendu. Votre établissement a ${currentCount} élèves inscrits, ce qui dépasse la limite de votre ${planLabel} (${planLimit} élèves max). Veuillez mettre à niveau vers le plan ${recommendedLabel} pour reprendre les inscriptions.`,
+        details: {
+          currentCount,
+          planLimit,
+          currentPlan: check.currentPlan,
+          recommendedPlan: check.recommendedPlan,
+          graceEndsAt: check.graceEndsAt,
+        },
+      });
+    }
+  }
 
   /**
    * Crée un nouvel élève avec matricule institutionnel (généré backend, immuable).
@@ -39,10 +66,13 @@ export class StudentsPrismaService {
     npi?: string;
     createdById?: string;
   }) {
+    // Vérifier que le tenant peut inscrire un nouvel élève (plan d'abonnement)
+    await this.assertCanEnroll(data.tenantId);
+
     const schoolCode = await this.matriculeService.getSchoolCode(data.tenantId);
     const enrollmentYear = await this.matriculeService.getEnrollmentYearFromAcademicYear(data.academicYearId);
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const matricule = await this.matriculeService.generateInTransaction(
         tx,
         data.tenantId,
@@ -74,6 +104,13 @@ export class StudentsPrismaService {
         },
       });
     });
+
+    // Vérifier le nombre d'élèves vs plan d'abonnement (best-effort, asynchrone)
+    this.studentCountVerifier.verifyAfterEnrollment(data.tenantId).catch(() => {
+      // Silencieux : le verifyAfterEnrollment log déjà les erreurs
+    });
+
+    return result;
   }
 
   /**
@@ -283,6 +320,11 @@ export class StudentsPrismaService {
     enrollmentType: 'NEW' | 'REPEAT' | 'TRANSFER';
     enrollmentDate: Date;
   }) {
+    // Vérifier que le tenant peut inscrire un élève (plan d'abonnement)
+    // L'élève existe déjà mais son enrollment pour l'année active peut faire
+    // grandir le nombre d'élèves comptés (currentAcademicYearId non mis à jour ici).
+    await this.assertCanEnroll(data.tenantId);
+
     // Vérifier que l'élève existe
     const student = await this.findStudentById(data.studentId, data.tenantId);
 
@@ -315,7 +357,7 @@ export class StudentsPrismaService {
     });
 
     // Créer la nouvelle inscription
-    return this.prisma.studentEnrollment.create({
+    const result = await this.prisma.studentEnrollment.create({
       data: {
         ...data,
         status: 'VALIDATED',
@@ -325,6 +367,13 @@ export class StudentsPrismaService {
         student: true,
       },
     });
+
+    // Vérifier le nombre d'élèves vs plan d'abonnement (best-effort, asynchrone)
+    this.studentCountVerifier.verifyAfterEnrollment(data.tenantId).catch(() => {
+      // Silencieux : le verifyAfterEnrollment log déjà les erreurs
+    });
+
+    return result;
   }
 
   /**

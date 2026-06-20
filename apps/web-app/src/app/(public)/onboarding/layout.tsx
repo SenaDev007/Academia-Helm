@@ -1,4 +1,6 @@
 import { generateSEOMetadata } from '@/lib/seo';
+import { Header } from '@/components/ui/header-1';
+import { Footer2 } from '@/components/ui/footer-2';
 
 export const metadata = generateSEOMetadata({
   title: 'Onboarding — Création de votre établissement',
@@ -11,5 +13,15 @@ export default function OnboardingLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return children;
+  return (
+    <>
+      <Header />
+      {/* Spacer pour le header fixe (responsive h-14 md:h-16) */}
+      <div className="h-14 md:h-16" />
+      <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50/30">
+        {children}
+      </main>
+      <Footer2 />
+    </>
+  );
 }

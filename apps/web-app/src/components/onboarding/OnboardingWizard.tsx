@@ -1864,7 +1864,7 @@ export default function OnboardingWizard() {
                 <button
                   onClick={handleNext}
                   disabled={isSubmitting}
-                  className="px-6 py-3 bg-blue-600 text-white rounded-md font-semibold hover:bg-blue-700 transition-all duration-300 flex items-center disabled:opacity-50"
+                  className="px-6 py-3 bg-crimson-600 text-white rounded-md font-semibold hover:bg-crimson-500 transition-all duration-300 flex items-center disabled:opacity-50 shadow-sm hover:shadow-md"
                 >
                   {isSubmitting ? (
                     <>
@@ -2387,7 +2387,7 @@ export default function OnboardingWizard() {
                 <button
                   onClick={handleNext}
                   disabled={isSubmitting}
-                  className="px-6 py-3 bg-blue-600 text-white rounded-md font-semibold hover:bg-blue-700 transition-all duration-300 flex items-center disabled:opacity-50"
+                  className="px-6 py-3 bg-crimson-600 text-white rounded-md font-semibold hover:bg-crimson-500 transition-all duration-300 flex items-center disabled:opacity-50 shadow-sm hover:shadow-md"
                 >
                   {isSubmitting ? (
                     <>
@@ -2714,7 +2714,7 @@ export default function OnboardingWizard() {
                 <button
                   onClick={handleNext}
                   disabled={isSubmitting}
-                  className="px-6 py-3 bg-blue-600 text-white rounded-md font-semibold hover:bg-blue-700 transition-all duration-300 flex items-center disabled:opacity-50"
+                  className="px-6 py-3 bg-crimson-600 text-white rounded-md font-semibold hover:bg-crimson-500 transition-all duration-300 flex items-center disabled:opacity-50 shadow-sm hover:shadow-md"
                 >
                   {isSubmitting ? (
                     <>
@@ -2829,7 +2829,7 @@ export default function OnboardingWizard() {
                 <button
                   onClick={handlePayment}
                   disabled={isSubmitting || !initialPayment}
-                      className="px-6 py-4 bg-gradient-to-r from-blue-900 to-blue-800 text-white rounded-xl font-semibold hover:from-blue-800 hover:to-blue-700 transition-all duration-300 flex items-center justify-center disabled:opacity-50 shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
+                      className="px-6 py-4 bg-gradient-to-r from-crimson-600 to-crimson-500 text-white rounded-xl font-semibold hover:from-crimson-500 hover:to-crimson-600 transition-all duration-300 flex items-center justify-center disabled:opacity-50 shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
                 >
                   {isSubmitting ? (
                     <>
@@ -2990,7 +2990,7 @@ export default function OnboardingWizard() {
             <div className="space-y-3">
               <button
                 onClick={handleContinueWithExistingDraft}
-                className="w-full px-4 py-3 bg-blue-600 text-white rounded-md font-semibold hover:bg-blue-700 transition-all duration-300 flex items-center justify-center"
+                className="w-full px-4 py-3 bg-gray-200 text-gray-900 rounded-md font-semibold hover:bg-gray-300 transition-all duration-300 flex items-center justify-center"
               >
                 <RotateCcw className="w-5 h-5 mr-2" />
                 Continuer avec le draft existant

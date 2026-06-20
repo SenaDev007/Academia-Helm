@@ -255,7 +255,7 @@ export default function FeexPayCheckout({
           <button
             onClick={handlePay}
             disabled={isProcessing || (method === 'MOBILE_MONEY' && !phone)}
-            className="w-full bg-blue-900 text-white py-4 rounded-xl font-bold text-base hover:bg-blue-800 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+            className="w-full bg-crimson-600 text-white py-4 rounded-xl font-bold text-base hover:bg-crimson-500 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
           >
             {isProcessing ? (
               <><Loader2 className="w-5 h-5 animate-spin" /> Traitement...</>

@@ -3,11 +3,12 @@
  * Matricule : <CODE_TENANT>-<ANNEE>-<AUTO_INCREMENT>
  */
 
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { MatriculeService } from './matricule.service';
 import { PublicVerificationService } from './public-verification.service';
 import { StudentAccountService } from '../../finance/student-account.service';
+import { StudentCountVerifierService } from '../../billing/services/student-count-verifier.service';
 
 const ENROLLMENT_STATUS = {
   PRE_REGISTERED: 'PRE_REGISTERED',
@@ -29,7 +30,34 @@ export class StudentsLifecycleService {
     private readonly matriculeService: MatriculeService,
     private readonly publicVerificationService: PublicVerificationService,
     private readonly studentAccountService: StudentAccountService,
+    private readonly studentCountVerifier: StudentCountVerifierService,
   ) {}
+
+  /**
+   * Vérifie si le tenant peut inscrire un nouvel élève.
+   * À appeler AVANT toute création d'élève.
+   * Lance une ForbiddenException si l'ajout est bloqué (plan dépassé + grâce expirée).
+   */
+  private async assertCanEnroll(tenantId: string): Promise<void> {
+    const check = await this.studentCountVerifier.canEnrollNewStudent(tenantId);
+    if (!check.allowed) {
+      const planLabel = check.currentPlan || 'plan actuel';
+      const recommendedLabel = check.recommendedPlan || 'plan supérieur';
+      const currentCount = check.currentCount ?? 0;
+      const planLimit = check.planLimit ?? 0;
+      throw new ForbiddenException({
+        code: 'STUDENT_ENROLLMENT_BLOCKED',
+        message: `L'ajout de nouveaux élèves est suspendu. Votre établissement a ${currentCount} élèves inscrits, ce qui dépasse la limite de votre ${planLabel} (${planLimit} élèves max). Veuillez mettre à niveau vers le plan ${recommendedLabel} pour reprendre les inscriptions.`,
+        details: {
+          currentCount,
+          planLimit,
+          currentPlan: check.currentPlan,
+          recommendedPlan: check.recommendedPlan,
+          graceEndsAt: check.graceEndsAt,
+        },
+      });
+    }
+  }
 
   private async logAudit(
     tenantId: string,
@@ -112,6 +140,9 @@ export class StudentsLifecycleService {
     },
     userId?: string,
   ) {
+    // Vérifier que le tenant peut inscrire un nouvel élève (plan d'abonnement)
+    await this.assertCanEnroll(tenantId);
+
     const enrollmentDate = new Date();
     const student = await this.prisma.student.create({
       data: {
@@ -167,6 +198,12 @@ export class StudentsLifecycleService {
       classId: data.classId ?? null,
     });
 
+    // Vérifier le nombre d'élèves vs plan d'abonnement (notification si dépassement)
+    // Best-effort : ne pas bloquer l'inscription
+    this.studentCountVerifier.verifyAfterEnrollment(tenantId).catch((e) => {
+      this.logger.warn(`verifyAfterEnrollment failed after preRegister: ${e?.message}`);
+    });
+
     return this.prisma.student.findUnique({
       where: { id: student.id },
       include: {
@@ -184,6 +221,10 @@ export class StudentsLifecycleService {
     classId: string;
     validateDocuments?: boolean;
   }, userId?: string) {
+    // Note : pas de assertCanEnroll ici car l'élève a déjà été pré-inscrit
+    // (donc déjà compté dans le nombre d'élèves). L'admission ne fait que
+    // valider son dossier et générer son matricule.
+
     const student = await this.prisma.student.findFirst({
       where: { id: data.studentId, tenantId },
       include: { studentEnrollments: true },
@@ -297,6 +338,11 @@ export class StudentsLifecycleService {
     // Alimentation ORION en temps rÃ©el (Sous-module F)
     await this.triggerOrion(tenantId, data.studentId, data.academicYearId);
 
+    // Vérifier le nombre d'élèves vs plan d'abonnement (best-effort, asynchrone)
+    this.studentCountVerifier.verifyAfterEnrollment(tenantId).catch((e) => {
+      this.logger.warn(`verifyAfterEnrollment failed after admit: ${e?.message}`);
+    });
+
     return this.prisma.student.findUnique({
       where: { id: data.studentId },
       include: {
@@ -314,6 +360,11 @@ export class StudentsLifecycleService {
     classId: string;
     previousArrears?: number;
   }, userId?: string) {
+    // Vérifier que le tenant peut inscrire un nouvel élève (plan d'abonnement)
+    // La réinscription met à jour currentAcademicYearId, ce qui peut faire
+    // grandir le nombre d'élèves comptés pour l'année active.
+    await this.assertCanEnroll(tenantId);
+
     const student = await this.prisma.student.findFirst({
       where: { id: data.studentId, tenantId },
     });
@@ -351,6 +402,11 @@ export class StudentsLifecycleService {
       this.logger.warn(`Compte élève non créé à la réinscription pour ${data.studentId}: ${(e as Error).message}`);
     }
 
+    // Vérifier le nombre d'élèves vs plan d'abonnement (best-effort, asynchrone)
+    this.studentCountVerifier.verifyAfterEnrollment(tenantId).catch((e) => {
+      this.logger.warn(`verifyAfterEnrollment failed after reEnroll: ${e?.message}`);
+    });
+
     return this.prisma.student.findUnique({
       where: { id: data.studentId },
       include: {
@@ -376,6 +432,11 @@ export class StudentsLifecycleService {
     },
     userId?: string,
   ) {
+    // Vérifier que le tenant peut inscrire un nouvel élève (plan d'abonnement)
+    // La promotion met à jour currentAcademicYearId vers la nouvelle année active,
+    // ce qui peut faire grandir le nombre d'élèves comptés pour cette année.
+    await this.assertCanEnroll(tenantId);
+
     const student = await this.prisma.student.findFirst({
       where: { id: data.studentId, tenantId },
     });
@@ -467,6 +528,11 @@ export class StudentsLifecycleService {
 
     // Alimentation ORION en temps rÃ©el
     await this.triggerOrion(tenantId, data.studentId, data.toAcademicYearId);
+
+    // Vérifier le nombre d'élèves vs plan d'abonnement (best-effort, asynchrone)
+    this.studentCountVerifier.verifyAfterEnrollment(tenantId).catch((e) => {
+      this.logger.warn(`verifyAfterEnrollment failed after promoteStudent: ${e?.message}`);
+    });
 
     return this.prisma.student.findUnique({
       where: { id: data.studentId },

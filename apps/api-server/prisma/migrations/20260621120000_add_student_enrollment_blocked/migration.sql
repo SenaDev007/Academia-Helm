@@ -1,7 +1,7 @@
 -- ============================================================================
 -- Migration: 20260621080000_add_student_enrollment_blocked
 -- ============================================================================
--- Ajoute un champ `studentEnrollmentBlocked` au modèle Tenant.
+-- Ajoute un champ `studentEnrollmentBlocked` au modèle Tenant (table "tenants").
 --
 -- Ce champ est utilisé par StudentCountVerifierService pour bloquer l'ajout
 -- de nouveaux élèves lorsque le nombre réel d'élèves dépasse la limite du plan
@@ -16,7 +16,9 @@
 --   true            — ajout d'élèves bloqué (l'école doit upgrader son plan)
 -- ============================================================================
 
-ALTER TABLE "Tenant" ADD COLUMN IF NOT EXISTS "studentEnrollmentBlocked" BOOLEAN NOT NULL DEFAULT false;
+-- Note: la table s'appelle "tenants" (minuscules) en DB car le modèle Prisma
+-- `Tenant` est mappé via @@map("tenants") dans le schema.prisma.
+ALTER TABLE "tenants" ADD COLUMN IF NOT EXISTS "studentEnrollmentBlocked" BOOLEAN NOT NULL DEFAULT false;
 
 -- Index pour permettre une vérification rapide
-CREATE INDEX IF NOT EXISTS "Tenant_studentEnrollmentBlocked_idx" ON "Tenant"("studentEnrollmentBlocked");
+CREATE INDEX IF NOT EXISTS "tenants_studentEnrollmentBlocked_idx" ON "tenants"("studentEnrollmentBlocked");

@@ -816,6 +816,21 @@ async function bootstrap() {
     logger.warn(`onboarding_drafts.logo_url column warning: ${logoColErr.message}`);
   }
 
+  // ============================================================================
+  // FALLBACK: Migration bilingualEnabled sur helm_subscriptions
+  // ============================================================================
+  // Cette colonne stocke l'état de l'option bilingue (FR + EN) activable
+  // depuis le module paramètres avec paiement FeexPay.
+  // Migration 20260621190000_add_bilingual_to_helm_subscription.
+  try {
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "helm_subscriptions" ADD COLUMN IF NOT EXISTS "bilingualEnabled" BOOLEAN NOT NULL DEFAULT false`
+    );
+    logger.log('✅ Column helm_subscriptions.bilingualEnabled ensured successfully');
+  } catch (bilingualColErr: any) {
+    logger.warn(`helm_subscriptions.bilingualEnabled column warning: ${bilingualColErr.message}`);
+  }
+
   await app.listen(port, '0.0.0.0');
 
   // Log memory info on startup

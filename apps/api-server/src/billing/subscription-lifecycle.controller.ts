@@ -307,7 +307,9 @@ export class SubscriptionLifecycleController {
   @Public()
   @Get('bilingual-status/:tenantId')
   async getBilingualStatus(@Param('tenantId') tenantId: string) {
-    const sub = await this.prisma.subscription.findFirst({
+    // Utiliser HelmSubscription (relation 1-1 avec tenant via tenantId @unique)
+    // qui est le modèle principal du système de billing actuel.
+    const sub = await this.prisma.helmSubscription.findUnique({
       where: { tenantId },
       select: {
         bilingualEnabled: true,
@@ -365,11 +367,12 @@ export class SubscriptionLifecycleController {
       throw new BadRequestException('paymentMethod et customer.email sont requis');
     }
 
-    const sub = await this.prisma.subscription.findFirst({
+    // Utiliser HelmSubscription (relation 1-1 via tenantId @unique)
+    const sub = await this.prisma.helmSubscription.findUnique({
       where: { tenantId },
     });
     if (!sub) {
-      throw new BadRequestException('Aucun abonnement trouvé pour ce tenant');
+      throw new BadRequestException('Aucun abonnement trouvé pour ce tenant. Souscrivez d\'abord à un plan.');
     }
     if (sub.bilingualEnabled) {
       return { success: true, message: 'Option bilingue déjà active', alreadyActive: true };
@@ -458,7 +461,7 @@ export class SubscriptionLifecycleController {
       this.logger.log(`Bilingual activation confirmed for tenant ${tenantId} by admin ${adminEmail}`);
     }
 
-    const sub = await this.prisma.subscription.findFirst({
+    const sub = await this.prisma.helmSubscription.findUnique({
       where: { tenantId },
     });
     if (!sub) {
@@ -466,7 +469,7 @@ export class SubscriptionLifecycleController {
     }
 
     // Activer l'option bilingue
-    await this.prisma.subscription.update({
+    await this.prisma.helmSubscription.update({
       where: { id: sub.id },
       data: { bilingualEnabled: true },
     });
@@ -525,7 +528,7 @@ export class SubscriptionLifecycleController {
     @Param('tenantId') tenantId: string,
     @Body() body: { reason?: string },
   ) {
-    const sub = await this.prisma.subscription.findFirst({
+    const sub = await this.prisma.helmSubscription.findUnique({
       where: { tenantId },
     });
     if (!sub) {
@@ -536,7 +539,7 @@ export class SubscriptionLifecycleController {
     }
 
     // Désactiver l'option bilingue
-    await this.prisma.subscription.update({
+    await this.prisma.helmSubscription.update({
       where: { id: sub.id },
       data: { bilingualEnabled: false },
     });
@@ -621,7 +624,19 @@ export class SubscriptionLifecycleController {
       this.logger.error(`logo_url failed: ${err.message}`);
     }
 
-    // 3. Vérifier que l'enum BillingEventType a les nouveaux types
+    // 3. bilingualEnabled sur helm_subscriptions
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `ALTER TABLE "helm_subscriptions" ADD COLUMN IF NOT EXISTS "bilingualEnabled" BOOLEAN NOT NULL DEFAULT false`,
+      );
+      results.push({ migration: 'bilingualEnabled (helm_subscriptions)', status: 'OK' });
+      this.logger.log('✅ bilingualEnabled column ensured');
+    } catch (err: any) {
+      results.push({ migration: 'bilingualEnabled (helm_subscriptions)', status: 'FAILED', error: err.message });
+      this.logger.error(`bilingualEnabled failed: ${err.message}`);
+    }
+
+    // 4. Vérifier que l'enum BillingEventType a les nouveaux types
     // (ALTER TYPE ne supporte pas IF NOT EXISTS en PG < 10, mais c'est OK depuis 9.3)
     try {
       await this.prisma.$executeRawUnsafe(

@@ -11821,6 +11821,9 @@ model HelmSubscription {
   upgradeGraceEnd    DateTime?
   pendingUpgradePlan HelmPlan?
   activeAddons       Json                   @default("[]")
+  /// Option bilingue (FR + EN) — activable depuis le module paramètres
+  /// avec paiement FeexPay. Quand true, les AcademicTrack EN sont actifs.
+  bilingualEnabled   Boolean                @default(false)
   fedapayCustomerId  String?
   fedapaySubId       String?
   lastPaymentDate    DateTime?

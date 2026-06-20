@@ -3,32 +3,26 @@
  * PLATFORM ADMIN LAYOUT CLIENT — Layout client pour le back-office admin
  * ============================================================================
  *
- * Version simplifiée de AppLayoutClient qui n'inclut PAS les providers qui
- * font des fetch vers /api/auth/* (session tenant) — ces fetch échouent en
- * 401 pour l'admin (qui n'a que le cookie academia_admin_session).
- *
- * Garde :
- *   - QueryProvider (react-query)
- *   - I18nProvider (traductions)
- *   - AppSessionProvider (contexte user/tenant)
- *   - PilotageLayout (layout complet avec sidebar, topbar, etc.)
- *
- * Retire :
+ * Version de AppLayoutClient qui inclut TOUS les providers nécessaires au
+ * PilotageLayout (SchoolLevelProvider, AcademicYearProvider, etc.) MAIS SANS :
  *   - PostLoginFlowWrapper (redirige vers /login si AUTH_ERROR)
- *   - SessionManagerProvider (gère l'inactivité, refresh token)
+ *   - SessionManagerProvider (gère l'inactivité, refresh token — fetch tenant)
  *   - SettingsBootstrapPrefetch (fetch settings tenant)
- *   - AcademicYearProvider (fetch années scolaires tenant)
- *   - SchoolLevelProvider (fetch niveaux scolaires tenant)
- *   - BilingualProvider (fetch config bilingue tenant)
- *   - ReviewPromptHost (fetch reviews tenant)
- *   - SessionInactivityModal / SessionLockScreen (dépendent de SessionManager)
+ *
+ * Ces 3 providers font des fetch vers /api/auth/* (session tenant) qui
+ * échouent en 401 pour l'admin (qui n'a que le cookie academia_admin_session).
  * ============================================================================
  */
 
 'use client';
 
+import { Suspense } from 'react';
 import { QueryProvider } from '@/providers/QueryProvider';
+import { SettingsBootstrapPrefetch } from '@/components/settings/SettingsBootstrapPrefetch';
 import { AppSessionProvider } from '@/contexts/AppSessionContext';
+import { AcademicYearProvider } from '@/contexts/AcademicYearContext';
+import { SchoolLevelProvider } from '@/contexts/SchoolLevelContext';
+import { BilingualProvider } from '@/contexts/BilingualContext';
 import { I18nProvider } from '@/contexts/I18nContext';
 import { motion } from 'framer-motion';
 import { getFadeMotion } from '@/lib/motion/presets';
@@ -36,7 +30,6 @@ import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import type { User, Tenant } from '@/types';
 import dynamic from 'next/dynamic';
 
-// Lazy load du PilotageLayout (comme dans AppLayoutClient)
 const PilotageLayout = dynamic(
   () => import('@/components/pilotage/PilotageLayout'),
   { ssr: true },
@@ -65,9 +58,17 @@ export default function PlatformAdminLayoutClient({
       <I18nProvider>
         <QueryProvider>
           <AppSessionProvider user={user} tenant={tenant}>
-            <PilotageLayout user={user} tenant={tenant}>
-              {children}
-            </PilotageLayout>
+            <Suspense fallback={null}>
+              <AcademicYearProvider>
+                <SchoolLevelProvider>
+                  <BilingualProvider>
+                    <PilotageLayout user={user} tenant={tenant}>
+                      {children}
+                    </PilotageLayout>
+                  </BilingualProvider>
+                </SchoolLevelProvider>
+              </AcademicYearProvider>
+            </Suspense>
           </AppSessionProvider>
         </QueryProvider>
       </I18nProvider>

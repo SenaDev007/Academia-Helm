@@ -1,14 +1,15 @@
 /**
  * ============================================================================
- * PROXY API — PLATFORM BACK-OFFICE (catch-all) — VERSION ROBUSTE
+ * PROXY API — PLATFORM BACK-OFFICE (catch-all) — Next.js 16 compatible
  * ============================================================================
  *
- * Version alternative qui lit le cookie admin directement depuis la requête
- * HTTP brute (request.headers.get('cookie')) au lieu d'utiliser next/headers
- * ou request.cookies qui peuvent être instables en serverless Vercel.
+ * ⚠️ Next.js 15+ : `params` est une Promise qu'il faut await.
+ * Si on ne l'await pas, params.path est undefined → crash 500.
  *
- * Si le cookie n'est pas trouvé via cette méthode, on tente aussi request.cookies
- * en fallback.
+ * Version robuste qui :
+ *   1. Await params (Next.js 16)
+ *   2. Lit le cookie de 2 façons (request.cookies + header brut)
+ *   3. Retourne des erreurs détaillées (pas de body vide)
  * ============================================================================
  */
 
@@ -26,9 +27,7 @@ function buildBackendUrl(pathSegments: string[]): string {
 }
 
 /**
- * Extrait le cookie academia_admin_session de la requête en lisant
- * directement le header Cookie brut. Plus fiable que request.cookies
- * en serverless Vercel.
+ * Extrait le cookie academia_admin_session de la requête.
  */
 function extractAdminCookie(request: NextRequest): string | null {
   // Méthode 1 : request.cookies (Next.js API)
@@ -98,10 +97,14 @@ async function parseBackendJson(res: Response): Promise<unknown> {
 
 async function proxyRequest(
   request: NextRequest,
-  params: { path: string[] },
+  paramsPromise: Promise<{ path: string[] }>,
   method: string,
 ) {
-  const url = new URL(buildBackendUrl(params.path));
+  // ⚠️ Next.js 15+ : params est une Promise qu'il faut await
+  const params = await paramsPromise;
+  const pathSegments = params.path || [];
+
+  const url = new URL(buildBackendUrl(pathSegments));
   request.nextUrl.searchParams.forEach((value, key) => {
     url.searchParams.append(key, value);
   });
@@ -140,22 +143,22 @@ async function proxyRequest(
   }
 }
 
-export async function GET(request: NextRequest, { params }: { params: { path: string[] } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   return proxyRequest(request, params, 'GET');
 }
 
-export async function POST(request: NextRequest, { params }: { params: { path: string[] } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   return proxyRequest(request, params, 'POST');
 }
 
-export async function PATCH(request: NextRequest, { params }: { params: { path: string[] } }) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   return proxyRequest(request, params, 'PATCH');
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { path: string[] } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   return proxyRequest(request, params, 'DELETE');
 }
 
-export async function PUT(request: NextRequest, { params }: { params: { path: string[] } }) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   return proxyRequest(request, params, 'PUT');
 }

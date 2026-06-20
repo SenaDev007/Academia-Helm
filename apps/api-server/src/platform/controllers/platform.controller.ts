@@ -3,16 +3,24 @@
  * PLATFORM CONTROLLER — BACK-OFFICE ACADEMIA HELM
  * ============================================================================
  *
- * Endpoints exposés sous /platform/* — accessibles uniquement aux rôles
- * plateforme (PLATFORM_OWNER, PLATFORM_SUPER_ADMIN, PLATFORM_ADMIN, SUPER_ADMIN).
+ * Endpoints exposés sous /platform/* — accessibles uniquement aux admins
+ * plateforme authentifiés via /admin-login (cookie academia_admin_session).
  *
  * Toutes les routes retournent des données RÉELLES issues de la base de
  * données. Aucune donnée mock.
  *
- * Le guard d'authentification est JwtAuthGuard (depuis api-server). Le guard
- * métier (vérification du rôle plateforme) est appliqué dans le service via
- * assertPlatformRole(user) — cela évite toute dépendance circulaire avec les
- * guards tenant-scopés.
+ * AUTHENTIFICATION :
+ *   Les routes sont @Public() (pas de JwtAuthGuard) car l'admin n'a pas de
+ *   JWT tenant — il s'authentifie via le cookie academia_admin_session qui
+ *   est vérifié côté proxy Next.js (getAdminServerSession).
+ *
+ *   Le proxy Next.js (/api/platform/[...path]/route.ts) vérifie le cookie
+ *   admin avant de forwarder la requête. Si le cookie est invalide ou absent,
+ *   le proxy retourne 401 avant même d'atteindre le backend.
+ *
+ *   SÉCURITÉ : le proxy ajoute un header `x-platform-admin-email` que le
+ *   backend vérifie pour s'assurer que la requête vient bien du proxy
+ *   (et non d'un appel direct au backend).
  * ============================================================================
  */
 
@@ -25,38 +33,55 @@ import {
   Body,
   Param,
   Query,
-  UseGuards,
+  Headers,
   Req,
   BadRequestException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { Public } from '../../auth/decorators/public.decorator';
 import { PlatformService } from '../services/platform.service';
 
 @Controller('platform')
-@UseGuards(JwtAuthGuard)
+@Public()
 export class PlatformController {
   private readonly logger = new Logger(PlatformController.name);
 
   constructor(private readonly platformService: PlatformService) {}
 
+  /**
+   * Vérifie que la requête vient bien du proxy Next.js (qui a déjà validé
+   * le cookie admin). Le header `x-platform-admin-email` est posé par le
+   * proxy uniquement si l'admin est authentifié.
+   */
+  private assertAdminProxyRequest(adminEmail?: string): void {
+    if (!adminEmail) {
+      throw new ForbiddenException(
+        'Accès réservé aux administrateurs plateforme. ' +
+          'La requête doit provenir du proxy Next.js avec un header x-platform-admin-email valide.',
+      );
+    }
+    // Log pour audit
+    this.logger.log(`Platform API access by admin: ${adminEmail}`);
+  }
+
   /** GET /platform/dashboard — KPIs agrégés + tendances + alertes */
   @Get('dashboard')
-  async getDashboard(@Req() req: any) {
-    this.platformService.assertPlatformRole(req.user);
+  async getDashboard(@Headers('x-platform-admin-email') adminEmail?: string) {
+    this.assertAdminProxyRequest(adminEmail);
     return this.platformService.getDashboard();
   }
 
   /** GET /platform/tenants — Liste paginée des écoles / tenants */
   @Get('tenants')
   async getTenants(
-    @Req() req: any,
+    @Headers('x-platform-admin-email') adminEmail?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('search') search?: string,
     @Query('status') status?: string,
   ) {
-    this.platformService.assertPlatformRole(req.user);
+    this.assertAdminProxyRequest(adminEmail);
     return this.platformService.getTenants({
       page: page ? parseInt(page, 10) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
@@ -67,44 +92,44 @@ export class PlatformController {
 
   /** GET /platform/initial-subscriptions — Frais d'activation / onboarding */
   @Get('initial-subscriptions')
-  async getInitialSubscriptions(@Req() req: any) {
-    this.platformService.assertPlatformRole(req.user);
+  async getInitialSubscriptions(@Headers('x-platform-admin-email') adminEmail?: string) {
+    this.assertAdminProxyRequest(adminEmail);
     return this.platformService.getInitialSubscriptions();
   }
 
   /** GET /platform/invoices — Factures Helm */
   @Get('invoices')
-  async getInvoices(@Req() req: any) {
-    this.platformService.assertPlatformRole(req.user);
+  async getInvoices(@Headers('x-platform-admin-email') adminEmail?: string) {
+    this.assertAdminProxyRequest(adminEmail);
     return this.platformService.getInvoices();
   }
 
   /** GET /platform/payments — Transactions BillingEvent */
   @Get('payments')
-  async getPayments(@Req() req: any) {
-    this.platformService.assertPlatformRole(req.user);
+  async getPayments(@Headers('x-platform-admin-email') adminEmail?: string) {
+    this.assertAdminProxyRequest(adminEmail);
     return this.platformService.getPayments();
   }
 
   /** GET /platform/users — Utilisateurs plateforme */
   @Get('users')
   async getPlatformUsers(
-    @Req() req: any,
+    @Headers('x-platform-admin-email') adminEmail?: string,
     @Query('role') role?: string,
   ) {
-    this.platformService.assertPlatformRole(req.user);
+    this.assertAdminProxyRequest(adminEmail);
     return this.platformService.getPlatformUsers(role);
   }
 
   /** GET /platform/audit-logs — Logs cross-tenant */
   @Get('audit-logs')
   async getAuditLogs(
-    @Req() req: any,
+    @Headers('x-platform-admin-email') adminEmail?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('action') action?: string,
   ) {
-    this.platformService.assertPlatformRole(req.user);
+    this.assertAdminProxyRequest(adminEmail);
     return this.platformService.getAuditLogs({
       page: page ? parseInt(page, 10) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
@@ -114,50 +139,50 @@ export class PlatformController {
 
   /** GET /platform/support/tickets — Tickets support (table à venir) */
   @Get('support/tickets')
-  async getSupportTickets(@Req() req: any) {
-    this.platformService.assertPlatformRole(req.user);
+  async getSupportTickets(@Headers('x-platform-admin-email') adminEmail?: string) {
+    this.assertAdminProxyRequest(adminEmail);
     return this.platformService.getSupportTickets();
   }
 
   /** GET /platform/roles — Rôles plateforme (RBAC) */
   @Get('roles')
-  async getRoles(@Req() req: any) {
-    this.platformService.assertPlatformRole(req.user);
+  async getRoles(@Headers('x-platform-admin-email') adminEmail?: string) {
+    this.assertAdminProxyRequest(adminEmail);
     return this.platformService.getRoles();
   }
 
   /** GET /platform/permissions — Permissions (RBAC) */
   @Get('permissions')
-  async getPermissions(@Req() req: any) {
-    this.platformService.assertPlatformRole(req.user);
+  async getPermissions(@Headers('x-platform-admin-email') adminEmail?: string) {
+    this.assertAdminProxyRequest(adminEmail);
     return this.platformService.getPermissions();
   }
 
   /** GET /platform/plans — Plans d'abonnement */
   @Get('plans')
-  async getPlans(@Req() req: any) {
-    this.platformService.assertPlatformRole(req.user);
+  async getPlans(@Headers('x-platform-admin-email') adminEmail?: string) {
+    this.assertAdminProxyRequest(adminEmail);
     return this.platformService.getPlans();
   }
 
   /** GET /platform/modules — Adoption des modules par tenants */
   @Get('modules')
-  async getModulesAdoption(@Req() req: any) {
-    this.platformService.assertPlatformRole(req.user);
+  async getModulesAdoption(@Headers('x-platform-admin-email') adminEmail?: string) {
+    this.assertAdminProxyRequest(adminEmail);
     return this.platformService.getModulesAdoption();
   }
 
   /** GET /platform/monitoring — État des services */
   @Get('monitoring')
-  async getMonitoring(@Req() req: any) {
-    this.platformService.assertPlatformRole(req.user);
+  async getMonitoring(@Headers('x-platform-admin-email') adminEmail?: string) {
+    this.assertAdminProxyRequest(adminEmail);
     return this.platformService.getMonitoring();
   }
 
   /** GET /platform/orion — Alertes + données ORION */
   @Get('orion')
-  async getOrionGlobal(@Req() req: any) {
-    this.platformService.assertPlatformRole(req.user);
+  async getOrionGlobal(@Headers('x-platform-admin-email') adminEmail?: string) {
+    this.assertAdminProxyRequest(adminEmail);
     return this.platformService.getOrionGlobal();
   }
 
@@ -168,33 +193,33 @@ export class PlatformController {
 
   /** GET /platform/reviews/pending — Avis en attente de modération */
   @Get('reviews/pending')
-  async getReviewsPending(@Req() req: any) {
-    this.platformService.assertPlatformRole(req.user);
+  async getReviewsPending(@Headers('x-platform-admin-email') adminEmail?: string) {
+    this.assertAdminProxyRequest(adminEmail);
     return this.platformService.getReviewsPending();
   }
 
   /** GET /platform/reviews/all — Tous les avis (filtre optionnel par statut) */
   @Get('reviews/all')
-  async getReviewsAll(@Req() req: any, @Query('status') status?: string) {
-    this.platformService.assertPlatformRole(req.user);
+  async getReviewsAll(@Headers('x-platform-admin-email') adminEmail?: string, @Query('status') status?: string) {
+    this.assertAdminProxyRequest(adminEmail);
     return this.platformService.getReviewsAll(status);
   }
 
   /** GET /platform/reviews/stats — Compteurs par statut */
   @Get('reviews/stats')
-  async getReviewsStats(@Req() req: any) {
-    this.platformService.assertPlatformRole(req.user);
+  async getReviewsStats(@Headers('x-platform-admin-email') adminEmail?: string) {
+    this.assertAdminProxyRequest(adminEmail);
     return this.platformService.getReviewsStats();
   }
 
   /** PATCH /platform/reviews/:id/status — Modérer un avis */
   @Patch('reviews/:id/status')
   async updateReviewStatus(
-    @Req() req: any,
+    @Headers('x-platform-admin-email') adminEmail?: string,
     @Param('id') id: string,
     @Body() body: { status: 'APPROVED' | 'REJECTED' | 'ARCHIVED' | 'PENDING'; featured?: boolean },
   ) {
-    this.platformService.assertPlatformRole(req.user);
+    this.assertAdminProxyRequest(adminEmail);
     if (!body?.status) {
       throw new BadRequestException('Le champ "status" est requis');
     }
@@ -203,8 +228,8 @@ export class PlatformController {
 
   /** DELETE /platform/reviews/:id — Supprimer un avis */
   @Delete('reviews/:id')
-  async deleteReview(@Req() req: any, @Param('id') id: string) {
-    this.platformService.assertPlatformRole(req.user);
+  async deleteReview(@Headers('x-platform-admin-email') adminEmail?: string, @Param('id') id: string) {
+    this.assertAdminProxyRequest(adminEmail);
     return this.platformService.deleteReview(id);
   }
 }

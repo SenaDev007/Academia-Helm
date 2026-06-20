@@ -231,7 +231,7 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
                 )}
               </button>
             )}
-            {/* Logo et Nom de l'École */}
+            {/* Logo et Nom de l'École (ou Academia Helm pour le back-office admin) */}
             <div className="flex items-center space-x-2.5 sm:space-x-3 min-w-0">
               <div className="relative">
                 {schoolIdentity?.logoUrl ? (
@@ -242,6 +242,15 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
                     height={38}
                     className="rounded-xl shadow-sm object-cover ring-1 ring-gray-100"
                   />
+                ) : tenant?.subdomain === 'admin' || user?.role === 'PLATFORM_SUPER_ADMIN' ? (
+                  // Back-office admin : utiliser le logo Academia Helm
+                  <Image
+                    src="/images/logo-Academia Hub.png"
+                    alt="Academia Helm"
+                    width={38}
+                    height={38}
+                    className="rounded-xl shadow-sm object-contain ring-1 ring-gray-100 bg-white"
+                  />
                 ) : (
                   <div className="w-[38px] h-[38px] bg-gradient-to-br from-blue-800 to-blue-900 rounded-xl flex items-center justify-center shadow-sm">
                     <School className="w-[18px] h-[18px] text-gold-400" />
@@ -251,7 +260,9 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
               </div>
               <div className="hidden sm:block min-w-0">
                 <span className="text-[13px] font-bold text-blue-900 block max-w-[240px] leading-tight break-words whitespace-normal line-clamp-1" title={schoolIdentity?.schoolAcronym || schoolIdentity?.schoolName || tenant.name}>
-                  {schoolIdentity?.schoolAcronym || schoolIdentity?.schoolName || tenant.name || 'Mon École'}
+                  {tenant?.subdomain === 'admin' || user?.role === 'PLATFORM_SUPER_ADMIN'
+                    ? 'Academia Helm — Back-office'
+                    : (schoolIdentity?.schoolAcronym || schoolIdentity?.schoolName || tenant.name || 'Mon École')}
                 </span>
               </div>
             </div>

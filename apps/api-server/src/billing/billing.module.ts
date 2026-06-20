@@ -15,6 +15,7 @@ import { FedaPayService } from './services/fedapay.service';
 import { PricingService } from './services/pricing.service';
 import { BillingService } from './billing.service';
 import { BillingGuard } from './guards/billing.guard';
+import { InvoiceService } from './services/invoice.service';
 import { OnboardingModule } from '../onboarding/onboarding.module';
 import { CommunicationModule } from '../communication/communication.module';
 import { AuthModule } from '../auth/auth.module';
@@ -40,6 +41,7 @@ import { OrionModule } from '../orion/orion.module';
     BillingService,
     PricingService,
     BillingGuard,
+    InvoiceService,
   ],
   exports: [
     SubscriptionService,
@@ -51,6 +53,7 @@ import { OrionModule } from '../orion/orion.module';
     FedaPayService,
     BillingService,
     BillingGuard,
+    InvoiceService,
   ],
 })
 export class BillingModule {}

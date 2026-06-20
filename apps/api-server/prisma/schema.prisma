@@ -11869,22 +11869,39 @@ model HelmUpgradeEvent {
 }
 
 model HelmInvoice {
-  id             String           @id @default(uuid())
-  subscriptionId String
-  tenantId       String
-  amount         Int
-  currency       String           @default("XOF")
-  plan           HelmPlan
-  billingCycle   HelmBillingCycle
-  period         String
-  fedapayTxId    String?
-  paidAt         DateTime?
-  status         String           @default("PENDING")
-  createdAt      DateTime         @default(now())
-  subscription   HelmSubscription @relation(fields: [subscriptionId], references: [id])
+  id              String           @id @default(uuid())
+  subscriptionId  String?
+  tenantId        String
+  amount          Int
+  currency        String           @default("XOF")
+  plan            HelmPlan?
+  billingCycle    HelmBillingCycle?
+  period          String?
+  fedapayTxId     String?
+  paidAt          DateTime?
+  status          String           @default("PENDING")
+  createdAt       DateTime         @default(now())
+  subscription    HelmSubscription? @relation(fields: [subscriptionId], references: [id])
+
+  // ─── Champs étendus (migration 20260621200000) ───
+  /// Numéro de facture unique (format: AH-YYYY-MM-NNNNN)
+  invoiceNumber   String?          @unique
+  customerEmail   String?
+  customerName    String?
+  customerPhone   String?
+  description     String?
+  /// Type de paiement : INITIAL_SUBSCRIPTION, RENEWAL, BILINGUAL_ACTIVATION, etc.
+  type            String?
+  paymentReference String?
+  paymentMethod   String?
+  paymentOperator String?
+  bilingualEnabled Boolean         @default(false)
+  issuedAt        DateTime?
 
   @@index([tenantId])
   @@index([period])
+  @@index([customerEmail])
+  @@index([type])
 }
 
 model BillingEvent {

@@ -52,6 +52,7 @@ import {
 import { HELM_PLANS, getRecommendedPlan, type HelmPlanKey, fetchPricingPlans, getPlanForStudentCount, type DynamicPricingPlan } from '@/lib/services/HelmPricingService';
 import { formatCurrency } from '@/lib/utils';
 import FeexPayCheckout from './FeexPayCheckout';
+import OnboardingAnimation from './OnboardingAnimation';
 
 interface OnboardingData {
   // Phase 1: Établissement
@@ -1464,39 +1465,37 @@ export default function OnboardingWizard() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50/30">
-      {/* Progress Bar — palette Academia Helm : navy + gold */}
-      <div className="bg-white border-b border-slate-200 shadow-sm pt-14 md:pt-16">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pb-5">
-          {/* Titre centré — navy institutionnel + accent gold */}
+      {/* Header animé — palette Academia Helm avec particules école + ondes */}
+      <div className="relative bg-gradient-to-br from-blue-900 via-blue-800 to-blue-900 pt-14 md:pt-16 pb-6 overflow-hidden">
+        {/* Animation particules + ondes en arrière-plan */}
+        <OnboardingAnimation />
+
+        {/* Contenu du header par-dessus l'animation */}
+        <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pb-4">
+          {/* Titre centré — texte blanc sur fond navy avec animation */}
           <div className="text-center mb-5">
-            <div className="inline-flex items-center justify-center gap-2.5 mb-3">
-              <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-br from-blue-900 to-blue-800 shadow-md">
-                <GraduationCap className="w-6 h-6 text-gold-500" />
-              </div>
-              <div className="text-left">
-                <h1 className="text-xl font-bold text-blue-900 leading-tight">Créez votre école sur Academia Helm</h1>
-                <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
-                  <Compass className="w-3 h-3 text-gold-600" />
-                  Prenez le gouvernail de votre institution
-                </p>
-              </div>
-            </div>
+            <h1 className="text-2xl md:text-3xl font-bold text-white leading-tight tracking-tight drop-shadow-sm">
+              Créez votre école sur Academia Helm
+            </h1>
+            <p className="text-sm md:text-base text-gold-400 mt-2 font-medium tracking-wide">
+              Prenez le gouvernail de votre institution
+            </p>
           </div>
-          
+
           {/* Progress Steps — dots navy/gold */}
           <div className="flex items-center justify-between">
             {[1, 2, 3, 4].map((s) => (
               <div key={s} className="flex items-center flex-1">
                 <div className="flex flex-col items-center flex-1">
                   <div className={`flex items-center justify-center w-11 h-11 rounded-full border-2 transition-all font-semibold ${
-                    step >= s 
-                      ? 'bg-blue-900 border-blue-900 text-white shadow-md' 
-                      : 'bg-white border-slate-300 text-slate-500'
+                    step >= s
+                      ? 'bg-gold-500 border-gold-500 text-blue-900 shadow-lg shadow-gold-500/30'
+                      : 'bg-white/10 border-white/40 text-white/70 backdrop-blur-sm'
                   }`}>
-                    {step > s ? <CheckCircle className="w-5 h-5 text-gold-500" /> : <span className="text-sm font-bold">{s}</span>}
+                    {step > s ? <CheckCircle className="w-5 h-5 text-blue-900" /> : <span className="text-sm font-bold">{s}</span>}
                   </div>
                   <span className={`mt-1.5 text-xs font-medium text-center ${
-                    step >= s ? 'text-blue-900' : 'text-slate-500'
+                    step >= s ? 'text-gold-400' : 'text-white/60'
                   }`}>
                     {s === 1 && 'Établissement'}
                     {s === 2 && 'Promoteur'}
@@ -1506,7 +1505,7 @@ export default function OnboardingWizard() {
                 </div>
                 {s < 4 && (
                   <div className={`flex-1 h-1 mx-2 transition-all rounded-full ${
-                    step > s ? 'bg-gold-500' : 'bg-slate-200'
+                    step > s ? 'bg-gold-500' : 'bg-white/20'
                   }`} />
                 )}
               </div>

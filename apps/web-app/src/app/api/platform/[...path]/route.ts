@@ -9,22 +9,23 @@
  *   etc.
  *
  * AUTHENTIFICATION :
- *   Le proxy vérifie le cookie `academia_admin_session` via
- *   getAdminServerSession(). Si l'admin est authentifié, le proxy ajoute
- *   le header `x-platform-admin-email` à la requête backend.
+ *   Le proxy vérifie le cookie `academia_admin_session` directement depuis
+ *   la requête (request.cookies) plutôt que via next/headers cookies().
+ *   Cette approche est plus fiable dans Vercel Edge/Serverless.
+ *
+ *   Si l'admin est authentifié, le proxy ajoute le header
+ *   `x-platform-admin-email` à la requête backend.
  *
  *   Si l'admin n'est PAS authentifié → 401 (avant d'atteindre le backend).
- *
- *   Le backend (PlatformController) vérifie la présence du header
- *   `x-platform-admin-email` et l'utilise pour l'audit logging.
  * ============================================================================
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { nestControllerUrl } from '@/lib/utils/api-urls';
-import { getAdminServerSession } from '@/lib/admin/admin-auth-server';
+import { verifyAdminSession } from '@/lib/admin/admin-auth-server';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 function buildBackendUrl(pathSegments: string[]): string {
   const path = pathSegments.length ? pathSegments.join('/') : '';
@@ -44,21 +45,34 @@ async function parseBackendJson(res: Response): Promise<unknown> {
 /**
  * Vérifie que l'admin est authentifié et construit les headers à envoyer
  * au backend. Retourne null si non authentifié (→ 401).
+ *
+ * Lit le cookie directement depuis la requête (request.cookies) plutôt que
+ * via next/headers cookies() qui peut être instable en serverless Vercel.
  */
-async function getPlatformProxyHeaders(): Promise<Record<string, string> | null> {
-  const adminSession = await getAdminServerSession();
-  if (!adminSession) {
+function getPlatformProxyHeaders(request: NextRequest): Record<string, string> | null {
+  const cookie = request.cookies.get('academia_admin_session')?.value;
+  if (!cookie) {
     return null;
   }
 
-  return {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-    'User-Agent': 'AcademiaHelm-BFF/1.0 (Next.js platform proxy)',
-    'x-platform-admin-email': adminSession.email,
-    'x-platform-admin-id': adminSession.id,
-    'x-platform-admin-role': adminSession.role,
-  };
+  try {
+    const decoded = JSON.parse(decodeURIComponent(cookie));
+    const session = verifyAdminSession(decoded);
+    if (!session) {
+      return null;
+    }
+
+    return {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'User-Agent': 'AcademiaHelm-BFF/1.0 (Next.js platform proxy)',
+      'x-platform-admin-email': session.user.email,
+      'x-platform-admin-id': session.user.id,
+      'x-platform-admin-role': session.user.role || 'PLATFORM_SUPER_ADMIN',
+    };
+  } catch {
+    return null;
+  }
 }
 
 function unauthorizedResponse() {
@@ -77,7 +91,7 @@ export async function GET(
     url.searchParams.append(key, value);
   });
 
-  const headers = await getPlatformProxyHeaders();
+  const headers = getPlatformProxyHeaders(request);
   if (!headers) return unauthorizedResponse();
 
   try {
@@ -107,7 +121,7 @@ export async function POST(
     url.searchParams.append(key, value);
   });
 
-  const headers = await getPlatformProxyHeaders();
+  const headers = getPlatformProxyHeaders(request);
   if (!headers) return unauthorizedResponse();
 
   let body: any = undefined;
@@ -145,7 +159,7 @@ export async function PATCH(
     url.searchParams.append(key, value);
   });
 
-  const headers = await getPlatformProxyHeaders();
+  const headers = getPlatformProxyHeaders(request);
   if (!headers) return unauthorizedResponse();
 
   let body: any = undefined;
@@ -183,7 +197,7 @@ export async function DELETE(
     url.searchParams.append(key, value);
   });
 
-  const headers = await getPlatformProxyHeaders();
+  const headers = getPlatformProxyHeaders(request);
   if (!headers) return unauthorizedResponse();
 
   try {
@@ -213,7 +227,7 @@ export async function PUT(
     url.searchParams.append(key, value);
   });
 
-  const headers = await getPlatformProxyHeaders();
+  const headers = getPlatformProxyHeaders(request);
   if (!headers) return unauthorizedResponse();
 
   let body: any = undefined;

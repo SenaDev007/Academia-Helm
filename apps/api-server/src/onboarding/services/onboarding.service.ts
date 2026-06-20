@@ -594,6 +594,43 @@ export class OnboardingService {
 
         subscriptions.push(subscription);
 
+        // ─── Créer également un HelmSubscription (modèle principal du système
+        // de billing actuel) pour que les endpoints /billing/* fonctionnent.
+        // Le HelmSubscription stocke le plan d'abonnement (SEED/GROW/LEAD/NETWORK),
+        // le cycle de facturation, les montants, et l'état bilingue.
+        // ───
+        const helmPlan = (pricing?.planCode as string) || 'SEED';
+        const helmPlanEnum = (['SEED', 'GROW', 'LEAD', 'NETWORK'].includes(helmPlan) ? helmPlan : 'SEED') as any;
+        const monthlyAmount = pricing?.monthlyPrice || 0;
+        const annualAmount = pricing?.yearlyPrice || 0;
+        const setupFee = Number(payment.amount) || 0;
+
+        // Éviter le doublon : HelmSubscription a tenantId @unique
+        const existingHelmSub = await tx.helmSubscription.findUnique({
+          where: { tenantId: tenant.id },
+          select: { id: true },
+        });
+        if (!existingHelmSub) {
+          await tx.helmSubscription.create({
+            data: {
+              tenantId: tenant.id,
+              plan: helmPlanEnum,
+              billingCycle: periodType === 'YEARLY' ? 'ANNUAL' : 'MONTHLY',
+              status: 'TRIALING',
+              monthlyAmount,
+              annualAmount,
+              setupFee,
+              currentPeriodStart: trialStart,
+              currentPeriodEnd: trialEnd,
+              trialEnd,
+              bilingualEnabled: draft.bilingual,
+              lastPaymentDate: new Date(),
+              lastPaymentAmount: setupFee,
+            },
+          });
+          this.logger.log(`✅ HelmSubscription created for tenant ${tenant.id} (plan=${helmPlanEnum})`);
+        }
+
         // Créer les niveaux scolaires selon le type d'établissement
         const schoolLevelsToCreate = this.getSchoolLevelsForType(draft.schoolType);
         

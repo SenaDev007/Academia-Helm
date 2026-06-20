@@ -37,6 +37,7 @@ import { SubscriptionLifecycleService } from './services/subscription-lifecycle.
 import { StudentCountVerifierService } from './services/student-count-verifier.service';
 import { FeexPayService } from './services/feexpay.service';
 import { PricingService } from './services/pricing.service';
+import { InvoiceService } from './services/invoice.service';
 import { PrismaService } from '../database/prisma.service';
 
 @Controller('billing')
@@ -49,6 +50,7 @@ export class SubscriptionLifecycleController {
     private readonly prisma: PrismaService,
     private readonly feexpayService: FeexPayService,
     private readonly pricingService: PricingService,
+    private readonly invoiceService: InvoiceService,
   ) {}
 
   /**
@@ -512,7 +514,37 @@ export class SubscriptionLifecycleController {
     });
 
     this.logger.log(`✅ Bilingual option activated for tenant ${tenantId}`);
-    return { success: true, message: 'Option bilingue activée avec succès' };
+
+    // Générer et envoyer la facture au client
+    try {
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { name: true, subdomain: true },
+      });
+
+      const amount = sub.billingCycle === 'ANNUAL'
+        ? 100000  // bilingualYearly
+        : 10000;  // bilingualMonthly
+
+      await this.invoiceService.createAndSendInvoice({
+        tenantId,
+        tenantName: tenant?.name || 'Établissement',
+        tenantSubdomain: tenant?.subdomain,
+        customerEmail: body.customerEmail || (adminEmail || ''),
+        customerName: tenant?.name || 'Client',
+        amount,
+        description: `Activation option bilingue (Français + Anglais) — ${sub.billingCycle === 'ANNUAL' ? 'Annuel' : 'Mensuel'}`,
+        type: 'BILINGUAL_ACTIVATION',
+        paymentReference: body.reference || body.transactionId,
+        paymentMethod: 'MOBILE_MONEY',
+        billingCycle: sub.billingCycle === 'ANNUAL' ? 'YEARLY' : 'MONTHLY',
+        bilingualEnabled: true,
+      });
+    } catch (invoiceErr: any) {
+      this.logger.warn(`Failed to send bilingual invoice: ${invoiceErr.message}`);
+    }
+
+    return { success: true, message: 'Option bilingue activée avec succès. Une facture vous a été envoyée par email.' };
   }
 
   /**
@@ -636,7 +668,34 @@ export class SubscriptionLifecycleController {
       this.logger.error(`bilingualEnabled failed: ${err.message}`);
     }
 
-    // 4. Vérifier que l'enum BillingEventType a les nouveaux types
+    // 4. Étendre helm_invoices (champs facturation complète)
+    try {
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ALTER COLUMN "subscriptionId" DROP NOT NULL`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ALTER COLUMN "plan" DROP NOT NULL`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ALTER COLUMN "billingCycle" DROP NOT NULL`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ALTER COLUMN "period" DROP NOT NULL`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ADD COLUMN IF NOT EXISTS "invoiceNumber" TEXT`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ADD COLUMN IF NOT EXISTS "customerEmail" TEXT`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ADD COLUMN IF NOT EXISTS "customerName" TEXT`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ADD COLUMN IF NOT EXISTS "customerPhone" TEXT`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ADD COLUMN IF NOT EXISTS "description" TEXT`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ADD COLUMN IF NOT EXISTS "type" TEXT`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ADD COLUMN IF NOT EXISTS "paymentReference" TEXT`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ADD COLUMN IF NOT EXISTS "paymentMethod" TEXT`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ADD COLUMN IF NOT EXISTS "paymentOperator" TEXT`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ADD COLUMN IF NOT EXISTS "bilingualEnabled" BOOLEAN NOT NULL DEFAULT false`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ADD COLUMN IF NOT EXISTS "issuedAt" TIMESTAMP(3)`);
+      await this.prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "helm_invoices_invoiceNumber_key" ON "helm_invoices"("invoiceNumber")`);
+      await this.prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "helm_invoices_customerEmail_idx" ON "helm_invoices"("customerEmail")`);
+      await this.prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "helm_invoices_type_idx" ON "helm_invoices"("type")`);
+      results.push({ migration: 'helm_invoices extended', status: 'OK' });
+      this.logger.log('✅ helm_invoices extended with billing fields');
+    } catch (err: any) {
+      results.push({ migration: 'helm_invoices extended', status: 'FAILED', error: err.message });
+      this.logger.error(`helm_invoices extension failed: ${err.message}`);
+    }
+
+    // 5. Vérifier que l'enum BillingEventType a les nouveaux types
     // (ALTER TYPE ne supporte pas IF NOT EXISTS en PG < 10, mais c'est OK depuis 9.3)
     try {
       await this.prisma.$executeRawUnsafe(

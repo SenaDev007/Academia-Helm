@@ -34,6 +34,7 @@ import {
 } from '@nestjs/common';
 import { Public } from '../auth/decorators/public.decorator';
 import { SubscriptionLifecycleService } from './services/subscription-lifecycle.service';
+import { StudentCountVerifierService } from './services/student-count-verifier.service';
 import { PrismaService } from '../database/prisma.service';
 
 @Controller('billing')
@@ -42,6 +43,7 @@ export class SubscriptionLifecycleController {
 
   constructor(
     private readonly lifecycleService: SubscriptionLifecycleService,
+    private readonly studentCountVerifier: StudentCountVerifierService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -68,6 +70,10 @@ export class SubscriptionLifecycleController {
     }
 
     await this.lifecycleService.runDailyCheck();
+
+    // Vérifier le nombre d'élèves réel vs plan d'abonnement
+    await this.studentCountVerifier.runDailyVerification();
+
     return { success: true, message: 'Daily check completed', timestamp: new Date().toISOString() };
   }
 

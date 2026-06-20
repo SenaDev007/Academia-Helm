@@ -1,16 +1,20 @@
 /**
  * Page Signup - Onboarding Wizard 4 Phases
- * 
- * Utilise le nouveau wizard d'onboarding avec :
+ *
+ * Utilise le wizard d'onboarding avec :
  * 1. Informations établissement
  * 2. Informations promoteur
- * 3. Plan & Options
- * 4. Paiement initial (FedaPay)
+ * 3. Plan & Options (plans dynamiques depuis pricing_plans)
+ * 4. Paiement initial (FeexPay)
+ *
+ * Layout : Header public + Footer public de Academia Helm
  */
 
 import type { Metadata } from 'next';
 import OnboardingWizard from '@/components/onboarding/OnboardingWizard';
 import { generateSEOMetadata } from '@/lib/seo';
+import { Header } from '@/components/ui/header-1';
+import { Footer2 } from '@/components/ui/footer-2';
 
 export const metadata: Metadata = generateSEOMetadata({
   title: 'Créer un compte établissement',
@@ -21,6 +25,13 @@ export const metadata: Metadata = generateSEOMetadata({
 });
 
 export default function Page() {
-  return <OnboardingWizard />;
+  return (
+    <>
+      <Header />
+      <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50/30">
+        <OnboardingWizard />
+      </main>
+      <Footer2 />
+    </>
+  );
 }
-

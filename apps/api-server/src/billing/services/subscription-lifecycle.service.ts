@@ -21,6 +21,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
 import { EmailService } from '../../communication/services/email.service';
 import { WhatsAppService } from '../../communication/services/whatsapp.service';
+import { StudentCountVerifierService } from './student-count-verifier.service';
 
 @Injectable()
 export class SubscriptionLifecycleService {
@@ -36,6 +37,7 @@ export class SubscriptionLifecycleService {
     private readonly emailService: EmailService,
     private readonly whatsappService: WhatsAppService,
     private readonly configService: ConfigService,
+    private readonly studentCountVerifier: StudentCountVerifierService,
   ) {}
 
   /**

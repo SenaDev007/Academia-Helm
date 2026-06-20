@@ -7,6 +7,7 @@ import { FeexPayController } from './feexpay.controller';
 import { SubscriptionService } from './services/subscription.service';
 import { SubscriptionLifecycleService } from './services/subscription-lifecycle.service';
 import { FeexPayService } from './services/feexpay.service';
+import { StudentCountVerifierService } from './services/student-count-verifier.service';
 import { BillingReminderService } from './services/billing-reminder.service';
 import { SubscriptionPlanSeedService } from './services/subscription-plan-seed.service';
 import { PricingConfigSeedService } from './services/pricing-config-seed.service';
@@ -31,6 +32,7 @@ import { OrionModule } from '../orion/orion.module';
     SubscriptionService,
     SubscriptionLifecycleService,
     FeexPayService,
+    StudentCountVerifierService,
     BillingReminderService,
     SubscriptionPlanSeedService,
     PricingConfigSeedService,
@@ -43,6 +45,7 @@ import { OrionModule } from '../orion/orion.module';
     SubscriptionService,
     SubscriptionLifecycleService,
     FeexPayService,
+    StudentCountVerifierService,
     BillingReminderService,
     PricingService,
     FedaPayService,

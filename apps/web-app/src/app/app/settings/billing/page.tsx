@@ -22,6 +22,8 @@ import {
   Loader2,
   ArrowRight,
   Zap,
+  Languages,
+  X,
 } from 'lucide-react';
 
 // Helper: récupère le tenantId depuis le cookie `x-tenant-id`
@@ -41,6 +43,14 @@ interface SubscriptionStatus {
   suspendedAt?: string;
   blockedAt?: string;
   reactivationFee?: number;
+}
+
+interface BilingualStatus {
+  enabled: boolean;
+  billingCycle: string;
+  monthlyAddon: number;
+  yearlyAddon: number;
+  subscriptionStatus: string;
 }
 
 function formatDate(date?: string): string {
@@ -81,9 +91,19 @@ function getStatusColor(status: string): string {
 export default function BillingPage() {
   const [currentTenantId, setCurrentTenantId] = useState<string | null>(null);
   const [subStatus, setSubStatus] = useState<SubscriptionStatus | null>(null);
+  const [bilingualStatus, setBilingualStatus] = useState<BilingualStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRenewing, setIsRenewing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  // État pour la section bilingue
+  const [bilingualModalOpen, setBilingualModalOpen] = useState(false);
+  const [bilingualAction, setBilingualAction] = useState<'activate' | 'deactivate' | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<'MOBILE_MONEY' | 'CARD'>('MOBILE_MONEY');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
+  const [isProcessingBilingual, setIsProcessingBilingual] = useState(false);
+  const [bilingualMessage, setBilingualMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const tid = getTenantIdFromCookie();
@@ -92,14 +112,28 @@ export default function BillingPage() {
       setIsLoading(false);
       return;
     }
-    fetch(`/api/billing/subscription-status/${tid}`, { cache: 'no-store' })
-      .then((r) => r.json())
-      .then((data) => {
-        setSubStatus(data);
+    Promise.all([
+      fetch(`/api/billing/subscription-status/${tid}`, { cache: 'no-store' }).then((r) => r.json()),
+      fetch(`/api/billing/bilingual-status/${tid}`, { cache: 'no-store' }).then((r) => r.json()),
+    ])
+      .then(([subData, bilingualData]) => {
+        setSubStatus(subData);
+        setBilingualStatus(bilingualData);
         setIsLoading(false);
       })
       .catch(() => setIsLoading(false));
   }, []);
+
+  const refreshBilingualStatus = async () => {
+    if (!currentTenantId) return;
+    try {
+      const res = await fetch(`/api/billing/bilingual-status/${currentTenantId}`, { cache: 'no-store' });
+      const data = await res.json();
+      setBilingualStatus(data);
+    } catch {
+      // ignore
+    }
+  };
 
   const handleRenew = async () => {
     setIsRenewing(true);
@@ -151,6 +185,96 @@ export default function BillingPage() {
       setMessage(err.message);
     } finally {
       setIsRenewing(false);
+    }
+  };
+
+  // Ouvrir la modal d'activation bilingue
+  const handleOpenActivateBilingual = () => {
+    setBilingualAction('activate');
+    setBilingualMessage(null);
+    setBilingualModalOpen(true);
+  };
+
+  // Ouvrir la modal de désactivation bilingue
+  const handleOpenDeactivateBilingual = () => {
+    setBilingualAction('deactivate');
+    setBilingualMessage(null);
+    setBilingualModalOpen(true);
+  };
+
+  // Confirmer l'activation bilingue avec paiement
+  const handleConfirmBilingual = async () => {
+    if (!currentTenantId) return;
+    if (bilingualAction === 'activate' && paymentMethod === 'MOBILE_MONEY' && !phoneNumber) {
+      setBilingualMessage('Numéro de téléphone requis pour Mobile Money');
+      return;
+    }
+    if (bilingualAction === 'activate' && !customerEmail) {
+      setBilingualMessage('Email client requis');
+      return;
+    }
+
+    setIsProcessingBilingual(true);
+    setBilingualMessage(null);
+
+    try {
+      if (bilingualAction === 'activate') {
+        // 1. Initier le paiement
+        const res = await fetch(`/api/billing/bilingual/activate/${currentTenantId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            paymentMethod,
+            phone: paymentMethod === 'MOBILE_MONEY' ? phoneNumber : undefined,
+            customer: { email: customerEmail },
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.message || 'Erreur lors du paiement');
+        }
+
+        // 2. Si paiement carte → rediriger vers paymentUrl
+        if (paymentMethod === 'CARD' && data.paymentUrl) {
+          window.location.href = data.paymentUrl;
+          return;
+        }
+
+        // 3. Si Mobile Money → confirmer immédiatement (simulé)
+        // En production, le webhook FeexPay confirmera automatiquement
+        const confirmRes = await fetch(`/api/billing/bilingual/confirm/${currentTenantId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reference: data.reference }),
+        });
+        const confirmData = await confirmRes.json();
+        if (confirmData.success) {
+          setBilingualMessage('✅ Option bilingue activée avec succès !');
+          await refreshBilingualStatus();
+          setTimeout(() => setBilingualModalOpen(false), 2000);
+        } else {
+          throw new Error(confirmData.message || 'Confirmation échouée');
+        }
+      } else if (bilingualAction === 'deactivate') {
+        // Désactivation — pas de paiement
+        const res = await fetch(`/api/billing/bilingual/deactivate/${currentTenantId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: 'Désactivation volontaire depuis les paramètres' }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          setBilingualMessage('✅ Option bilingue désactivée. La souscription bilingue est arrêtée.');
+          await refreshBilingualStatus();
+          setTimeout(() => setBilingualModalOpen(false), 2000);
+        } else {
+          throw new Error(data.message || 'Erreur lors de la désactivation');
+        }
+      }
+    } catch (err: any) {
+      setBilingualMessage(err.message);
+    } finally {
+      setIsProcessingBilingual(false);
     }
   };
 
@@ -307,6 +431,226 @@ export default function BillingPage() {
           </div>
         )}
       </div>
+
+      {/* Option bilingue */}
+      {bilingualStatus && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Languages className="w-5 h-5 text-gold-600" />
+                Option bilingue (Français + Anglais)
+              </h2>
+              <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                bilingualStatus.enabled
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : 'bg-slate-50 text-slate-700 border-slate-200'
+              }`}>
+                {bilingualStatus.enabled ? 'Active' : 'Inactive'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 text-sm mb-4">
+              <div>
+                <span className="text-slate-400 font-medium">Tarif mensuel</span>
+                <p className="font-bold text-slate-700">
+                  {bilingualStatus.monthlyAddon.toLocaleString('fr-FR')} FCFA / mois
+                </p>
+              </div>
+              <div>
+                <span className="text-slate-400 font-medium">Tarif annuel</span>
+                <p className="font-bold text-slate-700">
+                  {bilingualStatus.yearlyAddon.toLocaleString('fr-FR')} FCFA / an
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-500 mb-4">
+              L'option bilingue active les parcours académiques en Français et en Anglais pour votre école.
+              Les modules concernés (matières, classes, évaluations) pourront être configurés dans les deux langues.
+              {bilingualStatus.enabled
+                ? ' Désactivez à tout moment — la souscription s\'arrête immédiatement.'
+                : ' Activez maintenant avec paiement sécurisé via FeexPay.'}
+            </p>
+
+            {bilingualStatus.enabled ? (
+              <button
+                onClick={handleOpenDeactivateBilingual}
+                className="w-full sm:w-auto bg-rose-50 text-rose-700 border border-rose-200 px-6 py-3 rounded-xl font-bold text-sm hover:bg-rose-100 transition-colors flex items-center justify-center gap-2"
+              >
+                <X className="w-4 h-4" />
+                Désactiver l'option bilingue
+              </button>
+            ) : (
+              <button
+                onClick={handleOpenActivateBilingual}
+                disabled={bilingualStatus.subscriptionStatus === 'NONE'}
+                className="w-full sm:w-auto bg-gold-600 text-blue-900 px-6 py-3 rounded-xl font-bold text-sm hover:bg-gold-500 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm hover:shadow-md"
+              >
+                <Languages className="w-4 h-4" />
+                Activer l'option bilingue
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            )}
+            {bilingualStatus.subscriptionStatus === 'NONE' && (
+              <p className="text-xs text-amber-600 mt-2">
+                Souscrivez d'abord à un plan d'abonnement pour activer l'option bilingue.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal bilingue */}
+      {bilingualModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Languages className="w-5 h-5 text-gold-600" />
+                {bilingualAction === 'activate' ? 'Activer l\'option bilingue' : 'Désactiver l\'option bilingue'}
+              </h3>
+              <button
+                onClick={() => setBilingualModalOpen(false)}
+                className="text-slate-400 hover:text-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {bilingualAction === 'activate' && bilingualStatus && (
+              <div className="space-y-4">
+                <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+                  <p className="text-sm text-slate-700">
+                    Vous allez activer l'option bilingue pour{' '}
+                    <strong>
+                      {(bilingualStatus.billingCycle === 'YEARLY'
+                        ? bilingualStatus.yearlyAddon
+                        : bilingualStatus.monthlyAddon
+                      ).toLocaleString('fr-FR')} FCFA
+                    </strong>{' '}
+                    {bilingualStatus.billingCycle === 'YEARLY' ? '/ an' : '/ mois'}.
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Cycle de facturation actuel : {bilingualStatus.billingCycle === 'YEARLY' ? 'Annuel' : 'Mensuel'}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Méthode de paiement</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('MOBILE_MONEY')}
+                      className={`p-3 border-2 rounded-xl text-sm font-semibold transition-all ${
+                        paymentMethod === 'MOBILE_MONEY'
+                          ? 'border-gold-600 bg-gold-50 text-blue-900'
+                          : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                      }`}
+                    >
+                      Mobile Money
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('CARD')}
+                      className={`p-3 border-2 rounded-xl text-sm font-semibold transition-all ${
+                        paymentMethod === 'CARD'
+                          ? 'border-gold-600 bg-gold-50 text-blue-900'
+                          : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                      }`}
+                    >
+                      Carte bancaire
+                    </button>
+                  </div>
+                </div>
+
+                {paymentMethod === 'MOBILE_MONEY' && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Numéro de téléphone <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="tel"
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      placeholder="ex: 229XXXXXXXX"
+                      className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-gold-500 focus:border-gold-500 text-sm"
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Email <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    value={customerEmail}
+                    onChange={(e) => setCustomerEmail(e.target.value)}
+                    placeholder="votre@email.com"
+                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-gold-500 focus:border-gold-500 text-sm"
+                  />
+                </div>
+              </div>
+            )}
+
+            {bilingualAction === 'deactivate' && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                <p className="text-sm text-slate-700">
+                  Vous allez désactiver l'option bilingue. La souscription bilingue s'arrêtera immédiatement.
+                  Les parcours académiques en Anglais seront masqués (mais les données existantes seront préservées).
+                </p>
+                <p className="text-xs text-slate-500 mt-2">
+                  Aucun remboursement ne sera effectué pour le cycle en cours.
+                </p>
+              </div>
+            )}
+
+            {bilingualMessage && (
+              <div className={`mt-4 p-3 rounded-xl text-sm font-medium ${
+                bilingualMessage.startsWith('✅')
+                  ? 'bg-emerald-50 text-emerald-700'
+                  : 'bg-rose-50 text-rose-700'
+              }`}>
+                {bilingualMessage}
+              </div>
+            )}
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setBilingualModalOpen(false)}
+                disabled={isProcessingBilingual}
+                className="flex-1 bg-slate-100 text-slate-700 px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-slate-200 transition-colors disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleConfirmBilingual}
+                disabled={isProcessingBilingual}
+                className={`flex-1 px-4 py-2.5 rounded-xl font-bold text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2 ${
+                  bilingualAction === 'activate'
+                    ? 'bg-gold-600 text-blue-900 hover:bg-gold-500'
+                    : 'bg-rose-600 text-white hover:bg-rose-500'
+                }`}
+              >
+                {isProcessingBilingual ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : bilingualAction === 'activate' ? (
+                  <>
+                    <Zap className="w-4 h-4" />
+                    Payer et activer
+                  </>
+                ) : (
+                  <>
+                    <X className="w-4 h-4" />
+                    Confirmer la désactivation
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

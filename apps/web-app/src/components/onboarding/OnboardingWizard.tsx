@@ -46,6 +46,8 @@ import {
   DollarSign,
   Sparkles,
   TrendingDown,
+  GraduationCap,
+  Compass,
 } from 'lucide-react';
 import { HELM_PLANS, getRecommendedPlan, type HelmPlanKey, fetchPricingPlans, getPlanForStudentCount, type DynamicPricingPlan } from '@/lib/services/HelmPricingService';
 import { formatCurrency } from '@/lib/utils';
@@ -1461,17 +1463,24 @@ export default function OnboardingWizard() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50/30" style={{ marginTop: 0, paddingTop: 0 }}>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50/30">
       {/* Progress Bar — palette Academia Helm : navy + gold */}
-      <div className="bg-white border-b border-slate-200 shadow-sm" style={{ marginTop: 0, paddingTop: 0 }}>
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pb-4" style={{ paddingTop: 0 }}>
-          {/* Titre centré — navy institutionnel */}
-          <div className="text-center mb-6 pt-6">
-            <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-blue-900 to-blue-800 shadow-md mb-3">
-              <Sparkles className="w-6 h-6 text-gold-500" />
+      <div className="bg-white border-b border-slate-200 shadow-sm pt-14 md:pt-16">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pb-5">
+          {/* Titre centré — navy institutionnel + accent gold */}
+          <div className="text-center mb-5">
+            <div className="inline-flex items-center justify-center gap-2.5 mb-3">
+              <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-br from-blue-900 to-blue-800 shadow-md">
+                <GraduationCap className="w-6 h-6 text-gold-500" />
+              </div>
+              <div className="text-left">
+                <h1 className="text-xl font-bold text-blue-900 leading-tight">Créez votre école sur Academia Helm</h1>
+                <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
+                  <Compass className="w-3 h-3 text-gold-600" />
+                  Prenez le gouvernail de votre institution
+                </p>
+              </div>
             </div>
-            <h1 className="text-2xl font-bold text-blue-900">Création de votre école sur Academia Helm</h1>
-            <p className="text-sm text-slate-500 mt-1">Prenez le gouvernail de votre institution en quelques étapes</p>
           </div>
           
           {/* Progress Steps — dots navy/gold */}
@@ -1479,14 +1488,14 @@ export default function OnboardingWizard() {
             {[1, 2, 3, 4].map((s) => (
               <div key={s} className="flex items-center flex-1">
                 <div className="flex flex-col items-center flex-1">
-                  <div className={`flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all font-semibold ${
+                  <div className={`flex items-center justify-center w-11 h-11 rounded-full border-2 transition-all font-semibold ${
                     step >= s 
                       ? 'bg-blue-900 border-blue-900 text-white shadow-md' 
                       : 'bg-white border-slate-300 text-slate-500'
                   }`}>
-                    {step > s ? <CheckCircle className="w-6 h-6 text-gold-500" /> : <span className="text-base font-bold">{s}</span>}
+                    {step > s ? <CheckCircle className="w-5 h-5 text-gold-500" /> : <span className="text-sm font-bold">{s}</span>}
                   </div>
-                  <span className={`mt-2 text-xs font-medium text-center ${
+                  <span className={`mt-1.5 text-xs font-medium text-center ${
                     step >= s ? 'text-blue-900' : 'text-slate-500'
                   }`}>
                     {s === 1 && 'Établissement'}
@@ -1844,7 +1853,7 @@ export default function OnboardingWizard() {
                 <button
                   onClick={handleNext}
                   disabled={isSubmitting}
-                  className="px-6 py-3 bg-crimson-600 text-white rounded-md font-semibold hover:bg-crimson-500 transition-all duration-300 flex items-center disabled:opacity-50 shadow-sm hover:shadow-md"
+                  className="px-6 py-3 bg-gold-600 text-blue-900 rounded-md font-semibold hover:bg-gold-500 transition-all duration-300 flex items-center disabled:opacity-50 shadow-sm hover:shadow-md"
                 >
                   {isSubmitting ? (
                     <>
@@ -2371,7 +2380,7 @@ export default function OnboardingWizard() {
                 <button
                   onClick={handleNext}
                   disabled={isSubmitting}
-                  className="px-6 py-3 bg-crimson-600 text-white rounded-md font-semibold hover:bg-crimson-500 transition-all duration-300 flex items-center disabled:opacity-50 shadow-sm hover:shadow-md"
+                  className="px-6 py-3 bg-gold-600 text-blue-900 rounded-md font-semibold hover:bg-gold-500 transition-all duration-300 flex items-center disabled:opacity-50 shadow-sm hover:shadow-md"
                 >
                   {isSubmitting ? (
                     <>
@@ -2698,7 +2707,7 @@ export default function OnboardingWizard() {
                 <button
                   onClick={handleNext}
                   disabled={isSubmitting}
-                  className="px-6 py-3 bg-crimson-600 text-white rounded-md font-semibold hover:bg-crimson-500 transition-all duration-300 flex items-center disabled:opacity-50 shadow-sm hover:shadow-md"
+                  className="px-6 py-3 bg-gold-600 text-blue-900 rounded-md font-semibold hover:bg-gold-500 transition-all duration-300 flex items-center disabled:opacity-50 shadow-sm hover:shadow-md"
                 >
                   {isSubmitting ? (
                     <>
@@ -2813,7 +2822,7 @@ export default function OnboardingWizard() {
                 <button
                   onClick={handlePayment}
                   disabled={isSubmitting || !initialPayment}
-                      className="px-6 py-4 bg-gradient-to-r from-crimson-600 to-crimson-500 text-white rounded-xl font-semibold hover:from-crimson-500 hover:to-crimson-600 transition-all duration-300 flex items-center justify-center disabled:opacity-50 shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
+                      className="px-6 py-4 bg-gradient-to-r from-gold-600 to-gold-500 text-blue-900 rounded-xl font-semibold hover:from-gold-500 hover:to-gold-600 transition-all duration-300 flex items-center justify-center disabled:opacity-50 shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
                 >
                   {isSubmitting ? (
                     <>

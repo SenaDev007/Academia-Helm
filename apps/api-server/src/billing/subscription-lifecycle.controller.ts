@@ -35,6 +35,8 @@ import {
 import { Public } from '../auth/decorators/public.decorator';
 import { SubscriptionLifecycleService } from './services/subscription-lifecycle.service';
 import { StudentCountVerifierService } from './services/student-count-verifier.service';
+import { FeexPayService } from './services/feexpay.service';
+import { PricingService } from './services/pricing.service';
 import { PrismaService } from '../database/prisma.service';
 
 @Controller('billing')
@@ -45,6 +47,8 @@ export class SubscriptionLifecycleController {
     private readonly lifecycleService: SubscriptionLifecycleService,
     private readonly studentCountVerifier: StudentCountVerifierService,
     private readonly prisma: PrismaService,
+    private readonly feexpayService: FeexPayService,
+    private readonly pricingService: PricingService,
   ) {}
 
   /**
@@ -290,5 +294,276 @@ export class SubscriptionLifecycleController {
     }
 
     return { success: true, message: 'Enrollment unblocked successfully' };
+  }
+
+  // ============================================================================
+  // OPTION BILINGUE — Activation/Désactivation depuis le module paramètres
+  // ============================================================================
+
+  /**
+   * GET /api/billing/bilingual-status/:tenantId
+   * Retourne le statut de l'option bilingue pour un tenant.
+   */
+  @Public()
+  @Get('bilingual-status/:tenantId')
+  async getBilingualStatus(@Param('tenantId') tenantId: string) {
+    const sub = await this.prisma.subscription.findFirst({
+      where: { tenantId },
+      select: {
+        bilingualEnabled: true,
+        billingCycle: true,
+        status: true,
+      },
+    });
+
+    // Récupérer les prix bilingue depuis pricing_plans (table dynamique)
+    const bilingualPlan = await this.prisma.pricingPlan.findFirst({
+      where: { code: 'BILINGUAL' as any },
+    });
+
+    // Fallback si le plan bilingue n'existe pas en DB
+    const monthlyAddon = (bilingualPlan as any)?.bilingualMonthly ?? 10000;
+    const yearlyAddon = (bilingualPlan as any)?.bilingualYearly ?? 100000;
+
+    return {
+      enabled: sub?.bilingualEnabled || false,
+      billingCycle: sub?.billingCycle || 'MONTHLY',
+      monthlyAddon,
+      yearlyAddon,
+      subscriptionStatus: sub?.status || 'NONE',
+    };
+  }
+
+  /**
+   * POST /api/billing/bilingual/activate/:tenantId
+   * Active l'option bilingue avec paiement immédiat via FeexPay.
+   *
+   * Body: {
+   *   paymentMethod: 'MOBILE_MONEY' | 'CARD',
+   *   phone?: string,        // requis si MOBILE_MONEY
+   *   customer: { email: string, firstname?: string, lastname?: string }
+   * }
+   *
+   * Workflow :
+   *   1. Vérifie que le tenant a un abonnement actif
+   *   2. Calcule le montant : bilingualMonthly (MONTHLY) ou bilingualYearly (YEARLY)
+   *   3. Crée une transaction FeexPay
+   *   4. Retourne l'URL/les données de checkout
+   *   5. Le webhook FeexPay confirmera le paiement → on active bilingualEnabled
+   */
+  @Public()
+  @Post('bilingual/activate/:tenantId')
+  async activateBilingual(
+    @Param('tenantId') tenantId: string,
+    @Body() body: {
+      paymentMethod: 'MOBILE_MONEY' | 'CARD';
+      phone?: string;
+      customer: { email: string; firstname?: string; lastname?: string };
+    },
+  ) {
+    if (!body?.paymentMethod || !body?.customer?.email) {
+      throw new BadRequestException('paymentMethod et customer.email sont requis');
+    }
+
+    const sub = await this.prisma.subscription.findFirst({
+      where: { tenantId },
+    });
+    if (!sub) {
+      throw new BadRequestException('Aucun abonnement trouvé pour ce tenant');
+    }
+    if (sub.bilingualEnabled) {
+      return { success: true, message: 'Option bilingue déjà active', alreadyActive: true };
+    }
+
+    // Récupérer le prix bilingue depuis pricing_plans
+    const bilingualPlan = await this.prisma.pricingPlan.findFirst({
+      where: { code: 'BILINGUAL' as any },
+    });
+    const monthlyAddon = (bilingualPlan as any)?.bilingualMonthly ?? 10000;
+    const yearlyAddon = (bilingualPlan as any)?.bilingualYearly ?? 100000;
+
+    const amount = sub.billingCycle === 'YEARLY' ? yearlyAddon : monthlyAddon;
+    if (!amount) {
+      throw new BadRequestException('Montant bilingue introuvable');
+    }
+
+    // Créer une transaction FeexPay
+    try {
+      const paymentResult = body.paymentMethod === 'MOBILE_MONEY'
+        ? await this.feexpayService.createMobileMoneyPayment({
+            amount,
+            description: `Option bilingue - ${sub.billingCycle === 'YEARLY' ? 'Annuel' : 'Mensuel'}`,
+            phoneNumber: body.phone!,
+            email: body.customer.email,
+            firstName: body.customer.firstname,
+            lastName: body.customer.lastname,
+          })
+        : await this.feexpayService.createCardPayment({
+            amount,
+            description: `Option bilingue - ${sub.billingCycle === 'YEARLY' ? 'Annuel' : 'Mensuel'}`,
+            email: body.customer.email,
+            firstName: body.customer.firstname,
+            lastName: body.customer.lastname,
+          });
+
+      // Enregistrer l'intention de paiement pour traitement webhook
+      await this.prisma.billingEvent.create({
+        data: {
+          tenantId,
+          subscriptionId: sub.id,
+          type: 'BILINGUAL_ACTIVATION',
+          amount,
+          channel: 'FEEXPAY',
+          reference: paymentResult.reference || `bilingual-${tenantId}-${Date.now()}`,
+          metadata: {
+            action: 'ACTIVATE_BILINGUAL',
+            feexpayStatus: paymentResult.status,
+            billingCycle: sub.billingCycle,
+            customer: body.customer,
+          },
+        },
+      });
+
+      this.logger.log(`Bilingual activation initiated for tenant ${tenantId}: amount=${amount}, method=${body.paymentMethod}, ref=${paymentResult.reference}`);
+
+      return {
+        success: true,
+        amount,
+        paymentMethod: body.paymentMethod,
+        reference: paymentResult.reference,
+        paymentUrl: paymentResult.paymentUrl,
+        status: paymentResult.status,
+      };
+    } catch (err: any) {
+      this.logger.error(`Bilingual activation payment failed: ${err.message}`, err.stack);
+      throw new BadRequestException(`Échec de l'initialisation du paiement: ${err.message}`);
+    }
+  }
+
+  /**
+   * POST /api/billing/bilingual/confirm/:tenantId
+   * Confirme l'activation bilingue après paiement réussi (appelé par le webhook
+   * FeexPay ou manuellement par l'admin après vérification).
+   *
+   * Body: { transactionId?: string, reference?: string }
+   */
+  @Public()
+  @Post('bilingual/confirm/:tenantId')
+  async confirmBilingualActivation(
+    @Param('tenantId') tenantId: string,
+    @Body() body: { transactionId?: string; reference?: string },
+    @Headers('x-platform-admin-email') adminEmail?: string,
+  ) {
+    if (adminEmail) {
+      this.logger.log(`Bilingual activation confirmed for tenant ${tenantId} by admin ${adminEmail}`);
+    }
+
+    const sub = await this.prisma.subscription.findFirst({
+      where: { tenantId },
+    });
+    if (!sub) {
+      throw new BadRequestException('Aucun abonnement trouvé');
+    }
+
+    // Activer l'option bilingue
+    await this.prisma.subscription.update({
+      where: { id: sub.id },
+      data: { bilingualEnabled: true },
+    });
+
+    // Créer les tracks académiques EN si pas déjà présents
+    const existingEnTrack = await this.prisma.academicTrack.findFirst({
+      where: { tenantId, code: 'EN' },
+    });
+    if (!existingEnTrack) {
+      await this.prisma.academicTrack.create({
+        data: {
+          tenantId,
+          code: 'EN',
+          name: 'Anglais',
+          description: 'Parcours académique en anglais',
+          order: 1,
+          isDefault: false,
+          isActive: true,
+          metadata: { language: 'en', bilingual: true },
+        },
+      });
+      this.logger.log(`✅ Created EN academic track for tenant ${tenantId}`);
+    }
+
+    // Enregistrer l'événement
+    await this.prisma.billingEvent.create({
+      data: {
+        tenantId,
+        subscriptionId: sub.id,
+        type: 'BILINGUAL_ACTIVATED',
+        amount: 0,
+        channel: 'FEEXPAY',
+        reference: body.reference || body.transactionId || `bilingual-confirm-${tenantId}-${Date.now()}`,
+        metadata: {
+          action: 'BILINGUAL_CONFIRMED',
+          transactionId: body.transactionId,
+          confirmedBy: adminEmail || 'webhook',
+        },
+      },
+    });
+
+    this.logger.log(`✅ Bilingual option activated for tenant ${tenantId}`);
+    return { success: true, message: 'Option bilingue activée avec succès' };
+  }
+
+  /**
+   * POST /api/billing/bilingual/deactivate/:tenantId
+   * Désactive l'option bilingue — arrête la souscription bilingue immédiatement.
+   * Aucun remboursement (la désactivation prend effet au prochain cycle).
+   *
+   * Body: { reason?: string }
+   */
+  @Public()
+  @Post('bilingual/deactivate/:tenantId')
+  async deactivateBilingual(
+    @Param('tenantId') tenantId: string,
+    @Body() body: { reason?: string },
+  ) {
+    const sub = await this.prisma.subscription.findFirst({
+      where: { tenantId },
+    });
+    if (!sub) {
+      throw new BadRequestException('Aucun abonnement trouvé');
+    }
+    if (!sub.bilingualEnabled) {
+      return { success: true, message: 'Option bilingue déjà désactivée', alreadyInactive: true };
+    }
+
+    // Désactiver l'option bilingue
+    await this.prisma.subscription.update({
+      where: { id: sub.id },
+      data: { bilingualEnabled: false },
+    });
+
+    // Désactiver (mais ne pas supprimer) les tracks EN — les données existantes restent
+    await this.prisma.academicTrack.updateMany({
+      where: { tenantId, code: 'EN' },
+      data: { isActive: false },
+    });
+
+    // Enregistrer l'événement
+    await this.prisma.billingEvent.create({
+      data: {
+        tenantId,
+        subscriptionId: sub.id,
+        type: 'BILINGUAL_DEACTIVATED',
+        amount: 0,
+        channel: 'MANUAL',
+        reference: `bilingual-deactivate-${tenantId}-${Date.now()}`,
+        metadata: {
+          action: 'BILINGUAL_DEACTIVATED',
+          reason: body?.reason || 'User requested deactivation',
+        },
+      },
+    });
+
+    this.logger.log(`✅ Bilingual option deactivated for tenant ${tenantId} (reason: ${body?.reason || 'N/A'})`);
+    return { success: true, message: 'Option bilingue désactivée. La souscription bilingue est arrêtée.' };
   }
 }

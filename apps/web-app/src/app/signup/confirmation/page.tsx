@@ -59,7 +59,7 @@ export default function ConfirmationPage() {
 
               <Link
                 href="https://academiahelm.com/portal"
-                className="btn-primary-crimson block w-full py-3 px-6 rounded-xl flex items-center justify-center"
+                className="btn-primary-gold block w-full py-3 px-6 rounded-xl flex items-center justify-center"
               >
                 <ExternalLink className="w-5 h-5 mr-2" />
                 Accéder à mon portail
@@ -83,7 +83,7 @@ export default function ConfirmationPage() {
               <div className="flex flex-col gap-3">
                 <Link
                   href="/signup"
-                  className="btn-primary-crimson block w-full py-3 px-6 rounded-xl flex items-center justify-center"
+                  className="btn-primary-gold block w-full py-3 px-6 rounded-xl flex items-center justify-center"
                 >
                   <RefreshCw className="w-5 h-5 mr-2" />
                   Réessayer

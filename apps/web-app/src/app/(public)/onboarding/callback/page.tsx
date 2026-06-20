@@ -62,7 +62,7 @@ export default function OnboardingCallbackPage() {
           <div className="space-y-4">
             <Link
               href={loginUrl}
-              className="btn-primary-crimson inline-flex items-center justify-center w-full sm:w-auto"
+              className="btn-primary-gold inline-flex items-center justify-center w-full sm:w-auto"
             >
               <LogIn className="w-5 h-5 mr-2" />
               Se connecter à mon espace

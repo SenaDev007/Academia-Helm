@@ -138,6 +138,11 @@ body {
     @apply bg-crimson-600 text-white px-6 py-3 rounded-md font-semibold hover:bg-crimson-500 transition-colors;
   }
 
+  /* CTA principal Academia Helm — gold premium (≤5% de l'UI) */
+  .btn-primary-gold {
+    @apply bg-gold-600 text-blue-900 px-6 py-3 rounded-md font-semibold hover:bg-gold-500 transition-colors shadow-sm hover:shadow-md;
+  }
+
   .btn-secondary {
     @apply bg-gray-200 text-gray-900 px-6 py-3 rounded-md font-semibold hover:bg-gray-300 transition-colors;
   }

@@ -50,7 +50,7 @@ export default function OnboardingErrorPage() {
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Link
                 href="/signup"
-                className="btn-primary-crimson inline-flex items-center justify-center"
+                className="btn-primary-gold inline-flex items-center justify-center"
               >
                 <RefreshCw className="w-5 h-5 mr-2" />
                 Réessayer

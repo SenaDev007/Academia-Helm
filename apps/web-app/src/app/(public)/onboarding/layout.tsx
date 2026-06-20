@@ -16,8 +16,6 @@ export default function OnboardingLayout({
   return (
     <>
       <Header />
-      {/* Spacer pour le header fixe (responsive h-14 md:h-16) */}
-      <div className="h-14 md:h-16" />
       <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50/30">
         {children}
       </main>

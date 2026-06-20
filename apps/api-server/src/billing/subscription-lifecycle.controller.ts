@@ -656,43 +656,45 @@ export class SubscriptionLifecycleController {
       this.logger.error(`logo_url failed: ${err.message}`);
     }
 
-    // 3. bilingualEnabled sur helm_subscriptions
+    // 3. bilingualEnabled sur HelmSubscription
+    // Note: la table s'appelle "HelmSubscription" (PascalCase, pas de @@map)
     try {
       await this.prisma.$executeRawUnsafe(
-        `ALTER TABLE "helm_subscriptions" ADD COLUMN IF NOT EXISTS "bilingualEnabled" BOOLEAN NOT NULL DEFAULT false`,
+        `ALTER TABLE "HelmSubscription" ADD COLUMN IF NOT EXISTS "bilingualEnabled" BOOLEAN NOT NULL DEFAULT false`,
       );
-      results.push({ migration: 'bilingualEnabled (helm_subscriptions)', status: 'OK' });
+      results.push({ migration: 'bilingualEnabled (HelmSubscription)', status: 'OK' });
       this.logger.log('✅ bilingualEnabled column ensured');
     } catch (err: any) {
-      results.push({ migration: 'bilingualEnabled (helm_subscriptions)', status: 'FAILED', error: err.message });
+      results.push({ migration: 'bilingualEnabled (HelmSubscription)', status: 'FAILED', error: err.message });
       this.logger.error(`bilingualEnabled failed: ${err.message}`);
     }
 
-    // 4. Étendre helm_invoices (champs facturation complète)
+    // 4. Étendre HelmInvoice (champs facturation complète)
+    // Note: la table s'appelle "HelmInvoice" (PascalCase, pas de @@map)
     try {
-      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ALTER COLUMN "subscriptionId" DROP NOT NULL`);
-      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ALTER COLUMN "plan" DROP NOT NULL`);
-      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ALTER COLUMN "billingCycle" DROP NOT NULL`);
-      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ALTER COLUMN "period" DROP NOT NULL`);
-      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ADD COLUMN IF NOT EXISTS "invoiceNumber" TEXT`);
-      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ADD COLUMN IF NOT EXISTS "customerEmail" TEXT`);
-      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ADD COLUMN IF NOT EXISTS "customerName" TEXT`);
-      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ADD COLUMN IF NOT EXISTS "customerPhone" TEXT`);
-      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ADD COLUMN IF NOT EXISTS "description" TEXT`);
-      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ADD COLUMN IF NOT EXISTS "type" TEXT`);
-      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ADD COLUMN IF NOT EXISTS "paymentReference" TEXT`);
-      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ADD COLUMN IF NOT EXISTS "paymentMethod" TEXT`);
-      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ADD COLUMN IF NOT EXISTS "paymentOperator" TEXT`);
-      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ADD COLUMN IF NOT EXISTS "bilingualEnabled" BOOLEAN NOT NULL DEFAULT false`);
-      await this.prisma.$executeRawUnsafe(`ALTER TABLE "helm_invoices" ADD COLUMN IF NOT EXISTS "issuedAt" TIMESTAMP(3)`);
-      await this.prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "helm_invoices_invoiceNumber_key" ON "helm_invoices"("invoiceNumber")`);
-      await this.prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "helm_invoices_customerEmail_idx" ON "helm_invoices"("customerEmail")`);
-      await this.prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "helm_invoices_type_idx" ON "helm_invoices"("type")`);
-      results.push({ migration: 'helm_invoices extended', status: 'OK' });
-      this.logger.log('✅ helm_invoices extended with billing fields');
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "HelmInvoice" ALTER COLUMN "subscriptionId" DROP NOT NULL`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "HelmInvoice" ALTER COLUMN "plan" DROP NOT NULL`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "HelmInvoice" ALTER COLUMN "billingCycle" DROP NOT NULL`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "HelmInvoice" ALTER COLUMN "period" DROP NOT NULL`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "HelmInvoice" ADD COLUMN IF NOT EXISTS "invoiceNumber" TEXT`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "HelmInvoice" ADD COLUMN IF NOT EXISTS "customerEmail" TEXT`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "HelmInvoice" ADD COLUMN IF NOT EXISTS "customerName" TEXT`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "HelmInvoice" ADD COLUMN IF NOT EXISTS "customerPhone" TEXT`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "HelmInvoice" ADD COLUMN IF NOT EXISTS "description" TEXT`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "HelmInvoice" ADD COLUMN IF NOT EXISTS "type" TEXT`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "HelmInvoice" ADD COLUMN IF NOT EXISTS "paymentReference" TEXT`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "HelmInvoice" ADD COLUMN IF NOT EXISTS "paymentMethod" TEXT`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "HelmInvoice" ADD COLUMN IF NOT EXISTS "paymentOperator" TEXT`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "HelmInvoice" ADD COLUMN IF NOT EXISTS "bilingualEnabled" BOOLEAN NOT NULL DEFAULT false`);
+      await this.prisma.$executeRawUnsafe(`ALTER TABLE "HelmInvoice" ADD COLUMN IF NOT EXISTS "issuedAt" TIMESTAMP(3)`);
+      await this.prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "HelmInvoice_invoiceNumber_key" ON "HelmInvoice"("invoiceNumber")`);
+      await this.prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "HelmInvoice_customerEmail_idx" ON "HelmInvoice"("customerEmail")`);
+      await this.prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "HelmInvoice_type_idx" ON "HelmInvoice"("type")`);
+      results.push({ migration: 'HelmInvoice extended', status: 'OK' });
+      this.logger.log('✅ HelmInvoice extended with billing fields');
     } catch (err: any) {
-      results.push({ migration: 'helm_invoices extended', status: 'FAILED', error: err.message });
-      this.logger.error(`helm_invoices extension failed: ${err.message}`);
+      results.push({ migration: 'HelmInvoice extended', status: 'FAILED', error: err.message });
+      this.logger.error(`HelmInvoice extension failed: ${err.message}`);
     }
 
     // 5. Vérifier que l'enum BillingEventType a les nouveaux types

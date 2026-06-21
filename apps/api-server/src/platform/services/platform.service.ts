@@ -198,7 +198,7 @@ export class PlatformService {
           schools: { select: { city: true } },
           // helmSubscriptions est une relation 1-to-1 (singulière) — pas de take/orderBy
           helmSubscriptions: {
-            select: { plan: true, status: true, currentPeriodEnd: true },
+            select: { plan: true, status: true, currentPeriodEnd: true, billingCycle: true, bilingualEnabled: true, trialEnd: true },
           },
         },
       }),
@@ -228,7 +228,7 @@ export class PlatformService {
         slug: t.slug,
         subdomain: t.subdomain,
         country: t.country?.name || '—',
-        city: t.schools?.[0]?.city || '—',
+        city: (t.schools as any)?.city || '—',
         plan,
         planStatus: sub?.status || null,
         billingCycle: sub?.billingCycle || null,

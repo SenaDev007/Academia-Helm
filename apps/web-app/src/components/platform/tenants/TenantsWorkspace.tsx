@@ -339,7 +339,7 @@ export default function TenantsWorkspace() {
                   <th className="px-4 py-4 text-xs font-bold text-slate-500 uppercase whitespace-nowrap">Statut</th>
                   <th className="px-4 py-4 text-xs font-bold text-slate-500 uppercase whitespace-nowrap">Jours restants</th>
                   <th className="px-4 py-4 text-xs font-bold text-slate-500 uppercase whitespace-nowrap">Élèves</th>
-                  <th className="px-4 py-4 text-xs font-bold text-slate-500 uppercase whitespace-nowrap">Drapeaux</th>
+                  <th className="px-4 py-4 text-xs font-bold text-slate-500 uppercase whitespace-nowrap">Options</th>
                   <th className="px-4 py-4 text-xs font-bold text-slate-500 uppercase whitespace-nowrap">Expiration</th>
                   <th className="px-4 py-4 text-xs font-bold text-slate-500 uppercase whitespace-nowrap">Actions</th>
                 </tr>

@@ -324,7 +324,27 @@ export class ContractPdfService {
       generatedTime: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
     };
 
-    // 5. Compiler le template Handlebars → HTML
+    // 5. Nettoyer le template des restes de variables {{}} mal formées
+    // (peut arriver si des articles ont été sauvegardés avec des valeurs
+    // au lieu de variables, et que ces valeurs contiennent des accolades)
+    // Remplacer les {{nombre}} ou {{texte}} qui ne sont pas des helpers connus
+    // par leur valeur littérale (enlever les accolades)
+    const knownHelpers = ['if', 'each', 'unless', 'else', 'with', 'lookup', 'log', 'block', 'partial', 'content', 'insert', 'eq', 'ne', 'gt', 'lt', 'and', 'or', 'not'];
+    templateSource = templateSource.replace(/\{\{([^}]+)\}\}/g, (match, inner) => {
+      const trimmed = inner.trim();
+      const firstWord = trimmed.split(/\s+/)[0];
+      // Si c'est un helper connu, garder tel quel
+      if (knownHelpers.includes(firstWord)) return match;
+      // Si c'est une variable connue dans templateVars, garder tel quel
+      if (templateVars.hasOwnProperty(trimmed)) return match;
+      // Si c'est une variable avec un point (ex: contract.id), garder
+      if (trimmed.includes('.')) return match;
+      // Sinon, c'est probablement une valeur résiduelle — enlever les accolades
+      this.logger.warn(`Removing unknown Handlebars expression: ${match}`);
+      return trimmed;
+    });
+
+    // 6. Compiler le template Handlebars → HTML
     const compiledHtml = Handlebars.compile(templateSource)(templateVars);
 
     // 6. Générer le PDF via Puppeteer Pool
@@ -521,6 +541,17 @@ export class ContractPdfService {
       generatedAt: new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }),
       generatedTime: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
     };
+
+    // Nettoyer le template (même logique que generateContractPdf)
+    const knownHelpers2 = ['if', 'each', 'unless', 'else', 'with', 'lookup', 'log', 'block', 'partial', 'content', 'insert', 'eq', 'ne', 'gt', 'lt', 'and', 'or', 'not'];
+    templateSource = templateSource.replace(/\{\{([^}]+)\}\}/g, (match, inner) => {
+      const trimmed = inner.trim();
+      const firstWord = trimmed.split(/\s+/)[0];
+      if (knownHelpers2.includes(firstWord)) return match;
+      if (templateVars.hasOwnProperty(trimmed)) return match;
+      if (trimmed.includes('.')) return match;
+      return trimmed;
+    });
 
     const html = Handlebars.compile(templateSource)(templateVars);
     return { html, contract, templateVars };

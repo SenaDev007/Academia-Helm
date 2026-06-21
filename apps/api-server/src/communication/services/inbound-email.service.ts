@@ -26,10 +26,11 @@
  * ============================================================================
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, forwardRef, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
 import { EmailLogService } from './email-log.service';
+import { EmailService } from './email.service';
 
 export interface InboundEmailPayload {
   // Adresse `to` qui a reçu la réponse (ex: log_abc123@replies.academiahelm.com)
@@ -73,6 +74,8 @@ export class InboundEmailService {
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
     private readonly emailLogService: EmailLogService,
+    @Inject(forwardRef(() => EmailService))
+    private readonly emailService: EmailService,
   ) {}
 
   /**
@@ -258,33 +261,41 @@ export class InboundEmailService {
 
     if (recruiter?.email) {
       try {
-        // Réutiliser EmailService pour envoyer la notification
-        // (sans le wrapper categorized pour éviter une boucle de logs)
-        // On importe dynamiquement pour éviter la circular dep
-        const { EmailService } = await import('./email.service');
-        // Pas d'injection directe ici — on doit passer par Prisma pour logguer
-        // manuellement cette notification (elle-même sera logguée)
-        // Pour simplifier, on délègue à l'EmailService qu'on récupère via
-        // une lazy injection plus tard. Pour l'instant, on logge seulement.
+        const fromEmail = this.configService.get<string>('EMAIL_FROM_NOREPLY') || 'noreply@academiahelm.com';
+        const replyToSubject = `🔄 Réponse reçue — ${inboundEmail.subject || originalEmail.subject}`;
+
+        // Construire le HTML de la notification
+        const notificationHtml = `
+          <div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+            <div style="background:#0D1F6E;color:#fff;padding:20px;border-radius:8px 8px 0 0;">
+              <h2 style="margin:0;font-size:18px;">🔄 Réponse reçue</h2>
+              <p style="margin:5px 0 0;font-size:13px;color:#F5A623;">Un candidat a répondu à un email</p>
+            </div>
+            <div style="background:#f8fafc;padding:20px;border:1px solid #e2e8f0;border-radius:0 0 8px 8px;">
+              <table style="width:100%;font-size:14px;color:#334155;">
+                <tr><td style="padding:4px 0;font-weight:bold;width:120px;">De :</td><td>${inboundEmail.fromName || ''} &lt;${inboundEmail.fromEmail}&gt;</td></tr>
+                <tr><td style="padding:4px 0;font-weight:bold;">Sujet original :</td><td>${originalEmail.subject || 'N/A'}</td></tr>
+                <tr><td style="padding:4px 0;font-weight:bold;">Date :</td><td>${new Date(inboundEmail.receivedAt).toLocaleString('fr-FR')}</td></tr>
+              </table>
+              <hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0;" />
+              <h3 style="margin:0 0 8px;font-size:14px;color:#0D1F6E;">Message du candidat :</h3>
+              <div style="background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:12px;font-size:13px;color:#475569;line-height:1.6;white-space:pre-wrap;">${inboundEmail.textBody || inboundEmail.htmlBody || '(Message vide)'}</div>
+              <p style="margin:16px 0 0;font-size:12px;color:#94a3b8;">Cet email a été envoyé automatiquement par Academia Helm. Vous pouvez répondre directement au candidat depuis votre boîte mail.</p>
+            </div>
+          </div>`;
+
+        await this.emailService.sendEmail({
+          to: recruiter.email,
+          subject: replyToSubject,
+          html: notificationHtml,
+          from: fromEmail,
+          fromName: 'Academia Helm — Réponses',
+          replyTo: inboundEmail.fromEmail,
+        });
+
         this.logger.log(
-          `[NOTIFICATION] Réponse de ${inboundEmail.fromEmail} reçue sur l'email "${originalEmail.subject}" — ` +
-            `notifier le recruteur ${recruiter.email} (à implémenter via EmailService.sendCategorized)`,
+          `[NOTIFICATION] Réponse de ${inboundEmail.fromEmail} transférée au recruteur ${recruiter.email} — sujet: "${replyToSubject}"`,
         );
-        // TODO: une fois EmailService injectable ici, appeler:
-        // await this.emailService.sendCategorized({
-        //   tenantId,
-        //   category: 'SYSTEM',
-        //   subCategory: 'inbound_reply_notification',
-        //   module: 'communication',
-        //   to: recruiter.email,
-        //   toName: recruiter.fullName,
-        //   recipientType: 'STAFF',
-        //   subject: `[Réponse reçue] ${inboundEmail.subject}`,
-        //   html: `...`,
-        //   triggeredBy: 'SYSTEM',
-        //   relatedEntityId: inboundEmail.id,
-        //   relatedEntityType: 'InboundEmail',
-        // });
         sent++;
       } catch (err: any) {
         this.logger.error(`Failed to notify recruiter: ${err.message}`);

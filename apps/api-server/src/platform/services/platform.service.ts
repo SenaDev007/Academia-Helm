@@ -55,15 +55,8 @@ export class PlatformService {
       recentTenants,
     ] = await Promise.all([
       this.prisma.tenant.count({ where: { status: { not: 'WITHDRAWN' } } }),
-      this.prisma.tenant.count({
-        where: {
-          status: { not: 'WITHDRAWN' },
-          OR: [
-            { subscriptionStatus: { in: ['ACTIVE', 'TRIAL', 'TRIAL_ACTIVE'] } },
-            { subscriptionStatus: null }, // anciens tenants sans subscriptionStatus
-          ],
-        },
-      }),
+      // Compter tous les tenants non-withdrawn comme actifs (anciens + nouveaux)
+      this.prisma.tenant.count({ where: { status: { not: 'WITHDRAWN' } } }),
       this.prisma.tenant.aggregate({
         where: { status: { not: 'WITHDRAWN' } },
         _sum: { studentCountCache: true },

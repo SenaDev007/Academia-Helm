@@ -333,15 +333,15 @@ export default function TenantsWorkspace() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50/50 border-b border-slate-100">
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">École</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Pays / Ville</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Plan</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Statut abonnement</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Jours restants</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Élèves</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Drapeaux</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Expiration</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Actions</th>
+                  <th className="px-4 py-4 text-xs font-bold text-slate-500 uppercase min-w-[280px]">École</th>
+                  <th className="px-4 py-4 text-xs font-bold text-slate-500 uppercase whitespace-nowrap">Pays / Ville</th>
+                  <th className="px-4 py-4 text-xs font-bold text-slate-500 uppercase whitespace-nowrap">Plan</th>
+                  <th className="px-4 py-4 text-xs font-bold text-slate-500 uppercase whitespace-nowrap">Statut</th>
+                  <th className="px-4 py-4 text-xs font-bold text-slate-500 uppercase whitespace-nowrap">Jours restants</th>
+                  <th className="px-4 py-4 text-xs font-bold text-slate-500 uppercase whitespace-nowrap">Élèves</th>
+                  <th className="px-4 py-4 text-xs font-bold text-slate-500 uppercase whitespace-nowrap">Drapeaux</th>
+                  <th className="px-4 py-4 text-xs font-bold text-slate-500 uppercase whitespace-nowrap">Expiration</th>
+                  <th className="px-4 py-4 text-xs font-bold text-slate-500 uppercase whitespace-nowrap">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -349,26 +349,31 @@ export default function TenantsWorkspace() {
                   const planStatus = t.planStatus || null;
                   return (
                     <tr key={t.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="px-6 py-4">
+                      <td className="px-4 py-4">
                         <div
-                          className="font-bold text-slate-900 max-w-[220px] truncate text-left"
+                          className="font-bold text-slate-900 text-left"
                           title={t.name}
                         >
                           {t.name}
                         </div>
                         <div
-                          className="text-xs text-slate-500 font-mono max-w-[220px] truncate"
+                          className="text-xs text-slate-500 font-mono"
                           title={t.slug}
                         >
                           {t.slug}
                         </div>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-4 py-4">
                         <div className="text-sm text-slate-700">{t.country}</div>
-                        <div className="text-xs text-slate-400">{t.city}</div>
+                        <div className="text-xs text-slate-400">{t.city !== '—' ? t.city : '—'}</div>
                       </td>
-                      <td className="px-6 py-4">
-                        <span className="text-xs font-bold text-amber-700 uppercase">{t.plan}</span>
+                      <td className="px-4 py-4">
+                        <span className="text-xs font-bold text-amber-700 uppercase">
+                          {(() => {
+                            const p = (PLANS as readonly { code: string; label: string }[]).find(p => p.code === (t.plan || '').toUpperCase());
+                            return p ? p.label : t.plan;
+                          })()}
+                        </span>
                         {t.billingCycle && (
                           <div className="text-[10px] text-slate-400 uppercase mt-0.5">
                             {t.billingCycle === 'ANNUAL' ? 'Annuel' : t.billingCycle === 'MONTHLY' ? 'Mensuel' : t.billingCycle}

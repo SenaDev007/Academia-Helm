@@ -869,11 +869,11 @@ export class SubscriptionLifecycleController {
 
         // Pour CSPEB : créer la facture + billing event
         if (isCspeb) {
-          // BillingEvent
+          // BillingEvent (subscriptionId est optionnel et référence Subscription,
+          // pas HelmSubscription — on ne le passe pas pour éviter P2003)
           const event = await this.prisma.billingEvent.create({
             data: {
               tenantId: tenant.id,
-              subscriptionId: sub.id,
               type: 'INITIAL_SUBSCRIPTION' as any,
               amount: setupFee,
               channel: 'FEEXPAY',
@@ -882,6 +882,7 @@ export class SubscriptionLifecycleController {
                 seededBy: adminEmail,
                 description: 'Souscription initiale - Helm Grow (mensuel)',
                 planCode: plan,
+                helmSubscriptionId: sub.id,
               },
             },
           });

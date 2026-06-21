@@ -57,6 +57,12 @@ import {
   Shield,
   Star,
   Sparkles,
+  FileText,
+  GraduationCap,
+  Image as ImageIcon,
+  Mail,
+  Search,
+  Server,
 } from 'lucide-react';
 import type { User } from '@/types';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
@@ -255,24 +261,53 @@ const MAIN_MODULES = [
   { path: '/app/communication', label: 'Communication', icon: MessageSquare, featureCode: 'COMMUNICATION' },
 ];
 
-const PLATFORM_MODULES = [
-  { path: '/platform', label: 'Tableau de bord global', icon: LayoutDashboard },
+/**
+ * Section A — Site Public : gestion du contenu du site marketing public.
+ * (landing, blog, avis, pages marketing/légales, SEO, médias)
+ */
+const PUBLIC_SITE_MODULES = [
+  { path: '/platform/cms', label: 'Contenu du site', icon: FileText },
+  { path: '/platform/blog', label: 'Blog & Articles', icon: FileText },
+  { path: '/platform/reviews', label: 'Avis & Témoignages', icon: Star },
+  { path: '/platform/cms-pages', label: 'Pages marketing', icon: Sparkles },
+  { path: '/platform/legal-pages', label: 'Pages légales', icon: FileText },
+  { path: '/platform/seo', label: 'SEO & Meta', icon: Search },
+  { path: '/platform/media', label: 'Médias & Images', icon: ImageIcon },
+];
+
+/**
+ * Section B — Academia Helm : back-office global de la plateforme SaaS.
+ * (tenants, abonnements, facturation, modules, utilisateurs, RBAC, etc.)
+ */
+const ACADEMIA_HELM_MODULES = [
+  { path: '/platform', label: "Vue d'ensemble", icon: LayoutDashboard },
   { path: '/platform/tenants', label: 'Écoles / Tenants', icon: Building },
-  { path: '/platform/initial-subscriptions', label: 'Souscriptions initiales', icon: Briefcase },
   { path: '/platform/subscriptions', label: 'Abonnements & Plans', icon: CreditCard },
+  { path: '/platform/initial-subscriptions', label: 'Souscriptions initiales', icon: Briefcase },
+  { path: '/platform/billing', label: 'Facturation', icon: PieChart },
+  { path: '/platform/payments', label: 'Paiements & Transactions', icon: CreditCard },
   { path: '/platform/modules', label: 'Modules & Fonctions', icon: Zap },
-  { path: '/platform/aggregation', label: 'Agrégation Globale', icon: BarChart3 },
-  { path: '/platform/orion-pilotage', label: 'ORION-Pilotage Direction', icon: Zap },
   { path: '/platform/users', label: 'Utilisateurs plateforme', icon: Users },
   { path: '/platform/rbac', label: 'Rôles & Permissions', icon: Lock },
-  { path: '/platform/billing', label: 'Facturation SaaS', icon: PieChart },
-  { path: '/platform/payments', label: 'Paiements & Transactions', icon: CreditCard },
-  { path: '/platform/support', label: 'Support & Tickets', icon: HelpCircle },
-  { path: '/platform/monitoring', label: 'Incidents & Monitoring', icon: ShieldAlert },
+  { path: '/platform/communication', label: 'Communication & Emails', icon: Mail },
+  { path: '/platform/domains', label: 'Domaines & Sous-domaines', icon: Server },
   { path: '/platform/orion', label: 'ORION Global', icon: Brain },
+  { path: '/platform/aggregation', label: 'Agrégation globale', icon: BarChart3 },
+  { path: '/platform/support', label: 'Support & Tickets', icon: HelpCircle },
+  { path: '/platform/monitoring', label: 'Monitoring', icon: ShieldAlert },
   { path: '/platform/audit', label: 'Audit & Logs', icon: History },
-  { path: '/platform/reviews', label: 'Avis & Témoignages', icon: Star },
   { path: '/platform/settings', label: 'Paramètres plateforme', icon: Settings },
+];
+
+/**
+ * Section C — Academia Federis : module d'examen/certification externe.
+ * (centres d'examens, candidats, compositions, délibérations) — Bientôt disponible.
+ */
+const FEDERIS_MODULES = [
+  { path: '/platform/federis/exam-centers', label: "Centres d'examens", icon: Building },
+  { path: '/platform/federis/candidates', label: 'Candidats', icon: Users },
+  { path: '/platform/federis/exams', label: 'Compositions', icon: School },
+  { path: '/platform/federis/deliberations', label: 'Délibérations', icon: PieChart },
 ];
 
 const SUPPLEMENTARY_MODULES = [
@@ -341,6 +376,10 @@ export default function PilotageSidebar({
   const [mainModulesOpen, setMainModulesOpen] = useState(true);
   const [supplementaryModulesOpen, setSupplementaryModulesOpen] = useState(true);
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
+  // ── État d'ouverture des 3 sections du back-office plateforme ──
+  const [publicSiteOpen, setPublicSiteOpen] = useState(true);
+  const [academiaHelmOpen, setAcademiaHelmOpen] = useState(true);
+  const [federisOpen, setFederisOpen] = useState(true);
 
   // ── Tenant context for in-app review modal ──
   const { tenant } = useModuleContext();
@@ -386,10 +425,9 @@ export default function PilotageSidebar({
     [enabledSet, loading, moduleVisibility],
   );
 
-  const platformModules = useMemo(
-    () => PLATFORM_MODULES,
-    [],
-  );
+  const publicSiteModules = useMemo(() => PUBLIC_SITE_MODULES, []);
+  const academiaHelmModules = useMemo(() => ACADEMIA_HELM_MODULES, []);
+  const federisModules = useMemo(() => FEDERIS_MODULES, []);
 
   const isPlatformOwner =
     user?.role === 'PLATFORM_OWNER' ||
@@ -532,6 +570,56 @@ export default function PilotageSidebar({
     );
   };
 
+  // ── Render a platform sidebar section (header + collapsible items) ──
+  // Used for the 3 back-office sections: Site Public, Academia Helm, Academia Federis.
+  const renderPlatformSection = (
+    title: string,
+    SectionIcon: any,
+    items: Array<{ path: string; label: string; icon: any }>,
+    open: boolean,
+    setOpen: (v: boolean) => void,
+    badge?: string,
+    isFirst: boolean = false,
+  ) => {
+    return (
+      <div className="mb-5">
+        {effectiveOpen ? (
+          <>
+            <button
+              type="button"
+              onClick={() => setOpen(!open)}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-white/[0.04] transition-colors text-left group/section"
+            >
+              <span className="flex items-center gap-2 text-[10px] font-semibold text-blue-300/40 uppercase tracking-[0.15em]">
+                <SectionIcon className="w-3.5 h-3.5" />
+                {title}
+                {badge && (
+                  <span className="ml-1 px-1.5 py-0.5 rounded-full bg-gold-500/15 text-gold-300/90 text-[8px] font-semibold normal-case tracking-normal">
+                    {badge}
+                  </span>
+                )}
+              </span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 text-blue-300/40 transition-transform duration-200 ${
+                  open ? 'rotate-0' : '-rotate-90'
+                }`}
+              />
+            </button>
+            {open && (
+              <div className="mt-1.5 space-y-0.5">
+                {items.map((item) => renderNavItem(item))}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className={isFirst ? '' : 'pt-2 mt-1 border-t border-white/[0.06]'}>
+            {items.map((item) => renderIconItem(item))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const sidebarContent = (
     <div className="flex flex-col h-full">
       {/* ── Toggle only (school identity is already shown in the top header) ── */}
@@ -606,35 +694,34 @@ export default function PilotageSidebar({
         </div>
         )}
 
-        {/* Modules Plateforme (Administration Globale) */}
+        {/* Modules Plateforme — 3 sections : Site Public / Academia Helm / Academia Federis */}
         {isPlatformPortal && (
-          <div className="mb-5">
-            {effectiveOpen ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setMainModulesOpen(!mainModulesOpen)}
-                  className="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-white/[0.04] transition-colors text-left group/section"
-                >
-                  <span className="text-[10px] font-semibold text-blue-300/40 uppercase tracking-[0.15em]">
-                    Administration Globale
-                  </span>
-                  <ChevronDown
-                    className={`w-3.5 h-3.5 text-blue-300/40 transition-transform duration-200 ${
-                      mainModulesOpen ? 'rotate-0' : '-rotate-90'
-                    }`}
-                  />
-                </button>
-                {mainModulesOpen && (
-                  <div className="mt-1.5 space-y-0.5">
-                    {platformModules.map((item) => renderNavItem(item))}
-                  </div>
-                )}
-              </>
-            ) : (
-              platformModules.map((item) => renderIconItem(item))
+          <>
+            {renderPlatformSection(
+              'Site Public',
+              Globe,
+              publicSiteModules,
+              publicSiteOpen,
+              setPublicSiteOpen,
+              undefined,
+              true,
             )}
-          </div>
+            {renderPlatformSection(
+              'Academia Helm',
+              GraduationCap,
+              academiaHelmModules,
+              academiaHelmOpen,
+              setAcademiaHelmOpen,
+            )}
+            {renderPlatformSection(
+              'Academia Federis',
+              BookOpen,
+              federisModules,
+              federisOpen,
+              setFederisOpen,
+              'Bientôt disponible',
+            )}
+          </>
         )}
 
         {/* Module Général (Direction) — MASQUÉ sur le back-office admin */}

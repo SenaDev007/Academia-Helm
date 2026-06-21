@@ -45,7 +45,7 @@ const RichTextContent = memo(function RichTextContent({ initialContent, onInput 
       suppressContentEditableWarning
       onInput={(e) => onInput(e.currentTarget.innerHTML)}
       className="px-3 py-2 text-sm text-slate-700 focus:outline-none min-h-[80px] prose prose-sm max-w-none empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400 empty:before:cursor-text"
-      data-placeholder="Contenu de l'article (utilisez la barre d'outils pour le formatage)"
+      data-placeholder="Contenu de l'article — les informations du salarié et de l'école sont déjà pré-remplies. Ajustez librement le texte."
     />
   );
 }, (prev, next) => prev.initialContent === next.initialContent);
@@ -72,11 +72,39 @@ export function ContractDocumentEditor({ isOpen, onClose, onSuccess, contract }:
   const [hasChanges, setHasChanges] = useState(false);
 
   // Fetch articles from the backend (single source of truth)
+  // Le backend renvoie les articles avec toutes les variables {{...}} déjà
+  // résolues avec les vraies données du contrat (staff, école, etc.).
+  // L'utilisateur ne voit donc que du texte lisible dans l'éditeur, plus
+  // besoin d'accolades techniques.
   const fetchArticles = useCallback(async () => {
     if (!contract?.id || !tenant?.id) return;
     setLoading(true);
     try {
-      // Step 1: Try custom articles from contract terms (saved by user)
+      // 1) D'abord essayer le nouvel endpoint qui résout automatiquement
+      //    les variables avec les vraies données du contrat.
+      try {
+        const data: any = await hrFetch(hrUrl(`contracts/${contract.id}/articles`, { tenantId: tenant.id }));
+        if (data?.articles && Array.isArray(data.articles) && data.articles.length > 0) {
+          setArticles(data.articles);
+          setHasChanges(false);
+          // Si des templateVars sont retournés et que l'aperçu n'a pas
+          // encore été chargé, on pré-charge aussi l'aperçu HTML
+          if (data.templateVars && !previewHtml) {
+            try {
+              const previewData: any = await hrFetch(hrUrl(`contracts/${contract.id}/preview`, { tenantId: tenant.id }));
+              if (previewData?.html) setPreviewHtml(previewData.html);
+            } catch { /* preview is optional */ }
+          }
+          return;
+        }
+      } catch (err: any) {
+        console.warn('getResolvedArticles endpoint not available, falling back to legacy logic:', err?.message);
+      }
+
+      // 2) Fallback legacy (au cas où le nouvel endpoint ne serait pas
+      //    encore déployé) : on récupère le contrat et on cherche les
+      //    articles personnalisés, puis le template lié, puis les articles
+      //    par défaut, et en dernier recours on utilise l'aperçu.
       const contractData: any = await hrFetch(hrUrl(`contracts/${contract.id}`, { tenantId: tenant.id }));
       const customArticles = contractData?.terms?.customArticles;
 
@@ -86,7 +114,6 @@ export function ContractDocumentEditor({ isOpen, onClose, onSuccess, contract }:
         return;
       }
 
-      // Step 2: Try articles from linked template
       if (contractData?.templateId) {
         try {
           const templates: any[] = await hrFetch(hrUrl('contracts/templates/list', { tenantId: tenant.id }));
@@ -104,7 +131,6 @@ export function ContractDocumentEditor({ isOpen, onClose, onSuccess, contract }:
         } catch { /* ignore template fetch error */ }
       }
 
-      // Step 3: Fetch default articles from backend API
       try {
         const defaultData: any = await hrFetch(hrUrl(`contracts/templates/default/${contract.contractType}`, { tenantId: tenant.id }));
         if (defaultData?.template) {
@@ -117,7 +143,7 @@ export function ContractDocumentEditor({ isOpen, onClose, onSuccess, contract }:
         }
       } catch { /* ignore default fetch error */ }
 
-      // Step 4: Fallback — use preview to extract articles
+      // Dernier recours : utiliser l'aperçu pour extraire les articles
       const data: any = await hrFetch(hrUrl(`contracts/${contract.id}/preview`, { tenantId: tenant.id }));
       if (data?.html) {
         setPreviewHtml(data.html);
@@ -128,7 +154,6 @@ export function ContractDocumentEditor({ isOpen, onClose, onSuccess, contract }:
         const isConsultant = contract.contractType === 'CONSULTANT';
         const tv = data.templateVars;
 
-        // Function to replace {{variables}} with actual values
         const rv = (text: string): string => {
           if (!tv) return text;
           return text.replace(/\{\{(\w+)\}\}/g, (_, key) => {
@@ -164,7 +189,7 @@ export function ContractDocumentEditor({ isOpen, onClose, onSuccess, contract }:
     } finally {
       setLoading(false);
     }
-  }, [contract?.id, tenant?.id, contract?.contractType]);
+  }, [contract?.id, tenant?.id, contract?.contractType, previewHtml]);
 
   useEffect(() => {
     if (isOpen && contract?.id) {
@@ -338,9 +363,12 @@ export function ContractDocumentEditor({ isOpen, onClose, onSuccess, contract }:
             <div className="p-3 rounded-xl bg-blue-50/80 border border-blue-200 text-xs text-blue-800 flex gap-2">
               <AlertCircle className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
               <p>
-                Modifiez librement le titre et le contenu de chaque article.
-                Utilisez la barre d'outils (<strong className="font-bold">B</strong>, <em className="italic">I</em>, <u>U</u>, listes) au-dessus
-                de chaque article pour mettre en forme le texte — le HTML est préservé automatiquement.
+                Les informations disponibles (nom du salarié, poste, école, salaire
+                de base, mode de paiement, date d'effet, etc.) sont déjà pré-remplies
+                automatiquement depuis la fiche du personnel. Ajustez librement le
+                texte et les valeurs (notamment <strong>prime de fonction</strong> et
+                <strong> indemnité de transport</strong>) à l'aide de la barre d'outils
+                (<strong className="font-bold">B</strong>, <em className="italic">I</em>, <u>U</u>, listes).
                 Après signature, toute modification nécessitera un avenant.
               </p>
             </div>

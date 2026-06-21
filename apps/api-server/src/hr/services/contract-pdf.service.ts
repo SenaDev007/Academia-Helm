@@ -238,7 +238,10 @@ export class ContractPdfService {
     }
 
     // 4. Préparer les variables du template
-    const currency = contract.tenant?.country?.currencyCode || schoolSettings?.currency || 'XOF';
+    // Devise affichée en clair (FCFA pour l'Afrique de l'Ouest, sinon code ISO).
+    // On affiche "FCFA" plutôt que "XOF" car c'est le terme usuel au Bénin et dans la zone UEMOA.
+    const rawCurrency = contract.tenant?.country?.currencyCode || schoolSettings?.currency || 'XOF';
+    const currency = rawCurrency === 'XOF' ? 'FCFA' : rawCurrency;
     const templateVars = {
       // École / Employeur
       schoolName,
@@ -291,7 +294,7 @@ export class ContractPdfService {
       isCDI: contract.contractType === 'CDI',
       isStage: contract.contractType === 'STAGE',
       isVacataire: contract.contractType === 'VACATAIRE',
-      probationDuration: contract.contractType === 'CDI' ? 'trois (3) mois' : 'un (1) mois',
+      probationDuration: 'un (1) mois (30 jours)',
       jobResponsibilities: contract.staff?.qualifications || 'Les missions définies par la Direction de l\'établissement',
       workLocation: schoolAddress || schoolCity || 'L\'établissement',
       weeklyHours: '40',
@@ -496,7 +499,8 @@ export class ContractPdfService {
     }
 
     // Réutiliser les mêmes variables que generateContractPdf
-    const currency = contract.tenant?.country?.currencyCode || schoolSettings?.currency || 'XOF';
+    const rawCurrency2 = contract.tenant?.country?.currencyCode || schoolSettings?.currency || 'XOF';
+    const currency = rawCurrency2 === 'XOF' ? 'FCFA' : rawCurrency2;
     const templateVars = {
       schoolName, schoolAddress, schoolPhone, schoolEmail, schoolCountry, schoolCity, schoolLogoUrl,
       directorName, directorPosition: 'Directeur(rice)', schoolAuthorizationNumber, schoolAbbreviation,
@@ -532,7 +536,7 @@ export class ContractPdfService {
       isCDI: contract.contractType === 'CDI',
       isStage: contract.contractType === 'STAGE',
       isVacataire: contract.contractType === 'VACATAIRE',
-      probationDuration: contract.contractType === 'CDI' ? 'trois (3) mois' : 'un (1) mois',
+      probationDuration: 'un (1) mois (30 jours)',
       jobResponsibilities: contract.staff?.qualifications || "Les missions définies par la Direction de l'établissement",
       workLocation: schoolAddress || schoolCity || "L'établissement",
       weeklyHours: '40',
@@ -1114,6 +1118,96 @@ export class ContractPdfService {
 
     this.logger.log(`Articles sauvegardés pour le contrat ${contractId}: ${articles.length} articles`);
     return { success: true, articlesCount: articles.length, contract: updated };
+  }
+
+  /**
+   * Récupère les articles à afficher dans l'éditeur de contrat.
+   *
+   * Si le contrat a déjà des articles personnalisés sauvegardés (customArticles),
+   * on les renvoie tels quels — l'utilisateur les a déjà édités.
+   *
+   * Sinon, on prend les articles par défaut (getDefaultArticles) et on résout
+   * toutes les variables {{...}} avec les vraies données du contrat (staff,
+   * école, contrat). Ainsi, l'éditeur affiche du texte lisible, pas des
+   * placeholders techniques.
+   *
+   * L'éditeur n'a plus qu'à gérer la modification de quelques champs
+   * spécifiques (prime de fonction, transport, etc.) — toutes les autres
+   * informations sont déjà pré-remplies.
+   */
+  async getResolvedArticles(contractId: string, tenantId: string): Promise<{
+    articles: Array<{ title: string; content: string }>;
+    isCustom: boolean;
+    templateVars: Record<string, any>;
+  }> {
+    // Charger le contrat complet (même logique que generateContractPdf)
+    let contract: any;
+    try {
+      contract = await this.prisma.contract.findFirst({
+        where: { id: contractId, tenantId },
+        include: {
+          staff: { include: { employeeCNSS: true } },
+          tenant: { include: { country: true, schools: true } },
+          academicYear: true,
+          template: true,
+        },
+      });
+    } catch (prismaErr: any) {
+      if (prismaErr?.code === 'P2022' || prismaErr?.code === 'P2009' || prismaErr?.message?.includes('column') || prismaErr?.message?.includes('does not exist')) {
+        this.logger.warn(`getResolvedArticles: Full include failed, falling back: ${prismaErr.message}`);
+        contract = await this.prisma.contract.findFirst({
+          where: { id: contractId, tenantId },
+          include: {
+            staff: true,
+            tenant: { include: { country: true, schools: true } },
+            academicYear: true,
+            template: true,
+          },
+        });
+      } else {
+        throw prismaErr;
+      }
+    }
+
+    if (!contract) throw new NotFoundException(`Contrat ${contractId} introuvable`);
+
+    // 1) Si articles personnalisés déjà sauvegardés → les renvoyer tels quels
+    const customArticles = (contract.terms as any)?.customArticles;
+    if (Array.isArray(customArticles) && customArticles.length > 0) {
+      // On renvoie quand même templateVars pour permettre une éventuelle
+      // re-résolution côté frontend si besoin.
+      const { templateVars } = await this.generateContractHtml(contractId, tenantId);
+      return { articles: customArticles, isCustom: true, templateVars };
+    }
+
+    // 2) Sinon, résoudre les articles par défaut avec les vraies données
+    const { templateVars } = await this.generateContractHtml(contractId, tenantId);
+
+    const defaultArticles = this.getDefaultArticles(contract.contractType);
+
+    // Résoudre {{variable}} → valeur réelle
+    const resolveVars = (text: string): string => {
+      if (!text) return '';
+      return text.replace(/\{\{(\w+(?:\.\w+)*)\}\}/g, (match, key) => {
+        // Gérer les accès avec point (ex: staff.firstName)
+        const parts = key.split('.');
+        let val: any = templateVars;
+        for (const p of parts) {
+          if (val == null) break;
+          val = val[p];
+        }
+        if (val == null || val === '') return '____';
+        if (typeof val === 'boolean') return val ? 'Oui' : 'Non';
+        return String(val);
+      });
+    };
+
+    const resolvedArticles = defaultArticles.map((art) => ({
+      title: resolveVars(art.title),
+      content: resolveVars(art.content),
+    }));
+
+    return { articles: resolvedArticles, isCustom: false, templateVars };
   }
 
   // ─── Default Templates ──────────────────────────────────────────────────────

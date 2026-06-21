@@ -291,6 +291,28 @@ export class ContractsPrismaController {
   }
 
   /**
+   * GET /api/hr/contracts/:id/articles
+   * Récupère les articles à afficher dans l'éditeur de contrat.
+   *
+   * Si des articles personnalisés ont déjà été sauvegardés, on les renvoie
+   * tels quels. Sinon, on renvoie les articles par défaut du type de contrat
+   * avec toutes les variables {{...}} résolues avec les vraies données du
+   * contrat (staff, école, etc.) — l'éditeur affiche ainsi du texte lisible.
+   */
+  @Get(':id/articles')
+  async getContractArticles(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.contractPdfService.getResolvedArticles(id, tid);
+  }
+
+  /**
    * POST /api/hr/contracts/:id/generate-pdf
    * Génère (ou régénère) le PDF du contrat. Retourne { pdfUrl }.
    */

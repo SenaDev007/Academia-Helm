@@ -228,6 +228,44 @@ function withAntiCacheHeaders(response: NextResponse): NextResponse {
   return response;
 }
 
+/**
+ * Supprime le cookie `x-redirect-depth` d'une réponse non-redirect.
+ *
+ * Pourquoi : le middleware compte les redirections successives via ce cookie
+ * (maxAge=30s). Quand on renvoie une réponse "normale" (NextResponse.next()
+ * ou rewrite), il faut ABSOLUMENT supprimer ce cookie, sinon il persiste à
+ * travers les navigations intra-app et finit par atteindre le seuil
+ * MAX_REDIRECT_DEPTH (=5) → page d'erreur "Trop de redirections".
+ *
+ * Scénario typique : l'utilisateur navigue dans le module RH (Préparer contrat,
+ * Retour, etc.). Chaque navigation sans ?tenant= dans l'URL déclenche un
+ * redirect pour ajouter le tenant, incrémentant le cookie. Sans suppression
+ * sur les réponses normales, le compteur ne redescend jamais entre deux
+ * redirects, et au bout de 5 navigations rapides, on tombe sur l'erreur.
+ *
+ * IMPORTANT : on doit spécifier le même `domain` que celui utilisé pour SET
+ * le cookie (cf. safeRedirect), sinon le navigateur ne le supprimera pas.
+ * Ici, on essaie les deux : sans domaine (par défaut) ET avec le domaine
+ * parent détecté depuis le host. Cela couvre tous les cas de figure.
+ */
+function clearRedirectDepthCookie(response: NextResponse, request: NextRequest): NextResponse {
+  // Delete without domain (matches cookies set without domain)
+  response.cookies.delete('x-redirect-depth');
+  // Also try with the parent domain (matches cookies set with domain='.academiahelm.com')
+  const host = request.headers.get('host') || '';
+  const domainMatch = host.match(/\.[^.]+\.[^.]+$/); // .academiahelm.com
+  if (domainMatch) {
+    // Set with explicit domain + maxAge=0 → browser deletes the matching cookie
+    response.cookies.set('x-redirect-depth', '', {
+      path: '/',
+      maxAge: 0,
+      sameSite: 'lax',
+      domain: domainMatch[0],
+    });
+  }
+  return response;
+}
+
 // Routes admin-login (ne nécessitent pas de subdomain)
 // L'ancien /admin a été supprimé — le backoffice est maintenant /platform/*
 const adminRoutes: string[] = [];
@@ -508,33 +546,43 @@ export async function middleware(request: NextRequest) {
   // Routes app (nécessitent un subdomain ou tenant_id)
   if (pathname.startsWith('/app')) {
     // En local, vérifier le paramètre tenant dans l'URL
-    const isLocal = process.env.NODE_ENV === 'development';
     const tenantParam = request.nextUrl.searchParams.get('tenant');
     const tenantIdParam = request.nextUrl.searchParams.get('tenant_id');
-    
+
     // Si pas de subdomain ET pas de tenant param → vérifier la session
     if (!subdomain && !tenantParam && !tenantIdParam) {
-      // Si la session contient un tenant valide, autoriser l'accès
+      // Si la session contient un tenant valide, LAISSER PASSER la requête
+      // en injectant le tenant via les headers X-Tenant-ID / X-Tenant-Slug.
+      //
+      // ⚠️ Ne PAS rediriger pour ajouter ?tenant= à l'URL — c'était la cause
+      // principale du bug "Trop de redirections" dans le module RH :
+      // chaque navigation intra-app (ex. /app/hr/recruitment → /app/hr/contracts/<id>)
+      // déclenchait un redirect pour ajouter ?tenant=, et le cookie
+      // x-redirect-depth s'accumulait jusqu'à atteindre le seuil de 5.
+      // Les pages RH récupèrent le tenant depuis la session (AppSessionContext),
+      // pas depuis l'URL — donc le redirect était purement cosmétique.
       if (user?.tenantId) {
-        // Ajouter le tenant dans l'URL pour cohérence
-        // Utiliser le slug depuis la session si disponible, sinon tenantId (UUID)
-        const url = request.nextUrl.clone();
-        const tenantSlug = user.tenantSlug || user.tenantId;
-        url.searchParams.set('tenant', tenantSlug);
-        // Ajouter tenant_id si on utilise le slug
-        if (user.tenantSlug && user.tenantId) {
-          url.searchParams.set('tenant_id', user.tenantId);
+        const tenantResponse = withAntiCacheHeaders(NextResponse.next());
+        tenantResponse.headers.set('X-Tenant-ID', user.tenantId);
+        if (user.tenantSlug) {
+          tenantResponse.headers.set('X-Tenant-Slug', user.tenantSlug);
         }
-        return safeRedirect(url, request, redirectDepth);
+        tenantResponse.headers.set('X-User-ID', user.id);
+        // Forward portal_type header for RBAC validation
+        if (user.portalType) {
+          tenantResponse.headers.set('X-Portal-Type', user.portalType);
+        }
+        return clearRedirectDepthCookie(tenantResponse, request);
       }
-      
+
       // PLATFORM_OWNER sans tenantId → rediriger vers le portail pour sélectionner une école
       // Même le PLATFORM_OWNER doit toujours être dans le contexte d'un tenant (sous-domaine professionnel)
       if (user?.id && user.isPlatformOwner) {
         const mainDomain = getAppBaseUrl();
         return safeRedirect(new URL('/portal', mainDomain), request, redirectDepth);
       }
-      
+
+      // Pas de session du tout → rediriger vers /portal pour login
       const mainDomain = getAppBaseUrl();
       return safeRedirect(new URL('/portal', mainDomain), request, redirectDepth);
     }
@@ -554,8 +602,10 @@ export async function middleware(request: NextRequest) {
           tenantResponse.headers.set('X-Tenant-Slug', user.tenantSlug);
         }
         tenantResponse.headers.set('X-User-ID', user.id);
-        return tenantResponse;
+        return clearRedirectDepthCookie(tenantResponse, request);
       }
+      // Session ne correspond pas à l'URL → on continue vers resolveTenant
+      // (qui re-validera le tenant demandé dans l'URL).
     }
 
     // Résoudre le tenant (subdomain ou param)
@@ -586,7 +636,7 @@ export async function middleware(request: NextRequest) {
       } else if (user?.portalType) {
         cachedResponse.headers.set('X-Portal-Type', user.portalType);
       }
-      return cachedResponse;
+      return clearRedirectDepthCookie(cachedResponse, request);
     }
 
     try {
@@ -607,7 +657,7 @@ export async function middleware(request: NextRequest) {
         if (user) {
           fallbackResponse.headers.set('X-User-ID', user.id);
         }
-        return fallbackResponse;
+        return clearRedirectDepthCookie(fallbackResponse, request);
       }
 
       // Vérifier que le tenant est actif
@@ -643,7 +693,7 @@ export async function middleware(request: NextRequest) {
       tenantResponse.cookies.set('x-resolved-tenant-slug', tenant.slug, { path: '/', maxAge, sameSite: 'lax' });
       tenantResponse.cookies.set('x-resolved-tenant-subdomain', tenantIdentifier, { path: '/', maxAge, sameSite: 'lax' });
 
-      return tenantResponse;
+      return clearRedirectDepthCookie(tenantResponse, request);
     } catch (error) {
       // MODE RÉSILIENT : si l'API est down (Fly.io OOM, réseau, etc.),
       // NE PAS rediriger vers /tenant-not-found. Cela cause des boucles de
@@ -654,16 +704,13 @@ export async function middleware(request: NextRequest) {
       if (user) {
         fallbackResponse.headers.set('X-User-ID', user.id);
       }
-      return fallbackResponse;
+      return clearRedirectDepthCookie(fallbackResponse, request);
     }
   }
 
   // Réinitialiser le compteur de redirection pour les réponses normales
   // (pas de redirection → pas de boucle possible)
-  if (redirectDepth > 0) {
-    response.cookies.delete('x-redirect-depth');
-  }
-  return response;
+  return clearRedirectDepthCookie(response, request);
 }
 
 export const config = {

@@ -63,10 +63,23 @@ export default function TooManyRedirectsPage() {
           <button
             onClick={() => {
               // Supprimer les cookies de redirection et recharger
-              document.cookie = 'x-redirect-depth=; path=/; max-age=0';
-              document.cookie = 'x-resolved-tenant-id=; path=/; max-age=0';
-              document.cookie = 'x-resolved-tenant-slug=; path=/; max-age=0';
-              document.cookie = 'x-resolved-tenant-subdomain=; path=/; max-age=0';
+              // IMPORTANT : on spécifie le domaine parent pour que le navigateur
+              // supprime effectivement le cookie (sinon il a été set avec
+              // domain='.academiahelm.com' et document.cookie sans domaine ne le supprime pas).
+              const hostParts = window.location.hostname.split('.');
+              const parentDomain = hostParts.length >= 2
+                ? '.' + hostParts.slice(-2).join('.')
+                : '';
+              const clearCookie = (name: string) => {
+                document.cookie = `${name}=; path=/; max-age=0`;
+                if (parentDomain) {
+                  document.cookie = `${name}=; path=/; max-age=0; domain=${parentDomain}`;
+                }
+              };
+              clearCookie('x-redirect-depth');
+              clearCookie('x-resolved-tenant-id');
+              clearCookie('x-resolved-tenant-slug');
+              clearCookie('x-resolved-tenant-subdomain');
               window.location.href = '/';
             }}
             className="inline-flex items-center justify-center px-5 py-2.5 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 transition-colors"

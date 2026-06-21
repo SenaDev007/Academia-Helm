@@ -1070,6 +1070,74 @@ export class SubscriptionLifecycleController {
       where: { email: 's.akpovitohou@gmail.com' },
     });
 
+    // 4b. Créer ou mettre à jour l'entité School (pour la ville)
+    const existingSchool = await this.prisma.school.findUnique({
+      where: { tenantId: cspeb.id },
+    });
+
+    if (!existingSchool) {
+      await this.prisma.school.create({
+        data: {
+          tenantId: cspeb.id,
+          name: cspeb.name,
+          city: 'Parakou',
+          address: 'Parakou, Bénin',
+          primaryPhone: '+22900000000',
+          primaryEmail: 's.akpovitohou@gmail.com',
+          educationLevels: ['MATERNELLE', 'PRIMAIRE', 'SECONDAIRE'],
+        },
+      });
+      results.push({ step: 'School créé', city: 'Parakou' });
+    } else {
+      // Mettre à jour la ville si elle est vide
+      if (!existingSchool.city) {
+        await this.prisma.school.update({
+          where: { id: existingSchool.id },
+          data: { city: 'Parakou', address: 'Parakou, Bénin' },
+        });
+        results.push({ step: 'School mis à jour', city: 'Parakou' });
+      } else {
+        results.push({ step: 'School existe déjà', city: existingSchool.city });
+      }
+    }
+
+    // 4c. Créer aussi une School pour Academia Helm
+    const ahTenant = await this.prisma.tenant.findFirst({
+      where: { slug: 'academiahelm' },
+    });
+    if (ahTenant) {
+      const ahSchool = await this.prisma.school.findUnique({
+        where: { tenantId: ahTenant.id },
+      });
+      if (!ahSchool) {
+        await this.prisma.school.create({
+          data: {
+            tenantId: ahTenant.id,
+            name: ahTenant.name,
+            city: 'Cotonou',
+            address: 'Cotonou, Bénin',
+            educationLevels: ['MATERNELLE', 'PRIMAIRE', 'SECONDAIRE'],
+          },
+        });
+        results.push({ step: 'School créé pour Academia Helm', city: 'Cotonou' });
+      } else if (!ahSchool.city) {
+        await this.prisma.school.update({
+          where: { id: ahSchool.id },
+          data: { city: 'Cotonou' },
+        });
+        results.push({ step: 'School mis à jour pour Academia Helm', city: 'Cotonou' });
+      }
+    }
+
+    // 4d. Mettre à jour bilingualEnabled pour CSPEB (qui est bilingue)
+    if (!sub.bilingualEnabled) {
+      await this.prisma.helmSubscription.update({
+        where: { id: sub.id },
+        data: { bilingualEnabled: true },
+      });
+      results.push({ step: 'HelmSubscription.bilingualEnabled = true' });
+    }
+
     if (!existingDraft) {
       const draft = await this.prisma.onboardingDraft.create({
         data: {

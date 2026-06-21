@@ -214,10 +214,17 @@ export class RecruitmentNotificationService {
     },
   ): Promise<void> {
     const fromEmail =
-      options?.fromEmail ||
       this.configService.get<string>('EMAIL_FROM_NOREPLY') ||
       'noreply@academiahelm.com';
     const fromName = options?.fromName || 'Academia Helm — Recrutement';
+
+    // ⚠️ IMPORTANT : Resend exige que l'expéditeur (from) soit sur un domaine
+    // vérifié (academiahelm.com). On NE JAMAIS utiliser l'email du promoteur
+    // (ex: salumerhel2036@gmail.com) comme fromEmail car gmail.com n'est pas
+    // vérifié sur Resend → erreur "domain is not verified".
+    // Si un recruiterEmail est fourni, on l'utilise comme replyTo à la place.
+    const replyToEmail = options?.fromEmail || undefined;
+    const safeFromEmail = fromEmail; // Toujours noreply@academiahelm.com
 
     // ─── Voie tracée (catégorisée) ───
     // On utilise sendCategorized si la category est fournie ET le tenantId est dispo
@@ -232,7 +239,7 @@ export class RecruitmentNotificationService {
           toName: options.recipientName,
           recipientType: options.recipientType || 'CANDIDAT',
           recipientId: options.recipientId,
-          fromEmail,
+          fromEmail: safeFromEmail,
           fromName,
           subject,
           html,
@@ -272,11 +279,12 @@ export class RecruitmentNotificationService {
       to,
       subject,
       html,
-      from: fromEmail,
+      from: safeFromEmail,
       fromName,
+      replyTo: replyToEmail,
     });
     this.logger.log(
-      `📧 Email envoyé (legacy, non tracé) à ${to} — subject: "${subject.substring(0, 80)}" — fromName=${fromName}`,
+      `📧 Email envoyé (legacy, non tracé) à ${to} — subject: "${subject.substring(0, 80)}" — fromName=${fromName}, replyTo=${replyToEmail || 'N/A'}`,
     );
   }
 

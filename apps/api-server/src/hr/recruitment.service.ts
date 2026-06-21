@@ -658,13 +658,51 @@ export class RecruitmentPrismaService {
 
   // Applications
   async getApplications(tenantId: string) {
-    return this.prisma.hrApplication.findMany({
+    const applications = await this.prisma.hrApplication.findMany({
       where: { tenantId },
       include: {
         job: true,
-        candidate: true,
+        candidate: {
+          include: {
+            academicProfile: true,
+            documents: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
+    });
+
+    // Enrichir avec les données parsées (experiences, education, skills, pitch)
+    return applications.map((app) => {
+      const profile = (app.candidate as any)?.academicProfile;
+      let experiences: any[] = [];
+      let education: any[] = [];
+      let pitch = '';
+      let linkedinUrl = '';
+
+      if (profile?.pedagogicalExperience) {
+        try {
+          const parsed = JSON.parse(profile.pedagogicalExperience);
+          experiences = parsed.experiences || [];
+          education = parsed.education || [];
+          pitch = parsed.pitch || '';
+          linkedinUrl = parsed.linkedinUrl || '';
+        } catch {}
+      }
+
+      const skills = profile?.subjects || [];
+
+      return {
+        ...app,
+        candidate: {
+          ...app.candidate,
+          experiences,
+          education,
+          skills,
+          pitch,
+          linkedinUrl,
+        },
+      };
     });
   }
 

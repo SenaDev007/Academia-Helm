@@ -247,14 +247,15 @@ export class RecruitmentNotificationService {
               `category=${options.category}, subCategory=${options.subCategory || '-'}, ` +
               `logId=${result.logId}, providerId=${result.providerId || 'N/A'}`,
           );
+          return; // ✅ Email envoyé avec succès, on sort
         } else {
           this.logger.error(
             `📧 Email categorisé FAILED pour ${to}: ${result.error} — ` +
               `category=${options.category}, subCategory=${options.subCategory || '-'}, ` +
-              `logId=${result.logId || 'N/A'}`,
+              `logId=${result.logId || 'N/A'} — fallback vers sendEmail`,
           );
+          // ⚠️ Ne pas return ici — continuer vers le fallback sendEmail
         }
-        return;
       } catch (err: any) {
         this.logger.error(
           `sendCategorized threw (will fallback to plain sendEmail): ${err.message}`,

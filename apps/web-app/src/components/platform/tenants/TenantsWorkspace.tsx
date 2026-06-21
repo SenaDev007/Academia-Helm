@@ -11,6 +11,9 @@ import {
   Trash2,
   X,
   Check,
+  Languages,
+  AlertTriangle,
+  Clock,
 } from 'lucide-react';
 import { usePlatformData } from '@/hooks/usePlatformData';
 import { PlatformLoading, PlatformError, PlatformEmpty } from '../PlatformStates';
@@ -25,6 +28,17 @@ interface Tenant {
   city: string;
   plan: string;
   status: 'ACTIVE' | 'SUSPENDED' | 'TRIAL';
+  /** Statut précis de l'abonnement Helm (ACTIVE, TRIALING, GRACE_PERIOD, SUSPENDED, BLOCKED). */
+  planStatus?: string | null;
+  billingCycle?: string | null;
+  /** Jours restants avant expiration (couleur si < 7). null si non applicable. */
+  daysRemaining?: number | null;
+  /** Date de fin d'essai (ISO) ou null. */
+  trialEnd?: string | null;
+  /** Mode bilingue activé pour l'abonnement. */
+  bilingualEnabled?: boolean;
+  /** Ajout d'élèves bloqué (dépassement + période de grâce expirée). */
+  studentEnrollmentBlocked?: boolean;
   students: number;
   lastActivity: string;
   expiration: string | null;
@@ -47,6 +61,52 @@ type EditForm = {
   type: string;
   plan: string;
 };
+
+/** Couleurs du badge planStatus (préfixe cohérent avec l'onglet Abonnements). */
+function planStatusBadgeClass(planStatus?: string | null): string {
+  switch (planStatus) {
+    case 'ACTIVE':
+      return 'bg-emerald-100 text-emerald-700';
+    case 'TRIALING':
+      return 'bg-sky-100 text-sky-700';
+    case 'GRACE_PERIOD':
+      return 'bg-amber-100 text-amber-700';
+    case 'SUSPENDED':
+    case 'BLOCKED':
+      return 'bg-red-100 text-red-700';
+    case 'CANCELED':
+      return 'bg-slate-200 text-slate-600';
+    default:
+      return 'bg-slate-100 text-slate-500';
+  }
+}
+
+function planStatusLabel(planStatus?: string | null): string {
+  switch (planStatus) {
+    case 'ACTIVE':
+      return 'Actif';
+    case 'TRIALING':
+      return 'Essai';
+    case 'GRACE_PERIOD':
+      return 'Grâce';
+    case 'SUSPENDED':
+      return 'Suspendu';
+    case 'BLOCKED':
+      return 'Bloqué';
+    case 'CANCELED':
+      return 'Annulé';
+    default:
+      return planStatus || '—';
+  }
+}
+
+/** Couleur pour la cellule "Jours restants" : vert > 7, ambre 3-7, rouge < 3. */
+function daysRemainingClass(days: number | null | undefined): string {
+  if (days === null || days === undefined) return 'text-slate-400';
+  if (days < 3) return 'text-red-600 font-bold';
+  if (days <= 7) return 'text-amber-600 font-bold';
+  return 'text-emerald-700 font-semibold';
+}
 
 export default function TenantsWorkspace() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -233,77 +293,131 @@ export default function TenantsWorkspace() {
                   <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">École</th>
                   <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Pays / Ville</th>
                   <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Plan</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Statut</th>
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Statut abonnement</th>
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Jours restants</th>
                   <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Élèves</th>
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Drapeaux</th>
                   <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Expiration</th>
                   <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {data.tenants.map((t) => (
-                  <tr key={t.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="font-bold text-slate-900">{t.name}</div>
-                      <div className="text-xs text-slate-500 font-mono">{t.slug}</div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm text-slate-700">{t.country}</div>
-                      <div className="text-xs text-slate-400">{t.city}</div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="text-xs font-bold text-indigo-600 uppercase">{t.plan}</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      {t.status === 'ACTIVE' ? (
-                        <span className="px-2.5 py-1 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-bold uppercase">Actif</span>
-                      ) : t.status === 'TRIAL' ? (
-                        <span className="px-2.5 py-1 bg-amber-100 text-amber-700 rounded-full text-[10px] font-bold uppercase">Essai</span>
-                      ) : (
-                        <span className="px-2.5 py-1 bg-rose-100 text-rose-700 rounded-full text-[10px] font-bold uppercase">Suspendu</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-sm font-bold text-slate-900">{t.students}</td>
-                    <td className="px-6 py-4 text-xs text-slate-600">
-                      {t.expiration ? new Date(t.expiration).toLocaleDateString('fr-FR') : '—'}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <button
-                          onClick={() => handleToggleStatus(t.id, t.status)}
-                          disabled={actionLoading === t.id}
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition ${
-                            t.status === 'SUSPENDED'
-                              ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
-                              : 'bg-rose-50 text-rose-600 hover:bg-rose-100'
-                          } disabled:opacity-50`}
-                          title={t.status === 'SUSPENDED' ? 'Réactiver' : 'Suspendre'}
+                {data.tenants.map((t) => {
+                  const planStatus = t.planStatus || null;
+                  return (
+                    <tr key={t.id} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="font-bold text-slate-900">{t.name}</div>
+                        <div className="text-xs text-slate-500 font-mono">{t.slug}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-slate-700">{t.country}</div>
+                        <div className="text-xs text-slate-400">{t.city}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-xs font-bold text-amber-700 uppercase">{t.plan}</span>
+                        {t.billingCycle && (
+                          <div className="text-[10px] text-slate-400 uppercase mt-0.5">
+                            {t.billingCycle === 'ANNUAL' ? 'Annuel' : t.billingCycle === 'MONTHLY' ? 'Mensuel' : t.billingCycle}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        {/* Badge précis basé sur planStatus, fallback sur l'ancien statut */}
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${planStatusBadgeClass(
+                            planStatus,
+                          )}`}
                         >
-                          {actionLoading === t.id ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : t.status === 'SUSPENDED' ? (
-                            <><Play className="w-3.5 h-3.5" /> Réactiver</>
-                          ) : (
-                            <><Pause className="w-3.5 h-3.5" /> Suspendre</>
+                          {planStatusLabel(planStatus)}
+                        </span>
+                      </td>
+                      <td className={`px-6 py-4 text-sm ${daysRemainingClass(t.daysRemaining)}`}>
+                        {t.daysRemaining === null || t.daysRemaining === undefined ? (
+                          <span className="text-slate-400 inline-flex items-center gap-1">
+                            <Clock className="w-3 h-3" /> —
+                          </span>
+                        ) : t.daysRemaining > 0 ? (
+                          <span className="inline-flex items-center gap-1">
+                            <Clock className="w-3 h-3" /> {t.daysRemaining} j
+                          </span>
+                        ) : (
+                          <span className="text-red-700 font-bold">Expiré</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-sm font-bold text-slate-900">{t.students}</td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-1.5">
+                          {t.bilingualEnabled && (
+                            <span
+                              title="Mode bilingue activé"
+                              className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-violet-100 text-violet-700"
+                            >
+                              <Languages className="w-3.5 h-3.5" />
+                            </span>
                           )}
-                        </button>
-                        <button
-                          onClick={() => openEdit(t)}
-                          title="Modifier"
-                          className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-blue-900 transition-colors"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => { setDeleteTarget(t); setDeleteError(null); }}
-                          title="Supprimer"
-                          className="p-1.5 rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          {t.studentEnrollmentBlocked && (
+                            <span
+                              title="Inscription d'élèves bloquée"
+                              className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-red-100 text-red-700"
+                            >
+                              <AlertTriangle className="w-3.5 h-3.5" />
+                            </span>
+                          )}
+                          {!t.bilingualEnabled && !t.studentEnrollmentBlocked && (
+                            <span className="text-xs text-slate-400">—</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-xs text-slate-600">
+                        {t.expiration ? new Date(t.expiration).toLocaleDateString('fr-FR') : '—'}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            onClick={() => handleToggleStatus(t.id, t.status)}
+                            disabled={actionLoading === t.id}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition ${
+                              t.status === 'SUSPENDED'
+                                ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                                : 'bg-rose-50 text-rose-600 hover:bg-rose-100'
+                            } disabled:opacity-50`}
+                            title={t.status === 'SUSPENDED' ? 'Réactiver' : 'Suspendre'}
+                          >
+                            {actionLoading === t.id ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : t.status === 'SUSPENDED' ? (
+                              <>
+                                <Play className="w-3.5 h-3.5" /> Réactiver
+                              </>
+                            ) : (
+                              <>
+                                <Pause className="w-3.5 h-3.5" /> Suspendre
+                              </>
+                            )}
+                          </button>
+                          <button
+                            onClick={() => openEdit(t)}
+                            title="Modifier"
+                            className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-blue-900 transition-colors"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setDeleteTarget(t);
+                              setDeleteError(null);
+                            }}
+                            title="Supprimer"
+                            className="p-1.5 rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

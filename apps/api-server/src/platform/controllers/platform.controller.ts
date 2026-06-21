@@ -436,4 +436,40 @@ export class PlatformController {
     this.assertAdminProxyRequest(adminEmail);
     return this.platformService.updateSettings(body, { email: adminEmail });
   }
+
+  // ============================================================================
+  // COMMUNICATION — LOGS CROSS-TENANT
+  // ============================================================================
+
+  /**
+   * GET /platform/communication/logs — Logs d'emails agrégés sur tous les tenants.
+   *
+   * Query params:
+   *   - page (default 1)
+   *   - limit (default 50, max 200)
+   *   - search (subject / recipient / recipientName / fromEmail — partial match)
+   *   - category (RECRUTEMENT | PEDAGOGIE | FINANCE | ADMINISTRATIF | COMMUNICATION | SYSTEM)
+   *   - status (PENDING | SENT | DELIVERED | BOUNCED | FAILED | OPENED | CLICKED)
+   *   - tenantId (filtre par tenant)
+   */
+  @Get('communication/logs')
+  async getCommunicationLogs(
+    @Headers('x-platform-admin-email') adminEmail?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('search') search?: string,
+    @Query('category') category?: string,
+    @Query('status') status?: string,
+    @Query('tenantId') tenantId?: string,
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.getCommunicationLogs({
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+      search,
+      category,
+      status,
+      tenantId,
+    });
+  }
 }

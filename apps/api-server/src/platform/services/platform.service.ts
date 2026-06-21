@@ -1181,6 +1181,101 @@ export class PlatformService {
     return result;
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // COMMUNICATION LOGS — Agrégation cross-tenant des EmailLogs
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Liste les EmailLogs de tous les tenants (vue back-office plateforme).
+   * Filtres optionnels : search (subject/recipient), category, status, tenantId.
+   * Pagination : page (default 1), limit (default 50, max 200).
+   *
+   * Retourne :
+   *   - logs[] : id, date, from, to, recipientName, subject, category, subCategory,
+   *              module, status, tenantId, tenantName, provider, errorMessage
+   *   - stats : total, byStatus, byCategory
+   *   - pagination : total, page, limit, totalPages
+   */
+  async getCommunicationLogs(opts: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    category?: string;
+    status?: string;
+    tenantId?: string;
+  }) {
+    const page = Math.max(1, opts.page || 1);
+    const limit = Math.min(200, Math.max(1, opts.limit || 50));
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+    if (opts.category && opts.category !== 'ALL') where.category = opts.category;
+    if (opts.status && opts.status !== 'ALL') where.status = opts.status;
+    if (opts.tenantId) where.tenantId = opts.tenantId;
+    if (opts.search) {
+      where.OR = [
+        { subject: { contains: opts.search, mode: 'insensitive' } },
+        { recipient: { contains: opts.search, mode: 'insensitive' } },
+        { recipientName: { contains: opts.search, mode: 'insensitive' } },
+        { fromEmail: { contains: opts.search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [rows, total, statusAgg, categoryAgg] = await Promise.all([
+      this.prisma.emailLog.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          tenant: { select: { id: true, name: true, slug: true } },
+        },
+      }),
+      this.prisma.emailLog.count({ where }),
+      this.prisma.emailLog.groupBy({ by: ['status'], where, _count: { status: true } }),
+      this.prisma.emailLog.groupBy({ by: ['category'], where, _count: { category: true } }),
+    ]);
+
+    const byStatus: Record<string, number> = {};
+    statusAgg.forEach((s) => (byStatus[s.status || 'UNKNOWN'] = s._count.status));
+    const byCategory: Record<string, number> = {};
+    categoryAgg.forEach((c) => (byCategory[c.category || 'UNKNOWN'] = c._count.category));
+
+    return {
+      logs: rows.map((l) => ({
+        id: l.id,
+        date: l.createdAt.toISOString(),
+        from: l.fromEmail || 'noreply@academiahelm.com',
+        fromName: l.fromName || null,
+        to: l.recipient,
+        toName: l.recipientName || null,
+        subject: l.subject,
+        category: l.category || 'SYSTEM',
+        subCategory: l.subCategory || null,
+        module: l.module || null,
+        status: l.status,
+        provider: l.provider || null,
+        errorMessage: l.errorMessage || null,
+        sentAt: l.sentAt?.toISOString() || null,
+        tenantId: l.tenantId,
+        tenantName: l.tenant?.name || '—',
+        tenantSlug: l.tenant?.slug || null,
+        threadId: l.threadId || null,
+      })),
+      stats: {
+        total,
+        byStatus,
+        byCategory,
+      },
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
   async updateSettings(body: any, user: any) {
     if (!body || typeof body !== 'object') throw new BadRequestException('Body invalide');
     for (const [key, value] of Object.entries(body)) {

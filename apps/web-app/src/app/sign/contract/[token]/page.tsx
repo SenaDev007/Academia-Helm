@@ -244,7 +244,7 @@ export default function ContractSignPage({
 
             <div className="flex flex-col sm:flex-row gap-3">
               <a
-                href="https://academiahelm.com"
+                href="https://www.academiahelm.com"
                 className="flex-1 px-6 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"
               >
                 <Home className="w-4 h-4" /> Aller à l'accueil
@@ -320,7 +320,7 @@ export default function ContractSignPage({
           <div className="p-8 text-center">
             <p className="text-slate-600">{errorConfig.message}</p>
             <a
-              href="https://academiahelm.com"
+              href="https://www.academiahelm.com"
               className="mt-6 inline-flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-colors"
             >
               <Home className="w-4 h-4" /> Aller à l'accueil

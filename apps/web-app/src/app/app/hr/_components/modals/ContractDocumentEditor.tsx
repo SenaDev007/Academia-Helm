@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, memo, useRef } from 'react';
 import {
   Pencil, Loader2, Plus, Trash2, ChevronUp, ChevronDown,
   Eye, FileText, Save, AlertCircle, ArrowLeft,
@@ -11,6 +11,44 @@ import { toast } from '@/components/ui/toast';
 import { motion } from 'framer-motion';
 
 const PRIMARY = '#1A2BA6';
+
+/**
+ * RichTextContent — uncontrolled contentEditable wrapper.
+ *
+ * Why uncontrolled? Because re-setting `dangerouslySetInnerHTML` on every
+ * keystroke (after the parent state updates) causes the caret to jump to the
+ * start of the editor. Instead, we set the innerHTML imperatively only when
+ * the `initialContent` prop actually differs from what's already in the DOM
+ * (i.e. on initial load or when fresh articles are fetched). Typing is
+ * handled natively by the browser; we just propagate the resulting HTML
+ * upward via `onInput`.
+ */
+interface RichTextContentProps {
+  initialContent: string;
+  onInput: (html: string) => void;
+}
+
+const RichTextContent = memo(function RichTextContent({ initialContent, onInput }: RichTextContentProps) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (el && el.innerHTML !== initialContent) {
+      el.innerHTML = initialContent || '';
+    }
+  }, [initialContent]);
+
+  return (
+    <div
+      ref={ref}
+      contentEditable
+      suppressContentEditableWarning
+      onInput={(e) => onInput(e.currentTarget.innerHTML)}
+      className="px-3 py-2 text-sm text-slate-700 focus:outline-none min-h-[80px] prose prose-sm max-w-none empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400 empty:before:cursor-text"
+      data-placeholder="Contenu de l'article (utilisez la barre d'outils pour le formatage)"
+    />
+  );
+}, (prev, next) => prev.initialContent === next.initialContent);
 
 interface Article {
   title: string;
@@ -290,8 +328,9 @@ export function ContractDocumentEditor({ isOpen, onClose, onSuccess, contract }:
             <div className="p-3 rounded-xl bg-blue-50/80 border border-blue-200 text-xs text-blue-800 flex gap-2">
               <AlertCircle className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
               <p>
-                Vous pouvez modifier librement le titre et le contenu de chaque article.
-                Utilisez les balises <code className="bg-blue-100 px-1 rounded">&lt;strong&gt;</code> pour le gras.
+                Modifiez librement le titre et le contenu de chaque article.
+                Utilisez la barre d'outils (<strong className="font-bold">B</strong>, <em className="italic">I</em>, <u>U</u>, listes) au-dessus
+                de chaque article pour mettre en forme le texte — le HTML est préservé automatiquement.
                 Après signature, toute modification nécessitera un avenant.
               </p>
             </div>
@@ -340,13 +379,57 @@ export function ContractDocumentEditor({ isOpen, onClose, onSuccess, contract }:
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus:border-[#1A2BA6] focus:ring-2 focus:ring-[#1A2BA6]/10"
                     placeholder="Titre de l'article"
                   />
-                  <textarea
-                    value={art.content}
-                    onChange={(e) => updateArticle(idx, 'content', e.target.value)}
-                    rows={4}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:border-[#1A2BA6] focus:ring-2 focus:ring-[#1A2BA6]/10 resize-y min-h-[80px]"
-                    placeholder="Contenu de l'article (HTML autorisé pour le formatage)"
-                  />
+                  <div className="border border-slate-200 rounded-lg overflow-hidden focus-within:border-[#1A2BA6] focus-within:ring-2 focus-within:ring-[#1A2BA6]/10">
+                    {/* Formatting toolbar */}
+                    <div className="flex items-center gap-1 px-2 py-1.5 border-b border-slate-100 bg-slate-50">
+                      <button
+                        type="button"
+                        title="Gras"
+                        onMouseDown={(e) => { e.preventDefault(); document.execCommand('bold'); }}
+                        className="px-2.5 py-1 text-sm font-bold text-slate-700 hover:bg-slate-200 rounded-md transition"
+                      >
+                        B
+                      </button>
+                      <button
+                        type="button"
+                        title="Italique"
+                        onMouseDown={(e) => { e.preventDefault(); document.execCommand('italic'); }}
+                        className="px-2.5 py-1 text-sm italic text-slate-700 hover:bg-slate-200 rounded-md transition"
+                      >
+                        I
+                      </button>
+                      <button
+                        type="button"
+                        title="Souligné"
+                        onMouseDown={(e) => { e.preventDefault(); document.execCommand('underline'); }}
+                        className="px-2.5 py-1 text-sm underline text-slate-700 hover:bg-slate-200 rounded-md transition"
+                      >
+                        U
+                      </button>
+                      <div className="w-px h-5 bg-slate-200 mx-1" />
+                      <button
+                        type="button"
+                        title="Liste à puces"
+                        onMouseDown={(e) => { e.preventDefault(); document.execCommand('insertUnorderedList'); }}
+                        className="px-2 py-1 text-sm text-slate-700 hover:bg-slate-200 rounded-md transition"
+                      >
+                        •
+                      </button>
+                      <button
+                        type="button"
+                        title="Liste numérotée"
+                        onMouseDown={(e) => { e.preventDefault(); document.execCommand('insertOrderedList'); }}
+                        className="px-2 py-1 text-sm text-slate-700 hover:bg-slate-200 rounded-md transition"
+                      >
+                        1.
+                      </button>
+                    </div>
+                    {/* Rich text editor */}
+                    <RichTextContent
+                      initialContent={art.content || ''}
+                      onInput={(html) => updateArticle(idx, 'content', html)}
+                    />
+                  </div>
                 </div>
               </motion.div>
             ))}

@@ -347,7 +347,7 @@ export default function ContractDetailPage() {
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <span
-                className="px-3 py-1.5 rounded-full text-xs font-bold uppercase flex items-center gap-1.5"
+                className="px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5"
                 style={{ backgroundColor: status.bg, color: status.color, border: `1px solid ${status.border}` }}
               >
                 <StatusIcon className="h-3.5 w-3.5" />

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, useEffect } from 'react';
-import { X, PenTool, Trash2, CheckCircle, Loader2, Shield, UserCheck, Building2 } from 'lucide-react';
+import { X, PenTool, Trash2, CheckCircle, Loader2, Shield, UserCheck, Building2, Clock } from 'lucide-react';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { toast } from '@/components/ui/toast';
@@ -35,18 +35,20 @@ export function ContractSignModal({ isOpen, onClose, onSuccess, contract }: Cont
 
   useEffect(() => {
     if (contract) {
-      // Pre-fill the signer name from the contract staff
-      if (contract.staff) {
-        setSignerName(`${contract.staff.firstName} ${contract.staff.lastName}`);
-      }
-      // Auto-select the role:
-      // - If employer hasn't signed yet → default to EMPLOYEUR
-      // - If employer has signed but employee hasn't → default to EMPLOYE
       const t: any = (contract.terms as any) || {};
       if (!t.employerSignedAt) {
+        // Employer (recruteur) signs first — do NOT pre-fill with the employee's
+        // name. Use the employer's legal representative name if available,
+        // otherwise leave the field empty (the recruiter will type their own name).
         setSignerRole('EMPLOYEUR');
+        setSignerName(t.employerName || '');
       } else {
+        // Employer has signed — now the employee signs. Pre-fill with the
+        // staff (employee) name.
         setSignerRole('EMPLOYE');
+        if (contract.staff) {
+          setSignerName(`${contract.staff.firstName} ${contract.staff.lastName}`);
+        }
       }
     }
   }, [contract]);
@@ -215,7 +217,7 @@ export function ContractSignModal({ isOpen, onClose, onSuccess, contract }: Cont
                 type="button"
                 onClick={() => setSignerRole('EMPLOYE')}
                 disabled={!employerHasSigned || employeeHasSigned}
-                className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-xs font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed ${
+                className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-xs font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed ${
                   signerRole === 'EMPLOYE'
                     ? 'border-[#1A2BA6] bg-[#1A2BA6]/5 text-[#1A2BA6]'
                     : 'border-slate-200 text-slate-600 hover:border-slate-300'
@@ -224,14 +226,23 @@ export function ContractSignModal({ isOpen, onClose, onSuccess, contract }: Cont
                 <UserCheck className="h-4 w-4" />
                 <div className="text-left">
                   <div>Employé</div>
-                  {!employerHasSigned && <div className="text-[9px] text-amber-600 font-medium">En attente employeur</div>}
+                  {!employerHasSigned && !employeeHasSigned && (
+                    <div className="text-[9px] text-amber-600 font-medium">En attente de signature de l&apos;employeur</div>
+                  )}
                   {employeeHasSigned && <div className="text-[9px] text-green-600 font-medium">Déjà signé</div>}
                 </div>
               </button>
             </div>
-            {!employerHasSigned && signerRole === 'EMPLOYE' && (
-              <p className="mt-1.5 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
-                L'employeur doit signer le contrat en premier.
+            {!employerHasSigned && !employeeHasSigned && (
+              <p className="mt-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5 flex items-start gap-1.5">
+                <Clock className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
+                <span>La section <strong>Employé</strong> est verrouillée tant que l&apos;employeur n&apos;a pas signé le contrat. Veuillez signer en tant qu&apos;employeur d&apos;abord.</span>
+              </p>
+            )}
+            {employerHasSigned && !employeeHasSigned && (
+              <p className="mt-1.5 text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-2.5 py-1.5 flex items-start gap-1.5">
+                <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />
+                <span>L&apos;employeur a signé le contrat. L&apos;employé peut maintenant apposer sa signature.</span>
               </p>
             )}
           </div>
@@ -239,14 +250,18 @@ export function ContractSignModal({ isOpen, onClose, onSuccess, contract }: Cont
           {/* Signer name */}
           <div>
             <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-              Nom complet du signataire
+              {signerRole === 'EMPLOYEUR'
+                ? 'Nom du représentant légal (employeur)'
+                : 'Nom complet du signataire (employé)'}
             </label>
             <input
               type="text"
               className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:outline-none focus:border-[#1A2BA6] focus:ring-2 focus:ring-[#1A2BA6]/10"
               value={signerName}
               onChange={(e) => setSignerName(e.target.value)}
-              placeholder="Nom et prénom"
+              placeholder={signerRole === 'EMPLOYEUR'
+                ? 'Nom du représentant légal de l\'établissement'
+                : 'Nom et prénom'}
             />
           </div>
 

@@ -79,11 +79,51 @@ export class ContractSignTokenService {
       this.configService.get<string>('CONTRACT_SIGN_TOKEN_EXPIRY_DAYS') || '30',
       10,
     );
-    // URL publique de l'app (pour construire l'URL de signature)
-    this.publicBaseUrl =
+    // URL publique de l'app (pour construire l'URL de signature).
+    // On lit PUBLIC_WEB_URL ou APP_PUBLIC_URL ; à défaut on utilise le domaine
+    // public canonical (avec « www »). La production sert le site sur
+    // https://www.academiahelm.com — sans « www », certains reverse-proxies
+    // (Caddy, Vercel) ne redirigent pas forcément vers la bonne route.
+    const rawBaseUrl =
       this.configService.get<string>('PUBLIC_WEB_URL') ||
       this.configService.get<string>('APP_PUBLIC_URL') ||
-      'https://academiahelm.com';
+      'https://www.academiahelm.com';
+    this.publicBaseUrl = this.normalizeBaseUrl(rawBaseUrl);
+  }
+
+  /**
+   * Normalise la base d'URL publique :
+   *   - retire tout trailing slash
+   *   - garantit le sous-domaine « www » pour academiahelm.com (la prod sert
+   *     le site sur www.academiahelm.com ; sans « www », les liens de
+   *     signature envoyés par email peuvent atterrir sur une 404 ou un
+   *     redirect qui casse le flux /sign/contract/[token]).
+   */
+  private normalizeBaseUrl(url: string): string {
+    if (!url) return 'https://www.academiahelm.com';
+    let normalized = url.trim().replace(/\/+$/, ''); // retire les trailing slashes
+    // Ajoute « www. » si on pointe vers la racine academiahelm.com (sans www)
+    // ex : https://academiahelm.com → https://www.academiahelm.com
+    //      http://academiahelm.com  → http://www.academiahelm.com
+    try {
+      const parsed = new URL(normalized);
+      if (
+        (parsed.hostname === 'academiahelm.com' ||
+          parsed.hostname.endsWith('.academiahelm.com')) &&
+        !parsed.hostname.startsWith('www.')
+      ) {
+        // Only add www to the apex domain, not to existing subdomains
+        // (tenant.academiahelm.com should stay as-is)
+        if (parsed.hostname === 'academiahelm.com') {
+          parsed.hostname = 'www.academiahelm.com';
+          normalized = parsed.toString().replace(/\/+$/, '');
+        }
+      }
+    } catch {
+      // URL invalide — on garde le fallback canonical
+      normalized = 'https://www.academiahelm.com';
+    }
+    return normalized;
   }
 
   /**

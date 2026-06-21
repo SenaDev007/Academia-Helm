@@ -307,12 +307,15 @@ export class PlatformService {
     const invoices = await this.prisma.helmInvoice.findMany({
       orderBy: { createdAt: 'desc' },
       take: 200,
-      include: {
-        subscription: {
-          include: { tenant: { select: { name: true, slug: true } } },
-        },
-      },
     });
+
+    // Enrichir avec le nom du tenant séparément (évite les jointures lourdes)
+    const tenantIds = [...new Set(invoices.map((i) => i.tenantId))];
+    const tenants = await this.prisma.tenant.findMany({
+      where: { id: { in: tenantIds } },
+      select: { id: true, name: true },
+    });
+    const tenantMap = new Map(tenants.map((t) => [t.id, t.name]));
 
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
@@ -339,13 +342,16 @@ export class PlatformService {
       },
       invoices: invoices.map((i) => ({
         id: i.id,
-        school: i.subscription?.tenant?.name || '—',
+        school: tenantMap.get(i.tenantId) || '—',
         amount: Number(i.amount || 0),
         currency: i.currency || 'XOF',
         status: i.status,
         date: i.createdAt.toISOString(),
         paidAt: i.paidAt?.toISOString() || null,
         period: i.period,
+        invoiceNumber: (i as any).invoiceNumber || null,
+        description: (i as any).description || null,
+        type: (i as any).type || null,
       })),
     };
   }

@@ -329,17 +329,36 @@ export class ContractPdfService {
     // au lieu de variables, et que ces valeurs contiennent des accolades)
     // Remplacer les {{nombre}} ou {{texte}} qui ne sont pas des helpers connus
     // par leur valeur littérale (enlever les accolades)
-    const knownHelpers = ['if', 'each', 'unless', 'else', 'with', 'lookup', 'log', 'block', 'partial', 'content', 'insert', 'eq', 'ne', 'gt', 'lt', 'and', 'or', 'not'];
+    //
+    // IMPORTANT: On préserve TOUJOURS les blocs helpers {{#helper ...}},
+    // {{/helper}}, {{else}}, {{^}}, et les helpers avec arguments
+    // (ex: {{lookup foo bar}}, {{eq a b}}), sinon on casse la structure
+    // du template (ex: {{else}} sans {{#if}} → erreur de parse Handlebars).
+    const knownHelpers = ['if', 'each', 'unless', 'else', 'with', 'lookup', 'log', 'block', 'partial', 'content', 'insert', 'eq', 'ne', 'gt', 'lt', 'and', 'or', 'not', 'this'];
     templateSource = templateSource.replace(/\{\{([^}]+)\}\}/g, (match, inner) => {
       const trimmed = inner.trim();
+
+      // 1) Préserver les blocs ouvrants {{#helper ...}} et fermants {{/helper}}
+      //    et les inverses {{^}}, ainsi que {{else}}
+      if (/^(#|\/|\^)/.test(trimmed) || trimmed === 'else') {
+        return match;
+      }
+
       const firstWord = trimmed.split(/\s+/)[0];
-      // Si c'est un helper connu, garder tel quel
+
+      // 2) Préserver les helpers connus (avec ou sans arguments)
       if (knownHelpers.includes(firstWord)) return match;
-      // Si c'est une variable connue dans templateVars, garder tel quel
+
+      // 3) Préserver les appels de helper avec parenthèses, ex: {{(helper foo)}}
+      if (/^\(/.test(trimmed)) return match;
+
+      // 4) Préserver les variables connues dans templateVars
       if (templateVars.hasOwnProperty(trimmed)) return match;
-      // Si c'est une variable avec un point (ex: contract.id), garder
-      if (trimmed.includes('.')) return match;
-      // Sinon, c'est probablement une valeur résiduelle — enlever les accolades
+
+      // 5) Préserver les accès avec point, ex: contract.id, staff.firstName, @root.foo
+      if (trimmed.includes('.') || trimmed.startsWith('@')) return match;
+
+      // 6) Sinon, c'est probablement une valeur résiduelle — enlever les accolades
       this.logger.warn(`Removing unknown Handlebars expression: ${match}`);
       return trimmed;
     });
@@ -543,13 +562,31 @@ export class ContractPdfService {
     };
 
     // Nettoyer le template (même logique que generateContractPdf)
-    const knownHelpers2 = ['if', 'each', 'unless', 'else', 'with', 'lookup', 'log', 'block', 'partial', 'content', 'insert', 'eq', 'ne', 'gt', 'lt', 'and', 'or', 'not'];
+    // IMPORTANT: préserver les blocs helpers {{#if}}, {{/if}}, {{else}}, {{^}}
+    // pour ne pas casser la structure du template.
+    const knownHelpers2 = ['if', 'each', 'unless', 'else', 'with', 'lookup', 'log', 'block', 'partial', 'content', 'insert', 'eq', 'ne', 'gt', 'lt', 'and', 'or', 'not', 'this'];
     templateSource = templateSource.replace(/\{\{([^}]+)\}\}/g, (match, inner) => {
       const trimmed = inner.trim();
+
+      // 1) Préserver blocs ouvrants/fermants et inverses
+      if (/^(#|\/|\^)/.test(trimmed) || trimmed === 'else') {
+        return match;
+      }
+
       const firstWord = trimmed.split(/\s+/)[0];
+
+      // 2) Préserver helpers connus
       if (knownHelpers2.includes(firstWord)) return match;
+
+      // 3) Préserver appels helper avec parenthèses
+      if (/^\(/.test(trimmed)) return match;
+
+      // 4) Préserver variables connues
       if (templateVars.hasOwnProperty(trimmed)) return match;
-      if (trimmed.includes('.')) return match;
+
+      // 5) Préserver accès avec point ou @root
+      if (trimmed.includes('.') || trimmed.startsWith('@')) return match;
+
       return trimmed;
     });
 

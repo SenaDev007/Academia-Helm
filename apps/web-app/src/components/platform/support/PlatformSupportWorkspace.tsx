@@ -8,9 +8,8 @@ import {
   CheckCircle2,
   Loader2,
   AlertCircle,
-  RefreshCw,
-  X,
   MessageSquare,
+  Send,
 } from 'lucide-react';
 import { usePlatformData } from '@/hooks/usePlatformData';
 import { PlatformLoading, PlatformError, PlatformEmpty } from '../PlatformStates';
@@ -26,26 +25,48 @@ interface SupportData {
   note?: string;
 }
 
+const STATUS_OPTIONS: Array<{ value: string; label: string; cls: string }> = [
+  { value: 'OPEN', label: 'Ouvert', cls: 'bg-amber-100 text-amber-700' },
+  { value: 'IN_PROGRESS', label: 'En cours', cls: 'bg-blue-100 text-blue-700' },
+  { value: 'RESOLVED', label: 'Résolu', cls: 'bg-emerald-100 text-emerald-700' },
+  { value: 'CLOSED', label: 'Fermé', cls: 'bg-slate-100 text-slate-700' },
+];
+
+const PRIORITY_OPTIONS: Array<{ value: string; label: string; cls: string }> = [
+  { value: 'LOW', label: 'Basse', cls: 'bg-slate-100 text-slate-700' },
+  { value: 'MEDIUM', label: 'Moyenne', cls: 'bg-blue-100 text-blue-700' },
+  { value: 'HIGH', label: 'Haute', cls: 'bg-amber-100 text-amber-700' },
+  { value: 'URGENT', label: 'Urgente', cls: 'bg-rose-100 text-rose-700' },
+];
+
 export default function PlatformSupportWorkspace() {
   const { data, loading, error, refetch } = usePlatformData<SupportData>('/support/tickets');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [selectedTicket, setSelectedTicket] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
 
-  const handleUpdateStatus = useCallback(async (ticketId: string, newStatus: string) => {
+  const handleUpdateTicket = useCallback(async (
+    ticketId: string,
+    patch: { status?: string; priority?: string; assignedTo?: string },
+  ) => {
     setActionLoading(ticketId);
     setActionError(null);
+    setActionSuccess(null);
     try {
-      const res = await fetch(`/api/platform/support/tickets/${ticketId}/status`, {
+      const res = await fetch(`/api/platform/support/tickets/${ticketId}`, {
         method: 'PATCH',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify(patch),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err?.message || `Erreur ${res.status}`);
       }
+      setActionSuccess('Ticket mis à jour.');
+      setTimeout(() => setActionSuccess(null), 1200);
       refetch();
     } catch (err: any) {
       setActionError(err.message || 'Erreur');
@@ -56,11 +77,12 @@ export default function PlatformSupportWorkspace() {
 
   const handleReply = useCallback(async (ticketId: string) => {
     if (!replyText.trim()) return;
-    setActionLoading(ticketId);
+    setActionLoading(`reply-${ticketId}`);
     setActionError(null);
     try {
       const res = await fetch(`/api/platform/support/tickets/${ticketId}/reply`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: replyText }),
       });
@@ -70,6 +92,8 @@ export default function PlatformSupportWorkspace() {
       }
       setReplyText('');
       setSelectedTicket(null);
+      setActionSuccess('Réponse envoyée.');
+      setTimeout(() => setActionSuccess(null), 1200);
       refetch();
     } catch (err: any) {
       setActionError(err.message || 'Erreur');
@@ -81,7 +105,7 @@ export default function PlatformSupportWorkspace() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Support & Tickets</h1>
+        <h1 className="text-2xl font-bold text-blue-900">Support & Tickets</h1>
         <p className="text-slate-500">Tickets de support des écoles</p>
       </div>
 
@@ -89,6 +113,12 @@ export default function PlatformSupportWorkspace() {
         <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700 flex items-center gap-2">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
           <span>{actionError}</span>
+        </div>
+      )}
+      {actionSuccess && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-700 flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+          <span>{actionSuccess}</span>
         </div>
       )}
 
@@ -149,91 +179,89 @@ export default function PlatformSupportWorkspace() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {data.tickets.map((t) => (
-                      <tr key={t.id} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="px-6 py-4 text-xs font-mono text-slate-500">{t.id}</td>
-                        <td className="px-6 py-4 font-bold text-slate-900">{t.school}</td>
-                        <td className="px-6 py-4 text-sm text-slate-700">{t.subject}</td>
-                        <td className="px-6 py-4">
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${
-                            t.priority === 'URGENT' ? 'bg-rose-100 text-rose-700' :
-                            t.priority === 'HIGH' ? 'bg-amber-100 text-amber-700' :
-                            t.priority === 'MEDIUM' ? 'bg-blue-100 text-blue-700' :
-                            'bg-slate-100 text-slate-700'
-                          }`}>{t.priority}</span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${
-                            t.status === 'OPEN' ? 'bg-amber-100 text-amber-700' :
-                            t.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' :
-                            t.status === 'RESOLVED' ? 'bg-emerald-100 text-emerald-700' :
-                            'bg-slate-100 text-slate-700'
-                          }`}>{t.status.replace('_', ' ')}</span>
-                        </td>
-                        <td className="px-6 py-4 text-xs text-slate-600">{new Date(t.date).toLocaleDateString('fr-FR')}</td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-1">
-                            {/* Reply button */}
-                            <button
-                              onClick={() => setSelectedTicket(selectedTicket === t.id ? null : t.id)}
-                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 transition"
-                              title="Répondre"
+                    {data.tickets.map((t) => {
+                      const statusOpt = STATUS_OPTIONS.find((s) => s.value === t.status) || STATUS_OPTIONS[0];
+                      const prioOpt = PRIORITY_OPTIONS.find((p) => p.value === t.priority) || PRIORITY_OPTIONS[0];
+                      const rowLoading = actionLoading === t.id;
+                      const replyLoading = actionLoading === `reply-${t.id}`;
+                      return (
+                        <tr key={t.id} className="hover:bg-slate-50/50 transition-colors align-top">
+                          <td className="px-6 py-4 text-xs font-mono text-slate-500">{t.id}</td>
+                          <td className="px-6 py-4 font-bold text-slate-900">{t.school}</td>
+                          <td className="px-6 py-4 text-sm text-slate-700">{t.subject}</td>
+                          <td className="px-6 py-4">
+                            <select
+                              value={t.priority}
+                              onChange={(e) => handleUpdateTicket(t.id, { priority: e.target.value })}
+                              disabled={rowLoading}
+                              className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border-0 cursor-pointer disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-amber-500/30 ${prioOpt.cls}`}
+                              title="Modifier la priorité"
                             >
-                              <MessageSquare className="w-3.5 h-3.5" /> Répondre
-                            </button>
-                            {/* Close/Resolve button */}
-                            {t.status !== 'CLOSED' && t.status !== 'RESOLVED' && (
+                              {PRIORITY_OPTIONS.map((p) => (
+                                <option key={p.value} value={p.value}>{p.label}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-6 py-4">
+                            <select
+                              value={t.status}
+                              onChange={(e) => handleUpdateTicket(t.id, { status: e.target.value })}
+                              disabled={rowLoading}
+                              className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border-0 cursor-pointer disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-amber-500/30 ${statusOpt.cls}`}
+                              title="Modifier le statut"
+                            >
+                              {STATUS_OPTIONS.map((s) => (
+                                <option key={s.value} value={s.value}>{s.label}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-6 py-4 text-xs text-slate-600">{new Date(t.date).toLocaleDateString('fr-FR')}</td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-1">
+                              {/* Reply button */}
                               <button
-                                onClick={() => handleUpdateStatus(t.id, 'RESOLVED')}
-                                disabled={actionLoading === t.id}
-                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition disabled:opacity-50"
-                                title="Marquer résolu"
+                                onClick={() => { setSelectedTicket(selectedTicket === t.id ? null : t.id); setReplyText(''); }}
+                                disabled={replyLoading || rowLoading}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium bg-amber-500 text-white hover:bg-amber-600 transition disabled:opacity-50"
+                                title="Répondre"
                               >
-                                {actionLoading === t.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                                {replyLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MessageSquare className="w-3.5 h-3.5" />}
+                                Répondre
                               </button>
-                            )}
-                            {/* Close button */}
-                            {t.status !== 'CLOSED' && (
-                              <button
-                                onClick={() => handleUpdateStatus(t.id, 'CLOSED')}
-                                disabled={actionLoading === t.id}
-                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium bg-slate-50 text-slate-500 hover:bg-slate-100 transition disabled:opacity-50"
-                                title="Clôturer"
-                              >
-                                {actionLoading === t.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
-                              </button>
-                            )}
-                          </div>
-                          {/* Reply textarea */}
-                          {selectedTicket === t.id && (
-                            <div className="mt-2 space-y-2">
-                              <textarea
-                                value={replyText}
-                                onChange={(e) => setReplyText(e.target.value)}
-                                placeholder="Tapez votre réponse..."
-                                rows={2}
-                                className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-blue-500"
-                              />
-                              <div className="flex gap-1">
-                                <button
-                                  onClick={() => handleReply(t.id)}
-                                  disabled={actionLoading === t.id || !replyText.trim()}
-                                  className="px-2 py-1 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                                >
-                                  {actionLoading === t.id ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Envoyer'}
-                                </button>
-                                <button
-                                  onClick={() => { setSelectedTicket(null); setReplyText(''); }}
-                                  className="px-2 py-1 text-xs font-medium text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50"
-                                >
-                                  Annuler
-                                </button>
-                              </div>
                             </div>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                            {/* Reply textarea */}
+                            {selectedTicket === t.id && (
+                              <div className="mt-2 space-y-2">
+                                <textarea
+                                  value={replyText}
+                                  onChange={(e) => setReplyText(e.target.value)}
+                                  placeholder="Tapez votre réponse..."
+                                  rows={2}
+                                  className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-amber-500"
+                                />
+                                <div className="flex gap-1">
+                                  <button
+                                    onClick={() => handleReply(t.id)}
+                                    disabled={replyLoading || !replyText.trim()}
+                                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-amber-500 rounded-lg hover:bg-amber-600 disabled:opacity-50"
+                                  >
+                                    {replyLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                                    Envoyer
+                                  </button>
+                                  <button
+                                    onClick={() => { setSelectedTicket(null); setReplyText(''); }}
+                                    disabled={replyLoading}
+                                    className="px-2 py-1 text-xs font-medium text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50"
+                                  >
+                                    Annuler
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

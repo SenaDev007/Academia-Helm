@@ -90,6 +90,16 @@ export class PlatformController {
     });
   }
 
+  /** GET /platform/tenants/:id/details — Vue 360° d'un tenant */
+  @Get('tenants/:id/details')
+  async getTenantDetails(
+    @Headers('x-platform-admin-email') adminEmail?: string,
+    @Param('id') id?: string,
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.getTenantDetails(id!);
+  }
+
   /** GET /platform/initial-subscriptions — Frais d'activation / onboarding */
   @Get('initial-subscriptions')
   async getInitialSubscriptions(@Headers('x-platform-admin-email') adminEmail?: string) {

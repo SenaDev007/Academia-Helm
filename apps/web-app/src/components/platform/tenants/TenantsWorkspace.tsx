@@ -194,6 +194,16 @@ function planStatusLabel(planStatus?: string | null): string {
   }
 }
 
+/** Helper component for displaying a label-value pair in the details modal. */
+function DetailField({ label, value }: { label: string; value: any }) {
+  return (
+    <div>
+      <dt className="text-[11px] text-slate-400 font-medium uppercase tracking-wide">{label}</dt>
+      <dd className="text-sm text-slate-700 font-medium mt-0.5">{value != null && value !== '' && value !== '—' ? value : <span className="text-slate-300">—</span>}</dd>
+    </div>
+  );
+}
+
 /** Couleur pour la cellule "Jours restants" : vert > 7, ambre 3-7, rouge < 3. */
 function daysRemainingClass(days: number | null | undefined): string {
   if (days === null || days === undefined) return 'text-slate-400';
@@ -227,6 +237,42 @@ export default function TenantsWorkspace() {
   const [deleteTarget, setDeleteTarget] = useState<Tenant | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Details modal state
+  const [detailsId, setDetailsId] = useState<string | null>(null);
+  const [detailsData, setDetailsData] = useState<any>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
+
+  const openDetails = async (tenantId: string) => {
+    setDetailsId(tenantId);
+    setDetailsData(null);
+    setDetailsError(null);
+    setDetailsLoading(true);
+    try {
+      const res = await fetch(`/api/platform/tenants/${tenantId}/details`, {
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error || j?.message || `Erreur ${res.status}`);
+      }
+      const data = await res.json();
+      setDetailsData(data);
+    } catch (err: any) {
+      setDetailsError(err.message || 'Erreur lors du chargement des détails');
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
+  const closeDetails = () => {
+    setDetailsId(null);
+    setDetailsData(null);
+    setDetailsError(null);
+    setDetailsLoading(false);
+  };
 
   // Create modal state (manual school creation)
   const [createOpen, setCreateOpen] = useState(false);
@@ -526,12 +572,13 @@ export default function TenantsWorkspace() {
                   return (
                     <tr key={t.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="px-4 py-4">
-                        <div
-                          className="font-bold text-slate-900 text-left"
+                        <button
+                          onClick={() => openDetails(t.id)}
+                          className="font-bold text-slate-900 text-left hover:text-blue-700 hover:underline cursor-pointer"
                           title={t.name}
                         >
                           {t.name}
-                        </div>
+                        </button>
                         <div
                           className="text-xs text-slate-500 font-mono"
                           title={t.slug}
@@ -1188,6 +1235,233 @@ export default function TenantsWorkspace() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Details Modal — Vue 360° */}
+      {detailsId && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 sticky top-0 bg-white z-10">
+              <h2 className="text-lg font-bold text-blue-900">Détails de l'établissement</h2>
+              <button
+                onClick={closeDetails}
+                className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {detailsLoading ? (
+              <div className="p-12 flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+              </div>
+            ) : detailsError ? (
+              <div className="p-6">
+                <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{detailsError}</div>
+              </div>
+            ) : detailsData ? (
+              <div className="p-5 space-y-6">
+                {/* Stats rapides */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="p-3 bg-blue-50 rounded-xl text-center">
+                    <p className="text-2xl font-bold text-blue-900">{detailsData.stats?.studentCount || 0}</p>
+                    <p className="text-xs text-slate-500">Élèves</p>
+                  </div>
+                  <div className="p-3 bg-amber-50 rounded-xl text-center">
+                    <p className="text-2xl font-bold text-amber-700">{detailsData.stats?.staffCount || 0}</p>
+                    <p className="text-xs text-slate-500">Personnel</p>
+                  </div>
+                  <div className="p-3 bg-emerald-50 rounded-xl text-center">
+                    <p className="text-2xl font-bold text-emerald-700">{detailsData.stats?.userCount || 0}</p>
+                    <p className="text-xs text-slate-500">Utilisateurs</p>
+                  </div>
+                </div>
+
+                {/* Informations établissement */}
+                <div>
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Établissement</h3>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <DetailField label="Nom" value={detailsData.tenant?.name} />
+                    <DetailField label="Sous-domaine" value={detailsData.tenant?.subdomain ? `${detailsData.tenant.subdomain}.academiahelm.com` : null} />
+                    <DetailField label="Slug" value={detailsData.tenant?.slug} />
+                    <DetailField label="Type" value={detailsData.tenant?.type} />
+                    <DetailField label="Statut" value={detailsData.tenant?.status} />
+                    <DetailField label="Statut abonnement" value={detailsData.tenant?.subscriptionStatus} />
+                    <DetailField label="Créé le" value={detailsData.tenant?.createdAt ? new Date(detailsData.tenant.createdAt).toLocaleDateString('fr-FR') : null} />
+                    <DetailField label="Inscription élèves bloquée" value={detailsData.tenant?.studentEnrollmentBlocked ? 'Oui' : 'Non'} />
+                  </div>
+                </div>
+
+                {/* Pays */}
+                {detailsData.country && (
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Pays</h3>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <DetailField label="Pays" value={`${detailsData.country.flag || ''} ${detailsData.country.name}`} />
+                      <DetailField label="Indicatif" value={detailsData.country.phonePrefix} />
+                    </div>
+                  </div>
+                )}
+
+                {/* School (infos détaillées) */}
+                {detailsData.school && (
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Informations établissement (School)</h3>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <DetailField label="Ville" value={detailsData.school.city} />
+                      <DetailField label="Adresse" value={detailsData.school.address} />
+                      <DetailField label="Téléphone" value={detailsData.school.primaryPhone} />
+                      <DetailField label="Email" value={detailsData.school.primaryEmail} />
+                      <DetailField label="Site web" value={detailsData.school.website} />
+                      <DetailField label="WhatsApp" value={detailsData.school.whatsapp} />
+                      <DetailField label="Logo" value={detailsData.school.logo ? 'Configuré' : 'Non'} />
+                      <DetailField label="Abbreviation" value={detailsData.school.abbreviation} />
+                      <DetailField label="Devise" value={detailsData.school.motto} />
+                      <DetailField label="Slogan" value={detailsData.school.slogan} />
+                      <DetailField label="Fondateur" value={detailsData.school.founderName} />
+                      <DetailField label="Directeur" value={detailsData.school.directorPrimary} />
+                      <DetailField label="Niveaux" value={detailsData.school.educationLevels?.join(', ')} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Abonnement */}
+                {detailsData.subscription && (
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Abonnement</h3>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <DetailField label="Plan" value={detailsData.subscription.plan} />
+                      <DetailField label="Cycle" value={detailsData.subscription.billingCycle === 'ANNUAL' ? 'Annuel' : 'Mensuel'} />
+                      <DetailField label="Statut" value={detailsData.subscription.status} />
+                      <DetailField label="Montant mensuel" value={`${(detailsData.subscription.monthlyAmount || 0).toLocaleString('fr-FR')} FCFA`} />
+                      <DetailField label="Frais d'activation" value={`${(detailsData.subscription.setupFee || 0).toLocaleString('fr-FR')} FCFA`} />
+                      <DetailField label="Bilingue" value={detailsData.subscription.bilingualEnabled ? 'Oui' : 'Non'} />
+                      <DetailField label="Expiration" value={detailsData.subscription.currentPeriodEnd ? new Date(detailsData.subscription.currentPeriodEnd).toLocaleDateString('fr-FR') : null} />
+                      <DetailField label="Jours restants" value={detailsData.subscription.daysRemaining != null ? `${detailsData.subscription.daysRemaining} jours` : null} />
+                      <DetailField label="Dernier paiement" value={detailsData.subscription.lastPaymentDate ? new Date(detailsData.subscription.lastPaymentDate).toLocaleDateString('fr-FR') : null} />
+                      <DetailField label="Montant dernier paiement" value={detailsData.subscription.lastPaymentAmount ? `${detailsData.subscription.lastPaymentAmount.toLocaleString('fr-FR')} FCFA` : null} />
+                      {detailsData.subscription.expiredAt && <DetailField label="Expiré le" value={new Date(detailsData.subscription.expiredAt).toLocaleDateString('fr-FR')} />}
+                      {detailsData.subscription.suspendedAt && <DetailField label="Suspendu le" value={new Date(detailsData.subscription.suspendedAt).toLocaleDateString('fr-FR')} />}
+                      {detailsData.subscription.blockedAt && <DetailField label="Bloqué le" value={new Date(detailsData.subscription.blockedAt).toLocaleDateString('fr-FR')} />}
+                    </div>
+                  </div>
+                )}
+
+                {/* Promoteur */}
+                {detailsData.promoter && (
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Promoteur</h3>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <DetailField label="Prénom" value={detailsData.promoter.firstName} />
+                      <DetailField label="Nom" value={detailsData.promoter.lastName} />
+                      <DetailField label="Email" value={detailsData.promoter.email} />
+                      <DetailField label="Téléphone" value={detailsData.promoter.phone} />
+                      <DetailField label="Rôle" value={detailsData.promoter.role} />
+                      <DetailField label="Statut" value={detailsData.promoter.status} />
+                      <DetailField label="Dernière connexion" value={detailsData.promoter.lastLoginAt ? new Date(detailsData.promoter.lastLoginAt).toLocaleDateString('fr-FR') : 'Jamais'} />
+                      <DetailField label="Créé le" value={detailsData.promoter.createdAt ? new Date(detailsData.promoter.createdAt).toLocaleDateString('fr-FR') : null} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Onboarding (infos collectées lors du signup) */}
+                {detailsData.onboarding && (
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Données d'onboarding (signup)</h3>
+                    <div className="p-4 bg-slate-50 rounded-xl">
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <DetailField label="Nom école (onboarding)" value={detailsData.onboarding.schoolName} />
+                        <DetailField label="Type (onboarding)" value={detailsData.onboarding.schoolType} />
+                        <DetailField label="Ville (onboarding)" value={detailsData.onboarding.city} />
+                        <DetailField label="Pays (onboarding)" value={detailsData.onboarding.country} />
+                        <DetailField label="Téléphone (onboarding)" value={detailsData.onboarding.phone} />
+                        <DetailField label="Email (onboarding)" value={detailsData.onboarding.email} />
+                        <DetailField label="Bilingue (onboarding)" value={detailsData.onboarding.bilingual ? 'Oui' : 'Non'} />
+                        <DetailField label="Sous-domaine préféré" value={detailsData.onboarding.preferredSubdomain} />
+                        <DetailField label="Prénom promoteur" value={detailsData.onboarding.promoterFirstName} />
+                        <DetailField label="Nom promoteur" value={detailsData.onboarding.promoterLastName} />
+                        <DetailField label="Email promoteur" value={detailsData.onboarding.promoterEmail} />
+                        <DetailField label="Téléphone promoteur" value={detailsData.onboarding.promoterPhone} />
+                        <DetailField label="Statut onboarding" value={detailsData.onboarding.status} />
+                        <DetailField label="Date onboarding" value={detailsData.onboarding.createdAt ? new Date(detailsData.onboarding.createdAt).toLocaleDateString('fr-FR') : null} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Niveaux scolaires */}
+                {detailsData.schoolLevels?.length > 0 && (
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Niveaux scolaires</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {detailsData.schoolLevels.map((sl: any) => (
+                        <span key={sl.id} className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-semibold">
+                          {sl.name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Tracks académiques */}
+                {detailsData.academicTracks?.length > 0 && (
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Parcours académiques</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {detailsData.academicTracks.map((at: any) => (
+                        <span key={at.id} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${at.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                          {at.code} — {at.name} {at.isDefault && '(défaut)'}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Factures */}
+                {detailsData.invoices?.length > 0 && (
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Factures ({detailsData.invoices.length})</h3>
+                    <div className="space-y-2">
+                      {detailsData.invoices.map((inv: any) => (
+                        <div key={inv.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg text-sm">
+                          <div>
+                            <span className="font-semibold text-slate-700">{inv.invoiceNumber || inv.id.substring(0, 8)}</span>
+                            <span className="text-slate-400 ml-2">{inv.period}</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="font-bold text-slate-700">{inv.amount.toLocaleString('fr-FR')} FCFA</span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${inv.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                              {inv.status}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Historique paiements */}
+                {detailsData.billingEvents?.length > 0 && (
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Historique paiements ({detailsData.billingEvents.length})</h3>
+                    <div className="space-y-2">
+                      {detailsData.billingEvents.map((e: any) => (
+                        <div key={e.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg text-sm">
+                          <div>
+                            <span className="font-semibold text-slate-700">{e.type}</span>
+                            <span className="text-slate-400 ml-2">{e.channel}</span>
+                            <span className="text-slate-400 ml-2">{new Date(e.createdAt).toLocaleDateString('fr-FR')}</span>
+                          </div>
+                          <span className="font-bold text-slate-700">{e.amount.toLocaleString('fr-FR')} FCFA</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
         </div>
       )}

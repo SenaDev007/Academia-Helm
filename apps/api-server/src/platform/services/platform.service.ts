@@ -247,6 +247,267 @@ export class PlatformService {
     return { tenants, total, page, limit };
   }
 
+  /**
+   * Récupère TOUTES les informations d'un tenant (vue 360°) :
+   * - Tenant (nom, slug, subdomain, type, statut, dates)
+   * - School (ville, adresse, téléphone, email, logo)
+   * - HelmSubscription (plan, cycle, statut, expiration, bilingue)
+   * - User promoteur (nom, email, téléphone, rôle)
+   * - OnboardingDraft (infos collectées lors du signup)
+   * - AcademicTracks (FR, EN)
+   * - SchoolLevels (niveaux scolaires)
+   * - BillingEvents (historique paiements)
+   * - HelmInvoices (factures)
+   * - StudentCount (nombre d'élèves)
+   * - StaffCount (nombre de personnel)
+   */
+  async getTenantDetails(id: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id },
+      include: {
+        country: { select: { name: true, code: true, flagEmoji: true, phonePrefix: true } },
+        schools: { select: {
+          name: true, city: true, address: true, primaryPhone: true, primaryEmail: true,
+          website: true, whatsapp: true, logo: true, abbreviation: true, motto: true, slogan: true,
+          founderName: true, directorPrimary: true, educationLevels: true,
+        } },
+        helmSubscriptions: { select: {
+          id: true, plan: true, billingCycle: true, status: true,
+          monthlyAmount: true, annualAmount: true, setupFee: true,
+          currentPeriodStart: true, currentPeriodEnd: true, trialEnd: true,
+          bilingualEnabled: true, lastPaymentDate: true, lastPaymentAmount: true,
+          pendingUpgradePlan: true, upgradeGraceEnd: true,
+          notified7DaysBefore: true, notified3DaysBefore: true, notified1DayBefore: true,
+          expiredAt: true, gracePeriodEnd: true, suspendedAt: true, blockedAt: true,
+          createdAt: true,
+        } },
+      },
+    });
+
+    if (!tenant) throw new BadRequestException('Tenant introuvable');
+
+    // Récupérer le promoteur (User avec role PROMOTER lié au tenant)
+    const promoter = await this.prisma.user.findFirst({
+      where: { tenantId: id, role: { in: ['PROMOTER', 'SCHOOL_OWNER', 'SUPER_DIRECTOR'] } },
+      select: { id: true, email: true, firstName: true, lastName: true, phone: true, role: true, status: true, lastLoginAt: true, createdAt: true },
+    });
+
+    // Récupérer tous les users du tenant
+    const users = await this.prisma.user.findMany({
+      where: { tenantId: id },
+      select: { id: true, email: true, firstName: true, lastName: true, phone: true, role: true, status: true, lastLoginAt: true },
+      take: 50,
+    });
+
+    // Récupérer l'OnboardingDraft (infos collectées lors du signup)
+    const onboardingDraft = await this.prisma.onboardingDraft.findFirst({
+      where: {
+        OR: [
+          { email: promoter?.email || '' },
+          { promoterEmail: promoter?.email || '' },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Récupérer les AcademicTracks
+    const academicTracks = await this.prisma.academicTrack.findMany({
+      where: { tenantId: id },
+      select: { id: true, code: true, name: true, description: true, isDefault: true, isActive: true, order: true },
+      orderBy: { order: 'asc' },
+    });
+
+    // Récupérer les SchoolLevels
+    const schoolLevels = await this.prisma.schoolLevel.findMany({
+      where: { tenantId: id },
+      select: { id: true, code: true, name: true, label: true, order: true },
+      orderBy: { order: 'asc' },
+    });
+
+    // Récupérer les BillingEvents
+    const billingEvents = await this.prisma.billingEvent.findMany({
+      where: { tenantId: id },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+
+    // Récupérer les HelmInvoices
+    const invoices = await this.prisma.helmInvoice.findMany({
+      where: { tenantId: id },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+
+    // Compter les élèves et le staff
+    const [studentCount, staffCount, userCount] = await Promise.all([
+      this.prisma.student.count({ where: { tenantId: id } }),
+      this.prisma.staff.count({ where: { tenantId: id } }),
+      this.prisma.user.count({ where: { tenantId: id } }),
+    ]);
+
+    const now = new Date();
+    const sub = tenant.helmSubscriptions;
+    const daysRemaining = sub?.currentPeriodEnd
+      ? Math.max(0, Math.ceil((sub.currentPeriodEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
+      : null;
+
+    // Mappe les anciens plans
+    const oldPlanMap: Record<string, string> = { 'free': 'SEED', 'premium': 'GROW', 'basic': 'SEED', 'enterprise': 'NETWORK' };
+    const rawPlan = sub?.plan || tenant.subscriptionPlan || '';
+    const plan = sub?.plan || oldPlanMap[rawPlan.toLowerCase()] || (rawPlan ? rawPlan.toUpperCase() : '—');
+
+    const school = tenant.schools as any;
+
+    return {
+      // ─── Informations générales ───
+      tenant: {
+        id: tenant.id,
+        name: tenant.name,
+        slug: tenant.slug,
+        subdomain: tenant.subdomain,
+        type: tenant.type,
+        status: tenant.status,
+        subscriptionStatus: tenant.subscriptionStatus,
+        subscriptionPlan: tenant.subscriptionPlan,
+        createdAt: tenant.createdAt.toISOString(),
+        updatedAt: tenant.updatedAt.toISOString(),
+        trialEndsAt: (tenant as any).trialEndsAt?.toISOString() || null,
+        nextPaymentDueAt: (tenant as any).nextPaymentDueAt?.toISOString() || null,
+        studentCountCache: tenant.studentCountCache,
+        estimatedStudentCount: tenant.estimatedStudentCount,
+        studentEnrollmentBlocked: (tenant as any).studentEnrollmentBlocked || false,
+      },
+
+      // ─── Pays ───
+      country: tenant.country ? {
+        name: tenant.country.name,
+        code: tenant.country.code,
+        flag: tenant.country.flagEmoji,
+        phonePrefix: tenant.country.phonePrefix,
+      } : null,
+
+      // ─── School (informations établissement) ───
+      school: school ? {
+        name: school.name,
+        city: school.city,
+        address: school.address,
+        primaryPhone: school.primaryPhone,
+        primaryEmail: school.primaryEmail,
+        website: school.website,
+        whatsapp: school.whatsapp,
+        logo: school.logo,
+        abbreviation: school.abbreviation,
+        motto: school.motto,
+        slogan: school.slogan,
+        founderName: school.founderName,
+        directorPrimary: school.directorPrimary,
+        educationLevels: school.educationLevels,
+      } : null,
+
+      // ─── Abonnement (HelmSubscription) ───
+      subscription: sub ? {
+        id: sub.id,
+        plan,
+        billingCycle: sub.billingCycle,
+        status: sub.status,
+        monthlyAmount: sub.monthlyAmount,
+        annualAmount: sub.annualAmount,
+        setupFee: sub.setupFee,
+        currentPeriodStart: sub.currentPeriodStart?.toISOString() || null,
+        currentPeriodEnd: sub.currentPeriodEnd?.toISOString() || null,
+        trialEnd: sub.trialEnd?.toISOString() || null,
+        daysRemaining,
+        bilingualEnabled: (sub as any).bilingualEnabled || false,
+        lastPaymentDate: sub.lastPaymentDate?.toISOString() || null,
+        lastPaymentAmount: sub.lastPaymentAmount,
+        pendingUpgradePlan: sub.pendingUpgradePlan,
+        upgradeGraceEnd: sub.upgradeGraceEnd?.toISOString() || null,
+        notified7DaysBefore: sub.notified7DaysBefore,
+        notified3DaysBefore: sub.notified3DaysBefore,
+        notified1DayBefore: sub.notified1DayBefore,
+        expiredAt: sub.expiredAt?.toISOString() || null,
+        gracePeriodEnd: sub.gracePeriodEnd?.toISOString() || null,
+        suspendedAt: sub.suspendedAt?.toISOString() || null,
+        blockedAt: sub.blockedAt?.toISOString() || null,
+        createdAt: sub.createdAt.toISOString(),
+      } : null,
+
+      // ─── Promoteur (User principal) ───
+      promoter: promoter ? {
+        id: promoter.id,
+        firstName: promoter.firstName,
+        lastName: promoter.lastName,
+        email: promoter.email,
+        phone: promoter.phone,
+        role: promoter.role,
+        status: promoter.status,
+        lastLoginAt: promoter.lastLoginAt?.toISOString() || null,
+        createdAt: promoter.createdAt.toISOString(),
+      } : null,
+
+      // ─── OnboardingDraft (infos collectées lors du signup) ───
+      onboarding: onboardingDraft ? {
+        schoolName: onboardingDraft.schoolName,
+        schoolType: onboardingDraft.schoolType,
+        city: onboardingDraft.city,
+        country: onboardingDraft.country,
+        phone: onboardingDraft.phone,
+        email: onboardingDraft.email,
+        bilingual: onboardingDraft.bilingual,
+        preferredSubdomain: onboardingDraft.preferredSubdomain,
+        promoterFirstName: onboardingDraft.promoterFirstName,
+        promoterLastName: onboardingDraft.promoterLastName,
+        promoterEmail: onboardingDraft.promoterEmail,
+        promoterPhone: onboardingDraft.promoterPhone,
+        status: onboardingDraft.status,
+        priceSnapshot: onboardingDraft.priceSnapshot,
+        createdAt: onboardingDraft.createdAt.toISOString(),
+      } : null,
+
+      // ─── AcademicTracks ───
+      academicTracks: academicTracks.map(t => ({
+        id: t.id, code: t.code, name: t.name, description: t.description,
+        isDefault: t.isDefault, isActive: t.isActive, order: t.order,
+      })),
+
+      // ─── SchoolLevels ───
+      schoolLevels: schoolLevels.map(l => ({
+        id: l.id, code: l.code, name: l.name, label: l.label, order: l.order,
+      })),
+
+      // ─── BillingEvents (historique paiements) ───
+      billingEvents: billingEvents.map(e => ({
+        id: e.id,
+        type: e.type,
+        amount: e.amount,
+        channel: e.channel,
+        reference: e.reference,
+        createdAt: e.createdAt.toISOString(),
+      })),
+
+      // ─── Invoices (factures) ───
+      invoices: invoices.map(inv => ({
+        id: inv.id,
+        invoiceNumber: (inv as any).invoiceNumber || null,
+        amount: inv.amount,
+        currency: inv.currency,
+        status: inv.status,
+        plan: inv.plan,
+        billingCycle: inv.billingCycle,
+        period: inv.period,
+        paidAt: inv.paidAt?.toISOString() || null,
+        createdAt: inv.createdAt.toISOString(),
+      })),
+
+      // ─── Statistiques ───
+      stats: {
+        studentCount,
+        staffCount,
+        userCount,
+      },
+    };
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // 3. SOUSCRIPTIONS INITIALES
   // ─────────────────────────────────────────────────────────────────────────

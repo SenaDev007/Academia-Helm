@@ -30,6 +30,12 @@ interface Tenant {
   type?: string;
   country: string;
   city: string;
+  /** Adresse postale (School.address) — modifiable depuis le back-office. */
+  address?: string | null;
+  /** Téléphone principal (School.primaryPhone) — modifiable depuis le back-office. */
+  phone?: string | null;
+  /** Email principal (School.primaryEmail) — modifiable depuis le back-office. */
+  email?: string | null;
   plan: string;
   status: 'ACTIVE' | 'SUSPENDED' | 'TRIAL';
   /** Statut précis de l'abonnement Helm (ACTIVE, TRIALING, GRACE_PERIOD, SUSPENDED, BLOCKED). */
@@ -103,7 +109,7 @@ const CREATE_SCHOOL_TYPES = [
   { code: 'MATERNELLE', label: 'Maternelle' },
   { code: 'PRIMAIRE', label: 'Primaire' },
   { code: 'SECONDAIRE', label: 'Secondaire' },
-  { code: 'MIXTE', label: 'Mixte' },
+  { code: 'MIXTE', label: 'Mixte (Maternelle - Secondaire)' },
 ] as const;
 
 const CREATE_COUNTRIES = [
@@ -147,6 +153,16 @@ type EditForm = {
   name: string;
   subdomain: string;
   type: string;
+  /** Pays (Tenant.country) — affiché en lecture seule dans le formulaire d'édition. */
+  country: string;
+  /** Ville (School.city) — modifiable. */
+  city: string;
+  /** Adresse postale (School.address) — modifiable. */
+  address: string;
+  /** Téléphone principal (School.primaryPhone) — modifiable. */
+  phone: string;
+  /** Email principal (School.primaryEmail) — modifiable. */
+  email: string;
   plan: string;
   planStatus: string;
   billingCycle: string;
@@ -224,7 +240,9 @@ export default function TenantsWorkspace() {
   // Edit modal state
   const [editTarget, setEditTarget] = useState<Tenant | null>(null);
   const [editForm, setEditForm] = useState<EditForm>({
-    name: '', subdomain: '', type: 'SCHOOL', plan: 'SEED',
+    name: '', subdomain: '', type: 'SCHOOL',
+    country: '', city: '', address: '', phone: '', email: '',
+    plan: 'SEED',
     planStatus: 'ACTIVE', billingCycle: 'MONTHLY',
     expiration: '', trialEnd: '', bilingualEnabled: false,
     studentEnrollmentBlocked: false,
@@ -319,6 +337,14 @@ export default function TenantsWorkspace() {
       setCreateError('La ville est requise.');
       return;
     }
+    if (!createForm.phone.trim()) {
+      setCreateError("Le téléphone de l'établissement est requis.");
+      return;
+    }
+    if (!createForm.email.trim()) {
+      setCreateError("L'email de l'établissement est requis.");
+      return;
+    }
     if (!createForm.promoterFirstName.trim() || !createForm.promoterLastName.trim()) {
       setCreateError('Le prénom et le nom du promoteur sont requis.');
       return;
@@ -407,6 +433,11 @@ export default function TenantsWorkspace() {
       name: t.name || '',
       subdomain: t.subdomain || '',
       type: 'SCHOOL',
+      country: t.country && t.country !== '—' ? t.country : '',
+      city: t.city && t.city !== '—' ? t.city : '',
+      address: t.address || '',
+      phone: t.phone || '',
+      email: t.email || '',
       plan: planCode,
       planStatus: t.planStatus || 'ACTIVE',
       billingCycle: t.billingCycle || 'MONTHLY',
@@ -445,6 +476,11 @@ export default function TenantsWorkspace() {
         billingCycle: editForm.billingCycle,
         bilingualEnabled: editForm.bilingualEnabled,
         studentEnrollmentBlocked: editForm.studentEnrollmentBlocked,
+        // Champs School (entité 1-1) — envoyés systématiquement pour permettre la mise à jour
+        city: editForm.city.trim(),
+        address: editForm.address.trim(),
+        phone: editForm.phone.trim(),
+        email: editForm.email.trim(),
       };
       if (editForm.subdomain.trim()) body.subdomain = editForm.subdomain.trim();
       if (editForm.expiration) body.expiration = editForm.expiration;
@@ -708,13 +744,18 @@ export default function TenantsWorkspace() {
       {/* Edit Modal */}
       {editTarget && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-slate-100">
-              <div>
-                <h2 className="text-lg font-bold text-blue-900">Modifier l'établissement</h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  ID : <span className="font-mono">{editTarget.id}</span>
-                </p>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-slate-100 sticky top-0 bg-white z-10">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center">
+                  <School className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-blue-900">Modifier l'établissement</h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    ID : <span className="font-mono">{editTarget.id}</span>
+                  </p>
+                </div>
               </div>
               <button
                 onClick={closeEdit}
@@ -725,50 +766,119 @@ export default function TenantsWorkspace() {
               </button>
             </div>
 
-            <form onSubmit={submitEdit} className="p-6 space-y-4">
-              {/* Section: Informations générales */}
+            <form onSubmit={submitEdit} className="p-6 space-y-5">
+              {/* Section 1 — Informations de l'établissement (alignée sur l'onboarding) */}
               <div className="space-y-3">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide">Informations générales</h3>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">Nom de l'établissement *</label>
-                  <input
-                    type="text"
-                    value={editForm.name}
-                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
-                    placeholder="École Dupont"
-                  />
+                <div className="flex items-center gap-2">
+                  <School className="w-4 h-4 text-amber-600" />
+                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wide">Informations de l'établissement</h3>
                 </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Nom officiel de l'établissement *</label>
+                    <input
+                      type="text"
+                      value={editForm.name}
+                      onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                      placeholder="École Primaire Les Étoiles"
+                      required
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">Sous-domaine</label>
-                  <input
-                    type="text"
-                    value={editForm.subdomain}
-                    onChange={(e) => setEditForm({ ...editForm, subdomain: e.target.value })}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
-                    placeholder="dupont"
-                  />
-                  <p className="text-[11px] text-slate-400 mt-1">Laisser vide pour conserver l'actuel.</p>
-                </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Sous-domaine</label>
+                    <div className="flex items-center">
+                      <input
+                        type="text"
+                        value={editForm.subdomain}
+                        onChange={(e) => setEditForm({ ...editForm, subdomain: e.target.value })}
+                        className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-l-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-mono"
+                        placeholder="mon-ecole"
+                      />
+                      <span className="px-3 py-2 bg-slate-100 border border-l-0 border-slate-200 rounded-r-lg text-xs text-slate-500 font-mono">.academiahelm.com</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-1">Laisser tel quel pour conserver l'actuel.</p>
+                  </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">Type</label>
-                  <select
-                    value={editForm.type}
-                    onChange={(e) => setEditForm({ ...editForm, type: e.target.value })}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
-                  >
-                    {TENANT_TYPES.map((ty) => (
-                      <option key={ty.code} value={ty.code}>{ty.label}</option>
-                    ))}
-                  </select>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Type</label>
+                    <select
+                      value={editForm.type}
+                      onChange={(e) => setEditForm({ ...editForm, type: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    >
+                      {TENANT_TYPES.map((ty) => (
+                        <option key={ty.code} value={ty.code}>{ty.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Pays</label>
+                    <input
+                      type="text"
+                      value={editForm.country}
+                      disabled
+                      readOnly
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-500 cursor-not-allowed"
+                      placeholder="—"
+                    />
+                    <p className="text-[11px] text-slate-400 mt-1">Le pays est défini à la création et n'est pas modifiable.</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Ville *</label>
+                    <input
+                      type="text"
+                      value={editForm.city}
+                      onChange={(e) => setEditForm({ ...editForm, city: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                      placeholder="Cotonou"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Adresse</label>
+                    <input
+                      type="text"
+                      value={editForm.address}
+                      onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                      placeholder="Rue 123, Quartier"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Téléphone de l'établissement *</label>
+                    <input
+                      type="tel"
+                      value={editForm.phone}
+                      onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                      placeholder="+229 00 00 00 00"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Email de l'établissement *</label>
+                    <input
+                      type="email"
+                      value={editForm.email}
+                      onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                      placeholder="contact@ecole.org"
+                    />
+                  </div>
                 </div>
               </div>
 
-              {/* Section: Abonnement */}
+              {/* Section 2 — Abonnement */}
               <div className="space-y-3 pt-4 border-t border-slate-100">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide">Abonnement</h3>
+                <div className="flex items-center gap-2">
+                  <CreditCard className="w-4 h-4 text-amber-600" />
+                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wide">Abonnement</h3>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1.5">Plan</label>
@@ -831,9 +941,12 @@ export default function TenantsWorkspace() {
                 </div>
               </div>
 
-              {/* Section: Contrôles manuels */}
+              {/* Section 3 — Contrôles manuels */}
               <div className="space-y-3 pt-4 border-t border-slate-100">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide">Contrôles manuels</h3>
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600" />
+                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wide">Contrôles manuels</h3>
+                </div>
                 <label className="flex items-center justify-between p-3 bg-slate-50 rounded-lg cursor-pointer">
                   <div>
                     <span className="text-sm font-semibold text-slate-700">Option bilingue (FR + EN)</span>
@@ -876,7 +989,7 @@ export default function TenantsWorkspace() {
                 </div>
               )}
 
-              <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100 sticky bottom-0 bg-white">
                 <button
                   type="button"
                   onClick={closeEdit}
@@ -923,15 +1036,15 @@ export default function TenantsWorkspace() {
             </div>
 
             <form onSubmit={submitCreate} className="p-6 space-y-5">
-              {/* Section 1 — Établissement */}
+              {/* Section 1 — Informations de l'établissement (alignée sur l'onboarding) */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   <School className="w-4 h-4 text-amber-600" />
-                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wide">Établissement</h3>
+                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wide">Informations de l'établissement</h3>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="sm:col-span-2">
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Nom de l'école *</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Nom officiel de l'établissement *</label>
                     <input
                       type="text"
                       value={createForm.schoolName}
@@ -949,7 +1062,7 @@ export default function TenantsWorkspace() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Type d'école</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Type d'établissement</label>
                     <select
                       value={createForm.schoolType}
                       onChange={(e) => setCreateForm({ ...createForm, schoolType: e.target.value })}
@@ -984,23 +1097,25 @@ export default function TenantsWorkspace() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Téléphone</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Téléphone de l'établissement *</label>
                     <input
-                      type="text"
+                      type="tel"
                       value={createForm.phone}
                       onChange={(e) => setCreateForm({ ...createForm, phone: e.target.value })}
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                       placeholder="+229 00 00 00 00"
+                      required
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Email</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Email de l'établissement *</label>
                     <input
                       type="email"
                       value={createForm.email}
                       onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })}
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                       placeholder="contact@ecole.org"
+                      required
                     />
                   </div>
                   <div className="sm:col-span-2">
@@ -1013,7 +1128,7 @@ export default function TenantsWorkspace() {
                         className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-l-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-mono"
                         placeholder="saint-joseph"
                       />
-                      <span className="px-3 py-2 bg-slate-100 border border-l-0 border-slate-200 rounded-r-lg text-xs text-slate-500 font-mono">.academia-helm.app</span>
+                      <span className="px-3 py-2 bg-slate-100 border border-l-0 border-slate-200 rounded-r-lg text-xs text-slate-500 font-mono">.academiahelm.com</span>
                     </div>
                     <p className="text-[11px] text-slate-400 mt-1">Généré automatiquement depuis le nom de l'école.</p>
                   </div>

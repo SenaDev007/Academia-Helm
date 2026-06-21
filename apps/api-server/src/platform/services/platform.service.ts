@@ -195,7 +195,7 @@ export class PlatformService {
         include: {
           country: { select: { name: true } },
           // School est une relation 1-1 (tenantId @unique) — pas de take
-          schools: { select: { city: true } },
+          schools: { select: { city: true, address: true, primaryPhone: true, primaryEmail: true } },
           // helmSubscriptions est une relation 1-to-1 (singulière) — pas de take/orderBy
           helmSubscriptions: {
             select: { plan: true, status: true, currentPeriodEnd: true, billingCycle: true, bilingualEnabled: true, trialEnd: true },
@@ -229,6 +229,9 @@ export class PlatformService {
         subdomain: t.subdomain,
         country: t.country?.name || '—',
         city: (t.schools as any)?.city || '—',
+        address: (t.schools as any)?.address || null,
+        phone: (t.schools as any)?.primaryPhone || null,
+        email: (t.schools as any)?.primaryEmail || null,
         plan,
         planStatus: sub?.status || null,
         billingCycle: sub?.billingCycle || null,
@@ -1412,7 +1415,33 @@ export class PlatformService {
       }
     }
 
-    this.logger.log(`Tenant ${id} updated by ${user?.email} (fields: ${Object.keys({ ...data, ...subData }).join(', ')})`);
+    // Mise à jour de l'entité School (1-1 avec Tenant) — ville, adresse, téléphone, email
+    const schoolData: any = {};
+    if (body.city !== undefined) schoolData.city = body.city || null;
+    if (body.address !== undefined) schoolData.address = body.address || null;
+    if (body.phone !== undefined) schoolData.primaryPhone = body.phone || null;
+    if (body.email !== undefined) schoolData.primaryEmail = body.email || null;
+
+    if (Object.keys(schoolData).length > 0) {
+      const existingSchool = await this.prisma.school.findUnique({ where: { tenantId: id } });
+      if (existingSchool) {
+        await this.prisma.school.update({
+          where: { id: existingSchool.id },
+          data: schoolData,
+        });
+      } else {
+        // Créer l'entité School si elle n'existe pas (rare mais possible)
+        await this.prisma.school.create({
+          data: {
+            tenantId: id,
+            name: tenant.name,
+            ...schoolData,
+          },
+        });
+      }
+    }
+
+    this.logger.log(`Tenant ${id} updated by ${user?.email} (fields: ${Object.keys({ ...data, ...subData, ...schoolData }).join(', ')})`);
     return { ok: true, id };
   }
 

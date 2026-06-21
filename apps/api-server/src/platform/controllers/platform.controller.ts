@@ -329,6 +329,11 @@ export class PlatformController {
       bilingualEnabled?: boolean;
       studentEnrollmentBlocked?: boolean;
       subscriptionStatus?: string;
+      // Champs School (entité School 1-1 avec Tenant) — modifiables depuis le back-office
+      city?: string;
+      address?: string;
+      phone?: string;
+      email?: string;
     },
   ) {
     this.assertAdminProxyRequest(adminEmail);

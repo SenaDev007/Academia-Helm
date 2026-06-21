@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { usePlatformData } from '@/hooks/usePlatformData';
 import { PlatformLoading, PlatformError, PlatformEmpty } from '../PlatformStates';
+import ConfirmModal from '@/components/platform/ConfirmModal';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -479,7 +480,15 @@ function AllCard({
   loading: boolean;
 }) {
   const status = review.status || 'PENDING';
+  const [confirmModal, setConfirmModal] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({ open: false, title: '', message: '', onConfirm: () => {} });
+
   return (
+    <>
     <ReviewCardBase review={review}>
       {/* Status badge */}
       <div className="mt-3 flex items-center gap-2">
@@ -543,9 +552,15 @@ function AllCard({
         )}
         <button
           onClick={() => {
-            if (confirm('Supprimer définitivement cet avis ? Cette action est irréversible.')) {
-              onAction('delete');
-            }
+            setConfirmModal({
+              open: true,
+              title: 'Supprimer cet avis',
+              message: 'Supprimer définitivement cet avis ? Cette action est irréversible.',
+              onConfirm: () => {
+                setConfirmModal((prev) => ({ ...prev, open: false }));
+                onAction('delete');
+              },
+            });
           }}
           disabled={loading}
           className="flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50"
@@ -555,5 +570,16 @@ function AllCard({
         </button>
       </div>
     </ReviewCardBase>
+
+      <ConfirmModal
+        open={confirmModal.open}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal((prev) => ({ ...prev, open: false }))}
+        confirmLabel="Supprimer"
+        variant="danger"
+      />
+    </>
   );
 }

@@ -230,6 +230,17 @@ export class RecruitmentNotificationService {
     // On utilise sendCategorized si la category est fournie ET le tenantId est dispo
     if (options?.category && options?.tenantId) {
       try {
+        // ⚠️ IMPORTANT : on injecte l'email du recruteur comme replyToOverride.
+        // Ainsi, quand le candidat fait "Répondre" dans son client mail, son
+        // client enverra directement à l'email du recruteur (ex:
+        // s.akpovitohou@gmail.com) plutôt qu'à log_xxx@replies.academiahelm.com
+        // qui dépend du webhook inbound (actuellement HS car le MX pointe vers
+        // Amazon SES au lieu de Resend).
+        //
+        // Le replyToToken est quand même généré côté EmailLogService pour
+        // audit, mais l'adresse reply-to réelle est celle du recruteur.
+        const replyToOverride = options?.fromEmail || undefined;
+
         const result = await this.emailService.sendCategorized({
           tenantId: options.tenantId,
           category: options.category,
@@ -246,6 +257,7 @@ export class RecruitmentNotificationService {
           triggeredBy: 'SYSTEM',
           relatedEntityId: options.relatedEntityId,
           relatedEntityType: options.relatedEntityType,
+          replyToOverride,
         });
 
         if (result.success) {

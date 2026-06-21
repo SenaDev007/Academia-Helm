@@ -96,6 +96,22 @@ export interface CategorizedEmailRequest {
 
   // Reply-to
   enableReplyTracking?: boolean; // Default: true si Volet 2 activé
+  /**
+   * Override du reply-to personnalisé.
+   *
+   * Si fourni, l'email sera envoyé avec cette adresse comme champ "Reply-To"
+   * AU LIEU de l'adresse générée log_{token}@replies.academiahelm.com.
+   *
+   * Utilisé typiquement pour les emails de recrutement : on veut que les
+   * réponses du candidat aillent DIRECTEMENT au recruteur (email recruteur
+   * réel) plutôt que de passer par le webhook inbound (qui nécessite une
+   * config MX correcte sur replies.academiahelm.com).
+   *
+   * Le replyToToken est quand même généré et stocké en DB (pour audit et
+   * pour le cas où l'inbound webhook serait réactivé plus tard), mais il
+   * n'est PAS utilisé comme adresse reply-to.
+   */
+  replyToOverride?: string;
 }
 
 export interface EmailLogListFilters {
@@ -188,8 +204,18 @@ export class EmailLogService {
       request.enableReplyTracking !== false && this.replyTrackingEnabled;
 
     if (enableTracking) {
+      // On génère toujours un token pour audit/threading (stocké en DB).
       replyToToken = this.generateReplyToToken();
-      replyTo = this.buildReplyToAddress(replyToToken);
+
+      // ⚠️ IMPORTANT : si replyToOverride est fourni, on l'utilise comme
+      // adresse reply-to au lieu de l'adresse log_{token}@replies... .
+      // Cela permet au candidat de répondre DIRECTEMENT au recruteur sans
+      // dépendre du webhook inbound (qui nécessite une config MX correcte).
+      if (request.replyToOverride) {
+        replyTo = request.replyToOverride;
+      } else {
+        replyTo = this.buildReplyToAddress(replyToToken);
+      }
     }
 
     // Si on répond à un email existant, on hérite de son threadId

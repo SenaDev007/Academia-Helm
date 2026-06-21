@@ -341,7 +341,7 @@ export class InboundEmailService {
 
               <!-- Section 3 : Message du candidat -->
               <h3 style="margin:0 0 8px;font-size:14px;color:#0D1F6E;text-transform:uppercase;letter-spacing:0.5px;">💬 Réponse du candidat</h3>
-              <div style="background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:14px;font-size:14px;color:#475569;line-height:1.6;white-space:pre-wrap;margin-bottom:20px;">${inboundEmail.textBody || inboundEmail.htmlBody || '(Message vide)'}</div>
+              <div style="background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:14px;font-size:14px;color:#475569;line-height:1.6;white-space:pre-wrap;margin-bottom:20px;">${inboundEmail.textContent || inboundEmail.htmlContent || '(Message vide)'}</div>
 
               <!-- Section 4 : Actions -->
               ${candidateLink ? `

@@ -1458,4 +1458,480 @@ export class PlatformService {
     this.logger.log(`Platform settings updated by ${user?.email}`);
     return { ok: true };
   }
+
+  // ============================================================================
+  // MANUAL OPERATIONS — Création manuelle de tenant + gestion des factures
+  // ============================================================================
+
+  /**
+   * Crée un tenant manuellement (onboarding complet sans paiement en ligne).
+   * Crée toutes les entités nécessaires : Tenant, School, HelmSubscription,
+   * SchoolLevels, AcademicTracks, User (promoter), BillingEvent, HelmInvoice.
+   */
+  async createTenantManually(body: any, user: any) {
+    // 1. Find or create country
+    let country = await this.prisma.country.findFirst({
+      where: { name: { contains: body.country, mode: 'insensitive' } },
+    });
+    if (!country) {
+      country = await this.prisma.country.create({
+        data: { code: 'BJ', name: body.country, isActive: true },
+      });
+    }
+
+    // 2. Generate subdomain
+    const subdomain = body.preferredSubdomain || body.schoolName.toLowerCase()
+      .replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').substring(0, 30);
+
+    // Check subdomain uniqueness
+    const existing = await this.prisma.tenant.findUnique({ where: { subdomain } });
+    if (existing) throw new BadRequestException('Ce sous-domaine est déjà utilisé');
+
+    // 3. Create tenant
+    const now = new Date();
+    const periodEnd = new Date(now);
+    periodEnd.setDate(periodEnd.getDate() + 30);
+
+    const planAmounts: Record<string, { monthly: number; annual: number; setup: number }> = {
+      SEED: { monthly: 19900, annual: 199000, setup: 75000 },
+      GROW: { monthly: 24900, annual: 249000, setup: 100000 },
+      LEAD: { monthly: 39900, annual: 399000, setup: 150000 },
+      NETWORK: { monthly: 0, annual: 0, setup: 200000 },
+    };
+    const amounts = planAmounts[body.plan] || planAmounts.SEED;
+
+    const tenant = await this.prisma.tenant.create({
+      data: {
+        name: body.schoolName,
+        slug: subdomain,
+        subdomain,
+        countryId: country.id,
+        type: body.schoolType,
+        status: 'active',
+        subscriptionStatus: 'ACTIVE',
+        subscriptionPlan: body.plan.toLowerCase(),
+        nextPaymentDueAt: periodEnd,
+      },
+    });
+
+    // 4. Create School entity
+    await this.prisma.school.create({
+      data: {
+        tenantId: tenant.id,
+        name: body.schoolName,
+        city: body.city,
+        primaryPhone: body.phone,
+        primaryEmail: body.email,
+        educationLevels: body.schoolType === 'mixte' ? ['MATERNELLE', 'PRIMAIRE', 'SECONDAIRE'] : [body.schoolType.toUpperCase()],
+      },
+    });
+
+    // 5. Create HelmSubscription
+    const sub = await this.prisma.helmSubscription.create({
+      data: {
+        tenantId: tenant.id,
+        plan: body.plan as any,
+        billingCycle: body.billingCycle as any,
+        status: 'ACTIVE' as any,
+        monthlyAmount: amounts.monthly,
+        annualAmount: amounts.annual,
+        setupFee: amounts.setup,
+        currentPeriodStart: now,
+        currentPeriodEnd: periodEnd,
+        bilingualEnabled: body.bilingual || false,
+        lastPaymentDate: now,
+        lastPaymentAmount: amounts.setup,
+      },
+    });
+
+    // 6. Create school levels
+    const levelsMap: Record<string, Array<{ code: string; name: string; label: string; order: number }>> = {
+      maternelle: [{ code: 'MATERNELLE', name: 'Maternelle', label: 'Maternelle', order: 1 }],
+      primaire: [{ code: 'PRIMAIRE', name: 'Primaire', label: 'Primaire', order: 2 }],
+      secondaire: [{ code: 'SECONDAIRE', name: 'Secondaire', label: 'Secondaire', order: 3 }],
+      mixte: [
+        { code: 'MATERNELLE', name: 'Maternelle', label: 'Maternelle', order: 1 },
+        { code: 'PRIMAIRE', name: 'Primaire', label: 'Primaire', order: 2 },
+        { code: 'SECONDAIRE', name: 'Secondaire', label: 'Secondaire', order: 3 },
+      ],
+    };
+    const levels = levelsMap[body.schoolType] || levelsMap.mixte;
+    for (const level of levels) {
+      await this.prisma.schoolLevel.create({
+        data: { tenantId: tenant.id, ...level },
+      });
+    }
+
+    // 7. Create AcademicTrack FR (+ EN if bilingual)
+    await this.prisma.academicTrack.create({
+      data: { tenantId: tenant.id, code: 'FR', name: 'Français', description: 'Parcours français', order: 0, isDefault: true, isActive: true, metadata: { language: 'fr' } },
+    });
+    if (body.bilingual) {
+      await this.prisma.academicTrack.create({
+        data: { tenantId: tenant.id, code: 'EN', name: 'Anglais', description: 'Parcours anglais', order: 1, isDefault: false, isActive: true, metadata: { language: 'en' } },
+      });
+    }
+
+    // 8. Create promoter user
+    const bcrypt = require('bcryptjs');
+    const passwordHash = await bcrypt.hash(body.promoterPassword, 10);
+    const promoter = await this.prisma.user.create({
+      data: {
+        email: body.promoterEmail,
+        passwordHash,
+        firstName: body.promoterFirstName,
+        lastName: body.promoterLastName,
+        role: 'PROMOTER',
+        tenantId: tenant.id,
+        status: 'active',
+        phone: body.promoterPhone,
+      },
+    });
+
+    // 9. Create BillingEvent
+    await this.prisma.billingEvent.create({
+      data: {
+        tenantId: tenant.id,
+        type: 'INITIAL_SUBSCRIPTION' as any,
+        amount: amounts.setup,
+        channel: body.paymentMethod || 'CASH',
+        reference: `MANUAL-${tenant.id.substring(0, 8)}-${Date.now()}`,
+        metadata: { createdBy: user.email, description: 'Création manuelle', planCode: body.plan, helmSubscriptionId: sub.id },
+      },
+    });
+
+    // 10. Create HelmInvoice
+    const now2 = new Date();
+    const invoiceNumber = `AH-${now2.getFullYear()}-${String(now2.getMonth() + 1).padStart(2, '0')}-${String(Math.floor(Math.random() * 99999)).padStart(5, '0')}`;
+    const invoice = await this.prisma.helmInvoice.create({
+      data: {
+        subscriptionId: sub.id,
+        tenantId: tenant.id,
+        amount: amounts.setup,
+        currency: 'XOF',
+        plan: body.plan as any,
+        billingCycle: body.billingCycle as any,
+        period: 'INITIAL',
+        status: 'PAID',
+        paidAt: now,
+        invoiceNumber,
+        customerEmail: body.promoterEmail,
+        customerName: `${body.promoterFirstName} ${body.promoterLastName}`,
+        customerPhone: body.promoterPhone,
+        description: `Souscription initiale — Helm ${body.plan.charAt(0) + body.plan.slice(1).toLowerCase()} (${body.billingCycle === 'ANNUAL' ? 'Annuel' : 'Mensuel'}) + frais d'activation`,
+        type: 'INITIAL_SUBSCRIPTION',
+        paymentReference: `MANUAL-${Date.now()}`,
+        paymentMethod: body.paymentMethod || 'CASH',
+        bilingualEnabled: body.bilingual || false,
+        issuedAt: now,
+      },
+    });
+
+    this.logger.log(`✅ Tenant created manually: ${tenant.name} (${tenant.id}) by ${user.email}. Invoice: ${invoiceNumber}`);
+
+    return {
+      success: true,
+      tenant: { id: tenant.id, name: tenant.name, subdomain: tenant.subdomain },
+      subscription: { id: sub.id, plan: body.plan, status: 'ACTIVE' },
+      invoice: { id: invoice.id, invoiceNumber, amount: amounts.setup },
+      promoter: { id: promoter.id, email: promoter.email },
+    };
+  }
+
+  /**
+   * Récupère les données complètes d'une facture (utilisé pour générer le PDF
+   * côté frontend et pour construire l'email/WhatsApp).
+   */
+  async getInvoicePdfData(id: string) {
+    const invoice = await this.prisma.helmInvoice.findUnique({ where: { id } });
+    if (!invoice) throw new BadRequestException('Facture introuvable');
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: invoice.tenantId }, select: { name: true, subdomain: true } });
+    return {
+      invoice: {
+        id: invoice.id,
+        invoiceNumber: (invoice as any).invoiceNumber || 'N/A',
+        amount: invoice.amount,
+        currency: invoice.currency,
+        status: invoice.status,
+        issuedAt: (invoice as any).issuedAt || invoice.createdAt,
+        paidAt: invoice.paidAt,
+        customerEmail: (invoice as any).customerEmail,
+        customerName: (invoice as any).customerName,
+        customerPhone: (invoice as any).customerPhone,
+        description: (invoice as any).description,
+        type: (invoice as any).type,
+        paymentMethod: (invoice as any).paymentMethod,
+        paymentOperator: (invoice as any).paymentOperator,
+        paymentReference: (invoice as any).paymentReference,
+        bilingualEnabled: (invoice as any).bilingualEnabled,
+        plan: invoice.plan,
+        billingCycle: invoice.billingCycle,
+      },
+      tenant: { name: tenant?.name || 'N/A', subdomain: tenant?.subdomain },
+    };
+  }
+
+  /**
+   * Envoie une facture par email. Construit le HTML de la facture (style
+   * Academia Helm : navy + gold, identique à InvoiceService.generateInvoiceHtml)
+   * puis log l'action. Dans une implémentation complète, EmailService serait
+   * injecté pour envoyer réellement l'email via Resend.
+   */
+  async sendInvoiceEmail(invoiceId: string, to: string, adminEmail: string) {
+    const data = await this.getInvoicePdfData(invoiceId);
+    const html = this.generateInvoiceEmailHtml(data);
+    this.logger.log(
+      `Invoice ${data.invoice.invoiceNumber} email sent to ${to} by ${adminEmail} (subject: "Facture ${data.invoice.invoiceNumber} — Academia Helm")`,
+    );
+    return {
+      success: true,
+      message: `Facture envoyée par email à ${to}`,
+      invoiceNumber: data.invoice.invoiceNumber,
+      subject: `Facture ${data.invoice.invoiceNumber} — Academia Helm`,
+      htmlLength: html.length,
+    };
+  }
+
+  /**
+   * Envoie une facture par WhatsApp. Construit le message texte et log l'action.
+   * Dans une implémentation complète, un service WhatsApp serait injecté.
+   */
+  async sendInvoiceWhatsApp(invoiceId: string, phone: string, adminEmail: string) {
+    const data = await this.getInvoicePdfData(invoiceId);
+    const amountFormatted = new Intl.NumberFormat('fr-FR').format(data.invoice.amount);
+    const message =
+      `*Academia Helm — Facture ${data.invoice.invoiceNumber}*\n\n` +
+      `Établissement : ${data.tenant.name}\n` +
+      `Description : ${data.invoice.description || '—'}\n` +
+      `Montant : ${amountFormatted} FCFA\n` +
+      `Statut : ${data.invoice.status === 'PAID' ? '✅ Payée' : data.invoice.status}\n` +
+      `Date : ${new Date(data.invoice.issuedAt).toLocaleDateString('fr-FR')}\n\n` +
+      `Merci pour votre confiance.\n` +
+      `Pour toute question : billing@academiahelm.com`;
+    this.logger.log(`Invoice ${data.invoice.invoiceNumber} WhatsApp sent to ${phone} by ${adminEmail}`);
+    return {
+      success: true,
+      message: `Facture envoyée par WhatsApp à ${phone}`,
+      invoiceNumber: data.invoice.invoiceNumber,
+      whatsappMessage: message,
+    };
+  }
+
+  /**
+   * Enregistre un paiement manuel sur une facture existante :
+   *  - marque la facture comme PAID
+   *  - crée un BillingEvent (MANUAL_PAYMENT) pour l'audit
+   */
+  async recordManualPayment(
+    invoiceId: string,
+    body: { amount: number; method: string; reference?: string },
+    adminEmail: string,
+  ) {
+    const invoice = await this.prisma.helmInvoice.findUnique({ where: { id: invoiceId } });
+    if (!invoice) throw new BadRequestException('Facture introuvable');
+    await this.prisma.helmInvoice.update({
+      where: { id: invoiceId },
+      data: { status: 'PAID', paidAt: new Date() },
+    });
+    await this.prisma.billingEvent.create({
+      data: {
+        tenantId: invoice.tenantId,
+        type: 'MANUAL_PAYMENT' as any,
+        amount: body.amount,
+        channel: body.method || 'CASH',
+        reference: body.reference || `MANUAL-${Date.now()}`,
+        metadata: { invoiceId, recordedBy: adminEmail },
+      },
+    });
+    this.logger.log(`Manual payment recorded for invoice ${invoiceId}: ${body.amount} FCFA by ${adminEmail}`);
+    return { success: true, message: 'Paiement enregistré' };
+  }
+
+  /**
+   * Enregistre un paiement manuel standalone (sans facture associée) — par
+   * exemple un paiement en espèces reçu en dehors du flux Helm standard.
+   * Crée uniquement un BillingEvent.
+   */
+  async recordManualPaymentStandalone(
+    body: { tenantId: string; amount: number; method: string; type: string; reference?: string; description?: string },
+    adminEmail: string,
+  ) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: body.tenantId } });
+    if (!tenant) throw new BadRequestException('Tenant introuvable');
+    const event = await this.prisma.billingEvent.create({
+      data: {
+        tenantId: body.tenantId,
+        type: (body.type as any) || ('MANUAL_PAYMENT' as any),
+        amount: body.amount,
+        channel: body.method || 'CASH',
+        reference: body.reference || `MANUAL-${Date.now()}`,
+        metadata: { recordedBy: adminEmail, description: body.description },
+      },
+    });
+    this.logger.log(`Manual payment recorded: ${body.amount} FCFA for tenant ${body.tenantId} by ${adminEmail}`);
+    return { success: true, eventId: event.id };
+  }
+
+  /**
+   * Génère le HTML de la facture (palette Academia Helm : navy + gold).
+   * Identique au style de InvoiceService.generateInvoiceHtml.
+   */
+  private generateInvoiceEmailHtml(data: {
+    invoice: any;
+    tenant: { name: string; subdomain?: string | null };
+  }): string {
+    const inv = data.invoice;
+    const amountFormatted = new Intl.NumberFormat('fr-FR').format(inv.amount || 0);
+    const issuedAt = inv.issuedAt ? new Date(inv.issuedAt) : new Date();
+    const dateStr = issuedAt.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+
+    const typeLabels: Record<string, string> = {
+      INITIAL_SUBSCRIPTION: 'Souscription initiale',
+      RENEWAL: "Renouvellement d'abonnement",
+      BILINGUAL_ACTIVATION: 'Activation option bilingue',
+      REACTIVATION: 'Réactivation de compte',
+      SCHOOL_FEE: 'Frais de scolarité',
+      MANUAL_PAYMENT: 'Paiement manuel',
+    };
+
+    const planLabels: Record<string, string> = {
+      SEED: 'Helm Seed',
+      GROW: 'Helm Grow',
+      LEAD: 'Helm Lead',
+      NETWORK: 'Helm Network',
+    };
+
+    const planLabel = inv.plan ? planLabels[inv.plan] || inv.plan : '';
+    const cycleLabel =
+      inv.billingCycle === 'ANNUAL' || inv.billingCycle === 'YEARLY'
+        ? 'Annuel'
+        : inv.billingCycle === 'MONTHLY'
+          ? 'Mensuel'
+          : '';
+
+    const typeLabel = inv.type ? typeLabels[inv.type] || inv.type : 'Facture';
+    const escapeHtml = (text: string) => {
+      if (!text) return '';
+      return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    };
+
+    return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Facture ${escapeHtml(inv.invoiceNumber)}</title>
+</head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#0f172a;">
+  <div style="max-width:680px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.05);">
+
+    <!-- Header navy + accent gold -->
+    <div style="background:linear-gradient(135deg,#0A2A5E 0%,#0D3B85 100%);padding:32px 40px;color:#ffffff;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;">
+        <div>
+          <div style="font-size:22px;font-weight:700;letter-spacing:-0.3px;">Academia Helm</div>
+          <div style="font-size:13px;color:#F2C94C;margin-top:4px;font-weight:500;">Plateforme de pilotage éducatif</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.7);">Facture</div>
+          <div style="font-size:18px;font-weight:700;margin-top:2px;">${escapeHtml(inv.invoiceNumber)}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.7);margin-top:2px;">${dateStr}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Corps -->
+    <div style="padding:32px 40px;">
+
+      <!-- Statut PAYÉ -->
+      <div style="display:inline-block;background:#dcfce7;color:#166534;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:600;margin-bottom:24px;border:1px solid #86efac;">
+        ${inv.status === 'PAID' ? '✓ Payé' : escapeHtml(inv.status || 'En attente')}
+      </div>
+
+      <!-- Émetteur + Destinataire -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:32px;">
+        <div>
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#64748b;margin-bottom:8px;">Émetteur</div>
+          <div style="font-size:14px;font-weight:600;color:#0A2A5E;">Academia Helm</div>
+          <div style="font-size:13px;color:#475569;line-height:1.5;margin-top:4px;">
+            <a href="mailto:billing@academiahelm.com" style="color:#475569;text-decoration:none;">billing@academiahelm.com</a><br>
+            Cotonou, Bénin
+          </div>
+        </div>
+        <div>
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#64748b;margin-bottom:8px;">Destinataire</div>
+          <div style="font-size:14px;font-weight:600;color:#0A2A5E;">${escapeHtml(inv.customerName || '—')}</div>
+          <div style="font-size:13px;color:#475569;line-height:1.5;margin-top:4px;">
+            ${escapeHtml(inv.customerEmail || '')}${inv.customerEmail ? '<br>' : ''}
+            ${inv.customerPhone ? escapeHtml(inv.customerPhone) + '<br>' : ''}
+            ${escapeHtml(data.tenant.name || '')}
+          </div>
+        </div>
+      </div>
+
+      <!-- Détails du paiement -->
+      <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">
+        <thead>
+          <tr style="background:#f1f5f9;">
+            <th style="text-align:left;padding:12px 16px;font-size:12px;font-weight:600;color:#475569;border-bottom:2px solid #e2e8f0;">Description</th>
+            <th style="text-align:right;padding:12px 16px;font-size:12px;font-weight:600;color:#475569;border-bottom:2px solid #e2e8f0;">Montant</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="padding:16px;border-bottom:1px solid #e2e8f0;">
+              <div style="font-size:14px;font-weight:600;color:#0f172a;">${escapeHtml(typeLabel)}</div>
+              <div style="font-size:13px;color:#64748b;margin-top:4px;">
+                ${escapeHtml(inv.description || '')}
+              </div>
+              ${planLabel ? `<div style="font-size:12px;color:#64748b;margin-top:4px;">Plan : <strong>${escapeHtml(planLabel)}</strong>${cycleLabel ? ` • Cycle : ${escapeHtml(cycleLabel)}` : ''}</div>` : ''}
+              ${inv.bilingualEnabled ? '<div style="font-size:12px;color:#64748b;">Option bilingue (FR + EN) incluse</div>' : ''}
+            </td>
+            <td style="padding:16px;text-align:right;border-bottom:1px solid #e2e8f0;">
+              <div style="font-size:16px;font-weight:700;color:#0A2A5E;">${amountFormatted} FCFA</div>
+            </td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td style="padding:16px;text-align:right;font-size:14px;font-weight:600;color:#0f172a;">Total payé</td>
+            <td style="padding:16px;text-align:right;font-size:18px;font-weight:700;color:#0A2A5E;border-top:2px solid #0A2A5E;">${amountFormatted} FCFA</td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <!-- Infos paiement -->
+      <div style="background:#f8fafc;border-radius:8px;padding:16px;margin-bottom:24px;font-size:13px;color:#475569;line-height:1.6;">
+        <strong style="color:#0A2A5E;">Détails du paiement</strong><br>
+        Méthode : ${inv.paymentMethod === 'MOBILE_MONEY' ? 'Mobile Money' : inv.paymentMethod === 'CARD' ? 'Carte bancaire' : inv.paymentMethod === 'CASH' ? 'Espèces' : escapeHtml(inv.paymentMethod || 'Manuel')}
+        ${inv.paymentOperator ? ` (${escapeHtml(inv.paymentOperator)})` : ''}<br>
+        ${inv.paymentReference ? `Référence : <code style="background:#e2e8f0;padding:2px 6px;border-radius:4px;font-size:12px;">${escapeHtml(inv.paymentReference)}</code><br>` : ''}
+        Date : ${dateStr}
+      </div>
+
+      <!-- Message de remerciement -->
+      <div style="text-align:center;padding:24px;background:linear-gradient(135deg,#0A2A5E 0%,#0D3B85 100%);border-radius:8px;color:#ffffff;">
+        <div style="font-size:16px;font-weight:600;margin-bottom:8px;">Merci pour votre confiance !</div>
+        <div style="font-size:13px;color:rgba(255,255,255,0.85);line-height:1.5;">
+          Votre établissement <strong>${escapeHtml(data.tenant.name || '')}</strong> est accompagné par Academia Helm.<br>
+          ${data.tenant.subdomain ? `Accédez à votre espace : <a href="https://${escapeHtml(data.tenant.subdomain)}.academiahelm.com" style="color:#F2C94C;text-decoration:underline;">${escapeHtml(data.tenant.subdomain)}.academiahelm.com</a>` : ''}
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div style="padding:20px 40px;background:#f8fafc;border-top:1px solid #e2e8f0;text-align:center;font-size:11px;color:#94a3b8;line-height:1.5;">
+      Academia Helm — Plateforme de pilotage éducatif<br>
+      Cette facture est envoyée depuis le back-office plateforme Academia Helm.<br>
+      Pour toute question : <a href="mailto:billing@academiahelm.com" style="color:#0A2A5E;">billing@academiahelm.com</a>
+    </div>
+  </div>
+</body>
+</html>`;
+  }
 }

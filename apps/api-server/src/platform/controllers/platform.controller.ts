@@ -491,4 +491,95 @@ export class PlatformController {
       tenantId,
     });
   }
+
+  // ============================================================================
+  // MANUAL OPERATIONS — Création manuelle de tenant + gestion des factures
+  // ============================================================================
+
+  /** POST /platform/tenants/create-manual — Onboarding complet sans paiement */
+  @Post('tenants/create-manual')
+  async createTenantManually(
+    @Headers('x-platform-admin-email') adminEmail: string,
+    @Body() body: {
+      schoolName: string;
+      schoolType: string; // maternelle, primaire, secondaire, mixte
+      city: string;
+      country: string;
+      phone: string;
+      email: string;
+      bilingual: boolean;
+      preferredSubdomain: string;
+      plan: string; // SEED, GROW, LEAD, NETWORK
+      billingCycle: string; // MONTHLY, ANNUAL
+      paymentMethod: string; // CASH, MOBILE_MONEY, CARD
+      promoterFirstName: string;
+      promoterLastName: string;
+      promoterEmail: string;
+      promoterPhone: string;
+      promoterPassword: string;
+    },
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.createTenantManually(body, { email: adminEmail });
+  }
+
+  /** GET /platform/invoices/:id/pdf — Récupère les données d'une facture (pour PDF) */
+  @Get('invoices/:id/pdf')
+  async downloadInvoicePdf(
+    @Headers('x-platform-admin-email') adminEmail: string,
+    @Param('id') id: string,
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.getInvoicePdfData(id);
+  }
+
+  /** POST /platform/invoices/:id/send-email — Envoyer une facture par email */
+  @Post('invoices/:id/send-email')
+  async sendInvoiceEmail(
+    @Headers('x-platform-admin-email') adminEmail: string,
+    @Param('id') id: string,
+    @Body() body: { to: string },
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.sendInvoiceEmail(id, body.to, adminEmail);
+  }
+
+  /** POST /platform/invoices/:id/send-whatsapp — Envoyer une facture par WhatsApp */
+  @Post('invoices/:id/send-whatsapp')
+  async sendInvoiceWhatsApp(
+    @Headers('x-platform-admin-email') adminEmail: string,
+    @Param('id') id: string,
+    @Body() body: { phone: string },
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.sendInvoiceWhatsApp(id, body.phone, adminEmail);
+  }
+
+  /** POST /platform/invoices/:id/record-payment — Enregistrer un paiement manuel sur une facture */
+  @Post('invoices/:id/record-payment')
+  async recordManualPayment(
+    @Headers('x-platform-admin-email') adminEmail: string,
+    @Param('id') id: string,
+    @Body() body: { amount: number; method: string; reference?: string },
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.recordManualPayment(id, body, adminEmail);
+  }
+
+  /** POST /platform/payments/record-manual — Enregistrer un paiement manuel standalone */
+  @Post('payments/record-manual')
+  async recordManualPaymentStandalone(
+    @Headers('x-platform-admin-email') adminEmail: string,
+    @Body() body: {
+      tenantId: string;
+      amount: number;
+      method: string;
+      type: string;
+      reference?: string;
+      description?: string;
+    },
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.recordManualPaymentStandalone(body, adminEmail);
+  }
 }

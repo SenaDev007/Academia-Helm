@@ -14,6 +14,10 @@ import {
   Languages,
   AlertTriangle,
   Clock,
+  Plus,
+  School,
+  CreditCard,
+  User,
 } from 'lucide-react';
 import { usePlatformData } from '@/hooks/usePlatformData';
 import { PlatformLoading, PlatformError, PlatformEmpty } from '../PlatformStates';
@@ -75,6 +79,69 @@ const BILLING_CYCLES = [
   { code: 'MONTHLY', label: 'Mensuel' },
   { code: 'ANNUAL', label: 'Annuel' },
 ] as const;
+
+/** Options pour le modal de création manuelle d'une école. */
+const CREATE_PLANS = [
+  { code: 'SEED', label: 'Helm Seed', price: '19 900 FCFA / mois' },
+  { code: 'GROW', label: 'Helm Grow', price: '24 900 FCFA / mois' },
+  { code: 'LEAD', label: 'Helm Lead', price: '39 900 FCFA / mois' },
+  { code: 'NETWORK', label: 'Helm Network', price: 'Sur devis' },
+] as const;
+
+const CREATE_BILLING_CYCLES = [
+  { code: 'MONTHLY', label: 'Mensuel' },
+  { code: 'ANNUAL', label: 'Annuel (−2 mois)' },
+] as const;
+
+const CREATE_PAYMENT_METHODS = [
+  { code: 'CASH', label: 'Espèces' },
+  { code: 'MOBILE_MONEY', label: 'Mobile Money' },
+  { code: 'CARD', label: 'Carte bancaire' },
+] as const;
+
+const CREATE_SCHOOL_TYPES = [
+  { code: 'MATERNELLE', label: 'Maternelle' },
+  { code: 'PRIMAIRE', label: 'Primaire' },
+  { code: 'SECONDAIRE', label: 'Secondaire' },
+  { code: 'MIXTE', label: 'Mixte' },
+] as const;
+
+const CREATE_COUNTRIES = [
+  { code: 'Bénin', label: 'Bénin' },
+  { code: 'Togo', label: 'Togo' },
+  { code: 'Côte d\'Ivoire', label: 'Côte d\'Ivoire' },
+  { code: 'Sénégal', label: 'Sénégal' },
+] as const;
+
+type CreateForm = {
+  schoolName: string;
+  schoolType: string;
+  city: string;
+  country: string;
+  phone: string;
+  email: string;
+  bilingual: boolean;
+  preferredSubdomain: string;
+  plan: string;
+  billingCycle: string;
+  paymentMethod: string;
+  promoterFirstName: string;
+  promoterLastName: string;
+  promoterEmail: string;
+  promoterPhone: string;
+  promoterPassword: string;
+};
+
+/** Génère un sous-domaine propre à partir du nom de l'école. */
+function slugifySchoolName(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 30);
+}
 
 type EditForm = {
   name: string;
@@ -160,6 +227,108 @@ export default function TenantsWorkspace() {
   const [deleteTarget, setDeleteTarget] = useState<Tenant | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Create modal state (manual school creation)
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState<CreateForm>({
+    schoolName: '', schoolType: 'PRIMAIRE', city: '', country: 'Bénin',
+    phone: '', email: '', bilingual: false, preferredSubdomain: '',
+    plan: 'SEED', billingCycle: 'MONTHLY', paymentMethod: 'CASH',
+    promoterFirstName: '', promoterLastName: '', promoterEmail: '',
+    promoterPhone: '', promoterPassword: '',
+  });
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [createSuccess, setCreateSuccess] = useState<string | null>(null);
+
+  const openCreate = () => {
+    setCreateForm({
+      schoolName: '', schoolType: 'PRIMAIRE', city: '', country: 'Bénin',
+      phone: '', email: '', bilingual: false, preferredSubdomain: '',
+      plan: 'SEED', billingCycle: 'MONTHLY', paymentMethod: 'CASH',
+      promoterFirstName: '', promoterLastName: '', promoterEmail: '',
+      promoterPhone: '', promoterPassword: '',
+    });
+    setCreateError(null);
+    setCreateSuccess(null);
+    setCreateOpen(true);
+  };
+
+  const closeCreate = () => {
+    if (submitting) return;
+    setCreateOpen(false);
+    setCreateError(null);
+    setCreateSuccess(null);
+  };
+
+  const submitCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreateError(null);
+    setCreateSuccess(null);
+
+    if (!createForm.schoolName.trim()) {
+      setCreateError("Le nom de l'établissement est requis.");
+      return;
+    }
+    if (!createForm.city.trim()) {
+      setCreateError('La ville est requise.');
+      return;
+    }
+    if (!createForm.promoterFirstName.trim() || !createForm.promoterLastName.trim()) {
+      setCreateError('Le prénom et le nom du promoteur sont requis.');
+      return;
+    }
+    if (!createForm.promoterEmail.trim() || !createForm.promoterPhone.trim()) {
+      setCreateError('Email et téléphone du promoteur sont requis.');
+      return;
+    }
+    if (createForm.promoterPassword.length < 8) {
+      setCreateError('Le mot de passe du promoteur doit contenir au moins 8 caractères.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const res = await fetch('/api/platform/tenants/create-manual', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          schoolName: createForm.schoolName.trim(),
+          schoolType: createForm.schoolType,
+          city: createForm.city.trim(),
+          country: createForm.country,
+          phone: createForm.phone.trim(),
+          email: createForm.email.trim(),
+          bilingual: createForm.bilingual,
+          preferredSubdomain: createForm.preferredSubdomain.trim() || slugifySchoolName(createForm.schoolName),
+          plan: createForm.plan,
+          billingCycle: createForm.billingCycle,
+          paymentMethod: createForm.paymentMethod,
+          promoterFirstName: createForm.promoterFirstName.trim(),
+          promoterLastName: createForm.promoterLastName.trim(),
+          promoterEmail: createForm.promoterEmail.trim(),
+          promoterPhone: createForm.promoterPhone.trim(),
+          promoterPassword: createForm.promoterPassword,
+        }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error || j?.message || `Erreur ${res.status}`);
+      }
+      setCreateSuccess('École créée avec succès. Le promoteur va recevoir ses identifiants.');
+      setTimeout(() => {
+        setSubmitting(false);
+        setCreateOpen(false);
+        setCreateError(null);
+        setCreateSuccess(null);
+        refetch();
+      }, 1000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erreur lors de la création';
+      setCreateError(msg);
+      setSubmitting(false);
+    }
+  };
 
   const handleToggleStatus = useCallback(async (tenantId: string, currentStatus: string) => {
     setActionLoading(tenantId);
@@ -292,6 +461,13 @@ export default function TenantsWorkspace() {
           <p className="text-slate-500">Gestion des établissements inscrits sur la plateforme</p>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={openCreate}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-sm font-semibold shadow-md transition-all"
+          >
+            <Plus className="w-4 h-4" />
+            Créer une école
+          </button>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
@@ -669,6 +845,291 @@ export default function TenantsWorkspace() {
                 >
                   {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                   Enregistrer
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Create Modal — Création manuelle d'une école */}
+      {createOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-slate-100 sticky top-0 bg-white z-10">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center">
+                  <School className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-blue-900">Créer une école</h2>
+                  <p className="text-xs text-slate-500 mt-0.5">Inscription manuelle d'un établissement + promoteur</p>
+                </div>
+              </div>
+              <button
+                onClick={closeCreate}
+                disabled={submitting}
+                className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors disabled:opacity-50"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={submitCreate} className="p-6 space-y-5">
+              {/* Section 1 — Établissement */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <School className="w-4 h-4 text-amber-600" />
+                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wide">Établissement</h3>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Nom de l'école *</label>
+                    <input
+                      type="text"
+                      value={createForm.schoolName}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setCreateForm({
+                          ...createForm,
+                          schoolName: v,
+                          preferredSubdomain: slugifySchoolName(v),
+                        });
+                      }}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                      placeholder="École Saint-Joseph"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Type d'école</label>
+                    <select
+                      value={createForm.schoolType}
+                      onChange={(e) => setCreateForm({ ...createForm, schoolType: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    >
+                      {CREATE_SCHOOL_TYPES.map((t) => (
+                        <option key={t.code} value={t.code}>{t.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Ville *</label>
+                    <input
+                      type="text"
+                      value={createForm.city}
+                      onChange={(e) => setCreateForm({ ...createForm, city: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                      placeholder="Cotonou"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Pays</label>
+                    <select
+                      value={createForm.country}
+                      onChange={(e) => setCreateForm({ ...createForm, country: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    >
+                      {CREATE_COUNTRIES.map((c) => (
+                        <option key={c.code} value={c.code}>{c.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Téléphone</label>
+                    <input
+                      type="text"
+                      value={createForm.phone}
+                      onChange={(e) => setCreateForm({ ...createForm, phone: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                      placeholder="+229 00 00 00 00"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Email</label>
+                    <input
+                      type="email"
+                      value={createForm.email}
+                      onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                      placeholder="contact@ecole.org"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Sous-domaine souhaité</label>
+                    <div className="flex items-center">
+                      <input
+                        type="text"
+                        value={createForm.preferredSubdomain}
+                        onChange={(e) => setCreateForm({ ...createForm, preferredSubdomain: e.target.value })}
+                        className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-l-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-mono"
+                        placeholder="saint-joseph"
+                      />
+                      <span className="px-3 py-2 bg-slate-100 border border-l-0 border-slate-200 rounded-r-lg text-xs text-slate-500 font-mono">.academia-helm.app</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-1">Généré automatiquement depuis le nom de l'école.</p>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="flex items-center justify-between p-3 bg-slate-50 rounded-lg cursor-pointer">
+                      <div>
+                        <span className="text-sm font-semibold text-slate-700">Option bilingue (FR + EN)</span>
+                        <p className="text-xs text-slate-400 mt-0.5">Active les parcours académiques bilingues</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setCreateForm({ ...createForm, bilingual: !createForm.bilingual })}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${createForm.bilingual ? 'bg-amber-500' : 'bg-slate-300'}`}
+                      >
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${createForm.bilingual ? 'translate-x-6' : 'translate-x-1'}`} />
+                      </button>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 2 — Abonnement */}
+              <div className="space-y-3 pt-4 border-t border-slate-100">
+                <div className="flex items-center gap-2">
+                  <CreditCard className="w-4 h-4 text-amber-600" />
+                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wide">Abonnement</h3>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Plan</label>
+                    <select
+                      value={createForm.plan}
+                      onChange={(e) => setCreateForm({ ...createForm, plan: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    >
+                      {CREATE_PLANS.map((p) => (
+                        <option key={p.code} value={p.code}>{p.label} — {p.price}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Cycle de facturation</label>
+                    <select
+                      value={createForm.billingCycle}
+                      onChange={(e) => setCreateForm({ ...createForm, billingCycle: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    >
+                      {CREATE_BILLING_CYCLES.map((c) => (
+                        <option key={c.code} value={c.code}>{c.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Méthode de paiement</label>
+                    <select
+                      value={createForm.paymentMethod}
+                      onChange={(e) => setCreateForm({ ...createForm, paymentMethod: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    >
+                      {CREATE_PAYMENT_METHODS.map((m) => (
+                        <option key={m.code} value={m.code}>{m.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 3 — Promoteur */}
+              <div className="space-y-3 pt-4 border-t border-slate-100">
+                <div className="flex items-center gap-2">
+                  <User className="w-4 h-4 text-amber-600" />
+                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wide">Promoteur (compte administrateur)</h3>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Prénom *</label>
+                    <input
+                      type="text"
+                      value={createForm.promoterFirstName}
+                      onChange={(e) => setCreateForm({ ...createForm, promoterFirstName: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                      placeholder="Jean"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Nom *</label>
+                    <input
+                      type="text"
+                      value={createForm.promoterLastName}
+                      onChange={(e) => setCreateForm({ ...createForm, promoterLastName: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                      placeholder="Dupont"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Email *</label>
+                    <input
+                      type="email"
+                      value={createForm.promoterEmail}
+                      onChange={(e) => setCreateForm({ ...createForm, promoterEmail: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                      placeholder="jean.dupont@ecole.org"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Téléphone *</label>
+                    <input
+                      type="text"
+                      value={createForm.promoterPhone}
+                      onChange={(e) => setCreateForm({ ...createForm, promoterPhone: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                      placeholder="+229 00 00 00 00"
+                      required
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Mot de passe *</label>
+                    <input
+                      type="password"
+                      value={createForm.promoterPassword}
+                      onChange={(e) => setCreateForm({ ...createForm, promoterPassword: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                      placeholder="Minimum 8 caractères"
+                      required
+                      minLength={8}
+                    />
+                    <p className="text-[11px] text-slate-400 mt-1">Le promoteur utilisera cet identifiant pour se connecter à son back-office école.</p>
+                  </div>
+                </div>
+              </div>
+
+              {createError && (
+                <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                  <span>{createError}</span>
+                </div>
+              )}
+              {createSuccess && (
+                <div className="flex items-start gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-700">
+                  <Check className="w-4 h-4 mt-0.5 shrink-0" />
+                  <span>{createSuccess}</span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100 sticky bottom-0 bg-white">
+                <button
+                  type="button"
+                  onClick={closeCreate}
+                  disabled={submitting}
+                  className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-60 disabled:cursor-not-allowed rounded-lg text-sm font-semibold text-white shadow-md transition-all"
+                >
+                  {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                  Créer l'école
                 </button>
               </div>
             </form>

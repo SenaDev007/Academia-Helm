@@ -296,11 +296,11 @@ export class ContractPdfService {
       workLocation: schoolAddress || schoolCity || 'L\'établissement',
       weeklyHours: '40',
       workSchedule: 'Du lundi au vendredi, selon les horaires affichés par la Direction',
-      baseSalary: Number(contract.baseSalary).toLocaleString('fr-FR'),
+      baseSalary: this.toNumber(contract.baseSalary).toLocaleString('fr-FR'),
       functionBonus: '0',
       transportBonus: '0',
       otherBenefits: 'Aucun',
-      grossSalary: Number(contract.baseSalary).toLocaleString('fr-FR'),
+      grossSalary: this.toNumber(contract.baseSalary).toLocaleString('fr-FR'),
       currency,
       paymentMode: { BANK: 'Virement bancaire', CASH: 'Espèces', MOBILE_MONEY: 'Mobile Money' }[contract.paymentMode] || contract.paymentMode,
       academicYear: contract.academicYear?.name || '',
@@ -498,11 +498,11 @@ export class ContractPdfService {
       workLocation: schoolAddress || schoolCity || "L'établissement",
       weeklyHours: '40',
       workSchedule: 'Du lundi au vendredi, selon les horaires affichés par la Direction',
-      baseSalary: Number(contract.baseSalary).toLocaleString('fr-FR'),
+      baseSalary: this.toNumber(contract.baseSalary).toLocaleString('fr-FR'),
       functionBonus: '0',
       transportBonus: '0',
       otherBenefits: 'Aucun',
-      grossSalary: Number(contract.baseSalary).toLocaleString('fr-FR'),
+      grossSalary: this.toNumber(contract.baseSalary).toLocaleString('fr-FR'),
       currency,
       paymentMode: { BANK: 'Virement bancaire', CASH: 'Espèces', MOBILE_MONEY: 'Mobile Money' }[contract.paymentMode] || contract.paymentMode,
       academicYear: contract.academicYear?.name || '',
@@ -900,6 +900,19 @@ export class ContractPdfService {
   }
 
   // ─── Private helpers ────────────────────────────────────────────────────────
+
+  /**
+   * Convertit une valeur Prisma Decimal (qui peut être string, number, ou
+   * objet { $numberDecimal: "50000" }) en number JavaScript.
+   */
+  private toNumber(val: any): number {
+    if (val == null) return 0;
+    if (typeof val === 'number') return val;
+    if (typeof val === 'string') return parseFloat(val) || 0;
+    if (typeof val === 'object' && val.$numberDecimal) return parseFloat(val.$numberDecimal) || 0;
+    if (typeof val === 'object' && val.toString) return parseFloat(val.toString()) || 0;
+    return 0;
+  }
 
   private async renderPdf(html: string): Promise<Buffer> {
     try {

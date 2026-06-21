@@ -262,25 +262,96 @@ export class InboundEmailService {
     if (recruiter?.email) {
       try {
         const fromEmail = this.configService.get<string>('EMAIL_FROM_NOREPLY') || 'noreply@academiahelm.com';
-        const replyToSubject = `🔄 Réponse reçue — ${inboundEmail.subject || originalEmail.subject}`;
+        const appUrl = this.configService.get<string>('FRONTEND_URL') || 'https://academiahelm.com';
 
-        // Construire le HTML de la notification
+        // Déterminer le type d'email original pour le contexte
+        const categoryLabel = originalEmail.category === 'RECRUTEMENT' ? 'Recrutement' :
+                              originalEmail.category === 'PEDAGOGIE' ? 'Pédagogie' :
+                              originalEmail.category === 'FINANCE' ? 'Finance' :
+                              originalEmail.category === 'COMMUNICATION' ? 'Communication' :
+                              originalEmail.category || 'Système';
+        const subCategoryLabel = originalEmail.subCategory === 'candidature_recue' ? 'Candidature reçue' :
+                                 originalEmail.subCategory === 'entretien_programmé' ? 'Entretien programmé' :
+                                 originalEmail.subCategory === 'test_programmé' ? 'Test programmé' :
+                                 originalEmail.subCategory === 'résultat_entretien' ? 'Résultat entretien' :
+                                 originalEmail.subCategory === 'résultat_test' ? 'Résultat test' :
+                                 originalEmail.subCategory === 'embauche' ? 'Embauche' :
+                                 originalEmail.subCategory === 'contrat_signé' ? 'Contrat signé' :
+                                 originalEmail.subCategory === 'rejet' ? 'Rejet' :
+                                 originalEmail.subCategory || '';
+
+        // Date d'envoi de l'email original
+        const originalDate = originalEmail.sentAt
+          ? new Date(originalEmail.sentAt).toLocaleString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+          : originalEmail.createdAt
+            ? new Date(originalEmail.createdAt).toLocaleString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+            : 'Date inconnue';
+
+        // Extrait du contenu original (100 premiers caractères, sans HTML)
+        let originalSnippet = '';
+        if (originalEmail.content) {
+          originalSnippet = originalEmail.content
+            .replace(/<[^>]*>/g, '')
+            .replace(/&nbsp;/g, ' ')
+            .trim()
+            .substring(0, 200);
+          if (originalSnippet.length === 200) originalSnippet += '...';
+        }
+
+        // Lien vers la candidature si on a un relatedEntityId
+        const candidateLink = originalEmail.relatedEntityType === 'HrCandidate' && originalEmail.relatedEntityId
+          ? `${appUrl}/app/hr/recruitment`
+          : null;
+
+        const replyToSubject = `🔄 Réponse reçue — ${inboundEmail.fromName || inboundEmail.fromEmail} — ${originalEmail.subject || 'Email'}`;
+
         const notificationHtml = `
           <div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
-            <div style="background:#0D1F6E;color:#fff;padding:20px;border-radius:8px 8px 0 0;">
-              <h2 style="margin:0;font-size:18px;">🔄 Réponse reçue</h2>
-              <p style="margin:5px 0 0;font-size:13px;color:#F5A623;">Un candidat a répondu à un email</p>
+            <!-- Header navy + gold -->
+            <div style="background:linear-gradient(135deg,#0D1F6E 0%,#0D3B85 100%);color:#fff;padding:24px;border-radius:8px 8px 0 0;border-bottom:3px solid #F5A623;">
+              <h2 style="margin:0;font-size:20px;">🔄 Réponse reçue d'un candidat</h2>
+              <p style="margin:6px 0 0;font-size:13px;color:#F5A623;">Le candidat a répondu à un email envoyé par Academia Helm</p>
             </div>
-            <div style="background:#f8fafc;padding:20px;border:1px solid #e2e8f0;border-radius:0 0 8px 8px;">
-              <table style="width:100%;font-size:14px;color:#334155;">
-                <tr><td style="padding:4px 0;font-weight:bold;width:120px;">De :</td><td>${inboundEmail.fromName || ''} &lt;${inboundEmail.fromEmail}&gt;</td></tr>
-                <tr><td style="padding:4px 0;font-weight:bold;">Sujet original :</td><td>${originalEmail.subject || 'N/A'}</td></tr>
-                <tr><td style="padding:4px 0;font-weight:bold;">Date :</td><td>${new Date(inboundEmail.receivedAt).toLocaleString('fr-FR')}</td></tr>
+
+            <div style="background:#f8fafc;padding:24px;border:1px solid #e2e8f0;border-radius:0 0 8px 8px;">
+
+              <!-- Section 1 : Qui répond ? -->
+              <table style="width:100%;font-size:14px;color:#334155;margin-bottom:20px;">
+                <tr>
+                  <td style="padding:4px 0;font-weight:bold;width:130px;vertical-align:top;">De :</td>
+                  <td style="padding:4px 0;">
+                    <strong>${inboundEmail.fromName || ''}</strong><br/>
+                    <span style="color:#64748b;font-size:13px;">${inboundEmail.fromEmail}</span>
+                  </td>
+                </tr>
+                <tr><td style="padding:4px 0;font-weight:bold;">Date de réponse :</td><td style="padding:4px 0;">${new Date(inboundEmail.receivedAt).toLocaleString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td></tr>
               </table>
-              <hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0;" />
-              <h3 style="margin:0 0 8px;font-size:14px;color:#0D1F6E;">Message du candidat :</h3>
-              <div style="background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:12px;font-size:13px;color:#475569;line-height:1.6;white-space:pre-wrap;">${inboundEmail.textBody || inboundEmail.htmlBody || '(Message vide)'}</div>
-              <p style="margin:16px 0 0;font-size:12px;color:#94a3b8;">Cet email a été envoyé automatiquement par Academia Helm. Vous pouvez répondre directement au candidat depuis votre boîte mail.</p>
+
+              <!-- Section 2 : À quel email le candidat répond ? -->
+              <div style="background:#eff6ff;border-left:4px solid #0D1F6E;border-radius:0 6px 6px 0;padding:16px;margin-bottom:20px;">
+                <p style="margin:0 0 8px;font-size:11px;color:#0D1F6E;font-weight:bold;text-transform:uppercase;letter-spacing:0.5px;">📧 Email original (auquel le candidat a répondu)</p>
+                <table style="width:100%;font-size:13px;color:#334155;">
+                  <tr><td style="padding:2px 0;font-weight:bold;width:100px;">Sujet :</td><td style="padding:2px 0;">${originalEmail.subject || 'N/A'}</td></tr>
+                  <tr><td style="padding:2px 0;font-weight:bold;">Catégorie :</td><td style="padding:2px 0;">${categoryLabel}${subCategoryLabel ? ' — ' + subCategoryLabel : ''}</td></tr>
+                  <tr><td style="padding:2px 0;font-weight:bold;">Envoyé le :</td><td style="padding:2px 0;">${originalDate}</td></tr>
+                  ${originalEmail.recipientName ? `<tr><td style="padding:2px 0;font-weight:bold;">Destinataire :</td><td style="padding:2px 0;">${originalEmail.recipientName}</td></tr>` : ''}
+                </table>
+                ${originalSnippet ? `<div style="margin-top:10px;padding:10px;background:#fff;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;color:#64748b;font-style:italic;">"${originalSnippet}"</div>` : ''}
+              </div>
+
+              <!-- Section 3 : Message du candidat -->
+              <h3 style="margin:0 0 8px;font-size:14px;color:#0D1F6E;text-transform:uppercase;letter-spacing:0.5px;">💬 Réponse du candidat</h3>
+              <div style="background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:14px;font-size:14px;color:#475569;line-height:1.6;white-space:pre-wrap;margin-bottom:20px;">${inboundEmail.textBody || inboundEmail.htmlBody || '(Message vide)'}</div>
+
+              <!-- Section 4 : Actions -->
+              ${candidateLink ? `
+              <a href="${candidateLink}" style="display:inline-block;background:#F5A623;color:#0D1F6E;padding:10px 20px;border-radius:6px;font-size:13px;font-weight:bold;text-decoration:none;margin-bottom:16px;">📋 Voir la candidature dans Academia Helm</a>
+              ` : ''}
+
+              <p style="margin:16px 0 0;font-size:12px;color:#94a3b8;line-height:1.5;">
+                Cet email a été envoyé automatiquement par Academia Helm.<br/>
+                Vous pouvez répondre directement au candidat depuis votre boîte mail (le champ "Répondre à" est pré-rempli avec son adresse email).
+              </p>
             </div>
           </div>`;
 
@@ -294,7 +365,9 @@ export class InboundEmailService {
         });
 
         this.logger.log(
-          `[NOTIFICATION] Réponse de ${inboundEmail.fromEmail} transférée au recruteur ${recruiter.email} — sujet: "${replyToSubject}"`,
+          `[NOTIFICATION] Réponse de ${inboundEmail.fromEmail} transférée au recruteur ${recruiter.email} — ` +
+          `email original: "${originalEmail.subject}" (${categoryLabel}/${subCategoryLabel}), ` +
+          `envoyé le ${originalDate}`,
         );
         sent++;
       } catch (err: any) {

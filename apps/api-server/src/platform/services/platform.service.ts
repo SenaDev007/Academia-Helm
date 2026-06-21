@@ -1081,13 +1081,64 @@ export class PlatformService {
   async updateTenant(id: string, body: any, user: any) {
     const tenant = await this.prisma.tenant.findUnique({ where: { id } });
     if (!tenant) throw new BadRequestException('Tenant introuvable');
+
+    // Mise à jour des champs du tenant
     const data: any = {};
     if (body.name) data.name = body.name;
     if (body.subdomain) data.subdomain = body.subdomain;
     if (body.type) data.type = body.type;
     if (body.plan) data.subscriptionPlan = body.plan;
+    if (body.subscriptionStatus) data.subscriptionStatus = body.subscriptionStatus;
+    if (body.studentEnrollmentBlocked !== undefined) data.studentEnrollmentBlocked = body.studentEnrollmentBlocked;
+
+    // Mise à jour de la date d'expiration du tenant
+    if (body.expiration) {
+      data.nextPaymentDueAt = new Date(body.expiration);
+    }
+
     await this.prisma.tenant.update({ where: { id }, data });
-    this.logger.log(`Tenant ${id} updated by ${user?.email}`);
+
+    // Mise à jour du HelmSubscription si des champs d'abonnement sont fournis
+    const subData: any = {};
+    if (body.planStatus) subData.status = body.planStatus;
+    if (body.billingCycle) subData.billingCycle = body.billingCycle;
+    if (body.bilingualEnabled !== undefined) subData.bilingualEnabled = body.bilingualEnabled;
+    if (body.expiration) {
+      subData.currentPeriodEnd = new Date(body.expiration);
+    }
+    if (body.trialEnd) {
+      subData.trialEnd = new Date(body.trialEnd);
+    }
+
+    if (Object.keys(subData).length > 0) {
+      const existingSub = await this.prisma.helmSubscription.findUnique({ where: { tenantId: id } });
+      if (existingSub) {
+        await this.prisma.helmSubscription.update({
+          where: { id: existingSub.id },
+          data: subData,
+        });
+      } else {
+        // Créer un HelmSubscription si n'existe pas
+        await this.prisma.helmSubscription.create({
+          data: {
+            tenantId: id,
+            plan: (body.plan || 'SEED') as any,
+            billingCycle: (body.billingCycle || 'MONTHLY') as any,
+            status: (body.planStatus || 'ACTIVE') as any,
+            monthlyAmount: 0,
+            annualAmount: 0,
+            setupFee: 0,
+            currentPeriodStart: new Date(),
+            currentPeriodEnd: body.expiration ? new Date(body.expiration) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            trialEnd: body.trialEnd ? new Date(body.trialEnd) : null,
+            bilingualEnabled: body.bilingualEnabled || false,
+            ...subData,
+          },
+        });
+      }
+    }
+
+    this.logger.log(`Tenant ${id} updated by ${user?.email} (fields: ${Object.keys({ ...data, ...subData }).join(', ')})`);
     return { ok: true, id };
   }
 

@@ -307,7 +307,19 @@ export class PlatformController {
   async updateTenant(
     @Headers('x-platform-admin-email') adminEmail: string,
     @Param('id') id: string,
-    @Body() body: { name?: string; plan?: string; subdomain?: string; type?: string },
+    @Body() body: {
+      name?: string;
+      plan?: string;
+      subdomain?: string;
+      type?: string;
+      planStatus?: string;
+      billingCycle?: string;
+      expiration?: string;
+      trialEnd?: string;
+      bilingualEnabled?: boolean;
+      studentEnrollmentBlocked?: boolean;
+      subscriptionStatus?: string;
+    },
   ) {
     this.assertAdminProxyRequest(adminEmail);
     return this.platformService.updateTenant(id, body, { email: adminEmail });

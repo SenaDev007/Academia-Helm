@@ -52,14 +52,41 @@ interface TenantsData {
   limit: number;
 }
 
-const PLANS = ['SEED', 'GROW', 'LEAD', 'NETWORK'] as const;
-const TENANT_TYPES = ['SCHOOL', 'GROUP', 'NETWORK', 'MINISTRY', 'OTHER'] as const;
+const PLANS = [
+  { code: 'SEED', label: 'Helm Seed' },
+  { code: 'GROW', label: 'Helm Grow' },
+  { code: 'LEAD', label: 'Helm Lead' },
+  { code: 'NETWORK', label: 'Helm Network' },
+] as const;
+
+const TENANT_TYPES = [
+  { code: 'SCHOOL', label: 'École' },
+] as const;
+
+const PLAN_STATUSES = [
+  { code: 'ACTIVE', label: 'Actif' },
+  { code: 'TRIALING', label: 'Période d\'essai' },
+  { code: 'GRACE_PERIOD', label: 'Période de grâce' },
+  { code: 'SUSPENDED', label: 'Suspendu' },
+  { code: 'BLOCKED', label: 'Bloqué' },
+] as const;
+
+const BILLING_CYCLES = [
+  { code: 'MONTHLY', label: 'Mensuel' },
+  { code: 'ANNUAL', label: 'Annuel' },
+] as const;
 
 type EditForm = {
   name: string;
   subdomain: string;
   type: string;
   plan: string;
+  planStatus: string;
+  billingCycle: string;
+  expiration: string;
+  trialEnd: string;
+  bilingualEnabled: boolean;
+  studentEnrollmentBlocked: boolean;
 };
 
 /** Couleurs du badge planStatus (préfixe cohérent avec l'onglet Abonnements). */
@@ -121,6 +148,9 @@ export default function TenantsWorkspace() {
   const [editTarget, setEditTarget] = useState<Tenant | null>(null);
   const [editForm, setEditForm] = useState<EditForm>({
     name: '', subdomain: '', type: 'SCHOOL', plan: 'SEED',
+    planStatus: 'ACTIVE', billingCycle: 'MONTHLY',
+    expiration: '', trialEnd: '', bilingualEnabled: false,
+    studentEnrollmentBlocked: false,
   });
   const [editError, setEditError] = useState<string | null>(null);
   const [editSuccess, setEditSuccess] = useState<string | null>(null);
@@ -157,11 +187,18 @@ export default function TenantsWorkspace() {
   const openEdit = (t: Tenant) => {
     setEditTarget(t);
     const upper = (t.plan || '').toUpperCase();
+    const planCode = (PLANS as readonly { code: string; label: string }[]).find(p => p.code === upper) ? upper : 'SEED';
     setEditForm({
       name: t.name || '',
       subdomain: t.subdomain || '',
-      type: t.type || 'SCHOOL',
-      plan: (PLANS as readonly string[]).includes(upper) ? upper : 'SEED',
+      type: 'SCHOOL',
+      plan: planCode,
+      planStatus: t.planStatus || 'ACTIVE',
+      billingCycle: t.billingCycle || 'MONTHLY',
+      expiration: t.expiration ? t.expiration.split('T')[0] : '',
+      trialEnd: t.trialEnd ? t.trialEnd.split('T')[0] : '',
+      bilingualEnabled: t.bilingualEnabled || false,
+      studentEnrollmentBlocked: t.studentEnrollmentBlocked || false,
     });
     setEditError(null);
     setEditSuccess(null);
@@ -189,8 +226,14 @@ export default function TenantsWorkspace() {
         name: editForm.name.trim(),
         type: editForm.type,
         plan: editForm.plan,
+        planStatus: editForm.planStatus,
+        billingCycle: editForm.billingCycle,
+        bilingualEnabled: editForm.bilingualEnabled,
+        studentEnrollmentBlocked: editForm.studentEnrollmentBlocked,
       };
       if (editForm.subdomain.trim()) body.subdomain = editForm.subdomain.trim();
+      if (editForm.expiration) body.expiration = editForm.expiration;
+      if (editForm.trialEnd) body.trialEnd = editForm.trialEnd;
       const res = await fetch(`/api/platform/tenants/${editTarget.id}`, {
         method: 'PATCH',
         credentials: 'include',
@@ -455,30 +498,32 @@ export default function TenantsWorkspace() {
             </div>
 
             <form onSubmit={submitEdit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Nom de l'établissement *</label>
-                <input
-                  type="text"
-                  value={editForm.name}
-                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
-                  placeholder="École Dupont"
-                />
-              </div>
+              {/* Section: Informations générales */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide">Informations générales</h3>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">Nom de l'établissement *</label>
+                  <input
+                    type="text"
+                    value={editForm.name}
+                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    placeholder="École Dupont"
+                  />
+                </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Sous-domaine</label>
-                <input
-                  type="text"
-                  value={editForm.subdomain}
-                  onChange={(e) => setEditForm({ ...editForm, subdomain: e.target.value })}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
-                  placeholder="dupont"
-                />
-                <p className="text-[11px] text-slate-400 mt-1">Laisser vide pour conserver l'actuel.</p>
-              </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">Sous-domaine</label>
+                  <input
+                    type="text"
+                    value={editForm.subdomain}
+                    onChange={(e) => setEditForm({ ...editForm, subdomain: e.target.value })}
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    placeholder="dupont"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">Laisser vide pour conserver l'actuel.</p>
+                </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1.5">Type</label>
                   <select
@@ -487,22 +532,107 @@ export default function TenantsWorkspace() {
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                   >
                     {TENANT_TYPES.map((ty) => (
-                      <option key={ty} value={ty}>{ty}</option>
+                      <option key={ty.code} value={ty.code}>{ty.label}</option>
                     ))}
                   </select>
                 </div>
+              </div>
+
+              {/* Section: Abonnement */}
+              <div className="space-y-3 pt-4 border-t border-slate-100">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide">Abonnement</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Plan</label>
+                    <select
+                      value={editForm.plan}
+                      onChange={(e) => setEditForm({ ...editForm, plan: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    >
+                      {PLANS.map((p) => (
+                        <option key={p.code} value={p.code}>{p.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Statut abonnement</label>
+                    <select
+                      value={editForm.planStatus}
+                      onChange={(e) => setEditForm({ ...editForm, planStatus: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    >
+                      {PLAN_STATUSES.map((s) => (
+                        <option key={s.code} value={s.code}>{s.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Cycle de facturation</label>
+                    <select
+                      value={editForm.billingCycle}
+                      onChange={(e) => setEditForm({ ...editForm, billingCycle: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    >
+                      {BILLING_CYCLES.map((c) => (
+                        <option key={c.code} value={c.code}>{c.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Date d'expiration</label>
+                    <input
+                      type="date"
+                      value={editForm.expiration}
+                      onChange={(e) => setEditForm({ ...editForm, expiration: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    />
+                  </div>
+                </div>
+
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">Plan *</label>
-                  <select
-                    value={editForm.plan}
-                    onChange={(e) => setEditForm({ ...editForm, plan: e.target.value })}
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">Fin de la période d'essai</label>
+                  <input
+                    type="date"
+                    value={editForm.trialEnd}
+                    onChange={(e) => setEditForm({ ...editForm, trialEnd: e.target.value })}
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
-                  >
-                    {PLANS.map((p) => (
-                      <option key={p} value={p}>{p}</option>
-                    ))}
-                  </select>
+                  />
                 </div>
+              </div>
+
+              {/* Section: Contrôles manuels */}
+              <div className="space-y-3 pt-4 border-t border-slate-100">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide">Contrôles manuels</h3>
+                <label className="flex items-center justify-between p-3 bg-slate-50 rounded-lg cursor-pointer">
+                  <div>
+                    <span className="text-sm font-semibold text-slate-700">Option bilingue (FR + EN)</span>
+                    <p className="text-xs text-slate-400 mt-0.5">Active les parcours académiques bilingues</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEditForm({ ...editForm, bilingualEnabled: !editForm.bilingualEnabled })}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${editForm.bilingualEnabled ? 'bg-amber-500' : 'bg-slate-300'}`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${editForm.bilingualEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </button>
+                </label>
+
+                <label className="flex items-center justify-between p-3 bg-slate-50 rounded-lg cursor-pointer">
+                  <div>
+                    <span className="text-sm font-semibold text-slate-700">Bloquer l'ajout d'élèves</span>
+                    <p className="text-xs text-slate-400 mt-0.5">Empêche l'inscription de nouveaux élèves</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEditForm({ ...editForm, studentEnrollmentBlocked: !editForm.studentEnrollmentBlocked })}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${editForm.studentEnrollmentBlocked ? 'bg-red-500' : 'bg-slate-300'}`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${editForm.studentEnrollmentBlocked ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </button>
+                </label>
               </div>
 
               {editError && (

@@ -211,6 +211,10 @@ export class PlatformService {
       const plan = sub?.plan || t.subscriptionPlan || '—';
       const status =
         t.status === 'suspended' ? 'SUSPENDED' : t.subscriptionStatus === 'TRIAL' ? 'TRIAL' : 'ACTIVE';
+      const now = new Date();
+      const daysRemaining = sub?.currentPeriodEnd
+        ? Math.max(0, Math.ceil((sub.currentPeriodEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
+        : null;
       return {
         id: t.id,
         name: t.name,
@@ -219,10 +223,16 @@ export class PlatformService {
         country: t.country?.name || '—',
         city: t.schools?.[0]?.city || '—',
         plan,
+        planStatus: sub?.status || null,
+        billingCycle: sub?.billingCycle || null,
         status,
         students: Number(t.studentCountCache || 0),
         lastActivity: t.updatedAt.toISOString(),
         expiration: sub?.currentPeriodEnd?.toISOString() || null,
+        daysRemaining,
+        trialEnd: sub?.trialEnd?.toISOString() || null,
+        bilingualEnabled: (sub as any)?.bilingualEnabled || false,
+        studentEnrollmentBlocked: (t as any).studentEnrollmentBlocked || false,
         createdAt: t.createdAt.toISOString(),
       };
     });
@@ -552,53 +562,157 @@ export class PlatformService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // 10. PLANS D'ABONNEMENT
+  // 10. PLANS DYNAMIQUES (pricing_plans) + ABONNEMENTS ACTIFS (HelmSubscription)
   // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Retourne le catalogue de plans depuis pricing_plans + abonnements actifs.
+   * Utilisée par le back-office (remplace l'ancienne getPlans).
+   */
+  async getDynamicPlansWithSubscriptions() {
+    const pricingPlans = await this.prisma.pricingPlan.findMany({
+      where: { isActive: true },
+      orderBy: { sortOrder: 'asc' },
+    });
+
+    const subsByPlan = await this.prisma.helmSubscription.groupBy({
+      by: ['plan'],
+      _count: { plan: true },
+    });
+    const countMap = new Map(subsByPlan.map((s) => [s.plan, s._count.plan]));
+
+    const activeSubs = await this.prisma.helmSubscription.findMany({
+      where: { status: { in: ['ACTIVE', 'TRIALING', 'GRACE_PERIOD'] } },
+      include: {
+        tenant: {
+          select: { id: true, name: true, subdomain: true, status: true },
+        },
+      },
+      orderBy: { currentPeriodEnd: 'asc' },
+    });
+
+    const now = new Date();
+
+    return {
+      plans: pricingPlans.map((p) => ({
+        id: p.id,
+        code: p.code,
+        name: p.name,
+        tagline: p.tagline,
+        description: p.description,
+        studentMin: p.studentMin,
+        studentMax: p.studentMax,
+        initialFee: p.initialFee,
+        monthlyAmount: p.monthlyAmount,
+        yearlyAmount: p.yearlyAmount,
+        bilingualMonthly: p.bilingualMonthly,
+        bilingualYearly: p.bilingualYearly,
+        features: p.features ? (typeof p.features === 'string' ? JSON.parse(p.features as string) : p.features) : [],
+        isPopular: p.isPopular,
+        activeSubscriptions: countMap.get(p.code as any) || 0,
+      })),
+      activeSubscriptions: activeSubs.map((s) => {
+        const daysRemaining = s.currentPeriodEnd
+          ? Math.max(0, Math.ceil((s.currentPeriodEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
+          : 0;
+        return {
+          id: s.id,
+          tenantId: s.tenantId,
+          tenantName: s.tenant?.name || 'N/A',
+          tenantSubdomain: s.tenant?.subdomain || null,
+          tenantStatus: s.tenant?.status || 'unknown',
+          plan: s.plan,
+          billingCycle: s.billingCycle,
+          status: s.status,
+          bilingualEnabled: (s as any).bilingualEnabled || false,
+          currentPeriodStart: s.currentPeriodStart,
+          currentPeriodEnd: s.currentPeriodEnd,
+          trialEnd: s.trialEnd,
+          daysRemaining,
+          monthlyAmount: s.monthlyAmount,
+          annualAmount: s.annualAmount,
+          lastPaymentDate: s.lastPaymentDate,
+          lastPaymentAmount: s.lastPaymentAmount,
+        };
+      }),
+      stats: {
+        totalActive: activeSubs.filter((s) => s.status === 'ACTIVE').length,
+        totalTrialing: activeSubs.filter((s) => s.status === 'TRIALING').length,
+        totalGracePeriod: activeSubs.filter((s) => s.status === 'GRACE_PERIOD').length,
+        totalMrr: activeSubs
+          .filter((s) => s.status === 'ACTIVE')
+          .reduce((sum, s) => sum + (s.billingCycle === 'ANNUAL' ? Math.round(s.annualAmount / 12) : s.monthlyAmount), 0),
+      },
+    };
+  }
+
+  // Ancienne méthode (conservée pour compatibilité)
   async getPlans() {
     const plans = await this.prisma.subscriptionPlan.findMany({
       orderBy: { monthlyPrice: 'asc' },
     });
-
     const subscriptionsByPlan = await this.prisma.helmSubscription.groupBy({
       by: ['plan'],
       _count: { plan: true },
       where: { status: 'ACTIVE' },
     });
     const countMap = new Map(subscriptionsByPlan.map((s) => [s.plan, s._count.plan]));
-
     return {
       plans: plans.map((p) => ({
-        id: p.id,
-        code: p.code,
-        name: p.name,
-        monthlyPrice: p.monthlyPrice,
-        yearlyPrice: p.yearlyPrice,
-        maxSchools: p.maxSchools,
-        bilingualAllowed: p.bilingualAllowed,
+        id: p.id, code: p.code, name: p.name,
+        monthlyPrice: p.monthlyPrice, yearlyPrice: p.yearlyPrice,
+        maxSchools: p.maxSchools, bilingualAllowed: p.bilingualAllowed,
         activeSubscriptions: countMap.get(p.code as any) || 0,
       })),
     };
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // 11. MODULES — AGRÉGATION DE L'ADOPTION PAR LES TENANTS
+  // 11. MODULES — CATALOGUE COMPLET + ADOPTION PAR LES TENANTS
   // ─────────────────────────────────────────────────────────────────────────
+
+  /** Catalogue complet des modules Academia Helm (14 principaux + 8 complémentaires). */
+  private readonly MODULE_CATALOG = [
+    // Modules principaux
+    { code: 'STUDENTS', name: 'Élèves & Scolarité', category: 'principal', icon: 'Users', description: 'Inscriptions, matricules, dossiers élèves, transferts' },
+    { code: 'FINANCE', name: 'Finances & Économat', category: 'principal', icon: 'Calculator', description: 'Frais de scolarité, paiements, trésorerie, comptabilité' },
+    { code: 'HR_PAYROLL', name: 'Personnel, RH & Paie', category: 'principal', icon: 'UserCheck', description: 'Staff, contrats, paie, CNSS, congés' },
+    { code: 'PEDAGOGY', name: 'Organisation Pédagogique', category: 'principal', icon: 'Building', description: 'Classes, matières, emplois du temps, journaux de classe' },
+    { code: 'EXAMS', name: 'Examens & Bulletins', category: 'principal', icon: 'BookOpen', description: 'Évaluations, notes, bulletins, conseils de classe' },
+    { code: 'COMMUNICATION', name: 'Communication', category: 'principal', icon: 'MessageSquare', description: 'Emails, SMS, WhatsApp, annonces, campagnes' },
+    { code: 'ORION', name: 'ORION — Pilotage IA', category: 'principal', icon: 'Zap', description: 'Tableaux de bord, analytics, alertes intelligentes' },
+    // Modules complémentaires
+    { code: 'LIBRARY', name: 'Bibliothèque', category: 'complementaire', icon: 'Library', description: 'Catalogue, emprunts, réservations, ressources numériques' },
+    { code: 'TRANSPORT', name: 'Transport', category: 'complementaire', icon: 'Bus', description: 'Véhicules, trajets, arrêts, affectations élèves' },
+    { code: 'CANTEEN', name: 'Cantine', category: 'complementaire', icon: 'UtensilsCrossed', description: 'Menus, inscriptions, présences, stocks' },
+    { code: 'INFIRMARY', name: 'Infirmerie', category: 'complementaire', icon: 'HeartPulse', description: 'Visites, urgences, autorisations, pharmacie' },
+    { code: 'QHSE', name: 'QHSE', category: 'complementaire', icon: 'ShieldCheck', description: 'Qualité, hygiène, sécurité, environnement, audits' },
+    { code: 'EDUCAST', name: 'EduCast', category: 'complementaire', icon: 'Radio', description: 'Chaînes enseignants, vidéos, podcasts, webinaires' },
+    { code: 'SHOP', name: 'Boutique', category: 'complementaire', icon: 'ShoppingBag', description: 'Produits, commandes, point de vente, encaissements' },
+  ];
+
   async getModulesAdoption() {
+    const totalTenants = await this.prisma.tenant.count({ where: { status: { not: 'WITHDRAWN' } } });
+
+    // Récupérer l'adoption depuis TenantFeature
     const features = await this.prisma.tenantFeature.groupBy({
       by: ['featureCode'],
       where: { isEnabled: true },
       _count: { featureCode: true },
     });
+    const countMap = new Map(features.map((f) => [f.featureCode, f._count.featureCode]));
 
-    const totalTenants = await this.prisma.tenant.count({ where: { status: { not: 'WITHDRAWN' } } });
-
+    // Retourner le catalogue complet avec les compteurs d'adoption
     return {
       totalTenants,
-      modules: features.map((f) => ({
-        code: f.featureCode,
-        enabledCount: f._count.featureCode,
-        adoptionRate: totalTenants > 0 ? Math.round((f._count.featureCode / totalTenants) * 100) : 0,
-      })),
+      modules: this.MODULE_CATALOG.map((m) => {
+        const enabledCount = countMap.get(m.code) || 0;
+        return {
+          ...m,
+          enabledCount,
+          adoptionRate: totalTenants > 0 ? Math.round((enabledCount / totalTenants) * 100) : 0,
+        };
+      }),
     };
   }
 

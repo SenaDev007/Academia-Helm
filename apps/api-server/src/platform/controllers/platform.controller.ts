@@ -158,11 +158,11 @@ export class PlatformController {
     return this.platformService.getPermissions();
   }
 
-  /** GET /platform/plans — Plans d'abonnement */
+  /** GET /platform/plans — Plans d'abonnement (depuis pricing_plans + HelmSubscription) */
   @Get('plans')
   async getPlans(@Headers('x-platform-admin-email') adminEmail?: string) {
     this.assertAdminProxyRequest(adminEmail);
-    return this.platformService.getPlans();
+    return this.platformService.getDynamicPlansWithSubscriptions();
   }
 
   /** GET /platform/modules — Adoption des modules par tenants */

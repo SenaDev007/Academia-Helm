@@ -33,6 +33,7 @@ import {
   Inbox,
   Filter,
   ServerCrash,
+  Building2,
 } from 'lucide-react';
 import { usePlatformData } from '@/hooks/usePlatformData';
 import { PlatformLoading, PlatformError, PlatformEmpty } from '@/components/platform/PlatformStates';
@@ -71,6 +72,17 @@ interface CommunicationData {
     limit: number;
     totalPages: number;
   };
+}
+
+interface TenantOption {
+  id: string;
+  name: string;
+  slug?: string | null;
+}
+
+interface TenantsListResponse {
+  tenants: TenantOption[];
+  total: number;
 }
 
 const CATEGORIES = [
@@ -172,6 +184,11 @@ export default function CommunicationPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [tenantFilter, setTenantFilter] = useState('ALL');
+
+  // Fetch tenants list for the selector (Tous les tenants + each school)
+  const tenantsQ = usePlatformData<TenantsListResponse>('/tenants?limit=100');
+  const tenants: TenantOption[] = tenantsQ.data?.tenants ?? [];
 
   const path = useMemo(() => {
     const params = new URLSearchParams({
@@ -181,8 +198,9 @@ export default function CommunicationPage() {
       status: statusFilter,
     });
     if (searchTerm.trim()) params.set('search', searchTerm.trim());
+    if (tenantFilter !== 'ALL') params.set('tenantId', tenantFilter);
     return `/communication/logs?${params.toString()}`;
-  }, [searchTerm, categoryFilter, statusFilter]);
+  }, [searchTerm, categoryFilter, statusFilter, tenantFilter]);
 
   const { data, loading, error, refetch } = usePlatformData<CommunicationData>(path);
 
@@ -256,8 +274,26 @@ export default function CommunicationPage() {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Filter className="w-4 h-4 text-slate-400" />
+          {/* Tenant selector — group by school */}
+          <div className="relative">
+            <Building2 className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+            <select
+              value={tenantFilter}
+              onChange={(e) => setTenantFilter(e.target.value)}
+              className="pl-8 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500/20 max-w-[260px] truncate"
+              aria-label="Filtrer par établissement"
+              disabled={tenantsQ.loading}
+            >
+              <option value="ALL">Tous les tenants</option>
+              {tenants.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </div>
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}

@@ -179,6 +179,13 @@ export class PlatformController {
     return this.platformService.getMonitoring();
   }
 
+  /** GET /platform/aggregation — Données agrégées globales */
+  @Get('aggregation')
+  async getAggregation(@Headers('x-platform-admin-email') adminEmail?: string) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.getAggregation();
+  }
+
   /** GET /platform/orion — Alertes + données ORION */
   @Get('orion')
   async getOrionGlobal(@Headers('x-platform-admin-email') adminEmail?: string) {

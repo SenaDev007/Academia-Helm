@@ -307,8 +307,18 @@ export default function TenantsWorkspace() {
                   return (
                     <tr key={t.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="px-6 py-4">
-                        <div className="font-bold text-slate-900">{t.name}</div>
-                        <div className="text-xs text-slate-500 font-mono">{t.slug}</div>
+                        <div
+                          className="font-bold text-slate-900 max-w-[220px] truncate text-left"
+                          title={t.name}
+                        >
+                          {t.name}
+                        </div>
+                        <div
+                          className="text-xs text-slate-500 font-mono max-w-[220px] truncate"
+                          title={t.slug}
+                        >
+                          {t.slug}
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-sm text-slate-700">{t.country}</div>

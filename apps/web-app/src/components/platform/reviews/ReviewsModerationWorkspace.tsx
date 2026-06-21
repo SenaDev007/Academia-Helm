@@ -98,7 +98,10 @@ function formatDate(iso: string): string {
 
 function Stars({ rating, size = 14 }: { rating: number; size?: number }) {
   return (
-    <div className="flex gap-0.5" aria-label={`${rating} sur 5`}>
+    <div
+      className="flex shrink-0 gap-0.5"
+      aria-label={`${rating} sur 5`}
+    >
       {Array.from({ length: 5 }).map((_, i) => (
         <Star
           key={i}
@@ -353,41 +356,49 @@ function ReviewCardBase({
   children: React.ReactNode;
 }) {
   const isSchoolReview = Boolean(review.tenantId);
+  const promoterLine = [review.authorRole, review.schoolName, review.city]
+    .filter(Boolean)
+    .join(' · ');
   return (
-    <div className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
           {/* Avatar */}
           {review.photoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={review.photoUrl}
               alt=""
-              className="h-10 w-10 rounded-full object-cover"
+              className="h-10 w-10 shrink-0 rounded-full object-cover"
             />
           ) : (
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-indigo-700 text-xs font-bold text-white">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-indigo-700 text-xs font-bold text-white">
               {review.authorName?.trim().split(/\s+/).map((s) => s[0]).slice(0, 2).join('') || '?'}
             </div>
           )}
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              <p className="truncate text-sm font-bold text-slate-900">{review.authorName}</p>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <p className="max-w-full truncate text-sm font-bold text-slate-900">
+                {review.authorName}
+              </p>
               {isSchoolReview ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700">
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700">
                   <Building2 className="h-2.5 w-2.5" />
                   École
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700">
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700">
                   <User className="h-2.5 w-2.5" />
                   Public
                 </span>
               )}
             </div>
-            <p className="mt-0.5 truncate text-xs text-slate-500">
-              {[review.authorRole, review.schoolName, review.city].filter(Boolean).join(' · ')}
+            <p
+              className="mt-0.5 max-w-full whitespace-nowrap overflow-hidden text-ellipsis text-xs text-slate-500"
+              title={promoterLine}
+            >
+              {promoterLine}
             </p>
           </div>
         </div>

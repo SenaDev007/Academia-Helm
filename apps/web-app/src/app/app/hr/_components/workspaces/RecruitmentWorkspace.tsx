@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Briefcase,
@@ -137,6 +138,18 @@ interface Candidate {
     createdAt?: string;
     matchDetail?: string;
   }>;
+  /** ÉLIGIBLE workflow: contract info linked to the candidate's primary application
+   *  (only present if the candidate was declared ÉLIGIBLE and a DRAFT/PENDING
+   *  contract was auto-created). Used by the Embauches tab to:
+   *    - show a "Préparer le contrat" link → /app/hr/contracts/{contractId}
+   *    - enable/disable the "Embaucher" button based on employer signature */
+  contract?: {
+    id: string;
+    status: string;        // 'DRAFT' | 'PENDING' | 'ACTIVE'
+    isEmployerSigned: boolean;
+    startDate?: string;
+    contractType?: string;
+  } | null;
 }
 
 interface Interview {
@@ -192,13 +205,18 @@ interface TalentPool {
 export function RecruitmentWorkspace() {
   const { tenant } = useModuleContext();
   const confirmDialog = useConfirmDialog();
+  const router = useRouter();
 
   // Valid status transitions (mirrors backend VALID_TRANSITIONS)
+  // Two-phase hiring workflow:
+  //   ENTRETIEN/TEST → ÉLIGIBLE (creates Staff + DRAFT contract, NO email)
+  //   ÉLIGIBLE → EMBAUCHÉ     (sends hire email — requires employer signature)
   const VALID_TRANSITIONS: Record<string, string[]> = {
     'NOUVEAU':     ['EN_COURS', 'REJETÉ'],
     'EN_COURS':    ['ENTRETIEN', 'TEST', 'REJETÉ'],
-    'ENTRETIEN':   ['TEST', 'EMBAUCHÉ', 'REJETÉ'],
-    'TEST':        ['EMBAUCHÉ', 'REJETÉ'],
+    'ENTRETIEN':   ['TEST', 'ÉLIGIBLE', 'REJETÉ'],
+    'TEST':        ['ÉLIGIBLE', 'REJETÉ'],
+    'ÉLIGIBLE':    ['EMBAUCHÉ', 'REJETÉ'],
     'EMBAUCHÉ':    [],
     'REJETÉ':      [],
   };
@@ -207,6 +225,7 @@ export function RecruitmentWorkspace() {
     'EN_COURS': 'En cours',
     'ENTRETIEN': 'Entretien',
     'TEST': 'Test',
+    'ÉLIGIBLE': 'Éligible',
     'EMBAUCHÉ': 'Embauché',
     'REJETÉ': 'Rejeté',
   };
@@ -351,11 +370,11 @@ export function RecruitmentWorkspace() {
       colorLight: 'bg-emerald-50 border-emerald-100',
       textColor: 'text-emerald-700',
       tab: 'embauches',
-      description: 'L\'embauche est l\'étape finale du processus. Le candidat qui a réussi l\'entretien (et optionnellement le test) est officiellement recruté. Un contrat brouillon est automatiquement créé.',
+      description: 'L\'embauche est l\'étape finale du processus. Elle se fait en deux temps : déclaration d\'éligibilité (crée la fiche Personnel + contrat brouillon), préparation et signature du contrat par le recruteur, puis embauche finale (envoie l\'email au candidat + crée ses identifiants de connexion).',
       details: [
-        { label: 'Candidats éligibles', text: 'Sont éligibles à l\'embauche tous les candidats ayant le statut ENTRETIEN (entretien réussi) ou TEST (test réussi). Ils apparaissent dans la section "Prêts à embaucher" de l\'onglet Embauches.' },
-        { label: 'Processus d\'embauche', text: 'Le recruteur clique sur "Embaucher", confirme la décision, et le système crée automatiquement : une fiche Personnel (Staff) avec matricule, et un contrat brouillon (DRAFT) avec les informations du poste et le salaire.' },
-        { label: 'Contrat automatique', text: 'Un contrat de travail est généré automatiquement en mode brouillon avec le type de contrat (CDI, CDD...), la date de début, le salaire de base, et les informations du candidat. Le contrat sera finalisé et signé ultérieurement.' },
+        { label: 'Étape 1 — Déclarer éligible', text: 'Le recruteur clique sur "Déclarer éligible" pour les candidats ayant réussi l\'entretien (ou le test). Le système crée alors : une fiche Personnel (Staff) avec matricule et statut PENDING_HIRE, et un contrat brouillon (DRAFT). Aucun email n\'est envoyé au candidat à ce stade.' },
+        { label: 'Étape 2 — Préparer le contrat', text: 'Le recruteur ouvre le contrat DRAFT depuis l\'onglet Embauches, complète les clauses (articles, conditions, etc.), puis signe électroniquement le contrat en tant qu\'employeur. Tant que le contrat n\'est pas signé par le recruteur, le bouton "Embaucher" reste désactivé.' },
+        { label: 'Étape 3 — Embaucher', text: 'Une fois le contrat signé par le recruteur, le bouton "Embaucher" devient actif. Le recruteur clique dessus pour finaliser l\'embauche : le système active la fiche Personnel (PENDING_HIRE → ACTIVE), génère un token de signature, envoie l\'email d\'embauche au candidat avec le lien de signature du contrat, et crée automatiquement ses identifiants de connexion.' },
         { label: 'Statut final', text: 'Après embauche, le statut de la candidature passe à EMBAUCHÉ (état terminal). Le candidat ne peut plus revenir en arrière dans le pipeline. Il apparaît dans la section "Embauchés" de l\'onglet Embauches.' },
       ],
     },
@@ -451,6 +470,21 @@ export function RecruitmentWorkspace() {
           const interviewScore = c._avgInterviewScore ?? null;
           const testScore = c._avgTestScore ?? null;
           const scoreBreakdown = c._scoreBreakdown || `Documents: ${docScore}%`;
+          // ─── ÉLIGIBLE workflow: extract contract info from the primary app's staff ───
+          // The backend now includes `staff.contracts[0]` (DRAFT/PENDING/ACTIVE) on
+          // each application — we surface it as a top-level `contract` field so the
+          // Embauches tab can show a "Préparer le contrat" link and gate the
+          // "Embaucher" button on the employer signature.
+          const staffContract = primaryApp?.staff?.contracts?.[0] || null;
+          const contract = staffContract
+            ? {
+                id: staffContract.id,
+                status: staffContract.status,
+                isEmployerSigned: !!(staffContract.terms as any)?.employerSignedAt,
+                startDate: staffContract.startDate,
+                contractType: staffContract.contractType,
+              }
+            : null;
           return {
             id: c.id,
             applicationId: primaryApp?.id || c.id,
@@ -480,6 +514,7 @@ export function RecruitmentWorkspace() {
             history: primaryApp?.history || [{ action: 'Profil créé', date: new Date().toISOString().replace('T', ' ').slice(0, 16), user: 'Système' }],
             academicProfile: c.academicProfile || null,
             documents: c.documents || [],
+            contract,
             applications: (c.applications || []).map((app: any) => ({
               id: app.id,
               jobId: app.jobId,
@@ -1158,9 +1193,73 @@ export function RecruitmentWorkspace() {
     await handleMoveCandidate(candidateId, 'REJETÉ');
   };
 
-  // Hire candidate with confirmation dialog — triggers Staff + Contract creation
+  // ─── Declare candidate ÉLIGIBLE (Phase 1 of two-phase hiring) ──────────
+  // Triggers the backend to create the Staff record (PENDING_HIRE) and a
+  // DRAFT contract. NO email is sent — the recruiter must prepare & sign
+  // the contract before triggering the EMBAUCHÉ transition.
+  const handleDeclareEligible = async (candidate: Candidate) => {
+    const confirmed = await confirmDialog.warning(
+      `${candidate.name} sera déclaré ÉLIGIBLE. Une fiche Personnel et un contrat brouillon (DRAFT) seront créés automatiquement. Aucun email ne sera envoyé au candidat à ce stade. Vous devrez préparer et signer le contrat avant de finaliser l'embauche.`,
+      'Déclarer éligible ?'
+    );
+    if (!confirmed) return;
+    const applicationId = candidate.applicationId || candidate.id;
+    try {
+      setHiring(true);
+      await hrFetch(hrUrl(`recruitment/applications/${applicationId}/status`, { tenantId: tenant.id }), {
+        method: 'PUT',
+        body: { status: 'ÉLIGIBLE' },
+      });
+      toast({
+        variant: 'success',
+        title: 'Candidat déclaré éligible !',
+        description: 'La fiche personnel et un contrat brouillon ont été créés. Préparez et signez le contrat avant de finaliser l\'embauche.',
+      });
+      loadData();
+    } catch (err: any) {
+      const backendMsg = err?.message || err?.toString() || '';
+      toast({
+        variant: 'error',
+        title: 'Erreur lors de la déclaration d\'éligibilité',
+        description: backendMsg || 'Veuillez vérifier que le candidat a passé au moins l\'étape Entretien ou Test.',
+      });
+    } finally {
+      setHiring(false);
+    }
+  };
+
+  // Navigate to the contract preparation page for an ÉLIGIBLE candidate
+  const handlePrepareContract = (candidate: Candidate) => {
+    if (!candidate.contract?.id) {
+      toast({
+        variant: 'error',
+        title: 'Contrat introuvable',
+        description: 'Aucun contrat n\'est associé à ce candidat. Veuillez rafraîchir la page et réessayer.',
+      });
+      return;
+    }
+    router.push(`/app/hr/contracts/${candidate.contract.id}`);
+  };
+
+  // ─── Hire candidate (Phase 2 of two-phase hiring) ─────────────────────
+  // Sends the EMBAUCHÉ status. The backend will:
+  //   1. Verify the contract has been signed by the employer (terms.employerSignedAt)
+  //   2. If signed → activate staff, update contract to PENDING,
+  //      generate sign token, send hire email, create user credentials
+  //   3. If NOT signed → throw a 400 BadRequest with an explanatory message
+  // The frontend gates the button on `contract.isEmployerSigned` to give
+  // immediate feedback before the request is made.
   const handleHireCandidate = async () => {
     if (!hireCandidate) return;
+    // Defensive: double-check the contract is signed by the employer
+    if (!hireCandidate.contract?.isEmployerSigned) {
+      toast({
+        variant: 'error',
+        title: 'Contrat non signé',
+        description: 'Veuillez préparer et signer le contrat d\'abord avant de finaliser l\'embauche.',
+      });
+      return;
+    }
     setHiring(true);
     try {
       const applicationId = hireCandidate.applicationId || hireCandidate.id;
@@ -1168,12 +1267,20 @@ export function RecruitmentWorkspace() {
         method: 'PUT',
         body: { status: 'EMBAUCHÉ' },
       });
-      toast({ variant: 'success', title: 'Candidat embauché !', description: 'Un contrat brouillon a été automatiquement créé. Rendez-vous dans l\'onglet Contrats pour le valider.' });
+      toast({
+        variant: 'success',
+        title: 'Candidat embauché !',
+        description: 'Un email avec le lien de signature du contrat a été envoyé au candidat. Ses identifiants de connexion seront créés automatiquement.',
+      });
       setHireCandidate(null);
       loadData();
     } catch (err: any) {
       const backendMsg = err?.message || err?.toString() || '';
-      toast({ variant: 'error', title: 'Erreur lors de l\'embauche', description: backendMsg || 'Veuillez vérifier que le candidat a passé au moins l\'étape Entretien ou Test.' });
+      toast({
+        variant: 'error',
+        title: 'Erreur lors de l\'embauche',
+        description: backendMsg || 'Le contrat doit être signé par le recruteur avant l\'embauche.',
+      });
     } finally {
       setHiring(false);
     }
@@ -1185,7 +1292,9 @@ export function RecruitmentWorkspace() {
   // Minimum score threshold for hire eligibility (configurable)
   const MIN_HIRE_SCORE = 50;
 
-  // Candidates with ENTRETIEN or TEST status AND a minimum finalScore are truly eligible
+  // Candidates with ENTRETIEN or TEST status AND a minimum finalScore are
+  // eligible to be DECLARED ÉLIGIBLE (Phase 1). This is the new "ready for hire"
+  // pool — they no longer go directly to EMBAUCHÉ.
   // finalScore = weighted composite of document analysis + interview + test scores
   const readyForHire = candidates.filter(c =>
     (c.status === 'ENTRETIEN' || c.status === 'TEST') && c.finalScore >= MIN_HIRE_SCORE
@@ -1195,6 +1304,10 @@ export function RecruitmentWorkspace() {
   const notRecommendedForHire = candidates.filter(c =>
     (c.status === 'ENTRETIEN' || c.status === 'TEST') && c.finalScore < MIN_HIRE_SCORE
   );
+
+  // ÉLIGIBLE candidates (Phase 1 done, awaiting contract preparation/signature
+  // before they can be moved to EMBAUCHÉ).
+  const eligibleCandidates = candidates.filter(c => c.status === 'ÉLIGIBLE');
 
   // KPI calculations for dashboard cards (Tome 2 & 3)
   const totalJobs = jobs.filter(j => j.status === 'PUBLIÉE').length;
@@ -1557,8 +1670,16 @@ export function RecruitmentWorkspace() {
                               onChange={(e) => {
                                 const newStatus = e.target.value;
                                 if (newStatus === 'EMBAUCHÉ') {
-                                  // Redirect to Embauches tab instead of direct hire
+                                  // EMBAUCHÉ requires the contract to be signed by the
+                                  // employer first — redirect to the Embauches tab so
+                                  // the recruiter uses the proper flow.
                                   setActiveTab('embauches');
+                                  return;
+                                }
+                                if (newStatus === 'ÉLIGIBLE') {
+                                  // ÉLIGIBLE creates the Staff + DRAFT contract — use
+                                  // the confirmation flow rather than a silent PUT.
+                                  handleDeclareEligible(c);
                                   return;
                                 }
                                 if (newStatus === 'REJETÉ') {
@@ -1972,6 +2093,7 @@ export function RecruitmentWorkspace() {
                                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Statut</p>
                                     <span className={cn('inline-flex items-center gap-1 font-semibold px-2 py-0.5 rounded-full text-[10px]', 
                                       selectedCandidate.status === 'EMBAUCHÉ' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                                      selectedCandidate.status === 'ÉLIGIBLE' ? 'bg-violet-50 text-violet-600 border border-violet-100' :
                                       selectedCandidate.status === 'REJETÉ' ? 'bg-red-50 text-red-600 border border-red-100' :
                                       'bg-amber-50 text-amber-600 border border-amber-100'
                                     )}>{selectedCandidate.status}</span>
@@ -2920,6 +3042,7 @@ export function RecruitmentWorkspace() {
                                 <span>Statut actuel: <span className={cn(
                                   'font-bold',
                                   cand.status === 'EMBAUCHÉ' ? 'text-emerald-600' :
+                                  cand.status === 'ÉLIGIBLE' ? 'text-violet-600' :
                                   cand.status === 'REJETÉ' ? 'text-red-500' :
                                   'text-slate-600'
                                 )}>{STATUS_LABELS[cand.status] || cand.status}</span></span>
@@ -3028,22 +3151,125 @@ export function RecruitmentWorkspace() {
             <motion.div key="embauches" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
               <div>
                 <h3 className="text-base font-bold text-slate-900">Embauches et Contrats</h3>
-                <p className="text-xs text-slate-500">Embauchez les candidats validés. Un contrat brouillon sera automatiquement créé.</p>
+                <p className="text-xs text-slate-500">
+                  Workflow en deux étapes : <strong>1)</strong> Déclarer éligible (crée la fiche personnel + contrat brouillon),
+                  &nbsp;<strong>2)</strong> préparer & signer le contrat, puis <strong>3)</strong> embaucher (envoie l'email au candidat).
+                </p>
               </div>
 
-              {/* ─── Section: Prêts à embaucher ──────────────────────────── */}
+              {/* ─── Section: ÉLIGIBLES — En préparation de contrat (NEW) ──────── */}
+              {eligibleCandidates.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase bg-violet-50 text-violet-700 border border-violet-100">
+                      {eligibleCandidates.length} éligible{eligibleCandidates.length !== 1 ? 's' : ''} en préparation
+                    </span>
+                    <span className="text-xs text-slate-400 font-medium">Contrat à préparer et signer par le recruteur avant l'embauche</span>
+                  </div>
+
+                  <div className="bg-white border border-violet-200 rounded-xl overflow-hidden shadow-sm">
+                    <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+                    <table className="w-full border-collapse text-left text-xs text-slate-600">
+                      <thead>
+                        <tr className="bg-violet-50/50 border-b border-violet-100 text-slate-400 font-bold uppercase tracking-wider">
+                          <th className="p-4">Candidat</th>
+                          <th className="p-4">Poste</th>
+                          <th className="p-4">Statut contrat</th>
+                          <th className="p-4">Signature recruteur</th>
+                          <th className="p-4">Score Final</th>
+                          <th className="p-4 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {eligibleCandidates.map((c) => {
+                          const contractSigned = !!c.contract?.isEmployerSigned;
+                          const contractStatus = c.contract?.status || 'DRAFT';
+                          return (
+                            <tr key={c.id} className="hover:bg-violet-50/30 transition">
+                              <td className="p-4 font-bold text-slate-950">{c.name}</td>
+                              <td className="p-4 text-slate-600">{c.job}</td>
+                              <td className="p-4">
+                                <span className={cn(
+                                  'uppercase text-[9px] font-bold px-2 py-0.5 rounded-full border',
+                                  contractStatus === 'DRAFT'
+                                    ? 'bg-slate-50 text-slate-600 border-slate-200'
+                                    : contractStatus === 'PENDING'
+                                    ? 'bg-amber-50 text-amber-700 border-amber-100'
+                                    : 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                                )}>
+                                  {contractStatus === 'DRAFT' ? 'Brouillon' : contractStatus === 'PENDING' ? 'En attente' : contractStatus}
+                                </span>
+                              </td>
+                              <td className="p-4">
+                                {contractSigned ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-full px-2 py-0.5">
+                                    <CheckCircle className="h-3 w-3" /> Signée
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100 rounded-full px-2 py-0.5">
+                                    <Clock className="h-3 w-3" /> En attente
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-4">
+                                <span className="font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">{c.finalScore}%</span>
+                              </td>
+                              <td className="p-4 text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  <button
+                                    onClick={() => handlePrepareContract(c)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-2 text-[#1A2BA6] rounded-lg text-xs font-bold border border-[#1A2BA6]/20 hover:bg-[#1A2BA6]/5 transition"
+                                    title="Ouvrir la page du contrat pour le préparer et le signer"
+                                  >
+                                    <FileText className="h-3.5 w-3.5" /> Préparer le contrat
+                                  </button>
+                                  {contractSigned ? (
+                                    <button
+                                      onClick={() => setHireCandidate(c)}
+                                      className="inline-flex items-center gap-1.5 px-4 py-2 text-white rounded-lg text-xs font-bold shadow-sm hover:opacity-90 transition bg-emerald-600"
+                                      title="Finaliser l'embauche — envoie l'email au candidat"
+                                    >
+                                      <UserCheck className="h-3.5 w-3.5" /> Embaucher
+                                    </button>
+                                  ) : (
+                                    <button
+                                      disabled
+                                      className="inline-flex items-center gap-1.5 px-4 py-2 text-slate-400 rounded-lg text-xs font-bold border border-slate-200 cursor-not-allowed"
+                                      title="Veuillez préparer et signer le contrat d'abord"
+                                    >
+                                      <AlertTriangle className="h-3.5 w-3.5" /> Embaucher
+                                    </button>
+                                  )}
+                                </div>
+                                {!contractSigned && (
+                                  <p className="text-[9px] text-amber-700 mt-1.5 font-medium">
+                                    ⚠ Veuillez préparer et signer le contrat d'abord.
+                                  </p>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ─── Section: Prêts à déclarer éligibles ─────────────────── */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase bg-blue-50 text-blue-700 border border-blue-100">
-                    {readyForHire.length} candidat{readyForHire.length !== 1 ? 's' : ''} éligible{readyForHire.length !== 1 ? 's' : ''}
+                    {readyForHire.length} candidat{readyForHire.length !== 1 ? 's' : ''} à déclarer éligible{readyForHire.length !== 1 ? 's' : ''}
                   </span>
-                  <span className="text-xs text-slate-400 font-medium">Prêts à embaucher (score final ≥ {MIN_HIRE_SCORE}%)</span>
+                  <span className="text-xs text-slate-400 font-medium">Prêts à déclarer éligibles (score final ≥ {MIN_HIRE_SCORE}%)</span>
                 </div>
 
                 {readyForHire.length === 0 ? (
                   <div className="bg-white border border-slate-200 rounded-xl p-8 text-center">
                     <UserCheck className="h-8 w-8 text-slate-300 mx-auto mb-2" />
-                    <p className="text-xs text-slate-500 font-semibold">Aucun candidat éligible pour le moment.</p>
+                    <p className="text-xs text-slate-500 font-semibold">Aucun candidat à déclarer éligible pour le moment.</p>
                     <p className="text-[10px] text-slate-400 mt-1">Les candidats doivent avoir un score final ≥ {MIN_HIRE_SCORE}% et avoir passé les étapes Entretien ou Test.</p>
                   </div>
                 ) : (
@@ -3098,10 +3324,11 @@ export function RecruitmentWorkspace() {
                             </td>
                             <td className="p-4 text-right">
                               <button
-                                onClick={() => setHireCandidate(c)}
-                                className="inline-flex items-center gap-1.5 px-4 py-2 text-white rounded-lg text-xs font-bold shadow-sm hover:opacity-90 transition bg-emerald-600"
+                                onClick={() => handleDeclareEligible(c)}
+                                disabled={hiring}
+                                className="inline-flex items-center gap-1.5 px-4 py-2 text-white rounded-lg text-xs font-bold shadow-sm hover:opacity-90 transition bg-[#1A2BA6] disabled:opacity-50"
                               >
-                                <UserCheck className="h-3.5 w-3.5" /> Embaucher
+                                <Award className="h-3.5 w-3.5" /> Déclarer éligible
                               </button>
                             </td>
                           </tr>
@@ -3120,7 +3347,7 @@ export function RecruitmentWorkspace() {
                     <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase bg-amber-50 text-amber-700 border border-amber-100">
                       {notRecommendedForHire.length} score insuffisant
                     </span>
-                    <span className="text-xs text-slate-400 font-medium">Score final &lt; {MIN_HIRE_SCORE}% — embauche non recommandée</span>
+                    <span className="text-xs text-slate-400 font-medium">Score final &lt; {MIN_HIRE_SCORE}% — déclaration d'éligibilité non recommandée</span>
                   </div>
 
                   <div className="bg-white border border-amber-200 rounded-xl overflow-hidden shadow-sm">
@@ -3161,9 +3388,10 @@ export function RecruitmentWorkspace() {
                             </td>
                             <td className="p-4 text-right">
                               <button
-                                onClick={() => setHireCandidate(c)}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-amber-700 rounded-lg text-xs font-medium border border-amber-200 hover:bg-amber-50 transition"
-                                title="Embauche non recommandée — score final insuffisant"
+                                onClick={() => handleDeclareEligible(c)}
+                                disabled={hiring}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-amber-700 rounded-lg text-xs font-medium border border-amber-200 hover:bg-amber-50 transition disabled:opacity-50"
+                                title="Déclaration d'éligibilité non recommandée — score final insuffisant"
                               >
                                 <AlertTriangle className="h-3 w-3" /> Forcer
                               </button>
@@ -3239,7 +3467,9 @@ export function RecruitmentWorkspace() {
                   >
                     <div className="bg-emerald-600 px-6 py-4">
                       <h4 className="text-white font-bold text-sm">Confirmer l'embauche</h4>
-                      <p className="text-emerald-100 text-xs mt-0.5">Cette action créera automatiquement un profil Employé et un contrat brouillon.</p>
+                      <p className="text-emerald-100 text-xs mt-0.5">
+                        Le contrat a été signé par le recruteur. Cette action active le personnel, envoie l'email d'embauche au candidat et crée ses identifiants de connexion.
+                      </p>
                     </div>
                     <div className="p-6 space-y-4">
                       <div className="bg-slate-50 rounded-xl p-4 space-y-3">
@@ -3257,8 +3487,10 @@ export function RecruitmentWorkspace() {
                             <p className={cn('font-bold mt-0.5', hireCandidate.finalScore >= MIN_HIRE_SCORE ? 'text-emerald-600' : 'text-red-600')}>{hireCandidate.finalScore}%</p>
                           </div>
                           <div>
-                            <span className="text-slate-400 font-bold text-[10px] uppercase">Étape</span>
-                            <p className="font-bold text-slate-900 mt-0.5">{hireCandidate.status === 'ENTRETIEN' ? 'Entretien' : 'Test'}</p>
+                            <span className="text-slate-400 font-bold text-[10px] uppercase">Contrat</span>
+                            <p className="font-bold text-emerald-600 mt-0.5 flex items-center gap-1">
+                              <CheckCircle className="h-3 w-3" /> Signé par le recruteur
+                            </p>
                           </div>
                         </div>
                         {/* Score breakdown */}
@@ -3283,8 +3515,10 @@ export function RecruitmentWorkspace() {
 
                       <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
                         <p className="text-[10px] text-blue-700 font-medium">
-                          Un profil Employé sera créé avec les informations du candidat, et un contrat brouillon sera généré automatiquement.
-                          Rendez-vous ensuite dans l'onglet <strong>Contrats</strong> pour compléter et signer le contrat.
+                          En confirmant, le système va : <strong>1)</strong> activer la fiche Personnel (PENDING_HIRE → ACTIVE),
+                          &nbsp;<strong>2)</strong> passer le contrat en attente de signature du candidat (DRAFT/PENDING),
+                          &nbsp;<strong>3)</strong> générer un lien de signature et envoyer l'email d'embauche au candidat,
+                          &nbsp;<strong>4)</strong> créer automatiquement ses identifiants de connexion.
                         </p>
                       </div>
 
@@ -3564,25 +3798,32 @@ export function RecruitmentWorkspace() {
             <div className="mt-4 bg-slate-50 rounded-xl p-4 border border-slate-100">
               <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Flux du pipeline</h4>
               <div className="flex items-center gap-1 flex-wrap">
-                {['NOUVEAU', 'EN_COURS', 'ENTRETIEN', 'TEST', 'EMBAUCHÉ'].map((s, i) => (
+                {['NOUVEAU', 'EN_COURS', 'ENTRETIEN', 'TEST', 'ÉLIGIBLE', 'EMBAUCHÉ'].map((s, i) => (
                   <div key={s} className="flex items-center gap-1">
                     <span className={cn(
                       'px-2 py-0.5 rounded-full text-[9px] font-bold',
                       s === 'TEST' ? 'bg-orange-50 text-orange-600 border border-orange-100' :
+                      s === 'ÉLIGIBLE' ? 'bg-violet-50 text-violet-600 border border-violet-100' :
                       s === 'EMBAUCHÉ' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
                       'bg-slate-100 text-slate-600'
                     )}>{s}</span>
-                    {i < 4 && <ChevronRight className="h-3 w-3 text-slate-300" />}
+                    {i < 5 && <ChevronRight className="h-3 w-3 text-slate-300" />}
                   </div>
                 ))}
                 <span className="text-[9px] text-slate-400 ml-2">ou</span>
                 <div className="flex items-center gap-1 ml-1">
                   <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-violet-50 text-violet-600 border border-violet-100">ENTRETIEN</span>
                   <ChevronRight className="h-3 w-3 text-slate-300" />
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-violet-50 text-violet-600 border border-violet-100">ÉLIGIBLE</span>
+                  <ChevronRight className="h-3 w-3 text-slate-300" />
                   <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-100">EMBAUCHÉ</span>
                   <span className="text-[9px] text-orange-500 font-bold ml-1">(sans test)</span>
                 </div>
               </div>
+              <p className="text-[9px] text-slate-500 mt-2 italic">
+                L'étape <strong>ÉLIGIBLE</strong> crée la fiche Personnel et un contrat brouillon (DRAFT) sans envoyer d'email.
+                Le recruteur doit préparer et signer le contrat avant de finaliser l'<strong>EMBAUCHÉ</strong> (qui envoie l'email au candidat).
+              </p>
             </div>
           </div>
 

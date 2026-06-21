@@ -6,18 +6,26 @@ import { ContractsPrismaService } from './contracts-prisma.service';
 import { StaffMatriculeService } from './staff-matricule.service';
 import { RecruitmentNotificationService } from './recruitment-notification.service';
 import { ContractSignTokenService } from './services/contract-sign-token.service';
+import { StaffCredentialService } from './services/staff-credential.service';
 import { prismaCreateDefaults, prismaUpdateDefaults, prismaCreateNoCreatedAt, prismaCreateNoUpdatedAt, prismaCreateIdOnly, uuid, now } from '../common/utils/prisma-helpers';
 import { Prisma } from '@prisma/client';
 
 /**
  * Valid status transitions for the recruitment pipeline.
- * A candidate must pass through at least ENTRETIEN or TEST before being hired.
+ *
+ * Two-phase hiring workflow:
+ *   ENTRETIEN/TEST → ÉLIGIBLE  (creates Staff + DRAFT contract, NO email)
+ *   ÉLIGIBLE → EMBAUCHÉ        (sends hire email + creates user credentials,
+ *                                requires employer to have signed the contract)
+ *
+ * A candidate must pass through ÉLIGIBLE before being hired (EMBAUCHÉ).
  */
 const VALID_TRANSITIONS: Record<string, string[]> = {
   'NOUVEAU':     ['EN_COURS', 'REJETÉ'],
   'EN_COURS':    ['ENTRETIEN', 'TEST', 'REJETÉ'],
-  'ENTRETIEN':   ['TEST', 'EMBAUCHÉ', 'REJETÉ'],
-  'TEST':        ['EMBAUCHÉ', 'REJETÉ'],
+  'ENTRETIEN':   ['TEST', 'ÉLIGIBLE', 'REJETÉ'],
+  'TEST':        ['ÉLIGIBLE', 'REJETÉ'],
+  'ÉLIGIBLE':    ['EMBAUCHÉ', 'REJETÉ'],
   'EMBAUCHÉ':    [],   // Terminal state
   'REJETÉ':      [],   // Terminal state
 };
@@ -34,6 +42,7 @@ export class RecruitmentPrismaService {
     private readonly openRouter: OpenRouterService,
     private readonly notificationService: RecruitmentNotificationService,
     private readonly contractSignTokenService: ContractSignTokenService,
+    private readonly staffCredentialService: StaffCredentialService,
   ) {}
 
   // Job Offers CRUD
@@ -365,6 +374,29 @@ export class RecruitmentPrismaService {
           include: {
             job: {
               select: { id: true, title: true, ref: true, status: true },
+            },
+            // Include the staff record + its DRAFT/PENDING contracts so the
+            // frontend can route the recruiter to the contract page for
+            // ÉLIGIBLE candidates (contract preparation step).
+            staff: {
+              select: {
+                id: true,
+                status: true,
+                employeeNumber: true,
+                contracts: {
+                  where: { status: { in: ['DRAFT', 'PENDING', 'ACTIVE'] } },
+                  select: {
+                    id: true,
+                    status: true,
+                    terms: true,
+                    signedAt: true,
+                    startDate: true,
+                    contractType: true,
+                  },
+                  orderBy: { createdAt: 'desc' },
+                  take: 1,
+                },
+              },
             },
           },
         },
@@ -810,14 +842,20 @@ export class RecruitmentPrismaService {
       );
     }
 
-    // ─── 2. EMBAUCHÉ — Create Staff + Contract ─────────────────────────────
-    if (status === 'EMBAUCHÉ') {
+    // ─── 2. ÉLIGIBLE — Create Staff + DRAFT Contract (NO email) ──────────
+    // This is the FIRST step of the two-phase hiring workflow.
+    // - Creates the Staff record (status=PENDING_HIRE)
+    // - Creates the Contract in DRAFT status (waiting for employer signature)
+    // - DOES NOT send any email
+    // - DOES NOT generate a contract sign token
+    // - DOES NOT create user credentials
+    // The recruiter will then prepare & sign the contract before triggering
+    // the EMBAUCHÉ transition (which sends the hire email).
+    if (status === 'ÉLIGIBLE') {
       try {
         // ═══════════════════════════════════════════════════════════════════
         // PHASE 1: Pre-flight checks & data preparation (OUTSIDE transaction)
         // ═══════════════════════════════════════════════════════════════════
-        // Any failure here does NOT kill the main transaction.
-
         const application = await this.prisma.hrApplication.findUnique({
           where: { id },
           include: { candidate: true, job: true },
@@ -827,26 +865,23 @@ export class RecruitmentPrismaService {
         }
 
         if (!application.candidate?.firstName || !application.candidate?.lastName) {
-          throw new BadRequestException('Impossible d\'embaucher : le nom ou prénom du candidat est manquant.');
+          throw new BadRequestException('Impossible de déclarer éligible : le nom ou prénom du candidat est manquant.');
         }
         if (!application.job?.title) {
-          throw new BadRequestException('Impossible d\'embaucher : le poste du candidat n\'est pas défini.');
+          throw new BadRequestException('Impossible de déclarer éligible : le poste du candidat n\'est pas défini.');
         }
 
-        // Check if employee already exists with this email
+        // Check if a Staff already exists for this email — if so, link to it
         const existingStaff = await this.prisma.staff.findFirst({
-          where: { email: application.candidate.email, tenantId: application.tenantId }
+          where: { email: application.candidate.email, tenantId: application.tenantId },
         });
 
-        // Find academic year if available (outside transaction — read-only)
+        // Find active academic year (read-only, outside transaction)
         const currentYear = await this.prisma.academicYear.findFirst({
-          where: { tenantId: application.tenantId, isActive: true }
+          where: { tenantId: application.tenantId, isActive: true },
         });
 
         // ─── Generate matricules (OUTSIDE the main transaction) ─────────
-        // This is critical: if matricule generation fails, it must NOT
-        // abort the main PostgreSQL transaction (which would cascade-fail
-        // all subsequent operations).
         let globalMatricule: string | null = null;
         let tenantMatricule: string | null = null;
 
@@ -855,7 +890,6 @@ export class RecruitmentPrismaService {
             const schoolCode = await this.matriculeService.getSchoolCode(application.tenantId);
             const registrationYear = new Date().getFullYear();
 
-            // Generate global matricule by counting existing Staff records
             const year2 = registrationYear.toString().slice(-2);
             const prefix = `AH-STF-${year2}-`;
             const existingGlobal = await this.prisma.staff.findMany({
@@ -871,7 +905,6 @@ export class RecruitmentPrismaService {
             }
             globalMatricule = `${prefix}${String(maxSeq + 1).padStart(6, '0')}`;
 
-            // Generate tenant matricule via StaffNumberSequence upsert (real tenantId — FK is satisfied)
             const seq = await this.prisma.staffNumberSequence.upsert({
               where: { tenantId: application.tenantId },
               create: { ...prismaCreateNoCreatedAt(), tenantId: application.tenantId, current: 1 },
@@ -880,29 +913,28 @@ export class RecruitmentPrismaService {
             const tenantPadded = String(seq.current).padStart(5, '0');
             tenantMatricule = `${schoolCode}-${year2}-${tenantPadded}`;
 
-            this.logger.log(`Matricules generated: global=${globalMatricule}, tenant=${tenantMatricule}`);
+            this.logger.log(`[ÉLIGIBLE] Matricules generated: global=${globalMatricule}, tenant=${tenantMatricule}`);
           } catch (matErr: any) {
-            this.logger.warn(`Matricule generation failed (non-blocking): ${matErr?.message || matErr}`);
-            // Continue without matricules — the hire can still proceed
+            this.logger.warn(`[ÉLIGIBLE] Matricule generation failed (non-blocking): ${matErr?.message || matErr}`);
           }
         }
 
         // ═══════════════════════════════════════════════════════════════════
-        // PHASE 2: Main transaction — create Staff + Contract
+        // PHASE 2: Main transaction — create Staff (PENDING_HIRE) + DRAFT contract
         // ═══════════════════════════════════════════════════════════════════
         return await this.prisma.$transaction(async (tx) => {
-          // Update application status to EMBAUCHÉ
+          // Update application status to ÉLIGIBLE
           const updatedApp = await tx.hrApplication.update({
             where: { id },
             data: {
               ...prismaUpdateDefaults(),
               status,
-              ...(review ? { matchDetail: review } : {})
+              ...(review ? { matchDetail: review } : {}),
             },
             include: {
               candidate: true,
               job: true,
-            }
+            },
           });
 
           let staffRecord = existingStaff;
@@ -913,7 +945,7 @@ export class RecruitmentPrismaService {
             const isTeacher = jobTitle.includes('enseignant') || jobTitle.includes('prof') || jobTitle.includes('teacher') || jobTitle.includes('instituteur');
             const roleType = isTeacher ? 'TEACHER' : 'ADMIN';
 
-            // Parse salary (if it's a number like 400000 or "400 000 FCFA")
+            // Parse salary
             let parsedSalary: Prisma.Decimal | null = null;
             if (application.job.salary) {
               const allDigits = application.job.salary.replace(/[^0-9]/g, '');
@@ -925,13 +957,9 @@ export class RecruitmentPrismaService {
               }
             }
 
-            // Generate employee number based on school code (tenant matricule format)
-            // Format: <CODE_ECOLE>-YY-XXXXX (e.g., AHACAD-26-00001)
-            // Falls back to STF-YY-XXXXX if matricule generation failed
             const employeeNumber = tenantMatricule
               || `STF-${new Date().getFullYear().toString().slice(-2)}-${String(Date.now()).slice(-5)}`;
 
-            // Build staff data — explicitly list ALL fields to avoid spreading unknown keys
             const staffData: Record<string, any> = {
               id: uuid(),
               createdAt: now(),
@@ -952,18 +980,18 @@ export class RecruitmentPrismaService {
               roleType,
               hireDate: new Date(),
               contractType: application.job.contractType || 'CDI',
-              status: 'PENDING_SIGNATURE',
+              // Staff is pending hire — will be activated during EMBAUCHÉ
+              status: 'PENDING_HIRE',
               salary: parsedSalary,
             };
 
-            this.logger.log(`Creating staff: employeeNumber=${employeeNumber}, globalMatricule=${globalMatricule}, tenantMatricule=${tenantMatricule}`);
+            this.logger.log(`[ÉLIGIBLE] Creating staff: employeeNumber=${employeeNumber}, globalMatricule=${globalMatricule}, tenantMatricule=${tenantMatricule}`);
 
             staffRecord = await tx.staff.create({ data: staffData });
-            this.logger.log(`Staff created: id=${staffRecord.id}, employeeNumber=${staffRecord.employeeNumber}`);
+            this.logger.log(`[ÉLIGIBLE] Staff created: id=${staffRecord.id}, employeeNumber=${staffRecord.employeeNumber}`);
           }
 
-          // Link staffId on the application (whether newly created or existing staff)
-          // This MUST happen regardless — previously it was only inside the `if (!existingStaff)` block
+          // Link staffId on the application
           if (staffRecord) {
             await tx.hrApplication.update({
               where: { id },
@@ -974,7 +1002,7 @@ export class RecruitmentPrismaService {
             });
           }
 
-          // ─── 3. Auto-create Contract (directly in the same transaction) ───
+          // ─── Create DRAFT contract (waiting for employer preparation/signature) ───
           let contract = null;
           if (staffRecord) {
             const contractType = application.job.contractType || 'CDI';
@@ -999,11 +1027,9 @@ export class RecruitmentPrismaService {
                 },
               });
             } catch (deactErr: any) {
-              this.logger.warn(`Failed to deactivate existing contracts: ${deactErr?.message}`);
-              // Non-blocking: continue to create new contract
+              this.logger.warn(`[ÉLIGIBLE] Failed to deactivate existing contracts: ${deactErr?.message}`);
             }
 
-            // Build contract data — explicitly list ALL fields
             const contractData: Record<string, any> = {
               id: uuid(),
               createdAt: now(),
@@ -1014,7 +1040,9 @@ export class RecruitmentPrismaService {
               startDate: new Date(),
               baseSalary,
               paymentMode: 'BANK',
-              status: 'PENDING',
+              // DRAFT = contract is being prepared by the recruiter.
+              // Will become PENDING (waiting for employee signature) during EMBAUCHÉ.
+              status: 'DRAFT',
             };
 
             if (currentYear?.id) {
@@ -1026,67 +1054,239 @@ export class RecruitmentPrismaService {
                 data: contractData,
                 include: { staff: true },
               });
-              this.logger.log(`Contrat auto-créé pour ${application.candidate.firstName} ${application.candidate.lastName} — Contrat ID: ${contract.id}`);
+              this.logger.log(
+                `[ÉLIGIBLE] Contrat DRAFT créé pour ${application.candidate.firstName} ${application.candidate.lastName} — Contrat ID: ${contract.id}`,
+              );
             } catch (contractErr: any) {
-              // Contract creation failure should NOT block the hire
-              this.logger.error(`Échec création contrat [${contractErr?.constructor?.name}]: ${contractErr.message}`, contractErr.stack);
+              this.logger.error(
+                `[ÉLIGIBLE] Échec création contrat [${contractErr?.constructor?.name}]: ${contractErr.message}`,
+                contractErr.stack,
+              );
             }
           }
 
           return { ...updatedApp, staff: staffRecord, contract };
-        }).then(async (hireResult) => {
-          // ─── EMAIL NOTIFICATION — embauche ──────────────────────────────
-          // Fire-and-forget — never blocks the hire process.
-          try {
-            const app = await this.prisma.hrApplication.findUnique({
-              where: { id },
-              select: { candidateId: true, tenantId: true, jobId: true, candidate: { select: { email: true } } },
-            });
-            if (app?.candidateId && app?.tenantId && app?.jobId) {
-              // ─── Générer le token de signature du contrat ───
-              // Si un contrat a été créé lors de l'embauche, on génère un token
-              // qui permet au candidat de signer électroniquement via un lien magique.
-              let contractUrl: string | undefined;
-              const contractId = (hireResult as any)?.contract?.id;
-              if (contractId) {
-                try {
-                  const tokenResult = await this.contractSignTokenService.generateToken(
-                    contractId,
-                    app.tenantId,
-                  );
-                  contractUrl = tokenResult.signUrl;
-                  this.logger.log(
-                    `Token de signature généré pour contrat ${contractId} — URL: ${contractUrl}`,
-                  );
-                } catch (tokenErr: any) {
-                  this.logger.error(
-                    `Échec génération token de signature pour contrat ${contractId}: ${tokenErr.message}`,
-                  );
-                  // Non-bloquant — l'email partira sans le lien de signature
-                }
-              }
-
-              this.notificationService
-                .notifyHired({
-                  candidateId: app.candidateId,
-                  tenantId: app.tenantId,
-                  jobId: app.jobId,
-                  contractType: (hireResult as any)?.contract?.contractType,
-                  startDate: (hireResult as any)?.contract?.startDate,
-                  salary: (hireResult as any)?.contract?.baseSalary
-                    ? String((hireResult as any).contract.baseSalary)
-                    : undefined,
-                  contractUrl,
-                })
-                .catch((err) => {
-                  this.logger.error(`EMBAUCHÉ: failed to send notification: ${err.message}`);
-                });
-            }
-          } catch (err: any) {
-            this.logger.warn(`EMBAUCHÉ: notification pre-check failed: ${err.message}`);
-          }
-          return hireResult;
         });
+        // NOTE: No `.then()` for email/token — ÉLIGIBLE does NOT send any notification.
+      } catch (txErr: any) {
+        if (txErr instanceof HttpException) {
+          throw txErr;
+        }
+        this.logger.error(`[ÉLIGIBLE] transaction FAILED [${txErr?.constructor?.name}]: ${txErr.message}`, txErr.stack);
+        throw new BadRequestException(
+          `Erreur lors de la déclaration d'éligibilité [${txErr?.constructor?.name}]: ${txErr.message?.replace(/\n/g, ' ').substring(0, 500)}`
+        );
+      }
+    }
+
+    // ─── 3. EMBAUCHÉ — Verify employer signature + send hire email ───────
+    // This is the SECOND step of the two-phase hiring workflow.
+    // The Staff + Contract already exist (created during ÉLIGIBLE).
+    // Here we:
+    //   1. Find the existing staff + contract for this application
+    //   2. Verify the contract has been signed by the employer (terms.employerSignedAt)
+    //   3. If signed → activate staff, update contract to PENDING,
+    //      generate sign token, send hire email, create user credentials
+    if (status === 'EMBAUCHÉ') {
+      try {
+        // ═══════════════════════════════════════════════════════════════════
+        // PHASE 1: Pre-flight checks & data preparation (OUTSIDE transaction)
+        // ═══════════════════════════════════════════════════════════════════
+        const application = await this.prisma.hrApplication.findUnique({
+          where: { id },
+          include: { candidate: true, job: true },
+        });
+        if (!application) {
+          throw new NotFoundException(`Candidature avec l'ID ${id} non trouvée`);
+        }
+
+        if (!application.candidate?.firstName || !application.candidate?.lastName) {
+          throw new BadRequestException('Impossible d\'embaucher : le nom ou prénom du candidat est manquant.');
+        }
+        if (!application.job?.title) {
+          throw new BadRequestException('Impossible d\'embaucher : le poste du candidat n\'est pas défini.');
+        }
+
+        // ─── Find the existing staff (created during ÉLIGIBLE) ────────────
+        // Staff is linked via `staffId` on the application OR can be looked
+        // up by email + tenant (fallback for legacy data).
+        let existingStaff = null;
+        if (application.staffId) {
+          existingStaff = await this.prisma.staff.findUnique({
+            where: { id: application.staffId },
+          });
+        }
+        if (!existingStaff) {
+          existingStaff = await this.prisma.staff.findFirst({
+            where: { email: application.candidate.email, tenantId: application.tenantId },
+          });
+        }
+
+        if (!existingStaff) {
+          throw new BadRequestException(
+            'Impossible d\'embaucher : aucun personnel (Staff) trouvé pour cette candidature. ' +
+            'Le candidat doit d\'abord être déclaré ÉLIGIBLE pour créer la fiche personnel et le contrat.',
+          );
+        }
+
+        // ─── Find the existing contract (created during ÉLIGIBLE) ─────────
+        // Look for the most recent DRAFT contract for this staff. The contract
+        // must have been signed by the employer (terms.employerSignedAt) before
+        // we can send the hire email to the candidate.
+        const contract = await this.prisma.contract.findFirst({
+          where: {
+            staffId: existingStaff.id,
+            tenantId: application.tenantId,
+            status: { in: ['DRAFT', 'PENDING'] },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        });
+
+        if (!contract) {
+          throw new BadRequestException(
+            'Impossible d\'embaucher : aucun contrat (DRAFT/PENDING) trouvé pour ce personnel. ' +
+            'Le contrat doit être créé lors de la déclaration d\'éligibilité.',
+          );
+        }
+
+        // ─── Verify the employer has signed the contract ──────────────────
+        const terms = (contract.terms as any) || {};
+        if (!terms.employerSignedAt) {
+          throw new BadRequestException(
+            'Le contrat doit être signé par le recruteur avant l\'embauche. ' +
+            'Veuillez préparer et signer le contrat avant de finaliser l\'embauche.',
+          );
+        }
+
+        this.logger.log(
+          `[EMBAUCHÉ] Pre-flight OK — staff=${existingStaff.id}, contract=${contract.id}, employerSignedAt=${terms.employerSignedAt}`,
+        );
+
+        // ═══════════════════════════════════════════════════════════════════
+        // PHASE 2: Main transaction — activate Staff + update Contract status
+        // ═══════════════════════════════════════════════════════════════════
+        const hireResult = await this.prisma.$transaction(async (tx) => {
+          // Update application status to EMBAUCHÉ
+          const updatedApp = await tx.hrApplication.update({
+            where: { id },
+            data: {
+              ...prismaUpdateDefaults(),
+              status,
+              ...(review ? { matchDetail: review } : {}),
+            },
+            include: {
+              candidate: true,
+              job: true,
+            },
+          });
+
+          // Activate the staff (was PENDING_HIRE)
+          const staffRecord = await tx.staff.update({
+            where: { id: existingStaff!.id },
+            data: {
+              ...prismaUpdateDefaults(),
+              status: 'ACTIVE',
+            },
+          });
+          this.logger.log(
+            `[EMBAUCHÉ] Staff activated: id=${staffRecord.id}, employeeNumber=${staffRecord.employeeNumber}`,
+          );
+
+          // Ensure staffId is linked on the application (idempotent)
+          await tx.hrApplication.update({
+            where: { id },
+            data: {
+              ...prismaUpdateDefaults(),
+              staffId: staffRecord.id,
+            },
+          });
+
+          // Update contract status DRAFT → PENDING (waiting for employee signature)
+          // NB: employer signature (terms.employerSignedAt) is preserved as-is.
+          const updatedContract = await tx.contract.update({
+            where: { id: contract!.id },
+            data: {
+              ...prismaUpdateDefaults(),
+              status: 'PENDING',
+            },
+            include: { staff: true },
+          });
+          this.logger.log(
+            `[EMBAUCHÉ] Contract ${updatedContract.id} status updated: DRAFT → PENDING`,
+          );
+
+          return { ...updatedApp, staff: staffRecord, contract: updatedContract };
+        });
+
+        // ═══════════════════════════════════════════════════════════════════
+        // PHASE 3: Post-commit side effects (fire-and-forget, non-blocking)
+        // ═══════════════════════════════════════════════════════════════════
+        //   - Generate contract sign token (so the candidate can sign electronically)
+        //   - Send hire email notification with the contract sign URL
+        //   - Create user credentials (login + password) for the new staff
+
+        // 1. Generate contract sign token
+        let contractUrl: string | undefined;
+        try {
+          const tokenResult = await this.contractSignTokenService.generateToken(
+            contract.id,
+            application.tenantId,
+          );
+          contractUrl = tokenResult.signUrl;
+          this.logger.log(
+            `[EMBAUCHÉ] Token de signature généré pour contrat ${contract.id} — URL: ${contractUrl}`,
+          );
+        } catch (tokenErr: any) {
+          this.logger.error(
+            `[EMBAUCHÉ] Échec génération token de signature pour contrat ${contract.id}: ${tokenErr.message}`,
+          );
+          // Non-bloquant — l'email partira sans le lien de signature
+        }
+
+        // 2. Send hire email notification (fire-and-forget)
+        if (application.candidateId && application.tenantId && application.jobId) {
+          this.notificationService
+            .notifyHired({
+              candidateId: application.candidateId,
+              tenantId: application.tenantId,
+              jobId: application.jobId,
+              contractType: (hireResult as any)?.contract?.contractType,
+              startDate: (hireResult as any)?.contract?.startDate,
+              salary: (hireResult as any)?.contract?.baseSalary
+                ? String((hireResult as any).contract.baseSalary)
+                : undefined,
+              contractUrl,
+            })
+            .catch((err) => {
+              this.logger.error(`[EMBAUCHÉ] failed to send notification: ${err.message}`);
+            });
+        }
+
+        // 3. Create user credentials (login + password) for the new staff
+        //    Fire-and-forget — never blocks the hire process.
+        if (existingStaff?.id && application.tenantId) {
+          this.staffCredentialService
+            .createCredentialsForStaff(existingStaff.id, application.tenantId)
+            .then((credResult) => {
+              if (credResult?.created) {
+                this.logger.log(
+                  `[EMBAUCHÉ] User credentials created for staff ${existingStaff.id} — username=${credResult.username}`,
+                );
+              } else if (credResult?.error) {
+                this.logger.warn(
+                  `[EMBAUCHÉ] Credential creation skipped for staff ${existingStaff.id}: ${credResult.error}`,
+                );
+              }
+            })
+            .catch((err) => {
+              this.logger.error(
+                `[EMBAUCHÉ] Failed to create credentials for staff ${existingStaff.id}: ${err.message}`,
+              );
+            });
+        }
+
+        return hireResult;
       } catch (txErr: any) {
         // If it's already an HttpException (BadRequestException, etc.), re-throw it
         if (txErr instanceof HttpException) {
@@ -1307,7 +1507,7 @@ export class RecruitmentPrismaService {
         if (primaryApp) {
           const currentStatus = primaryApp.status;
           // Already at or past ENTRETIEN — nothing to do
-          if (currentStatus !== 'ENTRETIEN' && currentStatus !== 'TEST' && currentStatus !== 'EMBAUCHÉ') {
+          if (currentStatus !== 'ENTRETIEN' && currentStatus !== 'TEST' && currentStatus !== 'ÉLIGIBLE' && currentStatus !== 'EMBAUCHÉ') {
             // Advance through all intermediate states to ENTRETIEN
             let statusToSet = currentStatus;
             const path: string[] = [];
@@ -1424,7 +1624,7 @@ export class RecruitmentPrismaService {
         if (primaryApp) {
           const currentStatus = primaryApp.status;
           // Already at or past ENTRETIEN — nothing to do
-          if (currentStatus === 'ENTRETIEN' || currentStatus === 'TEST' || currentStatus === 'EMBAUCHÉ') {
+          if (currentStatus === 'ENTRETIEN' || currentStatus === 'TEST' || currentStatus === 'ÉLIGIBLE' || currentStatus === 'EMBAUCHÉ') {
             // Candidate already eligible or past this stage
           } else {
             // Advance through all intermediate states to ENTRETIEN
@@ -1609,7 +1809,7 @@ export class RecruitmentPrismaService {
         if (primaryApp) {
           const currentStatus = primaryApp.status;
           // Already at or past TEST — nothing to do
-          if (currentStatus !== 'TEST' && currentStatus !== 'EMBAUCHÉ') {
+          if (currentStatus !== 'TEST' && currentStatus !== 'ÉLIGIBLE' && currentStatus !== 'EMBAUCHÉ') {
             // Advance through all intermediate states to TEST
             let statusToSet = currentStatus;
             const path: string[] = [];
@@ -2559,7 +2759,7 @@ Réponds UNIQUEMENT en JSON valide.`,
       let targetStatus: string | null = null;
       let reason = '';
 
-      if (hasReussiInterview && currentStatus !== 'ENTRETIEN' && currentStatus !== 'TEST') {
+      if (hasReussiInterview && currentStatus !== 'ENTRETIEN' && currentStatus !== 'TEST' && currentStatus !== 'ÉLIGIBLE') {
         // Should be at least ENTRETIEN
         targetStatus = 'ENTRETIEN';
         reason = 'Has TERMINÉ/RÉUSSI interview';

@@ -557,7 +557,7 @@ export class CreateApplicationDto {
 }
 
 export class UpdateApplicationStatusDto {
-  @IsIn(['NOUVEAU', 'EN_COURS', 'ENTRETIEN', 'TEST', 'EMBAUCHÉ', 'REJETÉ']) status: string;
+  @IsIn(['NOUVEAU', 'EN_COURS', 'ENTRETIEN', 'TEST', 'ÉLIGIBLE', 'EMBAUCHÉ', 'REJETÉ']) status: string;
   @IsOptional() @IsString() review?: string;
   /** Frontend may send tenantId — ignored */
   @IsOptional() @IsString() tenantId?: string;

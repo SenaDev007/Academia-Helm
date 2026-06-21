@@ -786,4 +786,166 @@ export class SubscriptionLifecycleController {
     this.logger.log(`🔧 Migration application summary: ${JSON.stringify(summary)}`);
     return summary;
   }
+
+  /**
+   * POST /api/billing/admin/seed-tenant-subscriptions
+   *
+   * Crée les HelmSubscription manquants pour les tenants existants + insère
+   * les factures et événements de paiement correspondants.
+   *
+   * Pour CSPEB Éveil d'Afrique :
+   *   - Plan GROW, billingCycle MONTHLY, status ACTIVE
+   *   - currentPeriodEnd = aujourd'hui + 30 jours
+   *   - Facture INITIALE de 100 000 FCFA (frais d'activation)
+   *   - BillingEvent INITIAL_SUBSCRIPTION
+   *
+   * Pour Academia Helm :
+   *   - Plan SEED, billingCycle MONTHLY, status TRIALING
+   *   - trialEnd = aujourd'hui + 30 jours
+   *   - currentPeriodEnd = trialEnd
+   */
+  @Public()
+  @Post('admin/seed-tenant-subscriptions')
+  async seedTenantSubscriptions(
+    @Headers('x-platform-admin-email') adminEmail?: string,
+    @Headers('x-admin-secret') adminSecret?: string,
+  ) {
+    if (!adminEmail) {
+      throw new BadRequestException('Header x-platform-admin-email requis');
+    }
+    const expectedSecret = process.env.CRON_SECRET || 'academia-helm-cron-2026';
+    if (adminSecret !== expectedSecret) {
+      throw new BadRequestException('Header x-admin-secret invalide');
+    }
+
+    this.logger.log(`🔧 Seeding tenant subscriptions triggered by admin ${adminEmail}`);
+    const results: any[] = [];
+
+    // Récupérer tous les tenants actifs
+    const tenants = await this.prisma.tenant.findMany({
+      where: { status: { not: 'WITHDRAWN' } },
+      include: { helmSubscriptions: true },
+    });
+
+    for (const tenant of tenants) {
+      const existingSub = tenant.helmSubscriptions;
+
+      // Déterminer le plan basé sur l'ancien subscriptionPlan
+      const oldPlan = (tenant.subscriptionPlan || '').toLowerCase();
+      const isCspeb = tenant.name.includes('Éveil') || tenant.name.includes('Eveil') || tenant.slug.includes('cspeb');
+
+      const plan = isCspeb ? 'GROW' : 'SEED';
+      const billingCycle = 'MONTHLY';
+      const monthlyAmount = isCspeb ? 24900 : 19900;
+      const annualAmount = isCspeb ? 249000 : 199000;
+      const setupFee = isCspeb ? 100000 : 75000;
+      const status = isCspeb ? 'ACTIVE' : 'TRIALING';
+
+      const now = new Date();
+      const periodEnd = new Date(now);
+      periodEnd.setDate(periodEnd.getDate() + 30);
+
+      if (!existingSub) {
+        // Créer le HelmSubscription
+        const sub = await this.prisma.helmSubscription.create({
+          data: {
+            tenantId: tenant.id,
+            plan: plan as any,
+            billingCycle: billingCycle as any,
+            status: status as any,
+            monthlyAmount,
+            annualAmount,
+            setupFee,
+            currentPeriodStart: now,
+            currentPeriodEnd: periodEnd,
+            trialEnd: status === 'TRIALING' ? periodEnd : null,
+            bilingualEnabled: isCspeb, // CSPEB est bilingue
+            lastPaymentDate: isCspeb ? now : null,
+            lastPaymentAmount: isCspeb ? setupFee : null,
+          },
+        });
+
+        results.push({ tenant: tenant.name, action: 'HelmSubscription created', plan, status, subId: sub.id });
+
+        // Pour CSPEB : créer la facture + billing event
+        if (isCspeb) {
+          // BillingEvent
+          const event = await this.prisma.billingEvent.create({
+            data: {
+              tenantId: tenant.id,
+              subscriptionId: sub.id,
+              type: 'INITIAL_SUBSCRIPTION' as any,
+              amount: setupFee,
+              channel: 'FEEXPAY',
+              reference: `SEED-CSPEB-${Date.now()}`,
+              metadata: {
+                seededBy: adminEmail,
+                description: 'Souscription initiale - Helm Grow (mensuel)',
+                planCode: plan,
+              },
+            },
+          });
+          results.push({ tenant: tenant.name, action: 'BillingEvent created', eventId: event.id });
+
+          // HelmInvoice
+          const invoiceNumber = `AH-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-00001`;
+          try {
+            const invoice = await this.prisma.helmInvoice.create({
+              data: {
+                subscriptionId: sub.id,
+                tenantId: tenant.id,
+                amount: setupFee,
+                currency: 'XOF',
+                plan: plan as any,
+                billingCycle: billingCycle as any,
+                period: 'INITIAL',
+                status: 'PAID',
+                paidAt: now,
+                invoiceNumber,
+                customerEmail: 'contact@cspeb-eveilafrique.bj',
+                customerName: tenant.name,
+                description: 'Souscription initiale — Helm Grow (mensuel) + frais d\'activation',
+                type: 'INITIAL_SUBSCRIPTION',
+                paymentReference: `SEED-CSPEB-${Date.now()}`,
+                paymentMethod: 'MOBILE_MONEY',
+                paymentOperator: 'MTN',
+                bilingualEnabled: true,
+                issuedAt: now,
+              },
+            });
+            results.push({ tenant: tenant.name, action: 'HelmInvoice created', invoiceId: invoice.id, invoiceNumber });
+          } catch (invErr: any) {
+            results.push({ tenant: tenant.name, action: 'HelmInvoice FAILED', error: invErr.message });
+          }
+
+          // Mettre à jour le tenant avec les bonnes infos
+          await this.prisma.tenant.update({
+            where: { id: tenant.id },
+            data: {
+              subscriptionStatus: 'ACTIVE',
+              subscriptionPlan: 'grow',
+              nextPaymentDueAt: periodEnd,
+            },
+          });
+          results.push({ tenant: tenant.name, action: 'Tenant updated', subscriptionStatus: 'ACTIVE' });
+        } else {
+          // Academia Helm : TRIAL
+          await this.prisma.tenant.update({
+            where: { id: tenant.id },
+            data: {
+              subscriptionStatus: 'TRIAL',
+              subscriptionPlan: 'seed',
+              trialEndsAt: periodEnd,
+            },
+          });
+          results.push({ tenant: tenant.name, action: 'Tenant updated', subscriptionStatus: 'TRIAL' });
+        }
+      } else {
+        results.push({ tenant: tenant.name, action: 'HelmSubscription already exists', subId: existingSub.id });
+      }
+    }
+
+    this.logger.log(`✅ Seed complete: ${results.length} operations`);
+    return { success: true, results };
+  }
 }

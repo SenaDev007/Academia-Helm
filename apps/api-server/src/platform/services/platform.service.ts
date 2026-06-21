@@ -56,7 +56,13 @@ export class PlatformService {
     ] = await Promise.all([
       this.prisma.tenant.count({ where: { status: { not: 'WITHDRAWN' } } }),
       this.prisma.tenant.count({
-        where: { status: 'active', subscriptionStatus: { in: ['ACTIVE', 'TRIAL'] } },
+        where: {
+          status: { not: 'WITHDRAWN' },
+          OR: [
+            { subscriptionStatus: { in: ['ACTIVE', 'TRIAL', 'TRIAL_ACTIVE'] } },
+            { subscriptionStatus: null }, // anciens tenants sans subscriptionStatus
+          ],
+        },
       }),
       this.prisma.tenant.aggregate({
         where: { status: { not: 'WITHDRAWN' } },
@@ -208,7 +214,15 @@ export class PlatformService {
 
     const tenants = rows.map((t) => {
       const sub = t.helmSubscriptions;
-      const plan = sub?.plan || t.subscriptionPlan || '—';
+      // Mapper les anciens plans vers les nouveaux codes HelmPlan
+      const oldPlanMap: Record<string, string> = {
+        'free': 'SEED',
+        'premium': 'GROW',
+        'basic': 'SEED',
+        'enterprise': 'NETWORK',
+      };
+      const rawPlan = sub?.plan || t.subscriptionPlan || '';
+      const plan = sub?.plan || oldPlanMap[rawPlan.toLowerCase()] || (rawPlan ? rawPlan.toUpperCase() : '—');
       const status =
         t.status === 'suspended' ? 'SUSPENDED' : t.subscriptionStatus === 'TRIAL' ? 'TRIAL' : 'ACTIVE';
       const now = new Date();

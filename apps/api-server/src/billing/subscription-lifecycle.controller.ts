@@ -949,4 +949,176 @@ export class SubscriptionLifecycleController {
     this.logger.log(`✅ Seed complete: ${results.length} operations`);
     return { success: true, results };
   }
+
+  /**
+   * POST /api/billing/admin/seed-cspeb-billing
+   *
+   * Force la création de la facture + BillingEvent + OnboardingPayment
+   * pour CSPEB Éveil d'Afrique (même si le HelmSubscription existe déjà).
+   *
+   * Données insérées :
+   *   - HelmInvoice : AH-2026-06-00001, 100 000 FCFA, PAID
+   *   - BillingEvent : INITIAL_SUBSCRIPTION, 100 000 FCFA, FEEXPAY
+   *   - OnboardingDraft + OnboardingPayment : simulation de la souscription initiale
+   */
+  @Public()
+  @Post('admin/seed-cspeb-billing')
+  async seedCspebBilling(
+    @Headers('x-platform-admin-email') adminEmail?: string,
+    @Headers('x-admin-secret') adminSecret?: string,
+  ) {
+    if (!adminEmail) {
+      throw new BadRequestException('Header x-platform-admin-email requis');
+    }
+    const expectedSecret = process.env.CRON_SECRET || 'academia-helm-cron-2026';
+    if (adminSecret !== expectedSecret) {
+      throw new BadRequestException('Header x-admin-secret invalide');
+    }
+
+    this.logger.log(`🔧 Seeding CSPEB billing data triggered by admin ${adminEmail}`);
+    const results: any[] = [];
+    const now = new Date();
+
+    // 1. Trouver CSPEB
+    const cspeb = await this.prisma.tenant.findFirst({
+      where: {
+        OR: [
+          { name: { contains: 'Eveil', mode: 'insensitive' } },
+          { name: { contains: 'Éveil', mode: 'insensitive' } },
+          { slug: { contains: 'cspeb' } },
+        ],
+      },
+      include: { helmSubscriptions: true },
+    });
+
+    if (!cspeb) {
+      return { success: false, error: 'CSPEB tenant non trouvé' };
+    }
+
+    results.push({ step: 'Tenant trouvé', tenantId: cspeb.id, name: cspeb.name });
+
+    const sub = cspeb.helmSubscriptions;
+    if (!sub) {
+      return { success: false, error: 'CSPEB n\'a pas de HelmSubscription' };
+    }
+
+    // 2. Créer le BillingEvent (paiement)
+    const existingEvent = await this.prisma.billingEvent.findFirst({
+      where: { tenantId: cspeb.id, type: 'INITIAL_SUBSCRIPTION' },
+    });
+
+    if (!existingEvent) {
+      const event = await this.prisma.billingEvent.create({
+        data: {
+          tenantId: cspeb.id,
+          type: 'INITIAL_SUBSCRIPTION' as any,
+          amount: 100000,
+          channel: 'FEEXPAY',
+          reference: `CSPEB-INIT-${Date.now()}`,
+          metadata: {
+            seededBy: adminEmail,
+            description: 'Souscription initiale - Helm Grow (mensuel) + frais d\'activation',
+            planCode: 'GROW',
+            helmSubscriptionId: sub.id,
+            paymentMethod: 'MOBILE_MONEY',
+            operator: 'MTN',
+          },
+        },
+      });
+      results.push({ step: 'BillingEvent créé', eventId: event.id, amount: 100000 });
+    } else {
+      results.push({ step: 'BillingEvent existe déjà', eventId: existingEvent.id });
+    }
+
+    // 3. Créer le HelmInvoice (facture)
+    const existingInvoice = await this.prisma.helmInvoice.findFirst({
+      where: { tenantId: cspeb.id },
+    });
+
+    if (!existingInvoice) {
+      const invoiceNumber = `AH-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-00001`;
+      const invoice = await this.prisma.helmInvoice.create({
+        data: {
+          subscriptionId: sub.id,
+          tenantId: cspeb.id,
+          amount: 100000,
+          currency: 'XOF',
+          plan: 'GROW' as any,
+          billingCycle: 'MONTHLY' as any,
+          period: 'INITIAL',
+          status: 'PAID',
+          paidAt: now,
+          invoiceNumber,
+          customerEmail: 's.akpovitohou@gmail.com',
+          customerName: cspeb.name,
+          description: 'Souscription initiale — Helm Grow (mensuel) + frais d\'activation 100 000 FCFA',
+          type: 'INITIAL_SUBSCRIPTION',
+          paymentReference: `CSPEB-INIT-${Date.now()}`,
+          paymentMethod: 'MOBILE_MONEY',
+          paymentOperator: 'MTN',
+          bilingualEnabled: true,
+          issuedAt: now,
+        },
+      });
+      results.push({ step: 'HelmInvoice créé', invoiceId: invoice.id, invoiceNumber, amount: 100000 });
+    } else {
+      results.push({ step: 'HelmInvoice existe déjà', invoiceId: existingInvoice.id });
+    }
+
+    // 4. Créer l'OnboardingDraft + OnboardingPayment (souscription initiale)
+    const existingDraft = await this.prisma.onboardingDraft.findFirst({
+      where: { email: 's.akpovitohou@gmail.com' },
+    });
+
+    if (!existingDraft) {
+      const draft = await this.prisma.onboardingDraft.create({
+        data: {
+          schoolName: cspeb.name,
+          schoolType: 'mixte',
+          city: 'Parakou',
+          country: 'Bénin',
+          phone: '+22900000000',
+          email: 's.akpovitohou@gmail.com',
+          bilingual: true,
+          schoolsCount: 1,
+          preferredSubdomain: cspeb.subdomain || 'cspeb-eveildafriqueeducation',
+          promoterFirstName: 'Sena',
+          promoterLastName: 'Akpovitohou',
+          promoterEmail: 's.akpovitohou@gmail.com',
+          promoterPhone: '+22900000000',
+          promoterPasswordHash: '$2b$12$placeholder.hash.for.seed.data',
+          otpVerified: true,
+          selectedPlanId: null,
+          priceSnapshot: { planCode: 'GROW', billingCycle: 'MONTHLY', monthlyPrice: 24900, setupFee: 100000 } as any,
+          status: 'COMPLETED',
+        },
+      });
+
+      const payment = await this.prisma.onboardingPayment.create({
+        data: {
+          draftId: draft.id,
+          provider: 'feexpay',
+          reference: `CSPEB-ONBOARD-${Date.now()}`,
+          amount: 100000,
+          currency: 'XOF',
+          status: 'SUCCESS',
+          metadata: {
+            seededBy: adminEmail,
+            tenantId: cspeb.id,
+            paymentMethod: 'MOBILE_MONEY',
+            operator: 'MTN',
+            firstTenantSubdomain: cspeb.subdomain,
+          } as any,
+        },
+      });
+
+      results.push({ step: 'OnboardingDraft créé', draftId: draft.id });
+      results.push({ step: 'OnboardingPayment créé', paymentId: payment.id, amount: 100000 });
+    } else {
+      results.push({ step: 'OnboardingDraft existe déjà', draftId: existingDraft.id });
+    }
+
+    this.logger.log(`✅ CSPEB billing seed complete: ${results.length} operations`);
+    return { success: true, results };
+  }
 }

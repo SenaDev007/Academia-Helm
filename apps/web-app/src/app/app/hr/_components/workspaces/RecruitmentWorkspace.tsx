@@ -1859,62 +1859,6 @@ export function RecruitmentWorkspace() {
                               </div>
                             )}
 
-                            {/* Work Experience */}
-                            <div className="space-y-2">
-                              <h5 className="font-bold text-slate-800 uppercase tracking-wider text-[9px] text-[#1A2BA6] flex items-center gap-1">
-                                <Briefcase className="h-3.5 w-3.5" /> Expérience Professionnelle
-                              </h5>
-                              {experiencesList.length === 0 ? (
-                                <p className="text-slate-400 italic text-[10px]">Aucune expérience saisie.</p>
-                              ) : (
-                                <div className="border-l border-slate-200 pl-3 ml-1.5 space-y-3">
-                                  {experiencesList.map((exp: any, i: number) => (
-                                    <div key={i} className="relative">
-                                      <div className="absolute -left-[17px] top-1.5 w-2 h-2 rounded-full bg-[#1A2BA6] ring-4 ring-white" />
-                                      <p className="font-bold text-slate-800 text-[11px]">{exp.title}</p>
-                                      <p className="text-[9px] text-slate-500">{exp.company} · {exp.years}</p>
-                                      {exp.description && <p className="text-[10px] text-slate-600 mt-1 italic leading-relaxed">{exp.description}</p>}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Education */}
-                            <div className="space-y-2">
-                              <h5 className="font-bold text-slate-800 uppercase tracking-wider text-[9px] text-[#1A2BA6] flex items-center gap-1">
-                                <BookOpen className="h-3.5 w-3.5" /> Formation
-                              </h5>
-                              {educationList.length === 0 ? (
-                                <p className="text-slate-400 italic text-[10px]">Aucun diplôme saisi.</p>
-                              ) : (
-                                <div className="space-y-2">
-                                  {educationList.map((edu: any, i: number) => (
-                                    <div key={i} className="bg-slate-50 border border-slate-100 rounded-lg p-2.5">
-                                      <p className="font-bold text-slate-800">{edu.degree}</p>
-                                      <p className="text-[10px] text-slate-500">{edu.school} · {edu.year}</p>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Skills */}
-                            <div className="space-y-2">
-                              <h5 className="font-bold text-slate-800 uppercase tracking-wider text-[9px] text-[#1A2BA6] flex items-center gap-1">
-                                <Award className="h-3.5 w-3.5" /> Compétences normalisées
-                              </h5>
-                              {candidateSkills.length === 0 ? (
-                                <p className="text-slate-400 italic text-[10px]">Aucune compétence répertoriée.</p>
-                              ) : (
-                                <div className="flex flex-wrap gap-1">
-                                  {candidateSkills.map((s: string) => (
-                                    <span key={s} className="px-2 py-0.5 bg-indigo-50 border border-indigo-100 text-[#1A2BA6] rounded font-semibold text-[9px]">{s}</span>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-
                             {/* Recruiter Evaluation Widget */}
                             <div className="border-t border-slate-100 pt-4 space-y-3">
                               <h5 className="font-bold text-slate-800 uppercase tracking-wider text-[9px] text-[#1A2BA6]">Évaluation Recruteur</h5>

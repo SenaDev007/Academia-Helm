@@ -17,9 +17,6 @@ import {
   XCircle,
   FileText,
   User,
-  Plus,
-  Trash2,
-  BookOpen,
   Award,
   Sparkles,
   Send,
@@ -178,25 +175,15 @@ export function CareersContent({
   const [linkedinUrl, setLinkedinUrl] = useState('');
   const [jobStats, setJobStats] = useState<JobStats | null>(null);
 
-  // Step 2: Work Experience List
+  // Step 2 (simplified): Motivation pitch only.
+  // experiences/education/skills state is retained for backend backward-compat
+  // (always submitted as empty arrays since the collection UI was removed).
   const [experiences, setExperiences] = useState<WorkExperience[]>([]);
-  const [expTitle, setExpTitle] = useState('');
-  const [expCompany, setExpCompany] = useState('');
-  const [expYears, setExpYears] = useState('');
-  const [expDesc, setExpDesc] = useState('');
-
-  // Step 3: Education List
   const [education, setEducation] = useState<EducationItem[]>([]);
-  const [eduDegree, setEduDegree] = useState('');
-  const [eduSchool, setEduSchool] = useState('');
-  const [eduYear, setEduYear] = useState('');
-
-  // Step 4: Skills & Pitch
   const [skills, setSkills] = useState<string[]>([]);
-  const [skillInput, setSkillInput] = useState('');
   const [pitch, setPitch] = useState('');
 
-  // Step 5: Document Uploads
+  // Step 3: Document Uploads
   const [cvFile, setCvFile] = useState<File | null>(null);
   const [applicationLetterFile, setApplicationLetterFile] = useState<File | null>(null);
   const [coverFile, setCoverFile] = useState<File | null>(null);
@@ -211,7 +198,7 @@ export function CareersContent({
     switch (currentStep) {
       case 1:
         return !!(firstName.trim() && lastName.trim() && email.trim());
-      case 5:
+      case 3:
         return !!(cvFile && applicationLetterFile);
       default:
         return true;
@@ -230,16 +217,8 @@ export function CareersContent({
     setGender('M');
     setLinkedinUrl('');
     setExperiences([]);
-    setExpTitle('');
-    setExpCompany('');
-    setExpYears('');
-    setExpDesc('');
     setEducation([]);
-    setEduDegree('');
-    setEduSchool('');
-    setEduYear('');
     setSkills([]);
-    setSkillInput('');
     setPitch('');
     setCvFile(null);
     setApplicationLetterFile(null);
@@ -509,46 +488,6 @@ export function CareersContent({
     }
   }, [forcedJobSlug, jobs, selectedSchool, selectedJob]);
 
-  // Form helpers
-  const addExperience = () => {
-    if (!expTitle || !expCompany) return;
-    setExperiences([...experiences, { title: expTitle, company: expCompany, years: expYears, description: expDesc }]);
-    setExpTitle('');
-    setExpCompany('');
-    setExpYears('');
-    setExpDesc('');
-  };
-
-  const removeExperience = (index: number) => {
-    setExperiences(experiences.filter((_, i) => i !== index));
-  };
-
-  const addEducation = () => {
-    if (!eduDegree || !eduSchool) return;
-    setEducation([...education, { degree: eduDegree, school: eduSchool, year: eduYear }]);
-    setEduDegree('');
-    setEduSchool('');
-    setEduYear('');
-  };
-
-  const removeEducation = (index: number) => {
-    setEducation(education.filter((_, i) => i !== index));
-  };
-
-  const addSkill = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && skillInput.trim()) {
-      e.preventDefault();
-      if (!skills.includes(skillInput.trim())) {
-        setSkills([...skills, skillInput.trim()]);
-      }
-      setSkillInput('');
-    }
-  };
-
-  const removeSkill = (tag: string) => {
-    setSkills(skills.filter(s => s !== tag));
-  };
-
   // Soumission de candidature simplifiée
   const handleSubmitApplication = async () => {
     if (!selectedSchool || !selectedJob) return;
@@ -570,6 +509,9 @@ export function CareersContent({
       formData.append('gender', gender);
       formData.append('linkedinUrl', linkedinUrl);
       
+      // Experiences/education/skills collection UI has been removed; the
+      // state arrays are always empty here, so we send empty arrays for
+      // backward compatibility with the backend payload contract.
       formData.append('experiences', JSON.stringify(experiences));
       formData.append('education', JSON.stringify(education));
       formData.append('skills', JSON.stringify(skills));
@@ -1439,10 +1381,10 @@ export function CareersContent({
                   <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
                     <div className="p-4 md:p-6 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
                       <h3 className="text-sm md:text-base font-extrabold text-slate-900">Candidature — {selectedJob?.title}</h3>
-                      <p className="text-[11px] text-slate-500 mt-1">Étape {currentStep} sur 5</p>
+                      <p className="text-[11px] text-slate-500 mt-1">Étape {currentStep} sur 3</p>
                       {/* Progress bar */}
                       <div className="mt-3 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                        <div className="h-full bg-gradient-to-r from-[#0b2f73] to-[#f5b335] rounded-full transition-all duration-500" style={{ width: `${(currentStep / 5) * 100}%` }} />
+                        <div className="h-full bg-gradient-to-r from-[#0b2f73] to-[#f5b335] rounded-full transition-all duration-500" style={{ width: `${(currentStep / 3) * 100}%` }} />
                       </div>
                     </div>
 
@@ -1503,107 +1445,28 @@ export function CareersContent({
                         </motion.div>
                       )}
 
-                      {/* STEP 2: Work Experience */}
+                      {/* STEP 2: Motivation */}
                       {currentStep === 2 && (
                         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-                          <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2"><Briefcase className="h-4 w-4 text-blue-600" /> Expérience professionnelle</h4>
-                          
-                          {experiences.length > 0 && (
-                            <div className="space-y-2">
-                              {experiences.map((exp, i) => (
-                                <div key={i} className="p-3 bg-slate-50 rounded-lg text-xs flex justify-between items-start">
-                                  <div>
-                                    <p className="font-semibold text-slate-800">{exp.title} — {exp.company}</p>
-                                    <p className="text-slate-500">{exp.years}</p>
-                                    {exp.description && <p className="text-slate-500 mt-1">{exp.description}</p>}
-                                  </div>
-                                  <button type="button" onClick={() => removeExperience(i)} className="p-1.5 -m-1.5 text-slate-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 border border-dashed border-slate-200 rounded-xl">
-                            <input type="text" value={expTitle} onChange={e => setExpTitle(e.target.value)} placeholder="Poste occupé" className="rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs" />
-                            <input type="text" value={expCompany} onChange={e => setExpCompany(e.target.value)} placeholder="Établissement / Entreprise" className="rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs" />
-                            <input type="text" value={expYears} onChange={e => setExpYears(e.target.value)} placeholder="Période (ex: 2020-2023)" className="rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs" />
-                            <div className="flex gap-2">
-                              <input type="text" value={expDesc} onChange={e => setExpDesc(e.target.value)} placeholder="Description (optionnel)" className="flex-1 rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs" />
-                              <button type="button" onClick={addExperience} className="px-3 py-2.5 md:py-2 bg-slate-100 rounded-lg hover:bg-slate-200 transition"><Plus className="h-4 w-4 text-slate-600" /></button>
-                            </div>
-                          </div>
-                        </motion.div>
-                      )}
-
-                      {/* STEP 3: Education */}
-                      {currentStep === 3 && (
-                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-                          <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2"><BookOpen className="h-4 w-4 text-blue-600" /> Formation</h4>
-
-                          {education.length > 0 && (
-                            <div className="space-y-2">
-                              {education.map((edu, i) => (
-                                <div key={i} className="p-3 bg-slate-50 rounded-lg text-xs flex justify-between items-start">
-                                  <div>
-                                    <p className="font-semibold text-slate-800">{edu.degree} — {edu.school}</p>
-                                    <p className="text-slate-500">{edu.year}</p>
-                                  </div>
-                                  <button type="button" onClick={() => removeEducation(i)} className="p-1.5 -m-1.5 text-slate-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 border border-dashed border-slate-200 rounded-xl">
-                            <input type="text" value={eduDegree} onChange={e => setEduDegree(e.target.value)} placeholder="Diplôme" className="rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs" />
-                            <input type="text" value={eduSchool} onChange={e => setEduSchool(e.target.value)} placeholder="Établissement" className="rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs" />
-                            <div className="flex gap-2">
-                              <input type="text" value={eduYear} onChange={e => setEduYear(e.target.value)} placeholder="Année" className="flex-1 rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs" />
-                              <button type="button" onClick={addEducation} className="px-3 py-2.5 md:py-2 bg-slate-100 rounded-lg hover:bg-slate-200 transition"><Plus className="h-4 w-4 text-slate-600" /></button>
-                            </div>
-                          </div>
-                        </motion.div>
-                      )}
-
-                      {/* STEP 4: Skills & Pitch */}
-                      {currentStep === 4 && (
-                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-                          <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2"><Award className="h-4 w-4 text-blue-600" /> Compétences & Présentation</h4>
-                          
+                          <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                            <Award className="h-4 w-4 text-blue-600" /> Motivation
+                          </h4>
                           <div>
-                            <label className="block text-[10px] font-bold text-slate-500 mb-1">Compétences clés (Appuyez sur Entrée)</label>
-                            <input
-                              type="text"
-                              value={skillInput}
-                              onChange={(e) => setSkillInput(e.target.value)}
-                              onKeyDown={addSkill}
-                              placeholder="Ajouter une compétence... (ex: Didactique, Python)"
-                              className="w-full rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs"
-                            />
-                            <div className="flex flex-wrap gap-1.5 mt-2">
-                              {skills.map(s => (
-                                <span key={s} className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 rounded-full text-slate-700 text-[10px] font-semibold">
-                                  {s}
-                                  <button type="button" onClick={() => removeSkill(s)} className="p-0.5 -m-0.5 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-200 transition-colors">✕</button>
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 mb-1">Pourquoi vous ? Pitch de motivation (1-2 paragraphes)</label>
+                            <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                              Pourquoi vous ? (1-2 paragraphes)
+                            </label>
                             <textarea
                               value={pitch}
                               onChange={(e) => setPitch(e.target.value)}
-                              placeholder="Présentez brièvement vos atouts pour ce poste scolaire..."
+                              placeholder="Présentez brièvement vos atouts pour ce poste..."
                               className="w-full rounded-lg border border-slate-200 px-3 py-2.5 md:py-2 text-xs h-28"
                             />
                           </div>
                         </motion.div>
                       )}
 
-                      {/* STEP 5: Document Uploads */}
-                      {currentStep === 5 && (
+                      {/* STEP 3: Document Uploads */}
+                      {currentStep === 3 && (
                         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
                           <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2"><FileText className="h-4 w-4 text-blue-600" /> Fichiers & Justificatifs</h4>
                           
@@ -1660,7 +1523,7 @@ export function CareersContent({
                           Précédent
                         </button>
 
-                        {currentStep < 5 ? (
+                        {currentStep < 3 ? (
                           <button
                             type="button"
                             disabled={!canProceed()}

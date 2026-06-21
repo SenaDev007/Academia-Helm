@@ -853,4 +853,238 @@ export class PlatformService {
       isPopular: p.isPopular,
     }));
   }
+
+  // ============================================================================
+  // CRUD TENANTS
+  // ============================================================================
+
+  async updateTenantStatus(id: string, status: string, user: any) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id } });
+    if (!tenant) throw new BadRequestException('Tenant introuvable');
+    await this.prisma.tenant.update({ where: { id }, data: { status } });
+    this.logger.log(`Tenant ${id} status → ${status} by ${user?.email}`);
+    return { ok: true, id, status };
+  }
+
+  async updateTenant(id: string, body: any, user: any) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id } });
+    if (!tenant) throw new BadRequestException('Tenant introuvable');
+    const data: any = {};
+    if (body.name) data.name = body.name;
+    if (body.subdomain) data.subdomain = body.subdomain;
+    if (body.type) data.type = body.type;
+    if (body.plan) data.subscriptionPlan = body.plan;
+    await this.prisma.tenant.update({ where: { id }, data });
+    this.logger.log(`Tenant ${id} updated by ${user?.email}`);
+    return { ok: true, id };
+  }
+
+  async deleteTenant(id: string, user: any) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id } });
+    if (!tenant) throw new BadRequestException('Tenant introuvable');
+    await this.prisma.tenant.delete({ where: { id } });
+    this.logger.log(`Tenant ${id} (${tenant.name}) deleted by ${user?.email}`);
+    return { ok: true, id };
+  }
+
+  // ============================================================================
+  // CRUD USERS
+  // ============================================================================
+
+  async createUser(body: any, user: any) {
+    if (!body?.email || !body?.role) throw new BadRequestException('email et role sont requis');
+    const existing = await this.prisma.user.findFirst({ where: { email: body.email } });
+    if (existing) throw new BadRequestException('Un utilisateur avec cet email existe déjà');
+    const tempPassword = body.password || Math.random().toString(36).slice(-8) + 'A1!';
+    const bcrypt = require('bcryptjs');
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
+    const newUser = await this.prisma.user.create({
+      data: {
+        email: body.email, passwordHash,
+        firstName: body.firstName || '', lastName: body.lastName || '',
+        role: body.role, phone: body.phone || null,
+        tenantId: body.tenantId || null, status: 'active',
+      },
+      select: { id: true, email: true, role: true, firstName: true, lastName: true, status: true, createdAt: true },
+    });
+    this.logger.log(`User ${newUser.id} (${newUser.email}) created by ${user?.email}`);
+    return { ...newUser, tempPassword: body.password ? undefined : tempPassword };
+  }
+
+  async updateUser(id: string, body: any, user: any) {
+    const existing = await this.prisma.user.findUnique({ where: { id } });
+    if (!existing) throw new BadRequestException('Utilisateur introuvable');
+    const data: any = {};
+    if (body.email) data.email = body.email;
+    if (body.firstName !== undefined) data.firstName = body.firstName;
+    if (body.lastName !== undefined) data.lastName = body.lastName;
+    if (body.role) data.role = body.role;
+    if (body.phone !== undefined) data.phone = body.phone;
+    if (body.status) data.status = body.status;
+    if (body.tenantId !== undefined) data.tenantId = body.tenantId;
+    if (body.password) {
+      const bcrypt = require('bcryptjs');
+      data.passwordHash = await bcrypt.hash(body.password, 10);
+    }
+    await this.prisma.user.update({ where: { id }, data });
+    this.logger.log(`User ${id} updated by ${user?.email}`);
+    return { ok: true, id };
+  }
+
+  async deleteUser(id: string, user: any) {
+    const existing = await this.prisma.user.findUnique({ where: { id } });
+    if (!existing) throw new BadRequestException('Utilisateur introuvable');
+    await this.prisma.user.delete({ where: { id } });
+    this.logger.log(`User ${id} (${existing.email}) deleted by ${user?.email}`);
+    return { ok: true, id };
+  }
+
+  // ============================================================================
+  // SUPPORT TICKETS
+  // ============================================================================
+
+  async updateSupportTicket(id: string, body: any, user: any) {
+    const ticket = await this.prisma.supportTicket.findUnique({ where: { id } });
+    if (!ticket) throw new BadRequestException('Ticket introuvable');
+    const data: any = {};
+    if (body.status) data.status = body.status;
+    if (body.priority) data.priority = body.priority;
+    if (body.assignedTo !== undefined) data.assignedTo = body.assignedTo;
+    await this.prisma.supportTicket.update({ where: { id }, data });
+    this.logger.log(`Ticket ${id} updated by ${user?.email}`);
+    return { ok: true, id };
+  }
+
+  async replySupportTicket(id: string, message: string, user: any) {
+    const ticket = await this.prisma.supportTicket.findUnique({ where: { id } });
+    if (!ticket) throw new BadRequestException('Ticket introuvable');
+    const reply = await this.prisma.supportTicketMessage.create({
+      data: {
+        ticketId: id,
+        authorEmail: user?.email || 'admin@academiahelm.com',
+        authorName: user?.name || user?.email || 'Admin',
+        authorRole: 'PLATFORM_ADMIN',
+        message,
+      },
+    });
+    if (ticket.status === 'OPEN') {
+      await this.prisma.supportTicket.update({ where: { id }, data: { status: 'IN_PROGRESS' } });
+    }
+    this.logger.log(`Reply to ticket ${id} by ${user?.email}`);
+    return { ok: true, replyId: reply.id };
+  }
+
+  // ============================================================================
+  // MODULES — Toggle
+  // ============================================================================
+
+  async toggleModule(moduleId: string, body: { tenantId: string; enabled: boolean }, user: any) {
+    const existing = await this.prisma.tenantFeature.findFirst({
+      where: { tenantId: body.tenantId, moduleKey: moduleId },
+    });
+    if (existing) {
+      await this.prisma.tenantFeature.update({
+        where: { id: existing.id },
+        data: { isEnabled: body.enabled },
+      });
+    } else {
+      await this.prisma.tenantFeature.create({
+        data: { tenantId: body.tenantId, moduleKey: moduleId, isEnabled: body.enabled },
+      });
+    }
+    this.logger.log(`Module ${moduleId} ${body.enabled ? 'enabled' : 'disabled'} for tenant ${body.tenantId} by ${user?.email}`);
+    return { ok: true, moduleId, tenantId: body.tenantId, enabled: body.enabled };
+  }
+
+  // ============================================================================
+  // RBAC — CRUD Rôles
+  // ============================================================================
+
+  async createRole(body: any, user: any) {
+    if (!body?.name) throw new BadRequestException('Le nom du rôle est requis');
+    const existing = await this.prisma.role.findFirst({ where: { name: body.name } });
+    if (existing) throw new BadRequestException('Un rôle avec ce nom existe déjà');
+    const role = await this.prisma.role.create({
+      data: {
+        name: body.name,
+        label: body.label || body.name,
+        description: body.description || null,
+        level: body.level || 0,
+        scope: body.scope || 'TENANT',
+        isSystem: false,
+        isActive: true,
+      },
+    });
+    this.logger.log(`Role ${role.id} (${role.name}) created by ${user?.email}`);
+    return role;
+  }
+
+  async updateRole(id: string, body: any, user: any) {
+    const existing = await this.prisma.role.findUnique({ where: { id } });
+    if (!existing) throw new BadRequestException('Rôle introuvable');
+    if (existing.isSystem) throw new BadRequestException('Les rôles système ne peuvent pas être modifiés');
+    const data: any = {};
+    if (body.label) data.label = body.label;
+    if (body.description !== undefined) data.description = body.description;
+    if (body.level !== undefined) data.level = body.level;
+    if (body.isActive !== undefined) data.isActive = body.isActive;
+    await this.prisma.role.update({ where: { id }, data });
+    this.logger.log(`Role ${id} updated by ${user?.email}`);
+    return { ok: true, id };
+  }
+
+  async deleteRole(id: string, user: any) {
+    const existing = await this.prisma.role.findUnique({ where: { id } });
+    if (!existing) throw new BadRequestException('Rôle introuvable');
+    if (existing.isSystem) throw new BadRequestException('Les rôles système ne peuvent pas être supprimés');
+    await this.prisma.role.delete({ where: { id } });
+    this.logger.log(`Role ${id} (${existing.name}) deleted by ${user?.email}`);
+    return { ok: true, id };
+  }
+
+  // ============================================================================
+  // SETTINGS
+  // ============================================================================
+
+  async getSettings() {
+    const result: Record<string, any> = {
+      platformName: 'Academia Helm',
+      supportEmail: 'support@academiahelm.com',
+      billingEmail: 'billing@academiahelm.com',
+      defaultPlan: 'SEED',
+      trialDurationDays: 30,
+      reactivationFee: 5000,
+      maxTenants: 1000,
+    };
+    try {
+      const settings = await this.prisma.tenantSetting.findMany({
+        where: { tenantId: 'PLATFORM' },
+      });
+      for (const s of settings) {
+        result[s.key] = s.value;
+      }
+    } catch { /* table might not exist yet */ }
+    return result;
+  }
+
+  async updateSettings(body: any, user: any) {
+    if (!body || typeof body !== 'object') throw new BadRequestException('Body invalide');
+    for (const [key, value] of Object.entries(body)) {
+      const existing = await this.prisma.tenantSetting.findFirst({
+        where: { tenantId: 'PLATFORM', key },
+      });
+      if (existing) {
+        await this.prisma.tenantSetting.update({
+          where: { id: existing.id },
+          data: { value: String(value) },
+        });
+      } else {
+        await this.prisma.tenantSetting.create({
+          data: { tenantId: 'PLATFORM', key, value: String(value) },
+        });
+      }
+    }
+    this.logger.log(`Platform settings updated by ${user?.email}`);
+    return { ok: true };
+  }
 }

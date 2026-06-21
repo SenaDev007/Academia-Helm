@@ -281,4 +281,159 @@ export class PlatformController {
     this.assertAdminProxyRequest(adminEmail);
     return this.platformService.deletePricingPlan(id!);
   }
+
+  // ============================================================================
+  // CRUD TENANTS
+  // ============================================================================
+
+  @Patch('tenants/:id/status')
+  async updateTenantStatus(
+    @Headers('x-platform-admin-email') adminEmail: string,
+    @Param('id') id: string,
+    @Body() body: { status: string },
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.updateTenantStatus(id, body.status, { email: adminEmail });
+  }
+
+  @Patch('tenants/:id')
+  async updateTenant(
+    @Headers('x-platform-admin-email') adminEmail: string,
+    @Param('id') id: string,
+    @Body() body: { name?: string; plan?: string; subdomain?: string; type?: string },
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.updateTenant(id, body, { email: adminEmail });
+  }
+
+  @Delete('tenants/:id')
+  async deleteTenant(
+    @Headers('x-platform-admin-email') adminEmail: string,
+    @Param('id') id: string,
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.deleteTenant(id, { email: adminEmail });
+  }
+
+  // ============================================================================
+  // CRUD USERS
+  // ============================================================================
+
+  @Post('users')
+  async createUser(
+    @Headers('x-platform-admin-email') adminEmail: string,
+    @Body() body: any,
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.createUser(body, { email: adminEmail });
+  }
+
+  @Patch('users/:id')
+  async updateUser(
+    @Headers('x-platform-admin-email') adminEmail: string,
+    @Param('id') id: string,
+    @Body() body: any,
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.updateUser(id, body, { email: adminEmail });
+  }
+
+  @Delete('users/:id')
+  async deleteUser(
+    @Headers('x-platform-admin-email') adminEmail: string,
+    @Param('id') id: string,
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.deleteUser(id, { email: adminEmail });
+  }
+
+  // ============================================================================
+  // SUPPORT TICKETS
+  // ============================================================================
+
+  @Patch('support/tickets/:id')
+  async updateSupportTicket(
+    @Headers('x-platform-admin-email') adminEmail: string,
+    @Param('id') id: string,
+    @Body() body: { status?: string; priority?: string; assignedTo?: string },
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.updateSupportTicket(id, body, { email: adminEmail });
+  }
+
+  @Post('support/tickets/:id/reply')
+  async replySupportTicket(
+    @Headers('x-platform-admin-email') adminEmail: string,
+    @Param('id') id: string,
+    @Body() body: { message: string },
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    if (!body?.message) throw new BadRequestException('Le champ "message" est requis');
+    return this.platformService.replySupportTicket(id, body.message, { email: adminEmail, name: adminEmail });
+  }
+
+  // ============================================================================
+  // MODULES — Toggle
+  // ============================================================================
+
+  @Patch('modules/:id/toggle')
+  async toggleModule(
+    @Headers('x-platform-admin-email') adminEmail: string,
+    @Param('id') id: string,
+    @Body() body: { tenantId: string; enabled: boolean },
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.toggleModule(id, body, { email: adminEmail });
+  }
+
+  // ============================================================================
+  // RBAC — CRUD Rôles
+  // ============================================================================
+
+  @Post('roles')
+  async createRole(
+    @Headers('x-platform-admin-email') adminEmail: string,
+    @Body() body: any,
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.createRole(body, { email: adminEmail });
+  }
+
+  @Patch('roles/:id')
+  async updateRole(
+    @Headers('x-platform-admin-email') adminEmail: string,
+    @Param('id') id: string,
+    @Body() body: any,
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.updateRole(id, body, { email: adminEmail });
+  }
+
+  @Delete('roles/:id')
+  async deleteRole(
+    @Headers('x-platform-admin-email') adminEmail: string,
+    @Param('id') id: string,
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.deleteRole(id, { email: adminEmail });
+  }
+
+  // ============================================================================
+  // SETTINGS
+  // ============================================================================
+
+  @Get('settings')
+  async getSettings(@Headers('x-platform-admin-email') adminEmail: string) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.getSettings();
+  }
+
+  @Patch('settings')
+  async updateSettings(
+    @Headers('x-platform-admin-email') adminEmail: string,
+    @Body() body: any,
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.updateSettings(body, { email: adminEmail });
+  }
 }

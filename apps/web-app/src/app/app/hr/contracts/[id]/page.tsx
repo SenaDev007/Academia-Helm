@@ -353,13 +353,9 @@ export default function ContractDetailPage() {
                 <StatusIcon className="h-3.5 w-3.5" />
                 {status.label}
               </span>
-              {isSigned ? (
+              {isSigned && (
                 <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1.5">
                   <PenTool className="h-3.5 w-3.5" /> Signé électroniquement
-                </span>
-              ) : (
-                <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1.5">
-                  <Clock className="h-3.5 w-3.5" /> En attente de signature
                 </span>
               )}
             </div>

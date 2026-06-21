@@ -45,11 +45,33 @@ export function ContractEditModal({ isOpen, onClose, onSuccess, contract }: Cont
   // Pre-fill form when contract changes or modal opens
   useEffect(() => {
     if (contract && isOpen) {
+      // Handle Prisma Decimal serialization (can be string, number, or object)
+      const rawSalary = contract.baseSalary;
+      let salaryStr = '';
+      if (rawSalary != null) {
+        if (typeof rawSalary === 'object' && rawSalary.$numberDecimal) {
+          salaryStr = rawSalary.$numberDecimal;
+        } else {
+          salaryStr = String(rawSalary);
+        }
+      }
+
+      // Handle dates (can be ISO string or Date object)
+      const formatDate = (d: any): string => {
+        if (!d) return '';
+        try {
+          const date = typeof d === 'string' ? new Date(d) : d;
+          return date.toISOString().split('T')[0];
+        } catch {
+          return '';
+        }
+      };
+
       setFormData({
         contractType: contract.contractType || '',
-        startDate: contract.startDate ? new Date(contract.startDate).toISOString().split('T')[0] : '',
-        endDate: contract.endDate ? new Date(contract.endDate).toISOString().split('T')[0] : '',
-        baseSalary: contract.baseSalary != null ? String(contract.baseSalary) : '',
+        startDate: formatDate(contract.startDate),
+        endDate: formatDate(contract.endDate),
+        baseSalary: salaryStr,
         paymentMode: contract.paymentMode || '',
       });
     }

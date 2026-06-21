@@ -7,13 +7,14 @@
 
 import { Module } from '@nestjs/common';
 import { PlatformController } from './controllers/platform.controller';
+import { CmsController } from './controllers/cms.controller';
 import { PlatformService } from './services/platform.service';
 import { AuthModule } from '../auth/auth.module';
 import { DatabaseModule } from '../database/database.module';
 
 @Module({
   imports: [AuthModule, DatabaseModule],
-  controllers: [PlatformController],
+  controllers: [PlatformController, CmsController],
   providers: [PlatformService],
   exports: [PlatformService],
 })

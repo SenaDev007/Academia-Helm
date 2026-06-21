@@ -14321,3 +14321,91 @@ model PlatformOwnerAccessRequest {
   @@index([status])
   @@map("platform_owner_access_requests")
 }
+
+// ─── Site Public CMS ──────────────────────────────────────────────────────────
+// Tables utilisées par le back-office plateforme pour gérer le contenu public
+// du site Academia Helm (blog, pages marketing, pages légales, SEO, médias).
+// Migration 20260622080000_add_cms_tables.
+
+model BlogArticle {
+  id              String    @id @default(uuid())
+  title           String
+  slug            String    @unique
+  excerpt         String?
+  content         String?
+  coverImageUrl   String?
+  category        String?
+  tags            String?
+  seoTitle        String?
+  seoDescription  String?
+  status          String    @default("DRAFT") // DRAFT, PUBLISHED, ARCHIVED
+  publishedAt     DateTime?
+  authorId        String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status])
+  @@index([category])
+  @@map("blog_articles")
+}
+
+model CmsPage {
+  id              String    @id @default(uuid())
+  slug            String    @unique
+  title           String
+  content         Json?
+  seoTitle        String?
+  seoDescription  String?
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@map("cms_pages")
+}
+
+model LegalPage {
+  id              String    @id @default(uuid())
+  code            String    @unique // CGU, CGV, MENTIONS, PRIVACY
+  title           String
+  content         String?
+  version         Int       @default(1)
+  isActive        Boolean   @default(true)
+  effectiveDate   DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@map("legal_pages")
+}
+
+model SeoMeta {
+  id              String    @id @default(uuid())
+  pagePath        String    @unique
+  title           String?
+  description     String?
+  ogTitle         String?
+  ogDescription   String?
+  ogImageUrl      String?
+  keywords        String?
+  canonicalUrl    String?
+  noIndex         Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@map("seo_meta")
+}
+
+model MediaAsset {
+  id              String    @id @default(uuid())
+  name            String
+  url             String
+  type            String // image, video, document
+  size            Int?
+  alt             String?
+  tags            String?
+  uploadedBy      String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([type])
+  @@map("media_assets")
+}

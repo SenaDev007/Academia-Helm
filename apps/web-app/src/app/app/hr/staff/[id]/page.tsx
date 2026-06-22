@@ -627,6 +627,7 @@ export default function StaffDetailPage() {
                   <div>
                     <label className={labelClass}>Catégorie</label>
                     <select className={inputClass} value={editForm.category} onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}>
+                      <option value="">— Non renseignée —</option>
                       <option value="PEDAGOGICAL">Corps Enseignant</option>
                       <option value="ADMIN">Administration</option>
                       <option value="SUPPORT">Personnel d&apos;appui</option>

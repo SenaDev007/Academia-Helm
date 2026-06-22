@@ -34,38 +34,43 @@ export class DocumentUploadService {
   async sendUploadLink(tenantId: string, dto: SendDocumentUploadDto) {
     await this.ensureTableExists();
 
-    // ─── Résolution du candidat ────────────────────────────────────────────
+    // ─── Résolution du destinataire ────────────────────────────────────────
     // Accepte soit candidateId direct, soit staffId (résolution via HrApplication)
+    // Utilise du raw SQL pour éviter toute dépendance au Prisma client régénéré
     let candidate: { id: string; firstName: string; lastName: string; email: string | null } | null = null;
 
     if (dto.candidateId) {
-      candidate = await this.prisma.hrCandidate.findFirst({
-        where: { id: dto.candidateId, tenantId },
-        select: { id: true, firstName: true, lastName: true, email: true },
-      });
+      const rows = await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT id, first_name as "firstName", last_name as "lastName", email FROM hr_candidates WHERE id=$1 AND tenant_id=$2`,
+        dto.candidateId, tenantId,
+      );
+      candidate = rows[0] ?? null;
     } else if (dto.staffId) {
-      // Résolution: staffId → HrApplication.staffId → candidateId → HrCandidate
-      const app = await this.prisma.hrApplication.findFirst({
-        where: { staffId: dto.staffId, tenantId },
-        select: { candidate: { select: { id: true, firstName: true, lastName: true, email: true } } },
-      });
-      candidate = app?.candidate ?? null;
+      // 1. Résolution: staffId → HrApplication.staffId → candidateId → HrCandidate
+      const appRows = await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT c.id, c.first_name as "firstName", c.last_name as "lastName", c.email
+         FROM hr_applications a
+         JOIN hr_candidates c ON a.candidate_id = c.id
+         WHERE a.staff_id = $1 AND a.tenant_id = $2
+         LIMIT 1`,
+        dto.staffId, tenantId,
+      );
+      candidate = appRows[0] ?? null;
 
-      // Fallback: si pas de candidature liée, on utilise directement les infos du staff
+      // 2. Fallback: si pas de candidature liée, on utilise directement les infos du staff
       if (!candidate) {
-        const staff = await this.prisma.staff.findFirst({
-          where: { id: dto.staffId, tenantId },
-          select: { id: true, firstName: true, lastName: true, email: true },
-        });
+        const staffRows = await this.prisma.$queryRawUnsafe<any[]>(
+          `SELECT id, first_name as "firstName", last_name as "lastName", email FROM staff WHERE id=$1 AND tenant_id=$2`,
+          dto.staffId, tenantId,
+        );
+        const staff = staffRows[0];
         if (staff) {
-          // Crée une entrée de candidat "fantôme" liée au staff si pas déjà existante
-          // Pour éviter la dépendance à HrCandidate, on utilise directement le staff
           candidate = { id: staff.id, firstName: staff.firstName, lastName: staff.lastName, email: staff.email };
         }
       }
     }
 
-    if (!candidate) throw new NotFoundException('Candidature introuvable. Aucun candidat ou personnel correspondant.');
+    if (!candidate) throw new NotFoundException('Aucun candidat ou personnel correspondant trouvé. Vérifiez que le personnel existe.');
     if (!candidate.email) throw new BadRequestException("Le destinataire n'a pas d'email");
 
     await this.prisma.$executeRawUnsafe(`UPDATE hr_document_upload_tokens SET status='EXPIRED' WHERE candidate_id=$1 AND status='PENDING'`, candidate.id);

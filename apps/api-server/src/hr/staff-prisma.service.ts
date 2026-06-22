@@ -825,6 +825,81 @@ export class StaffPrismaService {
   }
 
   /**
+   * Upload document depuis un data URL (base64) — pattern identique au logo école.
+   *
+   * Le frontend compresse/convertit le fichier côté navigateur et envoie le data URL
+   * en JSON. Supporte les images ET les PDF (data:application/pdf;base64,...).
+   * Stocke le data URL directement dans filePath (pas de stockage S3/R2 requis).
+   */
+  async uploadStaffDocumentDataUrl(
+    staffId: string,
+    tenantId: string,
+    body: {
+      documentType: string;
+      fileName: string;
+      fileDataUrl: string;
+      mimeType: string;
+      fileSize: number;
+      description?: string;
+      expiresAt?: string;
+    },
+  ): Promise<any> {
+    // Verify staff exists
+    await this.findStaffById(staffId, tenantId);
+
+    // Valider le format data URL
+    const trimmed = (body.fileDataUrl ?? '').trim();
+    const m = /^data:([^;]+);base64,(.+)$/i.exec(trimmed);
+    if (!m) {
+      throw new BadRequestException('Format attendu : data URL base64 (data:...;base64,...).');
+    }
+    const mimeType = m[1].trim().toLowerCase();
+
+    // Vérifier la taille (max 20 Mo décodés)
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.from(m[2], 'base64');
+    } catch {
+      throw new BadRequestException('Base64 invalide.');
+    }
+    if (buffer.length > 20 * 1024 * 1024) {
+      throw new BadRequestException('Fichier trop volumineux (max 20 Mo décodés).');
+    }
+
+    // Determine category from document type
+    const category = DOC_TYPE_TO_CATEGORY[body.documentType] || 'GENERAL';
+
+    // Check if a document of this type already exists (for versioning)
+    const existingDoc = await this.prisma.staffDocument.findFirst({
+      where: { staffId, tenantId, documentType: body.documentType },
+      orderBy: { version: 'desc' },
+    });
+
+    const version = existingDoc ? existingDoc.version + 1 : 1;
+
+    // Stocker le data URL directement dans filePath (même pattern que logoUrl)
+    const filePath = trimmed;
+
+    return this.prisma.staffDocument.create({
+      data: {
+        ...prismaCreateDefaults(),
+        tenantId,
+        staffId,
+        documentType: body.documentType,
+        fileName: body.fileName,
+        filePath,
+        fileSize: body.fileSize || buffer.length,
+        mimeType: body.mimeType || mimeType,
+        category,
+        description: body.description || null,
+        validationStatus: 'PENDING',
+        expiresAt: body.expiresAt ? new Date(body.expiresAt) : null,
+        version,
+      },
+    });
+  }
+
+  /**
    * Ajoute un document à un membre du personnel (legacy JSON method).
    * Champs alignés sur le schéma Prisma : documentType, fileName, filePath, mimeType
    */
@@ -932,6 +1007,15 @@ export class StaffPrismaService {
 
     // Try to download from storage
     const filePath = doc.filePath;
+
+    // ─── Data URL : décoder directement le base64 ─────────────────────────
+    if (filePath && filePath.startsWith('data:')) {
+      const m = /^data:([^;]+);base64,(.+)$/i.exec(filePath);
+      if (m) {
+        const buffer = Buffer.from(m[2], 'base64');
+        return { buffer, fileName: doc.fileName, mimeType: doc.mimeType || m[1] };
+      }
+    }
 
     // Try cloud storage first
     try {

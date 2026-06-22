@@ -389,6 +389,50 @@ export class StaffPrismaController {
     );
   }
 
+  /**
+   * Upload document via data URL (base64) — pattern identique au logo école.
+   * Body: { documentType, fileName, fileDataUrl, mimeType, fileSize, description?, expiresAt? }
+   *
+   * Supporte les images (JPEG, PNG, WebP) ET les PDF.
+   * Plus fiable que le multipart via BFF proxy.
+   */
+  @Post(':id/documents-data')
+  async uploadDocumentDataUrl(
+    @GetTenant() tenant: any,
+    @Param('id') staffId: string,
+    @Body() body: {
+      documentType: string;
+      fileName: string;
+      fileDataUrl: string;
+      mimeType: string;
+      fileSize: number;
+      description?: string;
+      expiresAt?: string;
+    },
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    if (!body?.fileDataUrl || typeof body.fileDataUrl !== 'string') {
+      throw new BadRequestException('fileDataUrl requis (data URL base64)');
+    }
+    if (!body?.documentType || !body?.fileName) {
+      throw new BadRequestException('documentType et fileName requis');
+    }
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    const expiresAt = body.expiresAt && body.expiresAt.trim() !== '' ? body.expiresAt : undefined;
+    return this.staffService.uploadStaffDocumentDataUrl(staffId, tid, {
+      documentType: body.documentType,
+      fileName: body.fileName,
+      fileDataUrl: body.fileDataUrl,
+      mimeType: body.mimeType,
+      fileSize: body.fileSize,
+      description: body.description,
+      expiresAt,
+    });
+  }
+
   @Get(':id/documents')
   async findStaffDocuments(@GetTenant() tenant: any, @Param('id') staffId: string) {
     return this.staffService.findStaffDocuments(staffId, tenant?.id);

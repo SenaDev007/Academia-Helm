@@ -319,12 +319,12 @@ export default function StaffDetailPage() {
       setDocRequestResult({
         success: true,
         uploadUrl: res?.uploadUrl,
-        message: `Un email a été envoyé à ${member.email || 'l'adresse du destinataire'}.`,
+        message: `Un email a été envoyé à ${member.email || "l'adresse du destinataire"}.`,
       });
     } catch (err: any) {
       setDocRequestResult({
         success: false,
-        message: err.message || 'Erreur lors de l'envoi de la demande',
+        message: err.message || "Erreur lors de l'envoi de la demande",
       });
     } finally {
       setDocRequestLoading(false);
@@ -444,22 +444,51 @@ export default function StaffDetailPage() {
     if (!docFile || !tenant?.id) return;
     try {
       setDocLoading(true);
-      const formData = new FormData();
-      formData.append('file', docFile);
-      formData.append('documentType', docForm.documentType);
-      if (docForm.description) formData.append('description', docForm.description);
-      if (docForm.expiresAt) formData.append('expiresAt', docForm.expiresAt);
 
-      await hrFetch<any>(hrUrl(`staff/${id}/documents`, { tenantId: tenant.id }), {
+      // ─── Pattern data URL (identique au logo école + photo profil) ───────
+      // Pour les images : compression côté navigateur (compressImageFileToDataUrl)
+      // Pour les PDF et autres : lecture directe en data URL (FileReader)
+      let fileDataUrl: string;
+      const isImage = docFile.type.startsWith('image/');
+
+      if (isImage) {
+        // Compresser les images (max 1600px, qualité 0.85)
+        fileDataUrl = await compressImageFileToDataUrl(docFile, {
+          maxEdge: 1600,
+          quality: 0.85,
+          mimeType: 'image/jpeg',
+        });
+      } else {
+        // PDF et autres fichiers : lecture directe en base64 data URL
+        fileDataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(new Error('Lecture du fichier impossible'));
+          reader.readAsDataURL(docFile);
+        });
+      }
+
+      // Envoyer le data URL en JSON (pas de multipart/form-data)
+      await hrFetch<any>(hrUrl(`staff/${id}/documents-data`, { tenantId: tenant.id }), {
         method: 'POST',
-        body: formData,
+        body: {
+          documentType: docForm.documentType,
+          fileName: docFile.name,
+          fileDataUrl,
+          mimeType: docFile.type || (isImage ? 'image/jpeg' : 'application/octet-stream'),
+          fileSize: docFile.size,
+          description: docForm.description || undefined,
+          expiresAt: docForm.expiresAt || undefined,
+        },
       });
+
       toast({ variant: 'success', title: 'Document ajouté avec succès' });
       setDocOpen(false);
       setDocForm({ documentType: 'CV', description: '', expiresAt: '' });
       setDocFile(null);
       fetchMember();
     } catch (err: any) {
+      console.error('Document upload error:', err);
       toast({ variant: 'error', title: err.message || 'Erreur lors de l\'ajout du document' });
     } finally {
       setDocLoading(false);

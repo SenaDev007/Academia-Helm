@@ -30,6 +30,7 @@ import {
   Trash2,
   RefreshCw,
   Key,
+  Send,
   Eye,
   Clock,
   BadgeCheck,
@@ -157,6 +158,7 @@ export default function StaffDetailPage() {
   const [editLoading, setEditLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [credModalOpen, setCredModalOpen] = useState(false);
+  const [docReloading, setDocReloading] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
 
   // Document upload modal
@@ -1169,6 +1171,47 @@ export default function StaffDetailPage() {
                       >
                         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                         Régénérer les identifiants
+                      </button>
+                    </div>
+                  </section>
+
+                  {/* ─── Section: Documents du personnel ─── */}
+                  <section className="md:col-span-2 pt-6 border-t border-gray-50">
+                    <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                      <FileText size={20} className="text-blue-500" />
+                      Documents du personnel
+                    </h3>
+                    <div className="bg-amber-50/50 border border-amber-100 rounded-xl p-4 flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-700">Demande de documents</p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Envoyez un lien au candidat pour qu'il uploade ses documents (CNI, diplôme, attestations...).
+                          Les documents seront automatiquement catégorisés dans l'onglet Documents.
+                        </p>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Envoyer une demande de documents à ${member.firstName} ${member.lastName} ? Un email sera envoyé à ${member.email || 'N/A'}.`)) return;
+                          try {
+                            setDocReloading(true);
+                            const res = await hrFetch(hrUrl('recruitment/document-upload/send', { tenantId: tenant?.id }), {
+                              method: 'POST',
+                              body: { candidateId: member.id, staffId: member.id },
+                            });
+                            if (res?.uploadUrl) {
+                              toast({ variant: 'success', title: 'Demande envoyée !', description: `Lien: ${res.uploadUrl}` });
+                            }
+                          } catch (err: any) {
+                            toast({ variant: 'error', title: 'Erreur', description: err.message });
+                          } finally {
+                            setDocReloading(false);
+                          }
+                        }}
+                        disabled={docReloading}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white rounded-xl shadow-sm hover:opacity-90 disabled:opacity-50 transition bg-[#1A2BA6] shrink-0 ml-4"
+                      >
+                        {docReloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                        Relancer la demande
                       </button>
                     </div>
                   </section>

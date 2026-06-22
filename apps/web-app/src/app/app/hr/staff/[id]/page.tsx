@@ -161,6 +161,11 @@ export default function StaffDetailPage() {
   const [docReloading, setDocReloading] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
 
+  // Document request (relance) modal — professionnel
+  const [docRequestOpen, setDocRequestOpen] = useState(false);
+  const [docRequestLoading, setDocRequestLoading] = useState(false);
+  const [docRequestResult, setDocRequestResult] = useState<{ uploadUrl?: string; success: boolean; message?: string } | null>(null);
+
   // Document upload modal
   const [docOpen, setDocOpen] = useState(false);
   const [docLoading, setDocLoading] = useState(false);
@@ -283,6 +288,37 @@ export default function StaffDetailPage() {
       fetchMember();
     } catch (err: any) {
       toast({ variant: 'error', title: 'Erreur lors de la suppression de la photo' });
+    }
+  };
+
+  // ─── Relance demande de documents (modal professionnel) ───────────────────
+  const openDocRequestModal = () => {
+    setDocRequestResult(null);
+    setDocRequestOpen(true);
+  };
+
+  const sendDocRequest = async () => {
+    if (!tenant?.id || !member) return;
+    try {
+      setDocRequestLoading(true);
+      setDocRequestResult(null);
+      // Envoie staffId uniquement — le backend résout candidateId via HrApplication
+      const res = await hrFetch<any>(hrUrl('recruitment/document-upload/send', { tenantId: tenant.id }), {
+        method: 'POST',
+        body: { staffId: member.id },
+      });
+      setDocRequestResult({
+        success: true,
+        uploadUrl: res?.uploadUrl,
+        message: `Un email a été envoyé à ${member.email || 'l'adresse du destinataire'}.`,
+      });
+    } catch (err: any) {
+      setDocRequestResult({
+        success: false,
+        message: err.message || 'Erreur lors de l'envoi de la demande',
+      });
+    } finally {
+      setDocRequestLoading(false);
     }
   };
 
@@ -1190,23 +1226,7 @@ export default function StaffDetailPage() {
                         </p>
                       </div>
                       <button
-                        onClick={async () => {
-                          if (!confirm(`Envoyer une demande de documents à ${member.firstName} ${member.lastName} ? Un email sera envoyé à ${member.email || 'N/A'}.`)) return;
-                          try {
-                            setDocReloading(true);
-                            const res = await hrFetch(hrUrl('recruitment/document-upload/send', { tenantId: tenant?.id }), {
-                              method: 'POST',
-                              body: { candidateId: member.id, staffId: member.id },
-                            });
-                            if (res?.uploadUrl) {
-                              toast({ variant: 'success', title: 'Demande envoyée !', description: `Lien: ${res.uploadUrl}` });
-                            }
-                          } catch (err: any) {
-                            toast({ variant: 'error', title: 'Erreur', description: err.message });
-                          } finally {
-                            setDocReloading(false);
-                          }
-                        }}
+                        onClick={openDocRequestModal}
                         disabled={docReloading}
                         className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white rounded-xl shadow-sm hover:opacity-90 disabled:opacity-50 transition bg-[#1A2BA6] shrink-0 ml-4"
                       >

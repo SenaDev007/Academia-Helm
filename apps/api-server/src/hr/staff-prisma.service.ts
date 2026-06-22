@@ -18,7 +18,7 @@ import { PrismaService } from '../database/prisma.service';
 import { StaffMatriculeService } from './staff-matricule.service';
 import { StorageService } from '../common/services/storage.service';
 import { StaffCredentialService } from './services/staff-credential.service';
-import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
+import { prismaCreateDefaults, prismaUpdateDefaults, prismaCreateNoUpdatedAt } from '../common/utils/prisma-helpers';
 import { BatchAssignLevelDto } from './dto/index';
 
 // Mapping catégorie UI → roleType Prisma
@@ -607,11 +607,11 @@ export class StaffPrismaService {
     const hdUrl = originalUrl;
     const thumbnailUrl = originalUrl;
 
-    // Upsert photo (one per staff)
+    // Upsert photo (one per staff) — StaffPhoto n'a pas de champ updatedAt
     const photo = await this.prisma.staffPhoto.upsert({
       where: { staffId },
       create: {
-        ...prismaCreateDefaults(),
+        ...prismaCreateNoUpdatedAt(),
         tenantId,
         staffId,
         originalUrl,

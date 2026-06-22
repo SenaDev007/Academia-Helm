@@ -7,7 +7,13 @@ import { randomBytes } from 'crypto';
 import { Inject, forwardRef } from '@nestjs/common';
 
 export interface RequiredDoc { type: string; label: string; required: boolean; category: string; }
-export interface SendDocumentUploadDto { candidateId: string; staffId?: string; requiredDocs?: RequiredDoc[]; }
+export interface SendDocumentUploadDto {
+  /** Candidate ID (HrCandidate). Si absent, staffId sera utilisé pour résoudre le candidat via HrApplication. */
+  candidateId?: string;
+  /** Staff ID (Staff). Si fourni sans candidateId, résolution automatique via HrApplication. */
+  staffId?: string;
+  requiredDocs?: RequiredDoc[];
+}
 export interface UploadDocumentDto { docType: string; fileName: string; fileContent: string; contentType?: string; }
 
 const DEFAULT_REQUIRED_DOCS: RequiredDoc[] = [
@@ -27,9 +33,41 @@ export class DocumentUploadService {
 
   async sendUploadLink(tenantId: string, dto: SendDocumentUploadDto) {
     await this.ensureTableExists();
-    const candidate = await this.prisma.hrCandidate.findFirst({ where: { id: dto.candidateId, tenantId }, select: { id: true, firstName: true, lastName: true, email: true } });
-    if (!candidate) throw new NotFoundException('Candidat introuvable');
-    if (!candidate.email) throw new BadRequestException("Le candidat n'a pas d'email");
+
+    // ─── Résolution du candidat ────────────────────────────────────────────
+    // Accepte soit candidateId direct, soit staffId (résolution via HrApplication)
+    let candidate: { id: string; firstName: string; lastName: string; email: string | null } | null = null;
+
+    if (dto.candidateId) {
+      candidate = await this.prisma.hrCandidate.findFirst({
+        where: { id: dto.candidateId, tenantId },
+        select: { id: true, firstName: true, lastName: true, email: true },
+      });
+    } else if (dto.staffId) {
+      // Résolution: staffId → HrApplication.staffId → candidateId → HrCandidate
+      const app = await this.prisma.hrApplication.findFirst({
+        where: { staffId: dto.staffId, tenantId },
+        select: { candidate: { select: { id: true, firstName: true, lastName: true, email: true } } },
+      });
+      candidate = app?.candidate ?? null;
+
+      // Fallback: si pas de candidature liée, on utilise directement les infos du staff
+      if (!candidate) {
+        const staff = await this.prisma.staff.findFirst({
+          where: { id: dto.staffId, tenantId },
+          select: { id: true, firstName: true, lastName: true, email: true },
+        });
+        if (staff) {
+          // Crée une entrée de candidat "fantôme" liée au staff si pas déjà existante
+          // Pour éviter la dépendance à HrCandidate, on utilise directement le staff
+          candidate = { id: staff.id, firstName: staff.firstName, lastName: staff.lastName, email: staff.email };
+        }
+      }
+    }
+
+    if (!candidate) throw new NotFoundException('Candidature introuvable. Aucun candidat ou personnel correspondant.');
+    if (!candidate.email) throw new BadRequestException("Le destinataire n'a pas d'email");
+
     await this.prisma.$executeRawUnsafe(`UPDATE hr_document_upload_tokens SET status='EXPIRED' WHERE candidate_id=$1 AND status='PENDING'`, candidate.id);
     const token = randomBytes(16).toString('hex');
     const expiresAt = new Date(); expiresAt.setDate(expiresAt.getDate() + 7);

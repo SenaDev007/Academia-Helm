@@ -239,7 +239,24 @@ export class RecruitmentNotificationService {
         //
         // Le replyToToken est quand même généré côté EmailLogService pour
         // audit, mais l'adresse reply-to réelle est celle du recruteur.
-        const replyToOverride = options?.fromEmail || undefined;
+        //
+        // Si options.fromEmail est fourni (ex: notifyApplicationReceived passe
+        // branding.recruiterEmail), on l'utilise. Sinon, on fetch le
+        // RecruiterProfile du tenant pour récupérer son email automatiquement.
+        let replyToOverride = options?.fromEmail || undefined;
+        if (!replyToOverride) {
+          try {
+            const recruiter = await this.prisma.recruiterProfile.findFirst({
+              where: { tenantId: options.tenantId, isActive: true },
+              select: { email: true },
+            });
+            replyToOverride = recruiter?.email || undefined;
+          } catch (err: any) {
+            this.logger.warn(
+              `Failed to fetch recruiter email for replyToOverride: ${err.message} — falling back to log_xxx@replies...`,
+            );
+          }
+        }
 
         const result = await this.emailService.sendCategorized({
           tenantId: options.tenantId,

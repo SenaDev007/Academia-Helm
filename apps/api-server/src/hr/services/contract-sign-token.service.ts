@@ -189,35 +189,84 @@ export class ContractSignTokenService {
    * @throws BadRequestException si token expiré, déjà utilisé, ou contrat déjà signé
    */
   async validateToken(token: string): Promise<ValidatedContractInfo> {
-    const tokenRecord = await this.prisma.contractSignToken.findUnique({
-      where: { token },
-      include: {
-        contract: {
-          include: {
-            staff: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
-                position: true,
+    // ⚠️ Le Prisma client peut ne pas connaître la relation
+    // tenantIdentityProfile sur Tenant (si non régénéré). On fait un
+    // try/catch et fallback sur une requête simplifiée sans cette relation.
+    let tokenRecord: any;
+    try {
+      tokenRecord = await this.prisma.contractSignToken.findUnique({
+        where: { token },
+        include: {
+          contract: {
+            include: {
+              staff: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                  position: true,
+                },
               },
-            },
-            tenant: {
-              select: {
-                id: true,
-                name: true,
-                tenantIdentityProfile: {
-                  where: { isActive: true },
-                  select: { schoolName: true, logoUrl: true },
-                  take: 1,
+              tenant: {
+                select: {
+                  id: true,
+                  name: true,
+                  tenantIdentityProfile: {
+                    where: { isActive: true },
+                    select: { schoolName: true, logoUrl: true },
+                    take: 1,
+                  },
                 },
               },
             },
           },
         },
-      },
-    });
+      });
+    } catch (prismaErr: any) {
+      // Fallback : requête simplifiée sans tenantIdentityProfile
+      this.logger.warn(`Full include failed (${prismaErr.message?.substring(0, 100)}), falling back to simplified query`);
+      tokenRecord = await this.prisma.contractSignToken.findUnique({
+        where: { token },
+        include: {
+          contract: {
+            include: {
+              staff: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                  position: true,
+                },
+              },
+              tenant: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // Récupérer le schoolName/logoUrl séparément via une requête raw
+      if (tokenRecord?.contract?.tenantId) {
+        try {
+          const identityRows = await this.prisma.$queryRawUnsafe<any[]>(`
+            SELECT "schoolName", "logoUrl" FROM "tenant_identity_profiles"
+            WHERE "tenantId" = $1 AND "isActive" = true
+            ORDER BY "version" DESC LIMIT 1
+          `, tokenRecord.contract.tenantId);
+          if (identityRows[0]) {
+            (tokenRecord.contract.tenant as any).tenantIdentityProfile = [identityRows[0]];
+          }
+        } catch {
+          // Non critique — le schoolName fallback sur tenant.name
+        }
+      }
+    }
 
     if (!tokenRecord) {
       throw new NotFoundException('Token de signature invalide ou introuvable');

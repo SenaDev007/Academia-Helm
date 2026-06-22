@@ -577,64 +577,6 @@ export class StaffPrismaService {
   // ─── STAFF PHOTO ────────────────────────────────────────────────────────
 
   /**
-   * Upload et sauvegarde la photo d'un membre du personnel.
-   * Crée ou remplace la photo existante (une seule photo par staff).
-   */
-  async uploadStaffPhoto(
-    staffId: string,
-    tenantId: string,
-    file: Express.Multer.File,
-  ): Promise<any> {
-    // Verify staff exists
-    await this.findStaffById(staffId, tenantId);
-
-    // Validate file type
-    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-    if (!allowedMimeTypes.includes(file.mimetype)) {
-      throw new BadRequestException(`Type de fichier non autorisé. Formats acceptés: JPEG, PNG, WebP, GIF`);
-    }
-
-    // Validate file size (max 5MB)
-    const maxSize = 5 * 1024 * 1024;
-    if (file.size > maxSize) {
-      throw new BadRequestException(`Fichier trop volumineux. Taille maximale: 5 Mo`);
-    }
-
-    // Upload file to storage
-    const originalUrl = await this.storageService.uploadFile(file, `staff-photos/${tenantId}`);
-
-    // For now, use the same URL for all sizes (could add Sharp processing later)
-    const hdUrl = originalUrl;
-    const thumbnailUrl = originalUrl;
-
-    // Upsert photo (one per staff) — StaffPhoto n'a pas de champ updatedAt
-    const photo = await this.prisma.staffPhoto.upsert({
-      where: { staffId },
-      create: {
-        ...prismaCreateNoUpdatedAt(),
-        tenantId,
-        staffId,
-        originalUrl,
-        hdUrl,
-        thumbnailUrl,
-      },
-      update: {
-        originalUrl,
-        hdUrl,
-        thumbnailUrl,
-      },
-    });
-
-    // Resolve URLs before returning to frontend
-    return {
-      ...photo,
-      originalUrl: await this.storageService.resolveFileUrl(photo.originalUrl),
-      hdUrl: await this.storageService.resolveFileUrl(photo.hdUrl),
-      thumbnailUrl: await this.storageService.resolveFileUrl(photo.thumbnailUrl),
-    };
-  }
-
-  /**
    * Upload photo depuis un data URL (base64) — pattern identique au logo école.
    *
    * Le frontend compresse l'image côté navigateur (compressImageFileToDataUrl)
@@ -761,68 +703,6 @@ export class StaffPrismaService {
   }
 
   // ─── STAFF DOCUMENTS ──────────────────────────────────────────────────────
-
-  /**
-   * Upload et ajoute un document à un membre du personnel.
-   * Le document est classé automatiquement par catégorie selon son type.
-   */
-  async uploadStaffDocument(
-    staffId: string,
-    tenantId: string,
-    file: Express.Multer.File,
-    documentType: string,
-    description?: string,
-    expiresAt?: string,
-  ): Promise<any> {
-    // Verify staff exists
-    await this.findStaffById(staffId, tenantId);
-
-    // Validate file size (max 20MB)
-    const maxSize = 20 * 1024 * 1024;
-    if (file.size > maxSize) {
-      throw new BadRequestException(`Fichier trop volumineux. Taille maximale: 20 Mo`);
-    }
-
-    // Determine category from document type
-    const category = DOC_TYPE_TO_CATEGORY[documentType] || 'GENERAL';
-
-    // Check if a document of this type already exists (for versioning)
-    const existingDoc = await this.prisma.staffDocument.findFirst({
-      where: { staffId, tenantId, documentType },
-      orderBy: { version: 'desc' },
-    });
-
-    const version = existingDoc ? existingDoc.version + 1 : 1;
-
-    // Upload file to storage, organized by staff member and document type
-    const filePath = await this.storageService.uploadFile(
-      file,
-      `staff-docs/${tenantId}/${staffId}/${documentType.toLowerCase()}`,
-    );
-
-    // If replacing (version 1 exists), mark old document as superseded
-    if (existingDoc && version > 1) {
-      // Keep old document for history but mark it
-    }
-
-    return this.prisma.staffDocument.create({
-      data: {
-        ...prismaCreateDefaults(),
-        tenantId,
-        staffId,
-        documentType,
-        fileName: file.originalname,
-        filePath,
-        fileSize: file.size,
-        mimeType: file.mimetype,
-        category,
-        description: description || null,
-        validationStatus: 'PENDING',
-        expiresAt: expiresAt ? new Date(expiresAt) : null,
-        version,
-      },
-    });
-  }
 
   /**
    * Upload document depuis un data URL (base64) — pattern identique au logo école.

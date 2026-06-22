@@ -2078,11 +2078,11 @@ export class RecruitmentPrismaService {
     const uploadPromises: Array<Promise<{ type: string; file: Express.Multer.File | null; path: string | null }>> = [];
 
     // ─── File uploads ──────────────────────────────────────────────────────
-    // Si _useDataUrlStorage est vrai (endpoint apply-data), on stocke les data URLs
-    // directement dans filePath au lieu de les uploader vers S3/R2.
-    const useDataUrlStorage = body._useDataUrlStorage === true;
+    // Tous les fichiers arrivent maintenant via data URLs (endpoint apply-data).
+    // Le controller convertit les data URLs en pseudo-files Express.Multer.File
+    // avec un buffer. On reconvertit le buffer en data URL pour le stockage DB.
     const dataUrlForFile = (f: Express.Multer.File): string | null => {
-      if (!useDataUrlStorage || !f?.buffer) return null;
+      if (!f?.buffer) return null;
       return `data:${f.mimetype};base64,${f.buffer.toString('base64')}`;
     };
 
@@ -2090,16 +2090,6 @@ export class RecruitmentPrismaService {
       const dataUrlPath = dataUrlForFile(files.cv[0]);
       if (dataUrlPath) {
         uploadPromises.push(Promise.resolve({ type: 'cv', file: files.cv[0], path: dataUrlPath }));
-      } else {
-      uploadPromises.push(
-        this.storageService
-          .uploadFile(files.cv[0], `candidate-docs/${tenantId}/pending/cv`)
-          .then((path) => ({ type: 'cv', file: files.cv[0] as Express.Multer.File, path }))
-          .catch((err) => {
-            this.logger.error(`CV upload failed: ${err.message}`);
-            return { type: 'cv', file: files.cv[0] as Express.Multer.File, path: null };
-          }),
-      );
       }
     }
 
@@ -2107,16 +2097,6 @@ export class RecruitmentPrismaService {
       const dataUrlPath = dataUrlForFile(files.applicationLetter[0]);
       if (dataUrlPath) {
         uploadPromises.push(Promise.resolve({ type: 'applicationLetter', file: files.applicationLetter[0], path: dataUrlPath }));
-      } else {
-      uploadPromises.push(
-        this.storageService
-          .uploadFile(files.applicationLetter[0], `candidate-docs/${tenantId}/pending/application-letter`)
-          .then((path) => ({ type: 'applicationLetter', file: files.applicationLetter[0] as Express.Multer.File, path }))
-          .catch((err) => {
-            this.logger.error(`Application letter upload failed: ${err.message}`);
-            return { type: 'applicationLetter', file: files.applicationLetter[0] as Express.Multer.File, path: null };
-          }),
-      );
       }
     }
 
@@ -2124,16 +2104,6 @@ export class RecruitmentPrismaService {
       const dataUrlPath = dataUrlForFile(files.coverLetter[0]);
       if (dataUrlPath) {
         uploadPromises.push(Promise.resolve({ type: 'coverLetter', file: files.coverLetter[0], path: dataUrlPath }));
-      } else {
-      uploadPromises.push(
-        this.storageService
-          .uploadFile(files.coverLetter[0], `candidate-docs/${tenantId}/pending/cover-letter`)
-          .then((path) => ({ type: 'coverLetter', file: files.coverLetter[0] as Express.Multer.File, path }))
-          .catch((err) => {
-            this.logger.error(`Cover letter upload failed: ${err.message}`);
-            return { type: 'coverLetter', file: files.coverLetter[0] as Express.Multer.File, path: null };
-          }),
-      );
       }
     }
 
@@ -2141,16 +2111,6 @@ export class RecruitmentPrismaService {
       const dataUrlPath = dataUrlForFile(files.recommendationLetter[0]);
       if (dataUrlPath) {
         uploadPromises.push(Promise.resolve({ type: 'recommendationLetter', file: files.recommendationLetter[0], path: dataUrlPath }));
-      } else {
-      uploadPromises.push(
-        this.storageService
-          .uploadFile(files.recommendationLetter[0], `candidate-docs/${tenantId}/pending/recommendation`)
-          .then((path) => ({ type: 'recommendationLetter', file: files.recommendationLetter[0] as Express.Multer.File, path }))
-          .catch((err) => {
-            this.logger.error(`Recommendation letter upload failed: ${err.message}`);
-            return { type: 'recommendationLetter', file: files.recommendationLetter[0] as Express.Multer.File, path: null };
-          }),
-      );
       }
     }
 

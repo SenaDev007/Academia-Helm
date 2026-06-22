@@ -12,15 +12,11 @@ import {
   Param,
   Query,
   UseGuards,
-  UseInterceptors,
-  UploadedFile,
   BadRequestException,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
 import { AcademicSeriesPrismaService } from './academic-series-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
-import { StorageService } from '../common/services/storage.service';
 import {
   CreateAcademicSeriesDto,
   UpdateAcademicSeriesDto,
@@ -34,22 +30,10 @@ import {
 export class AcademicSeriesPrismaController {
   constructor(
     private readonly service: AcademicSeriesPrismaService,
-    private readonly storage: StorageService,
   ) {}
 
 
   // ... existing methods ...
-
-  @Post('programs/upload')
-  @UseInterceptors(FileInterceptor('file'))
-  async uploadProgram(
-    @UploadedFile() file: Express.Multer.File,
-    @Body('folder') folder?: string,
-  ) {
-    if (!file) throw new BadRequestException('File is required');
-    const url = await this.storage.uploadFile(file, folder || 'programs');
-    return { url };
-  }
 
   /**
    * Upload programme via data URL (base64) — pattern identique au logo école.

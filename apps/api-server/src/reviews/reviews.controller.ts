@@ -8,19 +8,15 @@ import {
   Patch,
   Post,
   Query,
-  UploadedFile,
   UseGuards,
-  UseInterceptors,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ReviewsService } from './reviews.service';
 import { CreateReviewDto, UpdateReviewStatusDto } from './reviews.dto';
-import { StorageService } from '../common/services/storage.service';
 
 const REVIEW_PHOTO_LIMITS = {
   // 2 Mo max pour une photo de profil — suffisant pour un avatar 512x512.
@@ -38,7 +34,6 @@ const REVIEW_PHOTO_LIMITS = {
 export class ReviewsController {
   constructor(
     private readonly reviewsService: ReviewsService,
-    private readonly storage: StorageService,
   ) {}
 
   @Public()
@@ -64,39 +59,13 @@ export class ReviewsController {
   }
 
   /**
-   * Upload public d'une photo de profil pour un avis déposé depuis le landing
-   * page public (enseignant / parent / élève). L'URL retournée doit ensuite
-   * être passée dans `photoUrl` du POST /reviews.
-   *
-   * Limite : 2 Mo, formats image uniquement.
-   */
-  @Public()
-  @Throttle({ medium: { limit: 10, ttl: 60000 } })
-  @Post('upload-photo')
-  @UseInterceptors(
-    FileInterceptor('photo', {
-      limits: { fileSize: REVIEW_PHOTO_LIMITS.maxFileSize },
-    }),
-  )
-  async uploadPhoto(@UploadedFile() file: Express.Multer.File) {
-    if (!file) {
-      throw new BadRequestException('Aucun fichier envoyé (champ "photo").');
-    }
-    if (!REVIEW_PHOTO_LIMITS.allowedMime.includes(file.mimetype)) {
-      throw new BadRequestException(
-        `Format non supporté : ${file.mimetype}. Formats acceptés : JPG, PNG, WebP, AVIF.`,
-      );
-    }
-    const url = await this.storage.uploadFile(file, 'reviews-photos');
-    return { url };
-  }
-
-  /**
    * Upload photo via data URL (base64) — pattern identique au logo école.
    * Body: { photoDataUrl: string }
    *
    * Le frontend compresse l'image côté navigateur et envoie le data URL en JSON.
    * Le data URL est retourné tel quel et sera stocké directement dans review.photoUrl.
+   *
+   * Limite : 2 Mo, formats image uniquement.
    */
   @Public()
   @Throttle({ medium: { limit: 10, ttl: 60000 } })

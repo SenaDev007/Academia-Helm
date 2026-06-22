@@ -391,9 +391,9 @@ export class AddStaffDocumentDto {
 }
 
 /**
- * DTO for Multer file upload of staff document.
- * The file itself is handled by FileInterceptor; this DTO captures the
- * additional form fields sent alongside the file.
+ * DTO for staff document metadata (legacy — the data URL endpoint accepts
+ * a different body shape with fileDataUrl, fileName, mimeType, fileSize).
+ * Kept for backward compatibility with the documents/json endpoint.
  */
 export class UploadStaffDocumentDto {
   /** Document type: CV, CNI, BIRTH_CERTIFICATE, DIPLOMA, CONTRACT, CNSS_CERTIFICATE, MEDICAL_CERTIFICATE, WORK_PERMIT, OTHER */

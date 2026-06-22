@@ -405,13 +405,6 @@ class StudentsService {
     window.URL.revokeObjectURL(url);
     a.remove();
   }
-
-  /**
-   * @deprecated L'upload de photo utilise maintenant le pattern data URL :
-   * le frontend compresse l'image côté navigateur (compressImageFileToDataUrl)
-   * et envoie le data URL directement comme photoUrl dans le body JSON de
-   * POST /students. Plus besoin de route BFF dédiée ni de multipart.
-   */
 }
 
 export const studentsService = new StudentsService();

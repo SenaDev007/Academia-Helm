@@ -62,14 +62,6 @@ function isBinaryContentType(contentType: string): boolean {
   );
 }
 
-/**
- * Check if the request is a multipart/form-data upload.
- */
-function isMultipartRequest(request: NextRequest): boolean {
-  const contentType = request.headers.get('content-type') || '';
-  return contentType.includes('multipart/form-data');
-}
-
 async function forward(
   request: NextRequest,
   pathSegments: string[],
@@ -86,34 +78,11 @@ async function forward(
     const options: RequestInit = { method, headers, cache: 'no-store' };
 
     if (method !== 'GET' && method !== 'HEAD') {
-      if (isMultipartRequest(request)) {
-        // For multipart/form-data, forward raw body bytes with original Content-Type
-        // (which includes the boundary string needed for parsing)
-        const bodyBuffer = Buffer.from(await request.arrayBuffer());
-        options.body = bodyBuffer as any;
-        // CRITICAL: Remove the default 'Content-Type: application/json' set by
-        // getProxyAuthHeaders() — JavaScript objects are case-sensitive, so setting
-        // 'content-type' (lowercase) would NOT overwrite 'Content-Type' (titlecase).
-        // Both headers would coexist, causing the backend to pick up application/json
-        // instead of multipart/form-data, which breaks Multer file extraction and
-        // body field parsing (causing "documentType must be a string" and
-        // "Aucun fichier photo fourni" errors).
-        delete (options.headers as Record<string, string>)['Content-Type'];
-        delete (options.headers as Record<string, string>)['content-type'];
-
-        // Set the correct multipart content-type with boundary
-        const contentType = request.headers.get('content-type');
-        if (contentType) {
-          (options.headers as Record<string, string>)['Content-Type'] = contentType;
-        }
-        // Remove content-length from forwarded headers to let fetch set it
-        delete (options.headers as Record<string, string>)['content-length'];
-      } else {
-        // Standard JSON body
-        const text = await request.text();
-        if (text.length > 0) {
-          options.body = text;
-        }
+      // Tous les uploads utilisent maintenant le pattern data URL (JSON body).
+      // Plus de multipart/form-data — la branche multipart a été supprimée.
+      const text = await request.text();
+      if (text.length > 0) {
+        options.body = text;
       }
     }
 

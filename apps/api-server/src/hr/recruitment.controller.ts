@@ -10,9 +10,8 @@
  * ============================================================================
  */
 
-import { Controller, Get, Post, Put, Body, Query, Param, Delete, UseGuards, UseInterceptors, UploadedFiles, Res, StreamableFile, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Query, Param, Delete, UseGuards, Res, StreamableFile, BadRequestException } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
-import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { RecruitmentPrismaService } from './recruitment.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
@@ -270,32 +269,6 @@ export class RecruitmentPrismaController {
 
   // ─── Public Job Apply ──────────────────────────────────────────────────────
 
-  @Public()
-  @Post('apply')
-  @SkipThrottle()
-  @UseInterceptors(FileFieldsInterceptor([
-    { name: 'cv', maxCount: 1 },
-    { name: 'applicationLetter', maxCount: 1 },
-    { name: 'coverLetter', maxCount: 1 },
-    { name: 'recommendationLetter', maxCount: 1 }
-  ], {
-    limits: {
-      fileSize: 10 * 1024 * 1024, // 10MB per file
-      fieldSize: 5 * 1024 * 1024,  // 5MB per non-file field (for large JSON payloads)
-    }
-  }))
-  async applyJob(
-    @Body() body: ApplyJobDto,
-    @UploadedFiles() files: {
-      cv?: Express.Multer.File[];
-      applicationLetter?: Express.Multer.File[];
-      coverLetter?: Express.Multer.File[];
-      recommendationLetter?: Express.Multer.File[];
-    }
-  ) {
-    return this.service.applyJob(body, files);
-  }
-
   /**
    * Public job apply via data URLs (base64) — pattern identique au logo école.
    *
@@ -334,9 +307,6 @@ export class RecruitmentPrismaController {
     if (body.coverLetter) files.coverLetter = [convertToFile(body.coverLetter)].filter(Boolean);
     if (body.recommendationLetter) files.recommendationLetter = [convertToFile(body.recommendationLetter)].filter(Boolean);
 
-    // Passer un flag au service pour qu'il stocke les data URLs directement
-    // au lieu de les uploader vers S3/R2
-    body._useDataUrlStorage = true;
     return this.service.applyJob(body, files);
   }
 

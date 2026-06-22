@@ -10,11 +10,11 @@
  *   PUT    /hr/staff/:id               — Update staff info
  *   DELETE /hr/staff/:id               — Archive staff
  *
- *   POST   /hr/staff/:id/photo         — Upload/replace staff photo (Multer)
+ *   POST   /hr/staff/:id/photo-data    — Upload/replace staff photo (data URL base64)
  *   GET    /hr/staff/:id/photo         — Get staff photo
  *   DELETE /hr/staff/:id/photo         — Delete staff photo
  *
- *   POST   /hr/staff/:id/documents     — Upload document (Multer file upload)
+ *   POST   /hr/staff/:id/documents-data — Upload document (data URL base64, supports images + PDF)
  *   POST   /hr/staff/:id/documents/json— Add document metadata (legacy JSON body)
  *   GET    /hr/staff/:id/documents     — Get all documents (grouped by category)
  *   DELETE /hr/staff/:id/documents/:docId — Delete a document
@@ -28,10 +28,9 @@
 
 import {
   Controller, Get, Post, Put, Delete, Body, Param, Query,
-  UseGuards, UseInterceptors, UploadedFile, UploadedFiles,
+  UseGuards,
   BadRequestException, Res, Req,
 } from '@nestjs/common';
-import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { StaffPrismaService } from './staff-prisma.service';
 import { TerminationPdfService } from './services/termination-pdf.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -39,7 +38,7 @@ import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 import {
   CreateStaffDto, UpdateStaffDto, AddStaffDocumentDto,
-  UploadStaffDocumentDto, ValidateDocumentDto, BatchAssignLevelDto,
+  ValidateDocumentDto, BatchAssignLevelDto,
 } from './dto/index';
 import type { Response, Request } from 'express';
 
@@ -291,26 +290,6 @@ export class StaffPrismaController {
 
   // ─── PHOTO ─────────────────────────────────────────────────────────────────
 
-  @Post(':id/photo')
-  @UseInterceptors(FileInterceptor('photo', {
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-  }))
-  async uploadPhoto(
-    @GetTenant() tenant: any,
-    @Param('id') staffId: string,
-    @UploadedFile() file: Express.Multer.File,
-    @Query('tenantId') tenantIdFallback?: string,
-  ) {
-    if (!file) {
-      throw new BadRequestException('Aucun fichier photo fourni');
-    }
-    const tid = tenant?.id ?? tenantIdFallback;
-    if (!tid) {
-      throw new BadRequestException('Tenant ID requis pour cette opération');
-    }
-    return this.staffService.uploadStaffPhoto(staffId, tid, file);
-  }
-
   /**
    * Upload photo via data URL (base64) — pattern identique au logo école.
    * Body: { photoDataUrl: string }
@@ -354,40 +333,6 @@ export class StaffPrismaController {
   }
 
   // ─── DOCUMENTS ─────────────────────────────────────────────────────────────
-
-  /**
-   * Upload a document file (Multer multipart/form-data)
-   * Query params: documentType, description?, expiresAt?
-   */
-  @Post(':id/documents')
-  @UseInterceptors(FileInterceptor('file', {
-    limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
-  }))
-  async uploadDocument(
-    @GetTenant() tenant: any,
-    @Param('id') staffId: string,
-    @UploadedFile() file: Express.Multer.File,
-    @Body() body: UploadStaffDocumentDto,
-    @Query('tenantId') tenantIdFallback?: string,
-  ) {
-    if (!file) {
-      throw new BadRequestException('Aucun fichier fourni');
-    }
-    const tid = tenant?.id ?? tenantIdFallback;
-    if (!tid) {
-      throw new BadRequestException('Tenant ID requis pour cette opération');
-    }
-    // Normalize expiresAt: treat empty strings as undefined/null
-    const expiresAt = body.expiresAt && body.expiresAt.trim() !== '' ? body.expiresAt : undefined;
-    return this.staffService.uploadStaffDocument(
-      staffId,
-      tid,
-      file,
-      body.documentType || 'OTHER',
-      body.description,
-      expiresAt,
-    );
-  }
 
   /**
    * Upload document via data URL (base64) — pattern identique au logo école.

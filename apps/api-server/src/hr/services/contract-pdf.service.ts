@@ -16,6 +16,7 @@ import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.servi
 import { StorageService } from '../../common/services/storage.service';
 import { StaffCredentialService } from './staff-credential.service';
 import { RecruitmentNotificationService } from '../recruitment-notification.service';
+import { ContractDocumentConfigService } from './contract-document-config.service';
 import * as Handlebars from 'handlebars';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -62,6 +63,7 @@ export class ContractPdfService {
     private readonly credentialService: StaffCredentialService,
     @Inject(forwardRef(() => RecruitmentNotificationService))
     private readonly notificationService: RecruitmentNotificationService,
+    private readonly documentConfigService: ContractDocumentConfigService,
   ) {
     this.loadDependencies();
   }
@@ -220,7 +222,9 @@ export class ContractPdfService {
     if (templateSource.trim().startsWith('[')) {
       try {
         const articles = JSON.parse(templateSource);
-        templateSource = this.buildHtmlFromArticles(articles, contract.contractType);
+        // Récupérer la config visuelle du tenant pour personnaliser le template
+        const docConfig = await this.documentConfigService.getConfig(tenantId);
+        templateSource = this.buildHtmlFromArticles(articles, contract.contractType, docConfig);
       } catch (err) {
         this.logger.error('Failed to parse articles JSON template, falling back to legacy HTML template', err);
         templateSource = this.getDefaultTemplate(contract.contractType);
@@ -493,7 +497,8 @@ export class ContractPdfService {
     if (templateSource.trim().startsWith('[')) {
       try {
         const articles = JSON.parse(templateSource);
-        templateSource = this.buildHtmlFromArticles(articles, contract.contractType);
+        const docConfig = await this.documentConfigService.getConfig(tenantId);
+        templateSource = this.buildHtmlFromArticles(articles, contract.contractType, docConfig);
       } catch {
         templateSource = this.getDefaultTemplate(contract.contractType);
       }
@@ -1855,7 +1860,33 @@ export class ContractPdfService {
       .replace(/javascript\s*:/gi, ''); // Remove javascript: URLs
   }
 
-  buildHtmlFromArticles(articles: any[], contractType: string): string {
+  buildHtmlFromArticles(articles: any[], contractType: string, docConfig?: any): string {
+    // Valeurs par défaut si pas de config (backward compatible)
+    const cfg = docConfig || {};
+    const headerBg = cfg.header_background_color || '#0D1F6E';
+    const accentColor = cfg.header_decorative_line_color || '#F5A623';
+    const primaryColor = cfg.style_primary_color || '#1A2BA6';
+    const watermarkText = cfg.watermark_text || 'ACADEMIA HELM';
+    const watermarkOpacity = cfg.watermark_opacity != null ? Number(cfg.watermark_opacity) : 0.04;
+    const watermarkFontSize = cfg.watermark_font_size || 72;
+    const watermarkRotation = cfg.watermark_rotation != null ? Number(cfg.watermark_rotation) : -45;
+    const watermarkColor = cfg.watermark_color || '#1A2BA6';
+    const fontFamily = cfg.style_font_family || "'Times New Roman', serif";
+    const titleFontSize = cfg.style_title_font_size || 11;
+    const bodyFontSize = cfg.style_body_font_size || 10.5;
+    const lineHeight = cfg.style_line_height != null ? Number(cfg.style_line_height) : 1.7;
+    const showSchoolName = cfg.header_show_school_name !== false;
+    const showAddress = cfg.header_show_address !== false;
+    const showContact = cfg.header_show_contact !== false;
+    const showAuthNumber = cfg.header_show_authorization_number !== false;
+    const showDecoLine = cfg.header_show_decorative_line !== false;
+    const showAcademiaSig = cfg.footer_show_academia_signature !== false;
+    const showPageNum = cfg.footer_show_page_number !== false;
+    const showContractRef = cfg.footer_show_contract_ref !== false;
+    const showQrCode = cfg.footer_show_qr_code !== false;
+    const footerBg = cfg.footer_background_color || '#0D1F6E';
+    const footerAccent = cfg.footer_accent_color || '#F5A623';
+
     let articlesHtml = '';
     for (const art of articles) {
       if (!art || typeof art !== 'object') continue;
@@ -1880,19 +1911,20 @@ export class ContractPdfService {
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: 'Times New Roman', serif;
+      font-family: ${fontFamily};
       color: #1a1a1a;
-      font-size: 12pt;
-      line-height: 1.7;
+      font-size: ${bodyFontSize + 1.5}pt;
+      line-height: ${lineHeight};
       background: white;
     }
     .watermark {
       position: fixed;
       top: 50%;
       left: 50%;
-      transform: translate(-50%, -50%) rotate(-45deg);
-      font-size: 72pt;
-      color: rgba(26, 43, 166, 0.04);
+      transform: translate(-50%, -50%) rotate(${watermarkRotation}deg);
+      font-size: ${watermarkFontSize}pt;
+      color: ${watermarkColor};
+      opacity: ${watermarkOpacity};
       font-weight: bold;
       z-index: 0;
       white-space: nowrap;
@@ -1904,11 +1936,11 @@ export class ContractPdfService {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      border-bottom: 3px solid #1A2BA6;
+      border-bottom: ${showDecoLine ? `3px solid ${accentColor}` : 'none'};
       padding-bottom: 16px;
       margin-bottom: 24px;
     }
-    .school-info h1 { font-size: 18pt; color: #1A2BA6; font-weight: bold; }
+    .school-info h1 { font-size: 18pt; color: ${primaryColor}; font-weight: bold; }
     .school-info p { font-size: 9pt; color: #555; margin-top: 2px; }
     .contract-meta { text-align: right; }
     .contract-meta .ref {
@@ -1930,10 +1962,10 @@ export class ContractPdfService {
       font-weight: bold;
       text-transform: uppercase;
       letter-spacing: 2px;
-      border: 2px solid #1A2BA6;
+      border: 2px solid ${primaryColor};
       display: inline-block;
       padding: 8px 32px;
-      color: #1A2BA6;
+      color: ${primaryColor};
     }
     /* Sections */
     .section {
@@ -1941,9 +1973,9 @@ export class ContractPdfService {
       page-break-inside: avoid;
     }
     .section-title {
-      font-size: 11pt;
+      font-size: ${titleFontSize}pt;
       font-weight: bold;
-      color: #1A2BA6;
+      color: ${primaryColor};
       border-bottom: 1px solid #e2e8f0;
       padding-bottom: 4px;
       margin-bottom: 12px;
@@ -1964,7 +1996,7 @@ export class ContractPdfService {
     .info-value { color: #1a1a1a; font-size: 10pt; }
     /* Article */
     .article { margin-bottom: 16px; }
-    .article p { font-size: 10.5pt; text-align: justify; margin-top: 4px; }
+    .article p { font-size: ${bodyFontSize}pt; text-align: justify; margin-top: 4px; }
     
     /* Signature area */
     .signature-section {
@@ -2036,7 +2068,7 @@ export class ContractPdfService {
   </style>
 </head>
 <body>
-<div class="watermark">ACADEMIA HELM</div>
+<div class="watermark">${watermarkText}</div>
 <div class="page">
 
   <!-- Header -->

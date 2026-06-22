@@ -15,9 +15,9 @@ import {
   Controller, Get, Put, Body, Query,
   UseGuards, BadRequestException,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
-import { TenantGuard } from '../../common/guards/tenant.guard';
-import { GetTenant } from '../../common/decorators/tenant.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { TenantGuard } from '../common/guards/tenant.guard';
+import { GetTenant } from '../common/decorators/tenant.decorator';
 import { ContractDocumentConfigService, UpdateContractDocumentConfigDto } from './services/contract-document-config.service';
 
 @Controller('hr/contract-document-config')

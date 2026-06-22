@@ -52,7 +52,9 @@ interface DocConfig {
   header_show_decorative_line: boolean;
   header_decorative_line_color: string;
   header_background_color: string;
+  watermark_type: string;
   watermark_text: string | null;
+  watermark_image_url: string | null;
   watermark_opacity: number;
   watermark_font_size: number;
   watermark_rotation: number;
@@ -284,26 +286,65 @@ export default function DocumentConfigPage() {
         {activeTab === 'watermark' && (
           <div className="space-y-5">
             <h2 className="text-lg font-bold text-slate-900">Filigrane</h2>
-            <TextInput label="Texte du filigrane" value={config.watermark_text || ''} onChange={v => update('watermark_text', v)} placeholder="Ex: Mon École ou CONFIDENTIEL" />
+            <SelectInput label="Type de filigrane" value={config.watermark_type || 'text'} onChange={v => update('watermark_type', v)}
+              options={[
+                { value: 'text', label: 'Texte' },
+                { value: 'image', label: 'Image (logo)' },
+              ]} />
+
+            {(config.watermark_type || 'text') === 'text' ? (
+              <TextInput label="Texte du filigrane" value={config.watermark_text || ''} onChange={v => update('watermark_text', v)} placeholder="Ex: Mon École ou CONFIDENTIEL" />
+            ) : (
+              <TextInput label="URL du logo (filigrane image)" value={config.watermark_image_url || ''} onChange={v => update('watermark_image_url', v)} placeholder="https://exemple.com/logo.png" />
+            )}
+
             <div className="grid grid-cols-2 gap-4">
               <NumberInput label="Opacité" value={config.watermark_opacity} onChange={v => update('watermark_opacity', v)} suffix="(0.01-1)" />
-              <NumberInput label="Taille" value={config.watermark_font_size} onChange={v => update('watermark_font_size', v)} suffix="pt" />
               <NumberInput label="Rotation" value={config.watermark_rotation} onChange={v => update('watermark_rotation', v)} suffix="°" />
-              <ColorInput label="Couleur" value={config.watermark_color} onChange={v => update('watermark_color', v)} />
+              {(config.watermark_type || 'text') === 'text' && (
+                <>
+                  <NumberInput label="Taille du texte" value={config.watermark_font_size} onChange={v => update('watermark_font_size', v)} suffix="pt" />
+                  <ColorInput label="Couleur du texte" value={config.watermark_color} onChange={v => update('watermark_color', v)} />
+                </>
+              )}
             </div>
+
+            {/* Aperçu format A4 */}
             <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
-              <p className="text-xs text-slate-500 mb-2">Aperçu :</p>
-              <div className="relative h-24 flex items-center justify-center overflow-hidden rounded-lg bg-white border border-slate-100">
-                <span style={{
-                  fontSize: `${config.watermark_font_size / 3}pt`,
-                  opacity: config.watermark_opacity,
-                  color: config.watermark_color,
-                  transform: `rotate(${config.watermark_rotation}deg)`,
-                  fontWeight: 'bold',
-                  whiteSpace: 'nowrap',
-                }}>
-                  {config.watermark_text || 'ACADEMIA HELM'}
-                </span>
+              <p className="text-xs text-slate-500 mb-3">Aperçu (format A4) :</p>
+              <div className="relative mx-auto bg-white border border-slate-200 shadow-sm overflow-hidden"
+                style={{ width: '210px', height: '297px' }}>
+                {/* Simule le contenu d'une page A4 */}
+                <div className="absolute inset-0 p-4">
+                  <div className="h-6 bg-slate-100 rounded mb-3"></div>
+                  <div className="h-3 bg-slate-50 rounded mb-1.5 w-3/4"></div>
+                  <div className="h-3 bg-slate-50 rounded mb-1.5 w-full"></div>
+                  <div className="h-3 bg-slate-50 rounded mb-1.5 w-5/6"></div>
+                  <div className="h-3 bg-slate-50 rounded mb-3 w-full"></div>
+                  <div className="h-6 bg-slate-100 rounded mb-3 w-1/2"></div>
+                  <div className="h-3 bg-slate-50 rounded mb-1.5 w-full"></div>
+                  <div className="h-3 bg-slate-50 rounded mb-1.5 w-4/5"></div>
+                  <div className="h-3 bg-slate-50 rounded mb-1.5 w-full"></div>
+                </div>
+                {/* Filigrane au centre */}
+                <div className="absolute top-1/2 left-1/2 flex items-center justify-center"
+                  style={{
+                    transform: `translate(-50%, -50%) rotate(${config.watermark_rotation}deg)`,
+                    opacity: config.watermark_opacity,
+                  }}>
+                  {(config.watermark_type || 'text') === 'image' && config.watermark_image_url ? (
+                    <img src={config.watermark_image_url} alt="Filigrane" style={{ maxWidth: '120px', maxHeight: '120px' }} />
+                  ) : (
+                    <span style={{
+                      fontSize: `${Math.min(config.watermark_font_size / 2.5, 28)}pt`,
+                      color: config.watermark_color,
+                      fontWeight: 'bold',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {config.watermark_text || 'ACADEMIA HELM'}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </div>

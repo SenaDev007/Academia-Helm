@@ -1867,6 +1867,8 @@ export class ContractPdfService {
     const accentColor = cfg.header_decorative_line_color || '#F5A623';
     const primaryColor = cfg.style_primary_color || '#1A2BA6';
     const watermarkText = cfg.watermark_text || 'ACADEMIA HELM';
+    const watermarkType = cfg.watermark_type || 'text';
+    const watermarkImageUrl = cfg.watermark_image_url || '';
     const watermarkOpacity = cfg.watermark_opacity != null ? Number(cfg.watermark_opacity) : 0.04;
     const watermarkFontSize = cfg.watermark_font_size || 72;
     const watermarkRotation = cfg.watermark_rotation != null ? Number(cfg.watermark_rotation) : -45;
@@ -1928,6 +1930,17 @@ export class ContractPdfService {
       font-weight: bold;
       z-index: 0;
       white-space: nowrap;
+      pointer-events: none;
+    }
+    .watermark-image {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) rotate(${watermarkRotation}deg);
+      max-width: 400px;
+      max-height: 400px;
+      opacity: ${watermarkOpacity};
+      z-index: 0;
       pointer-events: none;
     }
     .page { position: relative; z-index: 1; }
@@ -2068,7 +2081,7 @@ export class ContractPdfService {
   </style>
 </head>
 <body>
-<div class="watermark">${watermarkText}</div>
+<div class="${watermarkType === 'image' && watermarkImageUrl ? 'watermark-image' : 'watermark'}">${watermarkType === 'image' && watermarkImageUrl ? `<img src="${watermarkImageUrl}" alt="Watermark" style="max-width:400px;max-height:400px;" />` : watermarkText}</div>
 <div class="page">
 
   <!-- Header -->

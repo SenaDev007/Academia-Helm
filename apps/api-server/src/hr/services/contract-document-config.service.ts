@@ -37,7 +37,9 @@ export interface ContractDocumentConfig {
   header_background_color: string;
 
   // Filigrane
+  watermark_type: 'text' | 'image';     // text | image
   watermark_text: string | null;
+  watermark_image_url: string | null;   // URL du logo pour filigrane image
   watermark_opacity: number;
   watermark_font_size: number;
   watermark_rotation: number;
@@ -81,7 +83,9 @@ export interface UpdateContractDocumentConfigDto {
   header_background_color?: string;
 
   // Filigrane
+  watermark_type?: string;
   watermark_text?: string;
+  watermark_image_url?: string;
   watermark_opacity?: number;
   watermark_font_size?: number;
   watermark_rotation?: number;
@@ -157,7 +161,9 @@ export class ContractDocumentConfigService {
       header_show_decorative_line: dto.header_show_decorative_line,
       header_decorative_line_color: dto.header_decorative_line_color,
       header_background_color: dto.header_background_color,
+      watermark_type: dto.watermark_type,
       watermark_text: dto.watermark_text,
+      watermark_image_url: dto.watermark_image_url,
       watermark_opacity: dto.watermark_opacity,
       watermark_font_size: dto.watermark_font_size,
       watermark_rotation: dto.watermark_rotation,
@@ -183,7 +189,9 @@ export class ContractDocumentConfigService {
     for (const [key, value] of Object.entries(fieldMap)) {
       if (value !== undefined) {
         fields.push(`${key} = $${paramIdx++}`);
-        values.push(value);
+        // Convertir null → null explicite, sinon garder la valeur
+        // Prisma $executeRawUnsafe a besoin de valeurs typées, pas de undefined
+        values.push(value === null ? null : value);
       }
     }
 
@@ -194,16 +202,46 @@ export class ContractDocumentConfigService {
     fields.push(`updated_at = NOW()`);
     values.push(tenantId);
 
-    // Upsert : INSERT ... ON CONFLICT UPDATE
+    // D'abord s'assurer qu'une ligne existe (INSERT ... ON CONFLICT DO NOTHING)
     await this.prisma.$executeRawUnsafe(`
       INSERT INTO contract_document_configs (tenant_id)
-      VALUES ($${paramIdx})
+      VALUES ($1)
       ON CONFLICT (tenant_id) DO NOTHING
     `, tenantId);
 
+    // Ensuite UPDATE avec les champs fournis
+    // ⚠️ On utilise des casts explicites (::text, ::int, ::boolean, ::numeric)
+    // pour chaque paramètre afin que PostgreSQL puisse déterminer le type
+    // même quand la valeur est null (Prisma P2010 fix)
+    const typedFields = fields.map((f, i) => {
+      const paramName = f.split('=')[0].trim();
+      const paramNum = f.match(/\$(\d+)/)?.[1];
+      if (!paramNum) return f;
+      const idx = parseInt(paramNum) - 1;
+      const val = values[idx];
+
+      // Déterminer le type SQL basé sur la valeur ou le nom du champ
+      if (val === null || val === undefined) {
+        // Pour null, on cast selon le type de colonne
+        if (paramName.includes('_color') || paramName.includes('_url') || paramName.includes('_text') || paramName.includes('font_family') || paramName.includes('logo_position')) {
+          return `${paramName} = $${paramNum}::text`;
+        }
+        if (paramName.includes('_size') || paramName.includes('max_height') || paramName.includes('margin_') || paramName.includes('font_size') || paramName.includes('rotation')) {
+          return `${paramName} = $${paramNum}::int`;
+        }
+        if (paramName.includes('opacity') || paramName.includes('line_height')) {
+          return `${paramName} = $${paramNum}::numeric`;
+        }
+        if (paramName.includes('show_')) {
+          return `${paramName} = $${paramNum}::boolean`;
+        }
+      }
+      return f;
+    });
+
     await this.prisma.$executeRawUnsafe(`
       UPDATE contract_document_configs
-      SET ${fields.join(', ')}
+      SET ${typedFields.join(', ')}
       WHERE tenant_id = $${paramIdx}
     `, ...values);
 
@@ -246,7 +284,9 @@ export class ContractDocumentConfigService {
             "header_show_decorative_line" BOOLEAN DEFAULT true,
             "header_decorative_line_color" TEXT DEFAULT '#F5A623',
             "header_background_color" TEXT DEFAULT '#0D1F6E',
+            "watermark_type"          TEXT DEFAULT 'text',
             "watermark_text"          TEXT,
+            "watermark_image_url"     TEXT,
             "watermark_opacity"       DECIMAL(3,2) DEFAULT 0.05,
             "watermark_font_size"     INT DEFAULT 72,
             "watermark_rotation"      INT DEFAULT -45,

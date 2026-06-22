@@ -22,7 +22,7 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { ScheduledEmailService } from './scheduled-email.service';
 import { EmailService } from './email.service';
 
@@ -39,10 +39,14 @@ export class ScheduledEmailDispatcherService {
   /**
    * Cron toutes les minutes pour dispatcher les emails programmés dus.
    *
-   * Utilise '0 * * * * *' (toutes les minutes à la seconde 0) pour éviter
-   * le pic de charge au début de la minute.
+   * ⚠️ IMPORTANT : utilise CronExpression.EVERY_MINUTE (qui vaut '* * * * *',
+   * 5 champs sans secondes). Ne PAS utiliser '0 * * * * *' (6 champs avec
+   * secondes) car @nestjs/schedule n'accepte que les expressions 5 champs
+   * par défaut — une expression 6 champs fait crasher l'app au démarrage
+   * (le ScheduleModule lève une erreur pendant l'init, avant que l'app
+   * ne bind le port 3000 → "instance refused connection" sur Fly.io).
    */
-  @Cron('0 * * * * *')
+  @Cron(CronExpression.EVERY_MINUTE)
   async dispatchPendingEmails(): Promise<void> {
     // Évite les runs concurrents si le précédent n'a pas fini
     if (this.isRunning) {

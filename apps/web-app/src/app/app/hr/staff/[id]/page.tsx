@@ -337,10 +337,14 @@ export default function StaffDetailPage() {
       }
 
       // Handle numberOfChildren — empty string → null, otherwise convert to int
+      // ⚠️ Important : 0 est une valeur valide (célibataire avec 0 enfant).
+      // Ne PAS utiliser `|| null` car `0 || null` = `null` (falsy).
+      // On utilise `?? null` qui ne convertit que null/undefined.
       if (submitData.numberOfChildren === '' || submitData.numberOfChildren === null || submitData.numberOfChildren === undefined) {
         submitData.numberOfChildren = null;
       } else {
-        submitData.numberOfChildren = parseInt(submitData.numberOfChildren, 10) || null;
+        const parsed = parseInt(submitData.numberOfChildren, 10);
+        submitData.numberOfChildren = isNaN(parsed) ? null : parsed;
       }
 
       // Build bankDetails object from individual fields

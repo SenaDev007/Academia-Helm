@@ -26,9 +26,10 @@ const PRIMARY = '#1A2BA6';
 interface RichTextContentProps {
   initialContent: string;
   onInput: (html: string) => void;
+  onBlur?: () => void;
 }
 
-const RichTextContent = memo(function RichTextContent({ initialContent, onInput }: RichTextContentProps) {
+const RichTextContent = memo(function RichTextContent({ initialContent, onInput, onBlur }: RichTextContentProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -44,6 +45,7 @@ const RichTextContent = memo(function RichTextContent({ initialContent, onInput 
       contentEditable
       suppressContentEditableWarning
       onInput={(e) => onInput(e.currentTarget.innerHTML)}
+      onBlur={onBlur}
       className="px-3 py-2 text-sm text-slate-700 focus:outline-none min-h-[80px] prose prose-sm max-w-none empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400 empty:before:cursor-text"
       data-placeholder="Contenu de l'article — les informations du salarié et de l'école sont déjà pré-remplies. Ajustez librement le texte."
     />
@@ -204,24 +206,6 @@ export function ContractDocumentEditor({ isOpen, onClose, onSuccess, contract }:
   function updateArticle(index: number, field: 'title' | 'content', value: string) {
     setArticles((prev) => {
       const updated = [...prev];
-
-      // ─── Calcul automatique du salaire brut (Article 8 — Rémunération) ───
-      // Quand l'utilisateur modifie l'Article 8, on parse les montants
-      // (salaire de base, prime de fonction, indemnité de transport) et on
-      // recalcule automatiquement le salaire brut mensuel.
-      //
-      // Format attendu dans l'Article 8 :
-      //   Salaire de base : <strong>40 000 FCFA</strong>
-      //   Prime de fonction : <strong>5 000 FCFA</strong>
-      //   Indemnité de transport : <strong>3 000 FCFA</strong>
-      //   Autres avantages : <strong>Aucun</strong>
-      //   Soit un salaire brut mensuel de <strong>48 000 FCFA</strong>
-      //
-      // On détecte l'Article 8 par son titre (contient "Rémunération").
-      if (field === 'content' && updated[index]?.title?.includes('Rémunération')) {
-        value = recalculateGrossSalary(value);
-      }
-
       updated[index] = { ...updated[index], [field]: value };
       return updated;
     });
@@ -229,7 +213,12 @@ export function ContractDocumentEditor({ isOpen, onClose, onSuccess, contract }:
   }
 
   /**
-   * Recalcule le salaire brut mensuel en parsant les montants de l'Article 8.
+   * Recalcule le salaire brut mensuel de l'Article 8 et met à jour le HTML.
+   *
+   * ⚠️ Cette fonction est appelée UNIQUEMENT au blur (quand l'utilisateur
+   * quitte l'éditeur de l'Article 8), JAMAIS pendant la frappe. Sinon, le
+   * RichTextContent (uncontrolled) re-set innerHTML à chaque modification
+   * → le caret saute au début du contenu → experience catastrophique.
    *
    * Étapes :
    *   1. Extraire les montants numériques (en FCFA) pour :
@@ -240,68 +229,63 @@ export function ContractDocumentEditor({ isOpen, onClose, onSuccess, contract }:
    *   3. Remplacer la ligne "Soit un salaire brut mensuel de <strong>XXX FCFA</strong>"
    *      par le nouveau total
    *
-   * ⚠️ Important : si le total calculé est identique à celui déjà affiché, on
-   * retourne le HTML inchangé pour éviter de faire sauter le caret pendant
-   * la frappe (le RichTextContent est uncontrolled, toute modification du
-   * HTML pendant la frappe repositionnerait le caret en début de zone).
-   *
-   * Si le parsing échoue (format inattendu), on retourne le HTML inchangé.
+   * Si le parsing échoue (format inattendu), on ne modifie rien.
    */
-  function recalculateGrossSalary(html: string): string {
-    try {
-      // Helper : extrait le premier montant numérique (ex: "40 000" depuis
-      // "<strong>40 000 FCFA</strong>") après un label donné.
-      // Retourne 0 si non trouvé.
-      const extractAmount = (label: string): number => {
-        const regex = new RegExp(
-          label + '[^<]*<strong>\\s*([\\d\\s]+)\\s*FCFA\\s*</strong>',
-          'i',
+  function recalculateGrossSalaryOnBlur(index: number) {
+    setArticles((prev) => {
+      const updated = [...prev];
+      const article = updated[index];
+      if (!article?.title?.includes('Rémunération')) return prev;
+
+      const html = article.content;
+      try {
+        // Helper : extrait le premier montant numérique (ex: "40 000" depuis
+        // "<strong>40 000 FCFA</strong>") après un label donné.
+        const extractAmount = (label: string): number => {
+          const regex = new RegExp(
+            label + '[^<]*<strong>\\s*([\\d\\s]+)\\s*FCFA\\s*</strong>',
+            'i',
+          );
+          const match = html.match(regex);
+          if (!match) return 0;
+          const numStr = match[1].replace(/\s/g, '');
+          return parseInt(numStr, 10) || 0;
+        };
+
+        // Helper : extrait le montant déjà affiché dans la ligne "salaire brut"
+        const extractCurrentGross = (): number => {
+          const regex = /salaire brut mensuel de\s*<strong>\s*([\d\s]+)\s*FCFA\s*<\/strong>/i;
+          const match = html.match(regex);
+          if (!match) return -1; // -1 = non trouvé (on ne modifie pas)
+          const numStr = match[1].replace(/\s/g, '');
+          return parseInt(numStr, 10) || 0;
+        };
+
+        const baseSalary = extractAmount('Salaire de base');
+        const functionBonus = extractAmount('Prime de fonction');
+        const transportBonus = extractAmount('Indemnité de transport');
+
+        const newTotal = baseSalary + functionBonus + transportBonus;
+        const currentTotal = extractCurrentGross();
+
+        // Si pas de ligne "salaire brut mensuel" → pas de modification
+        if (currentTotal === -1) return prev;
+
+        // Si le total est déjà correct → pas de modification
+        if (currentTotal === newTotal) return prev;
+
+        const formattedTotal = newTotal.toLocaleString('fr-FR');
+        const updatedHtml = html.replace(
+          /(salaire brut mensuel de\s*<strong>)[^<]*(\s*FCFA\s*<\/strong>)/i,
+          `$1${formattedTotal}$2`,
         );
-        const match = html.match(regex);
-        if (!match) return 0;
-        const numStr = match[1].replace(/\s/g, '');
-        return parseInt(numStr, 10) || 0;
-      };
 
-      // Helper : extrait le montant déjà affiché dans la ligne "salaire brut"
-      const extractCurrentGross = (): number => {
-        const regex = /salaire brut mensuel de\s*<strong>\s*([\d\s]+)\s*FCFA\s*<\/strong>/i;
-        const match = html.match(regex);
-        if (!match) return -1; // -1 = non trouvé (on ne modifie pas)
-        const numStr = match[1].replace(/\s/g, '');
-        return parseInt(numStr, 10) || 0;
-      };
-
-      const baseSalary = extractAmount('Salaire de base');
-      const functionBonus = extractAmount('Prime de fonction');
-      const transportBonus = extractAmount('Indemnité de transport');
-
-      const newTotal = baseSalary + functionBonus + transportBonus;
-      const currentTotal = extractCurrentGross();
-
-      // Si le total déjà affiché est correct → pas de modification (évite
-      // le saut de caret pendant la frappe)
-      if (currentTotal === newTotal) {
-        return html;
+        updated[index] = { ...updated[index], content: updatedHtml };
+        return updated;
+      } catch {
+        return prev;
       }
-
-      // Si on n'a pas trouvé la ligne "salaire brut mensuel" → pas de mod
-      if (currentTotal === -1) {
-        return html;
-      }
-
-      const formattedTotal = newTotal.toLocaleString('fr-FR');
-
-      // Remplacer la ligne "Soit un salaire brut mensuel de <strong>XXX FCFA</strong>"
-      const updated = html.replace(
-        /(salaire brut mensuel de\s*<strong>)[^<]*(\s*FCFA\s*<\/strong>)/i,
-        `$1${formattedTotal}$2`,
-      );
-
-      return updated;
-    } catch {
-      return html;
-    }
+    });
   }
 
   function addArticle() {
@@ -560,6 +544,7 @@ export function ContractDocumentEditor({ isOpen, onClose, onSuccess, contract }:
                     <RichTextContent
                       initialContent={art.content || ''}
                       onInput={(html) => updateArticle(idx, 'content', html)}
+                      onBlur={() => recalculateGrossSalaryOnBlur(idx)}
                     />
                   </div>
                 </div>

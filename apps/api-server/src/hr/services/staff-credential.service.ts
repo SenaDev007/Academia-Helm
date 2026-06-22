@@ -194,7 +194,7 @@ export class StaffCredentialService {
       // 7. Récupérer les infos du tenant pour le sous-domaine
       const tenant = await this.prisma.tenant.findFirst({
         where: { id: tenantId },
-        select: { id: true, name: true, slug: true, subdomain: true, abbreviation: true },
+        select: { id: true, name: true, slug: true, subdomain: true },
       });
 
       const schoolSubdomain = tenant?.subdomain || tenant?.slug || '';
@@ -376,14 +376,12 @@ export class StaffCredentialService {
           name: true,
           slug: true,
           subdomain: true,
-          abbreviation: true,
-          schoolSettings: { select: { logoUrl: true, schoolName: true, phone: true, email: true, address: true } },
         },
       });
 
       const schoolSubdomain = tenant?.subdomain || tenant?.slug || '';
-      const schoolName = tenant?.schoolSettings?.schoolName || tenant?.name || 'Academia Helm';
-      const schoolLogoUrl = tenant?.schoolSettings?.logoUrl || null;
+      const schoolName = tenant?.name || 'Academia Helm';
+      const schoolLogoUrl = null;
       const baseDomain = process.env.APP_PUBLIC_URL || process.env.FRONTEND_URL || 'https://academiahelm.com';
 
       // Construire l'URL de connexion

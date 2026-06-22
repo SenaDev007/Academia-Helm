@@ -156,6 +156,7 @@ export default function StaffDetailPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [credModalOpen, setCredModalOpen] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
 
   // Document upload modal
@@ -1162,26 +1163,7 @@ export default function StaffDetailPage() {
                         </p>
                       </div>
                       <button
-                        onClick={async () => {
-                          if (!confirm(`Générer/régénérer les identifiants de connexion pour ${member.firstName} ${member.lastName} ? Un email sera envoyé à ${member.email || 'N/A'}.`)) return;
-                          try {
-                            setSaving(true);
-                            const res = await hrFetch(hrUrl(`staff/${member.id}/generate-credentials`, { tenantId: tenant?.id }), { method: 'POST' });
-                            if (res?.success) {
-                              toast({
-                                variant: 'success',
-                                title: 'Identifiants générés !',
-                                description: `Email envoyé à ${res.email || member.email}. Identifiant: ${res.username || 'N/A'}`,
-                              });
-                            } else {
-                              toast({ variant: 'error', title: 'Erreur', description: res?.error || 'Échec de la génération' });
-                            }
-                          } catch (err: any) {
-                            toast({ variant: 'error', title: 'Erreur', description: err.message });
-                          } finally {
-                            setSaving(false);
-                          }
-                        }}
+                        onClick={() => setCredModalOpen(true)}
                         disabled={saving}
                         className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white rounded-xl shadow-sm hover:opacity-90 disabled:opacity-50 transition bg-[#1A2BA6] shrink-0 ml-4"
                       >
@@ -1483,6 +1465,91 @@ export default function StaffDetailPage() {
           </Tabs>
         </div>
       </div>
+
+      {/* ─── Modal: Régénérer les identifiants ─── */}
+      {credModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => !saving && setCredModalOpen(false)}>
+          <div
+            className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-6 py-5" style={{ background: 'linear-gradient(135deg, #0D1F6E 0%, #0D3B85 100%)' }}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center">
+                  <Key className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-white font-bold text-base">Régénérer les identifiants</h3>
+                  <p className="text-white/60 text-xs mt-0.5">Nouveau mot de passe + email au personnel</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-4">
+              <div className="bg-slate-50 rounded-xl p-4 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-500">Personnel :</span>
+                  <span className="font-bold text-slate-900">{member.firstName} {member.lastName}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-500">Email :</span>
+                  <span className="font-medium text-slate-700">{member.email || 'Non renseigné'}</span>
+                </div>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex gap-2">
+                <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-800">
+                  Un nouveau mot de passe temporaire sera généré et envoyé par email.
+                  L'ancien mot de passe ne fonctionnera plus.
+                  Le personnel devra se connecter avec les nouveaux identifiants.
+                </p>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="px-6 py-4 bg-slate-50 flex items-center justify-end gap-3">
+              <button
+                onClick={() => setCredModalOpen(false)}
+                disabled={saving}
+                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 rounded-xl transition"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    setSaving(true);
+                    const res = await hrFetch(hrUrl(`staff/${member.id}/generate-credentials`, { tenantId: tenant?.id }), { method: 'POST' });
+                    if (res?.success) {
+                      toast({
+                        variant: 'success',
+                        title: 'Identifiants générés !',
+                        description: `Email envoyé à ${res.email || member.email}. Identifiant : ${res.username || 'N/A'}`,
+                      });
+                      setCredModalOpen(false);
+                    } else {
+                      toast({ variant: 'error', title: 'Erreur', description: res?.error || res?.message || 'Échec de la génération' });
+                    }
+                  } catch (err: any) {
+                    toast({ variant: 'error', title: 'Erreur', description: err.message });
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+                disabled={saving}
+                className="flex items-center gap-2 px-5 py-2 text-sm font-bold text-white rounded-xl shadow-sm hover:opacity-90 disabled:opacity-50 transition"
+                style={{ backgroundColor: '#0D1F6E' }}
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Confirmer la régénération
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Staff Termination Modal */}
       <StaffTerminationModal

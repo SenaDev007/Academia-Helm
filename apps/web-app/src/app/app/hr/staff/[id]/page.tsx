@@ -291,8 +291,8 @@ export default function StaffDetailPage() {
       email: member.email || '',
       phone: member.phone || '',
       position: member.position || '',
-      category: member.category || 'ADMIN',
-      gender: member.gender || 'MALE',
+      category: member.category || '',
+      gender: member.gender || '',
       dateOfBirth: member.dateOfBirth ? new Date(member.dateOfBirth).toISOString().split('T')[0] : '',
       birthDate: member.birthDate ? new Date(member.birthDate).toISOString().split('T')[0] : '',
       address: member.address || '',
@@ -544,6 +544,7 @@ export default function StaffDetailPage() {
                   <div>
                     <label className={labelClass}>Genre</label>
                     <select className={inputClass} value={editForm.gender} onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}>
+                      <option value="">— Non renseigné —</option>
                       <option value="MALE">Masculin</option>
                       <option value="FEMALE">Féminin</option>
                     </select>
@@ -864,7 +865,7 @@ export default function StaffDetailPage() {
                   )}
                   {!member.globalMatricule && !member.tenantMatricule && (
                     <p className="text-blue-600 font-bold tracking-widest uppercase text-xs">
-                      {member.staffCode || 'MAT-PENDING'}
+                      {member.staffCode || 'Non assigné'}
                     </p>
                   )}
                 </div>
@@ -876,7 +877,7 @@ export default function StaffDetailPage() {
                   </div>
                   <div className="flex items-center gap-3 text-sm text-gray-600">
                     <Shield size={18} className="text-gray-400" />
-                    <span>{member.category === 'PEDAGOGICAL' ? 'Corps Enseignant' : member.category === 'ADMIN' ? 'Administration' : 'Personnel d\'appui'}</span>
+                    <span>{member.category === 'PEDAGOGICAL' ? 'Corps Enseignant' : member.category === 'ADMIN' ? 'Administration' : member.category === 'SUPPORT' ? 'Personnel d\'appui' : 'Non renseignée'}</span>
                   </div>
                   <div className="flex items-center gap-3 text-sm text-gray-600">
                     <CheckCircle2 size={18} className="text-emerald-500" />
@@ -891,7 +892,7 @@ export default function StaffDetailPage() {
                   {(member.salary || member.contracts?.[0]?.baseSalary) && (
                     <div className="flex items-center gap-3 text-sm text-gray-600">
                       <DollarSign size={18} className="text-gray-400" />
-                      <span className="font-medium">{formatCurrency(member.salary || member.contracts?.[0]?.baseSalary)} FCFA</span>
+                      <span className="font-medium">{formatCurrency(member.salary || member.contracts?.[0]?.baseSalary)}</span>
                     </div>
                   )}
                 </div>
@@ -1095,11 +1096,18 @@ export default function StaffDetailPage() {
                       État Civil
                     </h3>
                     <div className="space-y-6">
-                      <InfoField label="Genre" value={member.gender === 'M' || member.gender === 'MALE' ? 'Masculin' : 'Féminin'} />
+                      <InfoField label="Genre" value={member.gender === 'M' || member.gender === 'MALE' ? 'Masculin' : member.gender === 'F' || member.gender === 'FEMALE' ? 'Féminin' : 'Non renseigné'} />
                       <InfoField label="Date de naissance" value={member.birthDate ? new Date(member.birthDate).toLocaleDateString('fr-FR') : member.dateOfBirth ? new Date(member.dateOfBirth).toLocaleDateString('fr-FR') : 'Non renseignée'} />
-                      <InfoField label="Nationalité" value={member.nationality || 'Béninoise'} />
-                      <InfoField label="Situation Matrimoniale" value={member.maritalStatus || 'Célibataire'} />
-                      <InfoField label="Nombre d'enfants" value={member.numberOfChildren?.toString() || '0'} />
+                      <InfoField label="Nationalité" value={member.nationality || 'Non renseignée'} />
+                      <InfoField label="Situation Matrimoniale" value={
+                        member.maritalStatus === 'SINGLE' ? 'Célibataire'
+                        : member.maritalStatus === 'MARRIED' ? 'Marié(e)'
+                        : member.maritalStatus === 'DIVORCED' ? 'Divorcé(e)'
+                        : member.maritalStatus === 'WIDOWED' ? 'Veuf/Veuve'
+                        : member.maritalStatus === 'SEPARATED' ? 'Séparé(e)'
+                        : 'Non renseignée'
+                      } />
+                      <InfoField label="Nombre d'enfants" value={member.numberOfChildren != null ? member.numberOfChildren.toString() : 'Non renseigné'} />
                     </div>
                   </section>
 

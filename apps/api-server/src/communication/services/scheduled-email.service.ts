@@ -20,7 +20,7 @@
  * ============================================================================
  */
 
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 
 export interface CreateScheduledEmailDto {
@@ -68,10 +68,64 @@ export interface ScheduledEmail {
 }
 
 @Injectable()
-export class ScheduledEmailService {
+export class ScheduledEmailService implements OnModuleInit {
   private readonly logger = new Logger(ScheduledEmailService.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Auto-création de la table scheduled_emails au démarrage si elle n'existe pas.
+   * Idempotent (CREATE TABLE IF NOT EXISTS).
+   *
+   * Pourquoi : la migration Prisma 20260622060000_add_scheduled_emails n'est pas
+   * appliquée automatiquement par `prisma migrate deploy` car elle n'a pas été
+   * générée via `prisma migrate dev` (elle a été écrite manuellement). On crée
+   * donc la table ici, au démarrage du module, en raw SQL idempotent.
+   */
+  async onModuleInit() {
+    try {
+      await this.prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "scheduled_emails" (
+            "id"              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+            "tenant_id"       TEXT NOT NULL,
+            "to_email"        TEXT NOT NULL,
+            "to_name"         TEXT,
+            "recipient_type"  TEXT,
+            "recipient_id"    TEXT,
+            "subject"         TEXT NOT NULL,
+            "html_body"       TEXT NOT NULL,
+            "text_body"       TEXT,
+            "category"        TEXT,
+            "subcategory"     TEXT,
+            "module"          TEXT,
+            "reply_to_override" TEXT,
+            "scheduled_at"    TIMESTAMP(3) NOT NULL,
+            "timezone"        TEXT DEFAULT 'Africa/Porto-Novo',
+            "status"          TEXT NOT NULL DEFAULT 'PENDING',
+            "sent_at"         TIMESTAMP(3),
+            "email_log_id"    TEXT,
+            "error_message"   TEXT,
+            "created_by_user_id" TEXT,
+            "created_by_name"    TEXT,
+            "created_at"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updated_at"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT "scheduled_emails_tenant_id_fkey"
+                FOREIGN KEY ("tenant_id") REFERENCES "tenants"("id") ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS "idx_scheduled_emails_pending_due"
+            ON "scheduled_emails" ("scheduled_at")
+            WHERE "status" = 'PENDING';
+        CREATE INDEX IF NOT EXISTS "idx_scheduled_emails_tenant"
+            ON "scheduled_emails" ("tenant_id");
+        CREATE INDEX IF NOT EXISTS "idx_scheduled_emails_status"
+            ON "scheduled_emails" ("status");
+      `);
+      this.logger.log('✅ scheduled_emails table ready (created if missing)');
+    } catch (err: any) {
+      this.logger.error(`Failed to create scheduled_emails table: ${err.message}`);
+      // Non-fatal — les endpoints retourneront une 500 mais l'app continue
+    }
+  }
 
   /**
    * Crée un email programmé.

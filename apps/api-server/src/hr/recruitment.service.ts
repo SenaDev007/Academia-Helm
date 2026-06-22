@@ -3574,6 +3574,16 @@ Réponds UNIQUEMENT en JSON valide.`,
         fromName: branding.recruiterName
           ? `${branding.recruiterName} — ${branding.schoolName}`
           : branding.schoolName || 'Academia Helm — Recrutement',
+        // Passer category + tenantId pour que sendEmail utilise la voie
+        // catégorisée (EmailLog + replyToOverride = email recruteur).
+        category: 'RECRUTEMENT',
+        subCategory: 'resultat_test',
+        tenantId,
+        recipientName: `${candidate.firstName} ${candidate.lastName}`,
+        recipientType: 'CANDIDAT',
+        recipientId: candidate.id,
+        relatedEntityId: candidate.id,
+        relatedEntityType: 'HrCandidate',
       });
 
       return {

@@ -17,6 +17,7 @@ import { financeService } from '@/services/finance.service';
 import { classesService } from '@/services/classes.service';
 import { motion } from 'framer-motion';
 import { formatGradeLabel, formatCurrency } from '@/lib/utils';
+import { compressImageFileToDataUrl } from '@/lib/media';
 import { localDb } from '@/lib/offline/local-db.service';
 
 interface FeeRegime {
@@ -206,16 +207,15 @@ export default function StudentEnrollmentForm({
         return;
       }
 
-      // En ligne : upload immédiat via service
-      const formDataObj = new FormData();
-      formDataObj.append('file', file);
-      const data = await studentsService.uploadPhoto(formDataObj as any);
-      if (!data?.photoUrl && !data?.url) {
-        throw new Error('Erreur lors de l\'upload de la photo');
-      }
-      const finalUrl = data.photoUrl || data.url;
-      setFormData((prev) => ({ ...prev, photoUrl: finalUrl }));
-      setPhotoPreviewUrl(finalUrl);
+      // En ligne : pattern data URL (identique au logo école)
+      // Compresser côté navigateur et stocker le data URL directement comme photoUrl
+      const photoDataUrl = await compressImageFileToDataUrl(file, {
+        maxEdge: 512,
+        quality: 0.85,
+        mimeType: 'image/jpeg',
+      });
+      setFormData((prev) => ({ ...prev, photoUrl: photoDataUrl }));
+      setPhotoPreviewUrl(photoDataUrl);
       setPhotoSyncStatus('synced');
     } catch (err: any) {
       setError(err.message || 'Erreur lors de l\'upload de la photo');
@@ -233,23 +233,24 @@ export default function StudentEnrollmentForm({
       for (const record of pending) {
         const blob: Blob | undefined = record.blob;
         if (!blob) continue;
-        const formDataObj = new FormData();
-        formDataObj.append('file', blob);
 
         try {
-          const data = await studentsService.uploadPhoto(formDataObj as any);
-          if (data.photoUrl || data.url) {
-            const url = data.photoUrl || data.url;
-            await localDb.execute('student_photos', 'put', {
-              ...record,
-              syncStatus: 'SYNCED',
-              syncedAt: new Date().toISOString(),
-              remoteUrl: url,
-            });
-            setFormData((prev) => ({ ...prev, photoUrl: url }));
-            setPhotoPreviewUrl(url);
-            setPhotoSyncStatus('synced');
-          }
+          // Pattern data URL : compresser le blob et stocker directement comme photoUrl
+          const file = new File([blob], record.fileName || 'photo.jpg', { type: blob.type || 'image/jpeg' });
+          const photoDataUrl = await compressImageFileToDataUrl(file, {
+            maxEdge: 512,
+            quality: 0.85,
+            mimeType: 'image/jpeg',
+          });
+          await localDb.execute('student_photos', 'put', {
+            ...record,
+            syncStatus: 'SYNCED',
+            syncedAt: new Date().toISOString(),
+            remoteUrl: photoDataUrl,
+          });
+          setFormData((prev) => ({ ...prev, photoUrl: photoDataUrl }));
+          setPhotoPreviewUrl(photoDataUrl);
+          setPhotoSyncStatus('synced');
         } catch (err) {
           console.error('Erreur upload photo:', err);
           setPhotoSyncStatus('failed');

@@ -51,6 +51,7 @@ import {
 } from 'lucide-react';
 import { HELM_PLANS, getRecommendedPlan, type HelmPlanKey, fetchPricingPlans, getPlanForStudentCount, type DynamicPricingPlan } from '@/lib/services/HelmPricingService';
 import { formatCurrency } from '@/lib/utils';
+import { compressImageFileToDataUrl } from '@/lib/media';
 import FeexPayCheckout from './FeexPayCheckout';
 import OnboardingAnimation from './OnboardingAnimation';
 
@@ -664,35 +665,19 @@ export default function OnboardingWizard() {
     setErrors({ logo: '' });
 
     try {
-      // Créer un aperçu du logo
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setLogoPreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      // ─── Pattern data URL (identique au module Paramètres identité) ──────
+      // Compresser le logo côté navigateur et stocker le data URL directement
+      // comme logoUrl. Plus besoin de BFF upload route ni de stockage local.
+      const logoDataUrl = await compressImageFileToDataUrl(file, {
+        maxEdge: 1024,
+        quality: 0.82,
+        mimeType: 'image/jpeg',
+      });
 
-      // Si on a déjà un draftId, uploader immédiatement
-      if (data.draftId) {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('draftId', data.draftId);
-
-        const response = await fetch('/api/onboarding/upload-logo', {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.message || 'Erreur lors de l\'upload du logo');
-        }
-
-        const result = await response.json();
-        handleChange('logoUrl', result.logoUrl);
-      }
-      // Sinon, le logo sera uploadé après la création du draft dans handleNext
+      setLogoPreview(logoDataUrl);
+      handleChange('logoUrl', logoDataUrl);
     } catch (error: any) {
-      setErrors({ logo: error.message || 'Erreur lors de l\'upload du logo' });
+      setErrors({ logo: error.message || 'Erreur lors du traitement du logo' });
       setLogoPreview(null);
     } finally {
       setIsUploadingLogo(false);
@@ -785,35 +770,9 @@ export default function OnboardingWizard() {
         const newDraftId = result.id;
         const updatedData = { ...data, draftId: newDraftId };
         setData(updatedData);
-        
-        // Si un logo a été sélectionné mais pas encore uploadé, l'uploader maintenant
-        if (logoPreview && !data.logoUrl) {
-          const fileInput = document.getElementById('logo-upload') as HTMLInputElement;
-          const file = fileInput?.files?.[0];
-          if (file) {
-            try {
-              const formData = new FormData();
-              formData.append('file', file);
-              formData.append('draftId', newDraftId);
+        // Le logo est déjà stocké comme data URL dans data.logoUrl (pattern data URL)
+        // Plus besoin d'upload différé via BFF route.
 
-              const logoResponse = await fetch('/api/onboarding/upload-logo', {
-                method: 'POST',
-                body: formData,
-              });
-
-              if (logoResponse.ok) {
-                const logoResult = await logoResponse.json();
-                const finalData = { ...updatedData, logoUrl: logoResult.logoUrl };
-                setData(finalData);
-                updatedData.logoUrl = logoResult.logoUrl;
-              }
-            } catch (logoError) {
-              console.error('Erreur lors de l\'upload du logo:', logoError);
-              // Ne pas bloquer le workflow si l'upload du logo échoue
-            }
-          }
-        }
-        
         // Sauvegarder dans localStorage
         if (typeof window !== 'undefined') {
           try {

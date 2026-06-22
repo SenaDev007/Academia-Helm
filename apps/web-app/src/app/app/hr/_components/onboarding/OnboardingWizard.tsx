@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react';
 import { X, User, ArrowLeft, ArrowRight, Loader2, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
+import { compressImageFileToDataUrl } from '@/lib/media';
 import { toast } from '@/components/ui/toast';
 import { OnboardingState, INITIAL_STATE, REQUIRED_DOCUMENTS } from './types';
 import { StepIndicator } from './components/StepIndicator';
@@ -122,19 +123,43 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
     const uploadPromises: Promise<any>[] = [];
     for (const [docType, file] of Object.entries(state.documents)) {
       if (file && !state.uploadedDocuments[docType]) {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('documentType', docType);
         uploadPromises.push(
-          hrFetch(hrUrl(`staff/${state.staffId}/documents`, { tenantId }), {
-            method: 'POST',
-            body: formData,
-          }).then(() => {
+          (async () => {
+            // ─── Pattern data URL (identique au logo école + photo profil) ───
+            // Images : compression côté navigateur ; PDF/autres : lecture directe
+            const isImage = file.type.startsWith('image/');
+            let fileDataUrl: string;
+            if (isImage) {
+              fileDataUrl = await compressImageFileToDataUrl(file, {
+                maxEdge: 1600,
+                quality: 0.85,
+                mimeType: 'image/jpeg',
+              });
+            } else {
+              fileDataUrl = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = () => reject(new Error('Lecture du fichier impossible'));
+                reader.readAsDataURL(file);
+              });
+            }
+
+            await hrFetch(hrUrl(`staff/${state.staffId}/documents-data`, { tenantId }), {
+              method: 'POST',
+              body: {
+                documentType: docType,
+                fileName: file.name,
+                fileDataUrl,
+                mimeType: file.type || (isImage ? 'image/jpeg' : 'application/octet-stream'),
+                fileSize: file.size,
+              },
+            });
+
             setState((prev) => ({
               ...prev,
               uploadedDocuments: { ...prev.uploadedDocuments, [docType]: true },
             }));
-          })
+          })()
         );
       }
     }

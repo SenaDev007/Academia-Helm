@@ -203,6 +203,21 @@ export class StorageService {
    * For Vercel Blob or public URLs, use resolveFileUrl() instead.
    */
   async downloadFile(filePath: string): Promise<Buffer> {
+    // ─── Data URL (base64 inline) — décoder directement ───────────────────
+    if (filePath.startsWith('data:')) {
+      const m = /^data:[^;]+;base64,(.+)$/i.exec(filePath);
+      if (m) return Buffer.from(m[1], 'base64');
+      throw new Error('Invalid data URL format');
+    }
+
+    // ─── HTTPS URL — fetch ────────────────────────────────────────────────
+    if (filePath.startsWith('https://') || filePath.startsWith('http://')) {
+      const response = await fetch(filePath);
+      if (!response.ok) throw new Error(`HTTP ${response.status}: ${filePath}`);
+      const arrayBuf = await response.arrayBuffer();
+      return Buffer.from(arrayBuf);
+    }
+
     // ─── R2 / S3 ──────────────────────────────────────────────────────────
     if ((this.storageType === 'r2' || this.storageType === 's3') && this.s3Client) {
       try {
@@ -308,6 +323,11 @@ export class StorageService {
    */
   async resolveFileUrl(filePath: string): Promise<string> {
     if (!filePath) return '';
+
+    // Data URL (base64 inline) — retourner tel quel, utilisable directement dans <img src>
+    if (filePath.startsWith('data:')) {
+      return filePath;
+    }
 
     // Already a full URL (Vercel Blob, external URL, etc.)
     if (filePath.startsWith('https://') || filePath.startsWith('http://')) {

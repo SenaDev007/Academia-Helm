@@ -15,19 +15,20 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { 
-  Stamp, 
-  Plus, 
-  Edit, 
-  Trash2, 
-  Eye, 
-  History, 
-  CheckCircle, 
+import {
+  Stamp,
+  Plus,
+  Edit,
+  Trash2,
+  Eye,
+  History,
+  CheckCircle,
   XCircle,
   Download,
   Upload,
   Settings
 } from 'lucide-react';
+import { compressImageFileToDataUrl } from '@/lib/media';
 
 interface AdministrativeSeal {
   id: string;
@@ -651,16 +652,21 @@ function SealVersionModal({ seal, onClose, onSuccess }: { seal: AdministrativeSe
     setSubmitting(true);
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('sealId', seal.id);
+      // Pattern data URL : compresser côté navigateur et envoyer en JSON
+      // (le BFF route attend du JSON, pas du multipart — c'était le bug)
+      const logoDataUrl = await compressImageFileToDataUrl(file, {
+        maxEdge: 1024,
+        quality: 0.85,
+        mimeType: 'image/png',
+      });
 
       const response = await fetch(`/api/settings/administrative-seals/${seal.id}/versions`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json',
         },
-        body: formData,
+        body: JSON.stringify({ logoUrl: logoDataUrl }),
       });
 
       if (response.ok) {

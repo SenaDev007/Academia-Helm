@@ -91,6 +91,46 @@ export class ReviewsController {
     return { url };
   }
 
+  /**
+   * Upload photo via data URL (base64) — pattern identique au logo école.
+   * Body: { photoDataUrl: string }
+   *
+   * Le frontend compresse l'image côté navigateur et envoie le data URL en JSON.
+   * Le data URL est retourné tel quel et sera stocké directement dans review.photoUrl.
+   */
+  @Public()
+  @Throttle({ medium: { limit: 10, ttl: 60000 } })
+  @Post('upload-photo-data')
+  async uploadPhotoDataUrl(@Body() body: { photoDataUrl: string }) {
+    if (!body?.photoDataUrl || typeof body.photoDataUrl !== 'string') {
+      throw new BadRequestException('photoDataUrl requis (data URL base64)');
+    }
+    const trimmed = body.photoDataUrl.trim();
+    const m = /^data:([^;]+);base64,(.+)$/i.exec(trimmed);
+    if (!m) {
+      throw new BadRequestException('Format attendu : data URL base64 (data:image/...;base64,...).');
+    }
+    const mimeType = m[1].trim().toLowerCase();
+    if (!REVIEW_PHOTO_LIMITS.allowedMime.includes(mimeType)) {
+      throw new BadRequestException(
+        `Format non supporté : ${mimeType}. Formats acceptés : JPG, PNG, WebP, AVIF.`,
+      );
+    }
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.from(m[2], 'base64');
+    } catch {
+      throw new BadRequestException('Base64 invalide.');
+    }
+    if (buffer.length > REVIEW_PHOTO_LIMITS.maxFileSize) {
+      throw new BadRequestException(
+        `Image trop volumineuse (max ${Math.round(REVIEW_PHOTO_LIMITS.maxFileSize / 1024)} Ko).`,
+      );
+    }
+    // Retourner le data URL tel quel — il sera stocké directement dans review.photoUrl
+    return { url: trimmed };
+  }
+
   @Public()
   @Get('published')
   getPublished(

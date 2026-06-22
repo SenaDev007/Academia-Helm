@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 import { getApiBaseUrl } from '@/lib/utils/urls';
+import { compressImageFileToDataUrl } from '@/lib/media';
 import { toast } from '@/components/ui/toast';
 import { HRShell } from '@/app/app/hr/_components/HRShell';
 
@@ -326,20 +327,23 @@ export default function DocumentConfigPage() {
                         if (!file) return;
                         try {
                           toast({ variant: 'default', title: 'Upload en cours...' });
-                          const tenantId = getTenantId();
+                          // Pattern data URL : compresser côté navigateur et envoyer en JSON
+                          const logoDataUrl = await compressImageFileToDataUrl(file, {
+                            maxEdge: 1024,
+                            quality: 0.85,
+                            mimeType: 'image/png',
+                          });
                           const baseUrl = getApiBaseUrl();
-                          const formData = new FormData();
-                          formData.append('photo', file);
-                          const res = await fetch(`${baseUrl}/reviews/upload-photo`, {
+                          const res = await fetch(`${baseUrl}/reviews/upload-photo-data`, {
                             method: 'POST',
-                            headers: { ...getClientAuthorizationHeader() },
+                            headers: { 'Content-Type': 'application/json', ...getClientAuthorizationHeader() },
                             credentials: 'include',
-                            body: formData,
+                            body: JSON.stringify({ photoDataUrl: logoDataUrl }),
                           });
                           if (!res.ok) throw new Error('Upload échoué');
                           const data = await res.json();
-                          if (data.photoUrl) {
-                            update('watermark_image_url', data.photoUrl);
+                          if (data.url) {
+                            update('watermark_image_url', data.url);
                             toast({ variant: 'success', title: 'Logo uploadé avec succès !' });
                           }
                         } catch (err: any) {

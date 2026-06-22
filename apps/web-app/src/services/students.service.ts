@@ -407,19 +407,11 @@ class StudentsService {
   }
 
   /**
-   * Upload la photo d'un étudiant
-   * Note: FormData ne peut pas être stringifié, donc on ajuste method et headers.
+   * @deprecated L'upload de photo utilise maintenant le pattern data URL :
+   * le frontend compresse l'image côté navigateur (compressImageFileToDataUrl)
+   * et envoie le data URL directement comme photoUrl dans le body JSON de
+   * POST /students. Plus besoin de route BFF dédiée ni de multipart.
    */
-  async uploadPhoto(formData: FormData): Promise<any> {
-    // Si FormData, apiFetch ou apiClient gère automatiquement le header multipart/form-data
-    return apiFetch(`${BASE_URL}/upload-photo`, {
-      method: "POST",
-      body: formData,
-      headers: {
-        "Content-Type": undefined, // Let Axios set the correct boundary
-      },
-    });
-  }
 }
 
 export const studentsService = new StudentsService();

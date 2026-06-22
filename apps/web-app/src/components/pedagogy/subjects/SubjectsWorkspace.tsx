@@ -44,6 +44,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useBilingual, BilingualTrack } from '@/contexts/BilingualContext';
 import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
 import { pedagogyService } from '@/services/pedagogy.service';
+import { compressImageFileToDataUrl } from '@/lib/media';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -593,13 +594,32 @@ export default function SubjectsWorkspace() {
   const handleUploadProgram = async (subjectId: string, file: File) => {
     setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('folder', 'programs');
+      // Pattern data URL : compresser/lire côté navigateur et envoyer en JSON
+      const isImage = file.type.startsWith('image/');
+      let fileDataUrl: string;
+      if (isImage) {
+        fileDataUrl = await compressImageFileToDataUrl(file, {
+          maxEdge: 1600,
+          quality: 0.85,
+          mimeType: 'image/jpeg',
+        });
+      } else {
+        fileDataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(new Error('Lecture du fichier impossible'));
+          reader.readAsDataURL(file);
+        });
+      }
 
-      const { url } = await pedagogyFetch<{ url: string }>('/api/pedagogy/academic-series/programs/upload', {
+      const { url } = await pedagogyFetch<{ url: string }>('/api/pedagogy/academic-series/programs/upload-data', {
         method: 'POST',
-        body: formData
+        body: {
+          fileDataUrl,
+          fileName: file.name,
+          mimeType: file.type || (isImage ? 'image/jpeg' : 'application/pdf'),
+          folder: 'programs',
+        }
       });
 
       await pedagogyFetch('/api/pedagogy/academic-series/programs', {

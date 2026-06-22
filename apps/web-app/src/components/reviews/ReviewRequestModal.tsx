@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { buildReviewsSubmitUrl } from '@/lib/reviews-api-url';
+import { compressImageFileToDataUrl } from '@/lib/media';
 import {
   HELM_GOLD,
   HELM_GOLD_LIGHT,
@@ -141,11 +142,16 @@ export default function ReviewRequestModal({
       setPhotoPreview(previewUrl);
       setPhotoUploading(true);
       try {
-        const fd = new FormData();
-        fd.append('photo', file);
-        const res = await fetch('/api/public/reviews/upload-photo', {
+        // Pattern data URL : compresser côté navigateur et envoyer en JSON
+        const photoDataUrl = await compressImageFileToDataUrl(file, {
+          maxEdge: 512,
+          quality: 0.85,
+          mimeType: 'image/jpeg',
+        });
+        const res = await fetch(buildReviewsSubmitUrl('/upload-photo-data'), {
           method: 'POST',
-          body: fd,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ photoDataUrl }),
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));

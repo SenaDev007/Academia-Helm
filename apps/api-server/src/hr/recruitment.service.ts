@@ -2077,7 +2077,20 @@ export class RecruitmentPrismaService {
     // Now: 4 parallel uploads ≈ 2-5s total
     const uploadPromises: Array<Promise<{ type: string; file: Express.Multer.File | null; path: string | null }>> = [];
 
+    // ─── File uploads ──────────────────────────────────────────────────────
+    // Si _useDataUrlStorage est vrai (endpoint apply-data), on stocke les data URLs
+    // directement dans filePath au lieu de les uploader vers S3/R2.
+    const useDataUrlStorage = body._useDataUrlStorage === true;
+    const dataUrlForFile = (f: Express.Multer.File): string | null => {
+      if (!useDataUrlStorage || !f?.buffer) return null;
+      return `data:${f.mimetype};base64,${f.buffer.toString('base64')}`;
+    };
+
     if (hasCV) {
+      const dataUrlPath = dataUrlForFile(files.cv[0]);
+      if (dataUrlPath) {
+        uploadPromises.push(Promise.resolve({ type: 'cv', file: files.cv[0], path: dataUrlPath }));
+      } else {
       uploadPromises.push(
         this.storageService
           .uploadFile(files.cv[0], `candidate-docs/${tenantId}/pending/cv`)
@@ -2087,9 +2100,14 @@ export class RecruitmentPrismaService {
             return { type: 'cv', file: files.cv[0] as Express.Multer.File, path: null };
           }),
       );
+      }
     }
 
     if (hasApplicationLetter) {
+      const dataUrlPath = dataUrlForFile(files.applicationLetter[0]);
+      if (dataUrlPath) {
+        uploadPromises.push(Promise.resolve({ type: 'applicationLetter', file: files.applicationLetter[0], path: dataUrlPath }));
+      } else {
       uploadPromises.push(
         this.storageService
           .uploadFile(files.applicationLetter[0], `candidate-docs/${tenantId}/pending/application-letter`)
@@ -2099,9 +2117,14 @@ export class RecruitmentPrismaService {
             return { type: 'applicationLetter', file: files.applicationLetter[0] as Express.Multer.File, path: null };
           }),
       );
+      }
     }
 
     if (hasLetter) {
+      const dataUrlPath = dataUrlForFile(files.coverLetter[0]);
+      if (dataUrlPath) {
+        uploadPromises.push(Promise.resolve({ type: 'coverLetter', file: files.coverLetter[0], path: dataUrlPath }));
+      } else {
       uploadPromises.push(
         this.storageService
           .uploadFile(files.coverLetter[0], `candidate-docs/${tenantId}/pending/cover-letter`)
@@ -2111,9 +2134,14 @@ export class RecruitmentPrismaService {
             return { type: 'coverLetter', file: files.coverLetter[0] as Express.Multer.File, path: null };
           }),
       );
+      }
     }
 
     if (files?.recommendationLetter && files.recommendationLetter.length > 0) {
+      const dataUrlPath = dataUrlForFile(files.recommendationLetter[0]);
+      if (dataUrlPath) {
+        uploadPromises.push(Promise.resolve({ type: 'recommendationLetter', file: files.recommendationLetter[0], path: dataUrlPath }));
+      } else {
       uploadPromises.push(
         this.storageService
           .uploadFile(files.recommendationLetter[0], `candidate-docs/${tenantId}/pending/recommendation`)
@@ -2123,6 +2151,7 @@ export class RecruitmentPrismaService {
             return { type: 'recommendationLetter', file: files.recommendationLetter[0] as Express.Multer.File, path: null };
           }),
       );
+      }
     }
 
     const uploadResults = await Promise.all(uploadPromises);

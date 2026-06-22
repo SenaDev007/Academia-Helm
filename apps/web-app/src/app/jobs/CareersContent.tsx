@@ -34,6 +34,7 @@ import {
 import { Header } from '@/components/ui/header-1';
 import { JobCardSkeleton } from '@/components/loading/Skeleton';
 import { JobCardSkeletonMobile } from '@/components/loading/SkeletonMobile';
+import { compressImageFileToDataUrl } from '@/lib/media';
 import RichContent from '@/components/ui/RichContent';
 
 
@@ -496,36 +497,61 @@ export function CareersContent({
     setSubmitResult(null);
 
     try {
-      const formData = new FormData();
-      formData.append('tenantId', selectedSchool.tenantId || selectedSchool.id);
-      formData.append('jobId', selectedJob.id);
-      formData.append('firstName', firstName);
-      formData.append('lastName', lastName);
-      formData.append('email', email);
-      formData.append('phone', phone);
-      formData.append('address', address);
-      formData.append('country', country);
-      formData.append('city', city);
-      formData.append('gender', gender);
-      formData.append('linkedinUrl', linkedinUrl);
-      
-      // Experiences/education/skills collection UI has been removed; the
-      // state arrays are always empty here, so we send empty arrays for
-      // backward compatibility with the backend payload contract.
-      formData.append('experiences', JSON.stringify(experiences));
-      formData.append('education', JSON.stringify(education));
-      formData.append('skills', JSON.stringify(skills));
-      formData.append('pitch', pitch);
+      // ─── Pattern data URL (identique au logo école + photo profil) ───────
+      // Convertir chaque fichier en data URL côté navigateur :
+      // - Images : compression (1600px, JPEG 0.85)
+      // - PDF et autres : lecture directe en base64
+      const fileToDataUrl = async (file: File | null): Promise<{ fileName: string; fileDataUrl: string; mimeType: string; fileSize: number } | null> => {
+        if (!file) return null;
+        const isImage = file.type.startsWith('image/');
+        let fileDataUrl: string;
+        if (isImage) {
+          fileDataUrl = await compressImageFileToDataUrl(file, { maxEdge: 1600, quality: 0.85, mimeType: 'image/jpeg' });
+        } else {
+          fileDataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = () => reject(new Error('Lecture du fichier impossible'));
+            reader.readAsDataURL(file);
+          });
+        }
+        return {
+          fileName: file.name,
+          fileDataUrl,
+          mimeType: file.type || (isImage ? 'image/jpeg' : 'application/octet-stream'),
+          fileSize: file.size,
+        };
+      };
 
-      if (cvFile) formData.append('cv', cvFile);
-      if (applicationLetterFile) formData.append('applicationLetter', applicationLetterFile);
-      if (coverFile) formData.append('coverLetter', coverFile);
-      if (recoFile) formData.append('recommendationLetter', recoFile);
+      const cvData = await fileToDataUrl(cvFile);
+      const applicationLetterData = await fileToDataUrl(applicationLetterFile);
+      const coverData = await fileToDataUrl(coverFile);
+      const recoData = await fileToDataUrl(recoFile);
+
+      const payload: any = {
+        tenantId: selectedSchool.tenantId || selectedSchool.id,
+        jobId: selectedJob.id,
+        firstName,
+        lastName,
+        email,
+        phone,
+        address,
+        country,
+        city,
+        gender,
+        linkedinUrl,
+        experiences,
+        education,
+        skills,
+        pitch,
+      };
+      if (cvData) payload.cv = cvData;
+      if (applicationLetterData) payload.applicationLetter = applicationLetterData;
+      if (coverData) payload.coverLetter = coverData;
+      if (recoData) payload.recommendationLetter = recoData;
 
       // Race the fetch against a hard 25s timeout. If the backend is too slow
-      // (AI analysis blocking, R2 upload slow, etc.), we optimistically show
-      // a success message — the candidate has been created with heuristic
-      // scores and the AI analysis runs in the background.
+      // (AI analysis blocking, etc.), we optimistically show a success message.
       const FETCH_TIMEOUT_MS = 25_000;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -534,9 +560,10 @@ export function CareersContent({
       let data: any;
       let timedOut = false;
       try {
-        res = await fetch('/api/hr/recruitment/apply', {
+        res = await fetch('/api/hr/recruitment/apply-data', {
           method: 'POST',
-          body: formData,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
           signal: controller.signal,
         });
         clearTimeout(timeoutId);

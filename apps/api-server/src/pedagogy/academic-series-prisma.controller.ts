@@ -51,6 +51,42 @@ export class AcademicSeriesPrismaController {
     return { url };
   }
 
+  /**
+   * Upload programme via data URL (base64) — pattern identique au logo école.
+   * Body: { fileDataUrl, fileName?, mimeType?, folder? }
+   *
+   * Supporte les images ET les PDF. Le data URL est retourné tel quel et
+   * sera stocké directement dans program.documentUrl.
+   */
+  @Post('programs/upload-data')
+  async uploadProgramData(
+    @Body() body: { fileDataUrl: string; fileName?: string; mimeType?: string; folder?: string },
+  ) {
+    if (!body?.fileDataUrl || typeof body.fileDataUrl !== 'string') {
+      throw new BadRequestException('fileDataUrl requis (data URL base64)');
+    }
+    const trimmed = body.fileDataUrl.trim();
+    const m = /^data:([^;]+);base64,(.+)$/i.exec(trimmed);
+    if (!m) {
+      throw new BadRequestException('Format attendu : data URL base64 (data:...;base64,...).');
+    }
+    const mimeType = m[1].trim().toLowerCase();
+    if (!mimeType.startsWith('image/') && mimeType !== 'application/pdf') {
+      throw new BadRequestException('Type non supporté. Formats acceptés : images, PDF.');
+    }
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.from(m[2], 'base64');
+    } catch {
+      throw new BadRequestException('Base64 invalide.');
+    }
+    if (buffer.length > 20 * 1024 * 1024) {
+      throw new BadRequestException('Fichier trop volumineux (max 20 Mo).');
+    }
+    // Retourner le data URL tel quel — sera stocké directement dans documentUrl
+    return { url: trimmed };
+  }
+
   @Put('programs/:id/approve')
   async approveProgram(
     @Param('id') id: string,

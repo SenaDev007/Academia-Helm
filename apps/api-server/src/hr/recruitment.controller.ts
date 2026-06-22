@@ -296,6 +296,50 @@ export class RecruitmentPrismaController {
     return this.service.applyJob(body, files);
   }
 
+  /**
+   * Public job apply via data URLs (base64) — pattern identique au logo école.
+   *
+   * Body: { ...ApplyJobDto, cv?, applicationLetter?, coverLetter?, recommendationLetter? }
+   * où chaque fichier est { fileName, fileDataUrl, mimeType, fileSize }
+   *
+   * Plus fiable que le multipart via BFF proxy. Supporte les PDF et images.
+   */
+  @Public()
+  @Post('apply-data')
+  @SkipThrottle()
+  async applyJobDataUrl(@Body() body: any) {
+    // Convertir les data URLs en pseudo-files Express.Multer.File
+    const convertToFile = (f: any): Express.Multer.File | null => {
+      if (!f || !f.fileDataUrl) return null;
+      const m = /^data:([^;]+);base64,(.+)$/i.exec(f.fileDataUrl);
+      if (!m) return null;
+      const buffer = Buffer.from(m[2], 'base64');
+      return {
+        buffer,
+        originalname: f.fileName || 'document',
+        mimetype: f.mimeType || m[1],
+        size: f.fileSize || buffer.length,
+        fieldname: 'file',
+        encoding: '7bit',
+        destination: '',
+        filename: f.fileName || 'document',
+        path: '',
+        stream: null as any,
+      } as unknown as Express.Multer.File;
+    };
+
+    const files: any = {};
+    if (body.cv) files.cv = [convertToFile(body.cv)].filter(Boolean);
+    if (body.applicationLetter) files.applicationLetter = [convertToFile(body.applicationLetter)].filter(Boolean);
+    if (body.coverLetter) files.coverLetter = [convertToFile(body.coverLetter)].filter(Boolean);
+    if (body.recommendationLetter) files.recommendationLetter = [convertToFile(body.recommendationLetter)].filter(Boolean);
+
+    // Passer un flag au service pour qu'il stocke les data URLs directement
+    // au lieu de les uploader vers S3/R2
+    body._useDataUrlStorage = true;
+    return this.service.applyJob(body, files);
+  }
+
   // ─── Candidate Document Delete ──────────────────────────────────────────
 
   @Delete('candidates/:candidateId/documents/:docId')

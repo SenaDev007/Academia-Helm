@@ -1748,7 +1748,7 @@ export default function StaffDetailPage() {
                     <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex gap-2">
                       <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
                       <p className="text-xs text-amber-800">
-                        Un email sera envoyé à <strong>{member.email || 'l'adresse du destinataire'}</strong> avec un lien sécurisé valide 7 jours.
+                        Un email sera envoyé à <strong>{member.email || "l'adresse du destinataire"}</strong> avec un lien sécurisé valide 7 jours.
                         Les documents téléversés seront automatiquement catégorisés dans l'onglet Documents.
                       </p>
                     </div>

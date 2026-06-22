@@ -16,6 +16,7 @@ import { ContractsPrismaService } from './contracts-prisma.service';
 import { ContractPdfService } from './services/contract-pdf.service';
 import { ContractSignTokenService } from './services/contract-sign-token.service';
 import { RecruitmentNotificationService } from './recruitment-notification.service';
+import { PrismaService } from '../database/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
@@ -30,6 +31,7 @@ export class ContractsPrismaController {
     private readonly contractPdfService: ContractPdfService,
     private readonly signTokenService: ContractSignTokenService,
     private readonly notificationService: RecruitmentNotificationService,
+    private readonly prisma: PrismaService,
   ) {}
 
   // ─── Contracts CRUD ─────────────────────────────────────────────────────────
@@ -450,15 +452,34 @@ export class ContractsPrismaController {
       throw new BadRequestException('Contrat ou personnel introuvable');
     }
 
-    // 2. Générer un nouveau token de signature
+    // 2. Récupérer le candidateId via HrApplication (staffId → candidateId)
+    // notifyHired() cherche le candidat dans HrCandidate, pas dans Staff.
+    // Il faut donc retrouver le candidateId original via l'application.
+    let candidateId = '';
+    try {
+      const app = await this.prisma.hrApplication.findFirst({
+        where: { staffId: contractWithStaff.staffId },
+        select: { candidateId: true },
+        orderBy: { createdAt: 'desc' },
+      });
+      candidateId = app?.candidateId || '';
+    } catch (e) {
+      // Fallback
+    }
+
+    if (!candidateId) {
+      throw new BadRequestException('Impossible de retrouver le candidat associé à ce personnel.');
+    }
+
+    // 3. Générer un nouveau token de signature
     const tokenResult = await this.signTokenService.generateToken(contractId, tid);
 
-    // 3. Renvoyer l'email d'embauche au candidat avec le nouveau lien
+    // 4. Renvoyer l'email d'embauche au candidat avec le nouveau lien
     try {
       await this.notificationService.notifyHired({
-        candidateId: contractWithStaff.staffId || '',
+        candidateId,
         tenantId: tid,
-        jobId: '', // pas critique pour l'email
+        jobId: '',
         contractType: contractWithStaff.contractType,
         startDate: contractWithStaff.startDate,
         salary: String(contractWithStaff.baseSalary),

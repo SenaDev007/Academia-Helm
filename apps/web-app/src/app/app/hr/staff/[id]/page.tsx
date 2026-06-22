@@ -28,6 +28,8 @@ import {
   Award,
   Camera,
   Trash2,
+  RefreshCw,
+  Key,
   Eye,
   Clock,
   BadgeCheck,
@@ -1141,6 +1143,50 @@ export default function StaffDetailPage() {
                       <InfoField label="Numéro CNI / Passeport" value={member.nationalId || 'Non renseigné'} />
                       <InfoField label="Numéro CNSS" value={member.cnssNumber || 'Non renseigné'} />
                       <InfoField label="Numéro IFU" value={member.ifuNumber || 'N/A'} />
+                    </div>
+                  </section>
+
+                  {/* ─── Section: Identifiants de connexion ─── */}
+                  <section className="md:col-span-2 pt-6 border-t border-gray-50">
+                    <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                      <Key size={20} className="text-blue-500" />
+                      Identifiants de connexion
+                    </h3>
+                    <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-700">Compte utilisateur</p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Générez ou régénérez les identifiants de connexion (nom d'utilisateur + mot de passe temporaire).
+                          Un email sera envoyé au personnel avec ses identifiants et le lien de connexion.
+                        </p>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Générer/régénérer les identifiants de connexion pour ${member.firstName} ${member.lastName} ? Un email sera envoyé à ${member.email || 'N/A'}.`)) return;
+                          try {
+                            setSaving(true);
+                            const res = await hrFetch(hrUrl(`staff/${member.id}/generate-credentials`, { tenantId: tenant?.id }), { method: 'POST' });
+                            if (res?.success) {
+                              toast({
+                                variant: 'success',
+                                title: 'Identifiants générés !',
+                                description: `Email envoyé à ${res.email || member.email}. Identifiant: ${res.username || 'N/A'}`,
+                              });
+                            } else {
+                              toast({ variant: 'error', title: 'Erreur', description: res?.error || 'Échec de la génération' });
+                            }
+                          } catch (err: any) {
+                            toast({ variant: 'error', title: 'Erreur', description: err.message });
+                          } finally {
+                            setSaving(false);
+                          }
+                        }}
+                        disabled={saving}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white rounded-xl shadow-sm hover:opacity-90 disabled:opacity-50 transition bg-[#1A2BA6] shrink-0 ml-4"
+                      >
+                        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                        Régénérer les identifiants
+                      </button>
                     </div>
                   </section>
                 </div>

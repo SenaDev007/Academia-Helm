@@ -49,6 +49,7 @@ import {
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { formatCurrency } from '@/lib/utils';
+import { compressImageFileToDataUrl } from '@/lib/media';
 import { toast } from '@/components/ui/toast';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -243,7 +244,7 @@ export default function StaffDetailPage() {
 
   useEffect(() => { fetchMember(); }, [fetchMember]);
 
-  // ─── Photo Upload ───────────────────────────────────────────────────────────
+  // ─── Photo Upload (pattern data URL — identique au logo école) ────────────
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !tenant?.id) return;
@@ -253,23 +254,31 @@ export default function StaffDetailPage() {
       toast({ variant: 'error', title: 'Format invalide. Utilisez JPEG, PNG ou WebP.' });
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      toast({ variant: 'error', title: 'Fichier trop volumineux (max 5 Mo).' });
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ variant: 'error', title: 'Fichier trop volumineux (max 10 Mo).' });
       return;
     }
 
     try {
       setPhotoUploading(true);
-      const formData = new FormData();
-      formData.append('photo', file);
 
-      await hrFetch<any>(hrUrl(`staff/${id}/photo`, { tenantId: tenant.id }), {
-        method: 'POST',
-        body: formData,
+      // 1. Compresser l'image côté navigateur → data URL (base64)
+      const photoDataUrl = await compressImageFileToDataUrl(file, {
+        maxEdge: 512,        // 512px max pour photo de profil (suffisant)
+        quality: 0.85,
+        mimeType: 'image/jpeg',
       });
+
+      // 2. Envoyer le data URL en JSON (pas de multipart/form-data)
+      await hrFetch<any>(hrUrl(`staff/${id}/photo-data`, { tenantId: tenant.id }), {
+        method: 'POST',
+        body: { photoDataUrl },
+      });
+
       toast({ variant: 'success', title: 'Photo mise à jour avec succès' });
       fetchMember();
     } catch (err: any) {
+      console.error('Photo upload error:', err);
       toast({ variant: 'error', title: err.message || 'Erreur lors du téléchargement de la photo' });
     } finally {
       setPhotoUploading(false);
@@ -1613,6 +1622,146 @@ export default function StaffDetailPage() {
           </div>
         </div>
       )}
+
+      {/* ─── Modal : Relance demande de documents ─── */}
+      <AnimatePresence>
+        {docRequestOpen && member && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+            onClick={() => !docRequestLoading && setDocRequestOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 10 }}
+              transition={{ duration: 0.2 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header bleu Helm */}
+              <div className="px-6 py-5" style={{ background: 'linear-gradient(135deg, #0D1F6E 0%, #1A2BA6 100%)' }}>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center">
+                    <Send className="h-5 w-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-white font-bold text-base">Demande de documents</h3>
+                    <p className="text-white/70 text-xs mt-0.5">Envoi d'un lien de télérversement par email</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 space-y-4">
+                {docRequestResult ? (
+                  // ─── Résultat ───
+                  <div className="space-y-4">
+                    {docRequestResult.success ? (
+                      <>
+                        <div className="flex flex-col items-center text-center space-y-3 py-2">
+                          <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center">
+                            <CheckCircle2 className="h-7 w-7 text-emerald-600" />
+                          </div>
+                          <h4 className="text-lg font-bold text-slate-900">Demande envoyée !</h4>
+                          <p className="text-sm text-slate-600">{docRequestResult.message}</p>
+                        </div>
+                        {docRequestResult.uploadUrl && (
+                          <div className="bg-slate-50 rounded-xl p-3 space-y-1">
+                            <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Lien de télérversement</p>
+                            <p className="text-xs text-slate-600 break-all font-mono bg-white rounded p-2 border border-slate-200">
+                              {docRequestResult.uploadUrl}
+                            </p>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="flex flex-col items-center text-center space-y-3 py-2">
+                        <div className="w-14 h-14 rounded-full bg-rose-100 flex items-center justify-center">
+                          <AlertCircle className="h-7 w-7 text-rose-600" />
+                        </div>
+                        <h4 className="text-lg font-bold text-slate-900">Échec de l'envoi</h4>
+                        <p className="text-sm text-slate-600">{docRequestResult.message}</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  // ─── Confirmation ───
+                  <>
+                    <div className="bg-slate-50 rounded-xl p-4 space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-500">Destinataire :</span>
+                        <span className="font-bold text-slate-900">{member.firstName} {member.lastName}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-500">Email :</span>
+                        <span className="font-medium text-slate-700">{member.email || 'Non renseigné'}</span>
+                      </div>
+                    </div>
+
+                    <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex gap-2">
+                      <FileText className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+                      <div className="text-xs text-blue-800 space-y-1">
+                        <p className="font-bold">Documents qui seront demandés :</p>
+                        <ul className="list-disc list-inside space-y-0.5 text-blue-700">
+                          <li>Pièce d'identité / Passeport <span className="text-rose-500 font-bold">*</span></li>
+                          <li>Diplôme le plus élevé <span className="text-rose-500 font-bold">*</span></li>
+                          <li>CV / Curriculum Vitae</li>
+                          <li>Attestations de travail</li>
+                          <li>Attestation CNSS, Certificat médical...</li>
+                        </ul>
+                        <p className="text-[10px] text-blue-500 mt-1">* obligatoires</p>
+                      </div>
+                    </div>
+
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex gap-2">
+                      <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                      <p className="text-xs text-amber-800">
+                        Un email sera envoyé à <strong>{member.email || 'l'adresse du destinataire'}</strong> avec un lien sécurisé valide 7 jours.
+                        Les documents téléversés seront automatiquement catégorisés dans l'onglet Documents.
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div className="px-6 py-4 bg-slate-50 flex items-center justify-end gap-3">
+                {docRequestResult ? (
+                  <button
+                    onClick={() => setDocRequestOpen(false)}
+                    className="px-5 py-2 text-sm font-bold text-white rounded-xl shadow-sm hover:opacity-90 transition"
+                    style={{ backgroundColor: '#0D1F6E' }}
+                  >
+                    Fermer
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => setDocRequestOpen(false)}
+                      disabled={docRequestLoading}
+                      className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 rounded-xl transition"
+                    >
+                      Annuler
+                    </button>
+                    <button
+                      onClick={sendDocRequest}
+                      disabled={docRequestLoading || !member.email}
+                      className="flex items-center gap-2 px-5 py-2 text-sm font-bold text-white rounded-xl shadow-sm hover:opacity-90 disabled:opacity-50 transition"
+                      style={{ backgroundColor: '#0D1F6E' }}
+                    >
+                      {docRequestLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                      Envoyer la demande
+                    </button>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Staff Termination Modal */}
       <StaffTerminationModal

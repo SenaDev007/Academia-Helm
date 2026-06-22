@@ -311,6 +311,30 @@ export class StaffPrismaController {
     return this.staffService.uploadStaffPhoto(staffId, tid, file);
   }
 
+  /**
+   * Upload photo via data URL (base64) — pattern identique au logo école.
+   * Body: { photoDataUrl: string }
+   *
+   * Le frontend compresse l'image côté navigateur (compressImageFileToDataUrl)
+   * et envoie le data URL en JSON. Plus fiable que le multipart via BFF proxy.
+   */
+  @Post(':id/photo-data')
+  async uploadPhotoDataUrl(
+    @GetTenant() tenant: any,
+    @Param('id') staffId: string,
+    @Body() body: { photoDataUrl: string },
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    if (!body?.photoDataUrl || typeof body.photoDataUrl !== 'string') {
+      throw new BadRequestException('photoDataUrl requis (data URL base64)');
+    }
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.staffService.uploadStaffPhotoDataUrl(staffId, tid, body.photoDataUrl);
+  }
+
   @Get(':id/photo')
   async getPhoto(@GetTenant() tenant: any, @Param('id') staffId: string) {
     return this.staffService.getStaffPhoto(staffId, tenant?.id);

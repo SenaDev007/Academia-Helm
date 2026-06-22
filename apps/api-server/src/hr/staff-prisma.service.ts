@@ -635,6 +635,75 @@ export class StaffPrismaService {
   }
 
   /**
+   * Upload photo depuis un data URL (base64) — pattern identique au logo école.
+   *
+   * Le frontend compresse l'image côté navigateur (compressImageFileToDataUrl)
+   * et envoie le résultat comme JSON string. On stocke directement le data URL
+   * dans la colonne originalUrl (pas de stockage S3/R2 requis).
+   */
+  async uploadStaffPhotoDataUrl(
+    staffId: string,
+    tenantId: string,
+    photoDataUrl: string,
+  ): Promise<any> {
+    // Verify staff exists
+    await this.findStaffById(staffId, tenantId);
+
+    // Valider le format data URL
+    const trimmed = (photoDataUrl ?? '').trim();
+    const m = /^data:([^;]+);base64,(.+)$/i.exec(trimmed);
+    if (!m) {
+      throw new BadRequestException('Format attendu : data URL base64 (data:image/...;base64,...).');
+    }
+    const mimeType = m[1].trim().toLowerCase();
+    if (!mimeType.startsWith('image/')) {
+      throw new BadRequestException('Le fichier doit être une image.');
+    }
+
+    // Vérifier la taille (max 5 Mo décodés)
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.from(m[2], 'base64');
+    } catch {
+      throw new BadRequestException('Base64 invalide.');
+    }
+    if (buffer.length > 5 * 1024 * 1024) {
+      throw new BadRequestException('Image trop volumineuse (max 5 Mo décodés).');
+    }
+
+    // Stocker le data URL directement (même pattern que logoUrl dans tenant_identity_profile)
+    const originalUrl = trimmed;
+    const hdUrl = trimmed;
+    const thumbnailUrl = trimmed;
+
+    // Upsert photo (one per staff) — StaffPhoto n'a pas de champ updatedAt
+    const photo = await this.prisma.staffPhoto.upsert({
+      where: { staffId },
+      create: {
+        ...prismaCreateNoUpdatedAt(),
+        tenantId,
+        staffId,
+        originalUrl,
+        hdUrl,
+        thumbnailUrl,
+      },
+      update: {
+        originalUrl,
+        hdUrl,
+        thumbnailUrl,
+      },
+    });
+
+    return {
+      ...photo,
+      // Les data URLs sont directement utilisables dans <img src>
+      originalUrl,
+      hdUrl,
+      thumbnailUrl,
+    };
+  }
+
+  /**
    * Récupère la photo d'un membre du personnel
    */
   async getStaffPhoto(staffId: string, tenantId: string): Promise<any> {
@@ -644,12 +713,18 @@ export class StaffPrismaService {
     });
     if (!photo) return null;
 
-    // Resolve all URLs for R2/S3 storage
+    // Helper: les data URLs sont utilisables directement, ne pas passer par resolveFileUrl
+    const resolveUrl = async (url: string | null): Promise<string | null> => {
+      if (!url) return null;
+      if (url.startsWith('data:')) return url;
+      try { return await this.storageService.resolveFileUrl(url); } catch { return url; }
+    };
+
     return {
       ...photo,
-      originalUrl: photo.originalUrl ? await this.storageService.resolveFileUrl(photo.originalUrl) : null,
-      hdUrl: photo.hdUrl ? await this.storageService.resolveFileUrl(photo.hdUrl) : null,
-      thumbnailUrl: photo.thumbnailUrl ? await this.storageService.resolveFileUrl(photo.thumbnailUrl) : null,
+      originalUrl: await resolveUrl(photo.originalUrl),
+      hdUrl: await resolveUrl(photo.hdUrl),
+      thumbnailUrl: await resolveUrl(photo.thumbnailUrl),
     };
   }
 

@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Save, Loader2, Image as ImageIcon, Droplet, FileText, Palette,
-  Check,
+  Check, Upload,
 } from 'lucide-react';
 import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 import { getApiBaseUrl } from '@/lib/utils/urls';
@@ -295,7 +295,62 @@ export default function DocumentConfigPage() {
             {(config.watermark_type || 'text') === 'text' ? (
               <TextInput label="Texte du filigrane" value={config.watermark_text || ''} onChange={v => update('watermark_text', v)} placeholder="Ex: Mon École ou CONFIDENTIEL" />
             ) : (
-              <TextInput label="URL du logo (filigrane image)" value={config.watermark_image_url || ''} onChange={v => update('watermark_image_url', v)} placeholder="https://exemple.com/logo.png" />
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Logo (filigrane image)</label>
+                <div className="flex items-center gap-3">
+                  {config.watermark_image_url ? (
+                    <div className="relative">
+                      <img src={config.watermark_image_url} alt="Logo filigrane" className="h-16 w-16 object-contain rounded-lg border border-slate-200" />
+                      <button
+                        onClick={() => update('watermark_image_url', null)}
+                        className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 hover:bg-red-600 transition"
+                        title="Supprimer le logo"
+                      >
+                        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="h-16 w-16 rounded-lg border-2 border-dashed border-slate-300 flex items-center justify-center text-slate-400">
+                      <ImageIcon className="h-6 w-6" />
+                    </div>
+                  )}
+                  <label className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100 rounded-xl cursor-pointer transition">
+                    <Upload className="h-4 w-4" />
+                    {config.watermark_image_url ? 'Changer le logo' : 'Uploader un logo'}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          toast({ variant: 'default', title: 'Upload en cours...' });
+                          const tenantId = getTenantId();
+                          const baseUrl = getApiBaseUrl();
+                          const formData = new FormData();
+                          formData.append('photo', file);
+                          const res = await fetch(`${baseUrl}/reviews/upload-photo`, {
+                            method: 'POST',
+                            headers: { ...getClientAuthorizationHeader() },
+                            credentials: 'include',
+                            body: formData,
+                          });
+                          if (!res.ok) throw new Error('Upload échoué');
+                          const data = await res.json();
+                          if (data.photoUrl) {
+                            update('watermark_image_url', data.photoUrl);
+                            toast({ variant: 'success', title: 'Logo uploadé avec succès !' });
+                          }
+                        } catch (err: any) {
+                          toast({ variant: 'error', title: 'Erreur upload', description: err.message });
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">Formats acceptés : PNG, JPEG, SVG, WebP. Max 2 Mo.</p>
+              </div>
             )}
 
             <div className="grid grid-cols-2 gap-4">

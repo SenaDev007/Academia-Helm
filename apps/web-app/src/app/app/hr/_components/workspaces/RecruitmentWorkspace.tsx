@@ -42,7 +42,12 @@ import {
   HeartHandshake,
   ShieldCheck,
   PowerOff,
-  RefreshCw
+  RefreshCw,
+  Facebook,
+  Twitter,
+  Share2,
+  Link2,
+  MessageCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -1455,12 +1460,39 @@ export function RecruitmentWorkspace() {
                       </div>
                       <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center">
                         <span className="text-xs font-semibold text-[#1A2BA6]">{job.candidates} Candidats</span>
-                        <div className="flex flex-col items-end gap-0.5">
-                          {job.publishedAt && (
-                            <span className="text-[10px] text-emerald-600 font-medium">Publiée le {job.publishedAt.split('T')[0]}</span>
-                          )}
-                          <span className="text-[10px] text-slate-400">Créé le {job.date}</span>
+                        <div className="flex items-center gap-1.5">
+                          {job.status === 'PUBLIÉE' && (() => {
+                            const shareUrl = typeof window !== 'undefined' ? `${window.location.origin}/jobs/${job.slug}` : '';
+                            const shareText = `🎯 Opportunité : ${job.title} — ${job.loc || 'Bénin'}${job.contractType ? ` (${job.contractType})` : ''}. Postulez maintenant sur Academia Helm !`;
+                            const encodedUrl = encodeURIComponent(shareUrl);
+                            const encodedText = encodeURIComponent(shareText);
+                            return (
+                              <div className="flex items-center gap-1">
+                                <a href={`https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}&quote=${encodedText}`} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition" title="Partager sur Facebook">
+                                  <Facebook className="h-3.5 w-3.5" />
+                                </a>
+                                <a href={`https://twitter.com/intent/tweet?text=${encodedText}&url=${encodedUrl}`} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 transition" title="Partager sur X (Twitter)">
+                                  <Twitter className="h-3.5 w-3.5" />
+                                </a>
+                                <a href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodedUrl}`} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition" title="Partager sur LinkedIn">
+                                  <Linkedin className="h-3.5 w-3.5" />
+                                </a>
+                                <a href={`https://wa.me/?text=${encodedText}%20${encodedUrl}`} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition" title="Partager sur WhatsApp">
+                                  <MessageCircle className="h-3.5 w-3.5" />
+                                </a>
+                                <button onClick={() => { navigator.clipboard.writeText(shareUrl); toast({ variant: 'success', title: 'Lien copié !' }); }} className="p-1.5 rounded-lg bg-slate-50 text-slate-500 hover:bg-slate-100 transition" title="Copier le lien">
+                                  <Link2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            );
+                          })()}
                         </div>
+                      </div>
+                      <div className="mt-2 flex flex-col items-end gap-0.5">
+                        {job.publishedAt && (
+                          <span className="text-[10px] text-emerald-600 font-medium">Publiée le {job.publishedAt.split('T')[0]}</span>
+                        )}
+                        <span className="text-[10px] text-slate-400">Créé le {job.date}</span>
                       </div>
                     </div>
                   ))}

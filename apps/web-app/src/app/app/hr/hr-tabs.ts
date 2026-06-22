@@ -33,16 +33,16 @@ export const HR_SUBMODULE_TABS = [
     exact: true,
   },
   {
-    id: 'recruitment',
-    label: 'Recrutement',
-    path: '/app/hr/recruitment',
-    icon: Briefcase,
-  },
-  {
     id: 'recruiter-settings',
     label: 'Recruteur',
     path: '/app/hr/recruitment/settings',
     icon: UserCog,
+  },
+  {
+    id: 'recruitment',
+    label: 'Recrutement',
+    path: '/app/hr/recruitment',
+    icon: Briefcase,
   },
   {
     id: 'staff',
@@ -51,16 +51,16 @@ export const HR_SUBMODULE_TABS = [
     icon: UserCircle,
   },
   {
-    id: 'contracts',
-    label: 'Contrats',
-    path: '/app/hr/contracts',
-    icon: FileCheck,
-  },
-  {
     id: 'contract-config',
     label: 'Config. Contrats',
     path: '/app/hr/contracts/document-config',
     icon: FileEdit,
+  },
+  {
+    id: 'contracts',
+    label: 'Contrats',
+    path: '/app/hr/contracts',
+    icon: FileCheck,
   },
   {
     id: 'collaborators',

@@ -295,7 +295,7 @@ export class ContractPdfService {
       isStage: contract.contractType === 'STAGE',
       isVacataire: contract.contractType === 'VACATAIRE',
       probationDuration: 'un (1) mois (30 jours)',
-      jobResponsibilities: contract.staff?.qualifications || 'Les missions définies par la Direction de l\'établissement',
+      jobResponsibilities: await this.getJobResponsibilitiesForStaff(contract.staffId),
       workLocation: schoolAddress || schoolCity || 'L\'établissement',
       weeklyHours: '40',
       workSchedule: 'Du lundi au vendredi, selon les horaires affichés par la Direction',
@@ -537,7 +537,7 @@ export class ContractPdfService {
       isStage: contract.contractType === 'STAGE',
       isVacataire: contract.contractType === 'VACATAIRE',
       probationDuration: 'un (1) mois (30 jours)',
-      jobResponsibilities: contract.staff?.qualifications || "Les missions définies par la Direction de l'établissement",
+      jobResponsibilities: await this.getJobResponsibilitiesForStaff(contract.staffId),
       workLocation: schoolAddress || schoolCity || "L'établissement",
       weeklyHours: '40',
       workSchedule: 'Du lundi au vendredi, selon les horaires affichés par la Direction',
@@ -972,6 +972,70 @@ export class ContractPdfService {
   }
 
   // ─── Private helpers ────────────────────────────────────────────────────────
+
+  /**
+   * Récupère les missions et responsabilités du poste associé au staff.
+   *
+   * Le staff n'a pas de lien direct vers HrJob, mais on peut remonter via
+   * HrApplication.staffId → HrApplication.jobId → HrJob.missions +
+   * HrJob.responsibilities.
+   *
+   * Si le staff a été créé hors processus de recrutement (ex: saisie directe),
+   * il n'y aura pas d'HrApplication → on fallback sur staff.qualifications
+   * (ancien comportement), puis sur un message générique.
+   *
+   * @returns Une chaîne formatée avec les missions + responsabilités du poste
+   */
+  private async getJobResponsibilitiesForStaff(staffId: string): Promise<string> {
+    try {
+      // Chercher l'application qui a créé ce staff (la plus récente)
+      const application = await this.prisma.hrApplication.findFirst({
+        where: { staffId },
+        include: {
+          job: {
+            select: {
+              title: true,
+              missions: true,
+              responsibilities: true,
+              description: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (application?.job) {
+        const job = application.job;
+        const parts: string[] = [];
+
+        // Missions principales
+        if (job.missions?.trim()) {
+          parts.push(job.missions.trim());
+        }
+
+        // Responsabilités
+        if (job.responsibilities?.trim()) {
+          parts.push(job.responsibilities.trim());
+        }
+
+        // Si ni missions ni responsabilités, fallback sur la description du poste
+        if (parts.length === 0 && job.description?.trim()) {
+          // La description peut être longue — on prend les 500 premiers caractères
+          const desc = job.description.trim();
+          parts.push(desc.length > 500 ? desc.substring(0, 500) + '...' : desc);
+        }
+
+        if (parts.length > 0) {
+          return parts.join(' — ');
+        }
+      }
+    } catch (err: any) {
+      this.logger.warn(`Failed to fetch job responsibilities for staff ${staffId}: ${err.message}`);
+    }
+
+    // Fallback : missions génériques
+    return 'Les missions définies par la Direction de l\'établissement';
+  }
 
   /**
    * Convertit une valeur Prisma Decimal (qui peut être string, number, ou

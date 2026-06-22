@@ -12,10 +12,9 @@ import {
   User,
   PenTool,
   ShieldCheck,
-  Download,
-  Home,
 } from 'lucide-react';
 import { SignatureCanvas } from '@/components/public/SignatureCanvas';
+import { PublicShell, PublicCard, HELM_NAVY, HELM_BLUE, HELM_GOLD } from '@/components/public/PublicShell';
 
 interface ContractInfo {
   token: string;
@@ -105,7 +104,6 @@ export default function ContractSignPage({
       const data = await res.json();
 
       if (!res.ok) {
-        // Distinguer les types d'erreur pour afficher le bon message
         const msg = (data.message || '').toLowerCase();
         if (msg.includes('expiré') || msg.includes('expir')) {
           setState('expired');
@@ -122,7 +120,6 @@ export default function ContractSignPage({
       }
 
       setContractInfo(data);
-      // Pré-remplir le nom avec les infos du staff
       setSignerName(`${data.staffFirstName} ${data.staffLastName}`.trim());
       setState('valid');
     } catch (err: any) {
@@ -173,21 +170,25 @@ export default function ContractSignPage({
   // Loading state
   if (state === 'loading') {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <Loader2 className="w-12 h-12 text-blue-600 animate-spin mx-auto" />
+      <PublicShell schoolName="Academia Helm" subtitle="Vérification du lien...">
+        <div className="flex flex-col items-center justify-center py-20 space-y-4">
+          <Loader2 className="w-12 h-12 animate-spin" style={{ color: HELM_BLUE }} />
           <p className="text-slate-600 font-medium">Vérification du lien de signature...</p>
         </div>
-      </div>
+      </PublicShell>
     );
   }
 
   // Success state
   if (state === 'success') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-blue-50 flex items-center justify-center p-4">
-        <div className="max-w-2xl w-full bg-white rounded-3xl shadow-2xl border border-emerald-200 overflow-hidden">
-          <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 p-8 text-center">
+      <PublicShell
+        schoolName={contractInfo?.schoolName || 'Academia Helm'}
+        schoolLogoUrl={contractInfo?.schoolLogoUrl}
+        subtitle="Signature électronique de contrat"
+      >
+        <div className="bg-white rounded-3xl shadow-2xl border border-emerald-200 overflow-hidden">
+          <div className="p-8 text-center" style={{ background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)' }}>
             <div className="w-20 h-20 mx-auto bg-white rounded-full flex items-center justify-center mb-4">
               <CheckCircle2 className="w-12 h-12 text-emerald-600" strokeWidth={2.5} />
             </div>
@@ -198,19 +199,19 @@ export default function ContractSignPage({
           </div>
 
           <div className="p-8 space-y-6">
-            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5">
+            <div className="rounded-2xl p-5" style={{ background: `${HELM_NAVY}0a`, border: `1px solid ${HELM_BLUE}33` }}>
               <div className="flex items-start gap-3">
-                <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center flex-shrink-0">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: HELM_BLUE }}>
                   <ShieldCheck className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-blue-900 mb-1">Vos identifiants de connexion</h3>
-                  <p className="text-sm text-blue-700">
+                  <h3 className="font-bold mb-1" style={{ color: HELM_NAVY }}>Vos identifiants de connexion</h3>
+                  <p className="text-sm" style={{ color: HELM_BLUE }}>
                     Un email contenant vos <strong>identifiants de connexion</strong> (nom
-                    d'utilisateur et mot de passe temporaire) vient d'être envoyé à votre adresse{' '}
+                    d&apos;utilisateur et mot de passe temporaire) vient d&apos;être envoyé à votre adresse{' '}
                     <strong>{contractInfo?.staffEmail}</strong>.
                   </p>
-                  <p className="text-xs text-blue-600 mt-2">
+                  <p className="text-xs mt-2" style={{ color: HELM_BLUE, opacity: 0.85 }}>
                     Pensez à vérifier vos spams. Vous devrez changer ce mot de passe à votre
                     première connexion.
                   </p>
@@ -222,41 +223,22 @@ export default function ContractSignPage({
               <h3 className="font-bold text-slate-700 mb-3">Prochaines étapes</h3>
               <ol className="space-y-2 text-sm text-slate-600">
                 <li className="flex gap-3">
-                  <span className="flex-shrink-0 w-6 h-6 bg-slate-200 rounded-full flex items-center justify-center font-bold text-xs">
-                    1
-                  </span>
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs text-white" style={{ background: HELM_BLUE }}>1</span>
                   <span>Vérifiez votre boîte mail ({contractInfo?.staffEmail}) pour vos identifiants</span>
                 </li>
                 <li className="flex gap-3">
-                  <span className="flex-shrink-0 w-6 h-6 bg-slate-200 rounded-full flex items-center justify-center font-bold text-xs">
-                    2
-                  </span>
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs text-white" style={{ background: HELM_BLUE }}>2</span>
                   <span>Connectez-vous à la plateforme Academia Helm avec ces identifiants</span>
                 </li>
                 <li className="flex gap-3">
-                  <span className="flex-shrink-0 w-6 h-6 bg-slate-200 rounded-full flex items-center justify-center font-bold text-xs">
-                    3
-                  </span>
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs text-white" style={{ background: HELM_BLUE }}>3</span>
                   <span>Modifiez votre mot de passe temporaire lors de la première connexion</span>
                 </li>
               </ol>
             </div>
-
-            <div className="flex flex-col sm:flex-row gap-3">
-              <a
-                href="https://www.academiahelm.com"
-                className="flex-1 px-6 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"
-              >
-                <Home className="w-4 h-4" /> Aller à l'accueil
-              </a>
-            </div>
-
-            <p className="text-center text-xs text-slate-400">
-              Academia Helm — Plateforme de pilotage éducatif
-            </p>
           </div>
         </div>
-      </div>
+      </PublicShell>
     );
   }
 
@@ -265,35 +247,30 @@ export default function ContractSignPage({
     const errorConfig = {
       expired: {
         icon: AlertCircle,
-        color: 'amber',
         title: 'Lien expiré',
         message:
           'Ce lien de signature a expiré. La période de validité (30 jours) est dépassée. Veuillez contacter l\'établissement pour obtenir un nouveau lien de signature.',
       },
       used: {
         icon: CheckCircle2,
-        color: 'blue',
         title: 'Lien déjà utilisé',
         message:
           'Ce lien de signature a déjà été utilisé. Le contrat a déjà été signé. Aucune action supplémentaire n\'est requise de votre part.',
       },
       'already-signed': {
         icon: CheckCircle2,
-        color: 'emerald',
         title: 'Contrat déjà signé',
         message:
           'Ce contrat a déjà été signé. Aucune action supplémentaire n\'est requise de votre part.',
       },
       'not-found': {
         icon: AlertCircle,
-        color: 'rose',
         title: 'Lien invalide',
         message:
           'Ce lien de signature est invalide ou introuvable. Vérifiez que vous avez bien copié l\'URL complète depuis votre email.',
       },
       error: {
         icon: AlertCircle,
-        color: 'rose',
         title: 'Erreur',
         message:
           'Une erreur est survenue lors de la vérification du lien. Veuillez réessayer plus tard ou contacter l\'établissement.',
@@ -301,33 +278,21 @@ export default function ContractSignPage({
     }[state];
 
     const Icon = errorConfig.icon;
-    const colorMap = {
-      amber: 'from-amber-500 to-amber-600 text-amber-600',
-      blue: 'from-blue-500 to-blue-600 text-blue-600',
-      emerald: 'from-emerald-500 to-emerald-600 text-emerald-600',
-      rose: 'from-rose-500 to-rose-600 text-rose-600',
-    };
 
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <div className="max-w-xl w-full bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden">
-          <div className={`bg-gradient-to-r ${colorMap[errorConfig.color as keyof typeof colorMap].split(' ').slice(0, 2).join(' ')} p-8 text-center`}>
+      <PublicShell schoolName="Academia Helm" subtitle="Signature électronique">
+        <div className="max-w-xl mx-auto bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden">
+          <div className="p-8 text-center" style={{ background: `linear-gradient(135deg, ${HELM_NAVY}, ${HELM_BLUE})` }}>
             <div className="w-20 h-20 mx-auto bg-white rounded-full flex items-center justify-center mb-4">
-              <Icon className={`w-12 h-12 ${colorMap[errorConfig.color as keyof typeof colorMap].split(' ')[2]}`} strokeWidth={2.5} />
+              <Icon className="w-12 h-12 text-rose-500" strokeWidth={2.5} />
             </div>
             <h1 className="text-2xl font-black text-white mb-2">{errorConfig.title}</h1>
           </div>
           <div className="p-8 text-center">
             <p className="text-slate-600">{errorConfig.message}</p>
-            <a
-              href="https://www.academiahelm.com"
-              className="mt-6 inline-flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-colors"
-            >
-              <Home className="w-4 h-4" /> Aller à l'accueil
-            </a>
           </div>
         </div>
-      </div>
+      </PublicShell>
     );
   }
 
@@ -335,33 +300,16 @@ export default function ContractSignPage({
   if (!contractInfo) return null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50">
-      {/* Header avec logo école */}
-      <header className="bg-white border-b border-slate-200">
-        <div className="max-w-4xl mx-auto px-4 py-5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {contractInfo.schoolLogoUrl && (
-              <img
-                src={contractInfo.schoolLogoUrl}
-                alt={contractInfo.schoolName}
-                className="h-10 w-10 rounded-xl object-contain border border-slate-200"
-              />
-            )}
-            <div>
-              <div className="font-bold text-slate-800 text-sm">{contractInfo.schoolName}</div>
-              <div className="text-xs text-slate-500">Signature électronique de contrat</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5 text-xs text-emerald-600 font-bold bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-200">
-            <ShieldCheck className="w-3.5 h-3.5" /> Sécurisé
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-4xl mx-auto px-4 py-8 space-y-6">
+    <PublicShell
+      schoolName={contractInfo.schoolName}
+      schoolLogoUrl={contractInfo.schoolLogoUrl}
+      subtitle="Signature électronique de contrat"
+      maxWidthClass="max-w-4xl"
+    >
+      <div className="space-y-6">
         {/* Title */}
         <div className="text-center space-y-2">
-          <h1 className="text-3xl font-black text-slate-900">
+          <h1 className="text-3xl font-black" style={{ color: HELM_NAVY }}>
             Bonjour {contractInfo.staffFirstName} 👋
           </h1>
           <p className="text-slate-600">
@@ -370,162 +318,118 @@ export default function ContractSignPage({
         </div>
 
         {/* Contract details card */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="bg-slate-900 p-5 text-white">
-            <div className="flex items-center gap-2">
-              <FileText className="w-5 h-5" />
-              <h2 className="text-lg font-bold">Détails du contrat</h2>
-            </div>
-          </div>
-          <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
-            <DetailItem
-              icon={<Building2 className="w-4 h-4" />}
-              label="Établissement"
-              value={contractInfo.schoolName}
-            />
-            <DetailItem
-              icon={<User className="w-4 h-4" />}
-              label="Employé(e)"
-              value={`${contractInfo.staffFirstName} ${contractInfo.staffLastName}`}
-            />
-            <DetailItem
-              icon={<FileText className="w-4 h-4" />}
-              label="Type de contrat"
-              value={CONTRACT_TYPE_LABELS[contractInfo.contractType] || contractInfo.contractType}
-            />
-            <DetailItem
-              icon={<Calendar className="w-4 h-4" />}
-              label="Date de début"
-              value={formatDate(contractInfo.startDate)}
-            />
+        <PublicCard
+          title="Détails du contrat"
+          icon={<FileText className="w-5 h-5" />}
+          accentColor={HELM_NAVY}
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <DetailItem icon={<Building2 className="w-4 h-4" />} label="Établissement" value={contractInfo.schoolName} />
+            <DetailItem icon={<User className="w-4 h-4" />} label="Employé(e)" value={`${contractInfo.staffFirstName} ${contractInfo.staffLastName}`} />
+            <DetailItem icon={<FileText className="w-4 h-4" />} label="Type de contrat" value={CONTRACT_TYPE_LABELS[contractInfo.contractType] || contractInfo.contractType} />
+            <DetailItem icon={<Calendar className="w-4 h-4" />} label="Date de début" value={formatDate(contractInfo.startDate)} />
             {contractInfo.endDate && (
-              <DetailItem
-                icon={<Calendar className="w-4 h-4" />}
-                label="Date de fin"
-                value={formatDate(contractInfo.endDate)}
-              />
+              <DetailItem icon={<Calendar className="w-4 h-4" />} label="Date de fin" value={formatDate(contractInfo.endDate)} />
             )}
-            <DetailItem
-              icon={<Euro className="w-4 h-4" />}
-              label="Salaire de base"
-              value={formatSalary(contractInfo.baseSalary)}
-            />
-            <DetailItem
-              icon={<FileText className="w-4 h-4" />}
-              label="Mode de paiement"
-              value={PAYMENT_MODE_LABELS[contractInfo.paymentMode] || contractInfo.paymentMode}
-            />
+            <DetailItem icon={<Euro className="w-4 h-4" />} label="Salaire de base" value={formatSalary(contractInfo.baseSalary)} />
+            <DetailItem icon={<FileText className="w-4 h-4" />} label="Mode de paiement" value={PAYMENT_MODE_LABELS[contractInfo.paymentMode] || contractInfo.paymentMode} />
             {contractInfo.employerSignedAt && (
-              <DetailItem
-                icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />}
-                label="Signé par l'employeur"
-                value={`${contractInfo.employerSignerName || '—'} le ${formatDate(contractInfo.employerSignedAt)}`}
-              />
+              <DetailItem icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />} label="Signé par l'employeur" value={`${contractInfo.employerSignerName || '—'} le ${formatDate(contractInfo.employerSignedAt)}`} />
             )}
           </div>
-        </div>
+        </PublicCard>
 
         {/* Signature form */}
-        <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="bg-blue-600 p-5 text-white">
-            <div className="flex items-center gap-2">
-              <PenTool className="w-5 h-5" />
-              <h2 className="text-lg font-bold">Votre signature électronique</h2>
-            </div>
-          </div>
-
-          <div className="p-6 space-y-5">
-            {/* Avertissement légal */}
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-              <p className="text-sm text-amber-800">
-                <strong>⚠️ Important :</strong> En signant ci-dessous, vous acceptez
-                électroniquement les termes de ce contrat. Votre signature a la même valeur
-                juridique qu'une signature manuscrite. Votre adresse IP et l'horodatage seront
-                enregistrés pour des raisons de sécurité et de traçabilité.
-              </p>
-            </div>
-
-            {/* Nom du signataire */}
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">
-                Nom complet du signataire
-              </label>
-              <input
-                type="text"
-                value={signerName}
-                onChange={(e) => setSignerName(e.target.value)}
-                placeholder="Votre nom complet"
-                required
-                className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-              <p className="text-xs text-slate-500 mt-1">
-                Ce nom apparaîtra sur le contrat signé comme "Signé par".
-              </p>
-            </div>
-
-            {/* Canvas signature */}
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">
-                Votre signature <span className="text-rose-500">*</span>
-              </label>
-              <SignatureCanvas
-                width={500}
-                height={200}
-                onSignatureChange={setSignatureData}
-                placeholder="Dessinez votre signature ici (souris ou doigt)"
-              />
-              <p className="text-xs text-slate-500 mt-1">
-                Dessinez votre signature dans le cadre ci-dessus. Cliquez sur l'icône gomme en
-                haut à droite pour effacer et recommencer.
-              </p>
-            </div>
-
-            {/* Error display */}
-            {submitError && (
-              <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-rose-500 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-bold text-rose-700 text-sm">Erreur lors de la signature</p>
-                  <p className="text-rose-600 text-sm mt-1">{submitError}</p>
-                </div>
+        <form onSubmit={handleSubmit}>
+          <PublicCard
+            title="Votre signature électronique"
+            icon={<PenTool className="w-5 h-5" />}
+            accentColor={HELM_BLUE}
+          >
+            <div className="space-y-5">
+              {/* Avertissement légal */}
+              <div className="rounded-xl p-4" style={{ background: `${HELM_GOLD}10`, border: `1px solid ${HELM_GOLD}40` }}>
+                <p className="text-sm" style={{ color: HELM_NAVY }}>
+                  <strong>⚠️ Important :</strong> En signant ci-dessous, vous acceptez
+                  électroniquement les termes de ce contrat. Votre signature a la même valeur
+                  juridique qu&apos;une signature manuscrite. Votre adresse IP et l&apos;horodatage seront
+                  enregistrés pour des raisons de sécurité et de traçabilité.
+                </p>
               </div>
-            )}
 
-            {/* Submit button */}
-            <button
-              type="submit"
-              disabled={!signatureData || !signerName.trim() || isSubmitting}
-              className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold text-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" /> Signature en cours...
-                </>
-              ) : (
-                <>
-                  <PenTool className="w-5 h-5" /> Signer électroniquement le contrat
-                </>
+              {/* Nom du signataire */}
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">
+                  Nom complet du signataire
+                </label>
+                <input
+                  type="text"
+                  value={signerName}
+                  onChange={(e) => setSignerName(e.target.value)}
+                  placeholder="Votre nom complet"
+                  required
+                  className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:border-transparent"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Ce nom apparaîtra sur le contrat signé comme &quot;Signé par&quot;.
+                </p>
+              </div>
+
+              {/* Canvas signature */}
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">
+                  Votre signature <span className="text-rose-500">*</span>
+                </label>
+                <SignatureCanvas
+                  width={500}
+                  height={200}
+                  onSignatureChange={setSignatureData}
+                  placeholder="Dessinez votre signature ici (souris ou doigt)"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Dessinez votre signature dans le cadre ci-dessus. Cliquez sur l&apos;icône gomme en
+                  haut à droite pour effacer et recommencer.
+                </p>
+              </div>
+
+              {/* Error display */}
+              {submitError && (
+                <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-rose-500 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold text-rose-700 text-sm">Erreur lors de la signature</p>
+                    <p className="text-rose-600 text-sm mt-1">{submitError}</p>
+                  </div>
+                </div>
               )}
-            </button>
 
-            <p className="text-center text-xs text-slate-400">
-              🔒 Votre signature est chiffrée et stockée de manière sécurisée. Elle est jointe
-              au PDF du contrat et ne sera jamais utilisée à d'autres fins.
-            </p>
-          </div>
+              {/* Submit button */}
+              <button
+                type="submit"
+                disabled={!signatureData || !signerName.trim() || isSubmitting}
+                className="w-full py-4 text-white rounded-xl font-bold text-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                style={{ background: `linear-gradient(135deg, ${HELM_BLUE}, ${HELM_NAVY})` }}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" /> Signature en cours...
+                  </>
+                ) : (
+                  <>
+                    <PenTool className="w-5 h-5" /> Signer électroniquement le contrat
+                  </>
+                )}
+              </button>
+
+              <p className="text-center text-xs text-slate-400">
+                🔒 Votre signature est chiffrée et stockée de manière sécurisée. Elle est jointe
+                au PDF du contrat et ne sera jamais utilisée à d&apos;autres fins.
+              </p>
+            </div>
+          </PublicCard>
         </form>
-
-        {/* Footer */}
-        <footer className="text-center text-xs text-slate-400 py-4">
-          <p>
-            Academia Helm — Plateforme de pilotage éducatif
-          </p>
-          <p className="mt-1">
-            En cas de problème, contactez votre établissement.
-          </p>
-        </footer>
-      </main>
-    </div>
+      </div>
+    </PublicShell>
   );
 }
 

@@ -5,21 +5,14 @@
  * PAGE PUBLIQUE DE TEST EN LIGNE — /test/[token]
  * ============================================================================
  *
- * Le candidat accède à cette page via le lien envoyé par email.
- *
  * Flow :
  *   1. Au chargement → GET /api/tests-public/:token/start
- *      → Retourne les questions SANS les réponses correctes + temps restant
  *   2. Minuterie compte à rebours (basée sur startedAt en DB)
  *   3. Le candidat répond aux questions
  *   4. Soumission → POST /api/tests-public/:token/submit
- *      → Correction auto (QCM/Vrai-Faux) + score
  *   5. Affichage du résultat + réponses correctes
  *
- * Sécurité :
- *   - Si temps écoulé → auto-submit
- *   - Si token déjà soumis → message d'erreur
- *   - Si token expiré → message d'erreur
+ * Identité visuelle Helm : header bleu (NAVY→BLUE), body blanc, accents GOLD.
  * ============================================================================
  */
 
@@ -27,8 +20,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import {
   Clock, Loader2, AlertCircle, CheckCircle, XCircle,
-  Send, Award, ArrowRight,
+  Send,
 } from 'lucide-react';
+import { PublicShell, PublicCard, HELM_NAVY, HELM_BLUE, HELM_GOLD } from '@/components/public/PublicShell';
 
 type PageState = 'loading' | 'test' | 'submitting' | 'result' | 'expired' | 'submitted' | 'error';
 
@@ -176,70 +170,70 @@ export default function TestPage() {
   // ─── Render ──────────────────────────────────────────────────────────────
   if (state === 'loading') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="text-center">
-          <Loader2 className="h-10 w-10 animate-spin text-[#1A2BA6] mx-auto mb-4" />
+      <PublicShell schoolName="Academia Helm" subtitle="Test en ligne">
+        <div className="flex flex-col items-center justify-center py-20 space-y-4">
+          <Loader2 className="w-12 h-12 animate-spin" style={{ color: HELM_BLUE }} />
           <p className="text-sm text-slate-500">Chargement du test...</p>
         </div>
-      </div>
+      </PublicShell>
     );
   }
 
   if (state === 'error') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-lg p-8 text-center">
-          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+      <PublicShell schoolName="Academia Helm" subtitle="Test en ligne">
+        <div className="max-w-md mx-auto bg-white rounded-2xl shadow-lg p-8 text-center">
+          <AlertCircle className="h-12 w-12 text-rose-500 mx-auto mb-4" />
           <h1 className="text-lg font-bold text-slate-900 mb-2">Une erreur est survenue</h1>
           <p className="text-sm text-slate-500 mb-4">{errorMsg}</p>
-          <p className="text-xs text-slate-400">Vérifiez que vous avez bien copié l'URL complète depuis votre email.</p>
+          <p className="text-xs text-slate-400">Vérifiez que vous avez bien copié l&apos;URL complète depuis votre email.</p>
         </div>
-      </div>
+      </PublicShell>
     );
   }
 
   if (state === 'expired') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-lg p-8 text-center">
-          <Clock className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+      <PublicShell schoolName="Academia Helm" subtitle="Test en ligne">
+        <div className="max-w-md mx-auto bg-white rounded-2xl shadow-lg p-8 text-center">
+          <Clock className="h-12 w-12 mx-auto mb-4" style={{ color: HELM_GOLD }} />
           <h1 className="text-lg font-bold text-slate-900 mb-2">Test expiré</h1>
-          <p className="text-sm text-slate-500">Le délai pour passer ce test est dépassé. Contactez l'établissement si vous pensez que c'est une erreur.</p>
+          <p className="text-sm text-slate-500">Le délai pour passer ce test est dépassé. Contactez l&apos;établissement si vous pensez que c&apos;est une erreur.</p>
         </div>
-      </div>
+      </PublicShell>
     );
   }
 
   if (state === 'submitted') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-lg p-8 text-center">
+      <PublicShell schoolName="Academia Helm" subtitle="Test en ligne">
+        <div className="max-w-md mx-auto bg-white rounded-2xl shadow-lg p-8 text-center">
           <CheckCircle className="h-12 w-12 text-emerald-500 mx-auto mb-4" />
           <h1 className="text-lg font-bold text-slate-900 mb-2">Test déjà soumis</h1>
-          <p className="text-sm text-slate-500">Vous avez déjà soumis ce test. Il n'est pas possible de le repasser.</p>
+          <p className="text-sm text-slate-500">Vous avez déjà soumis ce test. Il n&apos;est pas possible de le repasser.</p>
         </div>
-      </div>
+      </PublicShell>
     );
   }
 
   if (state === 'submitting') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="text-center">
-          <Loader2 className="h-10 w-10 animate-spin text-[#1A2BA6] mx-auto mb-4" />
+      <PublicShell schoolName="Academia Helm" subtitle="Test en ligne">
+        <div className="flex flex-col items-center justify-center py-20 space-y-4">
+          <Loader2 className="w-12 h-12 animate-spin" style={{ color: HELM_BLUE }} />
           <p className="text-sm text-slate-500">Correction en cours...</p>
         </div>
-      </div>
+      </PublicShell>
     );
   }
 
   // ─── RÉSULTAT ────────────────────────────────────────────────────────────
   if (state === 'result' && result && testData) {
     return (
-      <div className="min-h-screen bg-slate-50 py-8 px-4">
-        <div className="max-w-2xl mx-auto">
+      <PublicShell schoolName="Academia Helm" subtitle={testData.title}>
+        <div className="space-y-6">
           {/* Header résultat */}
-          <div className="bg-white rounded-2xl shadow-lg overflow-hidden mb-6">
+          <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
             <div className="p-8 text-center" style={{
               background: result.passed
                 ? 'linear-gradient(135deg, #059669 0%, #10b981 100%)'
@@ -257,33 +251,32 @@ export default function TestPage() {
             </div>
             <div className="p-6 grid grid-cols-3 gap-4 text-center">
               <div>
-                <p className="text-3xl font-bold text-slate-900">{result.autoScorePercent}%</p>
+                <p className="text-3xl font-bold" style={{ color: HELM_NAVY }}>{result.autoScorePercent}%</p>
                 <p className="text-[10px] text-slate-400 uppercase mt-1">Score</p>
               </div>
               <div>
-                <p className="text-3xl font-bold text-slate-900">{result.autoScore}/{result.autoScoreMax}</p>
+                <p className="text-3xl font-bold" style={{ color: HELM_NAVY }}>{result.autoScore}/{result.autoScoreMax}</p>
                 <p className="text-[10px] text-slate-400 uppercase mt-1">Points</p>
               </div>
               <div>
-                <p className="text-3xl font-bold text-slate-900">{answeredCount}/{testData.questions.length}</p>
+                <p className="text-3xl font-bold" style={{ color: HELM_NAVY }}>{answeredCount}/{testData.questions.length}</p>
                 <p className="text-[10px] text-slate-400 uppercase mt-1">Répondues</p>
               </div>
             </div>
           </div>
 
           {/* Détail des réponses */}
-          <div className="bg-white rounded-2xl shadow-sm p-6">
-            <h2 className="text-sm font-bold text-slate-900 mb-4">Détail des réponses</h2>
+          <PublicCard title="Détail des réponses">
             <div className="space-y-3">
               {testData.questions.map((q, i) => {
                 const correction = result.correctedResponses.find(c => c.questionId === q.id);
                 const userAnswer = answers[q.id];
                 return (
-                  <div key={q.id} className={`rounded-xl p-4 border ${correction?.isCorrect ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+                  <div key={q.id} className={`rounded-xl p-4 border ${correction?.isCorrect ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'}`}>
                     <div className="flex items-start gap-2">
                       {correction?.isCorrect
                         ? <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
-                        : <XCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />}
+                        : <XCircle className="h-4 w-4 text-rose-500 shrink-0 mt-0.5" />}
                       <div className="flex-1">
                         <p className="text-xs font-bold text-slate-900 mb-1">Q{i+1}. {q.question}</p>
                         <p className="text-[10px] text-slate-500">
@@ -304,13 +297,13 @@ export default function TestPage() {
                 );
               })}
             </div>
-          </div>
+          </PublicCard>
 
-          <p className="text-center text-xs text-slate-400 mt-6">
+          <p className="text-center text-xs text-slate-400">
             Votre test a été soumis. Le recruteur recevra vos résultats et vous contactera prochainement.
           </p>
         </div>
-      </div>
+      </PublicShell>
     );
   }
 
@@ -320,36 +313,42 @@ export default function TestPage() {
     const timeCritical = timeLeft < 30;
 
     return (
-      <div className="min-h-screen bg-slate-50 py-6 px-4">
-        <div className="max-w-2xl mx-auto">
-          {/* Header avec minuterie */}
-          <div className="bg-white rounded-2xl shadow-sm p-5 mb-4 flex items-center justify-between sticky top-4 z-10">
+      <PublicShell
+        schoolName="Academia Helm"
+        subtitle={testData.title}
+        maxWidthClass="max-w-2xl"
+        badge={
+          <div className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm ${
+            timeCritical ? 'bg-red-100 text-red-700 animate-pulse'
+            : timeWarning ? 'bg-amber-100 text-amber-700'
+            : 'bg-white/15 text-white'
+          }`} style={timeCritical || timeWarning ? undefined : { border: '1px solid rgba(255,255,255,0.25)' }}>
+            <Clock className="h-4 w-4" />
+            {formatTime(timeLeft)}
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          {/* Progress info */}
+          <div className="bg-white rounded-xl shadow-sm p-3 flex items-center justify-between sticky top-20 z-10 border border-slate-200">
             <div>
-              <h1 className="text-base font-bold text-slate-900">{testData.title}</h1>
+              <h1 className="text-base font-bold" style={{ color: HELM_NAVY }}>{testData.title}</h1>
               <p className="text-[10px] text-slate-400">{answeredCount}/{testData.questions.length} questions répondues</p>
-            </div>
-            <div className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm ${
-              timeCritical ? 'bg-red-100 text-red-700 animate-pulse'
-              : timeWarning ? 'bg-amber-100 text-amber-700'
-              : 'bg-slate-100 text-slate-700'
-            }`}>
-              <Clock className="h-4 w-4" />
-              {formatTime(timeLeft)}
             </div>
           </div>
 
           {testData.description && (
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 mb-4">
-              <p className="text-xs text-blue-800">{testData.description}</p>
+            <div className="rounded-xl p-3 border" style={{ background: `${HELM_BLUE}0a`, borderColor: `${HELM_BLUE}33` }}>
+              <p className="text-xs" style={{ color: HELM_NAVY }}>{testData.description}</p>
             </div>
           )}
 
           {/* Questions */}
           <div className="space-y-3">
             {testData.questions.map((q, i) => (
-              <div key={q.id} className="bg-white rounded-xl shadow-sm p-5">
+              <div key={q.id} className="bg-white rounded-xl shadow-sm p-5 border border-slate-200">
                 <div className="flex items-start gap-2 mb-3">
-                  <span className="flex-shrink-0 w-6 h-6 rounded-lg bg-[#1A2BA6] text-white text-xs font-bold flex items-center justify-center">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-lg text-white text-xs font-bold flex items-center justify-center" style={{ background: HELM_BLUE }}>
                     {i + 1}
                   </span>
                   <p className="text-sm font-bold text-slate-900 flex-1">{q.question}</p>
@@ -365,9 +364,14 @@ export default function TestPage() {
                         onClick={() => updateAnswer(q.id, String(oi))}
                         className={`w-full text-left px-4 py-2.5 rounded-xl border-2 text-sm transition ${
                           answers[q.id] === String(oi)
-                            ? 'border-[#1A2BA6] bg-[#1A2BA6]/5 text-[#1A2BA6] font-bold'
+                            ? 'font-bold'
                             : 'border-slate-200 text-slate-700 hover:border-slate-300'
                         }`}
+                        style={answers[q.id] === String(oi) ? {
+                          borderColor: HELM_BLUE,
+                          background: `${HELM_BLUE}0d`,
+                          color: HELM_BLUE,
+                        } : undefined}
                       >
                         {opt}
                       </button>
@@ -388,10 +392,11 @@ export default function TestPage() {
                             updateAnswer(q.id, selected ? current.filter(c => c !== String(oi)) : [...current, String(oi)]);
                           }}
                           className={`w-full text-left px-4 py-2.5 rounded-xl border-2 text-sm transition flex items-center gap-2 ${
-                            selected ? 'border-[#1A2BA6] bg-[#1A2BA6]/5 text-[#1A2BA6] font-bold' : 'border-slate-200 text-slate-700 hover:border-slate-300'
+                            selected ? 'font-bold' : 'border-slate-200 text-slate-700 hover:border-slate-300'
                           }`}
+                          style={selected ? { borderColor: HELM_BLUE, background: `${HELM_BLUE}0d`, color: HELM_BLUE } : undefined}
                         >
-                          <span className={`w-4 h-4 rounded border-2 flex items-center justify-center ${selected ? 'border-[#1A2BA6] bg-[#1A2BA6]' : 'border-slate-300'}`}>
+                          <span className={`w-4 h-4 rounded border-2 flex items-center justify-center`} style={selected ? { borderColor: HELM_BLUE, background: HELM_BLUE } : { borderColor: '#cbd5e1' }}>
                             {selected && <CheckCircle className="h-3 w-3 text-white" />}
                           </span>
                           {opt}
@@ -407,7 +412,8 @@ export default function TestPage() {
                     type="text"
                     value={answers[q.id] as string || ''}
                     onChange={e => updateAnswer(q.id, e.target.value)}
-                    className="w-full rounded-xl border-2 border-slate-200 px-4 py-2.5 text-sm focus:border-[#1A2BA6] focus:outline-none"
+                    className="w-full rounded-xl border-2 border-slate-200 px-4 py-2.5 text-sm focus:outline-none"
+                    style={{ outlineColor: HELM_BLUE }}
                     placeholder="Votre réponse..."
                   />
                 )}
@@ -418,7 +424,8 @@ export default function TestPage() {
                     value={answers[q.id] as string || ''}
                     onChange={e => updateAnswer(q.id, e.target.value)}
                     rows={4}
-                    className="w-full rounded-xl border-2 border-slate-200 px-4 py-2.5 text-sm focus:border-[#1A2BA6] focus:outline-none"
+                    className="w-full rounded-xl border-2 border-slate-200 px-4 py-2.5 text-sm focus:outline-none"
+                    style={{ outlineColor: HELM_BLUE }}
                     placeholder="Votre réponse détaillée..."
                   />
                 )}
@@ -427,12 +434,12 @@ export default function TestPage() {
           </div>
 
           {/* Submit button */}
-          <div className="mt-6 mb-8">
+          <div className="mb-8">
             <button
               onClick={() => handleSubmit(false)}
               disabled={answeredCount === 0}
               className="w-full flex items-center justify-center gap-2 px-6 py-3.5 text-sm font-bold text-white rounded-xl shadow-sm hover:opacity-90 disabled:opacity-40 transition"
-              style={{ backgroundColor: '#0D1F6E' }}
+              style={{ background: `linear-gradient(135deg, ${HELM_BLUE}, ${HELM_NAVY})` }}
             >
               <Send className="h-4 w-4" /> Soumettre le test ({answeredCount}/{testData.questions.length})
             </button>
@@ -442,7 +449,7 @@ export default function TestPage() {
             </p>
           </div>
         </div>
-      </div>
+      </PublicShell>
     );
   }
 

@@ -56,6 +56,7 @@ import { toast } from '@/components/ui/toast';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import RichTextEditor from '@/components/ui/RichTextEditor';
 import RichContent from '@/components/ui/RichContent';
+import { TestQuestionnaireManager } from './TestQuestionnaireManager';
 
 const PRIMARY = '#1A2BA6';
 
@@ -2617,6 +2618,9 @@ export function RecruitmentWorkspace() {
                   </button>
                 </div>
               </div>
+
+              {/* ─── Questionnaires en ligne ─── */}
+              <TestQuestionnaireManager />
 
               {/* KPI Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

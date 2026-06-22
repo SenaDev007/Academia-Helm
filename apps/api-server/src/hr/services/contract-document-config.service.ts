@@ -223,7 +223,7 @@ export class ContractDocumentConfigService {
       // Déterminer le type SQL basé sur la valeur ou le nom du champ
       if (val === null || val === undefined) {
         // Pour null, on cast selon le type de colonne
-        if (paramName.includes('_color') || paramName.includes('_url') || paramName.includes('_text') || paramName.includes('font_family') || paramName.includes('logo_position')) {
+        if (paramName.includes('_color') || paramName.includes('_url') || paramName.includes('_text') || paramName.includes('font_family') || paramName.includes('logo_position') || paramName.includes('watermark_type')) {
           return `${paramName} = $${paramNum}::text`;
         }
         if (paramName.includes('_size') || paramName.includes('max_height') || paramName.includes('margin_') || paramName.includes('font_size') || paramName.includes('rotation')) {
@@ -314,6 +314,15 @@ export class ContractDocumentConfigService {
         );
         CREATE INDEX IF NOT EXISTS "idx_contract_document_configs_tenant"
             ON "contract_document_configs" ("tenant_id");
+      `);
+
+      // ─── ALTER TABLE pour ajouter les colonnes manquantes si la table
+      // a déjà été créée avec un ancien schéma (sans watermark_type et
+      // watermark_image_url). Idempotent grâce à IF NOT EXISTS. ───
+      await this.prisma.$executeRawUnsafe(`
+        ALTER TABLE "contract_document_configs"
+          ADD COLUMN IF NOT EXISTS "watermark_type" TEXT DEFAULT 'text',
+          ADD COLUMN IF NOT EXISTS "watermark_image_url" TEXT;
       `);
     } catch (err: any) {
       this.logger.warn(`Failed to ensure contract_document_configs table: ${err.message}`);

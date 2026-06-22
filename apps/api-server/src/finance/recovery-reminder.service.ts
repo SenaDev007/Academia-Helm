@@ -3,7 +3,7 @@
  * Détection retards, niveaux WARNING (J+3), URGENT (J+7), FINAL_NOTICE (J+15), anti-harcèlement.
  * Blocage automatique si balance > RECOVERY_BLOCK_THRESHOLD (paramètre env).
  */
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
 import { Cron } from '@nestjs/schedule';
@@ -15,7 +15,7 @@ export class RecoveryReminderService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
-    private readonly recoveryEmailService: RecoveryReminderEmailService,
+    @Optional() private readonly recoveryEmailService?: RecoveryReminderEmailService,
   ) {}
 
   /**
@@ -158,7 +158,9 @@ export class RecoveryReminderService {
     // le reminder était seulement créé en DB mais AUCUN email n'était envoyé.
     // On fait l'envoi en fire-and-forget (non bloquant) pour ne pas ralentir
     // le cron nightly, et on logge le résultat.
-    if (sentVia === ReminderChannel.EMAIL || sentVia === ReminderChannel.SMS) {
+    // @Optional() — si le service n'est pas disponible (ex: CommunicationModule
+    // non importé), on skip sans crasher.
+    if (this.recoveryEmailService && (sentVia === ReminderChannel.EMAIL || sentVia === ReminderChannel.SMS)) {
       // On essaie l'email même si sentVia=SMS car l'email est plus fiable que
       // le SMS (pas de coût, pas de numéro à vérifier).
       this.recoveryEmailService

@@ -17,7 +17,7 @@
  * ============================================================================
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
 import { EmailService } from '../communication/services/email.service';
@@ -30,7 +30,7 @@ export class RecoveryReminderEmailService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
-    private readonly emailService: EmailService,
+    @Optional() private readonly emailService?: EmailService,
   ) {}
 
   /**
@@ -48,6 +48,11 @@ export class RecoveryReminderEmailService {
     reminderLevel: ReminderLevel | string,
     amountDue: number,
   ): Promise<boolean> {
+    // Guard: si EmailService n'est pas disponible (DI optional), skip
+    if (!this.emailService) {
+      this.logger.warn('EmailService not available — skipping recovery email');
+      return false;
+    }
     try {
       // 1. Récupérer le StudentAccount + Student + Guardian principal
       const account = await this.prisma.studentAccount.findFirst({

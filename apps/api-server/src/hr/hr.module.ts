@@ -53,6 +53,15 @@ import { ContractDocumentConfigService } from './services/contract-document-conf
 import { ContractDocumentConfigController } from './contract-document-config.controller';
 import { TestQuestionnaireService } from './services/test-questionnaire.service';
 import { TestQuestionnaireController, TestPublicController } from './test-questionnaire.controller';
+import { DocumentUploadService } from './services/document-upload.service';
+import { DocumentUploadController, DocumentPublicController } from './document-upload.controller';
+import { StaffCardService } from './services/staff-card.service';
+import { StaffCardController, StaffCardPublicController } from './staff-card.controller';
+import { RecruitmentDailySummaryService } from './services/recruitment-daily-summary.service';
+import { ContractDocumentConfigService } from './services/contract-document-config.service';
+import { ContractDocumentConfigController } from './contract-document-config.controller';
+import { TestQuestionnaireService } from './services/test-questionnaire.service';
+import { TestQuestionnaireController, TestPublicController } from './test-questionnaire.controller';
 
 @Module({
   imports: [PrismaModule, OrionModule, CommunicationModule],
@@ -131,6 +140,11 @@ import { TestQuestionnaireController, TestPublicController } from './test-questi
     IaPrismaService,
     OrganigramPrismaService,
     StaffCredentialService,
+    RecruitmentDailySummaryService,
+    ContractDocumentConfigService,
+    TestQuestionnaireService,
+    DocumentUploadService,
+    StaffCardService,
   ],
 })
 export class HRModule {}

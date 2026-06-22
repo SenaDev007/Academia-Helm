@@ -3424,9 +3424,28 @@ export function RecruitmentWorkspace() {
                             </td>
                             <td className="p-4 text-slate-500">{c.date}</td>
                             <td className="p-4">
-                              <span className="uppercase text-[9px] font-bold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-100">
-                                Recruté
-                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="uppercase text-[9px] font-bold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-100">
+                                  Recruté
+                                </span>
+                                {c.contract?.id && (
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        toast({ variant: 'default', title: 'Relance en cours...' });
+                                        await hrFetch(hrUrl(`contracts/${c.contract.id}/resend-sign-email`, { tenantId: tenant?.id }), { method: 'POST' });
+                                        toast({ variant: 'success', title: 'Email renvoyé !', description: `Le lien de signature a été renvoyé à ${c.name}.` });
+                                      } catch (err: any) {
+                                        toast({ variant: 'error', title: 'Erreur', description: err.message });
+                                      }
+                                    }}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition"
+                                    title="Renvoyer l'email de signature au candidat"
+                                  >
+                                    <RefreshCw className="h-3 w-3" /> Relancer
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         ))}

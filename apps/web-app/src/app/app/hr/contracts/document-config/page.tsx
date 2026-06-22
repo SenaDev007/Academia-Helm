@@ -8,7 +8,7 @@ import {
 import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 import { getApiBaseUrl } from '@/lib/utils/urls';
 import { toast } from '@/components/ui/toast';
-import { HRShell } from '../../../_components/HRShell';
+import { HRShell } from '@/app/app/hr/_components/HRShell';
 
 const PRIMARY = '#1A2BA6';
 

@@ -10,11 +10,11 @@
  *   PUT    /hr/staff/:id               — Update staff info
  *   DELETE /hr/staff/:id               — Archive staff
  *
- *   POST   /hr/staff/:id/photo-data    — Upload/replace staff photo (data URL base64)
- *   GET    /hr/staff/:id/photo         — Get staff photo
- *   DELETE /hr/staff/:id/photo         — Delete staff photo
+ *   POST   /hr/staff/:id/upload-photo     — Upload photo (data URL base64)
+ *   GET    /hr/staff/:id/photo            — Get staff photo
+ *   DELETE /hr/staff/:id/photo            — Delete staff photo
  *
- *   POST   /hr/staff/:id/documents-data — Upload document (data URL base64, supports images + PDF)
+ *   POST   /hr/staff/:id/upload-document  — Upload document (data URL base64, images + PDF)
  *   POST   /hr/staff/:id/documents/json— Add document metadata (legacy JSON body)
  *   GET    /hr/staff/:id/documents     — Get all documents (grouped by category)
  *   DELETE /hr/staff/:id/documents/:docId — Delete a document
@@ -291,13 +291,15 @@ export class StaffPrismaController {
   // ─── PHOTO ─────────────────────────────────────────────────────────────────
 
   /**
-   * Upload photo via data URL (base64) — pattern identique au logo école.
+   * Upload photo via data URL (base64) — pattern standard Helm.
    * Body: { photoDataUrl: string }
    *
    * Le frontend compresse l'image côté navigateur (compressImageFileToDataUrl)
    * et envoie le data URL en JSON. Plus fiable que le multipart via BFF proxy.
+   *
+   * Convention nom endpoint : POST /<resource>/upload-<type>
    */
-  @Post(':id/photo-data')
+  @Post(':id/upload-photo')
   async uploadPhotoDataUrl(
     @GetTenant() tenant: any,
     @Param('id') staffId: string,
@@ -335,13 +337,14 @@ export class StaffPrismaController {
   // ─── DOCUMENTS ─────────────────────────────────────────────────────────────
 
   /**
-   * Upload document via data URL (base64) — pattern identique au logo école.
+   * Upload document via data URL (base64) — pattern standard Helm.
    * Body: { documentType, fileName, fileDataUrl, mimeType, fileSize, description?, expiresAt? }
    *
    * Supporte les images (JPEG, PNG, WebP) ET les PDF.
-   * Plus fiable que le multipart via BFF proxy.
+   *
+   * Convention nom endpoint : POST /<resource>/upload-<type>
    */
-  @Post(':id/documents-data')
+  @Post(':id/upload-document')
   async uploadDocumentDataUrl(
     @GetTenant() tenant: any,
     @Param('id') staffId: string,

@@ -612,7 +612,7 @@ export default function SubjectsWorkspace() {
         });
       }
 
-      const { url } = await pedagogyFetch<{ url: string }>('/api/pedagogy/academic-series/programs/upload-data', {
+      const { url } = await pedagogyFetch<{ url: string }>('/api/pedagogy/academic-series/programs/upload-program', {
         method: 'POST',
         body: {
           fileDataUrl,

@@ -148,7 +148,7 @@ export default function ReviewRequestModal({
           quality: 0.85,
           mimeType: 'image/jpeg',
         });
-        const res = await fetch(buildReviewsSubmitUrl('/upload-photo-data'), {
+        const res = await fetch(buildReviewsSubmitUrl('/upload-photo'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ photoDataUrl }),

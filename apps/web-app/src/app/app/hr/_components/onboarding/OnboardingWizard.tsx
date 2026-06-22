@@ -144,7 +144,7 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
               });
             }
 
-            await hrFetch(hrUrl(`staff/${state.staffId}/documents-data`, { tenantId }), {
+            await hrFetch(hrUrl(`staff/${state.staffId}/upload-document`, { tenantId }), {
               method: 'POST',
               body: {
                 documentType: docType,

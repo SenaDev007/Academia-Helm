@@ -36,13 +36,15 @@ export class AcademicSeriesPrismaController {
   // ... existing methods ...
 
   /**
-   * Upload programme via data URL (base64) — pattern identique au logo école.
+   * Upload programme via data URL (base64) — pattern standard Helm.
    * Body: { fileDataUrl, fileName?, mimeType?, folder? }
    *
    * Supporte les images ET les PDF. Le data URL est retourné tel quel et
    * sera stocké directement dans program.documentUrl.
+   *
+   * Convention nom endpoint : POST /<resource>/upload-<type>
    */
-  @Post('programs/upload-data')
+  @Post('programs/upload-program')
   async uploadProgramData(
     @Body() body: { fileDataUrl: string; fileName?: string; mimeType?: string; folder?: string },
   ) {

@@ -560,7 +560,7 @@ export function CareersContent({
       let data: any;
       let timedOut = false;
       try {
-        res = await fetch('/api/hr/recruitment/apply-data', {
+        res = await fetch('/api/hr/recruitment/upload-apply', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),

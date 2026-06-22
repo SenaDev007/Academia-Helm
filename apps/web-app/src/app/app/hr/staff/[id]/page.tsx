@@ -270,7 +270,7 @@ export default function StaffDetailPage() {
       });
 
       // 2. Envoyer le data URL en JSON (pas de multipart/form-data)
-      await hrFetch<any>(hrUrl(`staff/${id}/photo-data`, { tenantId: tenant.id }), {
+      await hrFetch<any>(hrUrl(`staff/${id}/upload-photo`, { tenantId: tenant.id }), {
         method: 'POST',
         body: { photoDataUrl },
       });
@@ -469,7 +469,7 @@ export default function StaffDetailPage() {
       }
 
       // Envoyer le data URL en JSON (pas de multipart/form-data)
-      await hrFetch<any>(hrUrl(`staff/${id}/documents-data`, { tenantId: tenant.id }), {
+      await hrFetch<any>(hrUrl(`staff/${id}/upload-document`, { tenantId: tenant.id }), {
         method: 'POST',
         body: {
           documentType: docForm.documentType,

@@ -334,7 +334,7 @@ export default function DocumentConfigPage() {
                             mimeType: 'image/png',
                           });
                           const baseUrl = getApiBaseUrl();
-                          const res = await fetch(`${baseUrl}/reviews/upload-photo-data`, {
+                          const res = await fetch(`${baseUrl}/reviews/upload-photo`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json', ...getClientAuthorizationHeader() },
                             credentials: 'include',

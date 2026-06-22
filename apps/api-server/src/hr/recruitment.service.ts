@@ -2078,7 +2078,7 @@ export class RecruitmentPrismaService {
     const uploadPromises: Array<Promise<{ type: string; file: Express.Multer.File | null; path: string | null }>> = [];
 
     // ─── File uploads ──────────────────────────────────────────────────────
-    // Tous les fichiers arrivent maintenant via data URLs (endpoint apply-data).
+    // Tous les fichiers arrivent maintenant via data URLs (endpoint upload-apply).
     // Le controller convertit les data URLs en pseudo-files Express.Multer.File
     // avec un buffer. On reconvertit le buffer en data URL pour le stockage DB.
     const dataUrlForFile = (f: Express.Multer.File): string | null => {

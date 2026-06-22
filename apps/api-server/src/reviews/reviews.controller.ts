@@ -59,17 +59,19 @@ export class ReviewsController {
   }
 
   /**
-   * Upload photo via data URL (base64) — pattern identique au logo école.
+   * Upload photo via data URL (base64) — pattern standard Helm.
    * Body: { photoDataUrl: string }
    *
    * Le frontend compresse l'image côté navigateur et envoie le data URL en JSON.
    * Le data URL est retourné tel quel et sera stocké directement dans review.photoUrl.
    *
    * Limite : 2 Mo, formats image uniquement.
+   *
+   * Convention nom endpoint : POST /<resource>/upload-<type>
    */
   @Public()
   @Throttle({ medium: { limit: 10, ttl: 60000 } })
-  @Post('upload-photo-data')
+  @Post('upload-photo')
   async uploadPhotoDataUrl(@Body() body: { photoDataUrl: string }) {
     if (!body?.photoDataUrl || typeof body.photoDataUrl !== 'string') {
       throw new BadRequestException('photoDataUrl requis (data URL base64)');

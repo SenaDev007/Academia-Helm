@@ -270,15 +270,17 @@ export class RecruitmentPrismaController {
   // ─── Public Job Apply ──────────────────────────────────────────────────────
 
   /**
-   * Public job apply via data URLs (base64) — pattern identique au logo école.
+   * Public job apply via data URLs (base64) — pattern standard Helm.
    *
    * Body: { ...ApplyJobDto, cv?, applicationLetter?, coverLetter?, recommendationLetter? }
    * où chaque fichier est { fileName, fileDataUrl, mimeType, fileSize }
    *
-   * Plus fiable que le multipart via BFF proxy. Supporte les PDF et images.
+   * Supporte les PDF et images.
+   *
+   * Convention nom endpoint : POST /<resource>/upload-<type>
    */
   @Public()
-  @Post('apply-data')
+  @Post('upload-apply')
   @SkipThrottle()
   async applyJobDataUrl(@Body() body: any) {
     // Convertir les data URLs en pseudo-files Express.Multer.File

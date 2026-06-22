@@ -25,7 +25,7 @@ import {
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
-import { ScheduledEmailService, CreateScheduledEmailDto } from './scheduled-email.service';
+import { ScheduledEmailService, CreateScheduledEmailDto } from './services/scheduled-email.service';
 
 @Controller('communication/scheduled-emails')
 @UseGuards(JwtAuthGuard, TenantGuard)

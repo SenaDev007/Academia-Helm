@@ -20,7 +20,7 @@ import { TenantGuard } from '../../common/guards/tenant.guard';
 import { GetTenant } from '../../common/decorators/tenant.decorator';
 import { ContractDocumentConfigService, UpdateContractDocumentConfigDto } from './services/contract-document-config.service';
 
-@Controller('hr/contracts/document-config')
+@Controller('hr/contract-document-config')
 @UseGuards(JwtAuthGuard, TenantGuard)
 export class ContractDocumentConfigController {
   constructor(

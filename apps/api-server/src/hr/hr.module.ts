@@ -57,20 +57,6 @@ import { DocumentUploadService } from './services/document-upload.service';
 import { DocumentUploadController, DocumentPublicController } from './document-upload.controller';
 import { StaffCardService } from './services/staff-card.service';
 import { StaffCardController, StaffCardPublicController } from './staff-card.controller';
-import { RecruitmentDailySummaryService } from './services/recruitment-daily-summary.service';
-import { ContractDocumentConfigService } from './services/contract-document-config.service';
-import { ContractDocumentConfigController } from './contract-document-config.controller';
-import { TestQuestionnaireService } from './services/test-questionnaire.service';
-import { TestQuestionnaireController, TestPublicController } from './test-questionnaire.controller';
-import { DocumentUploadService } from './services/document-upload.service';
-import { DocumentUploadController, DocumentPublicController } from './document-upload.controller';
-import { StaffCardService } from './services/staff-card.service';
-import { StaffCardController, StaffCardPublicController } from './staff-card.controller';
-import { RecruitmentDailySummaryService } from './services/recruitment-daily-summary.service';
-import { ContractDocumentConfigService } from './services/contract-document-config.service';
-import { ContractDocumentConfigController } from './contract-document-config.controller';
-import { TestQuestionnaireService } from './services/test-questionnaire.service';
-import { TestQuestionnaireController, TestPublicController } from './test-questionnaire.controller';
 
 @Module({
   imports: [PrismaModule, OrionModule, CommunicationModule],
@@ -103,6 +89,8 @@ import { TestQuestionnaireController, TestPublicController } from './test-questi
     RecruitmentDailySummaryService,
     ContractDocumentConfigService,
     TestQuestionnaireService,
+    DocumentUploadService,
+    StaffCardService,
   ],
   controllers: [
     StaffPrismaController,
@@ -123,6 +111,10 @@ import { TestQuestionnaireController, TestPublicController } from './test-questi
     ContractDocumentConfigController,
     TestQuestionnaireController,
     TestPublicController,
+    DocumentUploadController,
+    DocumentPublicController,
+    StaffCardController,
+    StaffCardPublicController,
   ],
   exports: [
     StaffPrismaService,

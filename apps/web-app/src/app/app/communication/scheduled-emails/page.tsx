@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, memo, useRef } from 'react';
 import {
   Calendar, Clock, Mail, Send, Trash2, XCircle, Loader2, Plus,
   CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, Search,
+  Bold, Italic, Underline, List, ListOrdered,
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { getClientAuthorizationHeader, tryRefreshAccessToken } from '@/lib/auth/client-access-token';
@@ -318,6 +319,99 @@ export default function ScheduledEmailsPage() {
   );
 }
 
+// ─── Éditeur WYSIWYG (contentEditable uncontrolled) ──────────────────────
+
+/**
+ * RichTextContent — wrapper contentEditable uncontrolled.
+ *
+ * Pourquoi uncontrolled ? Parce que re-set innerHTML à chaque keystroke
+ * (après state update) fait sauter le caret en début de zone. On set
+ * innerHTML uniquement quand `initialContent` change vraiment (initial
+ * load ou reset), et on propage le HTML résultant via onInput.
+ *
+ * La toolbar utilise document.execCommand('bold'/'italic'/...) qui est
+ * déprécié mais reste supporté par tous les navigateurs. C'est le pattern
+ * le plus simple pour un éditeur léger sans dépendance externe.
+ */
+interface RichTextContentProps {
+  initialContent: string;
+  onInput: (html: string) => void;
+}
+
+const RichTextContent = memo(function RichTextContent({ initialContent, onInput }: RichTextContentProps) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (el && el.innerHTML !== initialContent) {
+      el.innerHTML = initialContent || '';
+    }
+  }, [initialContent]);
+
+  const exec = (cmd: string) => {
+    document.execCommand(cmd);
+    if (ref.current) onInput(ref.current.innerHTML);
+  };
+
+  return (
+    <div className="border border-slate-200 rounded-lg overflow-hidden focus-within:border-[#1A2BA6] focus-within:ring-2 focus-within:ring-[#1A2BA6]/10">
+      {/* Toolbar */}
+      <div className="flex items-center gap-1 px-2 py-1.5 border-b border-slate-100 bg-slate-50">
+        <button
+          type="button"
+          title="Gras"
+          onMouseDown={(e) => { e.preventDefault(); exec('bold'); }}
+          className="p-1.5 rounded hover:bg-slate-200 transition"
+        >
+          <Bold className="h-4 w-4 text-slate-700" />
+        </button>
+        <button
+          type="button"
+          title="Italique"
+          onMouseDown={(e) => { e.preventDefault(); exec('italic'); }}
+          className="p-1.5 rounded hover:bg-slate-200 transition"
+        >
+          <Italic className="h-4 w-4 text-slate-700" />
+        </button>
+        <button
+          type="button"
+          title="Souligné"
+          onMouseDown={(e) => { e.preventDefault(); exec('underline'); }}
+          className="p-1.5 rounded hover:bg-slate-200 transition"
+        >
+          <Underline className="h-4 w-4 text-slate-700" />
+        </button>
+        <div className="w-px h-5 bg-slate-200 mx-1" />
+        <button
+          type="button"
+          title="Liste à puces"
+          onMouseDown={(e) => { e.preventDefault(); exec('insertUnorderedList'); }}
+          className="p-1.5 rounded hover:bg-slate-200 transition"
+        >
+          <List className="h-4 w-4 text-slate-700" />
+        </button>
+        <button
+          type="button"
+          title="Liste numérotée"
+          onMouseDown={(e) => { e.preventDefault(); exec('insertOrderedList'); }}
+          className="p-1.5 rounded hover:bg-slate-200 transition"
+        >
+          <ListOrdered className="h-4 w-4 text-slate-700" />
+        </button>
+      </div>
+      {/* Zone éditable */}
+      <div
+        ref={ref}
+        contentEditable
+        suppressContentEditableWarning
+        onInput={(e) => onInput(e.currentTarget.innerHTML)}
+        className="px-3 py-2 text-sm text-slate-700 focus:outline-none min-h-[160px] prose prose-sm max-w-none empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400 empty:before:cursor-text"
+        data-placeholder="Rédigez votre message ici. Utilisez la barre d'outils ci-dessus pour mettre en forme (gras, italique, listes...)."
+      />
+    </div>
+  );
+}, (prev, next) => prev.initialContent === next.initialContent);
+
 // ─── Formulaire de création ──────────────────────────────────────────────
 
 function ScheduledEmailForm({
@@ -355,7 +449,9 @@ function ScheduledEmailForm({
       return;
     }
 
-    if (!toEmail.trim() || !subject.trim() || !htmlBody.trim() || !scheduledDate || !scheduledTime) {
+    // Vérifier qu'il y a du texte réel (pas juste des balises vides)
+    const textContent = htmlBody.replace(/<[^>]*>/g, '').trim();
+    if (!toEmail.trim() || !subject.trim() || !textContent || !scheduledDate || !scheduledTime) {
       toast({ variant: 'error', title: 'Tous les champs obligatoires doivent être remplis' });
       return;
     }
@@ -452,21 +548,18 @@ function ScheduledEmailForm({
             />
           </div>
 
-          {/* Contenu */}
+          {/* Contenu — éditeur WYSIWYG */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Contenu (HTML autorisé) *
+              Message *
             </label>
-            <textarea
-              value={htmlBody}
-              onChange={(e) => setHtmlBody(e.target.value)}
-              required
-              rows={6}
-              placeholder="<p>Bonjour,</p><p>Votre entretien est programmé demain à 10h.</p>"
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono focus:outline-none focus:border-[#1A2BA6] focus:ring-2 focus:ring-[#1A2BA6]/10"
+            <RichTextContent
+              initialContent={htmlBody}
+              onInput={(html) => setHtmlBody(html)}
             />
             <p className="text-[10px] text-slate-400 mt-1">
-              Vous pouvez utiliser des balises HTML : &lt;p&gt;, &lt;strong&gt;, &lt;a href="..."&gt;, etc.
+              Utilisez la barre d'outils pour mettre en forme (gras, italique, souligné, listes).
+              Aucune connaissance technique requise.
             </p>
           </div>
 

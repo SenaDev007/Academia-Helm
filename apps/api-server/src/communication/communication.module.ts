@@ -39,6 +39,7 @@ import { TemplatesPrismaController } from './templates-prisma.controller';
 import { TemplatesPrismaService } from './templates-prisma.service';
 import { EmailLogController } from './email-log.controller';
 import { ScheduledEmailController } from './scheduled-email.controller';
+import { StorageService } from '../common/services/storage.service';
 import { DatabaseModule } from '../database/database.module';
 
 @Module({
@@ -70,6 +71,7 @@ import { DatabaseModule } from '../database/database.module';
     // Scheduled emails (programmation d'envoi à date/heure précise)
     ScheduledEmailService,
     ScheduledEmailDispatcherService,
+    StorageService,
     // Prisma CRUD services
     CommunicationPrismaService,
     MessagesPrismaService,

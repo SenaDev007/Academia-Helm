@@ -27,10 +27,10 @@ import {
   Controller, Get, Post, Put, Delete, Body, Param, Query,
   UseGuards, BadRequestException,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
-import { TenantGuard } from '../../common/guards/tenant.guard';
-import { GetTenant } from '../../common/decorators/tenant.decorator';
-import { Public } from '../../auth/decorators/public.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { TenantGuard } from '../common/guards/tenant.guard';
+import { GetTenant } from '../common/decorators/tenant.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 import { TestQuestionnaireService, CreateQuestionnaireDto, UpdateQuestionnaireDto, SendQuestionnaireDto, SubmitResponseDto } from './services/test-questionnaire.service';
 
 @Controller('hr/recruitment')

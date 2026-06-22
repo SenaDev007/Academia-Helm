@@ -3,7 +3,7 @@
  * Détection retards, niveaux WARNING (J+3), URGENT (J+7), FINAL_NOTICE (J+15), anti-harcèlement.
  * Blocage automatique si balance > RECOVERY_BLOCK_THRESHOLD (paramètre env).
  */
-import { Injectable, NotFoundException, forwardRef, Inject } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
 import { Cron } from '@nestjs/schedule';
@@ -15,7 +15,6 @@ export class RecoveryReminderService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
-    @Inject(forwardRef(() => RecoveryReminderEmailService))
     private readonly recoveryEmailService: RecoveryReminderEmailService,
   ) {}
 

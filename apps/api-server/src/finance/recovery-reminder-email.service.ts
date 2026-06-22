@@ -17,7 +17,7 @@
  * ============================================================================
  */
 
-import { Injectable, Logger, forwardRef, Inject } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
 import { EmailService } from '../communication/services/email.service';
@@ -30,7 +30,6 @@ export class RecoveryReminderEmailService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
-    @Inject(forwardRef(() => EmailService))
     private readonly emailService: EmailService,
   ) {}
 

@@ -81,10 +81,19 @@ export class ScheduledEmailDispatcherService {
         `Scheduled email dispatch complete: ${sentCount} sent, ${failedCount} failed`,
       );
     } catch (err: any) {
-      this.logger.error(
-        `Scheduled email dispatcher error: ${err.message}`,
-        err.stack,
-      );
+      // Si la table scheduled_emails n'existe pas encore (migration non
+      // appliquée), on logge en warning sans crasher — le prochain run
+      // réessaiera une fois la migration appliquée.
+      if (err?.message?.includes('relation') && err?.message?.includes('does not exist')) {
+        this.logger.warn(
+          `scheduled_emails table not found — skipping dispatch (migration may not be applied yet)`,
+        );
+      } else {
+        this.logger.error(
+          `Scheduled email dispatcher error: ${err.message}`,
+          err.stack,
+        );
+      }
     } finally {
       this.isRunning = false;
     }

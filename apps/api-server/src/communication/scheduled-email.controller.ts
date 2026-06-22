@@ -22,9 +22,9 @@ import {
   Controller, Get, Post, Put, Delete, Body, Param, Query,
   UseGuards, BadRequestException,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
-import { TenantGuard } from '../../common/guards/tenant.guard';
-import { GetTenant } from '../../common/decorators/tenant.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { TenantGuard } from '../common/guards/tenant.guard';
+import { GetTenant } from '../common/decorators/tenant.decorator';
 import { ScheduledEmailService, CreateScheduledEmailDto } from './scheduled-email.service';
 
 @Controller('communication/scheduled-emails')

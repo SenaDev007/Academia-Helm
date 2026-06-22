@@ -1264,7 +1264,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
               <LogoCircle
                 logoUrl={clientBranding?.logoUrl}
                 alt={clientBranding?.name || BRAND.name}
-                size={72}
+                size={96}
               />
             </motion.div>
 

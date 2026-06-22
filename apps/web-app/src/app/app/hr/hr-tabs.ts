@@ -21,6 +21,7 @@ import {
   Shield,
   BarChart3,
   Settings,
+  FileEdit,
 } from 'lucide-react';
 
 export const HR_SUBMODULE_TABS = [
@@ -54,6 +55,12 @@ export const HR_SUBMODULE_TABS = [
     label: 'Contrats',
     path: '/app/hr/contracts',
     icon: FileCheck,
+  },
+  {
+    id: 'contract-config',
+    label: 'Config. Contrats',
+    path: '/app/hr/contracts/document-config',
+    icon: FileEdit,
   },
   {
     id: 'collaborators',

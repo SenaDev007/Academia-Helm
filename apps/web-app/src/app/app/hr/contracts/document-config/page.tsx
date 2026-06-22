@@ -3,12 +3,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Save, Loader2, Image as ImageIcon, Droplet, FileText, Palette,
-  ArrowLeft, Check,
+  Check,
 } from 'lucide-react';
 import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 import { getApiBaseUrl } from '@/lib/utils/urls';
 import { toast } from '@/components/ui/toast';
-import Link from 'next/link';
+import { HRShell } from '../../../_components/HRShell';
 
 const PRIMARY = '#1A2BA6';
 
@@ -220,13 +220,11 @@ export default function DocumentConfigPage() {
   ];
 
   return (
+    <HRShell activeId="contract-config" title="Configuration des contrats" description="Personnalisez l'apparence de vos contrats (en-tête, filigrane, pied de page, style).">
     <div className="p-6 space-y-6 max-w-3xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <Link href="/app/hr/contracts" className="flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-[#1A2BA6] mb-2">
-            <ArrowLeft className="h-4 w-4" /> Contrats
-          </Link>
           <h1 className="text-2xl font-bold text-slate-900">Configuration des contrats</h1>
           <p className="text-sm text-slate-500 mt-1">Personnalisez l'apparence de vos contrats (en-tête, filigrane, pied de page, style).</p>
         </div>
@@ -286,7 +284,7 @@ export default function DocumentConfigPage() {
         {activeTab === 'watermark' && (
           <div className="space-y-5">
             <h2 className="text-lg font-bold text-slate-900">Filigrane</h2>
-            <TextInput label="Texte du filigrane" value={config.watermark_text || ''} onChange={v => update('watermark_text', v)} placeholder="Ex: CSPEB Eveil d'Afrique ou CONFIDENTIEL" />
+            <TextInput label="Texte du filigrane" value={config.watermark_text || ''} onChange={v => update('watermark_text', v)} placeholder="Ex: Mon École ou CONFIDENTIEL" />
             <div className="grid grid-cols-2 gap-4">
               <NumberInput label="Opacité" value={config.watermark_opacity} onChange={v => update('watermark_opacity', v)} suffix="(0.01-1)" />
               <NumberInput label="Taille" value={config.watermark_font_size} onChange={v => update('watermark_font_size', v)} suffix="pt" />
@@ -352,7 +350,7 @@ export default function DocumentConfigPage() {
             </div>
             <div className="border-t border-slate-100 pt-4">
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Marges de page</p>
-              <div className="grid grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 gap-4">
                 <NumberInput label="Haut" value={config.style_margin_top} onChange={v => update('style_margin_top', v)} suffix="mm" />
                 <NumberInput label="Bas" value={config.style_margin_bottom} onChange={v => update('style_margin_bottom', v)} suffix="mm" />
                 <NumberInput label="Gauche" value={config.style_margin_left} onChange={v => update('style_margin_left', v)} suffix="mm" />
@@ -376,5 +374,6 @@ export default function DocumentConfigPage() {
         </button>
       </div>
     </div>
+    </HRShell>
   );
 }

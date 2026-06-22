@@ -6,7 +6,7 @@ import {
   ArrowLeft, FileText, Download, PenTool, Calendar, DollarSign,
   User, CheckCircle, Clock, AlertCircle, FileCheck, Loader2,
   RefreshCw, Shield, Hash, Briefcase, Building2, ExternalLink,
-  Pencil, Eye, RotateCcw,
+  Pencil, Eye, RotateCcw, Settings,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -401,6 +401,14 @@ export default function ContractDetailPage() {
               Modifier les infos
             </button>
           )}
+          <Link
+            href="/app/hr/contracts/document-config"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 rounded-xl transition"
+            title="Personnaliser l'apparence des contrats (en-tête, filigrane, pied de page, style)"
+          >
+            <Settings className="h-4 w-4" />
+            Config. visuelle
+          </Link>
           {canReactivate && (
             <button
               onClick={handleReactivate}

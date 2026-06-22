@@ -155,6 +155,7 @@ export default function StaffDetailPage() {
   // Edit modal
   const [editOpen, setEditOpen] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
 
   // Document upload modal

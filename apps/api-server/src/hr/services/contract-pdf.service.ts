@@ -1133,54 +1133,32 @@ export class ContractPdfService {
       }
     }
 
-    // Store articles as JSON in contract terms
+    // ─── Stocker les articles UNIQUEMENT dans contract.terms.customArticles ───
+    // Les articles personnalisés sont propres à CE contrat (ce candidat),
+    // pas à un template réutilisable. On ne crée JAMAIS de nouveau
+    // ContractTemplate ici — c'était l'ancien comportement qui causait :
+    //   1. Prolifération de templates (un par sauvegarde)
+    //   2. Valeurs figées en dur (le template stockait les articles résolus)
+    //
+    // Les templates de base (CDI/CDD/Stage/...) sont gérés séparément via
+    // les endpoints dédiés (POST /contracts/templates) et contiennent des
+    // variables {{...}} qui sont résolues à chaque génération.
     const updatedTerms = {
       ...((contract.terms as any) || {}),
       customArticles: articles,
       articlesUpdatedAt: new Date().toISOString(),
     };
 
-    // Also update or create a ContractTemplate with the custom articles
-    // If the contract has a linked template, update it; otherwise create one
-    let templateId = contract.templateId;
-
-    if (templateId) {
-      // Update existing template
-      await this.prisma.contractTemplate.update({
-        where: { id: templateId },
-        data: {
-          template: JSON.stringify(articles),
-          updatedAt: new Date(),
-        },
-      });
-    } else {
-      // Create a new template linked to this contract type
-      const newTemplate = await this.prisma.contractTemplate.create({
-        data: {
-          name: `Personnalisé - ${contract.contractType} - ${new Date().toLocaleDateString('fr-FR')}`,
-          contractType: contract.contractType,
-          template: JSON.stringify(articles),
-          tenantId,
-          isActive: true,
-        },
-      });
-      templateId = newTemplate.id;
-
-      // Link the template to the contract
-      await this.prisma.contract.update({
-        where: { id: contractId },
-        data: { templateId },
-      });
-    }
-
-    // Update the contract terms
+    // Mettre à jour le contrat avec les articles personnalisés
+    // ⚠️ On ne touche PAS au templateId — le contrat garde son template lié
+    // (s'il en a un) ou null (s'il utilise les articles par défaut).
     const updated = await this.prisma.contract.update({
       where: { id: contractId },
-      data: { terms: updatedTerms },
+      data: { terms: updatedTerms as any },
       include: { staff: true, template: true },
     });
 
-    this.logger.log(`Articles sauvegardés pour le contrat ${contractId}: ${articles.length} articles`);
+    this.logger.log(`Articles sauvegardés pour le contrat ${contractId}: ${articles.length} articles (stockés dans contract.terms.customArticles — pas de nouveau template créé)`);
     return { success: true, articlesCount: articles.length, contract: updated };
   }
 

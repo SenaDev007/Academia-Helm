@@ -27,6 +27,7 @@ import { FinanceTransactionController } from './finance-transaction.controller';
 import { FinanceTransactionService } from './finance-transaction.service';
 import { RecoveryReminderController } from './recovery-reminder.controller';
 import { RecoveryReminderService } from './recovery-reminder.service';
+import { RecoveryReminderEmailService } from './recovery-reminder-email.service';
 // Module 4 - Frais & Priorité de Paiement
 import { PaymentAllocationService } from './payment-allocation.service';
 import { FeeInstallmentService } from './fee-installment.service';
@@ -61,9 +62,10 @@ import { FinancialSettingsController } from './financial-settings.controller';
 import { FinanceReportsService } from './finance-reports.service';
 import { FinanceReportsController } from './finance-reports.controller';
 import { FinanceAuditController } from './finance-audit.controller';
+import { CommunicationModule } from '../communication/communication.module';
 
 @Module({
-  imports: [ConfigModule, DatabaseModule, SettingsModule],
+  imports: [ConfigModule, DatabaseModule, SettingsModule, CommunicationModule],
   controllers: [
     FeeStructureController,
     StudentAccountController,
@@ -104,6 +106,7 @@ import { FinanceAuditController } from './finance-audit.controller';
     StudentAccountService,
     FinanceTransactionService,
     RecoveryReminderService,
+    RecoveryReminderEmailService,
     // Module 4 - Frais & Priorité de Paiement
     PaymentAllocationService,
     FeeInstallmentService,
@@ -132,6 +135,7 @@ import { FinanceAuditController } from './finance-audit.controller';
     StudentAccountService,
     FinanceTransactionService,
     RecoveryReminderService,
+    RecoveryReminderEmailService,
     // Module 4 - Frais & Priorité de Paiement
     PaymentAllocationService,
     FeeInstallmentService,

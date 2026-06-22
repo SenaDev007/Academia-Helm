@@ -24,6 +24,8 @@ import { AnnouncementsServiceV2 } from './services/announcements.service';
 import { TemplateService } from './services/template.service';
 import { CommunicationOrionService } from './services/communication-orion.service';
 import { CommunicationSaraService } from './services/communication-sara.service';
+import { ScheduledEmailService } from './services/scheduled-email.service';
+import { ScheduledEmailDispatcherService } from './services/scheduled-email-dispatcher.service';
 import { CommunicationV2Controller } from './communication-v2.controller';
 import { CommunicationPrismaController } from './communication-prisma.controller';
 import { CommunicationPrismaService } from './communication-prisma.service';
@@ -36,6 +38,7 @@ import { AutomationPrismaService } from './automation-prisma.service';
 import { TemplatesPrismaController } from './templates-prisma.controller';
 import { TemplatesPrismaService } from './templates-prisma.service';
 import { EmailLogController } from './email-log.controller';
+import { ScheduledEmailController } from './scheduled-email.controller';
 import { DatabaseModule } from '../database/database.module';
 
 @Module({
@@ -48,6 +51,7 @@ import { DatabaseModule } from '../database/database.module';
     AutomationPrismaController,
     TemplatesPrismaController,
     EmailLogController,
+    ScheduledEmailController,
   ],
   providers: [
     EmailService, 
@@ -63,6 +67,9 @@ import { DatabaseModule } from '../database/database.module';
     TemplateService,
     CommunicationOrionService,
     CommunicationSaraService,
+    // Scheduled emails (programmation d'envoi à date/heure précise)
+    ScheduledEmailService,
+    ScheduledEmailDispatcherService,
     // Prisma CRUD services
     CommunicationPrismaService,
     MessagesPrismaService,
@@ -84,6 +91,7 @@ import { DatabaseModule } from '../database/database.module';
     TemplateService,
     CommunicationOrionService,
     CommunicationSaraService,
+    ScheduledEmailService,
     CommunicationPrismaService,
     MessagesPrismaService,
     SchedulingPrismaService,

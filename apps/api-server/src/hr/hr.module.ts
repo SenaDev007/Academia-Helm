@@ -48,6 +48,7 @@ import { OrganigramPrismaController } from './organigram-prisma.controller';
 import { OrionModule } from '../orion/orion.module';
 import { CommunicationModule } from '../communication/communication.module';
 import { StaffCredentialService } from './services/staff-credential.service';
+import { RecruitmentDailySummaryService } from './services/recruitment-daily-summary.service';
 
 @Module({
   imports: [PrismaModule, OrionModule, CommunicationModule],
@@ -77,6 +78,7 @@ import { StaffCredentialService } from './services/staff-credential.service';
     IaPrismaService,
     OrganigramPrismaService,
     StaffCredentialService,
+    RecruitmentDailySummaryService,
   ],
   controllers: [
     StaffPrismaController,

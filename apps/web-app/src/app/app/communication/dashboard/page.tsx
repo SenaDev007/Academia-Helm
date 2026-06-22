@@ -287,6 +287,22 @@ export default function CommunicationDashboardPage() {
             </div>
             <ChevronRight className="w-6 h-6 text-slate-300 group-hover:text-slate-700 group-hover:translate-x-1 transition-all" />
           </a>
+
+          <a
+            href="/app/communication/scheduled-emails"
+            className="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm hover:shadow-xl transition-all group flex items-center justify-between"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-amber-50 flex items-center justify-center group-hover:bg-amber-500 transition-colors">
+                <Clock className="w-7 h-7 text-amber-500 group-hover:text-white transition-colors" />
+              </div>
+              <div>
+                <h3 className="font-black text-slate-900 text-lg">Emails programmés</h3>
+                <p className="text-sm text-slate-500">Programmer l'envoi d'emails à une date/heure précise</p>
+              </div>
+            </div>
+            <ChevronRight className="w-6 h-6 text-slate-300 group-hover:text-slate-700 group-hover:translate-x-1 transition-all" />
+          </a>
         </div>
       </div>
     </ModuleContentArea>

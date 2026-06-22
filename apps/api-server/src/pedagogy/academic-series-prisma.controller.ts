@@ -15,6 +15,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { AcademicSeriesPrismaService } from './academic-series-prisma.service';
+import { IMAGE_OR_PDF_DATA_URL_PIPE } from '../common/pipes/data-url-validation.pipe';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import {
@@ -46,31 +47,11 @@ export class AcademicSeriesPrismaController {
    */
   @Post('programs/upload-program')
   async uploadProgramData(
-    @Body() body: { fileDataUrl: string; fileName?: string; mimeType?: string; folder?: string },
+    @Body('fileDataUrl', IMAGE_OR_PDF_DATA_URL_PIPE) fileDataUrl: string,
   ) {
-    if (!body?.fileDataUrl || typeof body.fileDataUrl !== 'string') {
-      throw new BadRequestException('fileDataUrl requis (data URL base64)');
-    }
-    const trimmed = body.fileDataUrl.trim();
-    const m = /^data:([^;]+);base64,(.+)$/i.exec(trimmed);
-    if (!m) {
-      throw new BadRequestException('Format attendu : data URL base64 (data:...;base64,...).');
-    }
-    const mimeType = m[1].trim().toLowerCase();
-    if (!mimeType.startsWith('image/') && mimeType !== 'application/pdf') {
-      throw new BadRequestException('Type non supporté. Formats acceptés : images, PDF.');
-    }
-    let buffer: Buffer;
-    try {
-      buffer = Buffer.from(m[2], 'base64');
-    } catch {
-      throw new BadRequestException('Base64 invalide.');
-    }
-    if (buffer.length > 20 * 1024 * 1024) {
-      throw new BadRequestException('Fichier trop volumineux (max 20 Mo).');
-    }
-    // Retourner le data URL tel quel — sera stocké directement dans documentUrl
-    return { url: trimmed };
+    // Le pipe a déjà validé le format, le MIME type (image/* ou application/pdf) et la taille (20 Mo).
+    // Retourner le data URL tel quel — sera stocké directement dans documentUrl.
+    return { url: fileDataUrl };
   }
 
   @Put('programs/:id/approve')

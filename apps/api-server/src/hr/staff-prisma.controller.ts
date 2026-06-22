@@ -33,6 +33,7 @@ import {
 } from '@nestjs/common';
 import { StaffPrismaService } from './staff-prisma.service';
 import { TerminationPdfService } from './services/termination-pdf.service';
+import { IMAGE_ONLY_DATA_URL_PIPE, IMAGE_OR_PDF_DATA_URL_PIPE } from '../common/pipes/data-url-validation.pipe';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
@@ -303,17 +304,14 @@ export class StaffPrismaController {
   async uploadPhotoDataUrl(
     @GetTenant() tenant: any,
     @Param('id') staffId: string,
-    @Body() body: { photoDataUrl: string },
+    @Body('photoDataUrl', IMAGE_ONLY_DATA_URL_PIPE) photoDataUrl: string,
     @Query('tenantId') tenantIdFallback?: string,
   ) {
-    if (!body?.photoDataUrl || typeof body.photoDataUrl !== 'string') {
-      throw new BadRequestException('photoDataUrl requis (data URL base64)');
-    }
     const tid = tenant?.id ?? tenantIdFallback;
     if (!tid) {
       throw new BadRequestException('Tenant ID requis pour cette opération');
     }
-    return this.staffService.uploadStaffPhotoDataUrl(staffId, tid, body.photoDataUrl);
+    return this.staffService.uploadStaffPhotoDataUrl(staffId, tid, photoDataUrl);
   }
 
   @Get(':id/photo')
@@ -359,12 +357,11 @@ export class StaffPrismaController {
     },
     @Query('tenantId') tenantIdFallback?: string,
   ) {
-    if (!body?.fileDataUrl || typeof body.fileDataUrl !== 'string') {
-      throw new BadRequestException('fileDataUrl requis (data URL base64)');
-    }
     if (!body?.documentType || !body?.fileName) {
       throw new BadRequestException('documentType et fileName requis');
     }
+    // Valider le data URL via le pipe (vérifie format, MIME type, taille)
+    const validatedDataUrl = IMAGE_OR_PDF_DATA_URL_PIPE.transform(body.fileDataUrl);
     const tid = tenant?.id ?? tenantIdFallback;
     if (!tid) {
       throw new BadRequestException('Tenant ID requis pour cette opération');
@@ -373,7 +370,7 @@ export class StaffPrismaController {
     return this.staffService.uploadStaffDocumentDataUrl(staffId, tid, {
       documentType: body.documentType,
       fileName: body.fileName,
-      fileDataUrl: body.fileDataUrl,
+      fileDataUrl: validatedDataUrl,
       mimeType: body.mimeType,
       fileSize: body.fileSize,
       description: body.description,

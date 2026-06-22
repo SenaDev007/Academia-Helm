@@ -11,6 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import { DataUrlValidationPipe } from '../common/pipes/data-url-validation.pipe';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Public } from '../auth/decorators/public.decorator';
@@ -72,34 +73,16 @@ export class ReviewsController {
   @Public()
   @Throttle({ medium: { limit: 10, ttl: 60000 } })
   @Post('upload-photo')
-  async uploadPhotoDataUrl(@Body() body: { photoDataUrl: string }) {
-    if (!body?.photoDataUrl || typeof body.photoDataUrl !== 'string') {
-      throw new BadRequestException('photoDataUrl requis (data URL base64)');
-    }
-    const trimmed = body.photoDataUrl.trim();
-    const m = /^data:([^;]+);base64,(.+)$/i.exec(trimmed);
-    if (!m) {
-      throw new BadRequestException('Format attendu : data URL base64 (data:image/...;base64,...).');
-    }
-    const mimeType = m[1].trim().toLowerCase();
-    if (!REVIEW_PHOTO_LIMITS.allowedMime.includes(mimeType)) {
-      throw new BadRequestException(
-        `Format non supporté : ${mimeType}. Formats acceptés : JPG, PNG, WebP, AVIF.`,
-      );
-    }
-    let buffer: Buffer;
-    try {
-      buffer = Buffer.from(m[2], 'base64');
-    } catch {
-      throw new BadRequestException('Base64 invalide.');
-    }
-    if (buffer.length > REVIEW_PHOTO_LIMITS.maxFileSize) {
-      throw new BadRequestException(
-        `Image trop volumineuse (max ${Math.round(REVIEW_PHOTO_LIMITS.maxFileSize / 1024)} Ko).`,
-      );
-    }
-    // Retourner le data URL tel quel — il sera stocké directement dans review.photoUrl
-    return { url: trimmed };
+  async uploadPhotoDataUrl(
+    @Body('photoDataUrl', new DataUrlValidationPipe({
+      allowedMimeTypes: REVIEW_PHOTO_LIMITS.allowedMime,
+      maxBytes: REVIEW_PHOTO_LIMITS.maxFileSize,
+      fieldName: 'photoDataUrl',
+    })) photoDataUrl: string,
+  ) {
+    // Le pipe a déjà validé le format, le MIME type et la taille.
+    // Retourner le data URL tel quel — il sera stocké directement dans review.photoUrl.
+    return { url: photoDataUrl };
   }
 
   @Public()

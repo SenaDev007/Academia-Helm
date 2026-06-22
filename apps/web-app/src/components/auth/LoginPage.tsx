@@ -65,6 +65,7 @@ import { isReservedSubdomain, extractTenantSlug } from '@/lib/tenant/constants';
 import { detectAccessContext, getAvailablePortals, getPortalForRole, canRoleUsePortal } from '@/lib/auth/role-portal-map';
 import { useFetchWithTimeout } from '@/lib/hooks/use-fetch-with-timeout';
 import { useSchoolBranding } from '@/hooks/useSchoolBranding';
+import AcademicParticles from './AcademicParticles';
 
 type PortalType = 'platform' | 'school' | 'teacher' | 'parent' | 'public' | null;
 
@@ -1172,23 +1173,11 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   };
 
   return (
-    <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden px-2 py-6 sm:px-4 sm:py-10 lg:px-6">
-      {/* ── Image de fond ── */}
-      <div className="pointer-events-none absolute inset-0" aria-hidden>
-        <Image
-          src="/images/login-page.png"
-          alt=""
-          fill
-          className="object-cover object-center"
-          priority
-          quality={85}
-          sizes="100vw"
-        />
-        {/* Overlay — TRANSPARENT pour laisser l'image de fond visible */}
-        <div
-          className="absolute inset-0"
-        />
-      </div>
+    <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden px-2 py-6 sm:px-4 sm:py-10 lg:px-6"
+      style={{ background: 'linear-gradient(135deg, #f0f4ff 0%, #e8edf7 50%, #f5f0ff 100%)' }}>
+
+      {/* ── Particules académiques animées ── */}
+      <AcademicParticles />
 
       {/* ── Background blobs — palette Helm ── */}
       <div className="pointer-events-none absolute inset-0 opacity-40" aria-hidden>
@@ -1241,21 +1230,25 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
         </Link>
       </motion.nav>
 
-      {/* ── Main login card ── */}
-      <div className="relative z-10 w-full max-w-sm px-0 sm:px-0">
+      {/* ── Main login card — layout paysage ── */}
+      <div className="relative z-10 w-full max-w-4xl px-0 sm:px-0">
         <motion.div
           initial={shouldReduceMotion ? false : { opacity: 0, y: 20, scale: 0.99 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: dur, ease: 'easeOut' }}
-          className="rounded-2xl border bg-white/95 p-4 shadow-2xl backdrop-blur-md sm:p-6"
+          className="rounded-2xl border bg-white/95 shadow-2xl backdrop-blur-md overflow-hidden"
           style={{
             borderColor: `${NAVY}18`,
             boxShadow: `0 24px 48px -12px ${NAVY}14, 0 0 0 1px ${GOLD}12`,
           }}
         >
+          <div className="flex flex-col md:flex-row min-h-[480px]">
+            {/* ── Colonne gauche : infos école ── */}
+            <div className="flex-1 p-6 sm:p-8 flex flex-col justify-center"
+              style={{ background: `linear-gradient(160deg, ${NAVY}08 0%, ${GOLD}06 100%)` }}>
           {/* ── Header ── */}
           <motion.div
-            className="mb-4 text-center"
+            className="mb-4 text-center md:text-left"
             variants={heroVariants}
             initial="hidden"
             animate="show"
@@ -1449,6 +1442,16 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
               </motion.div>
             ) : null}
           </AnimatePresence>
+            </div>{/* ── Fin colonne gauche ── */}
+
+            {/* ── Séparateur vertical ── */}
+            <div className="hidden md:flex items-center">
+              <div className="w-px h-4/5 bg-gradient-to-b from-transparent via-slate-200 to-transparent" />
+            </div>
+            <div className="md:hidden h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
+
+            {/* ── Colonne droite : formulaire de connexion ── */}
+            <div className="flex-1 p-6 sm:p-8 flex flex-col justify-center">
 
           {/* ════════════════════════════════════════════════════════════════
               FORMULAIRES D'AUTHENTIFICATION PAR PORTAIL
@@ -2105,6 +2108,8 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
               </p>
             )}
           </motion.div>
+            </div>{/* ── Fin colonne droite ── */}
+          </div>{/* ── Fin flex-row ── */}
         </motion.div>
       </div>
 

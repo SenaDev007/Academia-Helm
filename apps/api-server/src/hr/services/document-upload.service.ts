@@ -19,7 +19,9 @@ export interface UploadDocumentDto { docType: string; fileName: string; fileCont
 const DEFAULT_REQUIRED_DOCS: RequiredDoc[] = [
   { type: 'CNI', label: "Carte d'identité / Passeport", required: true, category: 'IDENTITE' },
   { type: 'DIPLOMA', label: 'Diplôme le plus élevé', required: true, category: 'DIPLOMES' },
-  { type: 'CV', label: 'CV / Curriculum Vitae', required: false, category: 'EXPERIENCE' },
+  { type: 'CV', label: 'CV / Curriculum Vitae', required: true, category: 'EXPERIENCE' },
+  { type: 'APPLICATION_LETTER', label: 'Lettre de demande d\'emploi', required: true, category: 'EXPERIENCE' },
+  { type: 'COVER_LETTER', label: 'Lettre de motivation', required: false, category: 'EXPERIENCE' },
   { type: 'WORK_CERTIFICATE', label: 'Attestations de travail', required: false, category: 'EXPERIENCE' },
   { type: 'CNSS_CERTIFICATE', label: 'Attestation CNSS', required: false, category: 'ADMINISTRATIF' },
   { type: 'MEDICAL_CERTIFICATE', label: 'Certificat médical', required: false, category: 'MEDICAL' },
@@ -34,36 +36,32 @@ export class DocumentUploadService {
   async sendUploadLink(tenantId: string, dto: SendDocumentUploadDto) {
     await this.ensureTableExists();
 
-    // ─── Résolution du destinataire ────────────────────────────────────────
-    // Accepte soit candidateId direct, soit staffId (résolution via HrApplication)
-    // Utilise du raw SQL pour éviter toute dépendance au Prisma client régénéré
+    // ─── Résolution du destinataire via Prisma client ─────────────────────
+    // Utilise le Prisma client (et non raw SQL) pour éviter les erreurs de
+    // mapping de noms de colonnes (camelCase vs snake_case).
+    // Accepte soit candidateId direct, soit staffId (résolution via HrApplication).
     let candidate: { id: string; firstName: string; lastName: string; email: string | null } | null = null;
 
     if (dto.candidateId) {
-      const rows = await this.prisma.$queryRawUnsafe<any[]>(
-        `SELECT id, first_name as "firstName", last_name as "lastName", email FROM hr_candidates WHERE id=$1 AND tenant_id=$2`,
-        dto.candidateId, tenantId,
-      );
-      candidate = rows[0] ?? null;
+      const found = await this.prisma.hrCandidate.findFirst({
+        where: { id: dto.candidateId, tenantId },
+        select: { id: true, firstName: true, lastName: true, email: true },
+      });
+      candidate = found ?? null;
     } else if (dto.staffId) {
-      // 1. Résolution: staffId → HrApplication.staffId → candidateId → HrCandidate
-      const appRows = await this.prisma.$queryRawUnsafe<any[]>(
-        `SELECT c.id, c.first_name as "firstName", c.last_name as "lastName", c.email
-         FROM hr_applications a
-         JOIN hr_candidates c ON a.candidate_id = c.id
-         WHERE a.staff_id = $1 AND a.tenant_id = $2
-         LIMIT 1`,
-        dto.staffId, tenantId,
-      );
-      candidate = appRows[0] ?? null;
+      // 1. Résolution: staffId → HrApplication.staffId → candidate
+      const app = await this.prisma.hrApplication.findFirst({
+        where: { staffId: dto.staffId, tenantId },
+        select: { candidate: { select: { id: true, firstName: true, lastName: true, email: true } } },
+      });
+      candidate = app?.candidate ?? null;
 
       // 2. Fallback: si pas de candidature liée, on utilise directement les infos du staff
       if (!candidate) {
-        const staffRows = await this.prisma.$queryRawUnsafe<any[]>(
-          `SELECT id, first_name as "firstName", last_name as "lastName", email FROM staff WHERE id=$1 AND tenant_id=$2`,
-          dto.staffId, tenantId,
-        );
-        const staff = staffRows[0];
+        const staff = await this.prisma.staff.findFirst({
+          where: { id: dto.staffId, tenantId },
+          select: { id: true, firstName: true, lastName: true, email: true },
+        });
         if (staff) {
           candidate = { id: staff.id, firstName: staff.firstName, lastName: staff.lastName, email: staff.email };
         }
@@ -73,6 +71,7 @@ export class DocumentUploadService {
     if (!candidate) throw new NotFoundException('Aucun candidat ou personnel correspondant trouvé. Vérifiez que le personnel existe.');
     if (!candidate.email) throw new BadRequestException("Le destinataire n'a pas d'email");
 
+    // hr_document_upload_tokens est une table créée en raw SQL (snake_case) — on garde le raw SQL pour elle
     await this.prisma.$executeRawUnsafe(`UPDATE hr_document_upload_tokens SET status='EXPIRED' WHERE candidate_id=$1 AND status='PENDING'`, candidate.id);
     const token = randomBytes(16).toString('hex');
     const expiresAt = new Date(); expiresAt.setDate(expiresAt.getDate() + 7);

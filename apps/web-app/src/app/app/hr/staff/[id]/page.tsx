@@ -1735,11 +1735,13 @@ export default function StaffDetailPage() {
                       <div className="text-xs text-blue-800 space-y-1">
                         <p className="font-bold">Documents qui seront demandés :</p>
                         <ul className="list-disc list-inside space-y-0.5 text-blue-700">
-                          <li>Pièce d'identité / Passeport <span className="text-rose-500 font-bold">*</span></li>
+                          <li>Pièce d&apos;identité / Passeport <span className="text-rose-500 font-bold">*</span></li>
                           <li>Diplôme le plus élevé <span className="text-rose-500 font-bold">*</span></li>
-                          <li>CV / Curriculum Vitae</li>
-                          <li>Attestations de travail</li>
-                          <li>Attestation CNSS, Certificat médical...</li>
+                          <li>CV / Curriculum Vitae <span className="text-rose-500 font-bold">*</span></li>
+                          <li>Lettre de demande d&apos;emploi <span className="text-rose-500 font-bold">*</span></li>
+                          <li>Lettre de motivation (optionnel)</li>
+                          <li>Attestations de travail (optionnel)</li>
+                          <li>Attestation CNSS, Certificat médical... (optionnel)</li>
                         </ul>
                         <p className="text-[10px] text-blue-500 mt-1">* obligatoires</p>
                       </div>

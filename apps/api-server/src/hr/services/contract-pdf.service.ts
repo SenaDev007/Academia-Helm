@@ -181,7 +181,12 @@ export class ContractPdfService {
     const schoolEmail = schoolSettings?.email || identityProfile?.email || school?.primaryEmail || '';
     const schoolLogo = schoolSettings?.logoUrl || identityProfile?.logoUrl || school?.logo || '';
     const schoolCity = schoolSettings?.city || identityProfile?.city || '';
-    const schoolCountry = schoolSettings?.country || identityProfile?.country || contract.tenant?.country?.name || '';
+    // schoolCountry : si schoolSettings.country est un code ISO (2 lettres),
+    // on préfère le nom complet du pays depuis le tenant.country.name.
+    const rawSchoolCountry = schoolSettings?.country || identityProfile?.country || '';
+    const schoolCountry = (rawSchoolCountry && rawSchoolCountry.length === 2)
+      ? (contract.tenant?.country?.name || rawSchoolCountry)
+      : (rawSchoolCountry || contract.tenant?.country?.name || '');
     const directorName = school?.directorPrimary || schoolSettings?.abbreviation || identityProfile?.schoolAcronym || 'Le Directeur';
     const schoolAuthorizationNumber = schoolSettings?.authorizationNumber || identityProfile?.authorizationNumber || '';
     const schoolAbbreviation = schoolSettings?.abbreviation || identityProfile?.schoolAcronym || school?.abbreviation || '';
@@ -453,7 +458,12 @@ export class ContractPdfService {
     const schoolEmail = schoolSettings?.email || identityProfile?.email || school?.primaryEmail || '';
     const schoolLogo = schoolSettings?.logoUrl || identityProfile?.logoUrl || school?.logo || '';
     const schoolCity = schoolSettings?.city || identityProfile?.city || '';
-    const schoolCountry = schoolSettings?.country || identityProfile?.country || contract.tenant?.country?.name || '';
+    // schoolCountry : si schoolSettings.country est un code ISO (2 lettres),
+    // on préfère le nom complet du pays depuis le tenant.country.name.
+    const rawSchoolCountry = schoolSettings?.country || identityProfile?.country || '';
+    const schoolCountry = (rawSchoolCountry && rawSchoolCountry.length === 2)
+      ? (contract.tenant?.country?.name || rawSchoolCountry)
+      : (rawSchoolCountry || contract.tenant?.country?.name || '');
     const directorName = school?.directorPrimary || schoolSettings?.abbreviation || identityProfile?.schoolAcronym || 'Le Directeur';
     const schoolAuthorizationNumber = schoolSettings?.authorizationNumber || identityProfile?.authorizationNumber || '';
     const schoolAbbreviation = schoolSettings?.abbreviation || identityProfile?.schoolAcronym || school?.abbreviation || '';
@@ -1008,20 +1018,19 @@ export class ContractPdfService {
         const job = application.job;
         const parts: string[] = [];
 
-        // Missions principales
+        // Missions principales (convertir le HTML en texte brut)
         if (job.missions?.trim()) {
-          parts.push(job.missions.trim());
+          parts.push(this.htmlToPlainText(job.missions.trim()));
         }
 
-        // Responsabilités
+        // Responsabilités (convertir le HTML en texte brut)
         if (job.responsibilities?.trim()) {
-          parts.push(job.responsibilities.trim());
+          parts.push(this.htmlToPlainText(job.responsibilities.trim()));
         }
 
         // Si ni missions ni responsabilités, fallback sur la description du poste
         if (parts.length === 0 && job.description?.trim()) {
-          // La description peut être longue — on prend les 500 premiers caractères
-          const desc = job.description.trim();
+          const desc = this.htmlToPlainText(job.description.trim());
           parts.push(desc.length > 500 ? desc.substring(0, 500) + '...' : desc);
         }
 
@@ -1035,6 +1044,51 @@ export class ContractPdfService {
 
     // Fallback : missions génériques
     return 'Les missions définies par la Direction de l\'établissement';
+  }
+
+  /**
+   * Convertit du HTML en texte brut propre.
+   *
+   * Pourquoi : les missions et responsabilités stockées dans HrJob sont du
+   * HTML (ex: <ul><li><p>Mission 1</p></li></ul>). Si on injecte ce HTML
+   * tel quel dans {{jobResponsibilities}}, Handlebars l'échappe en
+   * &lt;ul&gt;&lt;li&gt;... ce qui s'affiche comme texte brut dans le PDF.
+   *
+   * Cette méthode :
+   *   1. Convertit <li> en "- " (puces)
+   *   2. Convertit <br> en saut de ligne
+   *   3. Convertit <p> en saut de ligne
+   *   4. Supprime toutes les autres balises HTML
+   *   5. Nettoie les espaces multiples et sauts de ligne excessifs
+   */
+  private htmlToPlainText(html: string): string {
+    if (!html) return '';
+    return html
+      // Convertir <li> en puces
+      .replace(/<li[^>]*>/gi, '\n- ')
+      // Convertir <br> en saut de ligne
+      .replace(/<br\s*\/?>/gi, '\n')
+      // Convertir <p> en saut de ligne (fermeture uniquement, l'ouverture est gérée par <li>)
+      .replace(/<\/p>/gi, '\n')
+      .replace(/<p[^>]*>/gi, '')
+      // Supprimer toutes les autres balises HTML
+      .replace(/<[^>]+>/g, '')
+      // Décoder les entités HTML courantes
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      // Nettoyer les espaces multiples
+      .replace(/[ \t]+/g, ' ')
+      // Nettoyer les sauts de ligne excessifs (max 2 consécutifs)
+      .replace(/\n{3,}/g, '\n\n')
+      // Trim chaque ligne
+      .split('\n')
+      .map(line => line.trim())
+      .join('\n')
+      .trim();
   }
 
   /**

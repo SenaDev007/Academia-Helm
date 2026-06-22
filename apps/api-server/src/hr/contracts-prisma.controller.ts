@@ -353,7 +353,14 @@ export class ContractsPrismaController {
 
     const { pdfBuffer, contract } = result;
     const staffName = `${contract.staff?.lastName}_${contract.staff?.firstName}`.replace(/\s+/g, '_');
-    const filename = `Contrat_${staffName}_${contract.contractType}_${id.substring(0, 8)}.pdf`;
+    // Format: Contrat_nomPersonnel_nomEcole_date.pdf
+    // Ex: Contrat_AKOVI_Aurore_CSPEB_Eveil_dAfrique_2026-06-22.pdf
+    const schoolName = (contract.tenant?.name || 'Ecole')
+      .replace(/[^a-zA-Z0-9]/g, '_')
+      .replace(/_+/g, '_')
+      .substring(0, 50);
+    const dateStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const filename = `Contrat_${staffName}_${schoolName}_${dateStr}.pdf`;
 
     res.set({
       'Content-Type': 'application/pdf',

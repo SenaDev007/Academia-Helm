@@ -1243,9 +1243,12 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
           }}
         >
           <div className="flex flex-col md:flex-row min-h-[480px]">
-            {/* ── Colonne gauche : infos école ── */}
-            <div className="flex-1 p-6 sm:p-8 flex flex-col justify-center"
-              style={{ background: `linear-gradient(160deg, ${NAVY}08 0%, ${GOLD}06 100%)` }}>
+            {/* ── Colonne gauche : infos école (fond bleu palette Helm) ── */}
+            <div className="flex-1 p-6 sm:p-8 flex flex-col justify-center relative overflow-hidden"
+              style={{ background: `linear-gradient(155deg, ${NAVY} 0%, ${BLUE} 100%)` }}>
+              {/* ── Décor bleu : halos lumineux subtils ── */}
+              <div className="pointer-events-none absolute -top-16 -left-10 h-48 w-48 rounded-full opacity-25 blur-3xl" style={{ background: '#ffffff' }} aria-hidden />
+              <div className="pointer-events-none absolute -bottom-20 -right-10 h-56 w-56 rounded-full opacity-15 blur-3xl" style={{ background: `${GOLD}` }} aria-hidden />
           {/* ── Header ── */}
           <motion.div
             className="mb-4 text-center md:text-left"
@@ -1271,14 +1274,13 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
               className="mb-1.5 flex flex-col items-center justify-center gap-1"
             >
               <h1
-                className="text-sm font-semibold tracking-tight sm:text-base"
-                style={{ color: NAVY }}
+                className="text-sm font-semibold tracking-tight sm:text-base text-white"
               >
                 {portalDef?.title || clientBranding?.name || BRAND.name}
               </h1>
             </motion.div>
 
-            <motion.p variants={heroItem} className="text-sm text-slate-600">
+            <motion.p variants={heroItem} className="text-sm text-blue-100">
               {portalDef?.subtitle || clientBranding?.slogan || BRAND.subtitle}
             </motion.p>
 
@@ -1286,32 +1288,32 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             {(clientBranding?.name || tenantSlug || schoolNameFromUrl) && portalType !== 'public' && (
               <motion.div variants={heroItem} className="mt-3">
                 <div
-                  className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium"
+                  className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium text-white"
                   style={{
-                    color: NAVY,
-                    borderColor: `${NAVY}20`,
-                    background: `${NAVY}06`,
+                    borderColor: 'rgba(255,255,255,0.25)',
+                    background: 'rgba(255,255,255,0.10)',
+                    backdropFilter: 'blur(4px)',
                   }}
                 >
                   <Building2 className="h-3.5 w-3.5" />
                   <span>{clientBranding?.name || schoolNameFromUrl || tenantSlug}</span>
                   {clientBranding?.city && (
-                    <span className="text-slate-400">— {clientBranding.city}</span>
+                    <span className="text-blue-200">— {clientBranding.city}</span>
                   )}
                 </div>
               </motion.div>
             )}
 
             {portalType === null && (
-              <motion.p variants={heroItem} className="mt-1 text-xs font-medium text-slate-500">
+              <motion.p variants={heroItem} className="mt-1 text-xs font-medium text-blue-200">
                 {clientBranding?.slogan || clientBranding?.motto || BRAND.slogan}
               </motion.p>
             )}
 
             {/* Propulsé par — sur sous-domaine école */}
             {clientBranding && (
-              <motion.p variants={heroItem} className="mt-1 text-[10px] text-slate-400">
-                Propulsé par <span className="font-medium" style={{ color: NAVY }}>{BRAND.name}</span>
+              <motion.p variants={heroItem} className="mt-1 text-[10px] text-blue-200">
+                Propulsé par <span className="font-medium" style={{ color: GOLD }}>{BRAND.name}</span>
               </motion.p>
             )}
 
@@ -1328,15 +1330,16 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                     key={opt.type}
                     type="button"
                     onClick={() => setPortalType(opt.type)}
-                    className="flex flex-col items-center gap-1 rounded-xl border-2 p-3 min-h-[56px] text-center transition-all hover:shadow-md"
+                    className="flex flex-col items-center gap-1 rounded-xl border-2 p-3 min-h-[56px] text-center transition-all hover:shadow-md text-white"
                     style={{
-                      borderColor: `${NAVY}20`,
-                      background: `${NAVY}04`,
+                      borderColor: 'rgba(255,255,255,0.25)',
+                      background: 'rgba(255,255,255,0.08)',
+                      backdropFilter: 'blur(4px)',
                     }}
                   >
-                    <opt.Icon className="h-4 w-4 sm:h-5 sm:w-5" style={{ color: NAVY }} />
-                    <span className="text-[11px] sm:text-xs font-bold" style={{ color: NAVY }}>{opt.label}</span>
-                    <span className="text-[9px] sm:text-[10px] text-slate-500">{opt.desc}</span>
+                    <opt.Icon className="h-4 w-4 sm:h-5 sm:w-5" style={{ color: '#ffffff' }} />
+                    <span className="text-[11px] sm:text-xs font-bold text-white">{opt.label}</span>
+                    <span className="text-[9px] sm:text-[10px] text-blue-200">{opt.desc}</span>
                   </button>
                 ))}
               </motion.div>
@@ -1432,8 +1435,8 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                   </div>
                   <Link
                     href={backToPortalHref}
-                    className="mt-2 inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white"
-                    style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
+                    className="mt-2 inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold shadow-md"
+                    style={{ background: '#ffffff', color: NAVY }}
                   >
                     <ArrowLeft className="h-4 w-4" />
                     Retour aux portails
@@ -1444,11 +1447,11 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
           </AnimatePresence>
             </div>{/* ── Fin colonne gauche ── */}
 
-            {/* ── Séparateur vertical ── */}
+            {/* ── Séparateur vertical (fondu bleu → blanc) ── */}
             <div className="hidden md:flex items-center">
-              <div className="w-px h-4/5 bg-gradient-to-b from-transparent via-slate-200 to-transparent" />
+              <div className="w-px h-4/5" style={{ background: `linear-gradient(to bottom, transparent, ${GOLD}55, transparent)` }} />
             </div>
-            <div className="md:hidden h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
+            <div className="md:hidden h-px" style={{ background: `linear-gradient(to right, transparent, ${GOLD}55, transparent)` }} />
 
             {/* ── Colonne droite : formulaire de connexion ── */}
             <div className="flex-1 p-6 sm:p-8 flex flex-col justify-center">

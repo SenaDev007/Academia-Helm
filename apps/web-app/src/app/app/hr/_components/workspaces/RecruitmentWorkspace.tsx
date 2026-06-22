@@ -152,6 +152,7 @@ interface Candidate {
     id: string;
     status: string;        // 'DRAFT' | 'PENDING' | 'ACTIVE'
     isEmployerSigned: boolean;
+    isEmployeeSigned: boolean;  // true si le candidat a signé (contract.signedAt)
     startDate?: string;
     contractType?: string;
   } | null;
@@ -486,6 +487,7 @@ export function RecruitmentWorkspace() {
                 id: staffContract.id,
                 status: staffContract.status,
                 isEmployerSigned: !!(staffContract.terms as any)?.employerSignedAt,
+                isEmployeeSigned: !!staffContract.signedAt,
                 startDate: staffContract.startDate,
                 contractType: staffContract.contractType,
               }
@@ -3429,21 +3431,27 @@ export function RecruitmentWorkspace() {
                                   Recruté
                                 </span>
                                 {c.contract?.id && (
-                                  <button
-                                    onClick={async () => {
-                                      try {
-                                        toast({ variant: 'default', title: 'Relance en cours...' });
-                                        await hrFetch(hrUrl(`contracts/${c.contract.id}/resend-sign-email`, { tenantId: tenant?.id }), { method: 'POST' });
-                                        toast({ variant: 'success', title: 'Email renvoyé !', description: `Le lien de signature a été renvoyé à ${c.name}.` });
-                                      } catch (err: any) {
-                                        toast({ variant: 'error', title: 'Erreur', description: err.message });
-                                      }
-                                    }}
-                                    className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition"
-                                    title="Renvoyer l'email de signature au candidat"
-                                  >
-                                    <RefreshCw className="h-3 w-3" /> Relancer
-                                  </button>
+                                  c.contract?.isEmployeeSigned ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg" title="Le candidat a déjà signé son contrat">
+                                      <CheckCircle className="h-3 w-3" /> Signé
+                                    </span>
+                                  ) : (
+                                    <button
+                                      onClick={async () => {
+                                        try {
+                                          toast({ variant: 'default', title: 'Relance en cours...' });
+                                          await hrFetch(hrUrl(`contracts/${c.contract.id}/resend-sign-email`, { tenantId: tenant?.id }), { method: 'POST' });
+                                          toast({ variant: 'success', title: 'Email renvoyé !', description: `Le lien de signature a été renvoyé à ${c.name}.` });
+                                        } catch (err: any) {
+                                          toast({ variant: 'error', title: 'Erreur', description: err.message });
+                                        }
+                                      }}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition"
+                                      title="Renvoyer l'email de signature au candidat"
+                                    >
+                                      <RefreshCw className="h-3 w-3" /> Relancer
+                                    </button>
+                                  )
                                 )}
                               </div>
                             </td>

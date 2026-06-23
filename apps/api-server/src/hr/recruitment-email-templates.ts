@@ -627,3 +627,57 @@ export function renderRejected(
   `;
   return { subject, html: renderEmail(data.branding, body) };
 }
+
+// ============================================================================
+// 9. DEMANDE DE DOCUMENTS — lien de télérversement envoyé au candidat/personnel
+// ============================================================================
+export function renderDocumentUploadRequest(
+  data: RecruitmentEmailData & {
+    /** URL du lien de télérversement (page publique /upload-documents/:token) */
+    uploadUrl: string;
+    /** Date d'expiration du lien (formaté en FR) */
+    expiresAtFormatted: string;
+    /** Documents obligatoires (labels) */
+    requiredDocs: string[];
+    /** Documents optionnels (labels) */
+    optionalDocs: string[];
+  },
+): { subject: string; html: string } {
+  const subject = `📎 Documents à fournir — ${data.branding.schoolName}`;
+
+  const requiredList = data.requiredDocs.length
+    ? data.requiredDocs.map((d) => `<li style="margin-bottom:6px;"><strong>${escHtml(d)}</strong> <span style="color:#dc2626;font-size:11px;">(obligatoire)</span></li>`).join('')
+    : '';
+
+  const optionalList = data.optionalDocs.length
+    ? data.optionalDocs.map((d) => `<li style="margin-bottom:4px;color:#64748b;">${escHtml(d)} <span style="font-size:11px;">(optionnel)</span></li>`).join('')
+    : '';
+
+  const body = `
+    ${renderBadge('blue', '📎 Documents à fournir')}
+    <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;">Bonjour ${escHtml(data.candidateFirstName)},</h2>
+    <p style="margin:0 0 20px;color:#475569;line-height:1.6;">Suite à votre candidature chez <strong style="color:#0D1F6E;">${escHtml(data.branding.schoolName)}</strong>, nous avons besoin de certains documents pour finaliser votre dossier. Veuillez les téléverser via le lien sécurisé ci-dessous.</p>
+
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:20px;">
+      <tr><td style="padding:16px 20px;">
+        <h3 style="margin:0 0 12px;color:#0D1F6E;font-size:14px;text-transform:uppercase;letter-spacing:0.5px;">📋 Documents demandés</h3>
+        ${requiredList ? `<ul style="margin:0 0 16px;padding-left:20px;font-size:13px;color:#334155;">${requiredList}</ul>` : ''}
+        ${optionalList ? `<h4 style="margin:0 0 8px;color:#64748b;font-size:12px;text-transform:uppercase;">Documents complémentaires</h4><ul style="margin:0;padding-left:20px;font-size:13px;">${optionalList}</ul>` : ''}
+      </td></tr>
+    </table>
+
+    <div style="text-align:center;margin:28px 0 20px;">
+      <a href="${escHtml(data.uploadUrl)}" style="display:inline-block;background:#0D1F6E;color:#fff;padding:14px 32px;border-radius:8px;font-size:15px;font-weight:bold;text-decoration:none;">📎 Téléverser mes documents</a>
+    </div>
+
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;margin-bottom:16px;">
+      <tr><td style="padding:14px 18px;">
+        <p style="margin:0 0 6px;color:#92400e;font-size:12px;font-weight:bold;">⏰ Délai important</p>
+        <p style="margin:0;color:#92400e;font-size:12px;line-height:1.5;">Ce lien est valide jusqu'au <strong>${escHtml(data.expiresAtFormatted)}</strong>. Passé ce délai, veuillez contacter l'établissement pour obtenir un nouveau lien.</p>
+      </td></tr>
+    </table>
+
+    <p style="margin:0;color:#94a3b8;font-size:11px;line-height:1.6;">Si le bouton ne fonctionne pas, copiez-collez ce lien dans votre navigateur :<br/><a href="${escHtml(data.uploadUrl)}" style="color:#0D1F6E;word-break:break-all;">${escHtml(data.uploadUrl)}</a></p>
+  `;
+  return { subject, html: renderEmail(data.branding, body) };
+}

@@ -5,6 +5,7 @@ import { StorageService } from '../../common/services/storage.service';
 import { EmailService } from '../../communication/services/email.service';
 import { randomBytes } from 'crypto';
 import { Inject, forwardRef } from '@nestjs/common';
+import { renderDocumentUploadRequest, TenantBranding } from '../recruitment-email-templates';
 
 export interface RequiredDoc { type: string; label: string; required: boolean; category: string; }
 export interface SendDocumentUploadDto {
@@ -83,10 +84,119 @@ export class DocumentUploadService {
       const fromEmail = this.config.get('EMAIL_FROM_NOREPLY') || 'noreply@academiahelm.com';
       const reqList = requiredDocs.filter(d => d.required).map(d => d.label);
       const optList = requiredDocs.filter(d => !d.required).map(d => d.label);
-      const html = this.buildEmail(candidate.firstName, candidate.lastName, uploadUrl, expiresAt.toLocaleDateString('fr-FR'), reqList, optList);
-      await this.emailService.sendCategorized({ tenantId, category: 'RECRUTEMENT' as any, subCategory: 'upload_documents', module: 'hr', to: candidate.email, toName: `${candidate.firstName} ${candidate.lastName}`, recipientType: 'CANDIDAT' as any, recipientId: candidate.id, fromEmail, fromName: 'Academia Helm', subject: '📎 Documents à fournir', html, triggeredBy: 'SYSTEM', relatedEntityId: candidate.id, relatedEntityType: 'HrCandidate' });
+
+      // ─── Récupérer le branding du tenant (logo + nom école) ─────────────
+      // Même logique que recruitment-notification.service.ts getTenantBranding()
+      const branding = await this.getTenantBranding(tenantId);
+
+      // ─── Générer l'email avec le template standard Helm ──────────────────
+      // (header: logo + nom école / footer: Academia Helm)
+      const { subject, html } = renderDocumentUploadRequest({
+        branding,
+        candidateName: `${candidate.firstName} ${candidate.lastName}`,
+        candidateFirstName: candidate.firstName,
+        jobTitle: 'Finalisation de votre dossier',
+        uploadUrl,
+        expiresAtFormatted: expiresAt.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }),
+        requiredDocs: reqList,
+        optionalDocs: optList,
+      });
+
+      await this.emailService.sendCategorized({
+        tenantId,
+        category: 'RECRUTEMENT' as any,
+        subCategory: 'upload_documents',
+        module: 'hr',
+        to: candidate.email,
+        toName: `${candidate.firstName} ${candidate.lastName}`,
+        recipientType: 'CANDIDAT' as any,
+        recipientId: candidate.id,
+        fromEmail,
+        fromName: branding.schoolName, // ← nom de l'école, pas 'Academia Helm'
+        subject,
+        html,
+        triggeredBy: 'SYSTEM',
+        relatedEntityId: candidate.id,
+        relatedEntityType: 'HrCandidate',
+      });
     } catch (e: any) { this.logger.error(`Email failed: ${e.message}`); }
     return { token, uploadUrl };
+  }
+
+  /**
+   * Récupère le branding (logo + nom + contact) du tenant.
+   * Même logique que recruitment-notification.service.ts getTenantBranding().
+   */
+  private async getTenantBranding(tenantId: string): Promise<TenantBranding> {
+    try {
+      // 0. Récupérer le RecruiterProfile (config recruteur) pour l'email + signature
+      const recruiterProfile = await this.prisma.recruiterProfile
+        .findFirst({
+          where: { tenantId, isActive: true },
+          select: {
+            fullName: true,
+            email: true,
+            phone: true,
+            functionLabel: true,
+            signatureText: true,
+            signatureLogoUrl: true,
+          },
+        })
+        .catch(() => null);
+
+      // 1. Essayer tenant_identity_profiles (identité école)
+      const profile = await this.prisma.tenantIdentityProfile.findFirst({
+        where: { tenantId, isActive: true },
+        select: {
+          schoolName: true,
+          logoUrl: true,
+          address: true,
+          phonePrimary: true,
+          email: true,
+        },
+      });
+
+      if (profile?.schoolName) {
+        // Utiliser l'URL publique du logo au lieu du base64 (Gmail/Outlook bloquent les base64 volumineux)
+        const apiBaseUrl = this.config.get<string>('APP_PUBLIC_URL')
+          || 'https://academia-helm-api.fly.dev';
+        const logoUrl = profile.logoUrl
+          ? `${apiBaseUrl}/api/tenants/${tenantId}/logo`
+          : null;
+
+        return {
+          schoolName: profile.schoolName,
+          schoolLogo: logoUrl,
+          schoolAddress: profile.address,
+          schoolPhone: profile.phonePrimary,
+          schoolEmail: profile.email,
+          recruiterName: recruiterProfile?.fullName,
+          recruiterEmail: recruiterProfile?.email,
+          recruiterFunction: recruiterProfile?.functionLabel,
+          recruiterPhone: recruiterProfile?.phone,
+          signatureText: recruiterProfile?.signatureText,
+          signatureLogoUrl: recruiterProfile?.signatureLogoUrl,
+        };
+      }
+
+      // 2. Fallback sur le tenant directement
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { name: true },
+      });
+      return {
+        schoolName: tenant?.name || 'Établissement',
+        recruiterName: recruiterProfile?.fullName,
+        recruiterEmail: recruiterProfile?.email,
+        recruiterFunction: recruiterProfile?.functionLabel,
+        recruiterPhone: recruiterProfile?.phone,
+        signatureText: recruiterProfile?.signatureText,
+        signatureLogoUrl: recruiterProfile?.signatureLogoUrl,
+      };
+    } catch (err: any) {
+      this.logger.warn(`getTenantBranding failed for tenant ${tenantId}: ${err.message}`);
+      return { schoolName: 'Établissement' };
+    }
   }
 
   async getUploadInfo(token: string) {
@@ -130,10 +240,6 @@ export class DocumentUploadService {
     sql += ` ORDER BY created_at DESC`;
     const rows = await this.prisma.$queryRawUnsafe<any[]>(sql, ...p);
     return rows.map(r => ({ id: r.id, tenantId: r.tenant_id, candidateId: r.candidate_id, staffId: r.staff_id, token: r.token, status: r.status, requiredDocs: JSON.parse(r.required_docs || '[]'), uploadedDocs: r.uploaded_docs ? JSON.parse(r.uploaded_docs) : [], candidateEmail: r.candidate_email, candidateName: r.candidate_name, createdAt: r.created_at }));
-  }
-
-  private buildEmail(fn: string, ln: string, url: string, exp: string, req: string[], opt: string[]) {
-    return `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;background:#f8fafc;font-family:Arial,sans-serif;"><table cellpadding="0" cellspacing="0" width="100%" style="background:#eef2f7;"><tr><td align="center" style="padding:24px 12px;"><table cellpadding="0" cellspacing="0" width="600" style="max-width:600px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08);"><tr><td style="background:linear-gradient(160deg,#0D1F6E 0%,#0D3B85 100%);padding:28px 24px;border-bottom:3px solid #F5A623;"><h2 style="margin:0;color:#fff;font-size:20px;">📎 Documents à fournir</h2><p style="margin:6px 0 0;color:#F5A623;font-size:13px;">Finalisation de votre candidature</p></td></tr><tr><td style="padding:32px 28px;"><p style="margin:0 0 16px;color:#475569;font-size:14px;">Bonjour <strong>${fn} ${ln}</strong>,</p><p style="margin:0 0 20px;color:#475569;font-size:14px;">Suite à votre entretien, nous avons besoin de certains documents pour finaliser votre dossier.</p><div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:18px;margin-bottom:20px;"><p style="margin:0 0 8px;color:#dc2626;font-weight:bold;font-size:13px;">📋 Obligatoires :</p><ul style="margin:0 0 12px;padding-left:20px;color:#475569;font-size:13px;">${req.map(d=>`<li>${d}</li>`).join('')}</ul>${opt.length?`<p style="margin:0 0 8px;color:#64748b;font-weight:bold;font-size:13px;">📄 Optionnels :</p><ul style="margin:0;padding-left:20px;color:#94a3b8;font-size:13px;">${opt.map(d=>`<li>${d}</li>`).join('')}</ul>`:''}</div><a href="${url}" style="display:inline-block;background:#0D1F6E;color:#fff;padding:14px 32px;border-radius:8px;font-size:15px;font-weight:bold;text-decoration:none;">Télécharger mes documents →</a><p style="margin:16px 0 0;color:#94a3b8;font-size:12px;">⏰ Lien expire le ${exp}<br/><a href="${url}" style="color:#0D1F6E;">${url}</a></p></td></tr><tr><td style="background:#0D1F6E;padding:20px;text-align:center;"><span style="color:#fff;font-weight:bold;font-size:13px;">Academia Helm</span></td></tr></table></td></tr></table></body></html>`;
   }
 
   private async ensureTableExists() {

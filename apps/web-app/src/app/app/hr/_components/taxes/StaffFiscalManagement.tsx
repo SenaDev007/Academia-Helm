@@ -78,12 +78,14 @@ export function StaffFiscalManagement() {
               <th className="text-left px-4 py-3 font-semibold text-slate-600">Fonction</th>
               <th className="text-left px-4 py-3 font-semibold text-slate-600">Type</th>
               <th className="text-left px-4 py-3 font-semibold text-slate-600">Diplôme</th>
+              <th className="text-left px-4 py-3 font-semibold text-slate-600">Contacts</th>
               <th className="text-left px-4 py-3 font-semibold text-slate-600">Sit. Matrim.</th>
               <th className="text-left px-4 py-3 font-semibold text-slate-600">Enfants</th>
               <th className="text-left px-4 py-3 font-semibold text-slate-600">N° CNSS</th>
               <th className="text-left px-4 py-3 font-semibold text-slate-600">N° IFU</th>
               <th className="text-right px-4 py-3 font-semibold text-slate-600">Salaire</th>
               <th className="text-left px-4 py-3 font-semibold text-slate-600">Embauche</th>
+              <th className="text-left px-4 py-3 font-semibold text-slate-600">Observation</th>
             </tr>
           </thead>
           <tbody>
@@ -100,16 +102,22 @@ export function StaffFiscalManagement() {
                   </span>
                 </td>
                 <td className="px-4 py-3 text-slate-600 text-xs">{s.diploma || '—'}</td>
+                <td className="px-4 py-3 text-slate-600 text-xs">
+                  {s.phone && <div>📞 {s.phone}</div>}
+                  {s.email && <div>✉️ {s.email}</div>}
+                  {!s.phone && !s.email && '—'}
+                </td>
                 <td className="px-4 py-3 text-slate-600 text-xs">{s.maritalStatus || '—'}</td>
                 <td className="px-4 py-3 text-slate-600 text-xs">{s.numberOfChildren ?? '—'}</td>
                 <td className="px-4 py-3 text-slate-600 font-mono text-xs">{s.cnssNumber || '—'}</td>
                 <td className="px-4 py-3 text-slate-600 font-mono text-xs">{s.ifuNumber || '—'}</td>
                 <td className="px-4 py-3 text-right font-bold text-slate-900">{formatCurrency(s.salary || 0)}</td>
                 <td className="px-4 py-3 text-slate-600 text-xs">{s.hireDate ? new Date(s.hireDate).toLocaleDateString('fr-FR') : '—'}</td>
+                <td className="px-4 py-3 text-slate-500 text-xs max-w-[150px] truncate" title={s.observation || ''}>{s.observation || '—'}</td>
               </tr>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan={10} className="text-center py-12 text-slate-400">Aucun personnel trouvé</td></tr>
+              <tr><td colSpan={12} className="text-center py-12 text-slate-400">Aucun personnel trouvé</td></tr>
             )}
           </tbody>
         </table>

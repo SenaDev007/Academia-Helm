@@ -86,20 +86,35 @@ export class StaffCardService {
     try { if (logoUrl) logoUrl = await this.storageService.resolveFileUrl(logoUrl); } catch {}
     try { if (photoUrl) photoUrl = await this.storageService.resolveFileUrl(photoUrl); } catch {}
 
-    const html = this.buildHtml({
-      staffName: `${staff.firstName} ${staff.lastName}`,
-      staffPosition: staff.position || 'Personnel',
-      staffMatricule: staff.tenantMatricule || staff.globalMatricule || staff.employeeNumber || 'N/A',
-      staffEmail: staff.email || '',
-      staffPhone: staff.phone || '',
-      schoolName,
-      schoolAddress: ss?.address || '',
-      schoolCity: ss?.city || '',
-      schoolPhone: ss?.phone || '',
-      logoUrl,
-      photoUrl,
-      qrCodeDataUrl,
-    });
+    const html = cardType === 'BADGE'
+      ? this.buildBadgeHtml({
+          staffName: `${staff.firstName} ${staff.lastName}`,
+          staffPosition: staff.position || 'Personnel',
+          staffMatricule: staff.tenantMatricule || staff.globalMatricule || staff.employeeNumber || 'N/A',
+          staffEmail: staff.email || '',
+          staffPhone: staff.phone || '',
+          schoolName,
+          schoolAddress: ss?.address || '',
+          schoolCity: ss?.city || '',
+          schoolPhone: ss?.phone || '',
+          logoUrl,
+          photoUrl,
+          qrCodeDataUrl,
+        })
+      : this.buildHtml({
+          staffName: `${staff.firstName} ${staff.lastName}`,
+          staffPosition: staff.position || 'Personnel',
+          staffMatricule: staff.tenantMatricule || staff.globalMatricule || staff.employeeNumber || 'N/A',
+          staffEmail: staff.email || '',
+          staffPhone: staff.phone || '',
+          schoolName,
+          schoolAddress: ss?.address || '',
+          schoolCity: ss?.city || '',
+          schoolPhone: ss?.phone || '',
+          logoUrl,
+          photoUrl,
+          qrCodeDataUrl,
+        });
 
     let pdfUrl = '';
     try {
@@ -241,11 +256,14 @@ export class StaffCardService {
     let logoUrl = ss?.logoUrl || '';
     try { if (logoUrl) logoUrl = await this.storageService.resolveFileUrl(logoUrl); } catch {}
 
-    return cardRows.map(c => {
+    // Résoudre les URLs de photos de manière asynchrone (resolveFileUrl est async)
+    const resolvedCards = await Promise.all(cardRows.map(async (c) => {
       const staff = staffMap.get(c.staff_id);
       const parsed = this.parse(c);
       let photoUrl = staff?.photo?.originalUrl || '';
-      try { if (photoUrl) photoUrl = this.storageService.resolveFileUrl(photoUrl) as any; } catch {}
+      try {
+        if (photoUrl) photoUrl = await this.storageService.resolveFileUrl(photoUrl);
+      } catch {}
       return {
         ...parsed,
         staffName: staff ? `${staff.firstName} ${staff.lastName}` : 'N/A',
@@ -258,7 +276,8 @@ export class StaffCardService {
         schoolLogoUrl: logoUrl,
         cardLink: `${this.config.get('PUBLIC_WEB_URL') || 'https://www.academiahelm.com'}/staff-card/${c.token}`,
       };
-    });
+    }));
+    return resolvedCards;
   }
 
   async revokeCard(id: string, tenantId: string) {
@@ -393,6 +412,96 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;padding:20px}
   <div class="back-footer">
     <div class="brand"><strong>Academia Helm</strong><br/>Plateforme de pilotage éducatif</div>
     <div class="qr-large">${d.qrCodeDataUrl ? `<img src="${d.qrCodeDataUrl}" />` : ''}</div>
+  </div>
+</div>
+
+</body></html>`;
+  }
+
+  /**
+   * Template HTML pour le BADGE d'accès (format portrait/vertical).
+   * Design : badge vertical avec trou pour lanière, photo, QR code,
+   * informations essentielles. Différent de la carte professionnelle
+   * qui est en format paysage (recto-verso).
+   */
+  private buildBadgeHtml(d: any) {
+    const N = '#0b2f73';   // Navy Helm
+    const B = '#1d4fa5';   // Blue Helm
+    const G = '#f5b335';   // Gold Helm
+    const initials = d.staffName.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase();
+
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;padding:20px;display:flex;justify-content:center;gap:40px;flex-wrap:wrap}
+
+/* ── BADGE (portrait/vertical) ── */
+.badge{width:240px;height:360px;border-radius:16px;overflow:hidden;box-shadow:0 12px 40px rgba(11,47,115,.18);position:relative;background:#fff;display:flex;flex-direction:column}
+
+/* Trou pour lanière en haut */
+.lanyard-slot{width:60px;height:14px;background:#e2e8f0;border-radius:0 0 8px 8px;margin:0 auto;position:relative;z-index:2;border:1px solid #cbd5e1}
+.lanyard-slot::after{content:'';position:absolute;top:3px;left:50%;transform:translateX(-50%);width:40px;height:6px;background:#94a3b8;border-radius:3px}
+
+.badge-header{background:linear-gradient(135deg,${N} 0%,${B} 100%);padding:14px 16px 12px;text-align:center;color:#fff;position:relative}
+.badge-header::after{content:'';position:absolute;bottom:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,${G},transparent)}
+.badge-header .logo-area{display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:6px}
+.badge-header .logo-area img{height:24px;max-width:80px;object-fit:contain}
+.badge-header .logo-area .fallback{width:24px;height:24px;border-radius:6px;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;color:${G}}
+.badge-header .school-name{font-size:10px;font-weight:700;letter-spacing:.5px;line-height:1.3}
+.badge-header .badge-type{font-size:8px;font-weight:bold;color:${G};text-transform:uppercase;letter-spacing:1.5px;margin-top:4px;background:rgba(245,179,53,.15);padding:2px 8px;border-radius:3px;display:inline-block}
+
+.badge-body{flex:1;display:flex;flex-direction:column;align-items:center;padding:14px 16px 8px;background:#fff}
+.badge-body .photo-wrap{width:80px;height:80px;border-radius:50%;border:3px solid ${G};overflow:hidden;background:#f1f5f9;margin-bottom:10px;box-shadow:0 4px 12px rgba(11,47,115,.15)}
+.badge-body .photo-wrap img{width:100%;height:100%;object-fit:cover}
+.badge-body .photo-wrap .initials{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:bold;color:${N}}
+.badge-body h2{font-size:13px;font-weight:700;color:#0f172a;text-align:center;margin-bottom:3px;line-height:1.2}
+.badge-body .position{font-size:10px;color:${B};font-weight:600;text-align:center;margin-bottom:8px}
+.badge-body .info-line{font-size:9px;color:#64748b;text-align:center;margin-bottom:2px;font-family:'Courier New',monospace}
+
+.badge-footer{background:linear-gradient(135deg,${N} 0%,${B} 100%);padding:8px 16px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.badge-footer .qr{width:44px;height:44px;background:#fff;padding:3px;border-radius:6px;flex-shrink:0}
+.badge-footer .qr img{width:100%;height:100%}
+.badge-footer .brand{text-align:right;color:rgba(255,255,255,.9)}
+.badge-footer .brand strong{display:block;color:${G};font-size:10px;font-weight:700}
+.badge-footer .brand span{font-size:7px;color:rgba(255,255,255,.6)}
+
+/* Hologramme de sécurité */
+.hologram{position:absolute;top:10px;right:10px;width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,${G},#fff,${G});opacity:.7;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:bold;color:${N};transform:rotate(-15deg);z-index:3}
+
+/* Barre latérale colorée */
+.side-bar{position:absolute;top:0;left:0;bottom:0;width:5px;background:linear-gradient(180deg,${G} 0%,${N} 50%,${B} 100%)}
+</style></head><body>
+
+<!-- BADGE RECTO -->
+<div class="badge">
+  <div class="side-bar"></div>
+  <div class="hologram">AH</div>
+  <div class="lanyard-slot"></div>
+  <div class="badge-header">
+    <div class="logo-area">
+      ${d.logoUrl
+        ? `<img src="${d.logoUrl}" />`
+        : `<div class="fallback">${(d.schoolName || 'EC').substring(0, 2).toUpperCase()}</div>`}
+    </div>
+    <div class="school-name">${d.schoolName}</div>
+    <div class="badge-type">Badge d'accès</div>
+  </div>
+  <div class="badge-body">
+    <div class="photo-wrap">
+      ${d.photoUrl
+        ? `<img src="${d.photoUrl}" />`
+        : `<div class="initials">${initials}</div>`}
+    </div>
+    <h2>${d.staffName}</h2>
+    <div class="position">${d.staffPosition}</div>
+    <div class="info-line">N° ${d.staffMatricule}</div>
+    ${d.staffPhone ? `<div class="info-line">Tél: ${d.staffPhone}</div>` : ''}
+  </div>
+  <div class="badge-footer">
+    <div class="qr">${d.qrCodeDataUrl ? `<img src="${d.qrCodeDataUrl}" />` : ''}</div>
+    <div class="brand">
+      <strong>Academia Helm</strong>
+      <span>${d.schoolCity || ''}</span>
+    </div>
   </div>
 </div>
 

@@ -1000,8 +1000,24 @@ export class StaffPrismaService {
   async batchAssignLevel(dto: BatchAssignLevelDto) {
     const { staffIds, schoolLevelId, academicYearId } = dto;
 
+    if (!staffIds || staffIds.length === 0) {
+      throw new BadRequestException('Aucun personnel sélectionné.');
+    }
+
     // Resolve the actual SchoolLevel — may receive an EducationLevel ID from the frontend
     const resolvedSchoolLevelId = await this.resolveSchoolLevelId(schoolLevelId);
+
+    // ─── Résoudre le tenantId à partir du premier personnel sélectionné ──
+    // On récupère le tenantId depuis un des staff sélectionnés, car le DTO
+    // ne contient pas tenantId mais tous les staff appartiennent au même tenant.
+    const firstStaff = await this.prisma.staff.findFirst({
+      where: { id: staffIds[0] },
+      select: { id: true, tenantId: true },
+    });
+    if (!firstStaff) {
+      throw new BadRequestException('Personnel introuvable pour l\'affectation.');
+    }
+    const tenantId = firstStaff.tenantId;
 
     // ─── Résoudre l'année académique active (requise par StaffAssignment) ──
     // academicYearId est requis dans le schéma (non-nullable). Si non fourni,
@@ -1009,7 +1025,7 @@ export class StaffPrismaService {
     let resolvedAcademicYearId = academicYearId;
     if (!resolvedAcademicYearId) {
       const activeYear = await this.prisma.academicYear.findFirst({
-        where: { isActive: true },
+        where: { isActive: true, tenantId },
         select: { id: true },
       });
       if (!activeYear) {
@@ -1022,7 +1038,7 @@ export class StaffPrismaService {
 
     // Update all staff members
     const result = await this.prisma.staff.updateMany({
-      where: { id: { in: staffIds } },
+      where: { id: { in: staffIds }, tenantId },
       data: { schoolLevelId: resolvedSchoolLevelId },
     });
 
@@ -1047,24 +1063,18 @@ export class StaffPrismaService {
         assignments.push(updated);
       } else {
         // Create new assignment
-        const staff = await this.prisma.staff.findUnique({
-          where: { id: staffId },
-          select: { tenantId: true },
+        const created = await this.prisma.staffAssignment.create({
+          data: {
+            staffId,
+            schoolLevelId: resolvedSchoolLevelId,
+            tenantId,
+            academicYearId: resolvedAcademicYearId,
+            role: 'TEACHER',
+            startDate: new Date(),
+            status: 'ACTIVE',
+          },
         });
-        if (staff) {
-          const created = await this.prisma.staffAssignment.create({
-            data: {
-              staffId,
-              schoolLevelId: resolvedSchoolLevelId,
-              tenantId: staff.tenantId,
-              academicYearId: resolvedAcademicYearId,
-              role: 'TEACHER',
-              startDate: new Date(),
-              status: 'ACTIVE',
-            },
-          });
-          assignments.push(created);
-        }
+        assignments.push(created);
       }
     }
 

@@ -70,6 +70,9 @@ export function ContractsWorkspace() {
       if (filterStatus !== 'ALL') queryParams.status = filterStatus;
       const result = await hrFetch<any[]>(hrUrl('contracts', queryParams));
       setContracts(result);
+      // Also fetch staff to show those without contracts
+      const staffResult = await hrFetch<any[]>(hrUrl('staff', { tenantId: tenant.id }));
+      setStaffList(staffResult.filter((s: any) => s.status === 'ACTIVE' || s.status === 'PENDING_SIGNATURE'));
     } catch (error) {
       console.error('Error fetching contracts:', error);
     } finally {
@@ -126,6 +129,15 @@ export function ContractsWorkspace() {
       `${c.staff?.firstName} ${c.staff?.lastName}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (c.staff?.staffCode && c.staff.staffCode.toLowerCase().includes(searchQuery.toLowerCase()))
   );
+
+  // Staff without contracts (only show when filterStatus is ALL or ACTIVE, and no search query)
+  const staffWithContractIds = new Set(contracts.map(c => c.staffId));
+  const staffWithoutContracts = (filterStatus === 'ALL' || filterStatus === 'ACTIVE')
+    ? staffList.filter(s =>
+        !staffWithContractIds.has(s.id) &&
+        `${s.firstName} ${s.lastName}`.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : [];
 
   const selectClass =
     'rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 ' +
@@ -258,7 +270,7 @@ export function ContractsWorkspace() {
             <div key={i} className="h-20 rounded-xl border border-slate-200 bg-slate-100 animate-pulse" />
           ))}
         </div>
-      ) : filteredContracts.length === 0 ? (
+      ) : filteredContracts.length === 0 && staffWithoutContracts.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/30 p-16 text-center">
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm mb-4">
             <Files className="h-10 w-10 text-slate-300" />
@@ -277,6 +289,31 @@ export function ContractsWorkspace() {
               onTerminate={(c) => { setSelectedContract(c); setTerminationModalOpen(true); }}
             />
           ))}
+          {/* Staff without contracts - shown as "pending" entries */}
+          {staffWithoutContracts.length > 0 && (
+            <>
+              <div className="flex items-center gap-2 pt-4 pb-1">
+                <AlertCircle className="h-4 w-4 text-amber-500" />
+                <p className="text-xs font-bold text-amber-700 uppercase tracking-wider">
+                  Personnel sans contrat ({staffWithoutContracts.length})
+                </p>
+              </div>
+              {staffWithoutContracts.map((staff, idx) => (
+                <PendingContractRow
+                  key={staff.id}
+                  staff={staff}
+                  index={idx + filteredContracts.length}
+                  onCreate={() => {
+                    setModalForm({
+                      ...modalForm,
+                      staffId: staff.id,
+                    });
+                    setModalOpen(true);
+                  }}
+                />
+              ))}
+            </>
+          )}
         </div>
       )}
 
@@ -324,9 +361,17 @@ function ContractRow({ contract, index, tenantId, onTerminate }: { contract: any
     >
       <div className="p-4 md:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-11 h-11 rounded-xl flex items-center justify-center font-bold text-base shrink-0" style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}>
-            {contract.contractType?.[0]}
-          </div>
+          {contract.staff?.photoUrl ? (
+            <img
+              src={contract.staff.photoUrl}
+              alt={`${contract.staff?.firstName} ${contract.staff?.lastName}`}
+              className="w-11 h-11 rounded-xl object-cover shrink-0 border border-slate-200"
+            />
+          ) : (
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center font-bold text-base shrink-0" style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}>
+              {contract.staff?.firstName?.[0]}{contract.staff?.lastName?.[0]}
+            </div>
+          )}
           <div className="min-w-0">
             <h4 className="font-bold text-slate-900 text-sm truncate">{contract.staff?.firstName} {contract.staff?.lastName}</h4>
             <div className="flex items-center gap-2 mt-0.5 flex-wrap">
@@ -388,6 +433,53 @@ function ContractRow({ contract, index, tenantId, onTerminate }: { contract: any
           <Link href={`/app/hr/contracts/${contract.id}`} className="flex-grow md:flex-grow-0 flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors" style={{ color: PRIMARY }}>
             <FileCheck className="h-4 w-4" /> Ouvrir le contrat
           </Link>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function PendingContractRow({ staff, index, onCreate }: { staff: any; index: number; onCreate: () => void }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.04 }}
+      className="rounded-xl border border-dashed border-amber-200 bg-amber-50/30 shadow-sm hover:shadow-md transition-all overflow-hidden"
+    >
+      <div className="p-4 md:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3 min-w-0">
+          {staff.photoUrl ? (
+            <img
+              src={staff.photoUrl}
+              alt={`${staff.firstName} ${staff.lastName}`}
+              className="w-11 h-11 rounded-xl object-cover shrink-0 border border-amber-200"
+            />
+          ) : (
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center font-bold text-base shrink-0 bg-amber-100 text-amber-700">
+              {staff.firstName?.[0]}{staff.lastName?.[0]}
+            </div>
+          )}
+          <div className="min-w-0">
+            <h4 className="font-bold text-slate-900 text-sm truncate">{staff.firstName} {staff.lastName}</h4>
+            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border border-amber-200 bg-amber-50 text-amber-700">
+                Aucun contrat
+              </span>
+              <span className="text-[10px] text-slate-400 font-medium">
+                {staff.position || 'Personnel'} · {staff.tenantMatricule || staff.employeeNumber || 'N/A'}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 border-t md:border-none pt-3 md:pt-0 w-full md:w-auto">
+          <button
+            onClick={onCreate}
+            className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg text-white transition-colors whitespace-nowrap"
+            style={{ backgroundColor: PRIMARY }}
+          >
+            <Plus className="h-4 w-4" /> Créer un contrat
+          </button>
         </div>
       </div>
     </motion.div>

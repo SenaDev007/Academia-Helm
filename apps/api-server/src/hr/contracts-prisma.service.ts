@@ -12,10 +12,14 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../database/prisma.service';
 import { Prisma } from '@prisma/client';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
+import { StorageService } from '../common/services/storage.service';
 
 @Injectable()
 export class ContractsPrismaService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storageService: StorageService,
+  ) {}
 
   /**
    * Crée un contrat de travail
@@ -127,6 +131,7 @@ export class ContractsPrismaService {
             employeeNumber: true,
             position: true,
             roleType: true,
+            photo: { select: { thumbnailUrl: true, originalUrl: true } },
           },
         },
         template: { select: { id: true, name: true } },
@@ -135,10 +140,17 @@ export class ContractsPrismaService {
     });
 
     // Add staffCode alias so frontend can access contract.staff.staffCode
-    return contracts.map(c => ({
+    // Resolve photo URLs for R2/S3 storage (thumbnailUrl is a storage key, not a full URL)
+    return Promise.all(contracts.map(async (c) => ({
       ...c,
-      staff: c.staff ? { ...c.staff, staffCode: c.staff.employeeNumber } : c.staff,
-    }));
+      staff: c.staff ? {
+        ...c.staff,
+        staffCode: c.staff.employeeNumber,
+        photoUrl: c.staff.photo?.thumbnailUrl
+          ? await this.storageService.resolveFileUrl(c.staff.photo.thumbnailUrl)
+          : null,
+      } : c.staff,
+    })));
   }
 
   /**

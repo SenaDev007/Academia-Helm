@@ -548,6 +548,31 @@ export class RecruitmentPrismaService {
       throw new NotFoundException(`Candidat avec l'ID ${id} non trouvé`);
     }
 
+    // 2b. Archive linked staff records (when a candidate was hired and became staff)
+    // When we delete the candidate, we must also archive the Staff record so that
+    // the contracts list and other modules don't show a "ghost" employee.
+    try {
+      const linkedApps = await this.prisma.hrApplication.findMany({
+        where: { candidateId: id, staffId: { not: null } },
+        select: { staffId: true },
+      });
+      const staffIds = linkedApps.map(a => a.staffId).filter(Boolean) as string[];
+      if (staffIds.length > 0) {
+        await this.prisma.staff.updateMany({
+          where: { id: { in: staffIds } },
+          data: {
+            status: 'ARCHIVED',
+            terminationType: 'OTHER',
+            terminationDetails: { reason: 'Candidat supprimé du module de recrutement' },
+            terminatedAt: new Date(),
+          },
+        });
+        this.logger.log(`Archived ${staffIds.length} staff record(s) linked to deleted candidate ${id}`);
+      }
+    } catch (err) {
+      this.logger.warn(`Could not archive linked staff for candidate ${id}: ${err.message}`);
+    }
+
     // 3. Delete related records one by one (resilient to missing tables)
     // We do NOT use a transaction because if any table is missing,
     // the whole transaction fails. Instead, we delete each relation

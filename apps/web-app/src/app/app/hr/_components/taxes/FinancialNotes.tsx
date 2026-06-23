@@ -27,7 +27,17 @@ export function FinancialNotes() {
     })();
   }, [tenant?.id, currentYear?.id]);
 
-  const noteCodes = useMemo(() => [...new Set(notes.map(n => n.noteCode))].sort(), [notes]);
+  const noteCodes = useMemo(() => {
+    const codes = [...new Set(notes.map(n => n.noteCode))];
+    // Sort numerically by the note number (NOTE 1, NOTE 2, ..., NOTE 36)
+    return codes.sort((a, b) => {
+      const numA = parseInt(a.replace(/[^0-9]/g, '')) || 0;
+      const numB = parseInt(b.replace(/[^0-9]/g, '')) || 0;
+      if (numA !== numB) return numA - numB;
+      // For sub-notes like 3A, 3B, 3C — sort alphabetically after the number
+      return a.localeCompare(b);
+    });
+  }, [notes]);
 
   const currentNoteLines = useMemo(() =>
     notes.filter(n => n.noteCode === selectedNote).sort((a, b) => a.sortOrder - b.sortOrder),

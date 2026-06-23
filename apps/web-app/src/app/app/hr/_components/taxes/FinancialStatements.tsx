@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Loader2, FileText, Table, Save } from 'lucide-react';
+import { Loader2, FileText, Table, Save, Download } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useAcademicYear } from '@/hooks/useAcademicYear';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -83,6 +83,12 @@ export function FinancialStatements() {
           </select>
           <button onClick={handleSave} disabled={saving || Object.keys(editedAmounts).length === 0} className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white rounded-lg bg-[#1A2BA6] hover:opacity-90 disabled:opacity-50">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Enregistrer
+          </button>
+          <button onClick={() => window.open(hrUrl('taxes/financial-statements-pdf', { tenantId: tenant?.id, academicYearId: currentYear?.id, type }), '_blank')} className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-rose-600 border border-rose-200 rounded-lg hover:bg-rose-50 transition">
+            <Download className="h-4 w-4" /> PDF
+          </button>
+          <button onClick={() => window.open(hrUrl('taxes/export/financial-statements', { tenantId: tenant?.id, academicYearId: currentYear?.id, type }), '_blank')} className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-emerald-600 border border-emerald-200 rounded-lg hover:bg-emerald-50 transition">
+            <Download className="h-4 w-4" /> Excel
           </button>
         </div>
       </div>

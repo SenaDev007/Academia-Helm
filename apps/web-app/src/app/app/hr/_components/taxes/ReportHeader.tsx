@@ -7,13 +7,18 @@ import { useAcademicYear } from '@/hooks/useAcademicYear';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { toast } from '@/components/ui/toast';
 
-export function ReportHeader() {
+export function ReportHeader({ initialSection }: { initialSection?: 'garde' | 'r1' | 'r2' | 'r3' | 'r4' }) {
   const { tenant } = useModuleContext();
   const { currentYear } = useAcademicYear();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [activeSection, setActiveSection] = useState<'garde' | 'r1' | 'r2' | 'r3' | 'r4'>('garde');
+  const [activeSection, setActiveSection] = useState<'garde' | 'r1' | 'r2' | 'r3' | 'r4'>(initialSection || 'garde');
+
+  // Update when initialSection changes
+  useEffect(() => {
+    if (initialSection) setActiveSection(initialSection);
+  }, [initialSection]);
 
   useEffect(() => {
     if (!tenant?.id || !currentYear?.id) return;

@@ -35,9 +35,10 @@ const STAFF_SUBTABS = [
 
 // Sous-navigation pour "États financiers"
 const FINANCIAL_SUBTABS = [
+  { id: 'page-garde', label: 'Page de garde', icon: FileText },
+  { id: 'r1-r4', label: 'Fiches R1-R4', icon: ClipboardList },
   { id: 'statements', label: 'Bilan / CR / TFT', icon: FileText },
   { id: 'notes', label: 'Notes annexes (36)', icon: FileEdit },
-  { id: 'report-header', label: 'Fiches R1-R4', icon: ClipboardList },
 ] as const;
 
 export default function CnssPage() {
@@ -110,9 +111,10 @@ export default function CnssPage() {
       {activeTab === 'financial' && (
         <div>
           {renderSubTabs(FINANCIAL_SUBTABS, financialSubtab, setFinancialSubtab)}
+          {financialSubtab === 'page-garde' && <ReportHeader initialSection="garde" />}
+          {financialSubtab === 'r1-r4' && <ReportHeader initialSection="r1" />}
           {financialSubtab === 'statements' && <FinancialStatements />}
           {financialSubtab === 'notes' && <FinancialNotes />}
-          {financialSubtab === 'report-header' && <ReportHeader />}
         </div>
       )}
 

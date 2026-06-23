@@ -83,6 +83,9 @@ export function PayrollManagement() {
           <button onClick={handleGenerate} disabled={generating} className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white rounded-lg bg-[#1A2BA6] hover:opacity-90 disabled:opacity-50">
             {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Générer fiches
           </button>
+          <button onClick={() => window.open(hrUrl('taxes/export/payslips', { tenantId: tenant?.id, academicYearId: currentYear?.id, period }), '_blank')} className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-[#1A2BA6] border border-[#1A2BA6]/20 rounded-lg hover:bg-[#1A2BA6]/5 transition">
+            <Download className="h-4 w-4" /> Export Excel
+          </button>
         </div>
       </div>
 

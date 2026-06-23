@@ -188,6 +188,12 @@ export class TaxesController {
         employeeNumber: true,
         tenantMatricule: true,
         hireDate: true,
+        // Champs supplémentaires du fichier Excel
+        qualifications: true,    // Diplôme
+        gender: true,
+        maritalStatus: true,     // Situation matrimoniale
+        numberOfChildren: true,  // Nbre d'enfants
+        notes: true,             // Observation
       },
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
     });
@@ -197,6 +203,9 @@ export class TaxesController {
       salary: Number(s.salary || 0),
       staffType: s.contractType === 'VACATAIRE' ? 'VACATAIRE' : 'PERMANENT',
       displayName: `${s.firstName} ${s.lastName}`,
+      diploma: s.qualifications || '',     // Alias pour Diplôme
+      grade: s.position || '',             // Alias pour Grade/Expériences
+      observation: s.notes || '',          // Alias pour Observation
     }));
   }
 

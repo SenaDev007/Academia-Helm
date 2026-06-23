@@ -77,6 +77,9 @@ export function StaffFiscalManagement() {
               <th className="text-left px-4 py-3 font-semibold text-slate-600">Nom & Prénoms</th>
               <th className="text-left px-4 py-3 font-semibold text-slate-600">Fonction</th>
               <th className="text-left px-4 py-3 font-semibold text-slate-600">Type</th>
+              <th className="text-left px-4 py-3 font-semibold text-slate-600">Diplôme</th>
+              <th className="text-left px-4 py-3 font-semibold text-slate-600">Sit. Matrim.</th>
+              <th className="text-left px-4 py-3 font-semibold text-slate-600">Enfants</th>
               <th className="text-left px-4 py-3 font-semibold text-slate-600">N° CNSS</th>
               <th className="text-left px-4 py-3 font-semibold text-slate-600">N° IFU</th>
               <th className="text-right px-4 py-3 font-semibold text-slate-600">Salaire</th>
@@ -96,6 +99,9 @@ export function StaffFiscalManagement() {
                     {s.staffType}
                   </span>
                 </td>
+                <td className="px-4 py-3 text-slate-600 text-xs">{s.diploma || '—'}</td>
+                <td className="px-4 py-3 text-slate-600 text-xs">{s.maritalStatus || '—'}</td>
+                <td className="px-4 py-3 text-slate-600 text-xs">{s.numberOfChildren ?? '—'}</td>
                 <td className="px-4 py-3 text-slate-600 font-mono text-xs">{s.cnssNumber || '—'}</td>
                 <td className="px-4 py-3 text-slate-600 font-mono text-xs">{s.ifuNumber || '—'}</td>
                 <td className="px-4 py-3 text-right font-bold text-slate-900">{formatCurrency(s.salary || 0)}</td>
@@ -103,7 +109,7 @@ export function StaffFiscalManagement() {
               </tr>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan={7} className="text-center py-12 text-slate-400">Aucun personnel trouvé</td></tr>
+              <tr><td colSpan={10} className="text-center py-12 text-slate-400">Aucun personnel trouvé</td></tr>
             )}
           </tbody>
         </table>

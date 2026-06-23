@@ -60,6 +60,25 @@ export class TaxDeclarationService {
       irpp,
       totalIST,
       staffDetails: payrollData.details,
+      // Section paiement (à compléter par l'utilisateur)
+      payment: {
+        mode: '', // ESPECES, CHEQUE, VIREMENT
+        chequeNumber: '',
+        bank: '',
+        reference: '',
+        amountInWords: '',
+      },
+      // Pénalités (à compléter par l'utilisateur)
+      penalties: {
+        irpp: 0,
+        irppReason: '',
+        vps: 0,
+        vpsReason: '',
+        total: 0,
+      },
+      // Cadre administration
+      quittanceNumber: '',
+      submissionDate: '',
     };
 
     declaration = await this.prisma.taxDeclaration.create({
@@ -115,7 +134,18 @@ export class TaxDeclarationService {
       partPatronale,
       partOuvriere,
       totalCotisations,
+      majorations: 0, // Calculé si retard
+      totalAPayer: totalCotisations,
+      // Détail par employé (jours ouvrables et rémunération par mois)
       staffDetails: payrollData.details,
+      months: payrollData.months || [],
+      // Section paiement (à compléter par l'utilisateur)
+      payment: {
+        mode: '', // VIREMENT, CHEQUE, ESPECES
+        bank: '',
+        chequeNumber: '',
+        reference: '',
+      },
     };
 
     declaration = await this.prisma.taxDeclaration.create({
@@ -160,6 +190,21 @@ export class TaxDeclarationService {
       aibAchats,
       aibPrestations,
       totalAIB,
+      // Section IV — Détail des prélèvements AIB (prestataires)
+      prestataires: [] as Array<{
+        name: string; address: string; ifu: string; base: number; prelevement: number;
+      }>,
+      // Section paiement
+      payment: {
+        mode: '', // ESPECES, CHEQUE, VIREMENT
+        bank: '',
+        chequeNumber: '',
+        reference: '',
+      },
+      // Cadre administration
+      quittanceNumber: '',
+      emissionDate: '',
+      penalty: 0,
     };
 
     declaration = await this.prisma.taxDeclaration.create({
@@ -241,15 +286,48 @@ export class TaxDeclarationService {
 
   /**
    * Récupère les salaires bruts du trimestre pour le calcul CNSS.
+   * Inclut le détail par employé avec jours ouvrables et rémunération par mois (3 mois).
    */
   private async getQuarterlyPayrollData(tenantId: string, period: string) {
-    // period = "2026-T1"
-    // Pour l'instant, on multiplie le mensuel par 3 (simplifié)
-    const monthly = await this.getMonthlyPayrollData(tenantId, period);
+    // period = "2026-T1" → extraire l'année et les 3 mois
+    const yearMatch = period.match(/^(\d{4})-T(\d)$/);
+    const year = yearMatch ? parseInt(yearMatch[1]) : new Date().getFullYear();
+    const quarter = yearMatch ? parseInt(yearMatch[2]) : 1;
+    const startMonth = (quarter - 1) * 3 + 1; // T1=1, T2=4, T3=7, T4=10
+    const months = [startMonth, startMonth + 1, startMonth + 2];
+
+    const staff = await this.prisma.staff.findMany({
+      where: { tenantId, status: { not: 'ARCHIVED' } },
+      select: { id: true, firstName: true, lastName: true, salary: true, cnssNumber: true },
+    });
+
+    // Pour chaque employé: jours ouvrables et rémunération par mois
+    const details = staff.map(s => {
+      const monthlySalary = Number(s.salary || 0);
+      // Jours ouvrables standards (approximation: 26 jours par mois au Bénin)
+      const daysMonth1 = 26, daysMonth2 = 26, daysMonth3 = 26;
+      const totalDays = daysMonth1 + daysMonth2 + daysMonth3;
+
+      return {
+        staffId: s.id,
+        cnssNumber: s.cnssNumber || '',
+        name: `${s.firstName} ${s.lastName}`,
+        // Détail par mois (jours ouvrables)
+        daysMonth1, daysMonth2, daysMonth3,
+        totalDaysAssimilés: totalDays,
+        // Rémunération par mois
+        salaryMonth1: monthlySalary,
+        salaryMonth2: monthlySalary,
+        salaryMonth3: monthlySalary,
+        grossSalary: monthlySalary * 3, // Salaire brut trimestriel
+      };
+    });
+
     return {
-      totalGross: monthly.totalGross * 3,
-      staffCount: monthly.staffCount,
-      details: monthly.details.map(d => ({ ...d, grossSalary: d.grossSalary * 3 })),
+      totalGross: details.reduce((sum, d) => sum + d.grossSalary, 0),
+      staffCount: details.length,
+      details,
+      months: months.map(m => `${year}-${String(m).padStart(2, '0')}`),
     };
   }
 }

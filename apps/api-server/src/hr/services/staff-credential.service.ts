@@ -20,9 +20,11 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
 import { EmailService } from '../../communication/services/email.service';
 import { UserRole, ROLE_PORTAL_MAP, Portal } from '../../common/enums/user-role.enum';
+import { renderCredentialEmail, TenantBranding } from '../recruitment-email-templates';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 
@@ -93,6 +95,7 @@ export class StaffCredentialService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly emailService: EmailService,
+    private readonly config: ConfigService,
   ) {}
 
   /**
@@ -470,7 +473,8 @@ export class StaffCredentialService {
 
   /**
    * Envoie l'email professionnel contenant les credentials du nouvel utilisateur.
-   * Rédigé avec le style ghostwriter senior, palette Academia Helm.
+   * Utilise le template standard Helm (renderCredentialEmail) avec header logo+nom école,
+   * footer Academia Helm — cohérent avec les autres emails de recrutement.
    */
   private async sendCredentialEmail(params: {
     to: string;
@@ -502,365 +506,43 @@ export class StaffCredentialService {
       loginUrl,
       isTeacher,
       schoolLevel,
-      logoUrl,
-      schoolContacts,
       isRegeneration = false,
+      tenantId,
+      staffId,
     } = params;
 
     const roleLabel = ROLE_LABELS[userRole] || userRole;
     const portalLabel = PORTAL_LABELS[portal] || 'Portail École';
-    const displayName = `${staffFirstName} ${staffLastName}`.trim() || 'Collaborateur';
     const loginLabel = isTeacher ? 'Matricule' : 'Adresse email';
 
-    const logoBlock = logoUrl
-      ? `<img src="${logoUrl}" alt="${schoolName}" style="max-height: 56px; max-width: 200px; margin: 0 auto 8px; display: block; object-fit: contain;" />`
-      : '';
+    // ─── Récupérer le branding complet du tenant ──────────────────────────
+    // (logo via tenant_identity_profiles, pas le logoUrl null passé en param)
+    const branding = tenantId ? await this.getTenantBranding(tenantId) : { schoolName };
 
-    const welcomeIntro = isRegeneration
-      ? `Bonjour <strong>${displayName}</strong>, votre compte sur <strong>Academia Helm</strong> a été réinitialisé par l'administration de <strong>${schoolName}</strong>. Vous trouverez ci-dessous vos nouveaux identifiants de connexion.`
-      : `Votre intégration au sein de <strong>${schoolName}</strong> est désormais finalisée. Votre contrat a été signé et votre dossier est activé sur la plateforme <strong>Academia Helm</strong>. Vous trouverez ci-dessous vos identifiants de connexion qui vous permettent d'accéder à votre espace personnel dès maintenant.`;
-
-    const contactsBlock = schoolContacts && (schoolContacts.phone || schoolContacts.email || schoolContacts.address)
-      ? `
-    <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.15); font-size: 11px; color: rgba(255, 255, 255, 0.65); line-height: 1.6;">
-      ${schoolContacts.address ? `<div style="margin-bottom: 4px;">&#128205; ${schoolContacts.address}</div>` : ''}
-      ${schoolContacts.phone ? `<div style="margin-bottom: 4px;">&#128222; ${schoolContacts.phone}</div>` : ''}
-      ${schoolContacts.email ? `<div style="margin-bottom: 4px;">&#9993; ${schoolContacts.email}</div>` : ''}
-    </div>`
-      : '';
-
-    const html = `
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Vos identifiants de connexion — ${schoolName}</title>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-
-    body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      background-color: #F7F9FC;
-      color: #0F172A;
-      line-height: 1.6;
-    }
-
-    .email-container {
-      max-width: 600px;
-      margin: 0 auto;
-      background: #ffffff;
-      border-radius: 16px;
-      overflow: hidden;
-      box-shadow: 0 4px 24px rgba(10, 42, 94, 0.08);
-    }
-
-    /* ── Header ── */
-    .header {
-      background: linear-gradient(135deg, #0A2A5E 0%, #0D3B85 60%, #114FC4 100%);
-      padding: 40px 32px 32px;
-      text-align: center;
-      position: relative;
-      overflow: hidden;
-    }
-    .header::before {
-      content: '';
-      position: absolute;
-      top: -50%;
-      left: -50%;
-      width: 200%;
-      height: 200%;
-      background: radial-gradient(circle at 30% 50%, rgba(242, 201, 76, 0.08) 0%, transparent 50%);
-      pointer-events: none;
-    }
-    .header-logo {
-      font-size: 22px;
-      font-weight: 700;
-      color: #ffffff;
-      letter-spacing: -0.5px;
-      margin-bottom: 4px;
-    }
-    .header-logo span {
-      color: #F2C94C;
-    }
-    .header-tagline {
-      font-size: 11px;
-      color: rgba(255, 255, 255, 0.5);
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      font-weight: 500;
-    }
-
-    /* ── Welcome ── */
-    .welcome-section {
-      padding: 36px 32px 24px;
-    }
-    .welcome-greeting {
-      font-size: 20px;
-      font-weight: 700;
-      color: #0A2A5E;
-      margin-bottom: 16px;
-    }
-    .welcome-text {
-      font-size: 14px;
-      color: #334155;
-      line-height: 1.7;
-    }
-    .welcome-text strong {
-      color: #0A2A5E;
-    }
-
-    /* ── Credentials Card ── */
-    .credentials-card {
-      margin: 0 24px 24px;
-      background: linear-gradient(135deg, #F7F9FC 0%, #EEF2F8 100%);
-      border: 1px solid #E2E8F0;
-      border-radius: 12px;
-      overflow: hidden;
-    }
-    .credentials-header {
-      background: #0A2A5E;
-      padding: 12px 20px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .credentials-header-icon {
-      width: 20px;
-      height: 20px;
-      background: rgba(242, 201, 76, 0.2);
-      border-radius: 6px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 11px;
-    }
-    .credentials-header-text {
-      color: #ffffff;
-      font-size: 13px;
-      font-weight: 600;
-      letter-spacing: 0.5px;
-    }
-    .credentials-body {
-      padding: 20px;
-    }
-    .credential-row {
-      display: flex;
-      align-items: flex-start;
-      padding: 12px 0;
-      border-bottom: 1px solid #E2E8F0;
-    }
-    .credential-row:last-child {
-      border-bottom: none;
-      padding-bottom: 0;
-    }
-    .credential-label {
-      font-size: 11px;
-      color: #64748B;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      font-weight: 600;
-      min-width: 130px;
-      padding-top: 2px;
-    }
-    .credential-value {
-      font-size: 14px;
-      color: #0A2A5E;
-      font-weight: 600;
-      word-break: break-all;
-    }
-    .credential-value.password {
-      font-family: 'Courier New', monospace;
-      font-size: 15px;
-      color: #CFA63A;
-      background: #FFFBEB;
-      padding: 4px 10px;
-      border-radius: 6px;
-      border: 1px solid #FDE68A;
-      letter-spacing: 1px;
-    }
-    .credential-value.role-badge {
-      display: inline-block;
-      padding: 4px 12px;
-      border-radius: 20px;
-      font-size: 12px;
-      font-weight: 600;
-      background: #EEF2FF;
-      color: #0A2A5E;
-      border: 1px solid #C7D2FE;
-    }
-    ${schoolLevel ? `
-    .credential-value.level-badge {
-      display: inline-block;
-      padding: 4px 12px;
-      border-radius: 20px;
-      font-size: 12px;
-      font-weight: 600;
-    }
-    ` : ''}
-
-    /* ── CTA Button ── */
-    .cta-section {
-      padding: 0 32px 32px;
-      text-align: center;
-    }
-    .cta-button {
-      display: inline-block;
-      padding: 14px 40px;
-      background: linear-gradient(135deg, #0A2A5E 0%, #114FC4 100%);
-      color: #ffffff;
-      text-decoration: none;
-      border-radius: 12px;
-      font-size: 15px;
-      font-weight: 600;
-      letter-spacing: 0.3px;
-      box-shadow: 0 4px 16px rgba(10, 42, 94, 0.3);
-      transition: all 0.2s ease;
-    }
-    .cta-button:hover {
-      box-shadow: 0 6px 24px rgba(10, 42, 94, 0.4);
-      transform: translateY(-1px);
-    }
-
-    /* ── Security Notice ── */
-    .security-notice {
-      margin: 0 24px 24px;
-      padding: 16px 20px;
-      background: #FFF7ED;
-      border: 1px solid #FED7AA;
-      border-radius: 10px;
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-    }
-    .security-icon {
-      font-size: 18px;
-      flex-shrink: 0;
-      margin-top: 1px;
-    }
-    .security-text {
-      font-size: 12px;
-      color: #9A3412;
-      line-height: 1.6;
-    }
-    .security-text strong {
-      color: #7C2D12;
-    }
-
-    /* ── Footer ── */
-    .footer {
-      background: #0A2A5E;
-      padding: 28px 32px;
-      text-align: center;
-    }
-    .footer-brand {
-      font-size: 14px;
-      font-weight: 600;
-      color: #ffffff;
-      margin-bottom: 4px;
-    }
-    .footer-brand span {
-      color: #F2C94C;
-    }
-    .footer-copyright {
-      font-size: 11px;
-      color: rgba(255, 255, 255, 0.4);
-    }
-    .footer-tagline {
-      font-size: 10px;
-      color: rgba(255, 255, 255, 0.25);
-      margin-top: 6px;
-      letter-spacing: 1px;
-      text-transform: uppercase;
-    }
-  </style>
-</head>
-<body>
-  <div class="email-container">
-    <!-- Header -->
-    <div class="header">
-      ${logoBlock}
-      <div class="header-logo">Academia <span>Helm</span></div>
-      <div class="header-tagline">${schoolName}</div>
-    </div>
-
-    <!-- Welcome -->
-    <div class="welcome-section">
-      <div class="welcome-greeting">${isRegeneration ? 'Réinitialisation de vos identifiants' : 'Vos identifiants de connexion'}</div>
-      <div class="welcome-text">
-        ${welcomeIntro}
-      </div>
-    </div>
-
-    <!-- Credentials Card -->
-    <div class="credentials-card">
-      <div class="credentials-header">
-        <div class="credentials-header-icon">&#128273;</div>
-        <div class="credentials-header-text">VOS IDENTIFIANTS DE CONNEXION</div>
-      </div>
-      <div class="credentials-body">
-        <div class="credential-row">
-          <div class="credential-label">${loginLabel}</div>
-          <div class="credential-value">${username}</div>
-        </div>
-        <div class="credential-row">
-          <div class="credential-label">Mot de passe</div>
-          <div class="credential-value password">${password}</div>
-        </div>
-        <div class="credential-row">
-          <div class="credential-label">Accréditation</div>
-          <div class="credential-value role-badge">${roleLabel}</div>
-        </div>
-        <div class="credential-row">
-          <div class="credential-label">Portail</div>
-          <div class="credential-value">${portalLabel}</div>
-        </div>
-        ${schoolLevel ? `
-        <div class="credential-row">
-          <div class="credential-label">Niveau scolaire</div>
-          <div class="credential-value">${schoolLevel}</div>
-        </div>
-        ` : ''}
-      </div>
-    </div>
-
-    <!-- CTA -->
-    <div class="cta-section">
-      <a href="${loginUrl}" class="cta-button">Accéder à ma plateforme</a>
-    </div>
-
-    <!-- Security Notice -->
-    <div class="security-notice">
-      <div class="security-icon">&#9888;&#65039;</div>
-      <div class="security-text">
-        <strong>Sécurité de votre compte :</strong> Ce mot de passe est temporaire et doit être 
-        modifié dès votre première connexion. Ne partagez jamais vos identifiants avec qui que 
-        ce soit. Academia Helm ne vous demandera jamais votre mot de passe par email ou par téléphone.
-      </div>
-    </div>
-
-    <!-- Footer -->
-    <div class="footer">
-      <div class="footer-brand">${schoolName}</div>
-      <div class="footer-brand" style="font-size: 13px; margin-top: 4px;">Academia <span>Helm</span></div>
-      <div class="footer-copyright">&copy; 2021-2026 YEHI OR Tech. Tous droits réservés.</div>
-      <div class="footer-tagline">Prenez le gouvernail de votre institution</div>
-      ${contactsBlock}
-    </div>
-  </div>
-</body>
-</html>`;
+    // ─── Générer l'email avec le template standard Helm ────────────────────
+    const { subject, html } = renderCredentialEmail({
+      branding,
+      candidateName: `${staffFirstName} ${staffLastName}`.trim(),
+      candidateFirstName: staffFirstName || 'Collaborateur',
+      jobTitle: roleLabel,
+      username,
+      password,
+      loginLabel,
+      roleLabel,
+      portalLabel,
+      loginUrl,
+      schoolLevel,
+      isRegeneration,
+    });
 
     const text = `
-${schoolName} — ${isRegeneration ? 'Réinitialisation de vos identifiants' : 'Vos identifiants de connexion'} Academia Helm
+${schoolName} — ${isRegeneration ? 'Réinitialisation de vos identifiants' : 'Vos identifiants de connexion'}
 
-Bonjour ${displayName},
+Bonjour ${staffFirstName} ${staffLastName},
 
-${isRegeneration ? `Votre compte sur Academia Helm a été réinitialisé par l'administration de ${schoolName}.` : `Votre intégration au sein de ${schoolName} est finalisée.`}
+${isRegeneration ? `Votre compte a été réinitialisé par l'administration de ${schoolName}.` : `Votre intégration au sein de ${schoolName} est finalisée.`}
 
-Voici vos identifiants pour accéder à la plateforme Academia Helm :
+Voici vos identifiants de connexion :
 
 ${loginLabel} : ${username}
 Mot de passe : ${password}
@@ -873,30 +555,102 @@ Connectez-vous : ${loginUrl}
 IMPORTANT : Ce mot de passe est temporaire. Veuillez le modifier dès votre première connexion. Ne partagez jamais vos identifiants.
 
 — ${schoolName} — Academia Helm
-© 2021-2026 YEHI OR Tech
-${schoolContacts?.phone ? `Tél : ${schoolContacts.phone}` : ''}
-${schoolContacts?.email ? `Email : ${schoolContacts.email}` : ''}
 `;
 
     await this.emailService.sendCategorized({
-      tenantId: params.tenantId || 'unknown',
+      tenantId: tenantId || 'unknown',
       category: 'ADMINISTRATIF',
-      subCategory: params.isRegeneration
+      subCategory: isRegeneration
         ? 'reinitialisation_identifiants_staff'
         : 'creation_identifiants_staff',
       module: 'hr',
       to,
       toName: `${staffFirstName} ${staffLastName}`.trim() || undefined,
-      subject: `${schoolName} — ${isRegeneration ? 'Réinitialisation de vos identifiants' : 'Vos identifiants de connexion'}`,
+      subject,
       html,
       text,
       fromEmail: process.env.EMAIL_FROM_NOREPLY || 'noreply@academiahelm.com',
-      fromName: 'Academia Helm',
+      fromName: branding.schoolName, // ← nom de l'école, pas 'Academia Helm'
       recipientType: 'STAFF',
-      recipientId: params.staffId,
+      recipientId: staffId,
       triggeredBy: 'SYSTEM',
-      relatedEntityId: params.staffId,
+      relatedEntityId: staffId,
       relatedEntityType: 'Staff',
     });
+  }
+
+  /**
+   * Récupère le branding (logo + nom + contact) du tenant.
+   * Même logique que recruitment-notification.service.ts getTenantBranding().
+   */
+  private async getTenantBranding(tenantId: string): Promise<TenantBranding> {
+    try {
+      // 0. Récupérer le RecruiterProfile (config recruteur) pour l'email + signature
+      const recruiterProfile = await this.prisma.recruiterProfile
+        .findFirst({
+          where: { tenantId, isActive: true },
+          select: {
+            fullName: true,
+            email: true,
+            phone: true,
+            functionLabel: true,
+            signatureText: true,
+            signatureLogoUrl: true,
+          },
+        })
+        .catch(() => null);
+
+      // 1. Essayer tenant_identity_profiles (identité école)
+      const profile = await this.prisma.tenantIdentityProfile.findFirst({
+        where: { tenantId, isActive: true },
+        select: {
+          schoolName: true,
+          logoUrl: true,
+          address: true,
+          phonePrimary: true,
+          email: true,
+        },
+      });
+
+      if (profile?.schoolName) {
+        const apiBaseUrl = this.config.get<string>('APP_PUBLIC_URL')
+          || 'https://academia-helm-api.fly.dev';
+        const logoUrl = profile.logoUrl
+          ? `${apiBaseUrl}/api/tenants/${tenantId}/logo`
+          : null;
+
+        return {
+          schoolName: profile.schoolName,
+          schoolLogo: logoUrl,
+          schoolAddress: profile.address,
+          schoolPhone: profile.phonePrimary,
+          schoolEmail: profile.email,
+          recruiterName: recruiterProfile?.fullName,
+          recruiterEmail: recruiterProfile?.email,
+          recruiterFunction: recruiterProfile?.functionLabel,
+          recruiterPhone: recruiterProfile?.phone,
+          signatureText: recruiterProfile?.signatureText,
+          signatureLogoUrl: recruiterProfile?.signatureLogoUrl,
+        };
+      }
+
+      // 2. Fallback sur le tenant directement
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { name: true },
+      });
+      return {
+        schoolName: tenant?.name || 'Établissement',
+        recruiterName: recruiterProfile?.fullName,
+        recruiterEmail: recruiterProfile?.email,
+        recruiterFunction: recruiterProfile?.functionLabel,
+        recruiterPhone: recruiterProfile?.phone,
+        signatureText: recruiterProfile?.signatureText,
+        signatureLogoUrl: recruiterProfile?.signatureLogoUrl,
+      };
+    } catch (err: any) {
+      this.logger.warn(`getTenantBranding failed for tenant ${tenantId}: ${err.message}`);
+      return { schoolName: 'Établissement' };
+    }
   }
 }

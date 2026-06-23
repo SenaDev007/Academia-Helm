@@ -681,3 +681,67 @@ export function renderDocumentUploadRequest(
   `;
   return { subject, html: renderEmail(data.branding, body) };
 }
+
+// ============================================================================
+// 10. IDENTIFIANTS DE CONNEXION — credentials envoyés au personnel (création ou réinitialisation)
+// ============================================================================
+export function renderCredentialEmail(
+  data: RecruitmentEmailData & {
+    /** Identifiant de connexion (matricule pour enseignants, email sinon) */
+    username: string;
+    /** Mot de passe temporaire */
+    password: string;
+    /** Libellé du champ login (ex: "Matricule" ou "Adresse email") */
+    loginLabel: string;
+    /** Libellé du rôle (ex: "Enseignant", "Secrétaire") */
+    roleLabel: string;
+    /** Libellé du portail (ex: "Portail École") */
+    portalLabel: string;
+    /** URL de connexion */
+    loginUrl: string;
+    /** Niveau scolaire (pour enseignants, optionnel) */
+    schoolLevel?: string | null;
+    /** true si régénération (réinitialisation), false si création initiale */
+    isRegeneration?: boolean;
+  },
+): { subject: string; html: string } {
+  const action = data.isRegeneration ? 'Réinitialisation de vos identifiants' : 'Vos identifiants de connexion';
+  const subject = `${data.branding.schoolName} — ${action}`;
+
+  const intro = data.isRegeneration
+    ? `Bonjour <strong>${escHtml(data.candidateFirstName)}</strong>, votre compte a été réinitialisé par l'administration de <strong style="color:#0D1F6E;">${escHtml(data.branding.schoolName)}</strong>. Vous trouverez ci-dessous vos nouveaux identifiants de connexion.`
+    : `Votre intégration au sein de <strong style="color:#0D1F6E;">${escHtml(data.branding.schoolName)}</strong> est désormais finalisée. Votre contrat a été signé et votre dossier est activé sur la plateforme. Vous trouverez ci-dessous vos identifiants de connexion qui vous permettent d'accéder à votre espace personnel dès maintenant.`;
+
+  const body = `
+    ${renderBadge(data.isRegeneration ? 'orange' : 'green', data.isRegeneration ? '🔄 Identifiants réinitialisés' : '✅ Compte créé')}
+    <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;">Bonjour ${escHtml(data.candidateFirstName)},</h2>
+    <p style="margin:0 0 20px;color:#475569;line-height:1.6;">${intro}</p>
+
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:20px;">
+      <tr><td style="padding:16px 20px;">
+        <h3 style="margin:0 0 12px;color:#0D1F6E;font-size:14px;text-transform:uppercase;letter-spacing:0.5px;">🔐 Vos identifiants de connexion</h3>
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="font-size:13px;color:#334155;">
+          <tr><td style="padding:6px 0;font-weight:bold;width:140px;">${escHtml(data.loginLabel)} :</td><td style="padding:6px 0;font-family:monospace;font-size:14px;color:#0D1F6E;">${escHtml(data.username)}</td></tr>
+          <tr><td style="padding:6px 0;font-weight:bold;">Mot de passe :</td><td style="padding:6px 0;font-family:monospace;font-size:14px;color:#0D1F6E;">${escHtml(data.password)}</td></tr>
+          <tr><td style="padding:6px 0;font-weight:bold;">Accréditation :</td><td style="padding:6px 0;">${escHtml(data.roleLabel)}</td></tr>
+          <tr><td style="padding:6px 0;font-weight:bold;">Portail :</td><td style="padding:6px 0;">${escHtml(data.portalLabel)}</td></tr>
+          ${data.schoolLevel ? `<tr><td style="padding:6px 0;font-weight:bold;">Niveau scolaire :</td><td style="padding:6px 0;">${escHtml(data.schoolLevel)}</td></tr>` : ''}
+        </table>
+      </td></tr>
+    </table>
+
+    <div style="text-align:center;margin:28px 0 20px;">
+      <a href="${escHtml(data.loginUrl)}" style="display:inline-block;background:#0D1F6E;color:#fff;padding:14px 32px;border-radius:8px;font-size:15px;font-weight:bold;text-decoration:none;">🔐 Se connecter à mon espace</a>
+    </div>
+
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;margin-bottom:16px;">
+      <tr><td style="padding:14px 18px;">
+        <p style="margin:0 0 6px;color:#b91c1c;font-size:12px;font-weight:bold;">⚠️ Important — Sécurité</p>
+        <p style="margin:0;color:#b91c1c;font-size:12px;line-height:1.5;">Ce mot de passe est <strong>temporaire</strong>. Veuillez le modifier dès votre première connexion. Ne partagez jamais vos identifiants. Academia Helm ne vous demandera jamais votre mot de passe par email ou par téléphone.</p>
+      </td></tr>
+    </table>
+
+    <p style="margin:0;color:#94a3b8;font-size:11px;line-height:1.6;">Si le bouton ne fonctionne pas, copiez-collez ce lien dans votre navigateur :<br/><a href="${escHtml(data.loginUrl)}" style="color:#0D1F6E;word-break:break-all;">${escHtml(data.loginUrl)}</a></p>
+  `;
+  return { subject, html: renderEmail(data.branding, body) };
+}

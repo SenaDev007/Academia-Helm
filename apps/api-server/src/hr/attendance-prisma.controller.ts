@@ -75,7 +75,7 @@ export class AttendancePrismaController {
   @Get('statistics')
   async getAttendanceStatistics(
     @GetTenant() tenant: any,
-    @Query('academicYearId') academicYearId: string,
+    @Query('academicYearId') academicYearId?: string,
     @Query('staffId') staffId?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,

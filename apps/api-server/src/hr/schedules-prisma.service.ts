@@ -17,7 +17,7 @@
  * ============================================================================
  */
 
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 
@@ -131,14 +131,15 @@ export class SchedulesPrismaService {
   async create(
     data: {
       staffId: string;
-      dayOfWeek: number;
-      shiftType: string;
-      startTime: string;
-      endTime: string;
+      dayOfWeek?: number;
+      dayOfWeekName?: string;
+      shiftType?: string;
+      startTime?: string;
+      endTime?: string;
       role?: string;
       location?: string;
       notes?: string;
-      academicYearId: string;
+      academicYearId?: string;
       schoolLevelId?: string;
     },
     tenantId: string,
@@ -152,18 +153,63 @@ export class SchedulesPrismaService {
       throw new NotFoundException(`Staff member ${data.staffId} not found`);
     }
 
+    // ─── Resolve dayOfWeek (number 0-6) ──
+    const DAY_NAME_TO_NUM: Record<string, number> = {
+      SUNDAY: 0, MONDAY: 1, TUESDAY: 2, WEDNESDAY: 3,
+      THURSDAY: 4, FRIDAY: 5, SATURDAY: 6,
+    };
+    let dayOfWeek = data.dayOfWeek;
+    if (dayOfWeek === undefined || dayOfWeek === null) {
+      if (data.dayOfWeekName && DAY_NAME_TO_NUM[data.dayOfWeekName] !== undefined) {
+        dayOfWeek = DAY_NAME_TO_NUM[data.dayOfWeekName];
+      } else {
+        dayOfWeek = new Date().getDay();
+      }
+    }
+
+    // ─── Resolve shiftType ──
+    const shiftType = data.shiftType || 'MORNING';
+
+    // ─── Resolve start/end times ──
+    const startTime = data.startTime || (shiftType === 'AFTERNOON' ? '14:00' : '08:00');
+    const endTime = data.endTime || (shiftType === 'AFTERNOON' ? '18:00' : '12:00');
+
+    // ─── Resolve academicYearId if not provided ──
+    let academicYearId = data.academicYearId;
+    if (!academicYearId) {
+      const activeYear = await this.prisma.academicYear.findFirst({
+        where: { isActive: true, tenantId },
+        select: { id: true },
+      });
+      if (activeYear) {
+        academicYearId = activeYear.id;
+      } else {
+        const lastYear = await this.prisma.academicYear.findFirst({
+          where: { tenantId },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true },
+        });
+        if (!lastYear) {
+          throw new BadRequestException(
+            'Aucune année académique trouvée. Veuillez créer une année académique dans les paramètres.',
+          );
+        }
+        academicYearId = lastYear.id;
+      }
+    }
+
     try {
       return await this.prisma.staffSchedule.create({
         data: {
           ...prismaCreateDefaults(),
           tenantId,
-          academicYearId: data.academicYearId,
+          academicYearId,
           schoolLevelId: data.schoolLevelId ?? null,
           staffId: data.staffId,
-          dayOfWeek: data.dayOfWeek,
-          shiftType: data.shiftType,
-          startTime: data.startTime,
-          endTime: data.endTime,
+          dayOfWeek,
+          shiftType,
+          startTime,
+          endTime,
           role: data.role ?? null,
           location: data.location ?? null,
           notes: data.notes ?? null,
@@ -213,7 +259,9 @@ export class SchedulesPrismaService {
     data: {
       staffId?: string;
       dayOfWeek?: number;
+      dayOfWeekName?: string;
       shiftType?: string;
+      shift?: string;
       startTime?: string;
       endTime?: string;
       role?: string;
@@ -245,14 +293,27 @@ export class SchedulesPrismaService {
       }
     }
 
+    // ─── Resolve dayOfWeek from dayOfWeekName if needed ──
+    const DAY_NAME_TO_NUM: Record<string, number> = {
+      SUNDAY: 0, MONDAY: 1, TUESDAY: 2, WEDNESDAY: 3,
+      THURSDAY: 4, FRIDAY: 5, SATURDAY: 6,
+    };
+    let resolvedDayOfWeek = data.dayOfWeek;
+    if (resolvedDayOfWeek === undefined && data.dayOfWeekName) {
+      resolvedDayOfWeek = DAY_NAME_TO_NUM[data.dayOfWeekName];
+    }
+
+    // Map shift → shiftType
+    const resolvedShiftType = data.shiftType || data.shift;
+
     try {
       return await this.prisma.staffSchedule.update({
         where: { id },
         data: {
           ...prismaUpdateDefaults(),
           ...(data.staffId !== undefined && { staffId: data.staffId }),
-          ...(data.dayOfWeek !== undefined && { dayOfWeek: data.dayOfWeek }),
-          ...(data.shiftType !== undefined && { shiftType: data.shiftType }),
+          ...(resolvedDayOfWeek !== undefined && { dayOfWeek: resolvedDayOfWeek }),
+          ...(resolvedShiftType !== undefined && { shiftType: resolvedShiftType }),
           ...(data.startTime !== undefined && { startTime: data.startTime }),
           ...(data.endTime !== undefined && { endTime: data.endTime }),
           ...(data.role !== undefined && { role: data.role }),

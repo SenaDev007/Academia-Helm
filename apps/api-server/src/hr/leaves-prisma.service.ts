@@ -45,7 +45,7 @@ export class LeavesPrismaService {
    */
   async createLeaveRequest(data: {
     tenantId: string;
-    academicYearId: string;
+    academicYearId?: string;
     schoolLevelId?: string;
     staffId: string;
     type: string;
@@ -70,6 +70,33 @@ export class LeavesPrismaService {
       throw new NotFoundException(`Staff member ${data.staffId} not found`);
     }
 
+    // ─── Résoudre l'année académique active si non fournie ──
+    // academicYearId est requis dans le schéma Prisma (non-nullable).
+    // Si le frontend ne l'envoie pas, on récupère l'année active du tenant.
+    let academicYearId = data.academicYearId;
+    if (!academicYearId) {
+      const activeYear = await this.prisma.academicYear.findFirst({
+        where: { isActive: true, tenantId: data.tenantId },
+        select: { id: true },
+      });
+      if (!activeYear) {
+        // Fallback: prendre la dernière année créée pour ce tenant
+        const lastYear = await this.prisma.academicYear.findFirst({
+          where: { tenantId: data.tenantId },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true },
+        });
+        if (!lastYear) {
+          throw new BadRequestException(
+            'Aucune année académique trouvée. Veuillez créer une année académique dans les paramètres.',
+          );
+        }
+        academicYearId = lastYear.id;
+      } else {
+        academicYearId = activeYear.id;
+      }
+    }
+
     // Check for overlapping approved leave requests
     const overlapping = await this.prisma.leaveRequest.findFirst({
       where: {
@@ -91,7 +118,7 @@ export class LeavesPrismaService {
       data: {
         ...prismaCreateDefaults(),
         tenantId: data.tenantId,
-        academicYearId: data.academicYearId,
+        academicYearId,
         schoolLevelId: data.schoolLevelId ?? null,
         staffId: data.staffId,
         type: data.type,

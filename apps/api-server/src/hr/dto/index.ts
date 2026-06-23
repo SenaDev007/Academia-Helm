@@ -210,7 +210,7 @@ export class CreateOneTimeBonusDto {
 // ─── Leave DTOs ──────────────────────────────────────────────────────────────
 
 export class CreateLeaveRequestDto {
-  @IsUUID() academicYearId: string;
+  @IsOptional() @IsUUID() academicYearId?: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
   @IsUUID() staffId: string;
   @IsIn(['ANNUAL', 'SICK', 'MATERNITY', 'PATERNITY', 'UNPAID', 'EXCEPTIONAL']) type: string;
@@ -318,7 +318,7 @@ export class RecordAttendanceDto {
   @IsOptional() @IsIn(['PRESENT', 'ABSENT', 'LATE', 'HALF_DAY', 'MISSION']) status?: string;
   @IsOptional() @IsNumber() @Type(() => Number) hoursWorked?: number;
   @IsOptional() @IsString() notes?: string;
-  @IsUUID() academicYearId: string;
+  @IsOptional() @IsUUID() academicYearId?: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
   /** Frontend may send tenantId — ignored */
   @IsOptional() @IsString() tenantId?: string;
@@ -331,7 +331,7 @@ export class RecordOvertimeDto {
   @IsOptional() @IsString() notes?: string;
   /** Frontend AttendanceWorkspace sends reason — mapped to notes */
   @IsOptional() @IsString() reason?: string;
-  @IsUUID() academicYearId: string;
+  @IsOptional() @IsUUID() academicYearId?: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
   /** Frontend may send tenantId — ignored */
   @IsOptional() @IsString() tenantId?: string;
@@ -433,14 +433,15 @@ export class CompleteOnboardingDto {
 
 export class CreateScheduleDto {
   @IsString() staffId!: string;
-  @IsInt() @Min(0) @Max(6) dayOfWeek!: number;
-  @IsString() shiftType!: string;
-  @IsString() startTime!: string;
-  @IsString() endTime!: string;
+  @IsOptional() @IsInt() @Min(0) @Max(6) dayOfWeek?: number;
+  @IsOptional() @IsString() dayOfWeekName?: string;
+  @IsOptional() @IsString() shiftType?: string;
+  @IsOptional() @IsString() startTime?: string;
+  @IsOptional() @IsString() endTime?: string;
   @IsOptional() @IsString() role?: string;
   @IsOptional() @IsString() location?: string;
   @IsOptional() @IsString() notes?: string;
-  @IsString() academicYearId!: string;
+  @IsOptional() @IsString() academicYearId?: string;
   @IsOptional() @IsString() schoolLevelId?: string;
   /** Frontend may send tenantId — ignored */
   @IsOptional() @IsString() tenantId?: string;
@@ -721,16 +722,17 @@ export class UpdateContractTemplateDto {
 }
 
 export class UpdateScheduleDto {
-  @IsOptional() @IsUUID() staffId?: string;
+  @IsOptional() @IsString() staffId?: string;
   @IsOptional() @IsInt() @Min(0) @Max(6) @Type(() => Number) dayOfWeek?: number;
+  @IsOptional() @IsString() dayOfWeekName?: string;
   @IsOptional() @IsString() shiftType?: string;
   @IsOptional() @IsString() startTime?: string;
   @IsOptional() @IsString() endTime?: string;
   @IsOptional() @IsString() role?: string;
   @IsOptional() @IsString() location?: string;
   @IsOptional() @IsString() notes?: string;
-  @IsOptional() @IsUUID() academicYearId?: string;
-  @IsOptional() @IsUUID() schoolLevelId?: string;
+  @IsOptional() @IsString() academicYearId?: string;
+  @IsOptional() @IsString() schoolLevelId?: string;
   @IsOptional() @IsBoolean() isActive?: boolean;
   /** Frontend PlanningWorkspace may send date — used to derive dayOfWeek */
   @IsOptional() @IsDateString() date?: string;

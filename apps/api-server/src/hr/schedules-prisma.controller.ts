@@ -80,17 +80,40 @@ export class SchedulesPrismaController {
     if (!tid) {
       throw new BadRequestException('Tenant ID requis pour cette opération');
     }
-    // Derive dayOfWeek from date if not provided
+
+    // ─── Resolve dayOfWeek (number 0-6) ──
+    // Frontend may send:
+    //   - dayOfWeek as a number (0-6)
+    //   - dayOfWeekName as a string ('MONDAY', 'TUESDAY', etc.)
+    //   - date as ISO string (we derive dayOfWeek from it)
+    const DAY_NAME_TO_NUM: Record<string, number> = {
+      SUNDAY: 0, MONDAY: 1, TUESDAY: 2, WEDNESDAY: 3,
+      THURSDAY: 4, FRIDAY: 5, SATURDAY: 6,
+    };
     let dayOfWeek = data.dayOfWeek;
-    if (!dayOfWeek && data.date) {
-      dayOfWeek = new Date(data.date).getDay();
+    if (dayOfWeek === undefined || dayOfWeek === null) {
+      if (data.dayOfWeekName && DAY_NAME_TO_NUM[data.dayOfWeekName] !== undefined) {
+        dayOfWeek = DAY_NAME_TO_NUM[data.dayOfWeekName];
+      } else if (data.date) {
+        dayOfWeek = new Date(data.date).getDay();
+      } else {
+        throw new BadRequestException('dayOfWeek, dayOfWeekName, or date is required');
+      }
     }
+
     // Map shift → shiftType if shiftType not provided
     const shiftType = data.shiftType || data.shift || 'MORNING';
+
+    // Default start/end times if not provided
+    const startTime = data.startTime || (shiftType === 'AFTERNOON' ? '14:00' : '08:00');
+    const endTime = data.endTime || (shiftType === 'AFTERNOON' ? '18:00' : '12:00');
+
     return this.schedulesService.create({
       ...data,
       dayOfWeek,
       shiftType,
+      startTime,
+      endTime,
       tenantId: tid,
     }, tid);
   }

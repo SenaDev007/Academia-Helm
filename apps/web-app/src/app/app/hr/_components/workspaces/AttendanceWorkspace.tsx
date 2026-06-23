@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Search, Calendar, UserCheck, UserX, Clock, ChevronRight, Check, X, AlertCircle } from 'lucide-react';
+import { Plus, Search, Calendar, UserCheck, UserX, Clock, ChevronRight, Check, X, AlertCircle, CheckCircle2, XCircle } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { motion } from 'framer-motion';
@@ -19,26 +19,27 @@ export function AttendanceWorkspace() {
   const [attendances, setAttendances] = useState<any[]>([]);
   const [overtimes, setOvertimes] = useState<any[]>([]);
   const [stats, setStats] = useState<any>({ present: 0, absent: 0, attendanceRate: 0 });
-  
+
   // States for forms
   const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
   const [attendanceStatus, setAttendanceStatus] = useState('PRESENT');
   const [notes, setNotes] = useState('');
   const [hoursWorked, setHoursWorked] = useState('8');
-  
+
   const [overtimeDate, setOvertimeDate] = useState(new Date().toISOString().split('T')[0]);
   const [overtimeHours, setOvertimeHours] = useState('2');
   const [overtimeReason, setOvertimeReason] = useState('');
 
   const [savingAttendance, setSavingAttendance] = useState(false);
   const [savingOvertime, setSavingOvertime] = useState(false);
+  const [processingOvertime, setProcessingOvertime] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadInitialData() {
       if (!tenant?.id) return;
       try {
         setLoading(true);
-        // Load staff to choose from
+        // Load staff to choose from (PROMOTEUR excluded by backend)
         const staffData = await hrFetch<any[]>(hrUrl('staff', { tenantId: tenant.id }));
         setStaffList(staffData);
         if (staffData.length > 0) {
@@ -56,18 +57,21 @@ export function AttendanceWorkspace() {
 
   useEffect(() => {
     async function loadStaffStatsAndHistory() {
-      if (!tenant?.id || !selectedStaff?.id || !academicYear?.id) return;
+      if (!tenant?.id || !selectedStaff?.id) return;
       try {
+        const params: Record<string, string> = { tenantId: tenant.id };
+        if (academicYear?.id) params.academicYearId = academicYear.id;
+
         // Load attendance history for selected staff
-        const attHistory = await hrFetch<any[]>(hrUrl(`attendance/staff/${selectedStaff.id}`, { tenantId: tenant.id, academicYearId: academicYear.id }));
+        const attHistory = await hrFetch<any[]>(hrUrl(`attendance/staff/${selectedStaff.id}`, params));
         setAttendances(attHistory);
 
         // Load overtime history for selected staff
-        const otHistory = await hrFetch<any[]>(hrUrl(`attendance/overtime/staff/${selectedStaff.id}`, { tenantId: tenant.id, academicYearId: academicYear.id }));
+        const otHistory = await hrFetch<any[]>(hrUrl(`attendance/overtime/staff/${selectedStaff.id}`, params));
         setOvertimes(otHistory);
 
         // Load stats
-        const statData = await hrFetch<any>(hrUrl('attendance/statistics', { tenantId: tenant.id, academicYearId: academicYear.id, staffId: selectedStaff.id }));
+        const statData = await hrFetch<any>(hrUrl('attendance/statistics', { ...params, staffId: selectedStaff.id }));
         setStats(statData);
       } catch (err) {
         console.error('Error loading staff details:', err);
@@ -79,13 +83,13 @@ export function AttendanceWorkspace() {
 
   async function handleRecordAttendance(e: React.FormEvent) {
     e.preventDefault();
-    if (!tenant?.id || !selectedStaff?.id || !academicYear?.id) return;
+    if (!tenant?.id || !selectedStaff?.id) return;
     try {
       setSavingAttendance(true);
       await hrFetch(hrUrl('attendance', { tenantId: tenant.id }), {
         method: 'POST',
         body: {
-          academicYearId: academicYear.id,
+          ...(academicYear?.id ? { academicYearId: academicYear.id } : {}),
           staffId: selectedStaff.id,
           date: new Date(attendanceDate).toISOString(),
           status: attendanceStatus,
@@ -94,9 +98,11 @@ export function AttendanceWorkspace() {
         },
       });
       // Refresh
-      const attHistory = await hrFetch<any[]>(hrUrl(`attendance/staff/${selectedStaff.id}`, { tenantId: tenant.id, academicYearId: academicYear.id }));
+      const params: Record<string, string> = { tenantId: tenant.id };
+      if (academicYear?.id) params.academicYearId = academicYear.id;
+      const attHistory = await hrFetch<any[]>(hrUrl(`attendance/staff/${selectedStaff.id}`, params));
       setAttendances(attHistory);
-      const statData = await hrFetch<any>(hrUrl('attendance/statistics', { tenantId: tenant.id, academicYearId: academicYear.id, staffId: selectedStaff.id }));
+      const statData = await hrFetch<any>(hrUrl('attendance/statistics', { ...params, staffId: selectedStaff.id }));
       setStats(statData);
       setNotes('');
       toast({ variant: 'success', title: 'Présence enregistrée avec succès' });
@@ -110,13 +116,13 @@ export function AttendanceWorkspace() {
 
   async function handleRecordOvertime(e: React.FormEvent) {
     e.preventDefault();
-    if (!tenant?.id || !selectedStaff?.id || !academicYear?.id) return;
+    if (!tenant?.id || !selectedStaff?.id) return;
     try {
       setSavingOvertime(true);
       await hrFetch(hrUrl('attendance/overtime', { tenantId: tenant.id }), {
         method: 'POST',
         body: {
-          academicYearId: academicYear.id,
+          ...(academicYear?.id ? { academicYearId: academicYear.id } : {}),
           staffId: selectedStaff.id,
           date: new Date(overtimeDate).toISOString(),
           hours: parseFloat(overtimeHours),
@@ -124,7 +130,9 @@ export function AttendanceWorkspace() {
         },
       });
       // Refresh
-      const otHistory = await hrFetch<any[]>(hrUrl(`attendance/overtime/staff/${selectedStaff.id}`, { tenantId: tenant.id, academicYearId: academicYear.id }));
+      const params: Record<string, string> = { tenantId: tenant.id };
+      if (academicYear?.id) params.academicYearId = academicYear.id;
+      const otHistory = await hrFetch<any[]>(hrUrl(`attendance/overtime/staff/${selectedStaff.id}`, params));
       setOvertimes(otHistory);
       setOvertimeReason('');
       toast({ variant: 'success', title: 'Heures supplémentaires enregistrées avec succès' });
@@ -136,9 +144,49 @@ export function AttendanceWorkspace() {
     }
   }
 
+  async function handleProcessOvertime(overtimeId: string, action: 'VALIDATE' | 'REJECT') {
+    if (!tenant?.id) return;
+    try {
+      setProcessingOvertime(overtimeId);
+      await hrFetch(hrUrl(`attendance/overtime/${overtimeId}/process`, { tenantId: tenant.id }), {
+        method: 'PUT',
+        body: { action },
+      });
+      toast({ variant: 'success', title: action === 'VALIDATE' ? 'Heures supplémentaires validées' : 'Heures supplémentaires rejetées' });
+      // Refresh
+      const params: Record<string, string> = { tenantId: tenant.id };
+      if (academicYear?.id) params.academicYearId = academicYear.id;
+      const otHistory = await hrFetch<any[]>(hrUrl(`attendance/overtime/staff/${selectedStaff.id}`, params));
+      setOvertimes(otHistory);
+    } catch (err) {
+      toast({ variant: 'error', title: 'Erreur lors du traitement' });
+    } finally {
+      setProcessingOvertime(null);
+    }
+  }
+
+  async function handleDeleteOvertime(overtimeId: string) {
+    if (!tenant?.id) return;
+    try {
+      await hrFetch(hrUrl(`attendance/overtime/${overtimeId}`, { tenantId: tenant.id }), { method: 'DELETE' });
+      toast({ variant: 'success', title: 'Heures supplémentaires supprimées' });
+      setOvertimes(prev => prev.filter(o => o.id !== overtimeId));
+    } catch (err) {
+      toast({ variant: 'error', title: 'Erreur lors de la suppression' });
+    }
+  }
+
   const filteredStaff = staffList.filter((s) =>
     `${s.firstName} ${s.lastName}`.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // Calculate total validated overtime hours
+  const totalValidatedOvertimeHours = overtimes
+    .filter((o) => o.validated === true)
+    .reduce((acc, curr) => acc + Number(curr.hours), 0);
+  const totalPendingOvertimeHours = overtimes
+    .filter((o) => o.validated !== true)
+    .reduce((acc, curr) => acc + Number(curr.hours), 0);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-12">
@@ -155,7 +203,7 @@ export function AttendanceWorkspace() {
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          
+
           <div className="divide-y divide-slate-100 max-h-[450px] overflow-y-auto space-y-1 pr-1">
             {loading ? (
               [1, 2, 3].map((i) => (
@@ -176,12 +224,16 @@ export function AttendanceWorkspace() {
                   )}
                 >
                   <div className="flex items-center gap-3">
-                    <div
-                      className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0"
-                      style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}
-                    >
-                      {member.firstName?.[0]}{member.lastName?.[0]}
-                    </div>
+                    {member.photoUrl ? (
+                      <img src={member.photoUrl} alt={`${member.firstName} ${member.lastName}`} className="w-8 h-8 rounded-lg object-cover shrink-0" />
+                    ) : (
+                      <div
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0"
+                        style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}
+                      >
+                        {member.firstName?.[0]}{member.lastName?.[0]}
+                      </div>
+                    )}
                     <div>
                       <p className="text-sm font-bold text-slate-900">{member.firstName} {member.lastName}</p>
                       <p className="text-[10px] text-slate-400 uppercase tracking-wider">{member.position || 'Poste non renseigné'}</p>
@@ -213,7 +265,7 @@ export function AttendanceWorkspace() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-4 gap-4">
                 <div className="p-4 rounded-xl bg-emerald-50/50 border border-emerald-100 flex items-center gap-3">
                   <div className="p-2.5 rounded-lg bg-emerald-500/10 text-emerald-600">
                     <UserCheck className="h-5 w-5" />
@@ -236,13 +288,21 @@ export function AttendanceWorkspace() {
 
                 <div className="p-4 rounded-xl bg-indigo-50/50 border border-indigo-100 flex items-center gap-3">
                   <div className="p-2.5 rounded-lg bg-indigo-500/10 text-indigo-600">
+                    <CheckCircle2 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500">H. supp. validées</p>
+                    <p className="text-lg font-bold text-slate-800">{totalValidatedOvertimeHours} hrs</p>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-xl bg-amber-50/50 border border-amber-100 flex items-center gap-3">
+                  <div className="p-2.5 rounded-lg bg-amber-500/10 text-amber-600">
                     <Clock className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="text-xs text-slate-500">Heures supp. approuvées</p>
-                    <p className="text-lg font-bold text-slate-800">
-                      {overtimes.filter((o) => o.validated === true).reduce((acc, curr) => acc + Number(curr.hours), 0)} hrs
-                    </p>
+                    <p className="text-xs text-slate-500">H. supp. en attente</p>
+                    <p className="text-lg font-bold text-slate-800">{totalPendingOvertimeHours} hrs</p>
                   </div>
                 </div>
               </div>
@@ -358,10 +418,11 @@ export function AttendanceWorkspace() {
               </div>
             </div>
 
-            {/* History Tables */}
+            {/* Attendance History Table */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="px-5 py-4 border-b border-slate-200 bg-slate-50">
+              <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
                 <h4 className="font-bold text-slate-900 text-sm">Historique des Présences</h4>
+                <span className="text-xs text-slate-400">{attendances.length} enregistrement(s)</span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
@@ -380,7 +441,7 @@ export function AttendanceWorkspace() {
                       </tr>
                     ) : (
                       attendances.map((att) => (
-                        <tr key={att.id}>
+                        <tr key={att.id} className="hover:bg-slate-50/50">
                           <td className="px-5 py-3.5 font-medium text-slate-900">
                             {new Date(att.date).toLocaleDateString('fr-FR')}
                           </td>
@@ -391,11 +452,103 @@ export function AttendanceWorkspace() {
                               att.status === 'ABSENT' && 'bg-rose-50 text-rose-700 border border-rose-100',
                               att.status === 'LATE' && 'bg-amber-50 text-amber-700 border border-amber-100'
                             )}>
-                              {att.status}
+                              {att.status === 'PRESENT' ? 'Présent' : att.status === 'ABSENT' ? 'Absent' : att.status === 'LATE' ? 'En retard' : att.status}
                             </span>
                           </td>
                           <td className="px-5 py-3.5 text-slate-600">{att.hoursWorked || 0} hrs</td>
                           <td className="px-5 py-3.5 text-slate-500 max-w-[200px] truncate">{att.notes || '-'}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Overtime History Table — NEW */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-[#1A2BA6]" />
+                  <h4 className="font-bold text-slate-900 text-sm">Heures Supplémentaires</h4>
+                </div>
+                <div className="flex items-center gap-3 text-xs">
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 font-bold">
+                    {totalValidatedOvertimeHours} hrs validées
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100 font-bold">
+                    {totalPendingOvertimeHours} hrs en attente
+                  </span>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 bg-slate-50/50">
+                      <th className="px-5 py-3 text-slate-500 font-semibold">Date</th>
+                      <th className="px-5 py-3 text-slate-500 font-semibold">Heures</th>
+                      <th className="px-5 py-3 text-slate-500 font-semibold">Raison</th>
+                      <th className="px-5 py-3 text-slate-500 font-semibold">Statut</th>
+                      <th className="px-5 py-3 text-slate-500 font-semibold text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {overtimes.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="text-center py-6 text-slate-400">Aucune heure supplémentaire déclarée</td>
+                      </tr>
+                    ) : (
+                      overtimes.map((ot) => (
+                        <tr key={ot.id} className="hover:bg-slate-50/50">
+                          <td className="px-5 py-3.5 font-medium text-slate-900">
+                            {new Date(ot.date).toLocaleDateString('fr-FR')}
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                              {Number(ot.hours)} hrs
+                            </span>
+                          </td>
+                          <td className="px-5 py-3.5 text-slate-600 max-w-[250px] truncate">{ot.notes || '-'}</td>
+                          <td className="px-5 py-3.5">
+                            {ot.validated === true ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
+                                <CheckCircle2 className="h-3 w-3" /> Validée
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-100">
+                                <Clock className="h-3 w-3" /> En attente
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-5 py-3.5 text-right">
+                            {ot.validated !== true && (
+                              <div className="flex justify-end gap-1">
+                                <button
+                                  onClick={() => handleProcessOvertime(ot.id, 'VALIDATE')}
+                                  disabled={processingOvertime === ot.id}
+                                  className="p-1.5 rounded-lg hover:bg-emerald-50 text-emerald-600 transition-colors disabled:opacity-50"
+                                  title="Valider"
+                                >
+                                  {processingOvertime === ot.id ? <Clock className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                                </button>
+                                <button
+                                  onClick={() => handleProcessOvertime(ot.id, 'REJECT')}
+                                  disabled={processingOvertime === ot.id}
+                                  className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-500 transition-colors disabled:opacity-50"
+                                  title="Rejeter"
+                                >
+                                  <XCircle className="h-4 w-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteOvertime(ot.id)}
+                                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+                                  title="Supprimer"
+                                >
+                                  <X className="h-4 w-4" />
+                                </button>
+                              </div>
+                            )}
+                          </td>
                         </tr>
                       ))
                     )}

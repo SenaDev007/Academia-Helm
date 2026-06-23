@@ -20,6 +20,16 @@ const SHIFTS = [
   { name: 'Après-midi', type: 'AFTERNOON', startTime: '14:00', endTime: '18:00', time: '14:00 - 18:00' },
 ];
 
+// Status label mapping for staff display
+const STATUS_LABELS: Record<string, string> = {
+  ACTIVE: 'Actif',
+  PENDING_SIGNATURE: 'En attente de signature',
+  INACTIVE: 'Inactif',
+  SUSPENDED: 'Suspendu',
+  ON_LEAVE: 'En congé',
+  ARCHIVED: 'Archivé',
+};
+
 function getWeekDates(offset: number): Date[] {
   const now = new Date();
   const monday = new Date(now);
@@ -142,14 +152,14 @@ export function PlanningWorkspace() {
           method: 'PUT',
           body: {
             staffId,
-            dayOfWeek,
+            dayOfWeekName: dayOfWeek,
             shiftType,
             startTime: shiftObj?.startTime,
             endTime: shiftObj?.endTime,
             role,
             date: formatDateKey(date),
             shift: shiftType,
-            academicYearId: academicYear?.id,
+            ...(academicYear?.id ? { academicYearId: academicYear.id } : {}),
             tenantId: tenant?.id,
           },
         });
@@ -160,14 +170,14 @@ export function PlanningWorkspace() {
           method: 'POST',
           body: {
             staffId,
-            dayOfWeek,
+            dayOfWeekName: dayOfWeek,
             shiftType,
             startTime: shiftObj?.startTime,
             endTime: shiftObj?.endTime,
             role,
             date: formatDateKey(date),
             shift: shiftType,
-            academicYearId: academicYear?.id,
+            ...(academicYear?.id ? { academicYearId: academicYear.id } : {}),
             tenantId: tenant?.id,
           },
         });
@@ -192,8 +202,8 @@ export function PlanningWorkspace() {
         await hrFetch<any>(hrUrl(`schedules/${prev.scheduleId}`, { tenantId: tenant.id }), { method: 'DELETE' });
         toast({ variant: 'success', title: 'Créneau supprimé' });
       }
-    } catch (err) {
-      toast({ variant: 'error', title: 'Erreur lors de la sauvegarde' });
+    } catch (err: any) {
+      toast({ variant: 'error', title: 'Erreur lors de la sauvegarde', description: err?.message });
       // Revert optimistic update
       loadSchedules();
     } finally {
@@ -399,9 +409,10 @@ export function PlanningWorkspace() {
                       'text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border',
                       s.status === 'ACTIVE' ? 'text-emerald-600 bg-emerald-50 border-emerald-100' :
                       s.status === 'ON_LEAVE' ? 'text-blue-600 bg-blue-50 border-blue-100' :
+                      s.status === 'PENDING_SIGNATURE' ? 'text-amber-600 bg-amber-50 border-amber-100' :
                       'text-slate-500 bg-slate-50 border-slate-100'
                     )}>
-                      {s.status === 'ACTIVE' ? 'Actif' : s.status === 'ON_LEAVE' ? 'En congé' : s.status || 'Actif'}
+                      {STATUS_LABELS[s.status] || s.status || 'Actif'}
                     </span>
                   </div>
                 </div>

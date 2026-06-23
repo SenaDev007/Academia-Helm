@@ -218,11 +218,15 @@ export function AllowancesWorkspace() {
               <button
                 onClick={() => {
                   if (allowanceTypes.length === 0) {
-                    toast({ variant: 'warning', title: 'Veuillez d\'abord ajouter des types d\'indemnités via "Gérer les types".' });
+                    toast({ variant: 'warning', title: 'Aucun type d\'indemnité', description: 'Veuillez d\'abord créer un type d\'indemnité via "Gérer les types".' });
                     return;
                   }
                   setAssignType(allowanceTypes[0].id);
-                  setAssignAmount(allowanceTypes[0].defaultAmount.toString());
+                  // Use 'amount' field (DB field name), fallback to defaultAmount
+                  const firstAmount = allowanceTypes[0].amount ?? allowanceTypes[0].defaultAmount ?? 0;
+                  setAssignAmount(firstAmount.toString());
+                  setAssignStartDate(new Date().toISOString().split('T')[0]);
+                  setAssignEndDate('');
                   setIsAssignModalOpen(true);
                 }}
                 className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition"
@@ -332,12 +336,18 @@ export function AllowancesWorkspace() {
                   onChange={(e) => {
                     setAssignType(e.target.value);
                     const selected = allowanceTypes.find(t => t.id === e.target.value);
-                    if (selected) setAssignAmount(selected.defaultAmount.toString());
+                    if (selected) {
+                      const amt = selected.amount ?? selected.defaultAmount ?? 0;
+                      setAssignAmount(amt.toString());
+                    }
                   }}
                 >
-                  {allowanceTypes.map(t => (
-                    <option key={t.id} value={t.id}>{t.name} ({t.defaultAmount} F CFA)</option>
-                  ))}
+                  {allowanceTypes.map(t => {
+                    const amt = t.amount ?? t.defaultAmount ?? 0;
+                    return (
+                      <option key={t.id} value={t.id}>{t.name} ({amt} F CFA)</option>
+                    );
+                  })}
                 </select>
               </div>
               <div>

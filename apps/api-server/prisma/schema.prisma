@@ -467,6 +467,7 @@ model Tenant {
   taxDeclarations                  TaxDeclaration[]
   financialReportHeaders           FinancialReportHeader[]
   taxPayrollPeriods                TaxPayrollPeriod[]
+  taxPayslips                      TaxPayslip[]
 
   @@index([subdomain])
   @@index([slug])

@@ -537,4 +537,23 @@ export class StaffPrismaController {
     }
     return this.staffService.getPromoterStatus(tid);
   }
+
+  /**
+   * Synchronise tous les enseignants RH existants avec le module Pédagogie.
+   * Crée ou met à jour les enregistrements Teacher pour chaque Staff avec
+   * roleType=TEACHER qui n'a pas encore de Teacher correspondant.
+   *
+   * À appeler une fois après le déploiement pour backfill les données existantes.
+   */
+  @Post('sync-teachers-to-pedagogy')
+  async syncTeachersToPedagogy(
+    @GetTenant() tenant: any,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis');
+    }
+    return this.staffService.syncTeachersToPedagogy(tid);
+  }
 }

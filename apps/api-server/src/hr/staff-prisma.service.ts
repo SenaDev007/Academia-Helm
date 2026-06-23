@@ -1340,6 +1340,143 @@ export class StaffPrismaService {
     };
   }
 
+  /**
+   * Synchronise tous les enseignants RH existants avec le module Pédagogie.
+   *
+   * Pour chaque Staff avec roleType=TEACHER (non ARCHIVED) :
+   * 1. Cherche un Teacher correspondant (par email ou matricule/employeeNumber)
+   * 2. Si trouvé → met à jour schoolLevelId, position, qualifications
+   * 3. Si non trouvé → crée un nouveau Teacher
+   *
+   * @returns { synced, created, updated, skipped, errors }
+   */
+  async syncTeachersToPedagogy(tenantId: string) {
+    // Récupérer tous les enseignants actifs du tenant
+    const teachers = await this.prisma.staff.findMany({
+      where: {
+        tenantId,
+        roleType: 'TEACHER',
+        status: { not: 'ARCHIVED' },
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        gender: true,
+        birthDate: true,
+        address: true,
+        position: true,
+        department: true,
+        employeeNumber: true,
+        tenantMatricule: true,
+        globalMatricule: true,
+        schoolLevelId: true,
+        hireDate: true,
+        qualifications: true,
+        contractType: true,
+        academicYearId: true,
+      },
+    });
+
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+
+    for (const t of teachers) {
+      try {
+        // Chercher un Teacher existant par email ou matricule
+        const matricule = t.tenantMatricule || t.employeeNumber;
+        const orConditions: any[] = [];
+        if (t.email) orConditions.push({ email: t.email });
+        if (matricule) orConditions.push({ matricule: matricule });
+
+        const existingTeacher = orConditions.length > 0
+          ? await this.prisma.teacher.findFirst({
+              where: { tenantId, OR: orConditions },
+            })
+          : null;
+
+        if (existingTeacher) {
+          // Mettre à jour le Teacher existant
+          await this.prisma.teacher.update({
+            where: { id: existingTeacher.id },
+            data: {
+              ...(t.schoolLevelId ? { schoolLevelId: t.schoolLevelId } : {}),
+              ...(t.position ? { position: t.position } : {}),
+              ...(t.qualifications ? { qualifications: t.qualifications } : {}),
+              ...(t.phone ? { phone: t.phone } : {}),
+              ...(t.email ? { email: t.email } : {}),
+              ...(t.contractType ? { contractType: t.contractType } : {}),
+              ...(t.hireDate ? { hireDate: t.hireDate } : {}),
+              status: 'active',
+            },
+          });
+          updated++;
+        } else {
+          // Créer un nouveau Teacher
+          // Resolve schoolLevelId — if staff doesn't have one, try to find a default
+          let schoolLevelId = t.schoolLevelId;
+          if (!schoolLevelId) {
+            // Try to find any SchoolLevel for this tenant
+            const anyLevel = await this.prisma.schoolLevel.findFirst({
+              where: { tenantId },
+              select: { id: true },
+            });
+            if (anyLevel) {
+              schoolLevelId = anyLevel.id;
+            } else {
+              // Skip if no school level exists at all
+              skipped++;
+              errors.push(`${t.firstName} ${t.lastName}: aucun niveau scolaire trouvé`);
+              continue;
+            }
+          }
+
+          await this.prisma.teacher.create({
+            data: {
+              tenantId,
+              schoolLevelId,
+              matricule: matricule || `TMP-${Date.now()}`,
+              firstName: t.firstName,
+              lastName: t.lastName,
+              gender: t.gender || null,
+              dateOfBirth: t.birthDate || null,
+              phone: t.phone || null,
+              email: t.email || null,
+              address: t.address || null,
+              position: t.position || 'Enseignant',
+              qualifications: t.qualifications || null,
+              hireDate: t.hireDate || new Date(),
+              contractType: t.contractType || null,
+              status: 'active',
+              academicYearId: t.academicYearId || null,
+            },
+          });
+          created++;
+        }
+      } catch (err: any) {
+        errors.push(`${t.firstName} ${t.lastName}: ${err.message}`);
+        skipped++;
+      }
+    }
+
+    this.logger.log(
+      `syncTeachersToPedagogy: ${created} created, ${updated} updated, ${skipped} skipped, ${errors.length} errors out of ${teachers.length} teachers`,
+    );
+
+    return {
+      total: teachers.length,
+      created,
+      updated,
+      skipped,
+      errors,
+      message: `Synchronisation terminée : ${created} enseignant(s) créé(s), ${updated} mis à jour, ${skipped} ignoré(s)`,
+    };
+  }
+
   private async resolveSchoolLevelId(levelId: string): Promise<string> {
     // 1) Try direct SchoolLevel lookup
     const schoolLevel = await this.prisma.schoolLevel.findUnique({

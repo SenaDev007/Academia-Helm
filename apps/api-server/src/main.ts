@@ -987,6 +987,31 @@ async function bootstrap() {
 
   await app.listen(port, '0.0.0.0');
 
+  // ─── Auto-sync HR teachers → Pedagogy on startup ──
+  // One-time backfill: for each tenant, sync existing Staff TEACHER records
+  // to the Pedagogy Teacher table so they appear in class assignments.
+  try {
+    const { StaffPrismaService } = await import('./hr/staff-prisma.service');
+    const prisma = app.get('PrismaService') as any;
+    const staffService = app.get(StaffPrismaService) as any;
+    if (staffService && typeof staffService.syncTeachersToPedagogy === 'function') {
+      const tenants = await prisma.tenant.findMany({ select: { id: true, name: true } });
+      logger.log(`Auto-syncing ${tenants.length} tenant(s) teachers to pedagogy...`);
+      for (const t of tenants) {
+        try {
+          const result = await staffService.syncTeachersToPedagogy(t.id);
+          if (result.created > 0 || result.updated > 0) {
+            logger.log(`[${t.name}] Teacher sync: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped`);
+          }
+        } catch (err: any) {
+          logger.warn(`[${t.name}] Teacher sync failed: ${err.message}`);
+        }
+      }
+    }
+  } catch (err: any) {
+    logger.warn(`Teacher auto-sync skipped: ${err.message}`);
+  }
+
   // Log memory info on startup
   const memUsage = process.memoryUsage();
   logger.log(`Academia Helm API listening on http://0.0.0.0:${port} (PORT=${process.env.PORT ?? 'unset'})`);

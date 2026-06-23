@@ -269,8 +269,11 @@ export function TeacherLevelAssignment() {
       toast({ variant: 'success', title: 'Affectations enregistrées avec succès' });
       setPendingAssignments({});
       setHasChanges(false);
-      // Reload data
+      // Force reload with cache-busting
+      setLoading(true);
       await loadTeachers();
+      // Additional reload after a short delay to ensure DB commit is visible
+      setTimeout(() => loadTeachers(), 500);
     } catch (err: any) {
       console.error('Error saving assignments:', err);
       toast({ variant: 'error', title: 'Erreur lors de la sauvegarde', description: err?.message });

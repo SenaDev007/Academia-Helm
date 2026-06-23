@@ -178,12 +178,17 @@ export class StaffPrismaService {
     levelAssigned?: string;
   }) {
     const where: any = { tenantId };
+    // Exclure le PROMOTEUR du comptage et de la liste du personnel
+    // (il est le responsable, pas un employé compté dans l'effectif)
+    where.roleType = { not: 'PROMOTEUR' };
     if (filters?.academicYearId) where.academicYearId = filters.academicYearId;
     if (filters?.status && filters.status !== 'ALL') where.status = filters.status;
     if (filters?.category) {
-      // Mapper category UI → roleType
+      // Mapper category UI → roleType (sans écraser l'exclusion PROMOTEUR)
       const role = CATEGORY_TO_ROLE[filters.category];
-      if (role) where.roleType = role;
+      if (role) {
+        where.roleType = { in: [role] }; // Remplace l'exclusion PROMOTEUR par le filtre catégorie
+      }
     }
     if (filters?.levelAssigned) {
       where.schoolLevelId = filters.levelAssigned;
@@ -1067,10 +1072,20 @@ export class StaffPrismaService {
       where: { id: resolvedSchoolLevelId },
     });
 
+    // Re-fetch updated staff to confirm the assignment worked
+    const updatedStaff = await this.prisma.staff.findMany({
+      where: { id: { in: staffIds }, tenantId },
+      select: { id: true, schoolLevelId: true },
+    });
+    const confirmedCount = updatedStaff.filter(s => s.schoolLevelId === resolvedSchoolLevelId).length;
+
     return {
       updated: result.count,
+      confirmed: confirmedCount,
       assignments: assignments.length,
-      message: `${result.count} personnel(s) affecté(s) au niveau ${schoolLevel?.name || resolvedSchoolLevelId}`,
+      message: `${confirmedCount} personnel(s) affecté(s) au niveau ${schoolLevel?.name || resolvedSchoolLevelId}`,
+      schoolLevelId: resolvedSchoolLevelId,
+      schoolLevelName: schoolLevel?.name,
     };
   }
 

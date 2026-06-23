@@ -112,7 +112,12 @@ export class ContractsPrismaService {
     if (filters?.status && filters.status !== 'ALL') where.status = filters.status;
 
     const contracts = await this.prisma.contract.findMany({
-      where,
+      where: {
+        ...where,
+        staff: {
+          status: { not: 'ARCHIVED' },
+        },
+      },
       include: {
         staff: {
           select: {

@@ -351,6 +351,7 @@ export default function StaffDetailPage() {
       address: member.address || '',
       hireDate: member.hireDate ? new Date(member.hireDate).toISOString().split('T')[0] : '',
       contractType: member.contractType || '',
+      isPermanent: member.contractType !== 'VACATAIRE' && !!member.cnssNumber,
       nationality: member.nationality || '',
       maritalStatus: member.maritalStatus || '',
       numberOfChildren: member.numberOfChildren ?? '',
@@ -767,9 +768,60 @@ export default function StaffDetailPage() {
                   </div>
                   <div>
                     <label className={labelClass}>N° CNSS</label>
-                    <input type="text" className={inputClass} value={editForm.cnssNumber} onChange={(e) => setEditForm({ ...editForm, cnssNumber: e.target.value })} placeholder="Numéro d&apos;immatriculation" />
+                    <input
+                      type="text"
+                      className={inputClass}
+                      value={editForm.cnssNumber}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        // Auto-cocher "Permanent" quand un numéro CNSS est renseigné
+                        setEditForm(prev => ({
+                          ...prev,
+                          cnssNumber: val,
+                          isPermanent: val ? true : prev.isPermanent,
+                          // Si CNSS rempli et contractType était VACATAIRE, passer en CDI
+                          contractType: val && prev.contractType === 'VACATAIRE' ? 'CDI' : prev.contractType,
+                        }));
+                      }}
+                      placeholder="Numéro d'immatriculation"
+                    />
                   </div>
                 </div>
+
+                {/* Toggle Permanent / Vacataire */}
+                <div className="flex items-center gap-3 px-4 py-3 rounded-xl border bg-slate-50/50"
+                  style={{ borderColor: editForm.isPermanent ? '#10b98140' : '#cbd5e140' }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditForm(prev => {
+                        const newIsPermanent = !prev.isPermanent;
+                        // Si on décoche Permanent → passer en VACATAIRE
+                        // Si on coche Permanent et qu'on était VACATAIRE → passer en CDI
+                        const newContractType = !newIsPermanent
+                          ? 'VACATAIRE'
+                          : (prev.contractType === 'VACATAIRE' ? 'CDI' : prev.contractType);
+                        return { ...prev, isPermanent: newIsPermanent, contractType: newContractType };
+                      });
+                    }}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 ${editForm.isPermanent ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                    aria-label="Basculer Permanent / Vacataire"
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${editForm.isPermanent ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </button>
+                  <div className="flex-1">
+                    <p className={`text-sm font-bold ${editForm.isPermanent ? 'text-emerald-700' : 'text-slate-600'}`}>
+                      {editForm.isPermanent ? 'Permanent' : 'Vacataire'}
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      {editForm.isPermanent
+                        ? 'Soumis à la CNSS + IRPP — déductions automatiques sur la paie'
+                        : 'Non soumis à la CNSS/IRPP — le salaire net = salaire brut (aucune déduction)'}
+                    </p>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className={labelClass}>N° IFU</label>
@@ -1019,6 +1071,15 @@ export default function StaffDetailPage() {
                   <div className="flex items-center gap-3 text-sm text-gray-600">
                     <CheckCircle2 size={18} className="text-emerald-500" />
                     <span className="font-medium text-emerald-700">Contrat {member.contracts?.[0]?.contractType || member.contractType || 'N/A'}</span>
+                    {(member.contracts?.[0]?.contractType || member.contractType) === 'VACATAIRE' ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-100">
+                        Vacataire
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
+                        Permanent
+                      </span>
+                    )}
                   </div>
                   {member.hireDate && (
                     <div className="flex items-center gap-3 text-sm text-gray-600">

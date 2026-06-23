@@ -3,11 +3,13 @@
  * SESSION LOCK SCREEN
  * ============================================================================
  *
- * Écran de verrouillage plein écran affiché après inactivité prolongée.
- * L'utilisateur doit saisir ses identifiants pour déverrouiller la session
- * et reprendre son travail là où il en était.
+ * Écran de verrouillage plein écran affiché après 15 minutes d'inactivité.
+ * L'utilisateur peut :
+ *   1. Cliquer « Rester connecté(e) » pour reprendre rapidement sa session
+ *   2. Saisir son mot de passe pour déverrouiller de façon sécurisée
  *
- * Après 30 minutes de verrouillage sans interaction → déconnexion automatique.
+ * Après 15 minutes supplémentaires sans interaction → déconnexion automatique
+ * et redirection vers le site public.
  * ============================================================================
  */
 
@@ -16,7 +18,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Image from 'next/image';
-import { Lock, Mail, Eye, EyeOff, LogOut, Loader, AlertCircle } from 'lucide-react';
+import { Lock, Mail, Eye, EyeOff, LogOut, Loader, AlertCircle, RefreshCw } from 'lucide-react';
 import { useSessionManager } from '@/contexts/SessionManagerContext';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { BRAND } from '@/lib/brand';
@@ -25,7 +27,7 @@ const NAVY = '#0b2f73';
 const GOLD = '#f5b335';
 
 export default function SessionLockScreen() {
-  const { sessionState, handleUnlock, handleLogoutFromLock } = useSessionManager();
+  const { sessionState, handleUnlock, handleLogoutFromLock, handleStayConnected } = useSessionManager();
   const { shouldReduceMotion } = useMotionBudget();
 
   const isVisible = sessionState === 'locked';
@@ -185,6 +187,30 @@ export default function SessionLockScreen() {
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {/* Bouton « Rester connecté(e) » — déverrouillage rapide sans mot de passe */}
+            <motion.button
+              type="button"
+              onClick={handleStayConnected}
+              whileHover={shouldReduceMotion ? undefined : { scale: 1.02 }}
+              whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
+              className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 font-semibold text-white shadow-lg transition-colors"
+              style={{
+                background: `linear-gradient(135deg, ${GOLD}, #e0a02e)`,
+              }}
+            >
+              <RefreshCw className="h-5 w-5" />
+              Rester connecté(e)
+            </motion.button>
+
+            {/* Séparateur */}
+            <div className="mb-4 flex items-center gap-3">
+              <div className="h-px flex-1 bg-slate-200" />
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                Ou déverrouiller avec mot de passe
+              </span>
+              <div className="h-px flex-1 bg-slate-200" />
+            </div>
 
             {/* Formulaire de déverrouillage */}
             <form onSubmit={handleSubmit} className="space-y-5">

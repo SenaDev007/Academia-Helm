@@ -38,14 +38,14 @@ import {
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Délai d'inactivité avant affichage du modal d'avertissement (15 minutes) */
+/** Délai d'inactivité avant verrouillage de la session (15 minutes) */
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 
 /** Durée du compte à rebours du modal d'avertissement (30 secondes) */
 const WARNING_COUNTDOWN_S = 30;
 
-/** Délai avant déconnexion automatique après verrouillage (30 minutes) */
-const LOCK_EXPIRY_MS = 30 * 60 * 1000;
+/** Délai avant déconnexion automatique après verrouillage (15 minutes) */
+const LOCK_EXPIRY_MS = 15 * 60 * 1000;
 
 /** Intervalle de vérification de l'inactivité (15 secondes) */
 const IDLE_CHECK_INTERVAL_MS = 15 * 1000;
@@ -191,36 +191,29 @@ export function SessionManagerProvider({ children }: { children: React.ReactNode
   // State transitions
   // ---------------------------------------------------------------------------
 
-  /** Passer à l'état « warning » : afficher le modal avec compte à rebours */
+  /** Passer à l'état « locked » directement après 15 min d'inactivité.
+   *  L'écran de verrouillage affiche le bouton « Rester connecté(e) ».
+   *  Plus de modal d'avertissement intermédiaire — on verrouille directement.
+   */
   const enterWarning = useCallback(() => {
     if (isTransitioningRef.current) return;
     isTransitioningRef.current = true;
-    setSessionState('warning');
-    setCountdownSeconds(WARNING_COUNTDOWN_S);
-
-    let remaining = WARNING_COUNTDOWN_S;
-    countdownRef.current = setInterval(() => {
-      remaining -= 1;
-      setCountdownSeconds(remaining);
-      if (remaining <= 0) {
-        if (countdownRef.current) clearInterval(countdownRef.current);
-        // Verrouiller la session
-        setSessionState('locked');
-        lockedAtRef.current = Date.now();
-        isTransitioningRef.current = false;
-      }
-    }, 1000);
+    // Verrouiller directement la session (skip warning modal)
+    setSessionState('locked');
+    lockedAtRef.current = Date.now();
+    isTransitioningRef.current = false;
   }, []);
 
   // ---------------------------------------------------------------------------
   // User actions
   // ---------------------------------------------------------------------------
 
-  /** L'utilisateur clique « Rester connecté(e) » */
+  /** L'utilisateur clique « Rester connecté(e) » depuis l'écran de verrouillage */
   const handleStayConnected = useCallback(async () => {
-    // Annuler le compte à rebours
+    // Annuler le compte à rebours (si actif)
     if (countdownRef.current) clearInterval(countdownRef.current);
     isTransitioningRef.current = false;
+    lockedAtRef.current = null;
 
     // Rafraîchir le token et réinitialiser le timer d'activité
     recordActivity();
@@ -340,7 +333,7 @@ export function SessionManagerProvider({ children }: { children: React.ReactNode
     } catch {}
   }, [sessionState, enterWarning]);
 
-  /** Vérifier si le délai de verrouillage est atteint (30 min → déconnexion) */
+  /** Vérifier si le délai de verrouillage est atteint (15 min → déconnexion) */
   const checkLockExpiry = useCallback(() => {
     if (sessionState !== 'locked' || !lockedAtRef.current) return;
     const elapsed = Date.now() - lockedAtRef.current;

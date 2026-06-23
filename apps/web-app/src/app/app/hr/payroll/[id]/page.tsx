@@ -266,7 +266,7 @@ export default function PayrollDetailPage() {
   return (
     <HRShell activeId="payroll" title="Paie" description="Périodes de paie, calculs fiscaux et bulletins.">
     <div className="space-y-6 pb-20">
-      <div className="px-6 pt-4">
+      <div className="px-4 sm:px-6 pt-4">
         <Link href="/app/hr/payroll" className="flex items-center gap-2 text-gray-500 hover:text-blue-600 font-bold transition-all group">
           <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
           Retour à la liste
@@ -284,8 +284,8 @@ export default function PayrollDetailPage() {
         ]}
       />
 
-      <div className="px-6">
-        <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-2xl shadow-sm border border-gray-50">
+      <div className="px-4 sm:px-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6 bg-white p-3 sm:p-4 rounded-2xl shadow-sm border border-gray-50">
           <div className="flex items-center gap-3">
             <Badge className={period.status === 'PAID' ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'}>
               {period.status}
@@ -342,13 +342,13 @@ export default function PayrollDetailPage() {
           <table className="w-full text-left">
             <thead className="bg-gray-50/50">
               <tr>
-                <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase">Employé</th>
-                <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase">Salaire Brut</th>
-                <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase">Retenues</th>
-                <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase">Net à Payer</th>
-                <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase">Statut Ligne</th>
-                <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase">Paiement</th>
-                <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase text-right">Actions</th>
+                <th className="px-3 sm:px-6 py-3 sm:py-4 text-xs font-bold text-gray-400 uppercase">Employé</th>
+                <th className="px-3 sm:px-6 py-3 sm:py-4 text-xs font-bold text-gray-400 uppercase">Salaire Brut</th>
+                <th className="px-3 sm:px-6 py-3 sm:py-4 text-xs font-bold text-gray-400 uppercase">Retenues</th>
+                <th className="px-3 sm:px-6 py-3 sm:py-4 text-xs font-bold text-gray-400 uppercase">Net à Payer</th>
+                <th className="px-3 sm:px-6 py-3 sm:py-4 text-xs font-bold text-gray-400 uppercase">Statut Ligne</th>
+                <th className="px-3 sm:px-6 py-3 sm:py-4 text-xs font-bold text-gray-400 uppercase">Paiement</th>
+                <th className="px-3 sm:px-6 py-3 sm:py-4 text-xs font-bold text-gray-400 uppercase text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -357,7 +357,7 @@ export default function PayrollDetailPage() {
                 const isVacataire = payroll.staff?.contractType === 'VACATAIRE';
                 return (
                 <tr key={payroll.id} className="hover:bg-blue-50/10 transition-colors">
-                  <td className="px-6 py-4">
+                  <td className="px-3 sm:px-6 py-3 sm:py-4">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center text-gray-400">
                         <User size={20} />
@@ -375,10 +375,10 @@ export default function PayrollDetailPage() {
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-3 sm:px-6 py-3 sm:py-4">
                     <span className="text-sm font-bold text-gray-700">{formatCurrency(payroll.grossSalary)}</span>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-3 sm:px-6 py-3 sm:py-4">
                     {isVacataire ? (
                       <span className="text-xs text-gray-400 italic">Aucune (Vacataire)</span>
                     ) : (
@@ -390,10 +390,10 @@ export default function PayrollDetailPage() {
                       </div>
                     )}
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-3 sm:px-6 py-3 sm:py-4">
                     <span className="text-sm font-black text-blue-600">{formatCurrency(payroll.netSalary)}</span>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-3 sm:px-6 py-3 sm:py-4">
                     <Badge className={
                       payroll.status === 'VALIDATED' ? 'bg-emerald-50 text-emerald-600' :
                       payroll.status === 'PAID' ? 'bg-blue-50 text-blue-600' :
@@ -404,7 +404,7 @@ export default function PayrollDetailPage() {
                       {payroll.status}
                     </Badge>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-3 sm:px-6 py-3 sm:py-4">
                     {payroll.salaryPayment?.status === 'COMPLETED' ? (
                       <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600">
                         <CheckCircle2 size={14} /> Payé
@@ -421,7 +421,7 @@ export default function PayrollDetailPage() {
                       <span className="text-xs text-gray-400">—</span>
                     )}
                   </td>
-                  <td className="px-6 py-4 text-right">
+                  <td className="px-3 sm:px-6 py-3 sm:py-4 text-right">
                     <div className="flex justify-end gap-2">
                       {period.status === 'OPEN' && (
                         <button
@@ -458,7 +458,7 @@ export default function PayrollDetailPage() {
               })}
               {(!period.payrolls || period.payrolls.length === 0) && (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-gray-400">
+                  <td colSpan={7} className="px-3 sm:px-6 py-12 text-center text-gray-400">
                     <AlertCircle className="mx-auto mb-2 opacity-20" size={40} />
                     Aucune ligne de paie générée pour cette période.
                     {period.status === 'OPEN' && (

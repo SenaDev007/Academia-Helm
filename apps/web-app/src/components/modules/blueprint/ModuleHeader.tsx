@@ -63,7 +63,7 @@ export default function ModuleHeader({
   return (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden transition-all hover:shadow-md">
       {/* Header principal avec dégradé subtil */}
-      <div className="px-6 py-6 sm:px-8 sm:py-7 bg-gradient-to-br from-white via-white to-indigo-50/30 border-b border-gray-100 relative">
+      <div className="px-4 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-7 bg-gradient-to-br from-white via-white to-indigo-50/30 border-b border-gray-100 relative">
         <div className="absolute top-0 right-0 p-8 opacity-[0.03] pointer-events-none">
           {icon && <AppIcon name={icon as any} size={48} className="text-indigo-900" />}
         </div>
@@ -124,8 +124,8 @@ export default function ModuleHeader({
 
       {/* KPI rapides stylisés */}
       {kpis.length > 0 && (
-        <div className="px-6 py-6 sm:px-8 bg-gray-50/50 border-b border-gray-100">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div className="px-4 py-4 sm:px-6 lg:px-8 bg-gray-50/50 border-b border-gray-100">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
             {kpis.map((kpi, index) => (
               <div
                 key={index}

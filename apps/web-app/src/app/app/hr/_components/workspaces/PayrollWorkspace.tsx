@@ -161,7 +161,7 @@ export function PayrollWorkspace() {
       )}
 
       {/* KPI strip */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
         {[
           { label: 'Masse annuelle', value: stats?.totalAmount ? `${Math.round(stats.totalAmount / 1000000)}M XOF` : '—' },
           { label: 'Effectif moyen', value: stats?.totalStaff ? `${stats.totalStaff} pers.` : '—' },
@@ -226,7 +226,7 @@ function PayrollRow({ payroll, index }: { payroll: any; index: number }) {
                 </div>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-8 flex-grow max-w-md">
+            <div className="grid grid-cols-2 gap-4 sm:gap-8 flex-grow w-full md:max-w-md">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">Net à Payer</p>
                 <p className="text-lg font-black text-slate-900">{formatCurrency(payroll.totalAmount)}</p>

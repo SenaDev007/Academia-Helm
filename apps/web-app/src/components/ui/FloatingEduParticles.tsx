@@ -43,7 +43,7 @@ export default function FloatingEduParticles({ count = 20, opacityMultiplier = 1
   }, [count, opacityMultiplier]);
 
   return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+    <div className="absolute inset-0 overflow-hidden pointer-events-none" style={{ zIndex: 1 }} aria-hidden="true">
       {particles.map((p) => {
         const Icon = p.Icon;
         return (

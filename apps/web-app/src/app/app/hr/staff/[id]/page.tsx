@@ -1286,7 +1286,7 @@ export default function StaffDetailPage() {
             </TabsList>
 
             <TabsContent value="infos">
-              <Card className="border-none shadow-sm rounded-3xl bg-white p-8">
+              <Card className="border-none shadow-sm rounded-3xl bg-white p-4 sm:p-6 lg:p-8">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                   <section>
                     <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
@@ -1424,7 +1424,7 @@ export default function StaffDetailPage() {
             </TabsContent>
 
             <TabsContent value="docs">
-              <Card className="border-none shadow-sm rounded-3xl bg-white p-8">
+              <Card className="border-none shadow-sm rounded-3xl bg-white p-4 sm:p-6 lg:p-8">
                 <div className="flex justify-between items-center mb-8">
                   <div>
                     <h3 className="text-lg font-bold text-gray-900">Dossier Numérique</h3>
@@ -1574,7 +1574,7 @@ export default function StaffDetailPage() {
             </TabsContent>
 
             <TabsContent value="contracts">
-              <Card className="border-none shadow-sm rounded-3xl bg-white p-8">
+              <Card className="border-none shadow-sm rounded-3xl bg-white p-4 sm:p-6 lg:p-8">
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="text-lg font-bold text-gray-900">Contrats</h3>
                   <Badge className="bg-slate-100 text-slate-600">{contracts.length} contrat(s)</Badge>
@@ -1637,7 +1637,7 @@ export default function StaffDetailPage() {
             </TabsContent>
 
             <TabsContent value="career">
-              <Card className="border-none shadow-sm rounded-3xl bg-white p-8">
+              <Card className="border-none shadow-sm rounded-3xl bg-white p-4 sm:p-6 lg:p-8">
                 <div className="space-y-8">
                   {/* Evaluations */}
                   <section>

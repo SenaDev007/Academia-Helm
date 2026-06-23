@@ -87,10 +87,11 @@ export default function SubModuleNavigation({
       <nav
         className="flex border-b border-gray-200 overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
         aria-label="Sous-modules"
+        style={{ WebkitOverflowScrolling: 'touch' }}
       >
         {modules.map((module) => {
           const isActive = currentActiveId === module.id;
-          
+
           // Si le module a un href et pas de onModuleChange, utiliser <Link> pour une navigation côté client optimale
           if (module.href && !onModuleChange) {
             return (
@@ -99,7 +100,7 @@ export default function SubModuleNavigation({
                 href={module.href}
                 onClick={module.disabled ? (e) => e.preventDefault() : undefined}
                 className={cn(
-                  'flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors focus:outline-none',
+                  'flex items-center gap-1.5 px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm font-medium whitespace-nowrap transition-colors focus:outline-none',
                   'border-none rounded-none shadow-none',
                   module.disabled
                     ? 'opacity-30 cursor-not-allowed'
@@ -115,8 +116,8 @@ export default function SubModuleNavigation({
                 {module.icon && (
                   <span className={cn("flex-shrink-0", isActive ? "text-blue-600" : "text-gray-400")}>
                     {isValidElement(module.icon) ? (
-                      cloneElement(module.icon as React.ReactElement, { 
-                        className: cn("w-4 h-4", (module.icon as any).props.className) 
+                      cloneElement(module.icon as React.ReactElement, {
+                        className: cn("w-4 h-4", (module.icon as any).props.className)
                       } as any)
                     ) : typeof module.icon === 'function' || (typeof module.icon === 'object' && module.icon !== null) ? (
                       <module.icon className="w-4 h-4" />
@@ -125,10 +126,11 @@ export default function SubModuleNavigation({
                     )}
                   </span>
                 )}
-                <span>{module.label}</span>
+                <span className="hidden sm:inline">{module.label}</span>
+                <span className="sm:hidden">{module.label?.split(' ')[0]}</span>
                 {module.badge && (
                   <span className={cn(
-                    "ml-1.5 px-1.5 py-0.5 text-[10px] rounded-full font-bold",
+                    "ml-1 px-1.5 py-0.5 text-[10px] rounded-full font-bold",
                     isActive ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-500"
                   )}>
                     {module.badge}
@@ -145,7 +147,7 @@ export default function SubModuleNavigation({
               onClick={() => handleModuleClick(module)}
               disabled={module.disabled}
               className={cn(
-                'flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors focus:outline-none',
+                'flex items-center gap-1.5 px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm font-medium whitespace-nowrap transition-colors focus:outline-none',
                 'disabled:opacity-30 disabled:cursor-not-allowed border-none rounded-none shadow-none',
                 isActive
                   ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
@@ -156,8 +158,8 @@ export default function SubModuleNavigation({
               {module.icon && (
                 <span className={cn("flex-shrink-0", isActive ? "text-blue-600" : "text-gray-400")}>
                   {isValidElement(module.icon) ? (
-                    cloneElement(module.icon as React.ReactElement, { 
-                      className: cn("w-4 h-4", (module.icon as any).props.className) 
+                    cloneElement(module.icon as React.ReactElement, {
+                      className: cn("w-4 h-4", (module.icon as any).props.className)
                     } as any)
                   ) : typeof module.icon === 'function' || (typeof module.icon === 'object' && module.icon !== null) ? (
                     <module.icon className="w-4 h-4" />
@@ -166,10 +168,11 @@ export default function SubModuleNavigation({
                   )}
                 </span>
               )}
-              <span>{module.label}</span>
+              <span className="hidden sm:inline">{module.label}</span>
+              <span className="sm:hidden">{module.label?.split(' ')[0]}</span>
               {module.badge && (
                 <span className={cn(
-                  "ml-1.5 px-1.5 py-0.5 text-[10px] rounded-full font-bold",
+                  "ml-1 px-1.5 py-0.5 text-[10px] rounded-full font-bold",
                   isActive ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-500"
                 )}>
                   {module.badge}

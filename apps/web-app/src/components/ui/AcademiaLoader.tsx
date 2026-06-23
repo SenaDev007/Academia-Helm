@@ -66,17 +66,17 @@ export default function AcademiaLoader({ inline = false, message, progress, step
 
   return (
     <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#1A237E]">
-      {/* Particules éducatives flottantes */}
-      <FloatingEduParticles count={24} />
+      {/* Particules éducatives flottantes — toujours visibles, derrière le contenu */}
+      <FloatingEduParticles count={30} opacityMultiplier={2.0} />
 
       {/* Orbes d'ambiance subtiles */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none" style={{ zIndex: 0 }}>
         <div className="academia-loader-orb academia-loader-orb-1" />
         <div className="academia-loader-orb academia-loader-orb-2" />
       </div>
 
-      {/* Logo circulaire avec bordure */}
-      <div className="relative academia-loader-container">
+      {/* Logo circulaire avec bordure — z-index au-dessus des particules */}
+      <div className="relative academia-loader-container" style={{ zIndex: 10 }}>
         <div className="academia-loader-halo" />
         <div className="academia-loader-ring" />
         <div className="academia-loader-ring-outer" />
@@ -93,7 +93,7 @@ export default function AcademiaLoader({ inline = false, message, progress, step
       </div>
 
       {/* Nom de marque */}
-      <div className="mt-7 text-center academia-loader-text">
+      <div className="mt-7 text-center academia-loader-text relative" style={{ zIndex: 10 }}>
         <h1 className="text-2xl font-bold text-white tracking-tight">
           {BRAND.name.split(' ')[0]}
           <span className="text-[#f5b335] ml-1.5">{BRAND.name.split(' ')[1]}</span>
@@ -104,7 +104,7 @@ export default function AcademiaLoader({ inline = false, message, progress, step
       </div>
 
       {/* Message de l'étape réelle */}
-      <div className="mt-5 text-center academia-loader-step">
+      <div className="mt-5 text-center academia-loader-step relative" style={{ zIndex: 10 }}>
         <p className="text-sm font-medium text-white/90">
           {message || 'Chargement…'}
         </p>
@@ -117,7 +117,7 @@ export default function AcademiaLoader({ inline = false, message, progress, step
 
       {/* Barre de progression RÉELLE — seulement si progress est passé */}
       {typeof progress === 'number' && (
-        <div className="mt-6 w-56">
+        <div className="mt-6 w-56 relative" style={{ zIndex: 10 }}>
           <div className="h-2 rounded-full bg-white/10 overflow-hidden">
             <div
               className="h-full rounded-full transition-all duration-300 ease-out"
@@ -135,7 +135,7 @@ export default function AcademiaLoader({ inline = false, message, progress, step
       )}
 
       {/* Dots animés */}
-      <div className="flex items-center space-x-2.5 mt-6">
+      <div className="flex items-center space-x-2.5 mt-6 relative" style={{ zIndex: 10 }}>
         <div className="h-1.5 w-1.5 rounded-full bg-[#3F51B5]/70 academia-loader-dot" style={{ animationDelay: '0ms' }} />
         <div className="h-2 w-2 rounded-full bg-[#3F51B5] academia-loader-dot" style={{ animationDelay: '120ms' }} />
         <div className="h-1.5 w-1.5 rounded-full bg-[#f5b335] academia-loader-dot" style={{ animationDelay: '240ms' }} />

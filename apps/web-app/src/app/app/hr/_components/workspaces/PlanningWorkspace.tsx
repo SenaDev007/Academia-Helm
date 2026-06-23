@@ -542,7 +542,7 @@ ${DAYS_OF_WEEK.map((d, i) => `<th>${d}<br/><span style="font-size:10px;font-weig
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           {loading ? (
             [1, 2, 3].map((i) => <div key={i} className="h-16 bg-slate-50 animate-pulse rounded-lg" />)
           ) : filteredStaff.length === 0 ? (

@@ -218,7 +218,7 @@ export function ContractsWorkspace() {
       )}
 
       {/* KPI strip */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { label: 'Contrats actifs', value: contracts.filter((c) => c.status === 'ACTIVE').length },
           { label: 'En attente de signature', value: contracts.filter((c) => c.status === 'DRAFT' || c.status === 'PENDING').length },
@@ -389,7 +389,7 @@ function ContractRow({ contract, index, tenantId, onTerminate }: { contract: any
             </div>
           </div>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-6 flex-grow max-w-xl">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-6 flex-grow w-full md:max-w-xl">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Période</p>
             <div className="flex items-center gap-1.5 text-sm font-medium text-slate-700">

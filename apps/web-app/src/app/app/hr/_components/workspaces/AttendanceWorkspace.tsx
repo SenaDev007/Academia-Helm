@@ -265,7 +265,7 @@ export function AttendanceWorkspace() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                 <div className="p-4 rounded-xl bg-emerald-50/50 border border-emerald-100 flex items-center gap-3">
                   <div className="p-2.5 rounded-lg bg-emerald-500/10 text-emerald-600">
                     <UserCheck className="h-5 w-5" />

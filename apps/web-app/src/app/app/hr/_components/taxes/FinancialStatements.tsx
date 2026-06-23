@@ -77,7 +77,7 @@ export function FinancialStatements() {
           <h3 className="text-base font-bold text-slate-900">États financiers SYSCOHADA</h3>
           <p className="text-xs text-slate-500 mt-0.5">Bilan, Compte de Résultat, TFT — Année : {currentYear?.name || 'N/A'}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <select value={type} onChange={e => setType(e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-semibold focus:ring-2 focus:ring-[#1A2BA6]/20 focus:border-[#1A2BA6]">
             {STATEMENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>

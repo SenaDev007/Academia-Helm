@@ -187,7 +187,7 @@ export function LeavesWorkspace() {
       )}
 
       {/* KPI strip */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
         {[
           { label: 'Demandes en attente', value: requests.filter((r) => r.status === 'PENDING').length },
           { label: 'Approuvées ce mois',  value: requests.filter((r) => r.status === 'APPROVED').length },

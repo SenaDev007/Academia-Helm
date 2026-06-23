@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
 import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.service';
 import { StorageService } from '../../common/services/storage.service';
+import { EmailService } from '../../communication/services/email.service';
+import { Inject, forwardRef } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 
 @Injectable()
@@ -15,6 +17,7 @@ export class StaffCardService {
     private config: ConfigService,
     private puppeteerPool: PuppeteerPoolService,
     private storageService: StorageService,
+    @Inject(forwardRef(() => EmailService)) private emailService: EmailService,
   ) {
     this.loadQrcode();
   }
@@ -336,6 +339,210 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;padding:20px}
       qrData: r.qr_data,
       createdAt: r.created_at,
     };
+  }
+
+  /**
+   * Génère les cartes professionnelles pour TOUS les personnels actifs.
+   * Révoque les anciennes cartes actives et en génère de nouvelles.
+   */
+  async generateAllCards(tenantId: string, cardType = 'PROFESSIONAL') {
+    await this.ensureTableExists();
+
+    // Récupérer tous les personnels actifs avec email
+    const staffList = await this.prisma.staff.findMany({
+      where: { tenantId, status: { not: 'ARCHIVED' } },
+      select: { id: true, firstName: true, lastName: true, email: true },
+    });
+
+    let generated = 0;
+    let failed = 0;
+    const errors: string[] = [];
+
+    for (const staff of staffList) {
+      try {
+        // Révoquer l'ancienne carte active si elle existe
+        await this.prisma.$executeRawUnsafe(
+          `UPDATE hr_staff_cards SET status='REVOKED', updated_at=NOW() WHERE staff_id=$1 AND tenant_id=$2 AND status='ACTIVE'`,
+          staff.id, tenantId,
+        ).catch(() => {});
+
+        // Générer la nouvelle carte
+        await this.getOrCreateCard(staff.id, tenantId, cardType);
+        generated++;
+      } catch (e: any) {
+        failed++;
+        errors.push(`${staff.firstName} ${staff.lastName}: ${e.message}`);
+        this.logger.error(`Card generation failed for ${staff.id}: ${e.message}`);
+      }
+    }
+
+    return { generated, failed, errors, total: staffList.length };
+  }
+
+  /**
+   * Distribue les cartes par email aux personnels.
+   * Envoie la carte PDF en pièce jointe + lien public QR.
+   */
+  async distributeCardsByEmail(tenantId: string, staffIds?: string[]) {
+    await this.ensureTableExists();
+
+    // Récupérer les cartes actives
+    let cards: any[];
+    if (staffIds && staffIds.length > 0) {
+      cards = await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT c.*, s.first_name, s.last_name, s.email FROM hr_staff_cards c JOIN staff s ON c.staff_id=s.id WHERE c.tenant_id=$1 AND c.status='ACTIVE' AND c.staff_id = ANY($2)`,
+        tenantId, staffIds,
+      );
+    } else {
+      cards = await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT c.*, s.first_name, s.last_name, s.email FROM hr_staff_cards c JOIN staff s ON c.staff_id=s.id WHERE c.tenant_id=$1 AND c.status='ACTIVE'`,
+        tenantId,
+      );
+    }
+
+    // Récupérer le branding pour l'email
+    const branding = await this.getTenantBrandingForCard(tenantId);
+    const baseUrl = this.config.get('PUBLIC_WEB_URL') || 'https://www.academiahelm.com';
+
+    let sent = 0;
+    let failed = 0;
+    const errors: string[] = [];
+
+    for (const card of cards) {
+      try {
+        if (!card.email) {
+          failed++;
+          errors.push(`${card.first_name} ${card.last_name}: aucun email`);
+          continue;
+        }
+
+        // Résoudre l'URL du PDF
+        let pdfUrl = card.pdf_url;
+        if (pdfUrl && !pdfUrl.startsWith('data:')) {
+          try { pdfUrl = await this.storageService.resolveFileUrl(pdfUrl); } catch {}
+        }
+
+        // Télécharger le PDF pour l'attachement
+        let pdfBuffer: Buffer | null = null;
+        if (pdfUrl) {
+          try {
+            if (pdfUrl.startsWith('data:')) {
+              const m = /^data:[^;]+;base64,(.+)$/i.exec(pdfUrl);
+              if (m) pdfBuffer = Buffer.from(m[1], 'base64');
+            } else {
+              const resp = await fetch(pdfUrl);
+              if (resp.ok) pdfBuffer = Buffer.from(await resp.arrayBuffer());
+            }
+          } catch (e: any) {
+            this.logger.warn(`PDF download failed for card ${card.id}: ${e.message}`);
+          }
+        }
+
+        const staffName = `${card.first_name} ${card.last_name}`;
+        const cardLink = `${baseUrl.replace(/\/+$/, '')}/staff-card/${card.token}`;
+
+        // Email HTML
+        const html = this.buildDistributionEmail({
+          staffName,
+          staffFirstName: card.first_name,
+          schoolName: branding.schoolName,
+          schoolLogo: branding.schoolLogo,
+          cardLink,
+        });
+
+        await this.emailService.sendCategorized({
+          tenantId,
+          category: 'ADMINISTRATIF' as any,
+          subCategory: 'distribution_carte_personnel',
+          module: 'hr',
+          to: card.email,
+          toName: staffName,
+          recipientType: 'STAFF' as any,
+          recipientId: card.staff_id,
+          fromEmail: this.config.get('EMAIL_FROM_NOREPLY') || 'noreply@academiahelm.com',
+          fromName: branding.schoolName,
+          subject: `${branding.schoolName} — Votre carte professionnelle`,
+          html,
+          attachments: pdfBuffer ? [{
+            filename: `Carte_${card.first_name}_${card.last_name}.pdf`,
+            content: pdfBuffer.toString('base64'),
+            contentType: 'application/pdf',
+          }] : undefined,
+          triggeredBy: 'SYSTEM',
+          relatedEntityId: card.id,
+          relatedEntityType: 'StaffCard',
+        });
+
+        sent++;
+      } catch (e: any) {
+        failed++;
+        errors.push(`${card.first_name} ${card.last_name}: ${e.message}`);
+        this.logger.error(`Card distribution failed for ${card.staff_id}: ${e.message}`);
+      }
+    }
+
+    return { sent, failed, errors, total: cards.length };
+  }
+
+  /**
+   * Email de distribution de carte (template standard Helm).
+   */
+  private buildDistributionEmail(d: { staffName: string; staffFirstName: string; schoolName: string; schoolLogo?: string | null; cardLink: string }): string {
+    const N = '#0b2f73', B = '#1d4fa5', G = '#f5b335';
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;background:#eef2f7;font-family:Arial,sans-serif;">
+<table cellpadding="0" cellspacing="0" width="100%" style="background:#eef2f7;">
+<tr><td align="center" style="padding:24px 12px;">
+<table cellpadding="0" cellspacing="0" width="600" style="max-width:600px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(11,47,115,.08);">
+<tr><td style="background:linear-gradient(160deg,${N} 0%,${B} 100%);padding:28px 24px;border-bottom:3px solid ${G};text-align:center;">
+${d.schoolLogo ? `<img src="${d.schoolLogo}" alt="${d.schoolName}" style="max-height:48px;max-width:160px;object-fit:contain;margin-bottom:8px;" />` : ''}
+<div style="font-size:22px;font-weight:bold;color:#fff;">${d.schoolName}</div>
+<div style="font-size:13px;color:${G};margin-top:4px;">Carte professionnelle</div>
+</td></tr>
+<tr><td style="padding:32px 28px;background:#f8fafc;">
+<div style="display:inline-block;padding:8px 14px;border-radius:999px;background:#eff6ff;border:1px solid #93c5fd;color:#1e40af;font-size:13px;font-weight:bold;margin-bottom:20px;">🎫 Votre carte professionnelle</div>
+<h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;">Bonjour ${d.staffFirstName},</h2>
+<p style="margin:0 0 20px;color:#475569;line-height:1.6;">Votre carte professionnelle a été générée par l'administration de <strong style="color:${N};">${d.schoolName}</strong>. Vous la trouverez en pièce jointe de cet email.</p>
+<table cellpadding="0" cellspacing="0" width="100%" style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:20px;">
+<tr><td style="padding:16px 20px;">
+<p style="margin:0 0 8px;font-size:13px;color:#334155;"><strong>QR Code d'accès :</strong> Scannez le QR code sur votre carte pour accéder à votre profil public sécurisé.</p>
+<p style="margin:0;font-size:12px;color:#64748b;">Lien direct : <a href="${d.cardLink}" style="color:${N};">${d.cardLink}</a></p>
+</td></tr>
+</table>
+<div style="text-align:center;margin:24px 0;">
+<a href="${d.cardLink}" style="display:inline-block;background:${N};color:#fff;padding:14px 32px;border-radius:8px;font-size:15px;font-weight:bold;text-decoration:none;">Voir ma carte en ligne</a>
+</div>
+<p style="margin:0;color:#94a3b8;font-size:11px;line-height:1.6;">⚠️ Conservez votre carte en lieu sûr. Elle constitue une pièce d'identification professionnelle au sein de l'établissement. En cas de perte, contactez l'administration.</p>
+</td></tr>
+<tr><td style="background:${N};padding:24px 28px;text-align:center;border-top:3px solid ${G};">
+<div style="font-size:15px;font-weight:bold;color:#fff;">Academia Helm</div>
+<div style="font-size:11px;color:${G};margin-top:2px;">Plateforme de pilotage éducatif</div>
+<div style="font-size:11px;color:#94a3b8;line-height:1.6;margin-top:12px;">Cet email a été envoyé automatiquement. Merci de ne pas répondre directement.</div>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>`;
+  }
+
+  /**
+   * Récupère le branding pour l'email de distribution.
+   */
+  private async getTenantBrandingForCard(tenantId: string): Promise<{ schoolName: string; schoolLogo: string | null }> {
+    try {
+      const profile = await this.prisma.tenantIdentityProfile.findFirst({
+        where: { tenantId, isActive: true },
+        select: { schoolName: true, logoUrl: true },
+      });
+      if (profile?.schoolName) {
+        const apiBaseUrl = this.config.get<string>('APP_PUBLIC_URL') || 'https://academia-helm-api.fly.dev';
+        const logoUrl = profile.logoUrl ? `${apiBaseUrl}/api/tenants/${tenantId}/logo` : null;
+        return { schoolName: profile.schoolName, schoolLogo: logoUrl };
+      }
+      const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } });
+      return { schoolName: tenant?.name || 'Établissement', schoolLogo: null };
+    } catch {
+      return { schoolName: 'Établissement', schoolLogo: null };
+    }
   }
 
   private async ensureTableExists() {

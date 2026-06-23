@@ -11,6 +11,8 @@ import { TaxesController } from './taxes.controller';
 import { TaxSettingsService } from './services/tax-settings.service';
 import { FinancialStatementService } from './services/financial-statement.service';
 import { TaxDeclarationService } from './services/tax-declaration.service';
+import { FinancialNoteService } from './services/financial-note.service';
+import { PayrollService } from './services/payroll.service';
 
 @Module({
   imports: [PrismaModule],
@@ -20,11 +22,15 @@ import { TaxDeclarationService } from './services/tax-declaration.service';
     TaxSettingsService,
     FinancialStatementService,
     TaxDeclarationService,
+    FinancialNoteService,
+    PayrollService,
   ],
   exports: [
     TaxSettingsService,
     FinancialStatementService,
     TaxDeclarationService,
+    FinancialNoteService,
+    PayrollService,
   ],
 })
 export class TaxesModule {}

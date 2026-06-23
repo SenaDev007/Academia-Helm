@@ -24,6 +24,8 @@ import { PrismaService } from '../../database/prisma.service';
 import { TaxSettingsService, TaxSettingsData } from './services/tax-settings.service';
 import { FinancialStatementService } from './services/financial-statement.service';
 import { TaxDeclarationService } from './services/tax-declaration.service';
+import { FinancialNoteService } from './services/financial-note.service';
+import { PayrollService } from './services/payroll.service';
 
 @Controller('hr/taxes')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -33,6 +35,8 @@ export class TaxesController {
     private taxSettingsService: TaxSettingsService,
     private financialStatementService: FinancialStatementService,
     private taxDeclarationService: TaxDeclarationService,
+    private financialNoteService: FinancialNoteService,
+    private payrollService: PayrollService,
   ) {}
 
   // ─── Paramètres fiscaux ──────────────────────────────────────────────────
@@ -190,5 +194,80 @@ export class TaxesController {
       staffType: s.contractType === 'VACATAIRE' ? 'VACATAIRE' : 'PERMANENT',
       displayName: `${s.firstName} ${s.lastName}`,
     }));
+  }
+
+  // ─── Fiches de renseignements (Phase A) ──────────────────────────────────
+
+  @Get('report-header')
+  async getReportHeader(
+    @GetTenant() t: any,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!t?.id || !academicYearId) throw new BadRequestException('academicYearId requis');
+    return this.payrollService.getReportHeader(t.id, academicYearId);
+  }
+
+  @Put('report-header')
+  async updateReportHeader(
+    @GetTenant() t: any,
+    @Body() body: { academicYearId: string; data: any },
+  ) {
+    if (!t?.id || !body.academicYearId) throw new BadRequestException('academicYearId requis');
+    return this.payrollService.updateReportHeader(t.id, body.academicYearId, body.data);
+  }
+
+  // ─── Notes annexes SYSCOHADA (Phase B) ───────────────────────────────────
+
+  @Get('financial-notes')
+  async getFinancialNotes(
+    @GetTenant() t: any,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!t?.id || !academicYearId) throw new BadRequestException('academicYearId requis');
+    return this.financialNoteService.getOrCreateAll(t.id, academicYearId);
+  }
+
+  @Get('financial-notes/titles')
+  async getNoteTitles() {
+    return this.financialNoteService.getNoteTitles();
+  }
+
+  @Put('financial-notes/:id')
+  async updateNoteLine(
+    @Param('id') id: string,
+    @Body() body: { amountN?: number; amountN1?: number },
+  ) {
+    return this.financialNoteService.updateLine(id, body.amountN, body.amountN1);
+  }
+
+  // ─── États de paiement + Fiches de paie (Phase C) ────────────────────────
+
+  @Post('payroll/generate')
+  async generatePayroll(
+    @GetTenant() t: any,
+    @Body() body: { academicYearId: string; period: string; staffType: string },
+  ) {
+    if (!t?.id || !body.academicYearId || !body.period || !body.staffType) {
+      throw new BadRequestException('academicYearId, period et staffType requis');
+    }
+    return this.payrollService.generatePayslips(t.id, body.academicYearId, body.period, body.staffType);
+  }
+
+  @Get('payroll/payslips')
+  async getPayslips(
+    @GetTenant() t: any,
+    @Query('academicYearId') academicYearId: string,
+    @Query('period') period: string,
+  ) {
+    if (!t?.id || !academicYearId || !period) throw new BadRequestException('academicYearId et period requis');
+    return this.payrollService.getPayslips(t.id, academicYearId, period);
+  }
+
+  @Put('payslips/:id')
+  async updatePayslip(
+    @Param('id') id: string,
+    @Body() body: any,
+  ) {
+    return this.payrollService.updatePayslip(id, body);
   }
 }

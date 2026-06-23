@@ -5,15 +5,21 @@ import { HRShell } from '../_components/HRShell';
 import { TaxDashboard } from '../_components/taxes/TaxDashboard';
 import { StaffFiscalManagement } from '../_components/taxes/StaffFiscalManagement';
 import { FinancialStatements } from '../_components/taxes/FinancialStatements';
+import { FinancialNotes } from '../_components/taxes/FinancialNotes';
 import { TaxDeclarations } from '../_components/taxes/TaxDeclarations';
 import { TaxSettingsPanel } from '../_components/taxes/TaxSettingsPanel';
-import { LayoutDashboard, Users, FileText, Landmark, Settings } from 'lucide-react';
+import { ReportHeader } from '../_components/taxes/ReportHeader';
+import { PayrollManagement } from '../_components/taxes/PayrollManagement';
+import { LayoutDashboard, Users, FileText, Landmark, Settings, FileEdit, Receipt } from 'lucide-react';
 
 const SUB_TABS = [
   { id: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard },
   { id: 'staff', label: 'Gestion du personnel', icon: Users },
+  { id: 'payroll', label: 'Paie & Fiches', icon: Receipt },
   { id: 'financial', label: 'États financiers', icon: FileText },
+  { id: 'notes', label: 'Notes annexes', icon: FileEdit },
   { id: 'declarations', label: 'Déclarations fiscales', icon: Landmark },
+  { id: 'report-header', label: 'Fiches R1-R4', icon: FileText },
   { id: 'settings', label: 'Paramètres', icon: Settings },
 ] as const;
 
@@ -24,9 +30,8 @@ export default function CnssPage() {
     <HRShell
       activeId="cnss"
       title="Impôts & États financiers"
-      description="Gestion fiscale complète : états financiers SYSCOHADA, déclarations IST/AIB/CNSS et gestion du personnel."
+      description="Gestion fiscale complète : états financiers SYSCOHADA, déclarations IST/AIB/CNSS, paie et fiches de renseignements."
     >
-      {/* ─── Sous-onglets ─── */}
       <div className="mb-6 flex items-center gap-1 border-b border-slate-200 overflow-x-auto">
         {SUB_TABS.map((tab) => {
           const Icon = tab.icon;
@@ -48,11 +53,13 @@ export default function CnssPage() {
         })}
       </div>
 
-      {/* ─── Contenu ─── */}
       {activeSubTab === 'dashboard' && <TaxDashboard />}
       {activeSubTab === 'staff' && <StaffFiscalManagement />}
+      {activeSubTab === 'payroll' && <PayrollManagement />}
       {activeSubTab === 'financial' && <FinancialStatements />}
+      {activeSubTab === 'notes' && <FinancialNotes />}
       {activeSubTab === 'declarations' && <TaxDeclarations />}
+      {activeSubTab === 'report-header' && <ReportHeader />}
       {activeSubTab === 'settings' && <TaxSettingsPanel />}
     </HRShell>
   );

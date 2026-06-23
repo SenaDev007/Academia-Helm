@@ -465,6 +465,8 @@ model Tenant {
   financialStatements              FinancialStatement[]
   financialNotes                   FinancialNote[]
   taxDeclarations                  TaxDeclaration[]
+  financialReportHeaders           FinancialReportHeader[]
+  payrollPeriods                   PayrollPeriod[]
 
   @@index([subdomain])
   @@index([slug])
@@ -14524,4 +14526,125 @@ model TaxDeclaration {
   @@unique([tenantId, academicYearId, type, period])
   @@index([tenantId, academicYearId, type])
   @@map("tax_declarations")
+}
+
+// ─── Fiches de renseignements (Page garde + R1-R4) ────────────────────────
+model FinancialReportHeader {
+  id                String   @id @default(uuid())
+  tenantId          String
+  academicYearId    String
+
+  // Page de garde
+  centreDepot       String?
+  denominationSociale String?
+  sigleUsuel        String?
+  exerciceClosLe    String?
+  dureeExerciceMois Int?
+
+  // FICHE R1 — Identification
+  adresse           String?
+  numeroIF          String?
+  greffe            String?
+  numeroRC          String?
+  numeroCCSS        String?
+  numeroTelephone   String?
+  adresseGeoComplete String?
+  // ZE-ZH: autres infos R1
+  formeJuridique    String?
+  capitalSocial     String?
+  nombreEmployes    Int?
+  referentielBancaire String?
+
+  // FICHE R2 — Activité
+  regimeFiscal      String?
+  paysSiegeSocial   String?
+  nbEtablissementsPays Int?
+  nbEtablissementsHorsPays Int?
+  premiereAnneeExercice String?
+  activiteDesignation String?
+  activiteLocalisation String?
+  nbSalaries        Int?
+  chiffreAffaires   Decimal? @db.Decimal(18, 2)
+  partsMarche       String?
+  exportations      String?
+
+  // FICHE R3 — Dirigeants et Conseil d'Administration (JSON)
+  dirigeants        Json?    // [{nom, prenom, qualite, numeroIF, adresse}]
+  membresConseil    Json?    // [{nom, prenom, qualite, adresse}]
+  commissairesComptes Json?  // [{nom, prenom, adresse}]
+
+  // FICHE R4 — Notes applicables (JSON array de codes)
+  notesApplicables  Json?    // [{code: "NOTE 1", applicable: true}]
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, academicYearId])
+  @@map("financial_report_headers")
+}
+
+// ─── États de paiement et fiches de paie ──────────────────────────────────
+model PayrollPeriod {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  period          String   // "2026-01" (YYYY-MM)
+  staffType       String   // PERMANENT, VACATAIRE
+  status          String   @default("DRAFT") // DRAFT, FINALIZED
+  totalGross       Decimal  @default(0) @db.Decimal(18, 2)
+  totalDeductions  Decimal  @default(0) @db.Decimal(18, 2)
+  totalNet         Decimal  @default(0) @db.Decimal(18, 2)
+
+  payslips        Payslip[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, academicYearId, period, staffType])
+  @@map("payroll_periods")
+}
+
+model Payslip {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  staffId         String
+  payrollPeriodId String
+  period          String
+
+  // Rubriques (du fichier Excel "Fiche de paie")
+  salaireBase     Decimal  @default(0) @db.Decimal(18, 2)
+  moinsPercesArriere Decimal @default(0) @db.Decimal(18, 2)
+  gratificationsEtrennes Decimal @default(0) @db.Decimal(18, 2)
+  indemnites      Decimal  @default(0) @db.Decimal(18, 2)
+  primeSalissures Decimal  @default(0) @db.Decimal(18, 2)
+  salaireBrut     Decimal  @default(0) @db.Decimal(18, 2)
+
+  // Retenues
+  cnssOuvriere    Decimal  @default(0) @db.Decimal(18, 2)
+  itsNet          Decimal  @default(0) @db.Decimal(18, 2)
+  irppNet         Decimal  @default(0) @db.Decimal(18, 2)
+  avanceAcompte   Decimal  @default(0) @db.Decimal(18, 2)
+  opposition      Decimal  @default(0) @db.Decimal(18, 2)
+  taxesRadioTele  Decimal  @default(0) @db.Decimal(18, 2)
+
+  // Calculé
+  totalRetenues   Decimal  @default(0) @db.Decimal(18, 2)
+  netAPayer       Decimal  @default(0) @db.Decimal(18, 2)
+
+  // CNSS patronale (info)
+  cnssPatronale   Decimal  @default(0) @db.Decimal(18, 2)
+  vps             Decimal  @default(0) @db.Decimal(18, 2)
+
+  status          String   @default("DRAFT")
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  payrollPeriod   PayrollPeriod @relation(fields: [payrollPeriodId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, academicYearId, period])
+  @@map("payslips")
 }

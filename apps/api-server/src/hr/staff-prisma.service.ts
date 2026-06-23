@@ -998,6 +998,23 @@ export class StaffPrismaService {
     // Resolve the actual SchoolLevel — may receive an EducationLevel ID from the frontend
     const resolvedSchoolLevelId = await this.resolveSchoolLevelId(schoolLevelId);
 
+    // ─── Résoudre l'année académique active (requise par StaffAssignment) ──
+    // academicYearId est requis dans le schéma (non-nullable). Si non fourni,
+    // on récupère l'année académique active du tenant.
+    let resolvedAcademicYearId = academicYearId;
+    if (!resolvedAcademicYearId) {
+      const activeYear = await this.prisma.academicYear.findFirst({
+        where: { isActive: true },
+        select: { id: true },
+      });
+      if (!activeYear) {
+        throw new BadRequestException(
+          'Aucune année académique active trouvée. Veuillez activer une année académique dans les paramètres avant d\'affecter des enseignants.',
+        );
+      }
+      resolvedAcademicYearId = activeYear.id;
+    }
+
     // Update all staff members
     const result = await this.prisma.staff.updateMany({
       where: { id: { in: staffIds } },
@@ -1011,7 +1028,7 @@ export class StaffPrismaService {
       const existing = await this.prisma.staffAssignment.findFirst({
         where: {
           staffId,
-          academicYearId: academicYearId || undefined,
+          academicYearId: resolvedAcademicYearId,
           status: 'ACTIVE',
         },
       });
@@ -1035,7 +1052,7 @@ export class StaffPrismaService {
               staffId,
               schoolLevelId: resolvedSchoolLevelId,
               tenantId: staff.tenantId,
-              academicYearId: academicYearId || undefined,
+              academicYearId: resolvedAcademicYearId,
               role: 'TEACHER',
               startDate: new Date(),
               status: 'ACTIVE',

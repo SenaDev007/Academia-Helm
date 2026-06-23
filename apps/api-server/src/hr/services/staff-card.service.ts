@@ -9,8 +9,19 @@ import { randomBytes } from 'crypto';
 export class StaffCardService {
   private readonly logger = new Logger(StaffCardService.name);
   private qrcode: any = null;
-  constructor(private prisma: PrismaService, private config: ConfigService, private puppeteerPool: PuppeteerPoolService, private storageService: StorageService) { this.loadQrcode(); }
-  private async loadQrcode() { try { this.qrcode = await import('qrcode'); } catch {} }
+
+  constructor(
+    private prisma: PrismaService,
+    private config: ConfigService,
+    private puppeteerPool: PuppeteerPoolService,
+    private storageService: StorageService,
+  ) {
+    this.loadQrcode();
+  }
+
+  private async loadQrcode() {
+    try { this.qrcode = await import('qrcode'); } catch {}
+  }
 
   async getOrCreateCard(staffId: string, tenantId: string, cardType = 'PROFESSIONAL') {
     await this.ensureTableExists();
@@ -22,8 +33,8 @@ export class StaffCardService {
     );
     if (existing[0]) return this.parse(existing[0]);
 
-    // Récupérer les infos du staff via Prisma client (gère le mapping camelCase)
-    // ⚠️ Staff n'a pas de champ photoUrl — la photo est dans StaffPhoto (séparé)
+    // Récupérer les infos du staff via Prisma client
+    // ⚠️ Staff n'a pas de champ photoUrl — la photo est dans StaffPhoto (relation Staff.photo)
     const staff = await this.prisma.staff.findFirst({
       where: { id: staffId, tenantId },
       select: {
@@ -48,7 +59,12 @@ export class StaffCardService {
     let qrCodeDataUrl = '';
     if (this.qrcode) {
       try {
-        qrCodeDataUrl = await this.qrcode.toDataURL(qrData, { width: 200, margin: 1, color: { dark: '#0D1F6E', light: '#ffffff' } });
+        qrCodeDataUrl = await this.qrcode.toDataURL(qrData, {
+          width: 240,
+          margin: 1,
+          color: { dark: '#0b2f73', light: '#ffffff' },
+          errorCorrectionLevel: 'H',
+        });
       } catch (e: any) {
         this.logger.warn(`QR code generation failed: ${e.message}`);
       }
@@ -59,7 +75,7 @@ export class StaffCardService {
       select: { schoolName: true, logoUrl: true, address: true, phone: true, city: true },
     }).catch(() => null);
 
-    const schoolName = ss?.schoolName || staff.tenant?.name || 'Ecole';
+    const schoolName = ss?.schoolName || staff.tenant?.name || 'École';
 
     // Résoudre les URLs (data URLs ou S3/R2)
     let logoUrl = ss?.logoUrl || '';
@@ -103,7 +119,6 @@ export class StaffCardService {
   async getCardByToken(token: string) {
     await this.ensureTableExists();
 
-    // Récupérer la carte (table raw SQL snake_case)
     const cardRows = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT * FROM hr_staff_cards WHERE token=$1 AND status='ACTIVE'`,
       token,
@@ -111,7 +126,6 @@ export class StaffCardService {
     if (!cardRows[0]) throw new NotFoundException('Carte invalide');
     const card = cardRows[0];
 
-    // Récupérer les infos du staff via Prisma client (gère le mapping camelCase)
     const staff = await this.prisma.staff.findFirst({
       where: { id: card.staff_id },
       select: {
@@ -161,7 +175,15 @@ export class StaffCardService {
       `SELECT * FROM hr_staff_cards WHERE staff_id=$1 AND tenant_id=$2 ORDER BY created_at DESC`,
       staffId, tenantId,
     );
-    return r.map(x => this.parse(x));
+    // Résoudre les URLs PDF pour chaque carte
+    const resolved = await Promise.all(r.map(async (x) => {
+      const parsed = this.parse(x);
+      if (parsed.pdfUrl) {
+        try { parsed.pdfUrl = await this.storageService.resolveFileUrl(parsed.pdfUrl); } catch {}
+      }
+      return parsed;
+    }));
+    return resolved;
   }
 
   async revokeCard(id: string, tenantId: string) {
@@ -179,7 +201,7 @@ export class StaffCardService {
       const pdf = await page.pdf({
         format: 'A4',
         printBackground: true,
-        margin: { top: '10mm', bottom: '10mm', left: '10mm', right: '10mm' },
+        margin: { top: '8mm', bottom: '8mm', left: '8mm', right: '8mm' },
       });
       return Buffer.from(pdf);
     } finally {
@@ -187,11 +209,118 @@ export class StaffCardService {
     }
   }
 
+  /**
+   * Template HTML professionnel et moderne pour la carte personnel (recto-verso).
+   * Design : carte de visite premium avec palette Helm (Navy/Blue/Gold),
+   * photo circulaire, QR code, hologramme de sécurité, filigrane.
+   */
   private buildHtml(d: any) {
-    const N = '#0D1F6E', G = '#F5A623';
-    return `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;padding:20px}.card{width:340px;height:540px;margin:0 auto 20px;border-radius:16px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.15);position:relative}.front{background:linear-gradient(160deg,${N} 0%,#0D3B85 100%);color:#fff}.hdr{padding:20px;text-align:center;border-bottom:3px solid ${G}}.hdr img{height:40px;max-width:120px;margin-bottom:8px}.hdr h2{font-size:11px;color:${G};text-transform:uppercase}.body{padding:20px;text-align:center}.body .ph{width:100px;height:100px;border-radius:50%;border:3px solid ${G};margin:0 auto 12px;overflow:hidden;background:#fff}.body .ph img{width:100%;height:100%;object-fit:cover}.body .pp{width:100px;height:100px;border-radius:50%;border:3px solid ${G};margin:0 auto 12px;background:rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;font-size:36px;color:rgba(255,255,255,.5)}.body h1{font-size:16px;font-weight:bold;margin-bottom:4px}.body p{font-size:12px;color:rgba(255,255,255,.7);margin-bottom:2px}.body .m{font-size:10px;color:${G};font-weight:bold;margin-top:8px}.ft{position:absolute;bottom:0;left:0;right:0;padding:12px 20px;background:rgba(0,0,0,.2);display:flex;justify-content:space-between;align-items:center}.ft .qr img{width:60px;height:60px;background:#fff;padding:4px;border-radius:4px}.ft .i{font-size:8px;color:rgba(255,255,255,.6);text-align:right}.back{background:#fff;color:#333;padding:20px}.back h3{font-size:10px;color:${N};text-transform:uppercase;margin-bottom:8px}.back .r{display:flex;justify-content:space-between;font-size:10px;padding:4px 0;border-bottom:1px solid #eee}.back .r .l{color:#999}.back .r .v{font-weight:bold}.back .ql{text-align:center;margin-top:16px}.back .ql img{width:120px;height:120px}.back .ql p{font-size:8px;color:#999;margin-top:4px}</style></head><body>
-<div class="card front"><div class="hdr">${d.logoUrl ? `<img src="${d.logoUrl}"/>` : ''}<h2>${d.schoolName}</h2></div><div class="body">${d.photoUrl ? `<div class="ph"><img src="${d.photoUrl}"/></div>` : `<div class="pp">${d.staffName.charAt(0)}</div>`}<h1>${d.staffName}</h1><p>${d.staffPosition}</p><p>${d.staffPhone}</p><p>${d.staffEmail}</p><div class="m">Matricule: ${d.staffMatricule}</div></div><div class="ft"><div class="qr">${d.qrCodeDataUrl ? `<img src="${d.qrCodeDataUrl}"/>` : ''}</div><div class="i"><p>Carte professionnelle</p><p>Academia Helm</p></div></div></div>
-<div class="card back"><h3>Informations</h3><div class="r"><span class="l">Etablissement</span><span class="v">${d.schoolName}</span></div><div class="r"><span class="l">Adresse</span><span class="v">${d.schoolAddress || 'N/A'}${d.schoolCity ? ', ' + d.schoolCity : ''}</span></div><div class="r"><span class="l">Telephone</span><span class="v">${d.schoolPhone || 'N/A'}</span></div><div class="r"><span class="l">Personnel</span><span class="v">${d.staffName}</span></div><div class="r"><span class="l">Matricule</span><span class="v">${d.staffMatricule}</span></div><div class="ql">${d.qrCodeDataUrl ? `<img src="${d.qrCodeDataUrl}"/><p>Scannez pour le profil</p>` : ''}</div></div>
+    const N = '#0b2f73';   // Navy Helm
+    const B = '#1d4fa5';   // Blue Helm
+    const G = '#f5b335';   // Gold Helm
+    const initials = d.staffName.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase();
+
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;padding:20px}
+.card{width:340px;height:214px;margin:0 auto 24px;border-radius:14px;overflow:hidden;box-shadow:0 12px 40px rgba(11,47,115,.18);position:relative}
+/* ── RECTO ── */
+.front{background:linear-gradient(135deg,${N} 0%,${B} 100%);color:#fff;height:214px;position:relative;overflow:hidden}
+.front::before{content:'';position:absolute;top:-60%;right:-30%;width:200%;height:200%;background:radial-gradient(circle,rgba(245,179,53,.12) 0%,transparent 50%);pointer-events:none}
+.front::after{content:'';position:absolute;bottom:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,${G},transparent)}
+.front-header{padding:12px 16px 8px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,.12)}
+.front-header .logo{display:flex;align-items:center;gap:8px}
+.front-header .logo img{height:28px;max-width:100px;object-fit:contain}
+.front-header .logo .fallback{width:28px;height:28px;border-radius:6px;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;color:${G}}
+.front-header .badge-type{font-size:8px;font-weight:bold;color:${G};text-transform:uppercase;letter-spacing:1px;background:rgba(245,179,53,.15);padding:3px 8px;border-radius:4px}
+.front-body{padding:14px 16px;display:flex;align-items:center;gap:14px}
+.photo-wrap{width:64px;height:64px;border-radius:50%;border:3px solid ${G};overflow:hidden;background:rgba(255,255,255,.1);flex-shrink:0;position:relative}
+.photo-wrap img{width:100%;height:100%;object-fit:cover}
+.photo-wrap .initials{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:bold;color:rgba(255,255,255,.7)}
+.staff-info{flex:1;min-width:0}
+.staff-info h1{font-size:15px;font-weight:700;margin-bottom:2px;letter-spacing:.3px}
+.staff-info .position{font-size:11px;color:${G};margin-bottom:8px;font-weight:500}
+.staff-info .matricule{font-size:9px;color:rgba(255,255,255,.6);font-family:'Courier New',monospace;letter-spacing:.5px}
+.front-footer{position:absolute;bottom:0;left:0;right:0;padding:8px 16px;background:rgba(0,0,0,.25);display:flex;align-items:center;justify-content:space-between}
+.front-footer .qr{width:36px;height:36px;background:#fff;padding:2px;border-radius:4px}
+.front-footer .qr img{width:100%;height:100%}
+.front-footer .school-name{font-size:9px;color:rgba(255,255,255,.7);font-weight:600;text-align:right}
+.front-footer .school-name strong{display:block;color:#fff;font-size:10px}
+
+/* ── VERSO ── */
+.back{background:#fff;height:214px;position:relative;overflow:hidden;border:1px solid #e2e8f0}
+.back::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,${N},${G},${B})}
+.back-header{padding:10px 16px 6px;border-bottom:1px solid #f1f5f9}
+.back-header h2{font-size:10px;color:${N};text-transform:uppercase;letter-spacing:1.5px;font-weight:700}
+.back-header .school{font-size:11px;color:#334155;font-weight:600;margin-top:2px}
+.back-body{padding:10px 16px}
+.info-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px dotted #e2e8f0}
+.info-row:last-child{border-bottom:none}
+.info-row .label{font-size:8px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+.info-row .value{font-size:10px;color:#0f172a;font-weight:600;text-align:right}
+.back-footer{position:absolute;bottom:0;left:0;right:0;padding:8px 16px;background:linear-gradient(90deg,${N},${B});display:flex;align-items:center;justify-content:space-between}
+.back-footer .brand{font-size:9px;color:rgba(255,255,255,.8)}
+.back-footer .brand strong{color:${G};font-size:10px}
+.back-footer .qr-large{width:32px;height:32px;background:#fff;padding:2px;border-radius:3px}
+.back-footer .qr-large img{width:100%;height:100%}
+
+/* ── Hologramme de sécurité ── */
+.hologram{position:absolute;top:8px;right:8px;width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,${G},#fff,${G});opacity:.6;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:bold;color:${N};transform:rotate(-15deg)}
+</style></head><body>
+
+<!-- RECTO -->
+<div class="card front">
+  <div class="hologram">AH</div>
+  <div class="front-header">
+    <div class="logo">
+      ${d.logoUrl
+        ? `<img src="${d.logoUrl}" />`
+        : `<div class="fallback">${(d.schoolName || 'EC').substring(0, 2).toUpperCase()}</div>`}
+      <div style="font-size:9px;color:rgba(255,255,255,.8);font-weight:600;">${d.schoolName}</div>
+    </div>
+    <div class="badge-type">Carte Professionnelle</div>
+  </div>
+  <div class="front-body">
+    <div class="photo-wrap">
+      ${d.photoUrl
+        ? `<img src="${d.photoUrl}" />`
+        : `<div class="initials">${initials}</div>`}
+    </div>
+    <div class="staff-info">
+      <h1>${d.staffName}</h1>
+      <div class="position">${d.staffPosition}</div>
+      <div class="matricule">N° ${d.staffMatricule}</div>
+    </div>
+  </div>
+  <div class="front-footer">
+    <div class="qr">${d.qrCodeDataUrl ? `<img src="${d.qrCodeDataUrl}" />` : ''}</div>
+    <div class="school-name">
+      <strong>${d.schoolName}</strong>
+      ${d.schoolCity ? `<span>${d.schoolCity}</span>` : ''}
+    </div>
+  </div>
+</div>
+
+<!-- VERSO -->
+<div class="card back">
+  <div class="back-header">
+    <h2>Informations</h2>
+    <div class="school">${d.schoolName}</div>
+  </div>
+  <div class="back-body">
+    <div class="info-row"><span class="label">Établissement</span><span class="value">${d.schoolName}</span></div>
+    <div class="info-row"><span class="label">Adresse</span><span class="value">${d.schoolAddress || 'N/A'}${d.schoolCity ? ', ' + d.schoolCity : ''}</span></div>
+    <div class="info-row"><span class="label">Téléphone</span><span class="value">${d.schoolPhone || 'N/A'}</span></div>
+    <div class="info-row"><span class="label">Personnel</span><span class="value">${d.staffName}</span></div>
+    <div class="info-row"><span class="label">Matricule</span><span class="value">${d.staffMatricule}</span></div>
+    <div class="info-row"><span class="label">Contact</span><span class="value">${d.staffPhone || 'N/A'}</span></div>
+  </div>
+  <div class="back-footer">
+    <div class="brand"><strong>Academia Helm</strong><br/>Plateforme de pilotage éducatif</div>
+    <div class="qr-large">${d.qrCodeDataUrl ? `<img src="${d.qrCodeDataUrl}" />` : ''}</div>
+  </div>
+</div>
+
 </body></html>`;
   }
 

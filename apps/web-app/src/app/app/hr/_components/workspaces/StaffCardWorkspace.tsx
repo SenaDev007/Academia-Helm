@@ -29,7 +29,30 @@ export function StaffCardWorkspace() {
     if (!tenant?.id) return; setGenerating(staffId);
     try { await hrFetch(hrUrl(`staff/${staffId}/cards/generate`, { tenantId: tenant.id }), { method: 'POST', body: { cardType: 'PROFESSIONAL' } }); toast({ variant: 'success', title: 'Carte générée !' }); fetchCards(staffId); } catch (e: any) { toast({ variant: 'error', title: 'Erreur', description: e.message }); } finally { setGenerating(null); }
   }
-  async function handleDownload(url: string, name: string) { try { const r = await fetch(url); const b = await r.blob(); const u = URL.createObjectURL(b); const a = document.createElement('a'); a.href = u; a.download = `Carte_${name}.pdf`; a.click(); URL.revokeObjectURL(u); } catch {} }
+  async function handleDownload(pdfUrl: string, name: string) {
+    try {
+      // Si c'est une data URL, télécharger directement
+      if (pdfUrl.startsWith('data:')) {
+        const a = document.createElement('a');
+        a.href = pdfUrl;
+        a.download = `Carte_${name}.pdf`;
+        a.click();
+        return;
+      }
+      // Sinon, fetch via le BFF (gère les URLs S3/R2 présignées)
+      const r = await fetch(pdfUrl);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const b = await r.blob();
+      const u = URL.createObjectURL(b);
+      const a = document.createElement('a');
+      a.href = u;
+      a.download = `Carte_${name}.pdf`;
+      a.click();
+      URL.revokeObjectURL(u);
+    } catch (e: any) {
+      toast({ variant: 'error', title: 'Erreur téléchargement', description: e.message });
+    }
+  }
   async function handleRevoke(id: string, staffId: string) { if (!confirm('Révoquer cette carte ?')) return; if (!tenant?.id) return; try { await hrFetch(hrUrl(`staff/cards/${id}`, { tenantId: tenant.id }), { method: 'DELETE' }); toast({ variant: 'success', title: 'Carte révoquée' }); fetchCards(staffId); } catch {} }
 
   const filtered = staffList.filter(s => `${s.firstName} ${s.lastName} ${s.position || ''}`.toLowerCase().includes(search.toLowerCase()));

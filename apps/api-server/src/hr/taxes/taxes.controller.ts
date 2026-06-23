@@ -15,9 +15,8 @@
 
 import {
   Controller, Get, Post, Put, Body, Param, Query,
-  UseGuards, Res, BadRequestException,
+  UseGuards, BadRequestException,
 } from '@nestjs/common';
-import { Response } from 'express';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { GetTenant } from '../../common/decorators/tenant.decorator';

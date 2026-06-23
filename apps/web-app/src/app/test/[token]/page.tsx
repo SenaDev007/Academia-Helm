@@ -67,8 +67,8 @@ export default function TestPage() {
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [timeLeft, setTimeLeft] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
   const autoSubmitRef = useRef(false);
+  const handleSubmitRef = useRef<(auto?: boolean) => void>(() => {});
 
   // ─── Démarrer le test ────────────────────────────────────────────────────
   const startTest = useCallback(async () => {
@@ -103,14 +103,13 @@ export default function TestPage() {
   useEffect(() => {
     if (state !== 'test' || timeLeft <= 0) return;
 
-    // Un seul intervalle — ne pas recréer à chaque tick
     const intervalId = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 1) {
           clearInterval(intervalId);
           if (!autoSubmitRef.current) {
             autoSubmitRef.current = true;
-            handleSubmit(true);
+            handleSubmitRef.current(true); // Utilise la ref pour avoir la dernière version
           }
           return 0;
         }
@@ -120,18 +119,24 @@ export default function TestPage() {
 
     return () => clearInterval(intervalId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state]); // Dépend uniquement de 'state', pas de 'timeLeft'
+  }, [state]);
+
+  // Maintenir la ref de handleSubmit à jour à chaque render
+  useEffect(() => {
+    handleSubmitRef.current = handleSubmit;
+  });
 
   // ─── Soumission ──────────────────────────────────────────────────────────
   async function handleSubmit(isAutoSubmit = false) {
     if (state !== 'test' && !isAutoSubmit) return;
-    if (timerRef.current) clearInterval(timerRef.current);
     setState('submitting');
 
     try {
+      // Capturer les réponses au moment de la soumission (pas la closure initiale)
+      const currentAnswers = answers;
       const responses = (testData?.questions || []).map(q => ({
         questionId: q.id,
-        answer: answers[q.id] ?? (q.type === 'MULTIPLE_CHOICE' ? [] : ''),
+        answer: currentAnswers[q.id] ?? (q.type === 'MULTIPLE_CHOICE' ? [] : ''),
       }));
 
       const res = await fetch(`/api/tests-public/${token}/submit`, {

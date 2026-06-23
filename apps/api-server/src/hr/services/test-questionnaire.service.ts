@@ -246,16 +246,19 @@ export class TestQuestionnaireService {
     const normalizedBase = baseUrl.replace(/\/+$/, '');
     const testUrl = `${normalizedBase}/test/${token}`;
 
-    // 7. Envoyer l'email au candidat
+    // 7. Envoyer l'email au candidat (avec branding école)
     const questionnaire = this.parseQuestionnaire(qRows[0]);
     try {
       const fromEmail = this.config.get<string>('EMAIL_FROM_NOREPLY') || 'noreply@academiahelm.com';
+      const branding = await this.getTenantBranding(tenantId);
       const html = this.buildTestInvitationEmail({
         candidateName: `${candidate.firstName} ${candidate.lastName}`,
         testTitle: questionnaire.title,
         durationMinutes: questionnaire.durationMinutes,
         testUrl,
         expiresAt: expiresAt.toLocaleDateString('fr-FR'),
+        schoolName: branding.schoolName,
+        schoolLogo: branding.schoolLogo,
       });
 
       await this.emailService.sendCategorized({
@@ -268,7 +271,7 @@ export class TestQuestionnaireService {
         recipientType: 'CANDIDAT' as any,
         recipientId: candidateId,
         fromEmail,
-        fromName: 'Academia Helm — Recrutement',
+        fromName: branding.schoolName, // Nom de l'école, pas 'Academia Helm'
         subject: `📝 Test à passer : ${questionnaire.title}`,
         html,
         triggeredBy: 'SYSTEM',
@@ -324,10 +327,14 @@ export class TestQuestionnaireService {
     }
 
     // Si PENDING → passer à IN_PROGRESS et démarrer la minuterie
+    let justStarted = false;
     if (response.status === 'PENDING') {
       await this.prisma.$executeRawUnsafe(`
         UPDATE hr_test_responses SET status = 'IN_PROGRESS', started_at = NOW() WHERE token = $1
       `, token);
+      // Mettre à jour started_at dans la réponse locale pour le calcul du temps restant
+      response.started_at = new Date();
+      justStarted = true;
     }
 
     // Parser les questions SANS les réponses correctes
@@ -348,12 +355,15 @@ export class TestQuestionnaireService {
       timeRemainingSeconds = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
 
       // Si le temps est écoulé → auto-expire
-      if (timeRemainingSeconds === 0 && response.status === 'IN_PROGRESS') {
+      if (timeRemainingSeconds === 0 && (response.status === 'IN_PROGRESS' || justStarted)) {
         await this.prisma.$executeRawUnsafe(`
           UPDATE hr_test_responses SET status = 'EXPIRED' WHERE token = $1
         `, token);
         throw new BadRequestException('Le temps imparti pour ce test est écoulé.');
       }
+    } else if (justStarted) {
+      // Cas de sécurité: si started_at n'est pas défini mais qu'on vient de démarrer
+      timeRemainingSeconds = response.duration_minutes * 60;
     }
 
     return {
@@ -580,47 +590,55 @@ export class TestQuestionnaireService {
     durationMinutes: number;
     testUrl: string;
     expiresAt: string;
+    schoolName: string;
+    schoolLogo?: string | null;
   }): string {
-    const { candidateName, testTitle, durationMinutes, testUrl, expiresAt } = data;
+    const { candidateName, testTitle, durationMinutes, testUrl, expiresAt, schoolName, schoolLogo } = data;
+    const N = '#0b2f73', B = '#1d4fa5', G = '#f5b335';
     return `
 <!DOCTYPE html>
 <html lang="fr">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background:#f8fafc;font-family:Arial,Helvetica,sans-serif;">
+<body style="margin:0;padding:0;background:#eef2f7;font-family:Arial,Helvetica,sans-serif;">
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#eef2f7;">
     <tr><td align="center" style="padding:24px 12px;">
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(12,26,51,0.08);">
-        <tr><td style="background:linear-gradient(160deg,#0D1F6E 0%,#0D3B85 100%);padding:28px 24px;border-bottom:3px solid #F5A623;">
-          <h2 style="margin:0;font-size:20px;color:#fff;">📝 Test de recrutement</h2>
-          <p style="margin:6px 0 0;font-size:13px;color:#F5A623;">Vous êtes invité(e) à passer un test en ligne</p>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(11,47,115,0.08);">
+        <!-- Header: logo + nom école -->
+        <tr><td style="background:linear-gradient(160deg,${N} 0%,${B} 100%);padding:28px 24px;border-bottom:3px solid ${G};text-align:center;">
+          ${schoolLogo ? `<img src="${schoolLogo}" alt="${schoolName}" style="max-height:48px;max-width:160px;object-fit:contain;margin-bottom:8px;" />` : ''}
+          <div style="font-size:22px;font-weight:bold;color:#fff;">${schoolName}</div>
+          <div style="font-size:13px;color:${G};margin-top:4px;">Test de recrutement</div>
         </td></tr>
-        <tr><td style="padding:32px 28px;">
-          <p style="margin:0 0 16px;font-size:14px;color:#475569;">Bonjour <strong>${candidateName}</strong>,</p>
-          <p style="margin:0 0 20px;font-size:14px;color:#475569;">
-            Vous avez été sélectionné(e) pour passer le test suivant :
-          </p>
-          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:18px 20px;margin-bottom:24px;">
-            <p style="margin:0 0 8px;font-size:16px;font-weight:bold;color:#0D1F6E;">${testTitle}</p>
-            <p style="margin:0;font-size:13px;color:#64748b;">⏱ Durée : ${durationMinutes} minutes</p>
-            <p style="margin:4px 0 0;font-size:13px;color:#64748b;">⏰ Lien valide jusqu'au ${expiresAt}</p>
-          </div>
-          <div style="background:#fef3c7;border-left:4px solid #f59e0b;border-radius:0 8px 8px 0;padding:14px 18px;margin-bottom:24px;">
-            <p style="margin:0;font-size:13px;color:#92400e;line-height:1.6;">
+        <!-- Corps -->
+        <tr><td style="padding:32px 28px;background:#f8fafc;">
+          <div style="display:inline-block;padding:8px 14px;border-radius:999px;background:#eff6ff;border:1px solid #93c5fd;color:#1e40af;font-size:13px;font-weight:bold;margin-bottom:20px;">📝 Test à passer</div>
+          <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;">Bonjour ${candidateName},</h2>
+          <p style="margin:0 0 20px;color:#475569;line-height:1.6;">Vous avez été invité(e) par <strong style="color:${N};">${schoolName}</strong> à passer le test suivant :</p>
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:20px;">
+            <tr><td style="padding:16px 20px;">
+              <p style="margin:0 0 8px;font-size:16px;font-weight:bold;color:${N};">${testTitle}</p>
+              <p style="margin:0;font-size:13px;color:#64748b;">⏱ Durée : ${durationMinutes} minutes</p>
+              <p style="margin:4px 0 0;font-size:13px;color:#64748b;">⏰ Lien valide jusqu'au ${expiresAt}</p>
+            </td></tr>
+          </table>
+          <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:14px 18px;margin-bottom:20px;">
+            <p style="margin:0;color:#92400e;font-size:13px;line-height:1.6;">
               <strong>⚠ Important :</strong> Une minuterie démarrera dès que vous ouvrirez le test.
               Vous aurez ${durationMinutes} minutes pour répondre à toutes les questions.
-              Une fois le temps écoulé, le test sera automatiquement soumé.
+              Une fois le temps écoulé, le test sera automatiquement soumis.
               Assurez-vous d'avoir une connexion internet stable avant de commencer.
             </p>
           </div>
-          <a href="${testUrl}" style="display:inline-block;background:#0D1F6E;color:#fff;padding:14px 32px;border-radius:8px;font-size:15px;font-weight:bold;text-decoration:none;">Commencer le test →</a>
-          <p style="margin:20px 0 0;font-size:12px;color:#94a3b8;">
-            Si le bouton ne fonctionne pas, copiez ce lien :<br/>
-            <a href="${testUrl}" style="color:#0D1F6E;word-break:break-all;">${testUrl}</a>
-          </p>
+          <div style="text-align:center;margin:24px 0;">
+            <a href="${testUrl}" style="display:inline-block;background:${N};color:#fff;padding:14px 32px;border-radius:8px;font-size:15px;font-weight:bold;text-decoration:none;">Commencer le test →</a>
+          </div>
+          <p style="margin:0;color:#94a3b8;font-size:11px;line-height:1.6;">Si le bouton ne fonctionne pas, copiez ce lien :<br/><a href="${testUrl}" style="color:${N};word-break:break-all;">${testUrl}</a></p>
         </td></tr>
-        <tr><td style="background:#0D1F6E;padding:20px 24px;text-align:center;">
-          <div style="font-size:13px;color:#fff;font-weight:bold;">Academia Helm</div>
-          <div style="font-size:11px;color:#F5A623;margin-top:2px;">Plateforme de pilotage éducatif</div>
+        <!-- Footer: Academia Helm -->
+        <tr><td style="background:${N};padding:24px 28px;text-align:center;border-top:3px solid ${G};">
+          <div style="font-size:15px;font-weight:bold;color:#fff;">Academia Helm</div>
+          <div style="font-size:11px;color:${G};margin-top:2px;">Plateforme de pilotage éducatif</div>
+          <div style="font-size:11px;color:#94a3b8;line-height:1.6;margin-top:12px;">Cet email a été envoyé automatiquement. Merci de ne pas répondre directement.</div>
         </td></tr>
       </table>
     </td></tr>
@@ -632,6 +650,24 @@ export class TestQuestionnaireService {
   /**
    * Vérifie que les tables existent (idempotent).
    */
+  private async getTenantBranding(tenantId: string): Promise<{ schoolName: string; schoolLogo: string | null }> {
+    try {
+      const profile = await this.prisma.tenantIdentityProfile.findFirst({
+        where: { tenantId, isActive: true },
+        select: { schoolName: true, logoUrl: true },
+      });
+      if (profile?.schoolName) {
+        const apiBaseUrl = this.config.get<string>('APP_PUBLIC_URL') || 'https://academia-helm-api.fly.dev';
+        const logoUrl = profile.logoUrl ? `${apiBaseUrl}/api/tenants/${tenantId}/logo` : null;
+        return { schoolName: profile.schoolName, schoolLogo: logoUrl };
+      }
+      const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } });
+      return { schoolName: tenant?.name || 'Établissement', schoolLogo: null };
+    } catch {
+      return { schoolName: 'Établissement', schoolLogo: null };
+    }
+  }
+
   private async ensureTablesExist(): Promise<void> {
     try {
       await this.prisma.$executeRawUnsafe(`

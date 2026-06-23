@@ -39,11 +39,13 @@ interface Questionnaire {
   id: string;
   title: string;
   description?: string;
+  testType?: string;
   durationMinutes: number;
   questions: Question[];
   status: string;
   passingScore: number;
   maxScore: number;
+  instructions?: string;
   createdAt: string;
 }
 
@@ -148,11 +150,15 @@ export function TestQuestionnaireManager() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-bold text-slate-900">Questionnaires en ligne</h3>
+      {/* Header unifié */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <div>
+          <h3 className="text-base font-bold text-slate-900">Tests d'évaluation & Questionnaires</h3>
+          <p className="text-xs text-slate-500 mt-0.5">Créez des questionnaires en ligne, programmez-les pour les candidats, suivez les résultats.</p>
+        </div>
         <button
           onClick={() => { setEditingQ(null); setShowEditor(true); }}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white rounded-lg shadow-sm transition"
+          className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white rounded-xl shadow-sm transition"
           style={{ backgroundColor: PRIMARY }}
         >
           <Plus className="h-3.5 w-3.5" /> Créer un questionnaire
@@ -176,11 +182,24 @@ export function TestQuestionnaireManager() {
                 <div className="flex items-center gap-3">
                   {expandedId === q.id ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronRight className="h-4 w-4 text-slate-400" />}
                   <div>
-                    <p className="text-sm font-bold text-slate-900">{q.title}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-bold text-slate-900">{q.title}</p>
+                      {q.testType && (
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border ${
+                          q.testType === 'Technique' ? 'bg-blue-50 text-blue-700 border-blue-100' :
+                          q.testType === 'Pédagogique' ? 'bg-amber-50 text-amber-700 border-amber-100' :
+                          q.testType === 'RH / Psychotechnique' ? 'bg-purple-50 text-purple-700 border-purple-100' :
+                          q.testType === 'Anglais' ? 'bg-cyan-50 text-cyan-700 border-cyan-100' :
+                          q.testType === 'Entretien RH' ? 'bg-rose-50 text-rose-700 border-rose-100' :
+                          'bg-orange-50 text-orange-700 border-orange-100'
+                        }`}>{q.testType}</span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-3 text-[10px] text-slate-400 mt-0.5">
                       <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {q.durationMinutes} min</span>
                       <span>{q.questions.length} question{q.questions.length !== 1 ? 's' : ''}</span>
                       <span>Seuil: {q.passingScore}%</span>
+                      {q.maxScore && <span>Max: {q.maxScore}</span>}
                     </div>
                   </div>
                 </div>
@@ -335,8 +354,11 @@ function QuestionnaireEditor({ questionnaire, tenantId, onClose, onSuccess }: {
 }) {
   const [title, setTitle] = useState(questionnaire?.title || '');
   const [description, setDescription] = useState(questionnaire?.description || '');
+  const [testType, setTestType] = useState(questionnaire?.testType || 'Technique');
   const [duration, setDuration] = useState(questionnaire?.durationMinutes || 30);
   const [passingScore, setPassingScore] = useState(questionnaire?.passingScore || 60);
+  const [maxScore, setMaxScore] = useState(questionnaire?.maxScore || 100);
+  const [instructions, setInstructions] = useState(questionnaire?.instructions || '');
   const [questions, setQuestions] = useState<Question[]>(questionnaire?.questions || []);
   const [saving, setSaving] = useState(false);
 
@@ -369,7 +391,7 @@ function QuestionnaireEditor({ questionnaire, tenantId, onClose, onSuccess }: {
     }
     setSaving(true);
     try {
-      const body = { title, description, durationMinutes: duration, passingScore, questions };
+      const body = { title, description, testType, durationMinutes: duration, passingScore, maxScore, instructions, questions };
       if (questionnaire) {
         await hrFetch(hrUrl(`recruitment/questionnaires/${questionnaire.id}`, { tenantId }), { method: 'PUT', body });
       } else {
@@ -386,25 +408,60 @@ function QuestionnaireEditor({ questionnaire, tenantId, onClose, onSuccess }: {
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-auto">
         <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between z-10">
-          <h3 className="font-bold text-slate-900 text-sm">{questionnaire ? 'Modifier le questionnaire' : 'Nouveau questionnaire'}</h3>
+          <h3 className="font-bold text-slate-900 text-sm">{questionnaire ? 'Modifier le test' : 'Nouveau test'}</h3>
           <button onClick={onClose} className="p-1 rounded-lg hover:bg-slate-100"><X className="h-4 w-4 text-slate-400" /></button>
         </div>
         <div className="p-6 space-y-4">
-          <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Titre du questionnaire"
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold" />
-          <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Description (optionnel)" rows={2}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
-          <div className="grid grid-cols-2 gap-4">
+          {/* Titre */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Titre du test *</label>
+            <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Ex: Test de compétences pédagogiques"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold" />
+          </div>
+
+          {/* Type de test + Durée + Scores */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Durée (minutes)</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Type de test</label>
+              <select value={testType} onChange={e => setTestType(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm">
+                <option value="Technique">Technique</option>
+                <option value="Pédagogique">Pédagogique</option>
+                <option value="RH / Psychotechnique">RH / Psycho</option>
+                <option value="Anglais">Anglais</option>
+                <option value="Compétences transverses">Comp. transverses</option>
+                <option value="Entretien RH">Entretien RH</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Durée (min)</label>
               <input type="number" value={duration} onChange={e => setDuration(parseInt(e.target.value) || 30)} min="1" max="180"
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+                className="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm" />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Score minimum (%)</label>
-              <input type="number" value={passingScore} onChange={e => setPassingScore(parseInt(e.target.value) || 60)} min="0" max="100"
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Score max</label>
+              <input type="number" value={maxScore} onChange={e => setMaxScore(parseInt(e.target.value) || 100)} min="1"
+                className="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm" />
             </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Score min (%)</label>
+              <input type="number" value={passingScore} onChange={e => setPassingScore(parseInt(e.target.value) || 60)} min="0" max="100"
+                className="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm" />
+            </div>
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Description</label>
+            <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Description du test (optionnel)" rows={2}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+          </div>
+
+          {/* Consignes */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Consignes pour le candidat</label>
+            <textarea value={instructions} onChange={e => setInstructions(e.target.value)} placeholder="Ex: Lisez attentivement chaque question. Une minuterie démarrera..." rows={2}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
           </div>
 
           {/* Questions */}

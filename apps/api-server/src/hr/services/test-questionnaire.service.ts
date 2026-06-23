@@ -102,9 +102,9 @@ export class TestQuestionnaireService {
     const questionsJson = JSON.stringify(dto.questions);
 
     await this.prisma.$executeRawUnsafe(`
-      INSERT INTO hr_test_questionnaires (tenant_id, test_id, title, description, duration_minutes, questions, status, passing_score, max_score)
-      VALUES ($1, $2, $3, $4, $5, $6, 'DRAFT', $7, $8)
-    `, tenantId, testId, dto.title, dto.description || null, dto.durationMinutes, questionsJson, dto.passingScore || 60, dto.maxScore || 100);
+      INSERT INTO hr_test_questionnaires (tenant_id, test_id, title, description, test_type, instructions, duration_minutes, questions, status, passing_score, max_score)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'DRAFT', $9, $10)
+    `, tenantId, testId, dto.title, dto.description || null, (dto as any).testType || null, (dto as any).instructions || null, dto.durationMinutes, questionsJson, dto.passingScore || 60, dto.maxScore || 100);
 
     const rows = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT * FROM hr_test_questionnaires WHERE tenant_id = $1 AND title = $2 ORDER BY created_at DESC LIMIT 1
@@ -153,6 +153,8 @@ export class TestQuestionnaireService {
 
     if (dto.title !== undefined) { fields.push(`title = $${paramIdx++}::text`); values.push(dto.title); }
     if (dto.description !== undefined) { fields.push(`description = $${paramIdx++}::text`); values.push(dto.description); }
+    if ((dto as any).testType !== undefined) { fields.push(`test_type = $${paramIdx++}::text`); values.push((dto as any).testType); }
+    if ((dto as any).instructions !== undefined) { fields.push(`instructions = $${paramIdx++}::text`); values.push((dto as any).instructions); }
     if (dto.durationMinutes !== undefined) { fields.push(`duration_minutes = $${paramIdx++}::int`); values.push(dto.durationMinutes); }
     if (dto.questions !== undefined) { fields.push(`questions = $${paramIdx++}::text`); values.push(JSON.stringify(dto.questions)); }
     if (dto.passingScore !== undefined) { fields.push(`passing_score = $${paramIdx++}::int`); values.push(dto.passingScore); }
@@ -545,6 +547,8 @@ export class TestQuestionnaireService {
       testId: row.test_id,
       title: row.title,
       description: row.description,
+      testType: row.test_type,
+      instructions: row.instructions,
       durationMinutes: row.duration_minutes,
       questions: typeof row.questions === 'string' ? JSON.parse(row.questions) : row.questions,
       status: row.status,
@@ -677,6 +681,8 @@ export class TestQuestionnaireService {
             "test_id"         TEXT,
             "title"           TEXT NOT NULL,
             "description"     TEXT,
+            "test_type"       TEXT,
+            "instructions"    TEXT,
             "duration_minutes" INT NOT NULL DEFAULT 30,
             "questions"       TEXT NOT NULL,
             "status"          TEXT NOT NULL DEFAULT 'DRAFT',
@@ -725,6 +731,10 @@ export class TestQuestionnaireService {
         CREATE INDEX IF NOT EXISTS "idx_hr_test_responses_status"
             ON "hr_test_responses" ("status");
       `);
+
+      // Add columns if they don't exist (for tables created before the update)
+      try { await this.prisma.$executeRawUnsafe(`ALTER TABLE "hr_test_questionnaires" ADD COLUMN IF NOT EXISTS "test_type" TEXT`); } catch {}
+      try { await this.prisma.$executeRawUnsafe(`ALTER TABLE "hr_test_questionnaires" ADD COLUMN IF NOT EXISTS "instructions" TEXT`); } catch {}
     } catch (err: any) {
       this.logger.warn(`Failed to ensure test questionnaire tables: ${err.message}`);
     }

@@ -1115,25 +1115,25 @@ export class StaffPrismaService {
    */
   async syncDepartments(tenantId: string): Promise<{ updated: number; total: number; details: any[] }> {
     // 1. Récupérer tous les postes (HrJob) avec leurs départements
+    // ⚠️ HrJob utilise le champ `dept` (pas `department`) dans le schéma Prisma
     const jobs = await this.prisma.hrJob.findMany({
       where: { tenantId },
-      select: { id: true, title: true, department: true },
+      select: { id: true, title: true, dept: true },
     });
 
-    // 2. Construire un mapping jobId → department
+    // 2. Construire un mapping jobId → dept
     const jobDeptMap = new Map<string, string>();
     jobs.forEach(j => {
-      if (j.department) jobDeptMap.set(j.id, j.department);
+      if (j.dept) jobDeptMap.set(j.id, j.dept);
     });
 
-    // 3. Récupérer tous les staff avec leur jobId (via applications ou directement)
+    // 3. Récupérer tous les staff
     const staff = await this.prisma.staff.findMany({
       where: { tenantId, status: { not: 'ARCHIVED' } },
       select: { id: true, firstName: true, lastName: true, department: true, position: true },
     });
 
     // 4. Pour chaque staff, vérifier si son département correspond à un département de poste
-    // Si le staff a un département qui n'existe plus dans les postes, le mettre à jour
     const validDepartments = new Set(jobDeptMap.values());
     let updated = 0;
     const details: any[] = [];
@@ -1145,7 +1145,7 @@ export class StaffPrismaService {
       if (currentDept && !validDepartments.has(currentDept) && validDepartments.size > 0) {
         // Chercher un poste correspondant au position du staff
         const matchingJob = jobs.find(j => j.title === s.position);
-        const newDept = matchingJob?.department || Array.from(validDepartments)[0] || currentDept;
+        const newDept = matchingJob?.dept || Array.from(validDepartments)[0] || currentDept;
 
         if (newDept !== currentDept) {
           await this.prisma.staff.update({

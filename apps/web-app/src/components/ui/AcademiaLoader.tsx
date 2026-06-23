@@ -1,13 +1,14 @@
 'use client';
 
 /**
- * AcademiaLoader — v5 Global CSS
+ * AcademiaLoader — v6 Global CSS + Educational Particles
  *
  * Écran de chargement premium Academia Helm.
  * DEUX modes :
  * - inline (route transitions) : Logo animé + nom de page, PAS de pourcentage fictif.
  *   Next.js remplace automatiquement loading.tsx quand la page est prête.
- * - fullscreen (PostLoginFlow) : Logo circulaire + progression RÉELLE.
+ * - fullscreen (PostLoginFlow) : Logo circulaire + progression RÉELLE +
+ *   particules éducatives flottantes (GraduationCap, BookOpen, Award, etc.)
  *
  * ⚠️ All CSS animations are defined in globals.css so they are available
  * immediately during SSR — before JS hydration. This prevents the static
@@ -20,6 +21,7 @@ import { usePathname } from 'next/navigation';
 import Image from 'next/image';
 import { BRAND } from '@/lib/brand';
 import { getPageDisplayName } from '@/lib/loading/page-names';
+import FloatingEduParticles from './FloatingEduParticles';
 
 interface AcademiaLoaderProps {
   /** Mode compact pour les transitions inline (pas plein écran, pas de %) */
@@ -64,6 +66,9 @@ export default function AcademiaLoader({ inline = false, message, progress, step
 
   return (
     <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#1A237E]">
+      {/* Particules éducatives flottantes */}
+      <FloatingEduParticles count={24} />
+
       {/* Orbes d'ambiance subtiles */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="academia-loader-orb academia-loader-orb-1" />
@@ -110,22 +115,24 @@ export default function AcademiaLoader({ inline = false, message, progress, step
         )}
       </div>
 
-      {/* Barre de progression RÉELLE — épaisse et visible */}
-      <div className="mt-6 w-56">
-        <div className="h-2 rounded-full bg-white/10 overflow-hidden">
-          <div
-            className="h-full rounded-full transition-all duration-500 ease-out"
-            style={{
-              width: `${realProgress}%`,
-              background: 'linear-gradient(90deg, #3F51B5, #f5b335)',
-            }}
-          />
+      {/* Barre de progression RÉELLE — seulement si progress est passé */}
+      {typeof progress === 'number' && (
+        <div className="mt-6 w-56">
+          <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-300 ease-out"
+              style={{
+                width: `${realProgress}%`,
+                background: 'linear-gradient(90deg, #3F51B5, #f5b335)',
+              }}
+            />
+          </div>
+          <div className="flex justify-between mt-2">
+            <span className="text-[9px] text-blue-200/35 uppercase tracking-wider font-medium">Progression</span>
+            <span className="text-[11px] text-[#f5b335] font-bold tabular-nums">{Math.round(realProgress)}%</span>
+          </div>
         </div>
-        <div className="flex justify-between mt-2">
-          <span className="text-[9px] text-blue-200/35 uppercase tracking-wider font-medium">Progression</span>
-          <span className="text-[11px] text-[#f5b335] font-bold tabular-nums">{Math.round(realProgress)}%</span>
-        </div>
-      </div>
+      )}
 
       {/* Dots animés */}
       <div className="flex items-center space-x-2.5 mt-6">

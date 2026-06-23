@@ -333,6 +333,26 @@ body {
   }
 }
 
+/* AcademiaLoader floating educational particles */
+@keyframes eduParticleFloat {
+  0% {
+    transform: translate(0%, 0%) scale(0.8);
+    opacity: 0.05;
+  }
+  50% {
+    opacity: 0.18;
+  }
+  100% {
+    transform: translate(var(--end-x, 30%), var(--end-y, -30%)) scale(1.1);
+    opacity: 0.08;
+  }
+}
+
+@keyframes eduParticleRotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 @keyframes particleRotate {
   from {
     transform: rotate(0deg);

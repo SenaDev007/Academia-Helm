@@ -190,15 +190,55 @@ export function TeacherLevelAssignment() {
     return result;
   }, [staffList, searchQuery, selectedLevel, pendingAssignments]);
 
-  // Group teachers by level for stats
+  // Get the effective level for a staff member (pending or current)
+  // ⚠️ Important: staff.schoolLevelId is a SchoolLevel.id (stored by backend),
+  // but schoolLevels array contains EducationLevel entries with different IDs.
+  // We must match by `code` (e.g. 'MATERNELLE', 'PRIMAIRE', 'SECONDAIRE') which is
+  // the same in both SchoolLevel.code and EducationLevel.code/name.
+  const getEffectiveLevel = (staff: StaffMember): SchoolLevelOption | null => {
+    // If there's a pending assignment, use it directly (EducationLevel.id)
+    if (pendingAssignments[staff.id] !== undefined) {
+      const pendingId = pendingAssignments[staff.id];
+      if (!pendingId) return null;
+      return schoolLevels.find(l => l.id === pendingId) || null;
+    }
+    // No pending assignment — use the stored schoolLevel
+    if (!staff.schoolLevelId) return null;
+    // Try matching by ID first (in case they're the same)
+    const byId = schoolLevels.find(l => l.id === staff.schoolLevelId);
+    if (byId) return byId;
+    // Match by code: staff.schoolLevel.code === schoolLevel.code
+    if (staff.schoolLevel?.code) {
+      const byCode = schoolLevels.find(l => l.code === staff.schoolLevel!.code);
+      if (byCode) return byCode;
+    }
+    return null;
+  };
+
+  // Build a code → EducationLevel.id map for resolving stored SchoolLevel.ids
+  const codeToEduLevelId = useMemo(() => {
+    const m: Record<string, string> = {};
+    schoolLevels.forEach(l => { m[l.code] = l.id; });
+    return m;
+  }, [schoolLevels]);
+
   const levelStats = useMemo(() => {
     const stats: Record<string, number> = { UNASSIGNED: 0 };
     schoolLevels.forEach(l => { stats[l.id] = 0; });
 
     staffList.forEach(s => {
-      const effectiveLevel = pendingAssignments[s.id] !== undefined
-        ? pendingAssignments[s.id]
-        : s.schoolLevelId;
+      let effectiveLevel: string | null = null;
+      if (pendingAssignments[s.id] !== undefined) {
+        // Pending: EducationLevel.id (direct match)
+        effectiveLevel = pendingAssignments[s.id];
+      } else if (s.schoolLevelId) {
+        // Stored: SchoolLevel.id — try direct match, else match by code
+        if (stats[s.schoolLevelId] !== undefined) {
+          effectiveLevel = s.schoolLevelId;
+        } else if (s.schoolLevel?.code && codeToEduLevelId[s.schoolLevel.code]) {
+          effectiveLevel = codeToEduLevelId[s.schoolLevel.code];
+        }
+      }
       if (effectiveLevel && stats[effectiveLevel] !== undefined) {
         stats[effectiveLevel]++;
       } else {
@@ -207,12 +247,14 @@ export function TeacherLevelAssignment() {
     });
 
     return stats;
-  }, [staffList, schoolLevels, pendingAssignments]);
+  }, [staffList, schoolLevels, pendingAssignments, codeToEduLevelId]);
 
   // Handle level assignment for a single teacher
   const handleAssignLevel = (staffId: string, levelId: string | null) => {
     const staff = staffList.find(s => s.id === staffId);
-    const currentLevelId = staff?.schoolLevelId || null;
+    // Compare the effective level (resolved via code) to detect if there's actually a change
+    const currentEffective = getEffectiveLevel(staff || {} as StaffMember);
+    const currentLevelId = currentEffective?.id || null;
 
     setPendingAssignments(prev => {
       const newAssignments = { ...prev };
@@ -280,15 +322,6 @@ export function TeacherLevelAssignment() {
     } finally {
       setSaving(false);
     }
-  };
-
-  // Get the effective level for a staff member (pending or current)
-  const getEffectiveLevel = (staff: StaffMember): SchoolLevelOption | null => {
-    const levelId = pendingAssignments[staff.id] !== undefined
-      ? pendingAssignments[staff.id]
-      : staff.schoolLevelId;
-    if (!levelId) return null;
-    return schoolLevels.find(l => l.id === levelId) || null;
   };
 
   // Get level style

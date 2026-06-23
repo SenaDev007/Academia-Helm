@@ -16,6 +16,7 @@ import type { LoadingMessage, LoadingStep } from '@/lib/loading/loading-messages
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import Image from 'next/image';
 import { BRAND } from '@/lib/brand';
+import FloatingEduParticles from '@/components/ui/FloatingEduParticles';
 
 export interface LoadingScreenProps {
   message?: LoadingMessage;
@@ -61,6 +62,9 @@ export function LoadingScreen({
         <div className="absolute -bottom-40 -right-20 w-[500px] h-[500px] bg-[#3F51B5]/10 rounded-full blur-[140px]" />
       </motion.div>
 
+      {/* Particules éducatives flottantes */}
+      {!shouldReduceMotion && <FloatingEduParticles count={18} opacityMultiplier={0.7} />}
+
       {/* Contenu central */}
       <div className="w-full max-w-sm px-8 text-center relative z-10">
         {/* Logo circulaire avec bordure */}
@@ -81,14 +85,14 @@ export function LoadingScreen({
               className="absolute inset-0 -m-3 rounded-full border-2 border-white/10 border-t-[#f5b335]"
               style={{ animation: 'academiaOrbit 1.2s linear infinite' }}
             />
-            {/* Conteneur circulaire blanc pour le logo */}
-            <div className="relative z-10 w-20 h-20 rounded-full bg-white/10 border-2 border-white/30 flex items-center justify-center backdrop-blur-sm">
+            {/* Logo only — no circle background/border, fills full size */}
+            <div className="relative z-10 w-20 h-20 flex items-center justify-center">
               <Image
                 src={BRAND.logoPath}
                 alt={BRAND.name}
-                width={52}
-                height={52}
-                className="rounded-full"
+                width={80}
+                height={80}
+                className="object-contain"
                 style={{ animation: 'academiaPulse 3s ease-in-out infinite' }}
                 priority
               />

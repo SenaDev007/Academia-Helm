@@ -110,6 +110,7 @@ export default function SubModuleNavigation({
                 )}
                 aria-current={isActive ? 'page' : undefined}
                 prefetch={true}
+                scroll={false}
               >
                 {module.icon && (
                   <span className={cn("flex-shrink-0", isActive ? "text-blue-600" : "text-gray-400")}>

@@ -223,79 +223,219 @@ export class TaxPdfService {
 
   private buildIstHtml(d: any): string {
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
-*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;padding:20px;font-size:12px}
-.header{text-align:center;margin-bottom:20px;border-bottom:2px solid #0b2f73;padding-bottom:10px}
-.header h1{font-size:14px;color:#0b2f73}.header h2{font-size:12px;margin-top:4px}
-.section{margin-bottom:15px}.section h3{background:#0b2f73;color:#fff;padding:4px 8px;font-size:11px;margin-bottom:8px}
+*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;padding:20px;font-size:11px}
+.header{text-align:center;margin-bottom:15px;border-bottom:2px solid #0b2f73;padding-bottom:10px}
+.header h1{font-size:13px;color:#0b2f73}.header h2{font-size:11px;margin-top:3px}
+.section{margin-bottom:12px}.section h3{background:#0b2f73;color:#fff;padding:4px 8px;font-size:10px;margin-bottom:6px}
 .row{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dotted #ddd}
 .row .label{font-weight:bold}.row .value{font-family:monospace}
-.total{background:#f0f2f5;padding:6px;font-weight:bold;font-size:14px;text-align:right}
+.total{background:#f0f2f5;padding:6px;font-weight:bold;font-size:13px;text-align:right}
+.pay-table{width:100%;border-collapse:collapse;margin-top:6px}.pay-table td{border:1px solid #ddd;padding:4px;font-size:10px}
+.sig{margin-top:20px;display:flex;justify-content:space-between}
+.sig div{text-align:center;font-size:9px;border-top:1px solid #333;padding-top:4px;width:40%}
 </style></head><body>
-<div class="header"><h1>RÉPUBLIQUE DU BÉNIN</h1><h2>DIRECTION GÉNÉRALE DES IMPÔTS ET DES DOMAINES</h2><h2>IMPÔTS SUR SALAIRES</h2></div>
+<div class="header">
+<h1>RÉPUBLIQUE DU BÉNIN</h1>
+<h2>MINISTÈRE DE L'ÉCONOMIE ET DES FINANCES</h2>
+<h2>DIRECTION GÉNÉRALE DES IMPÔTS ET DES DOMAINES</h2>
+<h2 style="color:#f5b335;margin-top:5px">IMPÔTS SUR SALAIRES (I.S.)</h2>
+</div>
+<p style="text-align:center;margin-bottom:10px;font-size:10px">Déclaration du: ${d.period}</p>
+
 <div class="section"><h3>I — IDENTIFICATION</h3>
 <div class="row"><span class="label">N° IFU:</span><span class="value">${d.ifu}</span></div>
-<div class="row"><span class="label">Nom/Raison sociale:</span><span>${d.denomination}</span></div>
+<div class="row"><span class="label">Nom / Raison sociale:</span><span>${d.denomination}</span></div>
 <div class="row"><span class="label">Activité:</span><span>${d.activite}</span></div>
-<div class="row"><span class="label">Adresse:</span><span>${d.adresse}</span></div>
-<div class="row"><span class="label">Période:</span><span>${d.period}</span></div>
+<div class="row"><span class="label">Adresse (Siège):</span><span>${d.adresse}</span></div>
 </div>
+
 <div class="section"><h3>II — LIQUIDATION DES IMPÔTS SUR SALAIRES</h3>
 <div class="row"><span class="label">1. Nombre de salariés:</span><span class="value">${d.nbSalaries}</span></div>
 <div class="row"><span class="label">2. Montant brut des salaires:</span><span class="value">${this.fmt(d.brutSalaires)}</span></div>
 <div class="row"><span class="label">3. Montant de l'IRPP:</span><span class="value">${this.fmt(d.irpp)}</span></div>
 <div class="row"><span class="label">4. Montant du V.P.S. (Ligne 2 × ${d.vpsRate}%):</span><span class="value">${this.fmt(d.vps)}</span></div>
-<div class="total">5. Total des impôts sur salaires: ${this.fmt(d.totalIST)}</div>
+<div class="total">5. Total des impôts sur salaires (Ligne 3 + Ligne 4): ${this.fmt(d.totalIST)}</div>
+</div>
+
+<div class="section"><h3>III — PAIEMENT</h3>
+<div class="row"><span class="label">6. Montant du versement:</span><span>${this.fmt(d.totalIST)} francs CFA</span></div>
+<table class="pay-table">
+<tr><td><strong>MODE:</strong></td><td>☐ Espèces</td><td>☐ Chèque N°: ...................</td><td>☐ Virement</td></tr>
+<tr><td colspan="4">Banque: .......................................................</td></tr>
+</table>
+</div>
+
+<div class="section"><h3>PÉNALITÉS (Cadre réservé à l'Administration)</h3>
+<table class="pay-table">
+<tr><th></th><th>Motif</th><th>Montant</th></tr>
+<tr><td>* IRPP</td><td>${d.penalties?.irppReason || '—'}</td><td style="text-align:right">${this.fmt(d.penalties?.irpp || 0)}</td></tr>
+<tr><td>* VPS</td><td>${d.penalties?.vpsReason || '—'}</td><td style="text-align:right">${this.fmt(d.penalties?.vps || 0)}</td></tr>
+<tr style="font-weight:bold"><td colspan="2">Montant total:</td><td style="text-align:right">${this.fmt(d.penalties?.total || 0)}</td></tr>
+</table>
+<div style="margin-top:8px;font-size:10px">
+<div class="row"><span>N° de quittance:</span><span>${d.quittanceNumber || '—'}</span></div>
+</div>
+</div>
+
+<div class="sig">
+<div>Le Déclarant<br/>Signature et Cachet</div>
+<div>Cadre réservé à l'Administration<br/>Date d'émission</div>
 </div>
 </body></html>`;
   }
 
   private buildCnssHtml(d: any): string {
     const rows = (d.staffDetails || []).map((s: any, i: number) => `
-<tr><td>${i+1}</td><td>${s.cnssNumber || ''}</td><td>${s.name}</td><td colspan="3">${this.fmt(s.grossSalary)}</td></tr>`).join('');
+<tr>
+<td style="text-align:center">${i+1}</td>
+<td style="font-family:monospace">${s.cnssNumber || ''}</td>
+<td>${s.name}</td>
+<td style="text-align:center">${s.daysMonth1 || 0}</td>
+<td style="text-align:center">${s.daysMonth2 || 0}</td>
+<td style="text-align:center">${s.daysMonth3 || 0}</td>
+<td style="text-align:center">${s.totalDaysAssimilés || 0}</td>
+<td style="text-align:right">${this.fmt(s.salaryMonth1 || 0)}</td>
+<td style="text-align:right">${this.fmt(s.salaryMonth2 || 0)}</td>
+<td style="text-align:right">${this.fmt(s.salaryMonth3 || 0)}</td>
+<td style="text-align:right;font-weight:bold">${this.fmt(s.grossSalary || 0)}</td>
+</tr>`).join('');
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
-*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;padding:20px;font-size:11px}
-.header{text-align:center;margin-bottom:15px;border-bottom:2px solid #0b2f73;padding-bottom:8px}
-table{width:100%;border-collapse:collapse;margin-bottom:10px}th,td{border:1px solid #ddd;padding:4px;text-align:left}
-th{background:#0b2f73;color:#fff;font-size:10px}
-.total{background:#f0f2f5;padding:6px;font-weight:bold;font-size:13px;text-align:right}
+*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;padding:15px;font-size:10px}
+.header{text-align:center;margin-bottom:10px;border-bottom:2px solid #0b2f73;padding-bottom:6px}
+.header h2{font-size:12px;color:#0b2f73}.header p{font-size:9px;margin-top:2px}
+table{width:100%;border-collapse:collapse;margin-bottom:8px}th,td{border:1px solid #ccc;padding:3px;text-align:left}
+th{background:#0b2f73;color:#fff;font-size:9px}.total{background:#f0f2f5;font-weight:bold}
+.calc{margin-top:10px}.calc table{width:100%}.calc td{border:1px solid #ddd;padding:4px;font-size:10px}
+.sig{margin-top:15px;display:flex;justify-content:space-between;font-size:9px}
+.sig div{text-align:center;border-top:1px solid #333;padding-top:4px;width:35%}
 </style></head><body>
-<div class="header"><h2>CAISSE DE SÉCURITÉ SOCIALE — DÉCLARATION NOMINATIVE TRIMESTRIELLE</h2></div>
-<p><strong>Employeur:</strong> ${d.raisonSociale} — N° ${d.employeurNum} — Trimestre: ${d.period}</p>
-<table><thead><tr><th>N°</th><th>N° Immat.</th><th>Nom et Prénoms</th><th colspan="3">Salaire brut trimestriel</th></tr></thead>
-<tbody>${rows || '<tr><td colspan="6" style="text-align:center">Aucun personnel</td></tr>'}</tbody></table>
+<div class="header">
+<h2>CAISSE DE SÉCURITÉ SOCIALE</h2>
+<p>DÉCLARATION NOMINATIVE TRIMESTRIELLE</p>
+<p>Imprimé destiné aux entrepreneurs — Déclaration à renvoyer à la caisse sous peine d'une majoration de retard</p>
+</div>
+<p style="margin-bottom:6px"><strong>Employeur:</strong> ${d.raisonSociale} — <strong>N°:</strong> ${d.employeurNum} — <strong>Trimestre:</strong> ${d.period}</p>
+
 <table>
-<tr><td>Total salaire S</td><td style="text-align:right;font-weight:bold">${this.fmt(d.totalSalary)}</td></tr>
-<tr><td>Cotisations familiales (S × ${d.rates.familiales || 9}%)</td><td style="text-align:right">${this.fmt(d.cotisations.familiales)}</td></tr>
-<tr><td>Risques professionnels (S × ${d.rates.risques || 1}%)</td><td style="text-align:right">${this.fmt(d.cotisations.risques)}</td></tr>
-<tr><td>Part patronale (S × ${d.rates.patronale || 6.4}%)</td><td style="text-align:right">${this.fmt(d.cotisations.patronale)}</td></tr>
-<tr><td>Part ouvrière (S × ${d.rates.ouvriere || 3.6}%)</td><td style="text-align:right">${this.fmt(d.cotisations.ouvriere)}</td></tr>
+<thead>
+<tr>
+<th rowSpan="2">N°</th>
+<th rowSpan="2">N° d'immatriculation</th>
+<th rowSpan="2">NOM ET PRÉNOMS</th>
+<th colSpan="3">Durée de travail en jours ouvrables</th>
+<th rowSpan="2">Jours assimilés</th>
+<th colSpan="3">Rémunération en FCFA (*)</th>
+<th rowSpan="2">Salaire brut trimestriel</th>
+</tr>
+<tr>
+<th>1er mois</th><th>2ème mois</th><th>3ème mois</th>
+<th>1er mois</th><th>2ème mois</th><th>3ème mois</th>
+</tr>
+</thead>
+<tbody>
+${rows || '<tr><td colSpan="11" style="text-align:center;padding:10px">Aucun personnel</td></tr>'}
+<tr class="total">
+<td colSpan="7" style="text-align:right">Total salaire S =</td>
+<td style="text-align:right">${this.fmt(d.staffDetails?.reduce((s:number,e:any)=>s+(e.salaryMonth1||0),0) || 0)}</td>
+<td style="text-align:right">${this.fmt(d.staffDetails?.reduce((s:number,e:any)=>s+(e.salaryMonth2||0),0) || 0)}</td>
+<td style="text-align:right">${this.fmt(d.staffDetails?.reduce((s:number,e:any)=>s+(e.salaryMonth3||0),0) || 0)}</td>
+<td style="text-align:right">${this.fmt(d.totalSalary || 0)}</td>
+</tr>
+</tbody>
 </table>
-<div class="total">TOTAL DES COTISATIONS: ${this.fmt(d.total)}</div>
+
+<div class="calc">
+<table>
+<tr><td>Cotisations familiales : S × ${d.rates?.familiales || 9}% =</td><td style="text-align:right;font-weight:bold">${this.fmt(d.cotisations?.familiales || 0)}</td></tr>
+<tr><td>Risques professionnels : S × ${d.rates?.risques || 1}% =</td><td style="text-align:right;font-weight:bold">${this.fmt(d.cotisations?.risques || 0)}</td></tr>
+<tr><td>Assurance vieillesse : S × ${d.rates?.vieillesse || 0}% =</td><td style="text-align:right;font-weight:bold">${this.fmt(d.cotisations?.vieillesse || 0)}</td></tr>
+<tr><td>Part patronale : S × ${d.rates?.patronale || 6.4}% =</td><td style="text-align:right;font-weight:bold">${this.fmt(d.cotisations?.patronale || 0)}</td></tr>
+<tr><td>Part ouvrière : S × ${d.rates?.ouvriere || 3.6}% =</td><td style="text-align:right;font-weight:bold">${this.fmt(d.cotisations?.ouvriere || 0)}</td></tr>
+<tr style="background:#f0f2f5;font-weight:bold"><td>TOTAL DES COTISATIONS :</td><td style="text-align:right">${this.fmt(d.total || 0)}</td></tr>
+<tr><td>TOTAL DES MAJORATIONS :</td><td style="text-align:right">${this.fmt(d.majorations || 0)}</td></tr>
+<tr style="background:#0b2f73;color:#fff;font-weight:bold;font-size:12px"><td>TOTAL A PAYER :</td><td style="text-align:right">${this.fmt(d.totalAPayer || d.total || 0)}</td></tr>
+</table>
+</div>
+
+<p style="font-size:8px;color:#999;margin-top:5px">(*) Salaire y compris les autres indemnités soumises à cotisation</p>
+
+<div class="sig">
+<div>Certifie sincère et conforme à nos livres<br/>(Signature et cachet du responsable)</div>
+<div>RÉSERVE À LA CAISSE<br/>Fait le .................... 20.....</div>
+</div>
 </body></html>`;
   }
 
   private buildAibHtml(d: any): string {
+    const prestatairesRows = (d.prestataires || []).map((p: any, i: number) => `
+<tr><td style="text-align:center">${i+1}</td><td>${p.name}<br/><span style="font-size:8px;color:#999">${p.address || ''}</span></td><td style="font-family:monospace">${p.ifu || ''}</td><td style="text-align:right">${this.fmt(p.base || 0)}</td><td style="text-align:right;font-weight:bold">${this.fmt(p.prelevement || 0)}</td></tr>`).join('');
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
-*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;padding:20px;font-size:12px}
-.header{text-align:center;margin-bottom:15px;border-bottom:2px solid #0b2f73;padding-bottom:8px}
-.section h3{background:#0b2f73;color:#fff;padding:4px 8px;font-size:11px;margin-bottom:8px}
-table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:6px;text-align:left}
-th{background:#f0f2f5}.total{background:#0b2f73;color:#fff;padding:8px;font-weight:bold;font-size:14px;text-align:right}
+*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;padding:15px;font-size:11px}
+.header{text-align:center;margin-bottom:10px;border-bottom:2px solid #0b2f73;padding-bottom:8px}
+.header h2{font-size:13px;color:#0b2f73}.header p{font-size:9px;margin-top:2px}
+.section{margin-bottom:10px}.section h3{background:#0b2f73;color:#fff;padding:4px 8px;font-size:10px;margin-bottom:6px}
+table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:4px;text-align:left}
+th{background:#f0f2f5;font-size:10px}.total{background:#0b2f73;color:#fff;padding:6px;font-weight:bold;font-size:12px;text-align:right}
+.pay-table td{border:1px solid #ddd;padding:4px;font-size:10px}
+.sig{margin-top:15px;display:flex;justify-content:space-between;font-size:9px}
+.sig div{text-align:center;border-top:1px solid #333;padding-top:4px;width:35%}
 </style></head><body>
-<div class="header"><h2>BORDEREAU DE VERSEMENT DES PRÉLÈVEMENTS AIB</h2><p>RÉPUBLIQUE DU BÉNIN — DGI</p></div>
+<div class="header">
+<h2>BORDEREAU DE VERSEMENT DES PRÉLÈVEMENTS AIB</h2>
+<p>RÉPUBLIQUE DU BÉNIN — MINISTÈRE DE L'ÉCONOMIE ET DES FINANCES</p>
+<p>DIRECTION GÉNÉRALE DES IMPÔTS ET DES DOMAINES</p>
+<p>Année: ${d.period}</p>
+</div>
+
 <div class="section"><h3>I — IDENTIFICATION DU REDEVABLE</h3>
-<table><tr><td><strong>Nom/Raison sociale:</strong> ${d.raisonSociale}</td><td><strong>N° IFU:</strong> ${d.ifu}</td></tr>
+<table>
+<tr><td><strong>Nom ou raison sociale:</strong> ${d.raisonSociale}</td><td><strong>N° INSAE / IFU:</strong> ${d.ifu}</td></tr>
 <tr><td><strong>Activité:</strong> ${d.activite}</td><td><strong>Téléphone:</strong> ${d.telephone}</td></tr>
 <tr><td colspan="2"><strong>Adresse:</strong> ${d.adresse}</td></tr>
 <tr><td colspan="2"><strong>Période:</strong> ${d.period}</td></tr>
-</table></div>
+</table>
+</div>
+
 <div class="section"><h3>II — LIQUIDATION DES DROITS</h3>
-<table><thead><tr><th>Nature</th><th>Base</th><th>Taux</th><th>Montant</th></tr></thead>
+<table>
+<thead><tr><th>NATURE</th><th style="text-align:right">BASE</th><th style="text-align:center">TAUX</th><th style="text-align:right">MONTANT</th></tr></thead>
 <tbody>
-<tr><td>Achat de marchandises — AIB ${d.rates.achats || 1}%</td><td style="text-align:right">${this.fmt(d.baseAchats)}</td><td style="text-align:center">${d.rates.achats || 1}%</td><td style="text-align:right">${this.fmt(d.aibAchats)}</td></tr>
-<tr><td>Prestation de services — AIB ${d.rates.prestations || 5}%</td><td style="text-align:right">${this.fmt(d.basePrestations)}</td><td style="text-align:center">${d.rates.prestations || 5}%</td><td style="text-align:right">${this.fmt(d.aibPrestations)}</td></tr>
-</tbody></table></div>
-<div class="total">MONTANT TOTAL À REVERSER: ${this.fmt(d.total)}</div>
+<tr><td>Achat de marchandises — AIB ${d.rates?.achats || 1}%</td><td style="text-align:right">${this.fmt(d.baseAchats || 0)}</td><td style="text-align:center">${d.rates?.achats || 1}%</td><td style="text-align:right;font-weight:bold">${this.fmt(d.aibAchats || 0)}</td></tr>
+<tr><td>Prestation de services — AIB ${d.rates?.prestations || 5}%</td><td style="text-align:right">${this.fmt(d.basePrestations || 0)}</td><td style="text-align:center">${d.rates?.prestations || 5}%</td><td style="text-align:right;font-weight:bold">${this.fmt(d.aibPrestations || 0)}</td></tr>
+</tbody>
+</table>
+<div class="total">MONTANT TOTAL À REVERSER: ${this.fmt(d.total || 0)}</div>
+</div>
+
+<div class="section"><h3>III — PAIEMENT (Obligatoirement joint à la quittance)</h3>
+<table class="pay-table">
+<tr><td>☐ Espèce</td><td colspan="3"></td></tr>
+<tr><td>☐ Chèque</td><td>Banque: ${d.payment?.bank || '.........'}</td><td colspan="2">N° Chèque: ${d.payment?.chequeNumber || '.........'}</td></tr>
+<tr><td>☐ Virement</td><td>Banque: ${d.payment?.bank || '.........'}</td><td colspan="2">Réf Virement: ${d.payment?.reference || '.........'}</td></tr>
+</table>
+</div>
+
+<div class="section"><h3>IV — DÉTAIL DES PRÉLÈVEMENTS D'AIB</h3>
+<table>
+<thead><tr><th>N°</th><th>Nom et adresses du prestataire</th><th>N° INSAE/IFU</th><th style="text-align:right">Base</th><th style="text-align:right">Prélèvement effectué</th></tr></thead>
+<tbody>
+${prestatairesRows || '<tr><td colspan="5" style="text-align:center;padding:8px;color:#999">Aucun prestataire enregistré</td></tr>'}
+</tbody>
+</table>
+</div>
+
+<div style="margin-top:10px;font-size:10px">
+<div style="display:flex;justify-content:space-between">
+<span>N° de quittance: ${d.quittanceNumber || '.........'}</span>
+<span>Date d'émission: ${d.emissionDate || '.........'}</span>
+<span>Pénalité: ${this.fmt(d.penalty || 0)}</span>
+</div>
+</div>
+
+<div class="sig">
+<div>La partie versante<br/>Signature et cachet</div>
+<div>Cadre réservé à l'Administration<br/>Montant total perçu</div>
+</div>
 </body></html>`;
   }
 

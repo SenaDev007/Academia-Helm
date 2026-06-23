@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Loader2, RefreshCw, FileText, Download } from 'lucide-react';
+import { Loader2, RefreshCw, FileText, Download, Eye, Printer } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useAcademicYear } from '@/hooks/useAcademicYear';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -40,6 +40,9 @@ export function PayrollManagement() {
     } catch (e: any) { toast({ variant: 'error', title: 'Erreur', description: e.message }); }
     finally { setGenerating(false); }
   };
+
+  const viewPayslipPdf = (id: string) => window.open(hrUrl(`taxes/payslips/${id}/pdf`, { tenantId: tenant?.id }), '_blank');
+  const printPayslipPdf = (id: string) => { const w = window.open(hrUrl(`taxes/payslips/${id}/pdf`, { tenantId: tenant?.id }), '_blank'); w?.addEventListener('load', () => w.print()); };
 
   const downloadPayslipPdf = async (id: string, name: string) => {
     try {
@@ -146,7 +149,7 @@ export function PayrollManagement() {
                   <td className="px-2 py-1 text-right text-red-600">{formatCurrency(Number(p.avanceAcompte) + Number(p.opposition))}</td>
                   <td className="px-2 py-1 text-right text-red-600">{formatCurrency(Number(p.taxesRadioTele))}</td>
                   <td className="px-2 py-1 text-right font-bold text-emerald-600">{formatCurrency(Number(p.netAPayer))}</td>
-                  <td className="px-1 py-1"><button onClick={() => downloadPayslipPdf(p.id, `${p.staff?.firstName}_${p.staff?.lastName}`)} className="p-1 rounded bg-[#1A2BA6]/10 text-[#1A2BA6] hover:bg-[#1A2BA6]/20" title="Fiche de paie PDF"><Download className="h-3 w-3" /></button></td>
+                  <td className="px-1 py-1 whitespace-nowrap"><button onClick={() => viewPayslipPdf(p.id)} className="p-1 rounded bg-[#1A2BA6]/10 text-[#1A2BA6] hover:bg-[#1A2BA6]/20" title="Visualiser"><Eye className="h-3 w-3" /></button><button onClick={() => printPayslipPdf(p.id)} className="p-1 rounded bg-slate-50 text-slate-500 hover:bg-slate-100 ml-0.5" title="Imprimer"><Printer className="h-3 w-3" /></button><button onClick={() => downloadPayslipPdf(p.id, `${p.staff?.firstName}_${p.staff?.lastName}`)} className="p-1 rounded bg-rose-50 text-rose-500 hover:bg-rose-100 ml-0.5" title="Télécharger"><Download className="h-3 w-3" /></button></td>
                 </tr>
               ))}
               <tr className="bg-slate-100 font-bold">
@@ -213,7 +216,7 @@ export function PayrollManagement() {
                   <td className="px-2 py-1 text-right font-bold text-emerald-600">{formatCurrency(Number(p.netAPayer))}</td>
                   <td className="px-2 py-1 text-center font-mono text-slate-400">{p.staff?.tenantMatricule || '—'}</td>
                   <td className="px-2 py-1 text-center text-slate-300 italic text-[10px]">Signature</td>
-                  <td className="px-1 py-1"><button onClick={() => downloadPayslipPdf(p.id, `${p.staff?.firstName}_${p.staff?.lastName}`)} className="p-1 rounded bg-[#1A2BA6]/10 text-[#1A2BA6] hover:bg-[#1A2BA6]/20" title="Fiche de paie PDF"><Download className="h-3 w-3" /></button></td>
+                  <td className="px-1 py-1 whitespace-nowrap"><button onClick={() => viewPayslipPdf(p.id)} className="p-1 rounded bg-[#1A2BA6]/10 text-[#1A2BA6] hover:bg-[#1A2BA6]/20" title="Visualiser"><Eye className="h-3 w-3" /></button><button onClick={() => printPayslipPdf(p.id)} className="p-1 rounded bg-slate-50 text-slate-500 hover:bg-slate-100 ml-0.5" title="Imprimer"><Printer className="h-3 w-3" /></button><button onClick={() => downloadPayslipPdf(p.id, `${p.staff?.firstName}_${p.staff?.lastName}`)} className="p-1 rounded bg-rose-50 text-rose-500 hover:bg-rose-100 ml-0.5" title="Télécharger"><Download className="h-3 w-3" /></button></td>
                 </tr>
               ))}
               <tr className="bg-slate-100 font-bold">

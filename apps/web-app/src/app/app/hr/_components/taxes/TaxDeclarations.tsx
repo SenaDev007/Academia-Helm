@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Loader2, FileText, Landmark, Wallet, RefreshCw, CheckCircle, Clock, Download, ChevronDown, ChevronUp } from 'lucide-react';
+import { Loader2, FileText, Landmark, Wallet, RefreshCw, CheckCircle, Clock, Download, ChevronDown, ChevronUp, Eye, Printer } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useAcademicYear } from '@/hooks/useAcademicYear';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -71,6 +71,9 @@ export function TaxDeclarations() {
       setDeclarations(Array.isArray(res) ? res : []);
     } catch (e: any) { toast({ variant: 'error', title: 'Erreur', description: e.message }); }
   };
+
+  const viewPdf = (id: string) => window.open(hrUrl(`taxes/declarations/${id}/pdf`, { tenantId: tenant?.id }), '_blank');
+  const printPdf = (id: string) => { const w = window.open(hrUrl(`taxes/declarations/${id}/pdf`, { tenantId: tenant?.id }), '_blank'); w?.addEventListener('load', () => w.print()); };
 
   const downloadPdf = async (id: string, type: string, p: string) => {
     try {
@@ -146,7 +149,9 @@ export function TaxDeclarations() {
                   </div>
                   <div className="flex items-center gap-2">
                     <p className="text-lg font-bold text-slate-900">{formatCurrency(Number(decl.totalAmount || 0))}</p>
-                    <button onClick={() => downloadPdf(decl.id, decl.type, decl.period)} className="p-1.5 rounded-lg bg-[#1A2BA6]/10 text-[#1A2BA6] hover:bg-[#1A2BA6]/20 transition" title="Télécharger PDF"><Download className="h-4 w-4" /></button>
+                    <button onClick={() => viewPdf(decl.id)} className="p-1.5 rounded-lg bg-[#1A2BA6]/10 text-[#1A2BA6] hover:bg-[#1A2BA6]/20 transition" title="Visualiser"><Eye className="h-4 w-4" /></button>
+                    <button onClick={() => printPdf(decl.id)} className="p-1.5 rounded-lg bg-slate-50 text-slate-500 hover:bg-slate-100 transition" title="Imprimer"><Printer className="h-4 w-4" /></button>
+                    <button onClick={() => downloadPdf(decl.id, decl.type, decl.period)} className="p-1.5 rounded-lg bg-rose-50 text-rose-500 hover:bg-rose-100 transition" title="Télécharger PDF"><Download className="h-4 w-4" /></button>
                     <button onClick={() => setExpandedDecl(isExpanded ? null : decl.id)} className="p-1.5 rounded-lg bg-slate-50 text-slate-500 hover:bg-slate-100 transition" title="Détails">
                       {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                     </button>

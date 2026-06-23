@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Loader2, Search, Users, Download } from 'lucide-react';
+import { Loader2, Search, Users, Download, Phone, Mail } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { formatCurrency } from '@/lib/utils';
@@ -74,18 +74,18 @@ export function StaffFiscalManagement() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              <th className="text-left px-4 py-3 font-semibold text-slate-600">Nom & Prénoms</th>
-              <th className="text-left px-4 py-3 font-semibold text-slate-600">Fonction</th>
-              <th className="text-left px-4 py-3 font-semibold text-slate-600">Type</th>
-              <th className="text-left px-4 py-3 font-semibold text-slate-600">Diplôme</th>
-              <th className="text-left px-4 py-3 font-semibold text-slate-600">Contacts</th>
-              <th className="text-left px-4 py-3 font-semibold text-slate-600">Sit. Matrim.</th>
-              <th className="text-left px-4 py-3 font-semibold text-slate-600">Enfants</th>
-              <th className="text-left px-4 py-3 font-semibold text-slate-600">N° CNSS</th>
-              <th className="text-left px-4 py-3 font-semibold text-slate-600">N° IFU</th>
-              <th className="text-right px-4 py-3 font-semibold text-slate-600">Salaire</th>
-              <th className="text-left px-4 py-3 font-semibold text-slate-600">Embauche</th>
-              <th className="text-left px-4 py-3 font-semibold text-slate-600">Observation</th>
+              <th className="text-left px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Nom & Prénoms</th>
+              <th className="text-left px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Fonction</th>
+              <th className="text-left px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Type</th>
+              <th className="text-left px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Diplôme</th>
+              <th className="text-left px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Contacts</th>
+              <th className="text-left px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Sit. Matrim.</th>
+              <th className="text-left px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Enfants</th>
+              <th className="text-left px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">N° CNSS</th>
+              <th className="text-left px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">N° IFU</th>
+              <th className="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Salaire</th>
+              <th className="text-left px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Embauche</th>
+              <th className="text-left px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Observation</th>
             </tr>
           </thead>
           <tbody>
@@ -102,9 +102,9 @@ export function StaffFiscalManagement() {
                   </span>
                 </td>
                 <td className="px-4 py-3 text-slate-600 text-xs">{s.diploma || '—'}</td>
-                <td className="px-4 py-3 text-slate-600 text-xs">
-                  {s.phone && <div>📞 {s.phone}</div>}
-                  {s.email && <div>✉️ {s.email}</div>}
+                <td className="px-4 py-3 text-slate-600 text-xs whitespace-nowrap">
+                  {s.phone && <a href={`tel:${s.phone}`} className="flex items-center gap-1 text-slate-600 hover:text-[#1A2BA6] transition"><Phone className="h-3 w-3" /> {s.phone}</a>}
+                  {s.email && <a href={`mailto:${s.email}`} className="flex items-center gap-1 text-slate-600 hover:text-[#1A2BA6] transition mt-0.5"><Mail className="h-3 w-3" /> <span className="truncate max-w-[120px]">{s.email}</span></a>}
                   {!s.phone && !s.email && '—'}
                 </td>
                 <td className="px-4 py-3 text-slate-600 text-xs">{s.maritalStatus || '—'}</td>

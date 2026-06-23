@@ -234,6 +234,39 @@ async function bootstrap() {
       }
     }
 
+    // ─── Ensure tax module tables exist (idempotent SQL fallback) ──────────
+    // These tables may not be created by prisma migrate deploy if migrations
+    // aren't tracked properly. CREATE TABLE IF NOT EXISTS is idempotent.
+    const taxTableStatements = [
+      `CREATE TABLE IF NOT EXISTS "tax_settings" ("id" TEXT NOT NULL, "tenantId" TEXT NOT NULL, "academicYearId" TEXT, "cnssFamilialesRate" DOUBLE PRECISION NOT NULL DEFAULT 9.0, "cnssRisquesRate" DOUBLE PRECISION NOT NULL DEFAULT 1.0, "cnssVieillesseRate" DOUBLE PRECISION NOT NULL DEFAULT 0.0, "cnssPatronaleRate" DOUBLE PRECISION NOT NULL DEFAULT 6.4, "cnssOuvriereRate" DOUBLE PRECISION NOT NULL DEFAULT 3.6, "istVpsRate" DOUBLE PRECISION NOT NULL DEFAULT 4.0, "istIrppRate" DOUBLE PRECISION NOT NULL DEFAULT 0.0, "aibAchatsRate" DOUBLE PRECISION NOT NULL DEFAULT 1.0, "aibPrestationsRate" DOUBLE PRECISION NOT NULL DEFAULT 5.0, "istFrequency" TEXT NOT NULL DEFAULT 'MONTHLY', "cnssFrequency" TEXT NOT NULL DEFAULT 'QUARTERLY', "aibFrequency" TEXT NOT NULL DEFAULT 'MONTHLY', "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "tax_settings_pkey" PRIMARY KEY ("id"))`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "tax_settings_tenantId_key" ON "tax_settings"("tenantId")`,
+      `CREATE TABLE IF NOT EXISTS "financial_statements" ("id" TEXT NOT NULL, "tenantId" TEXT NOT NULL, "academicYearId" TEXT NOT NULL, "type" TEXT NOT NULL, "lineCode" TEXT NOT NULL, "lineLabel" TEXT NOT NULL, "note" TEXT, "amountN" DECIMAL(18,2) NOT NULL DEFAULT 0, "amountN1" DECIMAL(18,2), "category" TEXT, "isSubtotal" BOOLEAN NOT NULL DEFAULT false, "isTotal" BOOLEAN NOT NULL DEFAULT false, "sortOrder" INTEGER NOT NULL DEFAULT 0, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "financial_statements_pkey" PRIMARY KEY ("id"))`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "financial_statements_tenantId_academicYearId_type_lineCode_key" ON "financial_statements"("tenantId", "academicYearId", "type", "lineCode")`,
+      `CREATE INDEX IF NOT EXISTS "financial_statements_tenantId_academicYearId_type_idx" ON "financial_statements"("tenantId", "academicYearId", "type")`,
+      `CREATE TABLE IF NOT EXISTS "financial_notes" ("id" TEXT NOT NULL, "tenantId" TEXT NOT NULL, "academicYearId" TEXT NOT NULL, "noteCode" TEXT NOT NULL, "noteTitle" TEXT NOT NULL, "lineLabel" TEXT NOT NULL, "amountN" DECIMAL(18,2) NOT NULL DEFAULT 0, "amountN1" DECIMAL(18,2), "metadata" JSONB, "sortOrder" INTEGER NOT NULL DEFAULT 0, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "financial_notes_pkey" PRIMARY KEY ("id"))`,
+      `CREATE INDEX IF NOT EXISTS "financial_notes_tenantId_academicYearId_noteCode_idx" ON "financial_notes"("tenantId", "academicYearId", "noteCode")`,
+      `CREATE TABLE IF NOT EXISTS "tax_declarations" ("id" TEXT NOT NULL, "tenantId" TEXT NOT NULL, "academicYearId" TEXT NOT NULL, "type" TEXT NOT NULL, "period" TEXT NOT NULL, "status" TEXT NOT NULL DEFAULT 'DRAFT', "data" JSONB NOT NULL, "totalAmount" DECIMAL(18,2) NOT NULL DEFAULT 0, "submittedAt" TIMESTAMP(3), "paidAt" TIMESTAMP(3), "notes" TEXT, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "tax_declarations_pkey" PRIMARY KEY ("id"))`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "tax_declarations_tenantId_academicYearId_type_period_key" ON "tax_declarations"("tenantId", "academicYearId", "type", "period")`,
+      `CREATE INDEX IF NOT EXISTS "tax_declarations_tenantId_academicYearId_type_idx" ON "tax_declarations"("tenantId", "academicYearId", "type")`,
+      `CREATE TABLE IF NOT EXISTS "financial_report_headers" ("id" TEXT NOT NULL, "tenantId" TEXT NOT NULL, "academicYearId" TEXT NOT NULL, "centreDepot" TEXT, "denominationSociale" TEXT, "sigleUsuel" TEXT, "exerciceClosLe" TEXT, "dureeExerciceMois" INTEGER, "adresse" TEXT, "numeroIF" TEXT, "greffe" TEXT, "numeroRC" TEXT, "numeroCCSS" TEXT, "numeroTelephone" TEXT, "adresseGeoComplete" TEXT, "formeJuridique" TEXT, "capitalSocial" TEXT, "nombreEmployes" INTEGER, "referentielBancaire" TEXT, "regimeFiscal" TEXT, "paysSiegeSocial" TEXT, "nbEtablissementsPays" INTEGER, "nbEtablissementsHorsPays" INTEGER, "premiereAnneeExercice" TEXT, "activiteDesignation" TEXT, "activiteLocalisation" TEXT, "nbSalaries" INTEGER, "chiffreAffaires" DECIMAL(18,2), "partsMarcha" TEXT, "exportations" TEXT, "dirigeants" JSONB, "membresConseil" JSONB, "commissairesComptes" JSONB, "notesApplicables" JSONB, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "financial_report_headers_pkey" PRIMARY KEY ("id"))`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "financial_report_headers_tenantId_academicYearId_key" ON "financial_report_headers"("tenantId", "academicYearId")`,
+      `CREATE TABLE IF NOT EXISTS "tax_payroll_periods" ("id" TEXT NOT NULL, "tenantId" TEXT NOT NULL, "academicYearId" TEXT NOT NULL, "period" TEXT NOT NULL, "staffType" TEXT NOT NULL, "status" TEXT NOT NULL DEFAULT 'DRAFT', "totalGross" DECIMAL(18,2) NOT NULL DEFAULT 0, "totalDeductions" DECIMAL(18,2) NOT NULL DEFAULT 0, "totalNet" DECIMAL(18,2) NOT NULL DEFAULT 0, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "tax_payroll_periods_pkey" PRIMARY KEY ("id"))`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "tax_payroll_periods_tenantId_academicYearId_period_staffType_key" ON "tax_payroll_periods"("tenantId", "academicYearId", "period", "staffType")`,
+      `CREATE TABLE IF NOT EXISTS "tax_payslips" ("id" TEXT NOT NULL, "tenantId" TEXT NOT NULL, "academicYearId" TEXT NOT NULL, "staffId" TEXT NOT NULL, "payrollPeriodId" TEXT NOT NULL, "period" TEXT NOT NULL, "salaireBase" DECIMAL(18,2) NOT NULL DEFAULT 0, "moinsPercesArriere" DECIMAL(18,2) NOT NULL DEFAULT 0, "gratificationsEtrennes" DECIMAL(18,2) NOT NULL DEFAULT 0, "indemnites" DECIMAL(18,2) NOT NULL DEFAULT 0, "primeSalissures" DECIMAL(18,2) NOT NULL DEFAULT 0, "salaireBrut" DECIMAL(18,2) NOT NULL DEFAULT 0, "cnssOuvriere" DECIMAL(18,2) NOT NULL DEFAULT 0, "itsNet" DECIMAL(18,2) NOT NULL DEFAULT 0, "irppNet" DECIMAL(18,2) NOT NULL DEFAULT 0, "avanceAcompte" DECIMAL(18,2) NOT NULL DEFAULT 0, "opposition" DECIMAL(18,2) NOT NULL DEFAULT 0, "taxesRadioTele" DECIMAL(18,2) NOT NULL DEFAULT 0, "totalRetenues" DECIMAL(18,2) NOT NULL DEFAULT 0, "netAPayer" DECIMAL(18,2) NOT NULL DEFAULT 0, "cnssPatronale" DECIMAL(18,2) NOT NULL DEFAULT 0, "vps" DECIMAL(18,2) NOT NULL DEFAULT 0, "status" TEXT NOT NULL DEFAULT 'DRAFT', "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "tax_payslips_pkey" PRIMARY KEY ("id"))`,
+      `CREATE INDEX IF NOT EXISTS "tax_payslips_tenantId_academicYearId_period_idx" ON "tax_payslips"("tenantId", "academicYearId", "period")`,
+    ];
+
+    for (const stmt of taxTableStatements) {
+      try {
+        await prisma.$executeRawUnsafe(stmt);
+      } catch (e: any) {
+        if (!e.message?.includes('already exists') && !e.message?.includes('42P07')) {
+          logger.warn(`Tax table statement warning: ${e.message}`);
+        }
+      }
+    }
+    logger.log('Tax module tables ensured');
+
     // ─── Ensure missing columns from later migrations (idempotent ALTER) ───
     // These columns may not exist if migrations 20260606180000 or 20260606200000
     // were not applied on the production database.

@@ -103,26 +103,26 @@ export function PayrollManagement() {
           <table className="w-full text-xs">
             <thead className="bg-[#1A2BA6] text-white">
               <tr>
-                <th rowSpan={2} className="px-2 py-1 text-left">Nom et Prénoms</th>
-                <th rowSpan={2} className="px-2 py-1 text-left">Sit. Matrim.</th>
-                <th rowSpan={2} className="px-2 py-1 text-left">Date recrut.</th>
-                <th rowSpan={2} className="px-2 py-1 text-right">Salaire</th>
-                <th className="px-2 py-1 text-center" colSpan={2}>Avantages</th>
-                <th rowSpan={2} className="px-2 py-1 text-right">Salaire Brut</th>
-                <th rowSpan={2} className="px-2 py-1 text-right">ITS Brut</th>
-                <th rowSpan={2} className="px-2 py-1 text-right">ITS Net</th>
-                <th className="px-2 py-1 text-center" colSpan={5}>Retenues</th>
-                <th rowSpan={2} className="px-2 py-1 text-right">Net à payer</th>
+                <th rowSpan={2} className="px-2 py-1 text-left whitespace-nowrap">Nom et Prénoms</th>
+                <th rowSpan={2} className="px-2 py-1 text-left whitespace-nowrap">Sit. Matrim.</th>
+                <th rowSpan={2} className="px-2 py-1 text-left whitespace-nowrap">Date recrut.</th>
+                <th rowSpan={2} className="px-2 py-1 text-right whitespace-nowrap">Salaire</th>
+                <th className="px-2 py-1 text-center whitespace-nowrap" colSpan={2}>Avantages</th>
+                <th rowSpan={2} className="px-2 py-1 text-right whitespace-nowrap">Salaire Brut</th>
+                <th rowSpan={2} className="px-2 py-1 text-right whitespace-nowrap">ITS Brut</th>
+                <th rowSpan={2} className="px-2 py-1 text-right whitespace-nowrap">ITS Net</th>
+                <th className="px-2 py-1 text-center whitespace-nowrap" colSpan={5}>Retenues</th>
+                <th rowSpan={2} className="px-2 py-1 text-right whitespace-nowrap">Net à payer</th>
                 <th rowSpan={2} className="px-2 py-1"></th>
               </tr>
               <tr>
-                <th className="px-2 py-1 text-right">Prime Saliss.</th>
-                <th className="px-2 py-1 text-right">Gratific.</th>
-                <th className="px-2 py-1 text-right">CNSS</th>
-                <th className="px-2 py-1 text-right">CNSS Patr.</th>
-                <th className="px-2 py-1 text-right">VPS</th>
-                <th className="px-2 py-1 text-right">Avance/Opp.</th>
-                <th className="px-2 py-1 text-right">Taxes R/T</th>
+                <th className="px-2 py-1 text-right whitespace-nowrap">Prime Saliss.</th>
+                <th className="px-2 py-1 text-right whitespace-nowrap">Gratific.</th>
+                <th className="px-2 py-1 text-right whitespace-nowrap">CNSS</th>
+                <th className="px-2 py-1 text-right whitespace-nowrap">CNSS Patr.</th>
+                <th className="px-2 py-1 text-right whitespace-nowrap">VPS</th>
+                <th className="px-2 py-1 text-right whitespace-nowrap">Avance/Opp.</th>
+                <th className="px-2 py-1 text-right whitespace-nowrap">Taxes R/T</th>
               </tr>
             </thead>
             <tbody>
@@ -176,23 +176,23 @@ export function PayrollManagement() {
           <table className="w-full text-xs">
             <thead className="bg-[#1A2BA6] text-white">
               <tr>
-                <th rowSpan={2} className="px-2 py-1 text-left">Nom et Prénoms</th>
-                <th rowSpan={2} className="px-2 py-1 text-left">Sit. Matrim.</th>
-                <th rowSpan={2} className="px-2 py-1 text-left">Date recrut.</th>
-                <th rowSpan={2} className="px-2 py-1 text-right">Salaire</th>
-                <th className="px-2 py-1 text-right">Avantages / Gratifications</th>
-                <th rowSpan={2} className="px-2 py-1 text-right">Salaire Brut</th>
-                <th className="px-2 py-1 text-center" colSpan={3}>Retenues</th>
-                <th rowSpan={2} className="px-2 py-1 text-right">Net à payer</th>
-                <th rowSpan={2} className="px-2 py-1 text-center">CIN°</th>
-                <th rowSpan={2} className="px-2 py-1 text-center">Signature</th>
+                <th rowSpan={2} className="px-2 py-1 text-left whitespace-nowrap">Nom et Prénoms</th>
+                <th rowSpan={2} className="px-2 py-1 text-left whitespace-nowrap">Sit. Matrim.</th>
+                <th rowSpan={2} className="px-2 py-1 text-left whitespace-nowrap">Date recrut.</th>
+                <th rowSpan={2} className="px-2 py-1 text-right whitespace-nowrap">Salaire</th>
+                <th className="px-2 py-1 text-right whitespace-nowrap">Avantages / Gratifications</th>
+                <th rowSpan={2} className="px-2 py-1 text-right whitespace-nowrap">Salaire Brut</th>
+                <th className="px-2 py-1 text-center whitespace-nowrap" colSpan={3}>Retenues</th>
+                <th rowSpan={2} className="px-2 py-1 text-right whitespace-nowrap">Net à payer</th>
+                <th rowSpan={2} className="px-2 py-1 text-center whitespace-nowrap">CIN°</th>
+                <th rowSpan={2} className="px-2 py-1 text-center whitespace-nowrap">Signature</th>
                 <th rowSpan={2} className="px-2 py-1"></th>
               </tr>
               <tr>
-                <th className="px-2 py-1 text-right">Gratific. / Étrennes</th>
-                <th className="px-2 py-1 text-right">Avance / salaire</th>
-                <th className="px-2 py-1 text-right">Opposition / Assurance</th>
-                <th className="px-2 py-1 text-right">Taxes Radio/Télé</th>
+                <th className="px-2 py-1 text-right whitespace-nowrap">Gratific. / Étrennes</th>
+                <th className="px-2 py-1 text-right whitespace-nowrap">Avance / salaire</th>
+                <th className="px-2 py-1 text-right whitespace-nowrap">Opposition / Assurance</th>
+                <th className="px-2 py-1 text-right whitespace-nowrap">Taxes Radio/Télé</th>
               </tr>
             </thead>
             <tbody>

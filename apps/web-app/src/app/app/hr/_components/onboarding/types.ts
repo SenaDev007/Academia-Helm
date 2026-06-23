@@ -53,6 +53,8 @@ export interface OnboardingState {
     bankName: string;
     accountNumber: string;
     accountHolder: string;
+    mobileMoneyNumber: string;
+    mobileMoneyOperator: string;
     cnssNumber: string;
     ifuNumber: string;
   };
@@ -124,6 +126,8 @@ export const INITIAL_STATE: OnboardingState = {
     bankName: '',
     accountNumber: '',
     accountHolder: '',
+    mobileMoneyNumber: '',
+    mobileMoneyOperator: '',
     cnssNumber: '',
     ifuNumber: '',
   },

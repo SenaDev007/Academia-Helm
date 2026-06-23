@@ -169,19 +169,24 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
   const saveStep4AndAdvance = async () => {
     if (!state.staffId) return;
 
-    // Update staff with CNSS, IFU, bank details
+    // Update staff with CNSS, IFU, bank details (including Mobile Money for FeexPay)
+    const bankDetails: any = {};
+    if (state.contract.paymentMode === 'BANK' && state.contract.bankName) {
+      bankDetails.bankName = state.contract.bankName;
+      bankDetails.accountNumber = state.contract.accountNumber;
+      bankDetails.accountName = state.contract.accountHolder;
+    }
+    if (state.contract.paymentMode === 'MOBILE_MONEY' && state.contract.mobileMoneyNumber) {
+      bankDetails.mobileMoneyNumber = state.contract.mobileMoneyNumber;
+      bankDetails.mobileMoneyOperator = state.contract.mobileMoneyOperator;
+    }
+
     await hrFetch(hrUrl(`staff/${state.staffId}`, { tenantId }), {
       method: 'PUT',
       body: {
         cnssNumber: state.contract.cnssNumber || undefined,
         ifuNumber: state.contract.ifuNumber || undefined,
-        bankDetails: state.contract.paymentMode === 'BANK' && state.contract.bankName
-          ? {
-              bankName: state.contract.bankName,
-              accountNumber: state.contract.accountNumber,
-              accountHolder: state.contract.accountHolder,
-            }
-          : undefined,
+        bankDetails: Object.keys(bankDetails).length > 0 ? bankDetails : undefined,
       },
     });
 

@@ -45,6 +45,8 @@ import {
   Package,
   DollarSign,
   Phone,
+  Smartphone,
+  Wallet,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -359,6 +361,8 @@ export default function StaffDetailPage() {
       bankName: bankDetailsObj.bankName || '',
       bankAccountNumber: bankDetailsObj.accountNumber || '',
       bankAccountName: bankDetailsObj.accountName || '',
+      mobileMoneyNumber: bankDetailsObj.mobileMoneyNumber || '',
+      mobileMoneyOperator: bankDetailsObj.mobileMoneyOperator || '',
       emergencyContact: typeof member.emergencyContact === 'object' && member.emergencyContact ? JSON.stringify(member.emergencyContact) : (member.emergencyContact || ''),
       qualifications: member.qualifications || '',
       department: member.department || '',
@@ -398,12 +402,20 @@ export default function StaffDetailPage() {
         submitData.numberOfChildren = isNaN(parsed) ? null : parsed;
       }
 
-      // Build bankDetails object from individual fields
+      // Build bankDetails object from individual fields (including Mobile Money)
       const bankName = submitData.bankName || '';
       const bankAccountNumber = submitData.bankAccountNumber || '';
       const bankAccountName = submitData.bankAccountName || '';
-      if (bankName || bankAccountNumber || bankAccountName) {
-        submitData.bankDetails = { bankName, accountNumber: bankAccountNumber, accountName: bankAccountName };
+      const mobileMoneyNumber = submitData.mobileMoneyNumber || '';
+      const mobileMoneyOperator = submitData.mobileMoneyOperator || '';
+      if (bankName || bankAccountNumber || bankAccountName || mobileMoneyNumber || mobileMoneyOperator) {
+        submitData.bankDetails = {
+          bankName,
+          accountNumber: bankAccountNumber,
+          accountName: bankAccountName,
+          mobileMoneyNumber,
+          mobileMoneyOperator,
+        };
       } else {
         submitData.bankDetails = null;
       }
@@ -411,6 +423,8 @@ export default function StaffDetailPage() {
       delete submitData.bankName;
       delete submitData.bankAccountNumber;
       delete submitData.bankAccountName;
+      delete submitData.mobileMoneyNumber;
+      delete submitData.mobileMoneyOperator;
 
       // Handle emergencyContact — try to parse as JSON, else wrap as object
       if (typeof submitData.emergencyContact === 'string' && submitData.emergencyContact.trim()) {
@@ -774,6 +788,44 @@ export default function StaffDetailPage() {
                   <div>
                     <label className={labelClass}>Titulaire du compte</label>
                     <input type="text" className={inputClass} value={editForm.bankAccountName} onChange={(e) => setEditForm({ ...editForm, bankAccountName: e.target.value })} />
+                  </div>
+                </div>
+
+                {/* Mobile Money — pour le paiement des salaires via FeexPay */}
+                <div className="bg-emerald-50/50 border border-emerald-100 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-700">
+                    <Smartphone className="h-3.5 w-3.5" /> Mobile Money (Paiement des salaires)
+                  </div>
+                  <p className="text-[11px] text-slate-500 -mt-1">
+                    Numéro et opérateur utilisés pour le paiement des salaires via FeexPay.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelClass}>Numéro Mobile Money</label>
+                      <input
+                        type="tel"
+                        className={inputClass}
+                        value={editForm.mobileMoneyNumber}
+                        onChange={(e) => setEditForm({ ...editForm, mobileMoneyNumber: e.target.value })}
+                        placeholder="Ex: 2290167000000"
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClass}>Opérateur</label>
+                      <select
+                        className={inputClass}
+                        value={editForm.mobileMoneyOperator}
+                        onChange={(e) => setEditForm({ ...editForm, mobileMoneyOperator: e.target.value })}
+                      >
+                        <option value="">— Sélectionner —</option>
+                        <option value="MTN">MTN</option>
+                        <option value="MOOV">MOOV</option>
+                        <option value="CELTIIS">CELTIIS</option>
+                        <option value="CORIS">CORIS</option>
+                        <option value="ORANGE">ORANGE</option>
+                        <option value="WAVE">WAVE</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1221,6 +1273,39 @@ export default function StaffDetailPage() {
                       <InfoField label="Numéro CNI / Passeport" value={member.nationalId || 'Non renseigné'} />
                       <InfoField label="Numéro CNSS" value={member.cnssNumber || 'Non renseigné'} />
                       <InfoField label="Numéro IFU" value={member.ifuNumber || 'N/A'} />
+                    </div>
+                  </section>
+
+                  {/* ─── Section: Informations de Paiement (Mobile Money + Banque) ─── */}
+                  <section className="md:col-span-2 pt-6 border-t border-gray-50">
+                    <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
+                      <Wallet size={20} className="text-blue-500" />
+                      Informations de Paiement
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Mobile Money */}
+                      <div className="bg-emerald-50/50 border border-emerald-100 rounded-xl p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Smartphone className="h-4 w-4 text-emerald-600" />
+                          <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Mobile Money</p>
+                        </div>
+                        <div className="space-y-3">
+                          <InfoField label="Numéro MOMO" value={(member.bankDetails as any)?.mobileMoneyNumber || 'Non renseigné'} />
+                          <InfoField label="Opérateur" value={(member.bankDetails as any)?.mobileMoneyOperator || 'Non renseigné'} />
+                        </div>
+                      </div>
+                      {/* Compte Bancaire */}
+                      <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Building2 className="h-4 w-4 text-blue-600" />
+                          <p className="text-xs font-bold uppercase tracking-wider text-blue-700">Compte Bancaire</p>
+                        </div>
+                        <div className="space-y-3">
+                          <InfoField label="Banque" value={(member.bankDetails as any)?.bankName || 'Non renseignée'} />
+                          <InfoField label="N° Compte" value={(member.bankDetails as any)?.accountNumber || 'Non renseigné'} />
+                          <InfoField label="Titulaire" value={(member.bankDetails as any)?.accountName || 'Non renseigné'} />
+                        </div>
+                      </div>
                     </div>
                   </section>
 

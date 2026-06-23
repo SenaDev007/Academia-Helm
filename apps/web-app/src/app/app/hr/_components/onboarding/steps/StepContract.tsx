@@ -1,6 +1,6 @@
 'use client';
 
-import { FileText, DollarSign, Building2, Landmark } from 'lucide-react';
+import { FileText, DollarSign, Building2, Landmark, Smartphone } from 'lucide-react';
 
 const inputClass =
   'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 ' +
@@ -19,6 +19,8 @@ interface StepContractProps {
     bankName: string;
     accountNumber: string;
     accountHolder: string;
+    mobileMoneyNumber: string;
+    mobileMoneyOperator: string;
     cnssNumber: string;
     ifuNumber: string;
   };
@@ -27,6 +29,7 @@ interface StepContractProps {
 
 export function StepContract({ contract, onUpdate }: StepContractProps) {
   const showBankFields = contract.paymentMode === 'BANK';
+  const showMobileMoneyFields = contract.paymentMode === 'MOBILE_MONEY';
   const showEndDate = contract.contractType !== 'CDI';
 
   return (
@@ -111,6 +114,47 @@ export function StepContract({ contract, onUpdate }: StepContractProps) {
             <div>
               <label className={labelClass}>Titulaire</label>
               <input type="text" placeholder="Nom du titulaire" className={inputClass} value={contract.accountHolder} onChange={(e) => onUpdate('accountHolder', e.target.value)} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Money details (conditional) — for salary payment via FeexPay */}
+      {showMobileMoneyFields && (
+        <div className="space-y-4 p-4 bg-emerald-50/50 rounded-xl border border-emerald-100">
+          <div className="flex items-center gap-2 mb-1">
+            <Smartphone className="h-4 w-4 text-emerald-600" />
+            <span className="text-xs font-bold uppercase tracking-wider text-emerald-700">Coordonn&eacute;es Mobile Money</span>
+          </div>
+          <p className="text-[11px] text-slate-500 -mt-1 mb-2">
+            Num&eacute;ro et op&eacute;rateur utilis&eacute;s pour le paiement des salaires via FeexPay.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className={labelClass}>Num&eacute;ro Mobile Money *</label>
+              <input
+                type="tel"
+                placeholder="Ex: 2290167000000"
+                className={inputClass}
+                value={contract.mobileMoneyNumber}
+                onChange={(e) => onUpdate('mobileMoneyNumber', e.target.value)}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Op&eacute;rateur *</label>
+              <select
+                className={inputClass}
+                value={contract.mobileMoneyOperator}
+                onChange={(e) => onUpdate('mobileMoneyOperator', e.target.value)}
+              >
+                <option value="">— S&eacute;lectionner —</option>
+                <option value="MTN">MTN</option>
+                <option value="MOOV">MOOV</option>
+                <option value="CELTIIS">CELTIIS</option>
+                <option value="CORIS">CORIS</option>
+                <option value="ORANGE">ORANGE</option>
+                <option value="WAVE">WAVE</option>
+              </select>
             </div>
           </div>
         </div>

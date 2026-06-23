@@ -15,7 +15,7 @@
 
 import {
   Controller, Get, Post, Put, Body, Param, Query,
-  UseGuards, BadRequestException,
+  UseGuards, BadRequestException, Res,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
@@ -26,6 +26,7 @@ import { FinancialStatementService } from './services/financial-statement.servic
 import { TaxDeclarationService } from './services/tax-declaration.service';
 import { FinancialNoteService } from './services/financial-note.service';
 import { PayrollService } from './services/payroll.service';
+import { TaxPdfService } from './services/tax-pdf.service';
 
 @Controller('hr/taxes')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -37,6 +38,7 @@ export class TaxesController {
     private taxDeclarationService: TaxDeclarationService,
     private financialNoteService: FinancialNoteService,
     private payrollService: PayrollService,
+    private taxPdfService: TaxPdfService,
   ) {}
 
   // ─── Paramètres fiscaux ──────────────────────────────────────────────────
@@ -269,5 +271,46 @@ export class TaxesController {
     @Body() body: any,
   ) {
     return this.payrollService.updatePayslip(id, body);
+  }
+
+  // ─── Génération PDF officiels (Phase D) ──────────────────────────────────
+
+  @Get('declarations/:id/pdf')
+  async generateDeclarationPdf(
+    @Param('id') id: string,
+    @Res() res: any,
+  ) {
+    const decl = await this.taxDeclarationService.getById(id);
+    let pdf: Buffer;
+    if (decl.type === 'IST') pdf = await this.taxPdfService.generateIstPdf(id);
+    else if (decl.type === 'CNSS') pdf = await this.taxPdfService.generateCnssPdf(id);
+    else if (decl.type === 'AIB') pdf = await this.taxPdfService.generateAibPdf(id);
+    else throw new BadRequestException('Type de déclaration non supporté');
+
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="${decl.type}_${decl.period}.pdf"`, 'Content-Length': pdf.length });
+    return res.send(pdf);
+  }
+
+  @Get('payslips/:id/pdf')
+  async generatePayslipPdf(
+    @Param('id') id: string,
+    @Res() res: any,
+  ) {
+    const pdf = await this.taxPdfService.generatePayslipPdf(id);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="fiche_paie.pdf"`, 'Content-Length': pdf.length });
+    return res.send(pdf);
+  }
+
+  @Get('financial-statements-pdf')
+  async generateFinancialStatementPdf(
+    @GetTenant() t: any,
+    @Query('academicYearId') academicYearId: string,
+    @Query('type') type: string,
+    @Res() res: any,
+  ) {
+    if (!t?.id || !academicYearId || !type) throw new BadRequestException('academicYearId et type requis');
+    const pdf = await this.taxPdfService.generateFinancialStatementPdf(t.id, academicYearId, type);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="${type}.pdf"`, 'Content-Length': pdf.length });
+    return res.send(pdf);
   }
 }

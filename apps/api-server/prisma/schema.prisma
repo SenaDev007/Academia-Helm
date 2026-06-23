@@ -14426,7 +14426,7 @@ model MediaAsset {
 // ─── Paramètres fiscaux configurables (taux, seuils) ───────────────────────
 model TaxSettings {
   id              String   @id @default(uuid())
-  tenantId        String
+  tenantId        String   @unique
   academicYearId  String?
 
   // Taux CNSS (%) — part patronale + ouvrière

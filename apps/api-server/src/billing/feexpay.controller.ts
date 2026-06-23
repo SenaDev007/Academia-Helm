@@ -26,12 +26,16 @@ import {
 import { Request } from 'express';
 import { Public } from '../auth/decorators/public.decorator';
 import { FeexPayService, FeexPayOperator } from './services/feexpay.service';
+import { PrismaService } from '../database/prisma.service';
 
 @Controller('billing/feexpay')
 export class FeexPayController {
   private readonly logger = new Logger(FeexPayController.name);
 
-  constructor(private readonly feexpayService: FeexPayService) {}
+  constructor(
+    private readonly feexpayService: FeexPayService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   /**
    * POST /api/billing/feexpay/webhook
@@ -52,6 +56,45 @@ export class FeexPayController {
   async handleWebhook(@Body() body: any, @Req() req: Request) {
     this.logger.log(`FeexPay webhook received: ${JSON.stringify(body).substring(0, 500)}`);
     const result = await this.feexpayService.handleWebhook(body);
+
+    // ─── Mettre à jour les enregistrements SalaryPayment si applicable ──
+    // Le webhook FeexPay peut concerner un paiement (payin) ou un transfert (payout).
+    // Pour les payouts de salaires, on cherche le SalaryPayment par référence.
+    const reference = body?.reference || body?.order_id || body?.transref;
+    const status = (body?.status || '').toUpperCase();
+
+    if (reference && (status === 'SUCCESSFUL' || status === 'FAILED')) {
+      try {
+        const salaryPayment = await this.prisma.salaryPayment.findFirst({
+          where: { reference },
+        });
+
+        if (salaryPayment) {
+          const newStatus = status === 'SUCCESSFUL' ? 'COMPLETED' : 'FAILED';
+          await this.prisma.salaryPayment.update({
+            where: { id: salaryPayment.id },
+            data: {
+              status: newStatus,
+              notes: status === 'SUCCESSFUL'
+                ? `Payout confirmé par FeexPay (webhook) — ${new Date().toISOString()}`
+                : `Payout échoué — ${body?.reason || 'Raison inconnue'}`,
+            },
+          });
+          this.logger.log(`SalaryPayment ${salaryPayment.id} updated to ${newStatus} (ref=${reference})`);
+
+          // Si le paiement est réussi, mettre à jour le PayrollItem
+          if (status === 'SUCCESSFUL') {
+            await this.prisma.payrollItem.update({
+              where: { id: salaryPayment.payrollItemId },
+              data: { status: 'PAID' },
+            }).catch(() => {});
+          }
+        }
+      } catch (err: any) {
+        this.logger.error(`Failed to update SalaryPayment for ref=${reference}: ${err.message}`);
+      }
+    }
+
     return { received: true, ...result };
   }
 

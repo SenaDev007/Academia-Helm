@@ -18,14 +18,50 @@
  * ============================================================================
  */
 
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { Prisma } from '@prisma/client';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
+import { FeexPayService, FeexPayOperator } from '../billing/services/feexpay.service';
+
+/**
+ * Détermine si un staff est un vacataire (non soumis à la CNSS/IRPP).
+ * Un vacataire a contractType='VACATAIRE' sur son contrat ou sur sa fiche staff.
+ */
+function isVacataire(staff: any): boolean {
+  if (staff?.contractType === 'VACATAIRE') return true;
+  const contract = staff?.contracts?.[0];
+  if (contract?.contractType === 'VACATAIRE') return true;
+  return false;
+}
+
+/**
+ * Extrait le numéro Mobile Money et l'opérateur depuis bankDetails (JSON) ou les champs staff.
+ */
+function extractMobileMoneyInfo(staff: any): { number: string; operator: FeexPayOperator } | null {
+  const bd = staff?.bankDetails;
+  if (bd && typeof bd === 'object') {
+    const number = bd.mobileMoneyNumber || bd.accountNumber || staff?.phone;
+    const operator = bd.mobileMoneyOperator as FeexPayOperator;
+    if (number && operator) {
+      return { number, operator };
+    }
+  }
+  // Fallback: use staff.phone with a default operator
+  if (staff?.phone && staff?.phone.length >= 8) {
+    return { number: staff.phone, operator: 'MTN' };
+  }
+  return null;
+}
 
 @Injectable()
 export class PayrollPrismaService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(PayrollPrismaService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly feexpayService: FeexPayService,
+  ) {}
 
   // ============================================================================
   // PAYROLL BATCHES (Payroll model = batch mensuel)
@@ -116,12 +152,17 @@ export class PayrollPrismaService {
                 lastName: true,
                 position: true,
                 roleType: true,
+                contractType: true,
                 employeeCNSS: {
                   select: { cnssNumber: true },
                 },
               },
             },
             salarySlip: true,
+            payments: {
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+            },
           },
         },
         academicYear: {
@@ -131,6 +172,13 @@ export class PayrollPrismaService {
     });
 
     if (!payroll) throw new NotFoundException(`Lot de paie ${id} introuvable.`);
+
+    // Flatten payments[0] → salaryPayment for easier frontend access
+    payroll.items = payroll.items.map((item: any) => ({
+      ...item,
+      salaryPayment: item.payments?.[0] || null,
+    }));
+
     return payroll;
   }
 
@@ -173,6 +221,242 @@ export class PayrollPrismaService {
   }
 
   // ============================================================================
+  // PAIEMENT DES SALAIRES VIA FEEXPAY
+  // ============================================================================
+
+  /**
+   * Paie le salaire d'un seul employé via FeexPay (payout Mobile Money).
+   * - Vérifie que le PayrollItem est CALCULATED ou VALIDATED
+   * - Récupère le numéro Mobile Money + opérateur du staff
+   * - Appelle feexpayService.createPayout()
+   * - Crée un enregistrement SalaryPayment (status=PENDING)
+   * - Retourne la référence FeexPay
+   */
+  async disburseSalary(payrollItemId: string, tenantId: string, academicYearId: string) {
+    const item = await this.prisma.payrollItem.findFirst({
+      where: { id: payrollItemId, tenantId },
+      include: {
+        staff: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+            email: true,
+            bankDetails: true,
+            contractType: true,
+          },
+        },
+        payroll: true,
+      },
+    });
+
+    if (!item) {
+      throw new NotFoundException(`Ligne de paie ${payrollItemId} introuvable.`);
+    }
+
+    if (item.status !== 'CALCULATED' && item.status !== 'VALIDATED') {
+      throw new BadRequestException(
+        `La ligne de paie doit être CALCULATED ou VALIDATED pour être payée (actuel: ${item.status}).`,
+      );
+    }
+
+    // Vérifier qu'un paiement n'existe pas déjà
+    const existingPayment = await this.prisma.salaryPayment.findFirst({
+      where: { payrollItemId, status: { in: ['PENDING', 'COMPLETED'] } },
+    });
+    if (existingPayment) {
+      throw new BadRequestException(
+        `Un paiement existe déjà (${existingPayment.status}) pour cette ligne de paie. Référence: ${existingPayment.reference || 'N/A'}`,
+      );
+    }
+
+    // Extraire les infos Mobile Money
+    const momoInfo = extractMobileMoneyInfo(item.staff);
+    if (!momoInfo) {
+      throw new BadRequestException(
+        `Aucun numéro Mobile Money configuré pour ${item.staff.firstName} ${item.staff.lastName}. Veuillez configurer le numéro + opérateur dans la fiche du personnel.`,
+      );
+    }
+
+    const amount = Number(item.netSalary);
+    const motif = `Salaire ${item.payroll.month}/${item.payroll.year} — ${item.staff.firstName} ${item.staff.lastName}`;
+
+    // Appeler FeexPay
+    const result = await this.feexpayService.createPayout({
+      amount,
+      phoneNumber: momoInfo.number,
+      operator: momoInfo.operator,
+      motif,
+    });
+
+    // Créer l'enregistrement SalaryPayment
+    const salaryPayment = await this.prisma.salaryPayment.create({
+      data: {
+        ...prismaCreateDefaults(),
+        tenantId,
+        academicYearId,
+        payrollItemId,
+        staffId: item.staffId,
+        amount: item.netSalary,
+        paymentMethod: 'MOBILE_MONEY',
+        paymentDate: new Date(),
+        reference: result.reference || null,
+        status: result.success ? 'PENDING' : 'FAILED',
+        notes: result.success
+          ? `Payout initié vers ${momoInfo.number} (${momoInfo.operator})`
+          : `Échec: ${result.message || 'Erreur inconnue'}`,
+      },
+    });
+
+    // Mettre à jour le statut du PayrollItem
+    if (result.success) {
+      await this.prisma.payrollItem.update({
+        where: { id: payrollItemId },
+        data: { ...prismaUpdateDefaults(), status: 'VALIDATED' },
+      });
+    }
+
+    this.logger.log(
+      `Payout initiated for ${item.staff.firstName} ${item.staff.lastName}: ref=${result.reference}, amount=${amount} FCFA`,
+    );
+
+    return {
+      success: result.success,
+      reference: result.reference,
+      salaryPaymentId: salaryPayment.id,
+      message: result.success
+        ? `Paiement de ${amount} FCFA initié vers ${momoInfo.number} (${momoInfo.operator})`
+        : `Échec du paiement: ${result.message}`,
+    };
+  }
+
+  /**
+   * Paie les salaires de TOUS les employés d'un lot via FeexPay (paiement groupé).
+   * - Boucle sur tous les PayrollItems CALCULATED/VALIDATED
+   * - Appelle disburseSalary pour chacun
+   * - Retourne le récapitulatif (success/failed par staff)
+   * - Met à jour le statut du batch → PAID si tous les paiements sont réussis
+   */
+  async disburseAllSalaries(payrollId: string, tenantId: string) {
+    const payroll = await this.prisma.payroll.findFirst({
+      where: { id: payrollId, tenantId },
+      include: {
+        items: {
+          where: { status: { in: ['CALCULATED', 'VALIDATED'] } },
+          select: { id: true, staffId: true },
+        },
+      },
+    });
+
+    if (!payroll) {
+      throw new NotFoundException(`Lot de paie ${payrollId} introuvable.`);
+    }
+
+    if (payroll.items.length === 0) {
+      throw new BadRequestException(
+        `Aucune ligne de paie calculée à payer. Générez et calculez d'abord les lignes.`,
+      );
+    }
+
+    const results = [];
+    let successCount = 0;
+    let failedCount = 0;
+
+    for (const item of payroll.items) {
+      try {
+        const result = await this.disburseSalary(item.id, tenantId, payroll.academicYearId);
+        results.push({
+          payrollItemId: item.id,
+          staffId: item.staffId,
+          success: result.success,
+          reference: result.reference,
+          message: result.message,
+        });
+        if (result.success) successCount++;
+        else failedCount++;
+      } catch (err: any) {
+        results.push({
+          payrollItemId: item.id,
+          staffId: item.staffId,
+          success: false,
+          message: err.message,
+        });
+        failedCount++;
+      }
+    }
+
+    // Mettre à jour le statut du batch si tous les paiements sont réussis
+    if (successCount > 0 && failedCount === 0) {
+      await this.prisma.payroll.update({
+        where: { id: payrollId },
+        data: {
+          ...prismaUpdateDefaults(),
+          status: 'PAID',
+          paidAt: new Date(),
+        },
+      });
+    }
+
+    this.logger.log(
+      `Bulk payout for payroll ${payrollId}: ${successCount} success, ${failedCount} failed out of ${payroll.items.length}`,
+    );
+
+    return {
+      total: payroll.items.length,
+      success: successCount,
+      failed: failedCount,
+      results,
+      payrollStatus: failedCount === 0 && successCount > 0 ? 'PAID' : 'PARTIALLY_PAID',
+    };
+  }
+
+  /**
+   * Récupère le statut d'un paiement de salaire (depuis FeexPay + DB locale).
+   */
+  async getPaymentStatus(payrollItemId: string, tenantId: string) {
+    const payment = await this.prisma.salaryPayment.findFirst({
+      where: { payrollItemId, tenantId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!payment) {
+      return { hasPayment: false, status: null, reference: null };
+    }
+
+    // Si le paiement est PENDING et qu'on a une référence, vérifier le statut FeexPay
+    if (payment.status === 'PENDING' && payment.reference) {
+      try {
+        const feexpayStatus = await this.feexpayService.getPayoutStatus(payment.reference);
+        if (feexpayStatus.status === 'SUCCESSFUL') {
+          await this.prisma.salaryPayment.update({
+            where: { id: payment.id },
+            data: { ...prismaUpdateDefaults(), status: 'COMPLETED' },
+          });
+          payment.status = 'COMPLETED';
+        } else if (feexpayStatus.status === 'FAILED') {
+          await this.prisma.salaryPayment.update({
+            where: { id: payment.id },
+            data: { ...prismaUpdateDefaults(), status: 'FAILED' },
+          });
+          payment.status = 'FAILED';
+        }
+      } catch (err) {
+        this.logger.warn(`Failed to check FeexPay status for ${payment.reference}: ${err.message}`);
+      }
+    }
+
+    return {
+      hasPayment: true,
+      status: payment.status,
+      reference: payment.reference,
+      paymentDate: payment.paymentDate,
+      amount: payment.amount,
+      paymentMethod: payment.paymentMethod,
+    };
+  }
+
+  // ============================================================================
   // PAYROLL ITEMS (Lignes individuelles)
   // ============================================================================
 
@@ -206,6 +490,7 @@ export class PayrollPrismaService {
     const taxRates = await this.findActiveTaxRates(countryCode);
 
     // Trouver le personnel actif avec contrat actif ou en attente
+    // Inclure les vacataires (contractType='VACATAIRE') qui ne sont pas soumis à la CNSS
     const staffWithContracts = await this.prisma.staff.findMany({
       where: {
         tenantId,
@@ -222,6 +507,7 @@ export class PayrollPrismaService {
           where: { status: 'ACTIVE' },
           include: { allowanceType: true },
         },
+        employeeCNSS: true,
       },
     });
 
@@ -242,6 +528,10 @@ export class PayrollPrismaService {
         // Utiliser staff.salary ou contract.baseSalary comme base
         const baseSalary =
           staff.salary ?? contract?.baseSalary ?? new Prisma.Decimal(0);
+
+        // ─── Détection du statut vacataire ──
+        // Les vacataires ne sont PAS soumis à la CNSS ni à l'IRPP
+        const vacataire = isVacataire(staff);
 
         // Somme des indemnités actives
         const totalAllowances = staff.staffAllowances.reduce(
@@ -279,30 +569,34 @@ export class PayrollPrismaService {
         // Calculer les primes ponctuelles approuvées non affectées
         const bonuses = await this.calculateStaffBonuses(staff.id, tenantId);
 
-        // Calcul CNSS
-        let cnssEmployee = new Prisma.Decimal(0);
-        let cnssEmployer = new Prisma.Decimal(0);
-
-        if (cnssRate) {
-          const ceiling = cnssRate.salaryCeiling
-            ? Prisma.Decimal.min(baseSalary, cnssRate.salaryCeiling)
-            : baseSalary;
-          cnssEmployee = ceiling.times(cnssRate.employeeRate);
-          cnssEmployer = ceiling.times(cnssRate.employerRate);
-        }
-
         // Salaire brut = base + indemnités + heures supp + primes
         const grossSalary = baseSalary
           .plus(totalAllowances)
           .plus(overtimeAmount)
           .plus(bonuses);
 
-        // Montant imposable = brut - cotisation CNSS employé
-        const taxableAmount = grossSalary.minus(cnssEmployee);
+        // ─── Calcul CNSS (uniquement pour les permanents, PAS les vacataires) ──
+        let cnssEmployee = new Prisma.Decimal(0);
+        let cnssEmployer = new Prisma.Decimal(0);
+        let taxableAmount = grossSalary; // Pour les vacataires, tout le brut est "imposable" mais non taxé
 
-        // Calcul IRPP par tranches progressives
+        if (!vacataire && cnssRate) {
+          // Vérifier que le staff a un numéro CNSS actif
+          const hasCnss = staff.employeeCNSS?.isActive && staff.employeeCNSS?.cnssNumber;
+          if (hasCnss) {
+            const ceiling = cnssRate.salaryCeiling
+              ? Prisma.Decimal.min(baseSalary, cnssRate.salaryCeiling)
+              : baseSalary;
+            cnssEmployee = ceiling.times(cnssRate.employeeRate);
+            cnssEmployer = ceiling.times(cnssRate.employerRate);
+            // Montant imposable = brut - cotisation CNSS employé
+            taxableAmount = grossSalary.minus(cnssEmployee);
+          }
+        }
+
+        // ─── Calcul IRPP (uniquement pour les permanents, PAS les vacataires) ──
         let irppAmount = new Prisma.Decimal(0);
-        if (taxRates.length > 0 && taxableAmount.greaterThan(0)) {
+        if (!vacataire && taxRates.length > 0 && taxableAmount.greaterThan(0)) {
           let remaining = taxableAmount;
 
           for (const bracket of taxRates) {
@@ -417,10 +711,16 @@ export class PayrollPrismaService {
         payroll: true,
         staff: {
           include: {
+            contracts: {
+              where: { status: { in: ['ACTIVE', 'PENDING'] } },
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+            },
             staffAllowances: {
               where: { status: 'ACTIVE' },
               include: { allowanceType: true },
             },
+            employeeCNSS: true,
           },
         },
       },
@@ -439,6 +739,9 @@ export class PayrollPrismaService {
 
     const cnssRate = await this.findActiveCNSSRate(countryCode);
     const taxRates = await this.findActiveTaxRates(countryCode);
+
+    // ─── Détection du statut vacataire ──
+    const vacataire = isVacataire(item.staff);
 
     // Base salary
     const baseSalary = item.baseSalary;
@@ -478,30 +781,32 @@ export class PayrollPrismaService {
     // Calculer les primes ponctuelles approuvées
     const bonuses = await this.calculateStaffBonuses(item.staffId, tenantId);
 
-    // CNSS
-    let cnssEmployee = new Prisma.Decimal(0);
-    let cnssEmployer = new Prisma.Decimal(0);
-
-    if (cnssRate) {
-      const ceiling = cnssRate.salaryCeiling
-        ? Prisma.Decimal.min(baseSalary, cnssRate.salaryCeiling)
-        : baseSalary;
-      cnssEmployee = ceiling.times(cnssRate.employeeRate);
-      cnssEmployer = ceiling.times(cnssRate.employerRate);
-    }
-
     // Gross salary
     const grossSalary = baseSalary
       .plus(totalAllowances)
       .plus(overtimeAmount)
       .plus(bonuses);
 
-    // Taxable amount
-    const taxableAmount = grossSalary.minus(cnssEmployee);
+    // ─── CNSS (uniquement pour les permanents avec numéro CNSS actif) ──
+    let cnssEmployee = new Prisma.Decimal(0);
+    let cnssEmployer = new Prisma.Decimal(0);
+    let taxableAmount = grossSalary;
 
-    // IRPP par tranches progressives
+    if (!vacataire && cnssRate) {
+      const hasCnss = item.staff.employeeCNSS?.isActive && item.staff.employeeCNSS?.cnssNumber;
+      if (hasCnss) {
+        const ceiling = cnssRate.salaryCeiling
+          ? Prisma.Decimal.min(baseSalary, cnssRate.salaryCeiling)
+          : baseSalary;
+        cnssEmployee = ceiling.times(cnssRate.employeeRate);
+        cnssEmployer = ceiling.times(cnssRate.employerRate);
+        taxableAmount = grossSalary.minus(cnssEmployee);
+      }
+    }
+
+    // ─── IRPP (uniquement pour les permanents, PAS les vacataires) ──
     let irppAmount = new Prisma.Decimal(0);
-    if (taxRates.length > 0 && taxableAmount.greaterThan(0)) {
+    if (!vacataire && taxRates.length > 0 && taxableAmount.greaterThan(0)) {
       let remaining = taxableAmount;
 
       for (const bracket of taxRates) {

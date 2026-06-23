@@ -181,6 +181,65 @@ export class PayrollPrismaController {
   }
 
   // ──────────────────────────────────────────────────────────────────────────
+  // PAIEMENT DES SALAIRES VIA FEEXPAY
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Paie le salaire d'un seul employé via FeexPay (payout Mobile Money).
+   * POST /hr/payroll/items/:id/pay
+   */
+  @Post('items/:id/pay')
+  async disburseSalary(
+    @GetTenant() tenant: any,
+    @Param('id') payrollItemId: string,
+    @Body() body: { academicYearId: string },
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    if (!body?.academicYearId) {
+      throw new BadRequestException('academicYearId requis dans le body');
+    }
+    return this.payrollService.disburseSalary(payrollItemId, tid, body.academicYearId);
+  }
+
+  /**
+   * Paie les salaires de TOUS les employés d'un lot via FeexPay (paiement groupé).
+   * POST /hr/payroll/batches/:id/pay-all
+   */
+  @Post('batches/:id/pay-all')
+  async disburseAllSalaries(
+    @GetTenant() tenant: any,
+    @Param('id') payrollId: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.payrollService.disburseAllSalaries(payrollId, tid);
+  }
+
+  /**
+   * Récupère le statut d'un paiement de salaire.
+   * GET /hr/payroll/items/:id/payment-status
+   */
+  @Get('items/:id/payment-status')
+  async getPaymentStatus(
+    @GetTenant() tenant: any,
+    @Param('id') payrollItemId: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.payrollService.getPaymentStatus(payrollItemId, tid);
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
   // TAUX CNSS
   // ──────────────────────────────────────────────────────────────────────────
 

@@ -58,9 +58,10 @@ import { DocumentUploadController, DocumentPublicController } from './document-u
 import { StaffCardService } from './services/staff-card.service';
 import { StaffCardController, StaffCardPublicController } from './staff-card.controller';
 import { TaxesModule } from './taxes/taxes.module';
+import { BillingModule } from '../billing/billing.module';
 
 @Module({
-  imports: [PrismaModule, OrionModule, CommunicationModule, TaxesModule],
+  imports: [PrismaModule, OrionModule, CommunicationModule, TaxesModule, BillingModule],
   providers: [
     PrismaService,
     StaffPrismaService,

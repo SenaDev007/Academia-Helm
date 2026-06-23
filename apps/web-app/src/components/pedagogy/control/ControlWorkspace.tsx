@@ -101,7 +101,12 @@ export default function ControlWorkspace() {
         pedagogyService.getKpiDashboard(academicYear.id).catch(() => null),
         pedagogyService.getOrionDashboard(academicYear.id).catch(() => ({ insights: [], riskFlags: [] })),
         // On simule la récupération des documents en attente de validation
-        pedagogyService.getClassDiaries('').then((res: any[]) => (res || []).filter(d => d.status === 'SUBMITTED')).catch(() => [])
+        // Use the dedicated director endpoint for submitted documents
+        // instead of fetching ALL class diaries and filtering client-side
+        fetch(`/api/pedagogy/director/documents/submitted?academicYearId=${academicYear.id}`, {
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+        }).then(r => r.ok ? r.json() : []).catch(() => [])
       ]);
       setKpis(kpiData);
       setInsights(orionData.insights || []);

@@ -105,12 +105,14 @@ class PedagogyService {
   }
 
   // --- Teacher Class Assignments ---
+  // ⚠️ Uses /pedagogy/teacher-class-assignments (OLD model: teacherId + classSubjectId)
+  // NOT /pedagogy/assignments (NEW model: profileId + classId + subjectId) which expects a different payload
   async getTeacherAssignments(teacherId: string, academicYearId: string): Promise<any> {
     if (!networkDetectionService.isConnected()) {
       return LocalSearchService.search("teacher_class_assignments", { tenantId: getTenantId(), filters: { teacherId, academicYearId } });
     }
     try {
-      return await apiFetch(`/pedagogy/assignments?teacherId=${teacherId}&academicYearId=${academicYearId}`);
+      return await apiFetch(`/pedagogy/teacher-class-assignments?teacherId=${teacherId}&academicYearId=${academicYearId}`);
     } catch (e) {
       return LocalSearchService.search("teacher_class_assignments", { tenantId: getTenantId(), filters: { teacherId, academicYearId } });
     }
@@ -284,7 +286,7 @@ class PedagogyService {
     if (tenantId) {
       return createEntityOffline(tenantId, 'TEACHER_CLASS_ASSIGNMENT', data);
     }
-    return apiFetch('/pedagogy/assignments', { method: 'POST', body: data });
+    return apiFetch('/pedagogy/teacher-class-assignments', { method: 'POST', body: data });
   }
 
   async deleteTeacherAssignment(id: string): Promise<any> {
@@ -292,7 +294,7 @@ class PedagogyService {
     if (tenantId) {
       return deleteEntityOffline(tenantId, 'TEACHER_CLASS_ASSIGNMENT', id);
     }
-    return apiFetch(`/pedagogy/assignments/${id}`, { method: 'DELETE' });
+    return apiFetch(`/pedagogy/teacher-class-assignments/${id}`, { method: 'DELETE' });
   }
 
   // --- Control & Analytics ---

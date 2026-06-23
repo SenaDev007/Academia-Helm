@@ -110,6 +110,15 @@ export class PedagogyPrismaController {
     });
   }
 
+  @Get('teacher-class-assignments')
+  async getTeacherClassAssignments(
+    @TenantId() tenantId: string,
+    @Query('teacherId') teacherId?: string,
+    @Query('academicYearId') academicYearId?: string,
+  ) {
+    return this.pedagogyService.getTeacherClassAssignments(tenantId, teacherId, academicYearId);
+  }
+
   @Delete('teacher-class-assignments/:id')
   async removeTeacherClassAssignment(
     @Param('id') id: string,

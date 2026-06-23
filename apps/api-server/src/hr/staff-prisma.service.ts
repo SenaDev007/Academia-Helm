@@ -162,6 +162,50 @@ export class StaffPrismaService {
       },
     });
 
+    // ─── Pont HR → Pédagogie ──
+    // Si le staff créé est un enseignant (roleType=TEACHER) avec un schoolLevelId,
+    // créer automatiquement un enregistrement Teacher dans le module Pédagogie
+    // pour qu'il apparaisse dans les affectations de classes.
+    if (roleType === 'TEACHER' && (data.schoolLevelId || created.schoolLevelId)) {
+      try {
+        const existingTeacher = await this.prisma.teacher.findFirst({
+          where: {
+            tenantId: data.tenantId,
+            OR: [
+              { email: data.email || '' },
+              { matricule: finalEmployeeNumber },
+            ],
+          },
+        });
+
+        if (!existingTeacher) {
+          await this.prisma.teacher.create({
+            data: {
+              tenantId: data.tenantId,
+              schoolLevelId: data.schoolLevelId || created.schoolLevelId,
+              matricule: finalEmployeeNumber,
+              firstName: data.firstName,
+              lastName: data.lastName,
+              gender: data.gender || null,
+              dateOfBirth: data.birthDate ? new Date(data.birthDate) : null,
+              phone: data.phone || null,
+              email: data.email || null,
+              address: data.address || null,
+              position: data.position || 'Enseignant',
+              qualifications: data.qualifications || null,
+              hireDate: data.hireDate ? new Date(data.hireDate) : new Date(),
+              contractType: data.contractType || null,
+              status: 'active',
+              academicYearId: data.academicYearId || null,
+            },
+          });
+          this.logger.log(`Teacher auto-created in pedagogy for staff ${created.id} (${data.firstName} ${data.lastName})`);
+        }
+      } catch (err: any) {
+        this.logger.warn(`Failed to auto-create Teacher in pedagogy: ${err.message}`);
+      }
+    }
+
     // Retourner avec staffCode alias pour compatibilité frontend
     return {
       ...created,
@@ -1060,6 +1104,37 @@ export class StaffPrismaService {
       where: { id: { in: staffIds }, tenantId },
       data: { schoolLevelId: resolvedSchoolLevelId },
     });
+
+    // ─── Sync schoolLevelId to Pedagogy Teacher records ──
+    // When a teacher is assigned to a school level in HR, update their
+    // Teacher record in pedagogy so they appear in the correct level's assignments.
+    try {
+      const staffRecords = await this.prisma.staff.findMany({
+        where: { id: { in: staffIds }, tenantId },
+        select: { id: true, email: true, employeeNumber: true },
+      });
+      for (const s of staffRecords) {
+        // Match by email or matricule (employeeNumber)
+        const teacher = await this.prisma.teacher.findFirst({
+          where: {
+            tenantId,
+            OR: [
+              ...(s.email ? [{ email: s.email }] : []),
+              { matricule: s.employeeNumber },
+            ],
+          },
+          select: { id: true },
+        });
+        if (teacher) {
+          await this.prisma.teacher.update({
+            where: { id: teacher.id },
+            data: { schoolLevelId: resolvedSchoolLevelId },
+          });
+        }
+      }
+    } catch (err: any) {
+      this.logger.warn(`Failed to sync teacher schoolLevelId in pedagogy: ${err.message}`);
+    }
 
     // Also create/update StaffAssignment records for each teacher
     const assignments = [];

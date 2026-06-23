@@ -312,5 +312,42 @@ export class PedagogyPrismaService {
 
     return { success: true };
   }
+
+  /**
+   * Récupère les affectations enseignant/classe avec filtres optionnels.
+   * Inclut les infos classSubject (matière + classe) et teacher (nom, prénom).
+   */
+  async getTeacherClassAssignments(tenantId: string, teacherId?: string, academicYearId?: string) {
+    const where: any = { tenantId };
+    if (teacherId) where.teacherId = teacherId;
+    if (academicYearId) where.academicYearId = academicYearId;
+
+    return this.prisma.teacherClassAssignment.findMany({
+      where,
+      include: {
+        teacher: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            phone: true,
+            schoolLevelId: true,
+          },
+        },
+        classSubject: {
+          include: {
+            subject: {
+              select: { id: true, name: true, code: true, language: true },
+            },
+            academicClass: {
+              select: { id: true, name: true, levelId: true },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
 }
 

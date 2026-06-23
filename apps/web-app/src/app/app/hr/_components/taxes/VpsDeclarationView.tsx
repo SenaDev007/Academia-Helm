@@ -38,9 +38,12 @@ export function VpsDeclarationView() {
     if (!tenant?.id || !academicYear?.id) return;
     try {
       setGenerating(true);
+      // Generate current month period: "2026-06"
+      const now = new Date();
+      const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
       await hrFetch(hrUrl('taxes/declarations/ist/generate', { tenantId: tenant.id }), {
         method: 'POST',
-        body: { academicYearId: academicYear.id, tenantId: tenant.id },
+        body: { academicYearId: academicYear.id, period, tenantId: tenant.id },
       });
       toast({ variant: 'success', title: 'Déclaration VPS générée' });
       fetchDeclarations();

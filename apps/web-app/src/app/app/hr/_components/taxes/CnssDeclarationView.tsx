@@ -39,9 +39,14 @@ export function CnssDeclarationView() {
     if (!tenant?.id || !academicYear?.id) return;
     try {
       setGenerating(true);
+      // Generate current quarter period: "2026-T1"
+      const now = new Date();
+      const year = now.getFullYear();
+      const quarter = Math.floor(now.getMonth() / 3) + 1;
+      const period = `${year}-T${quarter}`;
       await hrFetch(hrUrl('taxes/declarations/cnss/generate', { tenantId: tenant.id }), {
         method: 'POST',
-        body: { academicYearId: academicYear.id, tenantId: tenant.id },
+        body: { academicYearId: academicYear.id, period, tenantId: tenant.id },
       });
       toast({ variant: 'success', title: 'Déclaration CNSS générée' });
       fetchDeclarations();

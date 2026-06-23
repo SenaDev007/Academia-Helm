@@ -8,8 +8,10 @@ import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { toast } from '@/components/ui/toast';
 
 export function ReportHeader({ initialSection }: { initialSection?: 'garde' | 'r1' | 'r2' | 'r3' | 'r4' }) {
-  const { tenant } = useModuleContext();
+  const { tenant, academicYear } = useModuleContext();
   const { currentYear } = useAcademicYear();
+  // Use currentYear from useAcademicYear OR academicYear from useModuleContext as fallback
+  const activeYearId = currentYear?.id || academicYear?.id;
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -21,21 +23,23 @@ export function ReportHeader({ initialSection }: { initialSection?: 'garde' | 'r
   }, [initialSection]);
 
   useEffect(() => {
-    if (!tenant?.id || !currentYear?.id) return;
+    if (!tenant?.id || !activeYearId) return;
     (async () => {
       try {
         setLoading(true);
-        const res = await hrFetch<any>(hrUrl('taxes/report-header', { tenantId: tenant.id, academicYearId: currentYear.id }));
+        const res = await hrFetch<any>(hrUrl('taxes/report-header', { tenantId: tenant.id, academicYearId: activeYearId }));
         setData(res);
-      } catch {} finally { setLoading(false); }
+      } catch (e: any) {
+        console.error('ReportHeader load error:', e);
+      } finally { setLoading(false); }
     })();
-  }, [tenant?.id, currentYear?.id]);
+  }, [tenant?.id, activeYearId]);
 
   const handleSave = async () => {
-    if (!tenant?.id || !currentYear?.id) return;
+    if (!tenant?.id || !activeYearId) return;
     setSaving(true);
     try {
-      await hrFetch(hrUrl('taxes/report-header', { tenantId: tenant.id }), { method: 'PUT', body: { academicYearId: currentYear.id, data } });
+      await hrFetch(hrUrl('taxes/report-header', { tenantId: tenant.id }), { method: 'PUT', body: { academicYearId: activeYearId, data } });
       toast({ variant: 'success', title: 'Enregistré' });
     } catch (e: any) {
       toast({ variant: 'error', title: 'Erreur', description: e.message });
@@ -45,7 +49,16 @@ export function ReportHeader({ initialSection }: { initialSection?: 'garde' | 'r
   const update = (field: string, value: any) => setData((prev: any) => ({ ...prev, [field]: value }));
 
   if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-slate-400" /></div>;
-  if (!data) return null;
+  if (!data) {
+    // Initialize empty data structure if API returned null
+    setData({
+      pageGarde: { schoolName: '', address: '', city: '', country: '', phone: '', email: '', website: '', academicYear: '' },
+      r1: { businessName: '', legalForm: '', capital: '', address: '', principalActivity: '',ifu: '', rccm: '', socialHeadquarters: '' },
+      r2: { activityType: '', mainActivity: '', secondaryActivities: '', staffCount: '', revenue: '' },
+      r3: { directors: [] },
+      r4: { notes: [] },
+    });
+  }
 
   const sections = [
     { id: 'garde', label: 'Page de garde', icon: FileText },

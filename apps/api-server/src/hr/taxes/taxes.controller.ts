@@ -117,10 +117,22 @@ export class TaxesController {
   @Get('declarations')
   async listDeclarations(
     @GetTenant() t: any,
-    @Query('academicYearId') academicYearId: string,
+    @Query('academicYearId') academicYearId?: string,
     @Query('type') type?: string,
   ) {
-    if (!t?.id || !academicYearId) throw new BadRequestException('academicYearId requis');
+    if (!t?.id) throw new BadRequestException('Tenant ID requis');
+    // If academicYearId not provided, try to resolve active year
+    if (!academicYearId) {
+      const activeYear = await this.prisma.academicYear.findFirst({
+        where: { isActive: true, tenantId: t.id },
+        select: { id: true },
+      });
+      if (!activeYear) {
+        // Return empty array if no active year
+        return [];
+      }
+      academicYearId = activeYear.id;
+    }
     return this.taxDeclarationService.listByType(t.id, academicYearId, type);
   }
 
@@ -132,26 +144,35 @@ export class TaxesController {
   @Post('declarations/ist/generate')
   async generateIST(
     @GetTenant() t: any,
-    @Body() body: { academicYearId: string; period: string },
+    @Body() body: { academicYearId: string; period: string; tenantId?: string },
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.taxDeclarationService.getOrGenerateIST(t.id, body.academicYearId, body.period);
+    const tid = t?.id ?? tenantIdFallback ?? body.tenantId;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    return this.taxDeclarationService.getOrGenerateIST(tid, body.academicYearId, body.period);
   }
 
   @Post('declarations/cnss/generate')
   async generateCNSS(
     @GetTenant() t: any,
-    @Body() body: { academicYearId: string; period: string },
+    @Body() body: { academicYearId: string; period: string; tenantId?: string },
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    return this.taxDeclarationService.getOrGenerateCNSS(t.id, body.academicYearId, body.period);
+    const tid = t?.id ?? tenantIdFallback ?? body.tenantId;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    return this.taxDeclarationService.getOrGenerateCNSS(tid, body.academicYearId, body.period);
   }
 
   @Post('declarations/aib/generate')
   async generateAIB(
     @GetTenant() t: any,
-    @Body() body: { academicYearId: string; period: string; baseAchats?: number; basePrestations?: number },
+    @Body() body: { academicYearId: string; period: string; baseAchats?: number; basePrestations?: number; tenantId?: string },
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
+    const tid = t?.id ?? tenantIdFallback ?? body.tenantId;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
     return this.taxDeclarationService.getOrGenerateAIB(
-      t.id, body.academicYearId, body.period,
+      tid, body.academicYearId, body.period,
       body.baseAchats || 0, body.basePrestations || 0,
     );
   }
@@ -258,22 +279,25 @@ export class TaxesController {
   @Post('payroll/generate')
   async generatePayroll(
     @GetTenant() t: any,
-    @Body() body: { academicYearId: string; period: string; staffType: string },
+    @Body() body: { academicYearId: string; period: string; staffType: string; tenantId?: string },
+    @Query('tenantId') tenantIdFallback?: string,
   ) {
-    if (!t?.id || !body.academicYearId || !body.period || !body.staffType) {
+    const tid = t?.id ?? tenantIdFallback ?? body.tenantId;
+    if (!tid || !body.academicYearId || !body.period || !body.staffType) {
       throw new BadRequestException('academicYearId, period et staffType requis');
     }
-    return this.payrollService.generatePayslips(t.id, body.academicYearId, body.period, body.staffType);
+    return this.payrollService.generatePayslips(tid, body.academicYearId, body.period, body.staffType);
   }
 
   @Get('payroll/payslips')
   async getPayslips(
     @GetTenant() t: any,
     @Query('academicYearId') academicYearId: string,
-    @Query('period') period: string,
+    @Query('period') period?: string,
+    @Query('staffType') staffType?: string,
   ) {
-    if (!t?.id || !academicYearId || !period) throw new BadRequestException('academicYearId et period requis');
-    return this.payrollService.getPayslips(t.id, academicYearId, period);
+    if (!t?.id || !academicYearId) throw new BadRequestException('academicYearId requis');
+    return this.payrollService.getPayslips(t.id, academicYearId, period || '');
   }
 
   @Put('payslips/:id')

@@ -30,6 +30,12 @@ export class TaxDeclarationService {
    * L'IST = IRPP + VPS (Versement Patronal sur Salaires)
    */
   async getOrGenerateIST(tenantId: string, academicYearId: string, period: string) {
+    if (!period) {
+      // Auto-générer le mois courant si non fourni: "2026-06"
+      const now = new Date();
+      period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+
     // Vérifier si la déclaration existe déjà
     let declaration = await this.prisma.taxDeclaration.findFirst({
       where: { tenantId, academicYearId, type: 'IST', period },
@@ -100,6 +106,13 @@ export class TaxDeclarationService {
    * Génère ou récupère la déclaration CNSS pour un trimestre.
    */
   async getOrGenerateCNSS(tenantId: string, academicYearId: string, period: string) {
+    if (!period) {
+      // Auto-générer le trimestre courant si non fourni: "2026-T1"
+      const now = new Date();
+      const quarter = Math.floor(now.getMonth() / 3) + 1;
+      period = `${now.getFullYear()}-T${quarter}`;
+    }
+
     let declaration = await this.prisma.taxDeclaration.findFirst({
       where: { tenantId, academicYearId, type: 'CNSS', period },
     });
@@ -168,6 +181,12 @@ export class TaxDeclarationService {
    * AIB 1% sur achats + AIB 5% sur prestations.
    */
   async getOrGenerateAIB(tenantId: string, academicYearId: string, period: string, baseAchats = 0, basePrestations = 0) {
+    if (!period) {
+      // Auto-générer le mois courant si non fourni: "2026-06"
+      const now = new Date();
+      period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+
     let declaration = await this.prisma.taxDeclaration.findFirst({
       where: { tenantId, academicYearId, type: 'AIB', period },
     });
@@ -290,7 +309,9 @@ export class TaxDeclarationService {
    */
   private async getQuarterlyPayrollData(tenantId: string, period: string) {
     // period = "2026-T1" → extraire l'année et les 3 mois
-    const yearMatch = period.match(/^(\d{4})-T(\d)$/);
+    // Null-safe: si period est undefined/null, utiliser le trimestre courant
+    const safePeriod = period || '';
+    const yearMatch = safePeriod.match(/^(\d{4})-T(\d)$/);
     const year = yearMatch ? parseInt(yearMatch[1]) : new Date().getFullYear();
     const quarter = yearMatch ? parseInt(yearMatch[2]) : 1;
     const startMonth = (quarter - 1) * 3 + 1; // T1=1, T2=4, T3=7, T4=10

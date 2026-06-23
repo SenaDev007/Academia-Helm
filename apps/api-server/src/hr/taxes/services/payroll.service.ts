@@ -90,9 +90,14 @@ export class PayrollService {
   }
 
   async getPayslips(tenantId: string, academicYearId: string, period: string) {
+    const where: any = { tenantId, academicYearId };
+    // Only filter by period if it's non-empty
+    if (period && period.trim()) {
+      where.period = period;
+    }
     return this.prisma.taxPayslip.findMany({
-      where: { tenantId, academicYearId, period },
-      include: { staff: { select: { firstName: true, lastName: true, position: true, cnssNumber: true } } },
+      where,
+      include: { staff: { select: { firstName: true, lastName: true, position: true, cnssNumber: true, maritalStatus: true } } },
       orderBy: { staff: { lastName: 'asc' } },
     });
   }

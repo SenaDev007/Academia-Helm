@@ -33,21 +33,30 @@ export function PayrollManagement() {
     setGenerating(true);
     try {
       const res = await hrFetch<any>(hrUrl('taxes/payroll/generate', { tenantId: tenant.id }), {
-        method: 'POST',
-        body: { academicYearId: currentYear.id, period, staffType },
+        method: 'POST', body: { academicYearId: currentYear.id, period, staffType },
       });
       toast({ variant: 'success', title: `${res.payslipsCount} fiche(s) générée(s)`, description: `Brut: ${formatCurrency(res.totalGross)} · Net: ${formatCurrency(res.totalNet)}` });
       loadData();
-    } catch (e: any) {
-      toast({ variant: 'error', title: 'Erreur', description: e.message });
-    } finally { setGenerating(false); }
+    } catch (e: any) { toast({ variant: 'error', title: 'Erreur', description: e.message }); }
+    finally { setGenerating(false); }
+  };
+
+  const downloadPayslipPdf = async (id: string, name: string) => {
+    try {
+      const res = await fetch(hrUrl(`taxes/payslips/${id}/pdf`, { tenantId: tenant?.id }));
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = `Fiche_paie_${name}.pdf`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) { toast({ variant: 'error', title: 'Erreur PDF', description: e.message }); }
   };
 
   if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-slate-400" /></div>;
 
   const totalGross = payslips.reduce((s, p) => s + Number(p.salaireBrut), 0);
-  const totalNet = payslips.reduce((s, p) => s + Number(p.netAPayer), 0);
   const totalDeductions = payslips.reduce((s, p) => s + Number(p.totalRetenues), 0);
+  const totalNet = payslips.reduce((s, p) => s + Number(p.netAPayer), 0);
 
   return (
     <div className="space-y-6">
@@ -58,7 +67,6 @@ export function PayrollManagement() {
         </div>
       </div>
 
-      {/* Génération */}
       <div className="bg-white rounded-xl border border-slate-200 p-5">
         <div className="flex items-end gap-3 flex-wrap">
           <div>
@@ -78,62 +86,148 @@ export function PayrollManagement() {
         </div>
       </div>
 
-      {/* Stats */}
       {payslips.length > 0 && (
         <div className="grid grid-cols-3 gap-4">
-          <div className="bg-white rounded-xl border border-slate-200 p-4">
-            <p className="text-xs text-slate-500">Salaire brut total</p>
-            <p className="text-lg font-bold text-slate-900">{formatCurrency(totalGross)}</p>
-          </div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4">
-            <p className="text-xs text-slate-500">Retenues totales</p>
-            <p className="text-lg font-bold text-red-600">{formatCurrency(totalDeductions)}</p>
-          </div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4">
-            <p className="text-xs text-slate-500">Net à payer total</p>
-            <p className="text-lg font-bold text-emerald-600">{formatCurrency(totalNet)}</p>
-          </div>
+          <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs text-slate-500">Salaire brut total</p><p className="text-lg font-bold text-slate-900">{formatCurrency(totalGross)}</p></div>
+          <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs text-slate-500">Retenues totales</p><p className="text-lg font-bold text-red-600">{formatCurrency(totalDeductions)}</p></div>
+          <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs text-slate-500">Net à payer total</p><p className="text-lg font-bold text-emerald-600">{formatCurrency(totalNet)}</p></div>
         </div>
       )}
 
-      {/* Tableau */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 border-b border-slate-200">
-            <tr>
-              <th className="text-left px-4 py-2 font-semibold text-slate-600">Nom</th>
-              <th className="text-right px-4 py-2 font-semibold text-slate-600">Base</th>
-              <th className="text-right px-4 py-2 font-semibold text-slate-600">Brut</th>
-              <th className="text-right px-4 py-2 font-semibold text-slate-600">CNSS Ouv.</th>
-              <th className="text-right px-4 py-2 font-semibold text-slate-600">ITS</th>
-              <th className="text-right px-4 py-2 font-semibold text-slate-600">Retenues</th>
-              <th className="text-right px-4 py-2 font-semibold text-slate-600">Net à payer</th>
-            </tr>
-          </thead>
-          <tbody>
-            {payslips.map((p, i) => (
-              <tr key={p.id} className={`border-b border-slate-100 ${i % 2 === 0 ? '' : 'bg-slate-50/30'}`}>
-                <td className="px-4 py-2">
-                  <div className="font-bold text-slate-900">{p.staff?.firstName} {p.staff?.lastName}</div>
-                  <div className="text-xs text-slate-400">{p.staff?.position || ''}</div>
-                </td>
-                <td className="px-4 py-2 text-right">{formatCurrency(Number(p.salaireBase))}</td>
-                <td className="px-4 py-2 text-right font-bold">{formatCurrency(Number(p.salaireBrut))}</td>
-                <td className="px-4 py-2 text-right text-red-600">{formatCurrency(Number(p.cnssOuvriere))}</td>
-                <td className="px-4 py-2 text-right text-red-600">{formatCurrency(Number(p.itsNet))}</td>
-                <td className="px-4 py-2 text-right text-red-600">{formatCurrency(Number(p.totalRetenues))}</td>
-                <td className="px-4 py-2 text-right font-bold text-emerald-600">{formatCurrency(Number(p.netAPayer))}</td>
+      {/* ─── Tableau État de paiement — PERMANENTS ─── */}
+      {staffType === 'PERMANENT' && (
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden overflow-x-auto">
+          <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
+            <p className="text-xs font-bold text-slate-700">PERSONNELS PERMANENTS — État de paiement</p>
+          </div>
+          <table className="w-full text-xs">
+            <thead className="bg-[#1A2BA6] text-white">
+              <tr>
+                <th rowSpan={2} className="px-2 py-1 text-left">Nom et Prénoms</th>
+                <th rowSpan={2} className="px-2 py-1 text-left">Sit. Matrim.</th>
+                <th rowSpan={2} className="px-2 py-1 text-left">Date recrut.</th>
+                <th rowSpan={2} className="px-2 py-1 text-right">Salaire</th>
+                <th className="px-2 py-1 text-center" colSpan={2}>Avantages</th>
+                <th rowSpan={2} className="px-2 py-1 text-right">Salaire Brut</th>
+                <th rowSpan={2} className="px-2 py-1 text-right">ITS Brut</th>
+                <th rowSpan={2} className="px-2 py-1 text-right">ITS Net</th>
+                <th className="px-2 py-1 text-center" colSpan={4}>Retenues</th>
+                <th rowSpan={2} className="px-2 py-1 text-right">Net à payer</th>
+                <th rowSpan={2} className="px-2 py-1"></th>
               </tr>
-            ))}
-            {payslips.length === 0 && (
-              <tr><td colSpan={7} className="text-center py-12 text-slate-400">
-                <FileText className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-                Aucune fiche pour cette période — cliquez sur « Générer fiches ».
-              </td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+              <tr>
+                <th className="px-2 py-1 text-right">Prime Saliss.</th>
+                <th className="px-2 py-1 text-right">Gratific.</th>
+                <th className="px-2 py-1 text-right">CNSS</th>
+                <th className="px-2 py-1 text-right">CNSS Patr.</th>
+                <th className="px-2 py-1 text-right">VPS</th>
+                <th className="px-2 py-1 text-right">Avance/Opp.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {payslips.map((p, i) => (
+                <tr key={p.id} className={`border-b border-slate-100 ${i % 2 === 0 ? '' : 'bg-slate-50/30'}`}>
+                  <td className="px-2 py-1 font-bold text-slate-900">{p.staff?.firstName} {p.staff?.lastName}</td>
+                  <td className="px-2 py-1 text-slate-500">{p.staff?.maritalStatus || '—'}</td>
+                  <td className="px-2 py-1 text-slate-500">{p.staff?.hireDate ? new Date(p.staff.hireDate).toLocaleDateString('fr-FR') : '—'}</td>
+                  <td className="px-2 py-1 text-right">{formatCurrency(Number(p.salaireBase))}</td>
+                  <td className="px-2 py-1 text-right">{formatCurrency(Number(p.primeSalissures))}</td>
+                  <td className="px-2 py-1 text-right">{formatCurrency(Number(p.gratificationsEtrennes))}</td>
+                  <td className="px-2 py-1 text-right font-bold">{formatCurrency(Number(p.salaireBrut))}</td>
+                  <td className="px-2 py-1 text-right text-slate-500">{formatCurrency(Number(p.salaireBrut))}</td>
+                  <td className="px-2 py-1 text-right text-red-600">{formatCurrency(Number(p.itsNet))}</td>
+                  <td className="px-2 py-1 text-right text-red-600">{formatCurrency(Number(p.cnssOuvriere))}</td>
+                  <td className="px-2 py-1 text-right text-slate-500">{formatCurrency(Number(p.cnssPatronale))}</td>
+                  <td className="px-2 py-1 text-right text-red-600">{formatCurrency(Number(p.vps))}</td>
+                  <td className="px-2 py-1 text-right text-red-600">{formatCurrency(Number(p.avanceAcompte) + Number(p.opposition))}</td>
+                  <td className="px-2 py-1 text-right font-bold text-emerald-600">{formatCurrency(Number(p.netAPayer))}</td>
+                  <td className="px-1 py-1"><button onClick={() => downloadPayslipPdf(p.id, `${p.staff?.firstName}_${p.staff?.lastName}`)} className="p-1 rounded bg-[#1A2BA6]/10 text-[#1A2BA6] hover:bg-[#1A2BA6]/20" title="Fiche de paie PDF"><Download className="h-3 w-3" /></button></td>
+                </tr>
+              ))}
+              <tr className="bg-slate-100 font-bold">
+                <td colSpan={3} className="px-2 py-1 text-right">TOTAL</td>
+                <td className="px-2 py-1 text-right">{formatCurrency(payslips.reduce((s,p) => s + Number(p.salaireBase), 0))}</td>
+                <td className="px-2 py-1 text-right">{formatCurrency(payslips.reduce((s,p) => s + Number(p.primeSalissures), 0))}</td>
+                <td className="px-2 py-1 text-right">{formatCurrency(payslips.reduce((s,p) => s + Number(p.gratificationsEtrennes), 0))}</td>
+                <td className="px-2 py-1 text-right">{formatCurrency(totalGross)}</td>
+                <td className="px-2 py-1 text-right">{formatCurrency(totalGross)}</td>
+                <td className="px-2 py-1 text-right">{formatCurrency(payslips.reduce((s,p) => s + Number(p.itsNet), 0))}</td>
+                <td className="px-2 py-1 text-right">{formatCurrency(payslips.reduce((s,p) => s + Number(p.cnssOuvriere), 0))}</td>
+                <td className="px-2 py-1 text-right">{formatCurrency(payslips.reduce((s,p) => s + Number(p.cnssPatronale), 0))}</td>
+                <td className="px-2 py-1 text-right">{formatCurrency(payslips.reduce((s,p) => s + Number(p.vps), 0))}</td>
+                <td className="px-2 py-1 text-right">{formatCurrency(payslips.reduce((s,p) => s + Number(p.avanceAcompte) + Number(p.opposition), 0))}</td>
+                <td className="px-2 py-1 text-right text-emerald-600">{formatCurrency(totalNet)}</td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ─── Tableau État de paiement — VACATAIRES ─── */}
+      {staffType === 'VACATAIRE' && (
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden overflow-x-auto">
+          <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
+            <p className="text-xs font-bold text-slate-700">PERSONNELS VACATAIRES — État de paiement</p>
+          </div>
+          <table className="w-full text-xs">
+            <thead className="bg-[#1A2BA6] text-white">
+              <tr>
+                <th rowSpan={2} className="px-2 py-1 text-left">Nom et Prénoms</th>
+                <th rowSpan={2} className="px-2 py-1 text-left">Sit. Matrim.</th>
+                <th rowSpan={2} className="px-2 py-1 text-left">Date recrut.</th>
+                <th rowSpan={2} className="px-2 py-1 text-right">Salaire</th>
+                <th className="px-2 py-1 text-right">Avantages / Gratifications</th>
+                <th rowSpan={2} className="px-2 py-1 text-right">Salaire Brut</th>
+                <th className="px-2 py-1 text-center" colSpan={3}>Retenues</th>
+                <th rowSpan={2} className="px-2 py-1 text-right">Net à payer</th>
+                <th rowSpan={2} className="px-2 py-1"></th>
+              </tr>
+              <tr>
+                <th className="px-2 py-1 text-right">Gratific. / Étrennes</th>
+                <th className="px-2 py-1 text-right">Avance / salaire</th>
+                <th className="px-2 py-1 text-right">Opposition / Assurance</th>
+                <th className="px-2 py-1 text-right">Taxes Radio/Télé</th>
+              </tr>
+            </thead>
+            <tbody>
+              {payslips.map((p, i) => (
+                <tr key={p.id} className={`border-b border-slate-100 ${i % 2 === 0 ? '' : 'bg-slate-50/30'}`}>
+                  <td className="px-2 py-1 font-bold text-slate-900">{p.staff?.firstName} {p.staff?.lastName}</td>
+                  <td className="px-2 py-1 text-slate-500">{p.staff?.maritalStatus || '—'}</td>
+                  <td className="px-2 py-1 text-slate-500">{p.staff?.hireDate ? new Date(p.staff.hireDate).toLocaleDateString('fr-FR') : '—'}</td>
+                  <td className="px-2 py-1 text-right">{formatCurrency(Number(p.salaireBase))}</td>
+                  <td className="px-2 py-1 text-right">{formatCurrency(Number(p.gratificationsEtrennes))}</td>
+                  <td className="px-2 py-1 text-right font-bold">{formatCurrency(Number(p.salaireBrut))}</td>
+                  <td className="px-2 py-1 text-right text-red-600">{formatCurrency(Number(p.avanceAcompte))}</td>
+                  <td className="px-2 py-1 text-right text-red-600">{formatCurrency(Number(p.opposition))}</td>
+                  <td className="px-2 py-1 text-right text-red-600">{formatCurrency(Number(p.taxesRadioTele))}</td>
+                  <td className="px-2 py-1 text-right font-bold text-emerald-600">{formatCurrency(Number(p.netAPayer))}</td>
+                  <td className="px-1 py-1"><button onClick={() => downloadPayslipPdf(p.id, `${p.staff?.firstName}_${p.staff?.lastName}`)} className="p-1 rounded bg-[#1A2BA6]/10 text-[#1A2BA6] hover:bg-[#1A2BA6]/20" title="Fiche de paie PDF"><Download className="h-3 w-3" /></button></td>
+                </tr>
+              ))}
+              <tr className="bg-slate-100 font-bold">
+                <td colSpan={3} className="px-2 py-1 text-right">TOTAL</td>
+                <td className="px-2 py-1 text-right">{formatCurrency(payslips.reduce((s,p) => s + Number(p.salaireBase), 0))}</td>
+                <td className="px-2 py-1 text-right">{formatCurrency(payslips.reduce((s,p) => s + Number(p.gratificationsEtrennes), 0))}</td>
+                <td className="px-2 py-1 text-right">{formatCurrency(totalGross)}</td>
+                <td className="px-2 py-1 text-right">{formatCurrency(payslips.reduce((s,p) => s + Number(p.avanceAcompte), 0))}</td>
+                <td className="px-2 py-1 text-right">{formatCurrency(payslips.reduce((s,p) => s + Number(p.opposition), 0))}</td>
+                <td className="px-2 py-1 text-right">{formatCurrency(payslips.reduce((s,p) => s + Number(p.taxesRadioTele), 0))}</td>
+                <td className="px-2 py-1 text-right text-emerald-600">{formatCurrency(totalNet)}</td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {payslips.length === 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
+          <FileText className="h-12 w-12 text-slate-300 mx-auto mb-3" />
+          <p className="text-sm text-slate-400">Aucune fiche pour cette période — cliquez sur « Générer fiches ».</p>
+        </div>
+      )}
     </div>
   );
 }

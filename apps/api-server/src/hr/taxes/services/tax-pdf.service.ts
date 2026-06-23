@@ -124,8 +124,17 @@ export class TaxPdfService {
 
     const header = await this.getReportHeader(payslip.tenantId, payslip.academicYearId);
 
+    // Récupérer le logo de l'école
+    const ss = await this.prisma.schoolSettings.findFirst({
+      where: { tenantId: payslip.tenantId },
+      select: { logoUrl: true },
+    }).catch(() => null);
+    let schoolLogo = ss?.logoUrl || '';
+    try { if (schoolLogo) schoolLogo = await this.storageService.resolveFileUrl(schoolLogo); } catch {}
+
     const html = this.buildPayslipHtml({
       schoolName: header?.denominationSociale || '',
+      schoolLogo,
       staffName: `${payslip.staff.firstName} ${payslip.staff.lastName}`,
       staffPosition: payslip.staff.position || '',
       cnssNumber: payslip.staff.cnssNumber || '',
@@ -292,36 +301,72 @@ th{background:#f0f2f5}.total{background:#0b2f73;color:#fff;padding:8px;font-weig
 
   private buildPayslipHtml(d: any): string {
     const r = d.rubriques;
+    const N = '#0b2f73', B = '#1d4fa5', G = '#f5b335';
+    // Format 2 fiches par page (comme le fichier Excel)
+    const ficheHtml = `
+<div class="fiche">
+  <div class="fiche-header">
+    ${d.schoolLogo ? `<img src="${d.schoolLogo}" alt="${d.schoolName}" style="max-height:40px;max-width:120px;object-fit:contain;" />` : ''}
+    <div class="school-info">
+      <h2>${d.schoolName}</h2>
+      <p class="period">FICHE DE PAIE — Mois de ${d.period}</p>
+    </div>
+  </div>
+  <div class="employer-ref">
+    <table class="ref-table"><tbody>
+    <tr><td><strong>NOM:</strong> ${d.staffName}</td><td><strong>FONCTION:</strong> ${d.staffPosition}</td></tr>
+    <tr><td><strong>N° CNSS:</strong> ${d.cnssNumber || '—'}</td><td><strong>Mois de:</strong> ${d.period}</td></tr>
+    </tbody></table>
+  </div>
+  <table class="rubriques">
+    <thead><tr><th>RUBRIQUES</th><th style="text-align:right">MONTANTS</th></thead>
+    <tbody>
+    <tr><td>SALAIRE DE BASE</td><td style="text-align:right">${this.fmt(r.salaireBase)}</td></tr>
+    <tr><td>Moins perçus / arriéré</td><td style="text-align:right">${this.fmt(r.moinsPerces)}</td></tr>
+    <tr><td>Gratifications et étrennes</td><td style="text-align:right">${this.fmt(r.gratifications)}</td></tr>
+    <tr><td>Indemnités</td><td style="text-align:right">${this.fmt(r.indemnites)}</td></tr>
+    <tr><td>Prime de Salissures</td><td style="text-align:right">${this.fmt(r.primeSalissures)}</td></tr>
+    <tr style="font-weight:bold;background:${N};color:#fff;"><td>SALAIRE BRUT</td><td style="text-align:right">${this.fmt(r.salaireBrut)}</td></tr>
+    <tr><td colspan="2" style="background:#f8fafc;font-weight:bold;font-size:10px;">RETENUES</td></tr>
+    <tr><td style="padding-left:20px;">CNSS (Part ouvrière) 3,6%</td><td style="text-align:right">${this.fmt(r.cnssOuvriere)}</td></tr>
+    <tr><td style="padding-left:20px;">ITS net</td><td style="text-align:right">${this.fmt(r.itsNet)}</td></tr>
+    <tr><td style="padding-left:20px;">Avance et Acompte</td><td style="text-align:right">${this.fmt(r.avanceAcompte)}</td></tr>
+    <tr><td style="padding-left:20px;">Opposition</td><td style="text-align:right">${this.fmt(r.opposition)}</td></tr>
+    <tr><td style="padding-left:20px;">Taxes Radio/Télé</td><td style="text-align:right">${this.fmt(r.taxesRadioTele)}</td></tr>
+    <tr style="font-weight:bold;"><td>TOTAL RETENUES</td><td style="text-align:right">${this.fmt(r.totalRetenues)}</td></tr>
+    <tr style="font-weight:bold;font-size:14px;background:${G}30;"><td>NET À PAYER</td><td style="text-align:right">${this.fmt(r.netAPayer)}</td></tr>
+    </tbody>
+  </table>
+  <div class="signatures">
+    <div class="sig-block">
+      <p>Arrêté la présente Fiche de Paie à la somme de:</p>
+      <p style="font-style:italic;border-bottom:1px solid #ddd;padding:8px 0;margin:8px 0;">${this.fmt(r.netAPayer)}</p>
+      <div style="display:flex;justify-content:space-between;margin-top:20px;">
+        <div style="text-align:center;"><p style="font-size:10px;font-weight:bold;">Le Directeur</p><p style="border-top:1px solid #333;margin-top:30px;padding-top:4px;font-size:9px;">Signature et cachet</p></div>
+        <div style="text-align:center;"><p style="font-size:10px;font-weight:bold;">L'Employé(e)</p><p style="border-top:1px solid #333;margin-top:30px;padding-top:4px;font-size:9px;">Signature</p></div>
+      </div>
+    </div>
+  </div>
+</div>`;
+
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
-*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;padding:20px;font-size:12px}
-.header{text-align:center;margin-bottom:15px;border-bottom:3px solid #f5b335;padding-bottom:8px}
-.header h2{color:#0b2f73}.info{margin-bottom:10px}.info div{padding:2px 0}
-table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:5px 8px}
-th{background:#0b2f73;color:#fff;font-size:11px}.right{text-align:right}.bold{font-weight:bold}
-.total{background:#f0f2f5;font-weight:bold;font-size:14px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',Arial,sans-serif;padding:15px;font-size:11px;color:#0f172a}
+.fiche{border:2px solid ${N};border-radius:10px;overflow:hidden;margin-bottom:20px;box-shadow:0 2px 8px rgba(11,47,115,.08)}
+.fiche-header{background:linear-gradient(135deg,${N} 0%,${B} 100%);padding:12px 16px;display:flex;align-items:center;gap:12px}
+.fiche-header h2{color:#fff;font-size:16px}
+.fiche-header .period{color:${G};font-size:11px;margin-top:2px}
+.school-info{flex:1}
+.employer-ref{padding:8px 16px;border-bottom:1px solid #e2e8f0}
+.ref-table{width:100%}.ref-table td{padding:2px 0;font-size:11px}
+.rubriques{width:100%;border-collapse:collapse}.rubriques th{background:${N};color:#fff;padding:4px 8px;font-size:10px;text-align:left}
+.rubriques td{padding:3px 8px;border-bottom:1px solid #f1f5f9;font-size:11px}
+.signatures{padding:12px 16px;border-top:1px solid #e2e8f0}
+.sig-block p{font-size:10px;color:#475569}
+@media print{.fiche{page-break-after:always}.fiche:last-child{page-break-after:auto}}
 </style></head><body>
-<div class="header"><h2>${d.schoolName}</h2><p>FICHE DE PAIE — ${d.period}</p></div>
-<div class="info">
-<div><strong>Nom:</strong> ${d.staffName}</div>
-<div><strong>Fonction:</strong> ${d.staffPosition}</div>
-<div><strong>N° CNSS:</strong> ${d.cnssNumber}</div>
-</div>
-<table><thead><tr><th>RUBRIQUES</th><th class="right">MONTANTS</th></tr></thead>
-<tbody>
-<tr><td>SALAIRE DE BASE</td><td class="right">${this.fmt(r.salaireBase)}</td></tr>
-<tr><td>Moins perçus / arriéré</td><td class="right">${this.fmt(r.moinsPerces)}</td></tr>
-<tr><td>Gratifications et étrennes</td><td class="right">${this.fmt(r.gratifications)}</td></tr>
-<tr><td>Indemnités</td><td class="right">${this.fmt(r.indemnites)}</td></tr>
-<tr><td>Prime de Salissures</td><td class="right">${this.fmt(r.primeSalissures)}</td></tr>
-<tr class="bold"><td>SALAIRE BRUT</td><td class="right">${this.fmt(r.salaireBrut)}</td></tr>
-<tr><td>CNSS (Part ouvrière) 3,6%</td><td class="right">${this.fmt(r.cnssOuvriere)}</td></tr>
-<tr><td>ITS net</td><td class="right">${this.fmt(r.itsNet)}</td></tr>
-<tr><td>Avance et Acompte</td><td class="right">${this.fmt(r.avanceAcompte)}</td></tr>
-<tr><td>Opposition</td><td class="right">${this.fmt(r.opposition)}</td></tr>
-<tr><td>Taxes Radio/Télé</td><td class="right">${this.fmt(r.taxesRadioTele)}</td></tr>
-<tr class="bold"><td>TOTAL RETENUES</td><td class="right">${this.fmt(r.totalRetenues)}</td></tr>
-<tr class="total"><td>NET À PAYER</td><td class="right">${this.fmt(r.netAPayer)}</td></tr>
-</tbody></table>
+${ficheHtml}
+${ficheHtml}
 </body></html>`;
   }
 

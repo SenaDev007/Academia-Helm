@@ -181,6 +181,8 @@ export function PayrollManagement() {
                 <th rowSpan={2} className="px-2 py-1 text-right">Salaire Brut</th>
                 <th className="px-2 py-1 text-center" colSpan={3}>Retenues</th>
                 <th rowSpan={2} className="px-2 py-1 text-right">Net à payer</th>
+                <th rowSpan={2} className="px-2 py-1 text-center">CIN°</th>
+                <th rowSpan={2} className="px-2 py-1 text-center">Signature</th>
                 <th rowSpan={2} className="px-2 py-1"></th>
               </tr>
               <tr>
@@ -203,6 +205,8 @@ export function PayrollManagement() {
                   <td className="px-2 py-1 text-right text-red-600">{formatCurrency(Number(p.opposition))}</td>
                   <td className="px-2 py-1 text-right text-red-600">{formatCurrency(Number(p.taxesRadioTele))}</td>
                   <td className="px-2 py-1 text-right font-bold text-emerald-600">{formatCurrency(Number(p.netAPayer))}</td>
+                  <td className="px-2 py-1 text-center font-mono text-slate-400">{p.staff?.tenantMatricule || '—'}</td>
+                  <td className="px-2 py-1 text-center text-slate-300 italic text-[10px]">Signature</td>
                   <td className="px-1 py-1"><button onClick={() => downloadPayslipPdf(p.id, `${p.staff?.firstName}_${p.staff?.lastName}`)} className="p-1 rounded bg-[#1A2BA6]/10 text-[#1A2BA6] hover:bg-[#1A2BA6]/20" title="Fiche de paie PDF"><Download className="h-3 w-3" /></button></td>
                 </tr>
               ))}
@@ -215,7 +219,7 @@ export function PayrollManagement() {
                 <td className="px-2 py-1 text-right">{formatCurrency(payslips.reduce((s,p) => s + Number(p.opposition), 0))}</td>
                 <td className="px-2 py-1 text-right">{formatCurrency(payslips.reduce((s,p) => s + Number(p.taxesRadioTele), 0))}</td>
                 <td className="px-2 py-1 text-right text-emerald-600">{formatCurrency(totalNet)}</td>
-                <td></td>
+                <td colSpan={3}></td>
               </tr>
             </tbody>
           </table>

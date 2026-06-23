@@ -56,6 +56,7 @@ export function CollaboratorsWorkspace() {
   const [trainingsList, setTrainingsList] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [syncingDepts, setSyncingDepts] = useState(false);
 
   useEffect(() => {
     if (!tenant?.id) return;
@@ -276,7 +277,29 @@ export function CollaboratorsWorkspace() {
 
         {activeTab === 'org_chart' && (
           <motion.div key="org_chart" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-            <h3 className="text-base font-bold text-slate-900">Organigramme</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-900">Organigramme</h3>
+              <button
+                onClick={async () => {
+                  if (!tenant?.id) return;
+                  try {
+                    setSyncingDepts(true);
+                    await hrFetch(hrUrl('staff/sync-departments', { tenantId: tenant.id }), { method: 'POST' });
+                    toast({ variant: 'success', title: 'Départements synchronisés !' });
+                    // Reload staff
+                    const data = await hrFetch<any[]>(hrUrl('staff', { tenantId: tenant.id }));
+                    setStaffList(Array.isArray(data) ? data : []);
+                  } catch (e: any) {
+                    toast({ variant: 'error', title: 'Erreur', description: e.message });
+                  } finally { setSyncingDepts(false); }
+                }}
+                disabled={syncingDepts}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-[#0A2A5E] border border-[#0A2A5E]/20 rounded-lg hover:bg-[#0A2A5E]/5 transition disabled:opacity-50"
+              >
+                {syncingDepts ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                Synchroniser les départements
+              </button>
+            </div>
             {loading ? (
               <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>
             ) : error ? (

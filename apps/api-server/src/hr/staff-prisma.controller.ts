@@ -486,4 +486,20 @@ export class StaffPrismaController {
     }
     return result;
   }
+
+  /**
+   * Synchronise les départements du personnel avec les départements paramétrés.
+   * Met à jour staff.department pour tous les personnels selon les HrJob de l'établissement.
+   */
+  @Post('sync-departments')
+  async syncDepartments(
+    @GetTenant() tenant: any,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis');
+    }
+    return this.staffService.syncDepartments(tid);
+  }
 }

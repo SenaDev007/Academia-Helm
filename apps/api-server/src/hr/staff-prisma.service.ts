@@ -1098,6 +1098,70 @@ export class StaffPrismaService {
    *
    * EducationLevel.name (MATERNELLE, PRIMAIRE, SECONDAIRE) correspond à SchoolLevel.code.
    */
+  /**
+   * Synchronise les départements du personnel avec les départements des postes (HrJob).
+   * Pour chaque staff, met à jour staff.department avec le département de son poste (HrJob).
+   * Si le staff n'a pas de poste lié, garde son département actuel.
+   */
+  async syncDepartments(tenantId: string): Promise<{ updated: number; total: number; details: any[] }> {
+    // 1. Récupérer tous les postes (HrJob) avec leurs départements
+    const jobs = await this.prisma.hrJob.findMany({
+      where: { tenantId },
+      select: { id: true, title: true, department: true },
+    });
+
+    // 2. Construire un mapping jobId → department
+    const jobDeptMap = new Map<string, string>();
+    jobs.forEach(j => {
+      if (j.department) jobDeptMap.set(j.id, j.department);
+    });
+
+    // 3. Récupérer tous les staff avec leur jobId (via applications ou directement)
+    const staff = await this.prisma.staff.findMany({
+      where: { tenantId, status: { not: 'ARCHIVED' } },
+      select: { id: true, firstName: true, lastName: true, department: true, position: true },
+    });
+
+    // 4. Pour chaque staff, vérifier si son département correspond à un département de poste
+    // Si le staff a un département qui n'existe plus dans les postes, le mettre à jour
+    const validDepartments = new Set(jobDeptMap.values());
+    let updated = 0;
+    const details: any[] = [];
+
+    for (const s of staff) {
+      const currentDept = s.department || '';
+      // Si le département actuel n'est pas dans la liste des départements valides
+      // ET qu'il y a des départements disponibles, essayer de le mettre à jour
+      if (currentDept && !validDepartments.has(currentDept) && validDepartments.size > 0) {
+        // Chercher un poste correspondant au position du staff
+        const matchingJob = jobs.find(j => j.title === s.position);
+        const newDept = matchingJob?.department || Array.from(validDepartments)[0] || currentDept;
+
+        if (newDept !== currentDept) {
+          await this.prisma.staff.update({
+            where: { id: s.id },
+            data: { department: newDept },
+          });
+          updated++;
+          details.push({
+            staffId: s.id,
+            name: `${s.firstName} ${s.lastName}`,
+            oldDepartment: currentDept,
+            newDepartment: newDept,
+          });
+        }
+      }
+    }
+
+    this.logger.log(`syncDepartments: ${updated}/${staff.length} staff updated. Valid departments: ${Array.from(validDepartments).join(', ')}`);
+
+    return {
+      updated,
+      total: staff.length,
+      details,
+    };
+  }
+
   private async resolveSchoolLevelId(levelId: string): Promise<string> {
     // 1) Try direct SchoolLevel lookup
     const schoolLevel = await this.prisma.schoolLevel.findUnique({

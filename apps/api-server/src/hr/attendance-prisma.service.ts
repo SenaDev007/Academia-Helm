@@ -8,14 +8,23 @@
  * ============================================================================
  */
 
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { Prisma } from '@prisma/client';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
+import { EmailService } from '../communication/services/email.service';
+import { RecruitmentNotificationService } from './recruitment-notification.service';
+import { renderOvertimeDecisionEmail } from './hr-email-templates';
 
 @Injectable()
 export class AttendancePrismaService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(AttendancePrismaService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly emailService: EmailService,
+    private readonly notificationService: RecruitmentNotificationService,
+  ) {}
 
   // ============================================================================
   // STAFF ATTENDANCE
@@ -259,13 +268,23 @@ export class AttendancePrismaService {
   async processOvertime(id: string, tenantId: string, action: 'VALIDATE' | 'REJECT', validatedBy?: string) {
     const overtime = await this.prisma.overtimeRecord.findFirst({
       where: { id, tenantId },
+      include: {
+        staff: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+      },
     });
 
     if (!overtime) {
       throw new NotFoundException(`Overtime record with ID ${id} not found`);
     }
 
-    return this.prisma.overtimeRecord.update({
+    const updated = await this.prisma.overtimeRecord.update({
       where: { id },
       data: {
         ...prismaUpdateDefaults(),
@@ -273,7 +292,67 @@ export class AttendancePrismaService {
         validatedBy: validatedBy ?? null,
         validatedAt: new Date(),
       },
+      include: {
+        staff: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+      },
     });
+
+    // ─── Envoi de l'email de notification au personnel ──
+    this.sendOvertimeDecisionEmail(updated, tenantId, action).catch((err) => {
+      this.logger.error(`Failed to send overtime decision email: ${err.message}`);
+    });
+
+    return updated;
+  }
+
+  /**
+   * Envoie un email de notification au personnel pour la validation ou le rejet
+   * de ses heures supplémentaires. Utilise le template Helm standardisé.
+   */
+  private async sendOvertimeDecisionEmail(
+    overtime: any,
+    tenantId: string,
+    action: 'VALIDATE' | 'REJECT',
+  ) {
+    try {
+      const staff = overtime.staff;
+      if (!staff?.email) {
+        this.logger.warn(`No email for staff ${staff?.id} — skipping overtime decision notification`);
+        return;
+      }
+
+      const branding = await this.notificationService.getTenantBranding(tenantId);
+
+      const decision = action === 'VALIDATE' ? 'VALIDATED' : 'REJECTED';
+
+      const { subject, html } = renderOvertimeDecisionEmail({
+        branding,
+        staffName: `${staff.firstName} ${staff.lastName}`,
+        date: overtime.date,
+        hours: Number(overtime.hours),
+        reason: overtime.notes,
+        decision,
+        validatorName: undefined, // could be enriched if we fetch the validator user
+      });
+
+      await this.emailService.sendEmail({
+        to: staff.email,
+        subject,
+        html,
+        fromName: branding.schoolName || 'Academia Helm',
+      });
+
+      this.logger.log(`Overtime decision email sent to ${staff.email} (${decision})`);
+    } catch (err) {
+      this.logger.error(`sendOvertimeDecisionEmail failed: ${err.message}`, err.stack);
+    }
   }
 
   /**

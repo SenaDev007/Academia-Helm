@@ -19,7 +19,7 @@
  * ============================================================================
  */
 
-function escHtml(s: string | number | undefined | null): string {
+export function escHtml(s: string | number | undefined | null): string {
   if (s == null) return '';
   return String(s)
     .replace(/&/g, '&amp;')
@@ -149,7 +149,7 @@ export interface RecruitmentEmailData {
  * Construit l'en-tête HTML avec logo + nom de l'école.
  * Si logoUrl est fourni → image, sinon fallback sur les initiales.
  */
-function renderHeader(branding: TenantBranding): string {
+export function renderHeader(branding: TenantBranding): string {
   const schoolName = escHtml(branding.schoolName || 'Établissement');
   // Logo de l'école :
   // - Si URL http(s) → img directe
@@ -196,7 +196,7 @@ function renderHeader(branding: TenantBranding): string {
  * Si un RecruiterProfile est configuré avec une signature personnalisée,
  * elle est affichée en plus de la signature AH par défaut.
  */
-function renderFooter(branding: TenantBranding): string {
+export function renderFooter(branding: TenantBranding): string {
   // Signature personnalisée du recruteur (optionnelle)
   // Le functionLabel est déjà inclus dans la signature la plupart du temps,
   // on ne l'affiche séparément que s'il n'est PAS déjà dans la signature
@@ -243,7 +243,7 @@ function renderFooter(branding: TenantBranding): string {
 /**
  * Wrapper commun — construit l'email complet avec header + corps + footer.
  */
-function renderEmail(
+export function renderEmail(
   branding: TenantBranding,
   bodyContent: string,
 ): string {
@@ -269,7 +269,7 @@ function renderEmail(
 /**
  * Badge coloré (vert/rouge/orange/bleu) pour statut.
  */
-function renderBadge(color: 'green' | 'red' | 'orange' | 'blue', text: string): string {
+export function renderBadge(color: 'green' | 'red' | 'orange' | 'blue', text: string): string {
   const colors = {
     green: { bg: '#ecfdf5', border: '#6ee7b7', text: '#047857' },
     red: { bg: '#fef2f2', border: '#fca5a5', text: '#b91c1c' },

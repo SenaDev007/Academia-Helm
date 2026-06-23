@@ -244,9 +244,13 @@ export function LeavesWorkspace() {
                   <motion.tr key={request.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.04 }} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold shrink-0" style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}>
-                          {request.staff?.firstName?.[0]}{request.staff?.lastName?.[0]}
-                        </div>
+                        {request.staff?.photoUrl ? (
+                          <img src={request.staff.photoUrl} alt={`${request.staff?.firstName} ${request.staff?.lastName}`} className="w-9 h-9 rounded-xl object-cover shrink-0" />
+                        ) : (
+                          <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold shrink-0" style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}>
+                            {request.staff?.firstName?.[0]}{request.staff?.lastName?.[0]}
+                          </div>
+                        )}
                         <div>
                           <p className="text-sm font-bold text-slate-900">{request.staff?.firstName} {request.staff?.lastName}</p>
                           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{request.staff?.staffCode || request.staff?.employeeNumber}</p>

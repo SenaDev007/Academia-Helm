@@ -20,13 +20,33 @@
  * ============================================================================
  */
 
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
+import { EmailService } from '../communication/services/email.service';
+import { RecruitmentNotificationService } from './recruitment-notification.service';
+import { StorageService } from '../common/services/storage.service';
+import { renderLeaveDecisionEmail } from './hr-email-templates';
+
+const LEAVE_TYPE_LABELS: Record<string, string> = {
+  ANNUAL: 'Congé annuel',
+  SICK: 'Congé maladie',
+  MATERNITY: 'Congé maternité',
+  PATERNITY: 'Congé paternité',
+  UNPAID: 'Congé sans solde',
+  EXCEPTIONAL: 'Congé exceptionnel',
+};
 
 @Injectable()
 export class LeavesPrismaService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(LeavesPrismaService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly emailService: EmailService,
+    private readonly notificationService: RecruitmentNotificationService,
+    private readonly storageService: StorageService,
+  ) {}
 
   // ============================================================================
   // LEAVE REQUESTS
@@ -190,7 +210,7 @@ export class LeavesPrismaService {
       updateData.rejectedReason = rejectedReason;
     }
 
-    return this.prisma.leaveRequest.update({
+    const updated = await this.prisma.leaveRequest.update({
       where: { id },
       data: {
         ...prismaUpdateDefaults(),
@@ -203,6 +223,7 @@ export class LeavesPrismaService {
             employeeNumber: true,
             firstName: true,
             lastName: true,
+            email: true,
           },
         },
         approver: {
@@ -214,6 +235,73 @@ export class LeavesPrismaService {
         },
       },
     });
+
+    // ─── Envoi de l'email de notification au personnel ──
+    if (status === 'APPROVED' || status === 'REJECTED') {
+      this.sendLeaveDecisionEmail(updated, tenantId, status, rejectedReason).catch((err) => {
+        this.logger.error(`Failed to send leave decision email: ${err.message}`);
+      });
+    }
+
+    return updated;
+  }
+
+  /**
+   * Envoie un email de notification au personnel pour l'approbation ou le rejet
+   * de sa demande de congé. Utilise le template Helm standardisé.
+   */
+  private async sendLeaveDecisionEmail(
+    leaveRequest: any,
+    tenantId: string,
+    decision: 'APPROVED' | 'REJECTED',
+    rejectionReason?: string,
+  ) {
+    try {
+      const staff = leaveRequest.staff;
+      if (!staff?.email) {
+        this.logger.warn(`No email for staff ${staff?.id} — skipping leave decision notification`);
+        return;
+      }
+
+      const branding = await this.notificationService.getTenantBranding(tenantId);
+
+      // Calculate days count
+      const startDate = new Date(leaveRequest.startDate);
+      const endDate = new Date(leaveRequest.endDate);
+      const daysCount = Math.ceil(
+        Math.abs(endDate.getTime() - startDate.getTime()) / 86400000,
+      ) + 1;
+
+      const approver = leaveRequest.approver;
+      const approverName = approver
+        ? `${approver.firstName || ''} ${approver.lastName || ''}`.trim()
+        : undefined;
+
+      const { subject, html } = renderLeaveDecisionEmail({
+        branding,
+        staffName: `${staff.firstName} ${staff.lastName}`,
+        leaveType: leaveRequest.type,
+        leaveTypeLabel: LEAVE_TYPE_LABELS[leaveRequest.type] || leaveRequest.type,
+        startDate: leaveRequest.startDate,
+        endDate: leaveRequest.endDate,
+        daysCount,
+        reason: leaveRequest.reason,
+        decision,
+        rejectionReason,
+        approverName,
+      });
+
+      await this.emailService.sendEmail({
+        to: staff.email,
+        subject,
+        html,
+        fromName: branding.schoolName || 'Academia Helm',
+      });
+
+      this.logger.log(`Leave decision email sent to ${staff.email} (${decision})`);
+    } catch (err) {
+      this.logger.error(`sendLeaveDecisionEmail failed: ${err.message}`, err.stack);
+    }
   }
 
   /**
@@ -241,7 +329,7 @@ export class LeavesPrismaService {
     if (filters?.status) where.status = filters.status;
     if (filters?.type) where.type = filters.type;
 
-    return this.prisma.leaveRequest.findMany({
+    const requests = await this.prisma.leaveRequest.findMany({
       where,
       include: {
         staff: {
@@ -252,11 +340,24 @@ export class LeavesPrismaService {
             lastName: true,
             position: true,
             roleType: true,
+            photo: { select: { thumbnailUrl: true } },
           },
         },
       },
       orderBy: { startDate: 'desc' },
     });
+
+    // Resolve photo URLs for R2/S3 storage
+    return Promise.all(requests.map(async (r) => ({
+      ...r,
+      staff: r.staff ? {
+        ...r.staff,
+        staffCode: r.staff.employeeNumber,
+        photoUrl: r.staff.photo?.thumbnailUrl
+          ? await this.storageService.resolveFileUrl(r.staff.photo.thumbnailUrl)
+          : null,
+      } : r.staff,
+    })));
   }
 
   /**

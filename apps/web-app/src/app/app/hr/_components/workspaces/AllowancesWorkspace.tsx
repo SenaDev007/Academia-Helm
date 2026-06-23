@@ -11,6 +11,29 @@ import { toast } from '@/components/ui/toast';
 
 const PRIMARY = '#1A2BA6';
 
+// Liste complète des types d'indemnité courants dans le domaine éducatif
+// Aucun montant par défaut — c'est l'établissement qui fixe les prix
+const PREDEFINED_ALLOWANCE_TYPES: Array<{ name: string; code: string; description: string }> = [
+  { name: 'Indemnité de Logement', code: 'LOGEMENT', description: 'Indemnité versée pour le logement du personnel' },
+  { name: 'Indemnité de Transport', code: 'TRANSPORT', description: 'Indemnité de transport aller-retour domicile-travail' },
+  { name: 'Prime de Responsabilité', code: 'RESPONSABILITE', description: 'Prime liée aux fonctions de responsabilité' },
+  { name: 'Indemnité d\'Enseignement', code: 'ENSEIGNEMENT', description: 'Indemnité pour heures d\'enseignement supplémentaires' },
+  { name: 'Prime de Sujet d\'Examen', code: 'SUJET_EXAMEN', description: 'Rémunération pour la composition de sujets d\'examens' },
+  { name: 'Indemnité de Surveillance', code: 'SURVEILLANCE', description: 'Indemnité pour la surveillance des examens' },
+  { name: 'Indemnité de Correction', code: 'CORRECTION', description: 'Rémunération pour la correction de copies d\'examens' },
+  { name: 'Prime de Direction', code: 'DIRECTION', description: 'Prime allouée aux directeurs/coordonnateurs' },
+  { name: 'Indemnité de Coordination', code: 'COORDINATION', description: 'Indemnité pour coordination pédagogique' },
+  { name: 'Prime de Motivation', code: 'MOTIVATION', description: 'Prime de motivation et d\'encouragement' },
+  { name: 'Indemnité de Fonction', code: 'FONCTION', description: 'Indemnité liée à la fonction occupée' },
+  { name: 'Prime d\'Ancienneté', code: 'ANCIENNETE', description: 'Prime basée sur l\'ancienneté dans l\'établissement' },
+  { name: 'Indemnité de Repas', code: 'REPAS', description: 'Indemnité pour les repas du personnel' },
+  { name: 'Indemnité de Communication', code: 'COMMUNICATION', description: 'Indemnité téléphone/internet professionnel' },
+  { name: 'Prime de Performance', code: 'PERFORMANCE', description: 'Prime basée sur l\'évaluation des performances' },
+  { name: 'Indemnité de Risk / Travail Pénible', code: 'RISQUE', description: 'Indemnité pour conditions de travail difficiles' },
+  { name: 'Prime de Fin d\'Année', code: 'FIN_ANNEE', description: 'Prime de fin d\'année (13ème mois)' },
+  { name: 'Indemnité de Congé Annuel', code: 'CONGE_ANNUEL', description: 'Indemnité compensatrice de congé annuel' },
+];
+
 export function AllowancesWorkspace() {
   const confirmDialog = useConfirmDialog();
   const { tenant } = useModuleContext();
@@ -28,8 +51,7 @@ export function AllowancesWorkspace() {
   const [typeName, setTypeName] = useState('');
   const [typeCode, setTypeCode] = useState('');
   const [typeDescription, setTypeDescription] = useState('');
-  const [typeAmount, setTypeAmount] = useState('');
-  const [typeCategory, setTypeCategory] = useState('HOUSING'); // HOUSING, TRANSPORT, MEAL, etc.
+  const [typePreset, setTypePreset] = useState('');
   const [savingType, setSavingType] = useState(false);
 
   // Form states - Assignment
@@ -89,9 +111,7 @@ export function AllowancesWorkspace() {
           name: typeName,
           code: typeCode,
           description: typeDescription,
-          amount: parseFloat(typeAmount) || undefined,
-          defaultAmount: parseFloat(typeAmount) || undefined,
-          category: typeCategory,
+          // No default amount — the school sets the amount at assignment time
         },
       });
       // Refresh types
@@ -102,7 +122,7 @@ export function AllowancesWorkspace() {
       setTypeName('');
       setTypeCode('');
       setTypeDescription('');
-      setTypeAmount('');
+      setTypePreset('');
       toast({ variant: 'success', title: 'Type d\'indemnité créé avec succès' });
     } catch (err) {
       console.error('Error creating allowance type:', err);
@@ -189,9 +209,13 @@ export function AllowancesWorkspace() {
                   )}
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0" style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}>
-                      {member.firstName?.[0]}{member.lastName?.[0]}
-                    </div>
+                    {member.photoUrl ? (
+                      <img src={member.photoUrl} alt={`${member.firstName} ${member.lastName}`} className="w-8 h-8 rounded-lg object-cover shrink-0" />
+                    ) : (
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0" style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}>
+                        {member.firstName?.[0]}{member.lastName?.[0]}
+                      </div>
+                    )}
                     <div>
                       <p className="text-sm font-bold text-slate-900">{member.firstName} {member.lastName}</p>
                       <p className="text-[10px] text-slate-400 uppercase tracking-wider">{member.staffCode}</p>
@@ -222,9 +246,8 @@ export function AllowancesWorkspace() {
                     return;
                   }
                   setAssignType(allowanceTypes[0].id);
-                  // Use 'amount' field (DB field name), fallback to defaultAmount
-                  const firstAmount = allowanceTypes[0].amount ?? allowanceTypes[0].defaultAmount ?? 0;
-                  setAssignAmount(firstAmount.toString());
+                  // No default amount — school enters it manually
+                  setAssignAmount('');
                   setAssignStartDate(new Date().toISOString().split('T')[0]);
                   setAssignEndDate('');
                   setIsAssignModalOpen(true);
@@ -291,22 +314,55 @@ export function AllowancesWorkspace() {
             </div>
             <form onSubmit={handleCreateType} className="space-y-4">
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Nom</label>
-                <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={typeName} onChange={(e) => setTypeName(e.target.value)} required />
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Type d'indemnité</label>
+                <select
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:border-[#1A2BA6]"
+                  value={typePreset}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setTypePreset(val);
+                    if (val !== 'CUSTOM') {
+                      const preset = PREDEFINED_ALLOWANCE_TYPES.find(p => p.code === val);
+                      if (preset) {
+                        setTypeName(preset.name);
+                        setTypeCode(preset.code);
+                        setTypeDescription(preset.description);
+                      }
+                    } else {
+                      setTypeName('');
+                      setTypeCode('');
+                      setTypeDescription('');
+                    }
+                  }}
+                >
+                  <option value="">— Sélectionner un type —</option>
+                  {PREDEFINED_ALLOWANCE_TYPES.map((p) => (
+                    <option key={p.code} value={p.code}>{p.name}</option>
+                  ))}
+                  <option value="CUSTOM">Autre (saisie manuelle)</option>
+                </select>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              {typePreset === 'CUSTOM' && (
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Nom de l'indemnité</label>
+                  <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={typeName} onChange={(e) => setTypeName(e.target.value)} placeholder="Ex: Prime spéciale" required />
+                </div>
+              )}
+              {typePreset === 'CUSTOM' && (
                 <div>
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Code</label>
-                  <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={typeCode} onChange={(e) => setTypeCode(e.target.value)} placeholder="Ex: LOGEMENT" required />
+                  <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={typeCode} onChange={(e) => setTypeCode(e.target.value)} placeholder="Ex: PRIME_SPECIALE" required />
                 </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Montant par défaut</label>
-                  <input type="number" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={typeAmount} onChange={(e) => setTypeAmount(e.target.value)} required />
-                </div>
-              </div>
+              )}
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Description</label>
                 <textarea className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm h-20" value={typeDescription} onChange={(e) => setTypeDescription(e.target.value)} />
+              </div>
+              <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+                <p className="text-xs text-blue-700">
+                  <strong>Note :</strong> Aucun montant par défaut n'est fixé ici.
+                  Le montant sera défini au moment de l'assignation à chaque collaborateur.
+                </p>
               </div>
               <div className="flex gap-2 justify-end">
                 <button type="button" onClick={() => setIsTypeModalOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm">Annuler</button>
@@ -333,26 +389,16 @@ export function AllowancesWorkspace() {
                 <select
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:border-[#1A2BA6]"
                   value={assignType}
-                  onChange={(e) => {
-                    setAssignType(e.target.value);
-                    const selected = allowanceTypes.find(t => t.id === e.target.value);
-                    if (selected) {
-                      const amt = selected.amount ?? selected.defaultAmount ?? 0;
-                      setAssignAmount(amt.toString());
-                    }
-                  }}
+                  onChange={(e) => setAssignType(e.target.value)}
                 >
-                  {allowanceTypes.map(t => {
-                    const amt = t.amount ?? t.defaultAmount ?? 0;
-                    return (
-                      <option key={t.id} value={t.id}>{t.name} ({amt} F CFA)</option>
-                    );
-                  })}
+                  {allowanceTypes.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
                 </select>
               </div>
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Montant Spécifique (F CFA)</label>
-                <input type="number" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={assignAmount} onChange={(e) => setAssignAmount(e.target.value)} required />
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Montant (F CFA) — à définir</label>
+                <input type="number" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={assignAmount} onChange={(e) => setAssignAmount(e.target.value)} placeholder="Saisir le montant" required />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>

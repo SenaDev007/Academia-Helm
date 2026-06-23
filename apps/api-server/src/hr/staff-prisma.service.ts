@@ -176,18 +176,35 @@ export class StaffPrismaService {
     category?: string;
     status?: string;
     levelAssigned?: string;
+    includePromoter?: boolean;
   }) {
     const where: any = { tenantId };
-    // Exclure le PROMOTEUR du comptage et de la liste du personnel
-    // (il est le responsable, pas un employé compté dans l'effectif)
-    where.roleType = { not: 'PROMOTEUR' };
+    // Exclure le PROMOTEUR par défaut du comptage et de la liste du personnel
+    // (il est le responsable, pas un employé compté dans l'effectif).
+    // Si includePromoter=true ET que le promoteur est ACTIVE (non ARCHIVED),
+    // on l'inclut. S'il est ARCHIVED, il reste exclu même avec includePromoter=true.
+    if (filters?.includePromoter) {
+      // Inclure le promoteur seulement s'il n'est pas ARCHIVED
+      where.OR = [
+        { roleType: { not: 'PROMOTEUR' } },
+        { roleType: 'PROMOTEUR', status: { not: 'ARCHIVED' } },
+      ];
+    } else {
+      where.roleType = { not: 'PROMOTEUR' };
+    }
     if (filters?.academicYearId) where.academicYearId = filters.academicYearId;
     if (filters?.status && filters.status !== 'ALL') where.status = filters.status;
     if (filters?.category) {
-      // Mapper category UI → roleType (sans écraser l'exclusion PROMOTEUR)
+      // Mapper category UI → roleType
       const role = CATEGORY_TO_ROLE[filters.category];
       if (role) {
-        where.roleType = { in: [role] }; // Remplace l'exclusion PROMOTEUR par le filtre catégorie
+        // Si on inclut le promoteur, on filtre par catégorie spécifique
+        // Sinon, on filtre par catégorie ET on exclut PROMOTEUR
+        if (filters.includePromoter) {
+          where.roleType = { in: [role] };
+        } else {
+          where.roleType = { in: [role], not: 'PROMOTEUR' };
+        }
       }
     }
     if (filters?.levelAssigned) {
@@ -1169,6 +1186,80 @@ export class StaffPrismaService {
       updated,
       total: staff.length,
       details,
+    };
+  }
+
+  /**
+   * Active ou désactive le PROMOTEUR.
+   * - active=true  → status='ACTIVE'  (visible dans toutes les listes RH via includePromoter=true)
+   * - active=false → status='ARCHIVED' (invisible dans toutes les listes RH)
+   *
+   * Note: Le promoteur est toujours exclu par défaut (roleType=PROMOTEUR).
+   * Quand il est ACTIVE, le frontend peut passer includePromoter=true pour l'afficher.
+   * Quand il est ARCHIVED, il ne doit pas apparaître même avec includePromoter=true.
+   */
+  async togglePromoter(tenantId: string, active: boolean) {
+    const promoter = await this.prisma.staff.findFirst({
+      where: { tenantId, roleType: 'PROMOTEUR' },
+    });
+
+    if (!promoter) {
+      throw new NotFoundException('Aucun promoteur trouvé pour ce tenant');
+    }
+
+    const newStatus = active ? 'ACTIVE' : 'ARCHIVED';
+    await this.prisma.staff.update({
+      where: { id: promoter.id },
+      data: {
+        ...prismaUpdateDefaults(),
+        status: newStatus,
+        ...(active ? {
+          terminationType: null,
+          terminationDetails: null,
+          terminatedAt: null,
+        } : {
+          terminationType: 'OTHER',
+          terminationDetails: { reason: 'Promoteur désactivé du module RH' },
+          terminatedAt: new Date(),
+        }),
+      },
+    });
+
+    this.logger.log(`Promoteur ${active ? 'activé' : 'désactivé'} pour tenant ${tenantId}`);
+
+    return {
+      success: true,
+      active,
+      status: newStatus,
+      message: active
+        ? 'Le promoteur est maintenant visible dans les listes du module RH'
+        : 'Le promoteur est maintenant masqué de toutes les listes du module RH',
+    };
+  }
+
+  /**
+   * Récupère l'état du PROMOTEUR (actif/inactif).
+   */
+  async getPromoterStatus(tenantId: string) {
+    const promoter = await this.prisma.staff.findFirst({
+      where: { tenantId, roleType: 'PROMOTEUR' },
+      select: { id: true, firstName: true, lastName: true, status: true, position: true },
+    });
+
+    if (!promoter) {
+      return { exists: false, active: false, promoter: null };
+    }
+
+    return {
+      exists: true,
+      active: promoter.status === 'ACTIVE',
+      promoter: {
+        id: promoter.id,
+        firstName: promoter.firstName,
+        lastName: promoter.lastName,
+        position: promoter.position,
+        status: promoter.status,
+      },
     };
   }
 

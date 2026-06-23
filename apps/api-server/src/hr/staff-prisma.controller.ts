@@ -76,6 +76,7 @@ export class StaffPrismaController {
     @Query('category') category?: string,
     @Query('status') status?: string,
     @Query('levelAssigned') levelAssigned?: string,
+    @Query('includePromoter') includePromoter?: string,
     @Query('tenantId') tenantIdFallback?: string,
   ) {
     const tid = tenant?.id ?? tenantIdFallback;
@@ -84,6 +85,7 @@ export class StaffPrismaController {
       category,
       status,
       levelAssigned,
+      includePromoter: includePromoter === 'true',
     });
   }
 
@@ -501,5 +503,38 @@ export class StaffPrismaController {
       throw new BadRequestException('Tenant ID requis');
     }
     return this.staffService.syncDepartments(tid);
+  }
+
+  /**
+   * Active ou désactive le PROMOTEUR (le rendre visible/invisible dans les listes RH).
+   * Quand le promoteur est désactivé (status=ARCHIVED), il n'apparaît dans AUCUNE liste RH.
+   * Quand il est activé (status=ACTIVE), il apparaît dans toutes les listes.
+   */
+  @Post('toggle-promoter')
+  async togglePromoter(
+    @GetTenant() tenant: any,
+    @Body() body: { active: boolean },
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis');
+    }
+    return this.staffService.togglePromoter(tid, body.active);
+  }
+
+  /**
+   * Récupère l'état du PROMOTEUR (actif/inactif) pour le toggle frontend.
+   */
+  @Get('promoter-status')
+  async getPromoterStatus(
+    @GetTenant() tenant: any,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis');
+    }
+    return this.staffService.getPromoterStatus(tid);
   }
 }

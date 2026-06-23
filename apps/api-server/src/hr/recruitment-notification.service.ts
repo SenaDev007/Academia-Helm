@@ -64,7 +64,7 @@ export class RecruitmentNotificationService {
    * Si un `RecruiterProfile` est configuré, son email/signature sont utilisés
    * pour personnaliser l'envoi (from, signature dans le footer).
    */
-  private async getTenantBranding(tenantId: string): Promise<TenantBranding> {
+  async getTenantBranding(tenantId: string): Promise<TenantBranding> {
     try {
       // 0. Récupérer le RecruiterProfile (config recruteur) pour l'email + signature
       const recruiterProfile = await this.prisma.recruiterProfile

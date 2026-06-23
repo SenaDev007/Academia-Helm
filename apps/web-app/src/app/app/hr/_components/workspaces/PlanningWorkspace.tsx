@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { CalendarDays, Clock, Search, User, Filter, AlertCircle, Plus, Sparkles, PlusCircle, ChevronLeft, ChevronRight, Loader2, Users } from 'lucide-react';
+import { CalendarDays, Clock, Search, User, Filter, AlertCircle, Plus, Sparkles, PlusCircle, ChevronLeft, ChevronRight, Loader2, Users, Check, Printer } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { toast } from '@/components/ui/toast';
@@ -61,6 +61,8 @@ export function PlanningWorkspace() {
   const [searchQuery, setSearchQuery] = useState('');
   const [weekOffset, setWeekOffset] = useState(0);
   const [assignments, setAssignments] = useState<Record<string, AssignmentValue>>({});
+  const [weekAssignStaffId, setWeekAssignStaffId] = useState('');
+  const [assigningWeek, setAssigningWeek] = useState(false);
 
   const weekDates = getWeekDates(weekOffset);
   const weekLabel = `${weekDates[0].toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} — ${weekDates[5].toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}`;
@@ -211,6 +213,136 @@ export function PlanningWorkspace() {
     }
   };
 
+  // Assign the same staff member to ALL shifts (MORNING + AFTERNOON) for ALL days of the week
+  const handleAssignWeek = async () => {
+    if (!weekAssignStaffId || !tenant?.id) return;
+    setAssigningWeek(true);
+    const staffMember = staffList.find(s => s.id === weekAssignStaffId);
+    const role = staffMember?.position || '';
+    let created = 0;
+    let updated = 0;
+    let failed = 0;
+
+    for (let dayIdx = 0; dayIdx < DAYS_OF_WEEK.length; dayIdx++) {
+      const dayName = DAYS_OF_WEEK[dayIdx];
+      const date = weekDates[dayIdx];
+      const dayOfWeek = DAY_OF_WEEK_MAP[dayName] || 'MONDAY';
+
+      for (const shift of SHIFTS) {
+        const key = `${dayName}-${shift.name}`;
+        const prev = assignments[key];
+        try {
+          if (prev?.scheduleId) {
+            // Update existing
+            await hrFetch<any>(hrUrl(`schedules/${prev.scheduleId}`, { tenantId: tenant.id }), {
+              method: 'PUT',
+              body: {
+                staffId: weekAssignStaffId,
+                dayOfWeekName: dayOfWeek,
+                shiftType: shift.type,
+                startTime: shift.startTime,
+                endTime: shift.endTime,
+                role,
+                date: formatDateKey(date),
+                shift: shift.type,
+                ...(academicYear?.id ? { academicYearId: academicYear.id } : {}),
+                tenantId: tenant?.id,
+              },
+            });
+            updated++;
+          } else {
+            // Create new
+            const result = await hrFetch<any>(hrUrl('schedules', { tenantId: tenant.id }), {
+              method: 'POST',
+              body: {
+                staffId: weekAssignStaffId,
+                dayOfWeekName: dayOfWeek,
+                shiftType: shift.type,
+                startTime: shift.startTime,
+                endTime: shift.endTime,
+                role,
+                date: formatDateKey(date),
+                shift: shift.type,
+                ...(academicYear?.id ? { academicYearId: academicYear.id } : {}),
+                tenantId: tenant?.id,
+              },
+            });
+            setAssignments((prev) => ({
+              ...prev,
+              [key]: { staffId: weekAssignStaffId, scheduleId: result?.id, role },
+            }));
+            created++;
+          }
+        } catch (err) {
+          failed++;
+        }
+      }
+    }
+
+    toast({
+      variant: failed > 0 ? 'default' : 'success',
+      title: 'Semaine assignée',
+      description: `${created + updated} créneau(x) mis à jour${failed > 0 ? `, ${failed} échec(s)` : ''}`,
+    });
+    setWeekAssignStaffId('');
+    setAssigningWeek(false);
+    // Reload to ensure consistency
+    loadSchedules();
+  };
+
+  // Print the weekly planning grid
+  const handlePrintPlanning = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const N = '#0b2f73', B = '#1d4fa5', G = '#f5b335';
+    const rows = SHIFTS.map((shift) => `
+      <tr>
+        <td style="padding:8px;font-weight:bold;background:${N};color:#fff;border:1px solid #ddd;">
+          ${shift.name}<br/><span style="font-size:10px;font-weight:normal;">${shift.time}</span>
+        </td>
+        ${DAYS_OF_WEEK.map((day) => {
+          const key = `${day}-${shift.name}`;
+          const assigned = assignments[key];
+          const staff = assigned?.staffId ? getStaffById(assigned.staffId) : null;
+          return `<td style="padding:8px;border:1px solid #ddd;text-align:center;${staff ? `background:#f0f7ff;` : ''}">
+            ${staff ? `<strong>${staff.firstName} ${staff.lastName}</strong><br/><span style="font-size:10px;color:#666;">${staff.position || ''}</span>` : '<span style="color:#ccc;">—</span>'}
+          </td>`;
+        }).join('')}
+      </tr>
+    `).join('');
+
+    printWindow.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Planning Hebdomadaire — ${weekLabel}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;padding:20px;font-size:12px}
+.header{text-align:center;margin-bottom:15px;border-bottom:3px solid ${G};padding-bottom:10px}
+.header h1{color:${N};font-size:18px}.header h2{font-size:13px;color:${B};margin-top:3px}
+table{width:100%;border-collapse:collapse;margin-bottom:10px}
+th,td{border:1px solid #ddd;padding:6px 8px;text-align:left;font-size:11px}
+th{background:${N};color:#fff}
+.footer{margin-top:20px;text-align:center;font-size:9px;color:#999;border-top:1px solid #ddd;padding-top:8px}
+@media print{body{padding:10px}}
+</style></head><body>
+<div class="header">
+<h1>PLANNING HEBDOMADAIRE — GRADE / PERMANENCE</h1>
+<h2>Semaine du ${weekLabel}</h2>
+<p style="font-size:10px;margin-top:3px">Généré le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</p>
+</div>
+<table>
+<thead><tr>
+<th style="width:120px">Horaires</th>
+${DAYS_OF_WEEK.map((d, i) => `<th>${d}<br/><span style="font-size:10px;font-weight:normal;">${weekDates[i]?.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</span></th>`).join('')}
+</tr></thead>
+<tbody>${rows}</tbody>
+</table>
+<div class="footer">
+<p>Academia Helm — Plateforme de pilotage éducatif</p>
+</div>
+</body></html>`);
+    printWindow.document.close();
+    setTimeout(() => printWindow.print(), 500);
+  };
+
   const getStaffById = (id: string) => staffList.find(s => s.id === id);
 
   const getCategoryColor = (staffId: string) => {
@@ -260,7 +392,38 @@ export function PlanningWorkspace() {
           <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
             <CalendarDays className="h-4 w-4 text-slate-400" /> Grille de Garde / Permanence
           </h4>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Assign same person for entire week */}
+            <div className="flex items-center gap-1.5 mr-2">
+              <select
+                className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-600 focus:outline-none focus:border-[#1A2BA6]"
+                value={weekAssignStaffId}
+                onChange={(e) => setWeekAssignStaffId(e.target.value)}
+                title="Choisir une personne pour toute la semaine"
+              >
+                <option value="">— Toute la semaine —</option>
+                {staffList.map((s) => (
+                  <option key={s.id} value={s.id}>{s.firstName} {s.lastName}</option>
+                ))}
+              </select>
+              <button
+                onClick={handleAssignWeek}
+                disabled={!weekAssignStaffId || assigningWeek}
+                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-white rounded-lg disabled:opacity-50 transition whitespace-nowrap"
+                style={{ backgroundColor: PRIMARY }}
+                title="Assigner cette personne à tous les créneaux de la semaine"
+              >
+                {assigningWeek ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />} Assigner
+              </button>
+            </div>
+            {/* Print button */}
+            <button
+              onClick={handlePrintPlanning}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition whitespace-nowrap"
+              title="Imprimer le planning"
+            >
+              <Printer className="h-3.5 w-3.5" /> Imprimer
+            </button>
             <button onClick={() => setWeekOffset((w) => w - 1)} className="p-1.5 rounded-lg hover:bg-slate-200 transition-colors border border-slate-200">
               <ChevronLeft className="h-4 w-4 text-slate-500" />
             </button>
@@ -391,9 +554,13 @@ export function PlanningWorkspace() {
               return (
                 <div key={s.id} className="flex items-center justify-between p-3 border border-slate-100 rounded-xl hover:bg-slate-50/50 transition">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold font-mono" style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}>
-                      {s.firstName?.[0]}{s.lastName?.[0]}
-                    </div>
+                    {s.photoUrl ? (
+                      <img src={s.photoUrl} alt={`${s.firstName} ${s.lastName}`} className="w-8 h-8 rounded-lg object-cover shrink-0" />
+                    ) : (
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold font-mono" style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}>
+                        {s.firstName?.[0]}{s.lastName?.[0]}
+                      </div>
+                    )}
                     <div>
                       <p className="text-xs font-bold text-slate-900">{s.firstName} {s.lastName}</p>
                       <p className="text-[10px] text-slate-400 mt-0.5">{s.position || 'Général'}</p>

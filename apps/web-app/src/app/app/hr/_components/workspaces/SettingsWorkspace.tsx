@@ -5,6 +5,7 @@ import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Save, Settings, ShieldAlert, CheckCircle2, Loader2,
   FileText, Plus, Trash2, Edit3, X, ArrowUp, ArrowDown,
+  UserCog, ToggleLeft, ToggleRight,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -23,7 +24,60 @@ const CONTRACT_TYPES = [
 export function SettingsWorkspace() {
   const confirmDialog = useConfirmDialog();
   const { tenant } = useModuleContext();
-  const [activeTab, setActiveTab] = useState<'payroll' | 'templates'>('payroll');
+  const [activeTab, setActiveTab] = useState<'payroll' | 'templates' | 'promoter'>('payroll');
+
+  // ── Promoter Status ──────────────────────────────────────────────────────
+  const [promoterStatus, setPromoterStatus] = useState<any>(null);
+  const [promoterLoading, setPromoterLoading] = useState(false);
+  const [promoterToggling, setPromoterToggling] = useState(false);
+
+  const fetchPromoterStatus = async () => {
+    if (!tenant?.id) return;
+    try {
+      setPromoterLoading(true);
+      const res = await hrFetch<any>(hrUrl('staff/promoter-status', { tenantId: tenant.id }));
+      setPromoterStatus(res);
+    } catch (e: any) {
+      console.error('Error loading promoter status:', e);
+    } finally {
+      setPromoterLoading(false);
+    }
+  };
+
+  const handleTogglePromoter = async () => {
+    if (!tenant?.id || !promoterStatus?.exists) return;
+    const newActive = !promoterStatus.active;
+    const confirmed = window.confirm(
+      newActive
+        ? `Activer le promoteur (${promoterStatus.promoter.firstName} ${promoterStatus.promoter.lastName}) ?\n\nIl apparaîtra dans toutes les listes du module RH.`
+        : `Désactiver le promoteur (${promoterStatus.promoter.firstName} ${promoterStatus.promoter.lastName}) ?\n\nIl sera masqué de toutes les listes du module RH (Personnel, Contrats, Planning, Indemnités, Congés, etc.).`
+    );
+    if (!confirmed) return;
+
+    try {
+      setPromoterToggling(true);
+      await hrFetch(hrUrl('staff/toggle-promoter', { tenantId: tenant.id }), {
+        method: 'POST',
+        body: { active: newActive },
+      });
+      toast({
+        variant: 'success',
+        title: newActive ? 'Promoteur activé' : 'Promoteur désactivé',
+        description: newActive
+          ? 'Le promoteur est maintenant visible dans les listes du module RH'
+          : 'Le promoteur est maintenant masqué de toutes les listes du module RH',
+      });
+      fetchPromoterStatus();
+    } catch (e: any) {
+      toast({ variant: 'error', title: 'Erreur', description: e.message });
+    } finally {
+      setPromoterToggling(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'promoter') fetchPromoterStatus();
+  }, [activeTab, tenant?.id]);
 
   // ── Payroll Settings ──────────────────────────────────────────────────────
   const [rates, setRates] = useState<any>({
@@ -249,11 +303,12 @@ export function SettingsWorkspace() {
         {[
           { id: 'payroll', label: 'Taux & Cotisations', icon: Settings },
           { id: 'templates', label: 'Modèles de Contrats', icon: FileText },
+          { id: 'promoter', label: 'Promoteur', icon: UserCog },
         ].map(({ id, label, icon: Icon }) => (
           <button
             key={id}
-            onClick={() => setActiveTab(id as 'payroll' | 'templates')}
-            className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-all"
+            onClick={() => setActiveTab(id as 'payroll' | 'templates' | 'promoter')}
+            className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all"
             style={activeTab === id ? { backgroundColor: PRIMARY, color: 'white' } : { color: '#64748b' }}
           >
             <Icon className="h-4 w-4" />
@@ -630,6 +685,125 @@ export function SettingsWorkspace() {
                     </div>
                   </motion.div>
                 ))}
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* ── Promoter Management ── */}
+        {activeTab === 'promoter' && (
+          <motion.div
+            key="promoter"
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 10 }}
+            className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-6"
+          >
+            <div className="flex items-center gap-2 pb-4 border-b border-slate-100">
+              <div className="p-2 rounded-lg bg-[#1A2BA6]/10 text-[#1A2BA6]">
+                <UserCog className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Gestion du Promoteur</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Activez ou désactivez la visibilité du promoteur dans les listes du module RH
+                </p>
+              </div>
+            </div>
+
+            {promoterLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+              </div>
+            ) : !promoterStatus?.exists ? (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center">
+                <ShieldAlert className="h-10 w-10 text-amber-400 mx-auto mb-3" />
+                <p className="text-sm font-bold text-amber-900">Aucun promoteur trouvé</p>
+                <p className="text-xs text-amber-700 mt-1">
+                  Le promoteur n'a pas encore été créé pour ce tenant. Il sera créé automatiquement lors de l'onboarding.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Promoter info card */}
+                <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                  <div className="flex items-center gap-4">
+                    <div className="w-14 h-14 rounded-xl flex items-center justify-center text-lg font-bold shrink-0"
+                      style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}>
+                      {promoterStatus.promoter.firstName?.[0]}{promoterStatus.promoter.lastName?.[0]}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-slate-900 text-sm">
+                        {promoterStatus.promoter.firstName} {promoterStatus.promoter.lastName}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {promoterStatus.promoter.position || 'Promoteur'}
+                      </p>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          promoterStatus.active
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                            : 'bg-slate-100 text-slate-500 border border-slate-200'
+                        }`}>
+                          {promoterStatus.active ? <CheckCircle2 className="h-3 w-3" /> : <ShieldAlert className="h-3 w-3" />}
+                          {promoterStatus.active ? 'Actif' : 'Inactif'}
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          Statut: {promoterStatus.promoter.status}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Toggle explanation */}
+                <div className={`rounded-xl p-4 border ${
+                  promoterStatus.active
+                    ? 'bg-emerald-50/50 border-emerald-100'
+                    : 'bg-slate-50 border-slate-100'
+                }`}>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    {promoterStatus.active ? (
+                      <>
+                        <strong className="text-emerald-700">Le promoteur est actuellement actif.</strong>
+                        <br />
+                        Il apparaît dans toutes les listes du module RH (Personnel, Contrats, Planning, Indemnités, Congés, Présence, etc.).
+                        Vous pouvez le désactiver pour le masquer de toutes les listes.
+                      </>
+                    ) : (
+                      <>
+                        <strong className="text-slate-700">Le promoteur est actuellement inactif.</strong>
+                        <br />
+                        Il est masqué de toutes les listes du module RH. Vous pouvez l'activer pour le faire réapparaître
+                        dans les listes (Personnel, Contrats, Planning, Indemnités, Congés, etc.).
+                      </>
+                    )}
+                  </p>
+                </div>
+
+                {/* Toggle button */}
+                <button
+                  onClick={handleTogglePromoter}
+                  disabled={promoterToggling}
+                  className={`w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold text-sm shadow-sm transition-all disabled:opacity-50 ${
+                    promoterStatus.active
+                      ? 'bg-rose-600 text-white hover:bg-rose-700'
+                      : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                  }`}
+                >
+                  {promoterToggling ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : promoterStatus.active ? (
+                    <ToggleRight className="h-5 w-5" />
+                  ) : (
+                    <ToggleLeft className="h-5 w-5" />
+                  )}
+                  {promoterStatus.active ? 'Désactiver le promoteur' : 'Activer le promoteur'}
+                </button>
+
+                <p className="text-[10px] text-slate-400 text-center">
+                  ⚠️ Cette action affecte immédiatement la visibilité du promoteur dans tout le module RH.
+                </p>
               </div>
             )}
           </motion.div>

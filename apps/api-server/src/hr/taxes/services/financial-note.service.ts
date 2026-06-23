@@ -8,10 +8,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
 
-interface NoteTemplate { code: string; title: string; lines: Array<{ label: string; note?: string }> }
+interface NoteTemplate {
+  code: string;
+  title: string;
+  columns?: string[]; // Noms des colonnes spécifiques (en plus de N/N-1)
+  lines: Array<{ label: string; note?: string }>
+}
 
 export const SYSCOHADA_NOTES: NoteTemplate[] = [
-  { code: 'NOTE 1', title: 'DETTES GARANTIES PAR DES SURETES REELLES', lines: [
+  { code: 'NOTE 1', title: 'DETTES GARANTIES PAR DES SURETES REELLES',
+    columns: ['Montant brut', 'Hypothèques', 'Nantissements', 'Gages/Autres'],
+    lines: [
     { label: 'Emprunts obligataires convertibles' }, { label: 'Autres emprunts obligataires' },
     { label: 'Emprunts et dettes des établissements de crédit' }, { label: 'Autres dettes financières' },
     { label: 'SOUS TOTAL (1)' }, { label: 'Dettes de crédit-bail immobilier' },
@@ -22,7 +29,9 @@ export const SYSCOHADA_NOTES: NoteTemplate[] = [
     { label: 'A - Déclaration de conformité au SYSCOHADA' }, { label: 'B - Règles et méthodes comptables' },
     { label: 'C - Dérogation aux postulats et conventions' }, { label: 'D - Informations complémentaires relatives au tableau des flux' },
   ]},
-  { code: 'NOTE 3A', title: 'IMMOBILISATION BRUTE', lines: [
+  { code: 'NOTE 3A', title: 'IMMOBILISATION BRUTE',
+    columns: ['Brut ouverture', 'Acquisitions', 'Apports', 'Virements', 'Réévaluation', 'Cessions', 'Brut clôture'],
+    lines: [
     { label: "Frais de développement et de prospection" }, { label: 'Brevets, licences, logiciels et droits similaires' },
     { label: 'Fonds commercial et droit au bail' }, { label: 'Autres immobilisations incorporelles' },
     { label: 'Terrains' }, { label: 'Bâtiments' }, { label: 'Aménagements, agencements et installations' },
@@ -34,13 +43,17 @@ export const SYSCOHADA_NOTES: NoteTemplate[] = [
     { label: 'Contrats en cours au début de lexercice' }, { label: 'Contrats conclus pendant lexercice' },
     { label: 'Contrats résiliés pendant lexercice' }, { label: 'Contrats en cours à la clôture' },
   ]},
-  { code: 'NOTE 3C', title: 'IMMOBILISATIONS (AMORTISSEMENTS)', lines: [
+  { code: 'NOTE 3C', title: 'IMMOBILISATIONS (AMORTISSEMENTS)',
+    columns: ['Cumul ouverture', 'Dotations exercice', 'Diminutions (cessions)', 'Cumul clôture'],
+    lines: [
     { label: 'Frais de développement et de prospection' }, { label: 'Brevets, licences, logiciels et droits' },
     { label: 'Fonds commercial et droit au bail' }, { label: 'Terrains' }, { label: 'Bâtiments' },
     { label: 'Aménagements, agencements et installations' }, { label: 'Matériel, mobilier et actifs biologiques' },
     { label: 'Matériel de transport' }, { label: 'TOTAL' },
   ]},
-  { code: 'NOTE 3D', title: 'IMMOBILISATIONS (PLUS-VALUES ET MOINS-VALUES)', lines: [
+  { code: 'NOTE 3D', title: 'IMMOBILISATIONS (PLUS-VALUES ET MOINS-VALUES)',
+    columns: ['Montant brut', 'Amortissements pratiqués', 'Valeur comptable nette', 'Prix de cession', 'Plus/Minus-value'],
+    lines: [
     { label: 'Immobilisations incorporelles' }, { label: 'Immobilisations corporelles' },
     { label: 'Immobilisations financières' }, { label: 'TOTAL' },
   ]},
@@ -48,7 +61,9 @@ export const SYSCOHADA_NOTES: NoteTemplate[] = [
     { label: 'Nature et date des réévaluations' }, { label: 'Éléments réévalués par postes du bilan' },
     { label: 'Montants coûts historiques' }, { label: 'Amortissements supplémentaires' }, { label: 'Incidences sur les résultats' },
   ]},
-  { code: 'NOTE 4', title: 'IMMOBILISATIONS FINANCIERES', lines: [
+  { code: 'NOTE 4', title: 'IMMOBILISATIONS FINANCIERES',
+    columns: ['Année N', 'Année N-1', 'Variation %', 'Créances ≤ 1 an', 'Créances 1-2 ans', 'Créances > 2 ans'],
+    lines: [
     { label: 'Titres de participation' }, { label: 'Prêts et créances' }, { label: 'Dépôts et cautionnements versés' },
     { label: 'Autres immobilisations financières' }, { label: 'TOTAL' },
   ]},
@@ -61,11 +76,15 @@ export const SYSCOHADA_NOTES: NoteTemplate[] = [
     { label: 'En-cours de production de biens' }, { label: 'En-cours de production de services' }, { label: 'Produits finis' },
     { label: 'TOTAL' },
   ]},
-  { code: 'NOTE 7', title: 'CLIENTS', lines: [
+  { code: 'NOTE 7', title: 'CLIENTS',
+    columns: ['Année N', 'Année N-1', 'Variation %', 'Créances ≤ 1 an', 'Créances 1-2 ans', 'Créances > 2 ans'],
+    lines: [
     { label: 'Clients effets à recevoir' }, { label: 'Clients dettes en compte' }, { label: 'Clients - avances reçues' },
     { label: 'Créances litigieuses' }, { label: 'TOTAL BRUT' }, { label: 'Dépréciations' }, { label: 'TOTAL NET' },
   ]},
-  { code: 'NOTE 8', title: 'AUTRES CREANCES', lines: [
+  { code: 'NOTE 8', title: 'AUTRES CREANCES',
+    columns: ['Année N', 'Année N-1', 'Variation %', 'Créances ≤ 1 an', 'Créances 1-2 ans', 'Créances > 2 ans'],
+    lines: [
     { label: 'Créances diverses' }, { label: 'État' }, { label: 'Comptes courants des administrateurs et dirigeants' },
     { label: 'Avances consenties au personnel' }, { label: 'Dépôts et cautionnements versés' }, { label: 'TOTAL' },
   ]},
@@ -104,7 +123,9 @@ export const SYSCOHADA_NOTES: NoteTemplate[] = [
     { label: 'Titres participatifs' }, { label: 'Avances conditionnées' },
     { label: 'Titres subordonnés à durée indéterminée' }, { label: 'TOTAL' },
   ]},
-  { code: 'NOTE 16A', title: 'EMPRUNTS ET DETTES FINANCIERES', lines: [
+  { code: 'NOTE 16A', title: 'EMPRUNTS ET DETTES FINANCIERES',
+    columns: ['Année N', 'Année N-1', 'Variation', 'Variation %', 'Dettes ≤ 1 an', 'Dettes 1-2 ans', 'Dettes > 2 ans'],
+    lines: [
     { label: 'Emprunts obligataires' }, { label: 'Emprunts et dettes auprès des établissements de crédit' },
     { label: 'Avances reçues de l\'État' }, { label: 'Avances reçues et comptes courants bloqués' },
     { label: 'Dettes de crédit-bail' }, { label: 'Dettes sur contrats de location-acquisition' },
@@ -122,18 +143,24 @@ export const SYSCOHADA_NOTES: NoteTemplate[] = [
     { label: 'Actif éventuel - Litiges' }, { label: 'Actif éventuel - Garanties' },
     { label: 'Passif éventuel - Litiges' }, { label: 'Passif éventuel - Garanties données' },
   ]},
-  { code: 'NOTE 17', title: "FOURNISSEURS D'EXPLOITATION", lines: [
+  { code: 'NOTE 17', title: "FOURNISSEURS D'EXPLOITATION",
+    columns: ['Année N', 'Année N-1', 'Variation %', 'Dettes ≤ 1 an', 'Dettes 1-2 ans', 'Dettes > 2 ans'],
+    lines: [
     { label: 'Fournisseurs dettes en compte (hors groupe)' }, { label: 'Fournisseurs effets à payer (hors groupe)' },
     { label: 'Fournisseurs dettes et effets à payer groupe' }, { label: 'Fournisseurs avances reçues' }, { label: 'TOTAL' },
   ]},
-  { code: 'NOTE 18', title: 'DETTES FISCALES ET SOCIALES', lines: [
+  { code: 'NOTE 18', title: 'DETTES FISCALES ET SOCIALES',
+    columns: ['Année N', 'Année N-1', 'Variation', 'Variation %', 'Dettes ≤ 1 an', 'Dettes 1-2 ans', 'Dettes > 2 ans'],
+    lines: [
     { label: 'Personnel avances et acomptes' }, { label: 'Personnel rémunérations dues' }, { label: 'Autres personnel' },
     { label: 'Caisse de sécurité sociale' }, { label: 'Caisse de retraite' }, { label: 'Autres organismes sociaux' },
     { label: 'TOTAL DETTES SOCIALES' }, { label: 'État impôts sur les bénéfices' }, { label: 'État impôts et taxes' },
     { label: 'État TVA' }, { label: 'État impôts retenus à la source' }, { label: 'Autres dettes État' },
     { label: 'TOTAL DETTES FISCALES' },
   ]},
-  { code: 'NOTE 19', title: 'AUTRES DETTES', lines: [
+  { code: 'NOTE 19', title: 'AUTRES DETTES',
+    columns: ['Année N', 'Année N-1', 'Variation', 'Variation %', 'Dettes ≤ 1 an', 'Dettes 1-2 ans', 'Dettes > 2 ans'],
+    lines: [
     { label: 'Organismes internationaux' }, { label: 'Apporteurs, opérations sur le capital' },
     { label: 'Associés, compte courant' }, { label: 'Dépôts et cautionnements reçus' },
     { label: 'Provisions pour risques à court terme' }, { label: 'TOTAL' },
@@ -235,6 +262,8 @@ export class FinancialNoteService {
               lineLabel: line.label,
               amountN: 0,
               sortOrder: order++,
+              // Stocker les colonnes spécifiques dans metadata
+              metadata: note.columns ? { columns: note.columns } : null,
             },
           }).catch(() => {});
         }
@@ -247,14 +276,18 @@ export class FinancialNoteService {
     return notes;
   }
 
-  async updateLine(id: string, amountN?: number, amountN1?: number) {
+  async updateLine(id: string, amountN?: number, amountN1?: number, metadata?: any) {
     return this.prisma.financialNote.update({
       where: { id },
-      data: { amountN: amountN ?? undefined, amountN1: amountN1 ?? undefined },
+      data: {
+        amountN: amountN ?? undefined,
+        amountN1: amountN1 ?? undefined,
+        metadata: metadata ?? undefined,
+      },
     });
   }
 
   async getNoteTitles() {
-    return SYSCOHADA_NOTES.map(n => ({ code: n.code, title: n.title, lineCount: n.lines.length }));
+    return SYSCOHADA_NOTES.map(n => ({ code: n.code, title: n.title, lineCount: n.lines.length, columns: n.columns || null }));
   }
 }

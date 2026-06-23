@@ -16,6 +16,7 @@ import { TaxDeclarationService } from './services/tax-declaration.service';
 import { FinancialNoteService } from './services/financial-note.service';
 import { PayrollService } from './services/payroll.service';
 import { TaxPdfService } from './services/tax-pdf.service';
+import { TaxExcelService } from './services/tax-excel.service';
 
 @Module({
   imports: [PrismaModule],
@@ -30,6 +31,7 @@ import { TaxPdfService } from './services/tax-pdf.service';
     FinancialNoteService,
     PayrollService,
     TaxPdfService,
+    TaxExcelService,
   ],
   exports: [
     TaxSettingsService,

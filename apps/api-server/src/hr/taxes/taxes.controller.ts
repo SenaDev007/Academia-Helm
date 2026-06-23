@@ -27,6 +27,7 @@ import { TaxDeclarationService } from './services/tax-declaration.service';
 import { FinancialNoteService } from './services/financial-note.service';
 import { PayrollService } from './services/payroll.service';
 import { TaxPdfService } from './services/tax-pdf.service';
+import { TaxExcelService } from './services/tax-excel.service';
 
 @Controller('hr/taxes')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -39,6 +40,7 @@ export class TaxesController {
     private financialNoteService: FinancialNoteService,
     private payrollService: PayrollService,
     private taxPdfService: TaxPdfService,
+    private taxExcelService: TaxExcelService,
   ) {}
 
   // ─── Paramètres fiscaux ──────────────────────────────────────────────────
@@ -312,5 +314,56 @@ export class TaxesController {
     const pdf = await this.taxPdfService.generateFinancialStatementPdf(t.id, academicYearId, type);
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="${type}.pdf"`, 'Content-Length': pdf.length });
     return res.send(pdf);
+  }
+
+  // ─── Export Excel (Phase E) ──────────────────────────────────────────────
+
+  @Get('export/financial-statements')
+  async exportFinancialStatements(
+    @GetTenant() t: any,
+    @Query('academicYearId') academicYearId: string,
+    @Query('type') type: string,
+    @Res() res: any,
+  ) {
+    if (!t?.id || !academicYearId || !type) throw new BadRequestException('academicYearId et type requis');
+    const buffer = await this.taxExcelService.exportFinancialStatement(t.id, academicYearId, type);
+    res.set({ 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': `attachment; filename="${type}.xlsx"`, 'Content-Length': buffer.length });
+    return res.send(buffer);
+  }
+
+  @Get('export/payslips')
+  async exportPayslips(
+    @GetTenant() t: any,
+    @Query('academicYearId') academicYearId: string,
+    @Query('period') period: string,
+    @Res() res: any,
+  ) {
+    if (!t?.id || !academicYearId || !period) throw new BadRequestException('academicYearId et period requis');
+    const buffer = await this.taxExcelService.exportPayslips(t.id, academicYearId, period);
+    res.set({ 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': `attachment; filename="paie_${period}.xlsx"`, 'Content-Length': buffer.length });
+    return res.send(buffer);
+  }
+
+  @Get('export/financial-notes')
+  async exportFinancialNotes(
+    @GetTenant() t: any,
+    @Query('academicYearId') academicYearId: string,
+    @Res() res: any,
+  ) {
+    if (!t?.id || !academicYearId) throw new BadRequestException('academicYearId requis');
+    const buffer = await this.taxExcelService.exportFinancialNotes(t.id, academicYearId);
+    res.set({ 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': `attachment; filename="notes_annexes.xlsx"`, 'Content-Length': buffer.length });
+    return res.send(buffer);
+  }
+
+  @Get('export/staff-fiscal')
+  async exportStaffFiscal(
+    @GetTenant() t: any,
+    @Res() res: any,
+  ) {
+    if (!t?.id) throw new BadRequestException('Tenant ID requis');
+    const buffer = await this.taxExcelService.exportStaffFiscal(t.id);
+    res.set({ 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': `attachment; filename="personnel_fiscal.xlsx"`, 'Content-Length': buffer.length });
+    return res.send(buffer);
   }
 }

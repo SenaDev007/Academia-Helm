@@ -386,19 +386,38 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;padding:20px}
   async distributeCardsByEmail(tenantId: string, staffIds?: string[]) {
     await this.ensureTableExists();
 
-    // Récupérer les cartes actives
-    let cards: any[];
+    // Récupérer les cartes actives via raw SQL (table hr_staff_cards en snake_case)
+    let cardRows: any[];
     if (staffIds && staffIds.length > 0) {
-      cards = await this.prisma.$queryRawUnsafe<any[]>(
-        `SELECT c.*, s.first_name, s.last_name, s.email FROM hr_staff_cards c JOIN staff s ON c.staff_id=s.id WHERE c.tenant_id=$1 AND c.status='ACTIVE' AND c.staff_id = ANY($2)`,
+      cardRows = await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT * FROM hr_staff_cards WHERE tenant_id=$1 AND status='ACTIVE' AND staff_id = ANY($2)`,
         tenantId, staffIds,
       );
     } else {
-      cards = await this.prisma.$queryRawUnsafe<any[]>(
-        `SELECT c.*, s.first_name, s.last_name, s.email FROM hr_staff_cards c JOIN staff s ON c.staff_id=s.id WHERE c.tenant_id=$1 AND c.status='ACTIVE'`,
+      cardRows = await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT * FROM hr_staff_cards WHERE tenant_id=$1 AND status='ACTIVE'`,
         tenantId,
       );
     }
+
+    // Récupérer les infos staff via Prisma client (gère le mapping camelCase)
+    const staffIdsList = cardRows.map(c => c.staff_id);
+    const staffMap = new Map<string, any>();
+    if (staffIdsList.length > 0) {
+      const staffRecords = await this.prisma.staff.findMany({
+        where: { id: { in: staffIdsList } },
+        select: { id: true, firstName: true, lastName: true, email: true },
+      });
+      staffRecords.forEach(s => staffMap.set(s.id, s));
+    }
+
+    // Combiner les données
+    const cards = cardRows.map(c => ({
+      ...c,
+      first_name: staffMap.get(c.staff_id)?.firstName || '',
+      last_name: staffMap.get(c.staff_id)?.lastName || '',
+      email: staffMap.get(c.staff_id)?.email || '',
+    }));
 
     // Récupérer le branding pour l'email
     const branding = await this.getTenantBrandingForCard(tenantId);

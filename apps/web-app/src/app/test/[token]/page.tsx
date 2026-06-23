@@ -103,10 +103,11 @@ export default function TestPage() {
   useEffect(() => {
     if (state !== 'test' || timeLeft <= 0) return;
 
-    timerRef.current = setInterval(() => {
+    // Un seul intervalle — ne pas recréer à chaque tick
+    const intervalId = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 1) {
-          clearInterval(timerRef.current!);
+          clearInterval(intervalId);
           if (!autoSubmitRef.current) {
             autoSubmitRef.current = true;
             handleSubmit(true);
@@ -117,8 +118,9 @@ export default function TestPage() {
       });
     }, 1000);
 
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [state, timeLeft]);
+    return () => clearInterval(intervalId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]); // Dépend uniquement de 'state', pas de 'timeLeft'
 
   // ─── Soumission ──────────────────────────────────────────────────────────
   async function handleSubmit(isAutoSubmit = false) {

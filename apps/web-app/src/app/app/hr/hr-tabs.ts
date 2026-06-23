@@ -22,6 +22,7 @@ import {
   BarChart3,
   Settings,
   FileEdit,
+  Landmark,
 } from 'lucide-react';
 
 export const HR_SUBMODULE_TABS = [
@@ -106,9 +107,9 @@ export const HR_SUBMODULE_TABS = [
   },
   {
     id: 'cnss',
-    label: 'CNSS',
+    label: 'Impôts & État Financier',
     path: '/app/hr/cnss',
-    icon: Shield,
+    icon: Landmark,
   },
   {
     id: 'reporting',

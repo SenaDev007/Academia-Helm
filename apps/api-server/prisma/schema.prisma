@@ -460,6 +460,12 @@ model Tenant {
   // Access requests from PLATFORM_OWNER
   platformOwnerAccessRequests      PlatformOwnerAccessRequest[]
 
+  // Module Impôts et États financiers
+  taxSettings                      TaxSettings?
+  financialStatements              FinancialStatement[]
+  financialNotes                   FinancialNote[]
+  taxDeclarations                  TaxDeclaration[]
+
   @@index([subdomain])
   @@index([slug])
   @@index([countryId])
@@ -14408,4 +14414,114 @@ model MediaAsset {
 
   @@index([type])
   @@map("media_assets")
+}
+
+// ============================================================================
+// MODULE : IMPÔTS ET ÉTATS FINANCIERS (remplace l'onglet CNSS)
+// ============================================================================
+// 4 sous-onglets : Tableau de bord → Gestion du personnel → États financiers → Déclarations fiscales
+// Tous les taux (CNSS, IST, AIB) sont configurables via TaxSettings.
+// ============================================================================
+
+// ─── Paramètres fiscaux configurables (taux, seuils) ───────────────────────
+model TaxSettings {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String?
+
+  // Taux CNSS (%) — part patronale + ouvrière
+  cnssFamilialesRate    Float @default(9.0)   // Cotisations familiales
+  cnssRisquesRate       Float @default(1.0)   // Risques professionnels
+  cnssVieillesseRate    Float @default(0.0)   // Assurance vieillesse (à valider)
+  cnssPatronaleRate     Float @default(6.4)   // Part patronale
+  cnssOuvriereRate      Float @default(3.6)   // Part ouvrière
+
+  // Taux IST (%)
+  istVpsRate            Float @default(4.0)   // Versement Patronal sur Salaires (VPS)
+  istIrppRate           Float @default(0.0)   // IRPP (barème progressif, 0 = calcul auto)
+
+  // Taux AIB (%)
+  aibAchatsRate         Float @default(1.0)   // AIB sur achats de marchandises
+  aibPrestationsRate    Float @default(5.0)   // AIB sur prestations de services
+
+  // Périodicité
+  istFrequency          String @default("MONTHLY") // MONTHLY, QUARTERLY
+  cnssFrequency         String @default("QUARTERLY")
+  aibFrequency          String @default("MONTHLY")
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("tax_settings")
+}
+
+// ─── États financiers SYSCOHADA (Bilan, CR, TFT) ───────────────────────────
+model FinancialStatement {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  type            String   // BILAN_ACTIF, BILAN_PASSIF, COMPTE_RESULTAT, TFT
+  lineCode        String   // AD, AE, BZ, CA, TA... (codes SYSCOHADA)
+  lineLabel       String
+  note            String?  // référence note annexe (ex: "3", "18")
+  amountN         Decimal  @default(0) @db.Decimal(18, 2)
+  amountN1        Decimal? @db.Decimal(18, 2)
+  category        String?  // IMMOBILISATIONS, CIRCULANT, TRESORERIE...
+  isSubtotal      Boolean  @default(false)
+  isTotal         Boolean  @default(false)
+  sortOrder       Int      @default(0)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, academicYearId, type, lineCode])
+  @@index([tenantId, academicYearId, type])
+  @@map("financial_statements")
+}
+
+// ─── Notes annexes (36 notes SYSCOHADA) ────────────────────────────────────
+model FinancialNote {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  noteCode        String   // NOTE 1, NOTE 18, NOTE 27A...
+  noteTitle       String
+  lineLabel       String
+  amountN         Decimal  @default(0) @db.Decimal(18, 2)
+  amountN1        Decimal? @db.Decimal(18, 2)
+  metadata        Json?    // colonnes spécifiques (hypothèques, nantissements, échéances...)
+  sortOrder       Int      @default(0)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, academicYearId, noteCode])
+  @@map("financial_notes")
+}
+
+// ─── Déclarations fiscales (IST, AIB, CNSS) ────────────────────────────────
+model TaxDeclaration {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  type            String   // IST, AIB, CNSS
+  period          String   // "2026-01", "2026-T1", "2026"
+  status          String   @default("DRAFT") // DRAFT, SUBMITTED, PAID
+  data            Json     // données structurées (lignes, calculs, détails)
+  totalAmount     Decimal  @default(0) @db.Decimal(18, 2)
+  submittedAt     DateTime?
+  paidAt          DateTime?
+  notes           String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, academicYearId, type, period])
+  @@index([tenantId, academicYearId, type])
+  @@map("tax_declarations")
 }

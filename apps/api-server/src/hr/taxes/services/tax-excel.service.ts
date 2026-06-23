@@ -64,7 +64,7 @@ export class TaxExcelService {
    * Génère un export Excel des fiches de paie.
    */
   async exportPayslips(tenantId: string, academicYearId: string, period: string): Promise<Buffer> {
-    const payslips = await this.prisma.payslip.findMany({
+    const payslips = await this.prisma.taxPayslip.findMany({
       where: { tenantId, academicYearId, period },
       include: { staff: { select: { firstName: true, lastName: true, position: true, cnssNumber: true } } },
       orderBy: { staff: { lastName: 'asc' } },

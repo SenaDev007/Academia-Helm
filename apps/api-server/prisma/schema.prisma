@@ -466,7 +466,7 @@ model Tenant {
   financialNotes                   FinancialNote[]
   taxDeclarations                  TaxDeclaration[]
   financialReportHeaders           FinancialReportHeader[]
-  payrollPeriods                   PayrollPeriod[]
+  taxPayrollPeriods                TaxPayrollPeriod[]
 
   @@index([subdomain])
   @@index([slug])
@@ -14584,8 +14584,8 @@ model FinancialReportHeader {
   @@map("financial_report_headers")
 }
 
-// ─── États de paiement et fiches de paie ──────────────────────────────────
-model PayrollPeriod {
+// ─── États de paiement et fiches de paie (module taxes) ───────────────────
+model TaxPayrollPeriod {
   id              String   @id @default(uuid())
   tenantId        String
   academicYearId  String
@@ -14596,17 +14596,17 @@ model PayrollPeriod {
   totalDeductions  Decimal  @default(0) @db.Decimal(18, 2)
   totalNet         Decimal  @default(0) @db.Decimal(18, 2)
 
-  payslips        Payslip[]
+  payslips        TaxPayslip[]
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, academicYearId, period, staffType])
-  @@map("payroll_periods")
+  @@map("tax_payroll_periods")
 }
 
-model Payslip {
+model TaxPayslip {
   id              String   @id @default(uuid())
   tenantId        String
   academicYearId  String
@@ -14643,8 +14643,8 @@ model Payslip {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  payrollPeriod   PayrollPeriod @relation(fields: [payrollPeriodId], references: [id], onDelete: Cascade)
+  payrollPeriod   TaxPayrollPeriod @relation(fields: [payrollPeriodId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, academicYearId, period])
-  @@map("payslips")
+  @@map("tax_payslips")
 }

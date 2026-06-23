@@ -20,11 +20,11 @@ export class PayrollService {
   ) {}
 
   async getOrCreatePeriod(tenantId: string, academicYearId: string, period: string, staffType: string) {
-    let period_ = await this.prisma.payrollPeriod.findFirst({
+    let period_ = await this.prisma.taxPayrollPeriod.findFirst({
       where: { tenantId, academicYearId, period, staffType },
     });
     if (!period_) {
-      period_ = await this.prisma.payrollPeriod.create({
+      period_ = await this.prisma.taxPayrollPeriod.create({
         data: { tenantId, academicYearId, period, staffType, status: 'DRAFT' },
       });
     }
@@ -62,17 +62,17 @@ export class PayrollService {
       totalDeductions += totalRetenues;
       totalNet += netAPayer;
 
-      const existing = await this.prisma.payslip.findFirst({
+      const existing = await this.prisma.taxPayslip.findFirst({
         where: { payrollPeriodId: payrollPeriod.id, staffId: staff.id },
       });
 
       if (existing) {
-        await this.prisma.payslip.update({
+        await this.prisma.taxPayslip.update({
           where: { id: existing.id },
           data: { salaireBase, salaireBrut, cnssOuvriere, itsNet, cnssPatronale, vps, totalRetenues, netAPayer },
         });
       } else {
-        await this.prisma.payslip.create({
+        await this.prisma.taxPayslip.create({
           data: {
             tenantId, academicYearId, staffId: staff.id, payrollPeriodId: payrollPeriod.id, period,
             salaireBase, salaireBrut, cnssOuvriere, itsNet, cnssPatronale, vps, totalRetenues, netAPayer,
@@ -81,7 +81,7 @@ export class PayrollService {
       }
     }
 
-    await this.prisma.payrollPeriod.update({
+    await this.prisma.taxPayrollPeriod.update({
       where: { id: payrollPeriod.id },
       data: { totalGross, totalDeductions, totalNet },
     });
@@ -90,7 +90,7 @@ export class PayrollService {
   }
 
   async getPayslips(tenantId: string, academicYearId: string, period: string) {
-    return this.prisma.payslip.findMany({
+    return this.prisma.taxPayslip.findMany({
       where: { tenantId, academicYearId, period },
       include: { staff: { select: { firstName: true, lastName: true, position: true, cnssNumber: true } } },
       orderBy: { staff: { lastName: 'asc' } },
@@ -98,7 +98,7 @@ export class PayrollService {
   }
 
   async updatePayslip(id: string, data: any) {
-    const payslip = await this.prisma.payslip.findUnique({ where: { id } });
+    const payslip = await this.prisma.taxPayslip.findUnique({ where: { id } });
     if (!payslip) throw new NotFoundException('Fiche de paie introuvable');
 
     // Recalculer le brut et le net si les rubriques changent
@@ -126,7 +126,7 @@ export class PayrollService {
     updated.totalRetenues = totalRetenues;
     updated.netAPayer = salaireBrut - totalRetenues;
 
-    return this.prisma.payslip.update({ where: { id }, data: updated });
+    return this.prisma.taxPayslip.update({ where: { id }, data: updated });
   }
 
   async getReportHeader(tenantId: string, academicYearId: string) {

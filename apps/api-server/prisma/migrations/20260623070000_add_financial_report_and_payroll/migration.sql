@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS "financial_report_headers" (
     "activiteLocalisation" TEXT,
     "nbSalaries" INTEGER,
     "chiffreAffaires" DECIMAL(18,2),
-    "partsMarcha" TEXT,
+    "partsMarche" TEXT,
     "exportations" TEXT,
     "dirigeants" JSONB,
     "membresConseil" JSONB,
@@ -42,8 +42,8 @@ CREATE TABLE IF NOT EXISTS "financial_report_headers" (
 CREATE UNIQUE INDEX IF NOT EXISTS "financial_report_headers_tenantId_academicYearId_key" ON "financial_report_headers"("tenantId", "academicYearId");
 ALTER TABLE "financial_report_headers" ADD CONSTRAINT "financial_report_headers_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- CreateTable: PayrollPeriod
-CREATE TABLE IF NOT EXISTS "payroll_periods" (
+-- CreateTable: TaxPayrollPeriod
+CREATE TABLE IF NOT EXISTS "tax_payroll_periods" (
     "id" TEXT NOT NULL,
     "tenantId" TEXT NOT NULL,
     "academicYearId" TEXT NOT NULL,
@@ -55,14 +55,14 @@ CREATE TABLE IF NOT EXISTS "payroll_periods" (
     "totalNet" DECIMAL(18,2) NOT NULL DEFAULT 0,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
-    CONSTRAINT "payroll_periods_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "tax_payroll_periods_pkey" PRIMARY KEY ("id")
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS "payroll_periods_tenantId_academicYearId_period_staffType_key" ON "payroll_periods"("tenantId", "academicYearId", "period", "staffType");
-ALTER TABLE "payroll_periods" ADD CONSTRAINT "payroll_periods_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+CREATE UNIQUE INDEX IF NOT EXISTS "tax_payroll_periods_tenantId_academicYearId_period_staffType_key" ON "tax_payroll_periods"("tenantId", "academicYearId", "period", "staffType");
+ALTER TABLE "tax_payroll_periods" ADD CONSTRAINT "tax_payroll_periods_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- CreateTable: Payslip
-CREATE TABLE IF NOT EXISTS "payslips" (
+-- CreateTable: TaxPayslip
+CREATE TABLE IF NOT EXISTS "tax_payslips" (
     "id" TEXT NOT NULL,
     "tenantId" TEXT NOT NULL,
     "academicYearId" TEXT NOT NULL,
@@ -88,9 +88,9 @@ CREATE TABLE IF NOT EXISTS "payslips" (
     "status" TEXT NOT NULL DEFAULT 'DRAFT',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
-    CONSTRAINT "payslips_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "tax_payslips_pkey" PRIMARY KEY ("id")
 );
 
-CREATE INDEX IF NOT EXISTS "payslips_tenantId_academicYearId_period_idx" ON "payslips"("tenantId", "academicYearId", "period");
-ALTER TABLE "payslips" ADD CONSTRAINT "payslips_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "payslips" ADD CONSTRAINT "payslips_payrollPeriodId_fkey" FOREIGN KEY ("payrollPeriodId") REFERENCES "payroll_periods"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+CREATE INDEX IF NOT EXISTS "tax_payslips_tenantId_academicYearId_period_idx" ON "tax_payslips"("tenantId", "academicYearId", "period");
+ALTER TABLE "tax_payslips" ADD CONSTRAINT "tax_payslips_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "tax_payslips" ADD CONSTRAINT "tax_payslips_payrollPeriodId_fkey" FOREIGN KEY ("payrollPeriodId") REFERENCES "tax_payroll_periods"("id") ON DELETE CASCADE ON UPDATE CASCADE;

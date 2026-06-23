@@ -114,7 +114,7 @@ export class TaxPdfService {
    * Génère le PDF d'une fiche de paie individuelle.
    */
   async generatePayslipPdf(payslipId: string): Promise<Buffer> {
-    const payslip = await this.prisma.payslip.findUnique({
+    const payslip = await this.prisma.taxPayslip.findUnique({
       where: { id: payslipId },
       include: {
         staff: { select: { firstName: true, lastName: true, position: true, email: true, cnssNumber: true, phone: true } },

@@ -57,24 +57,10 @@ export function StaffCardWorkspace() {
     } finally { setDistributing(false); setModal(null); }
   }
 
-  async function handleDownload(pdfUrl: string, name: string) {
+  async function handleDownload(cardId: string, name: string) {
     try {
-      if (pdfUrl.startsWith('data:')) {
-        const a = document.createElement('a');
-        a.href = pdfUrl;
-        a.download = `Carte_${name}.pdf`;
-        a.click();
-        return;
-      }
-      const r = await fetch(pdfUrl);
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const b = await r.blob();
-      const u = URL.createObjectURL(b);
-      const a = document.createElement('a');
-      a.href = u;
-      a.download = `Carte_${name}.pdf`;
-      a.click();
-      URL.revokeObjectURL(u);
+      // Utiliser l'endpoint backend direct (évite CORS)
+      window.open(hrUrl(`staff/cards/${cardId}/download`, { tenantId: tenant?.id }), '_blank');
     } catch (e: any) {
       toast({ variant: 'error', title: 'Erreur téléchargement', description: e.message });
     }
@@ -119,7 +105,7 @@ export function StaffCardWorkspace() {
               <div className="flex items-center gap-2 shrink-0">
                 {hasCard && activeCard ? (<>
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200"><CheckCircle className="h-3 w-3" /> Active</span>
-                  {activeCard.pdfUrl && <button onClick={() => handleDownload(activeCard.pdfUrl, `${staff.firstName}_${staff.lastName}`)} className="p-1.5 rounded-lg bg-[#1A2BA6]/10 text-[#1A2BA6] hover:bg-[#1A2BA6]/20 transition" title="Télécharger PDF"><Download className="h-3.5 w-3.5" /></button>}
+                  {activeCard.id && <button onClick={() => handleDownload(activeCard.id, `${staff.firstName}_${staff.lastName}`)} className="p-1.5 rounded-lg bg-[#1A2BA6]/10 text-[#1A2BA6] hover:bg-[#1A2BA6]/20 transition" title="Télécharger PDF"><Download className="h-3.5 w-3.5" /></button>}
                   {activeCard.qrData && <a href={activeCard.qrData} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg bg-slate-50 text-slate-500 hover:bg-slate-100 transition" title="Profil public (QR)"><QrCode className="h-3.5 w-3.5" /></a>}
                   <button onClick={() => setModal({ type: 'revoke', data: { id: activeCard.id, staffId: staff.id, name: `${staff.firstName} ${staff.lastName}` } })} className="p-1.5 rounded-lg bg-red-50 text-red-400 hover:bg-red-100 transition" title="Révoquer"><Trash2 className="h-3.5 w-3.5" /></button>
                   <button onClick={() => handleGenerate(staff.id)} disabled={generating === staff.id} className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition disabled:opacity-50" title="Régénérer">{generating === staff.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}Régénérer</button>

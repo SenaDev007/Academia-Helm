@@ -189,6 +189,78 @@ export class StaffCardService {
     return resolved;
   }
 
+  /**
+   * Télécharge le PDF d'une carte (retourne un Buffer).
+   */
+  async downloadCardPdf(cardId: string, tenantId: string): Promise<Buffer> {
+    await this.ensureTableExists();
+    const rows = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT * FROM hr_staff_cards WHERE id=$1 AND tenant_id=$2 AND status='ACTIVE'`,
+      cardId, tenantId,
+    );
+    if (!rows[0]) throw new NotFoundException('Carte introuvable');
+    const pdfUrl = rows[0].pdf_url;
+    if (!pdfUrl) throw new NotFoundException('PDF non généré pour cette carte');
+
+    // Si data URL, décoder
+    if (pdfUrl.startsWith('data:')) {
+      const m = /^data:[^;]+;base64,(.+)$/i.exec(pdfUrl);
+      if (m) return Buffer.from(m[1], 'base64');
+    }
+
+    // Si URL HTTP, télécharger
+    const resolvedUrl = await this.storageService.resolveFileUrl(pdfUrl);
+    const response = await fetch(resolvedUrl);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return Buffer.from(await response.arrayBuffer());
+  }
+
+  /**
+   * Récupère TOUTES les cartes actives du tenant avec infos staff (pour trombinoscope).
+   */
+  async listAllCards(tenantId: string) {
+    await this.ensureTableExists();
+    const cardRows = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT c.* FROM hr_staff_cards c WHERE c.tenant_id=$1 AND c.status='ACTIVE' ORDER BY c.created_at DESC`,
+      tenantId,
+    );
+
+    const staffIds = cardRows.map(c => c.staff_id);
+    if (staffIds.length === 0) return [];
+
+    const staffRecords = await this.prisma.staff.findMany({
+      where: { id: { in: staffIds } },
+      select: { id: true, firstName: true, lastName: true, position: true, email: true, phone: true, tenantMatricule: true, globalMatricule: true, employeeNumber: true, photo: { select: { originalUrl: true } } },
+    });
+    const staffMap = new Map(staffRecords.map(s => [s.id, s]));
+
+    const ss = await this.prisma.schoolSettings.findFirst({
+      where: { tenantId },
+      select: { schoolName: true, logoUrl: true },
+    }).catch(() => null);
+    let logoUrl = ss?.logoUrl || '';
+    try { if (logoUrl) logoUrl = await this.storageService.resolveFileUrl(logoUrl); } catch {}
+
+    return cardRows.map(c => {
+      const staff = staffMap.get(c.staff_id);
+      const parsed = this.parse(c);
+      let photoUrl = staff?.photo?.originalUrl || '';
+      try { if (photoUrl) photoUrl = this.storageService.resolveFileUrl(photoUrl) as any; } catch {}
+      return {
+        ...parsed,
+        staffName: staff ? `${staff.firstName} ${staff.lastName}` : 'N/A',
+        staffPosition: staff?.position || 'Personnel',
+        staffMatricule: staff?.tenantMatricule || staff?.globalMatricule || staff?.employeeNumber || 'N/A',
+        staffEmail: staff?.email || '',
+        staffPhone: staff?.phone || '',
+        staffPhotoUrl: photoUrl,
+        schoolName: ss?.schoolName || '',
+        schoolLogoUrl: logoUrl,
+        cardLink: `${this.config.get('PUBLIC_WEB_URL') || 'https://www.academiahelm.com'}/staff-card/${c.token}`,
+      };
+    });
+  }
+
   async revokeCard(id: string, tenantId: string) {
     await this.ensureTableExists();
     await this.prisma.$executeRawUnsafe(

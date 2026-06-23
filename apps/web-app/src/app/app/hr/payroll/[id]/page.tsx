@@ -63,11 +63,16 @@ export default function PayrollDetailPage() {
   const handleGeneratePayrolls = async () => {
     try {
       setProcessing(true);
-      await hrFetch<any>(hrUrl(`payroll/periods/${id}/generate`, { tenantId: tenant.id }), { method: 'POST', body: { tenantId: tenant.id, academicYearId: academicYear?.id } });
+      // Use the correct backend endpoint: POST /batches/:id/generate
+      // academicYearId is passed as query param (not body)
+      await hrFetch<any>(hrUrl(`payroll/batches/${id}/generate`, {
+        tenantId: tenant.id,
+        ...(academicYear?.id ? { academicYearId: academicYear.id } : {}),
+      }), { method: 'POST' });
       toast({ variant: 'success', title: 'Lignes de paie générées avec succès' });
       fetchPayroll();
-    } catch (error) {
-      toast({ variant: 'error', title: 'Erreur lors de la génération' });
+    } catch (error: any) {
+      toast({ variant: 'error', title: 'Erreur lors de la génération', description: error?.message });
     } finally {
       setProcessing(false);
     }
@@ -75,22 +80,30 @@ export default function PayrollDetailPage() {
 
   const handleCalculatePayrollLine = async (lineId: string) => {
     try {
-      await hrFetch<any>(hrUrl(`payroll/${lineId}/calculate`, { tenantId: tenant.id }), { method: 'POST', body: { tenantId: tenant.id, academicYearId: academicYear?.id } });
+      // POST /items/:id/calculate with academicYearId as query param
+      await hrFetch<any>(hrUrl(`payroll/items/${lineId}/calculate`, {
+        tenantId: tenant.id,
+        ...(academicYear?.id ? { academicYearId: academicYear.id } : {}),
+      }), { method: 'POST' });
       toast({ variant: 'success', title: 'Calcul fiscal effectué' });
       fetchPayroll();
-    } catch (error) {
-      toast({ variant: 'error', title: 'Erreur de calcul' });
+    } catch (error: any) {
+      toast({ variant: 'error', title: 'Erreur de calcul', description: error?.message });
     }
   };
 
   const handleCalculateAll = async () => {
     try {
       setProcessing(true);
-      await hrFetch<any>(hrUrl(`payroll/periods/${id}/calculate`, { tenantId: tenant.id }), { method: 'POST', body: { tenantId: tenant.id, academicYearId: academicYear?.id } });
+      // POST /batches/:id/calculate
+      await hrFetch<any>(hrUrl(`payroll/batches/${id}/calculate`, {
+        tenantId: tenant.id,
+        ...(academicYear?.id ? { academicYearId: academicYear.id } : {}),
+      }), { method: 'POST' });
       toast({ variant: 'success', title: 'Calcul global terminé' });
       fetchPayroll();
-    } catch (error) {
-      toast({ variant: 'error', title: 'Erreur lors du calcul global' });
+    } catch (error: any) {
+      toast({ variant: 'error', title: 'Erreur lors du calcul global', description: error?.message });
     } finally {
       setProcessing(false);
     }
@@ -99,14 +112,15 @@ export default function PayrollDetailPage() {
   const handleValidateAndPay = async () => {
     try {
       setProcessing(true);
-      await hrFetch<any>(hrUrl(`payroll/periods/${id}`, { tenantId: tenant.id }), {
+      // Use the correct backend endpoint: PUT /batches/:id/status
+      await hrFetch<any>(hrUrl(`payroll/batches/${id}/status`, { tenantId: tenant.id }), {
         method: 'PUT',
         body: { status: 'PAID' },
       });
       toast({ variant: 'success', title: 'Paie validée et marquée comme payée' });
       fetchPayroll();
-    } catch (error) {
-      toast({ variant: 'error', title: 'Erreur lors de la validation' });
+    } catch (error: any) {
+      toast({ variant: 'error', title: 'Erreur lors de la validation', description: error?.message });
     } finally {
       setProcessing(false);
     }

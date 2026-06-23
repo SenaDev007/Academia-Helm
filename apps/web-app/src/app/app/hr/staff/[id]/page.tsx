@@ -426,6 +426,8 @@ export default function StaffDetailPage() {
       delete submitData.bankAccountName;
       delete submitData.mobileMoneyNumber;
       delete submitData.mobileMoneyOperator;
+      // isPermanent is a UI-only field — not a Prisma field, must not be sent to backend
+      delete submitData.isPermanent;
 
       // Handle emergencyContact — try to parse as JSON, else wrap as object
       if (typeof submitData.emergencyContact === 'string' && submitData.emergencyContact.trim()) {

@@ -13,7 +13,7 @@
  * ============================================================================
  */
 
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { StaffMatriculeService } from './staff-matricule.service';
 import { StorageService } from '../common/services/storage.service';
@@ -63,6 +63,8 @@ function generateEmployeeNumber(): string {
 
 @Injectable()
 export class StaffPrismaService {
+  private readonly logger = new Logger(StaffPrismaService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly matriculeService: StaffMatriculeService,

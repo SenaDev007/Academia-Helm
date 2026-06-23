@@ -282,12 +282,34 @@ export function LeavesWorkspace() {
                     </td>
                     <td className="px-5 py-4 text-right">
                       {request.status === 'PENDING' ? (
-                        <div className="flex justify-end gap-1.5">
-                          <button onClick={() => handleProcessRequest(request.id, 'APPROVED')} className="p-1.5 rounded-lg hover:bg-emerald-50 text-emerald-600 transition-colors" title="Approuver"><CheckCircle2 className="h-5 w-5" /></button>
-                          <button onClick={async () => { const ok = await confirmDialog.danger('Cette demande de congé sera rejetée définitivement.', 'Rejeter la demande'); if (ok) handleProcessRequest(request.id, 'REJECTED') }} className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-500 transition-colors" title="Rejeter"><XCircle className="h-5 w-5" /></button>
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => handleProcessRequest(request.id, 'APPROVED')}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors"
+                            title="Approuver la demande"
+                          >
+                            <CheckCircle2 className="h-4 w-4" />
+                            <span className="hidden sm:inline">Approuver</span>
+                          </button>
+                          <button
+                            onClick={async () => {
+                              const ok = await confirmDialog.danger(
+                                'Cette demande de congé sera rejetée définitivement.',
+                                'Rejeter la demande',
+                              );
+                              if (ok) handleProcessRequest(request.id, 'REJECTED');
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 transition-colors"
+                            title="Rejeter la demande"
+                          >
+                            <XCircle className="h-4 w-4" />
+                            <span className="hidden sm:inline">Rejeter</span>
+                          </button>
                         </div>
                       ) : (
-                        <button className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"><FileText className="h-5 w-5" /></button>
+                        <span className="text-xs text-slate-400 italic">
+                          {request.status === 'APPROVED' ? 'Demande approuvée' : request.status === 'REJECTED' ? 'Demande rejetée' : request.status}
+                        </span>
                       )}
                     </td>
                   </motion.tr>

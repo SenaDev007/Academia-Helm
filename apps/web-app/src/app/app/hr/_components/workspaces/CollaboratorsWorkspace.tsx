@@ -334,9 +334,13 @@ export function CollaboratorsWorkspace() {
                     <div className="flex flex-col items-center">
                       <div className="relative">
                         <div className="flex flex-col items-center p-4 rounded-2xl border-2 border-amber-300 bg-gradient-to-b from-amber-50 to-white shadow-lg min-w-[180px]">
-                          <div className="w-12 h-12 rounded-xl flex items-center justify-center text-base font-bold mb-2" style={{ backgroundColor: '#0A2A5E15', color: PRIMARY }}>
-                            {directorStaff.firstName?.[0]}{directorStaff.lastName?.[0]}
-                          </div>
+                          {directorStaff.photoUrl ? (
+                            <img src={directorStaff.photoUrl} alt={`${directorStaff.firstName} ${directorStaff.lastName}`} className="w-12 h-12 rounded-xl object-cover mb-2" />
+                          ) : (
+                            <div className="w-12 h-12 rounded-xl flex items-center justify-center text-base font-bold mb-2" style={{ backgroundColor: '#0A2A5E15', color: PRIMARY }}>
+                              {directorStaff.firstName?.[0]}{directorStaff.lastName?.[0]}
+                            </div>
+                          )}
                           <p className="font-bold text-slate-900 text-sm text-center">{directorStaff.firstName} {directorStaff.lastName}</p>
                           <p className="text-[10px] text-[#0A2A5E] font-semibold mt-0.5">{directorStaff.position || 'Directeur'}</p>
                           <Crown className="absolute -top-2 -right-2 h-5 w-5 text-amber-500" />
@@ -377,9 +381,13 @@ export function CollaboratorsWorkspace() {
                                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 pl-4">
                                     {members.map((m) => (
                                       <div key={m.id} className={cn('border rounded-lg p-2.5 text-center hover:shadow-sm transition-shadow', catStyle.bg)}>
-                                        <div className="w-7 h-7 rounded-lg mx-auto flex items-center justify-center text-[10px] font-bold mb-1.5" style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}>
-                                          {m.firstName?.[0]}{m.lastName?.[0]}
-                                        </div>
+                                        {m.photoUrl ? (
+                                          <img src={m.photoUrl} alt={`${m.firstName} ${m.lastName}`} className="w-7 h-7 rounded-lg mx-auto object-cover mb-1.5" />
+                                        ) : (
+                                          <div className="w-7 h-7 rounded-lg mx-auto flex items-center justify-center text-[10px] font-bold mb-1.5" style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}>
+                                            {m.firstName?.[0]}{m.lastName?.[0]}
+                                          </div>
+                                        )}
                                         <p className="font-bold text-slate-900 text-[11px] leading-tight">{m.firstName} {m.lastName}</p>
                                         <p className="text-[9px] text-slate-500 mt-0.5">{m.position || 'Général'}</p>
                                       </div>
@@ -406,9 +414,13 @@ export function CollaboratorsWorkspace() {
                             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                               {members.map((m) => (
                                 <div key={m.id} className="border border-slate-100 rounded-xl p-3 bg-slate-50 text-center hover:bg-slate-100 transition-colors">
-                                  <div className="w-8 h-8 rounded-lg mx-auto flex items-center justify-center text-xs font-bold mb-2" style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}>
-                                    {m.firstName?.[0]}{m.lastName?.[0]}
-                                  </div>
+                                  {m.photoUrl ? (
+                                    <img src={m.photoUrl} alt={`${m.firstName} ${m.lastName}`} className="w-8 h-8 rounded-lg mx-auto object-cover mb-2" />
+                                  ) : (
+                                    <div className="w-8 h-8 rounded-lg mx-auto flex items-center justify-center text-xs font-bold mb-2" style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}>
+                                      {m.firstName?.[0]}{m.lastName?.[0]}
+                                    </div>
+                                  )}
                                   <p className="font-bold text-slate-900 text-xs">{m.firstName} {m.lastName}</p>
                                   <p className="text-[10px] text-slate-500 mt-0.5">{m.position || 'Général'}</p>
                                 </div>

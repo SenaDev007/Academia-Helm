@@ -386,15 +386,22 @@ export function AllowancesWorkspace() {
             <form onSubmit={handleAssignAllowance} className="space-y-4">
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Type d'indemnité</label>
-                <select
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:border-[#1A2BA6]"
-                  value={assignType}
-                  onChange={(e) => setAssignType(e.target.value)}
-                >
-                  {allowanceTypes.map(t => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
+                {allowanceTypes.length === 0 ? (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+                    <strong>Aucun type d'indemnité créé.</strong><br />
+                    Veuillez d'abord créer un type via le bouton « Gérer les types ».
+                  </div>
+                ) : (
+                  <select
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:border-[#1A2BA6]"
+                    value={assignType}
+                    onChange={(e) => setAssignType(e.target.value)}
+                  >
+                    {allowanceTypes.map(t => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                )}
               </div>
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Montant (F CFA) — à définir</label>

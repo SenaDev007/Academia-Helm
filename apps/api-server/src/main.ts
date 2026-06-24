@@ -985,6 +985,26 @@ async function bootstrap() {
     logger.warn(`CMS tables fallback warning: ${cmsTablesErr.message}`);
   }
 
+  // ─── Department managerId FK migration: Teacher → Staff ──
+  // The Department.managerId originally referenced Teacher.id, but the frontend
+  // sends Staff IDs. We change the FK to reference Staff.id instead.
+  // This is idempotent — safe to run multiple times.
+  try {
+    const prisma = app.get(PrismaService);
+    // Drop old FK constraint (departments_managerId_fkey → teachers.id)
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "departments" DROP CONSTRAINT IF EXISTS "departments_managerId_fkey"`,
+    ).catch(() => {});
+    // Add new FK constraint → staff.id with ON DELETE SET NULL
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "departments" ADD CONSTRAINT "departments_managerId_fkey"
+       FOREIGN KEY ("managerId") REFERENCES "staff"("id") ON DELETE SET NULL`,
+    ).catch(() => {});
+    logger.log('✅ Department.managerId FK migrated: Teacher → Staff');
+  } catch (deptFkErr: any) {
+    logger.warn(`Department FK migration warning: ${deptFkErr.message}`);
+  }
+
   await app.listen(port, '0.0.0.0');
 
   // ─── Auto-sync HR teachers → Pedagogy on startup ──

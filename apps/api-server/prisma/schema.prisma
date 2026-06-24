@@ -2580,7 +2580,6 @@ model Teacher {
   updatedAt                  DateTime                    @updatedAt
   annualSupplies             AnnualTeacherSupply[]
   dailyLogs                  DailyLog[]
-  managedDepartment          Department?                 @relation("DepartmentManager")
   lessonJournals             LessonJournal[]
   pedagogicalDocuments       PedagogicalDocument[]
   mainTeacherAcademicClasses AcademicClass[]             @relation("AcademicClassMainTeacher")
@@ -2612,7 +2611,7 @@ model Department {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   creator     User?     @relation(fields: [createdBy], references: [id])
-  manager     Teacher?  @relation("DepartmentManager", fields: [managerId], references: [id])
+  manager     Staff?    @relation("DepartmentManager", fields: [managerId], references: [id], onDelete: SetNull)
   tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   teachers    Teacher[] @relation("DepartmentTeachers")
 
@@ -5036,6 +5035,7 @@ model Staff {
   globalResourceUsages      TenantResourceUsage[]      @relation("StaffResourceUsages")
   globalResourceAnnotations TenantResourceAnnotation[] @relation("StaffResourceAnnotations")
   organigramNodes           OrganigramNode[]           @relation("StaffOrganigramNodes")
+  managedDepartment         Department?                @relation("DepartmentManager")
 
   @@index([tenantId])
   @@index([employeeNumber])

@@ -253,6 +253,31 @@ export class StaffPrismaService {
     } else {
       where.roleType = { not: 'PROMOTEUR' };
     }
+
+    // ─── Exclure également par email : si un User avec role PROMOTER a le même email ──
+    // (sécurité : au cas où le promoteur a un roleType différent de 'PROMOTEUR')
+    if (!filters?.includePromoter) {
+      try {
+        const promoterUsers = await this.prisma.user.findMany({
+          where: {
+            tenantId,
+            role: { in: ['PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'SUPER_DIRECTOR'] },
+            email: { not: null },
+          },
+          select: { email: true },
+        });
+        const promoterEmails = promoterUsers
+          .map((u) => u.email)
+          .filter((e): e is string => !!e);
+
+        if (promoterEmails.length > 0) {
+          where.email = { notIn: promoterEmails };
+        }
+      } catch {
+        // Si la requête échoue, on continue sans l'exclusion par email
+      }
+    }
+
     if (filters?.academicYearId) where.academicYearId = filters.academicYearId;
     if (filters?.status && filters.status !== 'ALL') where.status = filters.status;
     if (filters?.category) {

@@ -1117,6 +1117,68 @@ async function bootstrap() {
     logger.warn(`Rooms columns migration warning: ${roomsColsErr.message}`);
   }
 
+  // ─── Contract PDF — ensure missing columns in employment_contracts, school_settings, staff ──
+  // The contract PDF generation loads Contract + Staff + SchoolSettings + TenantIdentityProfile.
+  // If any column is missing in the production DB, Prisma throws "colonne inconnue".
+  // This adds all potentially missing columns idempotently.
+  try {
+    const prisma = app.get(PrismaService);
+
+    // 1. employment_contracts — schoolLevelId column (added to schema but may not be in DB)
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "employment_contracts" ADD COLUMN IF NOT EXISTS "schoolLevelId" TEXT`,
+    ).catch(() => {});
+
+    // 2. school_settings — feexpayShopId, feexpayApiKey (added for FeexPay integration)
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "school_settings" ADD COLUMN IF NOT EXISTS "feexpayShopId" TEXT`,
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "school_settings" ADD COLUMN IF NOT EXISTS "feexpayApiKey" TEXT`,
+    ).catch(() => {});
+
+    // 3. staff — ensure all columns referenced by contract PDF exist
+    // (bankDetails, mobileMoneyNumber, mobileMoneyOperator, etc.)
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "bankDetails" JSONB`,
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "mobileMoneyNumber" TEXT`,
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "mobileMoneyOperator" TEXT`,
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "contractType" TEXT`,
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "cnssNumber" TEXT`,
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "ifNumber" TEXT`,
+    ).catch(() => {});
+
+    // 4. Ensure employee_cnss table exists
+    await prisma.$executeRawUnsafe(
+      `CREATE TABLE IF NOT EXISTS "employee_cnss" (
+        "id" TEXT NOT NULL,
+        "tenantId" TEXT NOT NULL,
+        "staffId" TEXT NOT NULL,
+        "cnssNumber" TEXT,
+        "affiliationDate" DATE,
+        "isActive" BOOLEAN NOT NULL DEFAULT true,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "employee_cnss_pkey" PRIMARY KEY ("id"),
+        CONSTRAINT "employee_cnss_staffId_key" UNIQUE ("staffId")
+      )`,
+    ).catch(() => {});
+
+    logger.log('✅ Contract PDF columns ensured (employment_contracts.schoolLevelId, school_settings.feexpay*, staff.bankDetails/mobileMoney*, employee_cnss)');
+  } catch (contractColsErr: any) {
+    logger.warn(`Contract PDF columns migration warning: ${contractColsErr.message}`);
+  }
+
   await app.listen(port, '0.0.0.0');
 
   // ─── Auto-sync HR teachers → Pedagogy on startup ──

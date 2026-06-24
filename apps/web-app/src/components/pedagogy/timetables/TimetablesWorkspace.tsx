@@ -115,10 +115,7 @@ export default function TimetablesWorkspace() {
     startTime: string;
     endTime: string;
   }
-  const [breaks, setBreaks] = useState<BreakPeriod[]>([
-    { id: '1', name: 'Récréation', startTime: '10:00', endTime: '10:30' },
-    { id: '2', name: 'Pause Déjeuner', startTime: '12:00', endTime: '13:00' }
-  ]);
+  const [breaks, setBreaks] = useState<BreakPeriod[]>([]);
 
   // Timetables automatic generation
   const [generating, setGenerating] = useState(false);
@@ -791,10 +788,10 @@ ${DAYS.map(d => `<th>${d.label}</th>`).join('')}
   };
 
   return (
-    <div className="flex h-[calc(100vh-12rem)] gap-6 overflow-hidden">
+    <div className="flex flex-col gap-6">
       {/* Bilingual track selector — affiché en haut si bilingue activé */}
       {isBilingual && (
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-slate-100 rounded-xl p-1 shadow-md">
+        <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1 shadow-sm self-center">
           <button
             type="button"
             onClick={() => setCurrentTrack('FR')}
@@ -811,41 +808,42 @@ ${DAYS.map(d => `<th>${d.label}</th>`).join('')}
           </button>
         </div>
       )}
+      <div className="flex flex-col lg:flex-row gap-6">
       {/* Sidebar de contrôle */}
-      <div className="w-72 bg-white rounded-3xl border border-gray-100 flex flex-col shadow-sm">
-        <div className="p-6 border-b border-gray-50 space-y-4">
+      <div className="w-full lg:w-72 bg-white rounded-2xl border border-gray-100 flex flex-col shadow-sm shrink-0">
+        <div className="p-5 border-b border-gray-50 space-y-4">
            <div className="flex items-center justify-between">
               <h2 className="text-lg font-black text-gray-900 flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-indigo-600" />
+                <Calendar className="w-5 h-5 text-blue-600" />
                 Planning
               </h2>
               <button className="p-2 hover:bg-gray-50 rounded-xl text-gray-400">
                 <MoreVertical className="w-4 h-4" />
               </button>
            </div>
-           
-           <div className="flex p-1 bg-gray-50 rounded-2xl">
-              <button 
+
+           <div className="flex p-1 bg-gray-50 rounded-xl">
+              <button
                 onClick={() => setViewMode('class')}
-                className={cn("flex-1 py-2 rounded-xl text-[10px] font-black uppercase transition-all", viewMode === 'class' ? "bg-white text-indigo-600 shadow-sm" : "text-gray-400")}
+                className={cn("flex-1 py-2 rounded-lg text-[10px] font-black uppercase transition-all", viewMode === 'class' ? "bg-white text-blue-600 shadow-sm" : "text-gray-400")}
               >Classe</button>
-              <button 
+              <button
                 onClick={() => setViewMode('teacher')}
-                className={cn("flex-1 py-2 rounded-xl text-[10px] font-black uppercase transition-all", viewMode === 'teacher' ? "bg-white text-indigo-600 shadow-sm" : "text-gray-400")}
+                className={cn("flex-1 py-2 rounded-lg text-[10px] font-black uppercase transition-all", viewMode === 'teacher' ? "bg-white text-blue-600 shadow-sm" : "text-gray-400")}
               >Prof</button>
-              <button 
+              <button
                 onClick={() => setViewMode('room')}
-                className={cn("flex-1 py-2 rounded-xl text-[10px] font-black uppercase transition-all", viewMode === 'room' ? "bg-white text-indigo-600 shadow-sm" : "text-gray-400")}
+                className={cn("flex-1 py-2 rounded-lg text-[10px] font-black uppercase transition-all", viewMode === 'room' ? "bg-white text-blue-600 shadow-sm" : "text-gray-400")}
               >Salle</button>
            </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+        <div className="p-4 space-y-2 max-h-[60vh] lg:max-h-none overflow-y-auto">
           {viewMode === 'class' && classes.map(c => (
-            <button 
-              key={c.id} 
+            <button
+              key={c.id}
               onClick={() => setSelectedId(c.id)}
-              className={cn("w-full p-3 rounded-2xl text-left transition-all", selectedId === c.id ? "bg-indigo-600 text-white shadow-lg shadow-indigo-100" : "hover:bg-gray-50 text-gray-700")}
+              className={cn("w-full p-3 rounded-xl text-left transition-all", selectedId === c.id ? "bg-blue-600 text-white shadow-lg shadow-blue-100" : "hover:bg-gray-50 text-gray-700")}
             >
               <p className="text-sm font-black">{c.name}</p>
             </button>
@@ -873,9 +871,9 @@ ${DAYS.map(d => `<th>${d.label}</th>`).join('')}
       </div>
 
       {/* Grille EDT */}
-      <div className="flex-1 bg-white rounded-3xl border border-gray-100 flex flex-col shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-gray-50 bg-gray-50/20 flex items-center justify-between">
-          <div className="flex items-center gap-6">
+      <div className="flex-1 bg-white rounded-2xl border border-gray-100 flex flex-col shadow-sm">
+        <div className="p-5 border-b border-gray-50 flex flex-col gap-4">
+          <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
                <h3 className="text-xl font-black text-gray-900 tracking-tight">Emploi du Temps Hebdomadaire</h3>
                <p className="text-xs text-gray-500 font-bold uppercase tracking-widest mt-1">
@@ -887,66 +885,66 @@ ${DAYS.map(d => `<th>${d.label}</th>`).join('')}
                </p>
             </div>
           </div>
-          <div className="flex gap-2">
-            <button 
+          <div className="flex gap-2 flex-wrap">
+            <button
               onClick={() => setModal('settings-breaks')}
-              className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-100 rounded-2xl text-xs font-black text-gray-600 hover:bg-gray-50 transition-all shadow-sm"
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all"
             >
-              <Clock className="w-4 h-4 text-indigo-600" />
-              PAUSES & PLAGES
+              <Clock className="w-4 h-4 text-blue-600" />
+              Pauses & Plages
             </button>
             {(viewMode === 'class' || viewMode === 'teacher') && (
-              <button 
+              <button
                 onClick={handleAutoGenerate}
                 disabled={generating}
                 className={cn(
-                  "flex items-center gap-2 px-5 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-2xl text-xs font-black transition-all shadow-sm",
+                  "flex items-center gap-2 px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-bold transition-all",
                   generating && "opacity-75 cursor-not-allowed"
                 )}
               >
                 {generating ? (
-                  <div className="w-3.5 h-3.5 border-2 border-indigo-700 border-t-transparent rounded-full animate-spin" />
+                  <div className="w-3.5 h-3.5 border-2 border-blue-700 border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <Calendar className="w-4 h-4" />
                 )}
-                {generating ? "GÉNÉRATION..." : "AUTO-GÉNÉRER"}
+                {generating ? "Génération..." : "Auto-générer"}
               </button>
             )}
             <button
               onClick={handleDownloadTimetable}
-              className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-100 rounded-2xl text-xs font-black text-gray-600 hover:bg-gray-50 transition-all shadow-sm"
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all"
               title="Télécharger l'emploi du temps (HTML)"
             >
               <Download className="w-4 h-4" />
-              TÉLÉCHARGER
+              Télécharger
             </button>
             <button
               onClick={handlePrintTimetable}
-              className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-100 rounded-2xl text-xs font-black text-gray-600 hover:bg-gray-50 transition-all shadow-sm"
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all"
               title="Imprimer l'emploi du temps"
             >
               <Printer className="w-4 h-4" />
-              IMPRIMER
+              Imprimer
             </button>
-            <button 
+            <button
               onClick={() => setModal('add-entry')}
-              className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-2xl text-xs font-black hover:scale-105 transition-all shadow-lg shadow-indigo-100"
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition-all shadow-sm"
             >
               <Plus className="w-4 h-4" />
-              AJOUTER UN COURS
+              Ajouter un cours
             </button>
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto bg-gray-50/10">
+        <div className="overflow-x-auto bg-gray-50/30 p-4">
           <div className="min-w-[800px]">
              {/* Header Jours */}
-             <div className="grid grid-cols-[100px_repeat(6,1fr)] border-b border-gray-100 bg-white sticky top-0 z-20">
+             <div className="grid grid-cols-[100px_repeat(6,1fr)] border-b border-gray-100 bg-white rounded-t-xl overflow-hidden">
                 <div className="p-4 border-r border-gray-100 flex items-center justify-center bg-gray-50/50">
                   <Clock className="w-4 h-4 text-gray-300" />
                 </div>
                 {DAYS.map(day => (
-                  <div key={day.id} className="p-4 border-r border-gray-100 text-center">
+                  <div key={day.id} className="p-4 border-r border-gray-100 text-center last:border-r-0">
                     <span className="text-[11px] font-black uppercase text-gray-500 tracking-widest">{day.label}</span>
                   </div>
                 ))}
@@ -955,7 +953,7 @@ ${DAYS.map(d => `<th>${d.label}</th>`).join('')}
              {/* Lignes Heures */}
              {HOURS.map(hour => (
                <div key={hour} className="grid grid-cols-[100px_repeat(6,1fr)]">
-                  <div className="p-4 border-r border-b border-gray-100 flex items-center justify-center bg-white sticky left-0 z-10">
+                  <div className="p-4 border-r border-b border-gray-100 flex items-center justify-center bg-white">
                     <span className="text-xs font-black text-gray-400">{hour}:00</span>
                   </div>
                   {DAYS.map(day => (
@@ -966,6 +964,7 @@ ${DAYS.map(d => `<th>${d.label}</th>`).join('')}
           </div>
         </div>
       </div>
+      </div>{/* /flex row */}
 
       <FormModal
         isOpen={modal === 'add-entry'}

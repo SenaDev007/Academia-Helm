@@ -88,7 +88,7 @@ interface AssignedSubject {
 }
 
 export default function ProductionWorkspace() {
-  const { academicYear, tenantId } = useModuleContext();
+  const { academicYear, tenantId, schoolLevel } = useModuleContext();
   const diarySyncStatuses = useEntitySyncStatusBatch('CLASS_DIARY', tenantId ?? undefined);
   const lessonSyncStatuses = useEntitySyncStatusBatch('LESSON_PLAN', tenantId ?? undefined);
   const { user } = useAuth();
@@ -116,6 +116,7 @@ export default function ProductionWorkspace() {
   const [tests, setTests] = useState<any[]>([]);
   const [weeklyAssignment, setWeeklyAssignment] = useState<any | null>(null);
   const [semainier, setSemainier] = useState<any | null>(null);
+  const [feedbacks, setFeedbacks] = useState<any[]>([]);
   
   // Modals
   const [modal, setModal] = useState<'none' | 'create-diary' | 'create-lesson' | 'create-journal' | 'create-test' | 'create-weekly-entry' | 'report-weekly-incident'>('none');
@@ -389,33 +390,36 @@ export default function ProductionWorkspace() {
   ];
 
   return (
-    <div className="flex h-[calc(100vh-12rem)] gap-6 overflow-hidden">
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col lg:flex-row gap-6">
       {/* Sidebar : Mes Classes & Matières */}
-      <div className="w-80 bg-white rounded-3xl border border-gray-100 flex flex-col shadow-sm">
-        <div className="p-6 border-b border-gray-50 bg-gray-50/20">
+      <div className="w-full lg:w-72 bg-white rounded-2xl border border-gray-100 flex flex-col shadow-sm shrink-0">
+        <div className="p-5 border-b border-gray-50">
           <h2 className="text-lg font-black text-gray-900 flex items-center gap-2">
-            <LayoutDashboard className="w-5 h-5 text-indigo-600" />
+            <LayoutDashboard className="w-5 h-5 text-blue-600" />
             Mon Portfolio
           </h2>
-          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1">Saisie des activités</p>
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Saisie des activités</p>
         </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          {assignedSubjects.map(s => (
+        <div className="p-4 space-y-2 max-h-[60vh] lg:max-h-none overflow-y-auto">
+          {assignedSubjects.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-8">Aucune matière assignée.</p>
+          ) : assignedSubjects.map(s => (
             <button
               key={s.id}
               onClick={() => setSelectedSubjectId(s.id)}
               className={cn(
-                "w-full text-left p-4 rounded-2xl transition-all border",
-                selectedSubjectId === s.id ? "bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100" : "hover:bg-gray-50 border-transparent text-gray-700"
+                "w-full text-left p-3 rounded-xl transition-all border",
+                selectedSubjectId === s.id ? "bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-100" : "hover:bg-gray-50 border-transparent text-gray-700"
               )}
             >
               <div className="flex items-center gap-3">
-                 <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs", selectedSubjectId === s.id ? "bg-white/20" : "bg-indigo-50 text-indigo-600")}>
+                 <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center font-black text-xs", selectedSubjectId === s.id ? "bg-white/20" : "bg-blue-50 text-blue-600")}>
                     {s.subject.code}
                  </div>
                  <div className="min-w-0">
                     <p className="font-bold text-sm truncate">{s.subject.name}</p>
-                    <p className={cn("text-[10px] font-bold uppercase", selectedSubjectId === s.id ? "text-indigo-200" : "text-gray-400")}>{s.class.name}</p>
+                    <p className={cn("text-[10px] font-bold uppercase", selectedSubjectId === s.id ? "text-blue-200" : "text-gray-400")}>{s.class.name}</p>
                  </div>
               </div>
             </button>
@@ -424,71 +428,71 @@ export default function ProductionWorkspace() {
       </div>
 
       {/* Zone de Travail */}
-      <div className="flex-1 bg-white rounded-3xl border border-gray-100 flex flex-col shadow-sm overflow-hidden">
+      <div className="flex-1 bg-white rounded-2xl border border-gray-100 flex flex-col shadow-sm min-w-0">
         {/* Navigation Tabs */}
-        <div className="flex border-b border-gray-50 bg-white overflow-x-auto no-scrollbar">
-          <button 
+        <div className="flex border-b border-gray-100 bg-white overflow-x-auto">
+          <button
             onClick={() => setActiveTab('dashboard')}
-            className={cn("px-6 py-5 text-xs font-black uppercase tracking-widest border-b-2 transition-all whitespace-nowrap", activeTab === 'dashboard' ? "border-indigo-600 text-indigo-600 bg-indigo-50/30" : "border-transparent text-gray-400 hover:text-gray-600")}
+            className={cn("px-5 py-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all whitespace-nowrap", activeTab === 'dashboard' ? "border-blue-600 text-blue-600 bg-blue-50/30" : "border-transparent text-gray-400 hover:text-gray-600")}
           >
             Dashboard
           </button>
-          <button 
+          <button
             onClick={() => setActiveTab('diaries')}
-            className={cn("px-6 py-5 text-xs font-black uppercase tracking-widest border-b-2 transition-all whitespace-nowrap", activeTab === 'diaries' ? "border-indigo-600 text-indigo-600 bg-indigo-50/30" : "border-transparent text-gray-400 hover:text-gray-600")}
+            className={cn("px-5 py-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all whitespace-nowrap", activeTab === 'diaries' ? "border-blue-600 text-blue-600 bg-blue-50/30" : "border-transparent text-gray-400 hover:text-gray-600")}
           >
             Cahier de Textes
           </button>
-          <button 
+          <button
             onClick={() => setActiveTab('lessons')}
-            className={cn("px-8 py-5 text-xs font-black uppercase tracking-widest border-b-2 transition-all", activeTab === 'lessons' ? "border-indigo-600 text-indigo-600 bg-indigo-50/30" : "border-transparent text-gray-400 hover:text-gray-600")}
+            className={cn("px-5 py-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all whitespace-nowrap", activeTab === 'lessons' ? "border-blue-600 text-blue-600 bg-blue-50/30" : "border-transparent text-gray-400 hover:text-gray-600")}
           >
             Fiches & Programmations
           </button>
-          <button 
+          <button
             onClick={() => setActiveTab('journal')}
-            className={cn("px-8 py-5 text-xs font-black uppercase tracking-widest border-b-2 transition-all", activeTab === 'journal' ? "border-indigo-600 text-indigo-600 bg-indigo-50/30" : "border-transparent text-gray-400 hover:text-gray-600")}
+            className={cn("px-5 py-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all whitespace-nowrap", activeTab === 'journal' ? "border-blue-600 text-blue-600 bg-blue-50/30" : "border-transparent text-gray-400 hover:text-gray-600")}
           >
             Cahier Journal
           </button>
-          <button 
+          <button
             onClick={() => setActiveTab('tests')}
-            className={cn("px-8 py-5 text-xs font-black uppercase tracking-widest border-b-2 transition-all", activeTab === 'tests' ? "border-indigo-600 text-indigo-600 bg-indigo-50/30" : "border-transparent text-gray-400 hover:text-gray-600")}
+            className={cn("px-5 py-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all whitespace-nowrap", activeTab === 'tests' ? "border-blue-600 text-blue-600 bg-blue-50/30" : "border-transparent text-gray-400 hover:text-gray-600")}
           >
             Cahier de Test
           </button>
-          <button 
+          <button
             onClick={() => setActiveTab('weekly')}
-            className={cn("px-8 py-5 text-xs font-black uppercase tracking-widest border-b-2 transition-all", activeTab === 'weekly' ? "border-indigo-600 text-indigo-600 bg-indigo-50/30" : "border-transparent text-gray-400 hover:text-gray-600")}
+            className={cn("px-5 py-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all whitespace-nowrap", activeTab === 'weekly' ? "border-blue-600 text-blue-600 bg-blue-50/30" : "border-transparent text-gray-400 hover:text-gray-600")}
           >
             Semainier
           </button>
-          <button 
+          <button
             onClick={() => setActiveTab('progress')}
-            className={cn("px-6 py-5 text-xs font-black uppercase tracking-widest border-b-2 transition-all whitespace-nowrap", activeTab === 'progress' ? "border-indigo-600 text-indigo-600 bg-indigo-50/30" : "border-transparent text-gray-400 hover:text-gray-600")}
+            className={cn("px-5 py-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all whitespace-nowrap", activeTab === 'progress' ? "border-blue-600 text-blue-600 bg-blue-50/30" : "border-transparent text-gray-400 hover:text-gray-600")}
           >
             Progression
           </button>
           <button
             onClick={() => setActiveTab('feedback')}
-            className={cn("px-6 py-5 text-xs font-black uppercase tracking-widest border-b-2 transition-all whitespace-nowrap", activeTab === 'feedback' ? "border-rose-600 text-rose-600 bg-rose-50/30" : "border-transparent text-gray-400 hover:text-gray-600")}
+            className={cn("px-5 py-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all whitespace-nowrap", activeTab === 'feedback' ? "border-rose-600 text-rose-600 bg-rose-50/30" : "border-transparent text-gray-400 hover:text-gray-600")}
           >
             Retours Direction
           </button>
           <button
             onClick={() => setActiveTab('students')}
-            className={cn("px-6 py-5 text-xs font-black uppercase tracking-widest border-b-2 transition-all whitespace-nowrap", activeTab === 'students' ? "border-indigo-600 text-indigo-600 bg-indigo-50/30" : "border-transparent text-gray-400 hover:text-gray-600")}
+            className={cn("px-5 py-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all whitespace-nowrap", activeTab === 'students' ? "border-blue-600 text-blue-600 bg-blue-50/30" : "border-transparent text-gray-400 hover:text-gray-600")}
           >
             Mes Élèves
           </button>
 
-          <div className="ml-auto flex items-center px-6 gap-2 shrink-0">
+          <div className="ml-auto flex items-center px-5 gap-2 shrink-0">
              {isOffline && (
-               <span className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 text-amber-600 rounded-xl text-[10px] font-black uppercase mr-2 border border-amber-100">
+               <span className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 text-amber-600 rounded-lg text-[10px] font-bold uppercase mr-2 border border-amber-100">
                  <AlertTriangle className="w-3 h-3" /> Hors ligne
                </span>
              )}
-             <button 
+             <button
               onClick={() => {
                 if (activeTab === 'diaries') setModal('create-diary');
                 else if (activeTab === 'lessons') setModal('create-lesson');
@@ -497,59 +501,69 @@ export default function ProductionWorkspace() {
                 else if (activeTab === 'weekly') setModal('create-weekly-entry');
               }}
               className={cn(
-                "flex items-center gap-2 bg-indigo-600 text-white px-5 py-2.5 rounded-2xl text-xs font-black hover:scale-105 transition-all shadow-md shadow-indigo-100",
+                "flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 transition-all",
                 activeTab === 'dashboard' || activeTab === 'progress' || activeTab === 'feedback' ? "hidden" : ""
               )}
              >
                 <Plus className="w-4 h-4" />
-                {activeTab === 'weekly' ? 'AJOUTER RAPPORT' : 'NOUVELLE ENTRÉE'}
+                {activeTab === 'weekly' ? 'Ajouter rapport' : 'Nouvelle entrée'}
              </button>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto bg-gray-50/10 p-8">
+        <div className="bg-gray-50/30 p-6">
            {activeTab === 'dashboard' && (
-              <div className="max-w-5xl mx-auto space-y-6">
-                 <h3 className="text-2xl font-black text-gray-900 tracking-tight mb-8">Vue d'ensemble Pédagogique</h3>
+              <div className="space-y-6">
+                 <h3 className="text-2xl font-black text-gray-900 tracking-tight">Vue d'ensemble Pédagogique</h3>
                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div className="p-6 bg-white rounded-3xl border border-gray-100 shadow-sm">
+                    <div className="p-5 bg-white rounded-xl border border-gray-100 shadow-sm">
                        <p className="text-[10px] font-bold text-gray-400 uppercase">Documents Soumis</p>
-                       <h4 className="text-3xl font-black text-gray-900 mt-2">18</h4>
+                       <h4 className="text-3xl font-black text-gray-900 mt-2">{diaries.length + lessons.length + journals.length + tests.length}</h4>
                     </div>
-                    <div className="p-6 bg-emerald-50 rounded-3xl border border-emerald-100 shadow-sm">
+                    <div className="p-5 bg-emerald-50 rounded-xl border border-emerald-100 shadow-sm">
                        <p className="text-[10px] font-bold text-emerald-600 uppercase">Validés</p>
-                       <h4 className="text-3xl font-black text-emerald-700 mt-2">12</h4>
+                       <h4 className="text-3xl font-black text-emerald-700 mt-2">
+                         {[...diaries, ...lessons, ...journals, ...tests].filter((d: any) => d.status === 'APPROVED' || d.status === 'VALIDATED').length}
+                       </h4>
                     </div>
-                    <div className="p-6 bg-amber-50 rounded-3xl border border-amber-100 shadow-sm">
+                    <div className="p-5 bg-amber-50 rounded-xl border border-amber-100 shadow-sm">
                        <p className="text-[10px] font-bold text-amber-600 uppercase">À Corriger</p>
-                       <h4 className="text-3xl font-black text-amber-700 mt-2">2</h4>
+                       <h4 className="text-3xl font-black text-amber-700 mt-2">
+                         {[...diaries, ...lessons, ...journals, ...tests].filter((d: any) => d.status === 'PENDING' || d.status === 'DRAFT').length}
+                       </h4>
                     </div>
-                    <div className="p-6 bg-rose-50 rounded-3xl border border-rose-100 shadow-sm">
+                    <div className="p-5 bg-rose-50 rounded-xl border border-rose-100 shadow-sm">
                        <p className="text-[10px] font-bold text-rose-600 uppercase">Rejetés</p>
-                       <h4 className="text-3xl font-black text-rose-700 mt-2">0</h4>
+                       <h4 className="text-3xl font-black text-rose-700 mt-2">
+                         {[...diaries, ...lessons, ...journals, ...tests].filter((d: any) => d.status === 'REJECTED').length}
+                       </h4>
                     </div>
                  </div>
-                 
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
-                    <div className="p-6 bg-white rounded-3xl border border-gray-100 shadow-sm">
+
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="p-5 bg-white rounded-xl border border-gray-100 shadow-sm">
                        <h4 className="font-bold text-gray-900 mb-4">Derniers Retours Direction</h4>
                        <div className="space-y-3">
-                          <div className="p-3 bg-amber-50 rounded-xl flex items-start gap-3">
-                             <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5"/>
-                             <div>
-                                <p className="text-xs font-bold text-amber-800">Fiche Pédago : Les équations</p>
-                                <p className="text-[10px] text-amber-700 mt-1">"Veuillez détailler la phase d'évaluation."</p>
-                             </div>
-                          </div>
+                          {feedbacks.length === 0 ? (
+                            <p className="text-sm text-gray-400 py-4 text-center">Aucun retour pour le moment.</p>
+                          ) : feedbacks.slice(0, 3).map((f: any) => (
+                            <div key={f.id} className="p-3 bg-amber-50 rounded-xl flex items-start gap-3">
+                               <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5"/>
+                               <div>
+                                  <p className="text-xs font-bold text-amber-800">{f.title || f.subject || 'Retour'}</p>
+                                  <p className="text-[10px] text-amber-700 mt-1">{f.content || f.comment || ''}</p>
+                               </div>
+                            </div>
+                          ))}
                        </div>
                     </div>
-                    <div className="p-6 bg-indigo-900 rounded-3xl shadow-xl text-white">
-                       <div className="flex items-center gap-2 mb-4 text-indigo-300">
+                    <div className="p-5 bg-blue-900 rounded-xl shadow-sm text-white">
+                       <div className="flex items-center gap-2 mb-4 text-blue-300">
                           <Sparkles className="w-5 h-5" />
                           <span className="text-xs font-bold uppercase">Assistant Sarah AI</span>
                        </div>
                        <p className="text-sm font-medium leading-relaxed mb-4">Générez vos fiches pédagogiques en un clic ou demandez une correction automatique selon les retours de la direction.</p>
-                       <button className="w-full py-2 bg-indigo-600 rounded-xl text-xs font-bold hover:bg-indigo-500 transition-colors">Ouvrir Sarah AI</button>
+                       <button className="w-full py-2 bg-blue-600 rounded-lg text-xs font-bold hover:bg-blue-500 transition-colors">Ouvrir Sarah AI</button>
                     </div>
                  </div>
               </div>
@@ -864,110 +878,118 @@ export default function ProductionWorkspace() {
            )}
 
            {activeTab === 'progress' && (
-              <div className="max-w-4xl mx-auto space-y-8">
-                 <div className="bg-gradient-to-br from-indigo-900 to-blue-900 rounded-[2.5rem] p-10 text-white shadow-xl relative overflow-hidden">
-                    <div className="absolute top-0 right-0 p-10 opacity-10">
+              <div className="space-y-6">
+                 <div className="bg-gradient-to-br from-blue-900 to-blue-800 rounded-2xl p-8 text-white shadow-sm relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-8 opacity-10">
                        <BarChart className="w-32 h-32" />
                     </div>
                     <div className="relative">
-                       <h3 className="text-3xl font-black mb-2">Couverture du Programme</h3>
-                       <p className="text-indigo-100/60 font-bold text-sm uppercase tracking-widest">Matière : {activeSubject?.subject.name}</p>
-                       
-                       <div className="mt-10 flex items-center gap-6">
-                          <div className="text-5xl font-black">62%</div>
+                       <h3 className="text-2xl font-black mb-2">Couverture du Programme</h3>
+                       <p className="text-blue-100/60 font-bold text-sm uppercase tracking-widest">Matière : {activeSubject?.subject.name || '—'}</p>
+
+                       <div className="mt-8 flex items-center gap-6">
+                          <div className="text-4xl font-black">
+                            {diaries.length > 0 ? '100' : '0'}%
+                          </div>
                           <div className="flex-1 h-3 bg-white/10 rounded-full overflow-hidden">
-                             <div className="h-full bg-indigo-400 rounded-full" style={{ width: '62%' }}></div>
+                             <div className="h-full bg-blue-400 rounded-full" style={{ width: `${diaries.length > 0 ? 100 : 0}%` }}></div>
                           </div>
                        </div>
-                       <p className="mt-4 text-xs text-indigo-200/80">32 séances effectuées sur 52 prévues pour l'année.</p>
+                       <p className="mt-4 text-xs text-blue-200/80">
+                         {diaries.length} séance(s) enregistrée(s) pour cette matière.
+                       </p>
                     </div>
                  </div>
 
-                 <div className="grid grid-cols-2 gap-6">
-                    <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm">
                        <h4 className="font-black text-gray-900 mb-4 flex items-center gap-2">
                          <CheckCircle2 className="w-5 h-5 text-emerald-500" />
                          Chapitres Validés
                        </h4>
-                       <ul className="space-y-3">
-                          {['Les opérations complexes', 'Géométrie vectorielle'].map((c, i) => (
-                            <li key={i} className="flex items-center gap-3 text-xs font-bold text-gray-600 p-2 hover:bg-gray-50 rounded-xl">
-                               <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                               {c}
-                            </li>
-                          ))}
-                       </ul>
+                       {diaries.filter((d: any) => d.status === 'APPROVED' || d.status === 'VALIDATED').length === 0 ? (
+                         <p className="text-sm text-gray-400 py-4 text-center">Aucun chapitre validé.</p>
+                       ) : (
+                         <ul className="space-y-2">
+                            {diaries.filter((d: any) => d.status === 'APPROVED' || d.status === 'VALIDATED').map((d: any, i: number) => (
+                              <li key={i} className="flex items-center gap-3 text-xs font-bold text-gray-600 p-2 hover:bg-gray-50 rounded-lg">
+                                 <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                                 {d.title || d.summary || d.topic || `Séance du ${d.date ? new Date(d.date).toLocaleDateString('fr-FR') : '—'}`}
+                              </li>
+                            ))}
+                         </ul>
+                       )}
                     </div>
-                    <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+                    <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm">
                        <h4 className="font-black text-gray-900 mb-4 flex items-center gap-2">
                          <Clock className="w-5 h-5 text-amber-500" />
                          En cours / Prochains
                        </h4>
-                       <ul className="space-y-3">
-                          {['Statistiques descriptives', 'Probabilités'].map((c, i) => (
-                            <li key={i} className="flex items-center gap-3 text-xs font-bold text-gray-600 p-2 hover:bg-gray-50 rounded-xl">
-                               <div className="w-2 h-2 rounded-full bg-gray-200" />
-                               {c}
-                            </li>
-                          ))}
-                       </ul>
+                       {diaries.filter((d: any) => d.status !== 'APPROVED' && d.status !== 'VALIDATED').length === 0 ? (
+                         <p className="text-sm text-gray-400 py-4 text-center">Aucune séance en cours.</p>
+                       ) : (
+                         <ul className="space-y-2">
+                            {diaries.filter((d: any) => d.status !== 'APPROVED' && d.status !== 'VALIDATED').map((d: any, i: number) => (
+                              <li key={i} className="flex items-center gap-3 text-xs font-bold text-gray-600 p-2 hover:bg-gray-50 rounded-lg">
+                                 <div className="w-2 h-2 rounded-full bg-gray-200" />
+                                 {d.title || d.summary || d.topic || `Séance du ${d.date ? new Date(d.date).toLocaleDateString('fr-FR') : '—'}`}
+                              </li>
+                            ))}
+                         </ul>
+                       )}
                     </div>
                  </div>
               </div>
            )}
 
            {activeTab === 'feedback' && (
-              <div className="max-w-4xl mx-auto space-y-6">
-                 <div className="flex items-center justify-between mb-8">
+              <div className="space-y-6">
+                 <div className="flex items-center justify-between">
                     <h3 className="text-2xl font-black text-gray-900 tracking-tight">Retours & Approbations Direction</h3>
-                    <div className="flex gap-2">
-                       <button className="px-4 py-2 bg-white border border-gray-200 text-gray-600 rounded-xl text-xs font-bold shadow-sm">
-                         Filtrer par statut
-                       </button>
-                    </div>
                  </div>
 
                  <div className="grid grid-cols-1 gap-4">
-                    <div className="p-6 bg-white rounded-3xl border border-gray-100 shadow-sm flex items-start gap-4">
-                       <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-500 flex items-center justify-center shrink-0">
-                          <AlertTriangle className="w-6 h-6" />
-                       </div>
-                       <div className="flex-1">
-                          <div className="flex justify-between items-start">
-                             <div>
-                                <span className="text-[10px] font-bold text-gray-400 uppercase">Cahier Journal • 12 Mai 2025</span>
-                                <h4 className="text-lg font-bold text-gray-900 mt-1">À Corriger</h4>
-                             </div>
-                             <span className="px-2 py-1 bg-amber-100 text-amber-700 text-[10px] font-bold rounded uppercase">Action Requise</span>
-                          </div>
-                          <div className="mt-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
-                             <p className="text-xs text-gray-600 font-medium">"Il manque les objectifs spécifiques pour la séance de Mathématiques de 10h. Veuillez compléter et soumettre à nouveau."</p>
-                             <p className="text-[10px] text-gray-400 mt-2 font-bold">— M. le Directeur</p>
-                          </div>
-                          <div className="mt-4 flex gap-2">
-                             <button className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-colors">Corriger le document</button>
-                             <button className="px-4 py-2 bg-gray-100 text-gray-600 rounded-xl text-xs font-bold hover:bg-gray-200 transition-colors">Demander aide à Sarah AI</button>
-                          </div>
-                       </div>
-                    </div>
-                    
-                    <div className="p-6 bg-white rounded-3xl border border-gray-100 shadow-sm flex items-start gap-4 opacity-70">
-                       <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-500 flex items-center justify-center shrink-0">
-                          <CheckCircle2 className="w-6 h-6" />
-                       </div>
-                       <div className="flex-1">
-                          <div className="flex justify-between items-start">
-                             <div>
-                                <span className="text-[10px] font-bold text-gray-400 uppercase">Fiche Pédagogique • 10 Mai 2025</span>
-                                <h4 className="text-lg font-bold text-gray-900 mt-1">Validé</h4>
-                             </div>
-                             <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded uppercase">Archivé</span>
-                          </div>
-                          <div className="mt-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
-                             <p className="text-xs text-gray-600 font-medium">"Excellent travail, la progression est claire."</p>
-                          </div>
-                       </div>
-                    </div>
+                    {feedbacks.length === 0 ? (
+                      <div className="py-16 text-center bg-white rounded-xl border border-gray-100 border-dashed">
+                         <AlertTriangle className="w-12 h-12 text-gray-200 mx-auto mb-4" />
+                         <p className="text-gray-400 font-bold">Aucun retour de la direction pour le moment.</p>
+                      </div>
+                    ) : feedbacks.map((f: any) => (
+                      <div key={f.id} className={`p-5 bg-white rounded-xl border border-gray-100 shadow-sm flex items-start gap-4 ${f.status === 'REJECTED' ? 'opacity-70' : ''}`}>
+                         <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
+                           f.status === 'REJECTED' ? 'bg-rose-50 text-rose-500' :
+                           f.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-500' :
+                           'bg-amber-50 text-amber-500'
+                         }`}>
+                            {f.status === 'APPROVED' ? <CheckCircle2 className="w-6 h-6" /> : <AlertTriangle className="w-6 h-6" />}
+                         </div>
+                         <div className="flex-1">
+                            <div className="flex justify-between items-start">
+                               <div>
+                                  <span className="text-[10px] font-bold text-gray-400 uppercase">
+                                    {f.documentType || 'Document'} • {f.createdAt ? new Date(f.createdAt).toLocaleDateString('fr-FR') : '—'}
+                                  </span>
+                                  <h4 className="text-lg font-bold text-gray-900 mt-1">
+                                    {f.status === 'APPROVED' ? 'Validé' : f.status === 'REJECTED' ? 'Rejeté' : 'À Corriger'}
+                                  </h4>
+                               </div>
+                               <span className={`px-2 py-1 text-[10px] font-bold rounded uppercase ${
+                                 f.status === 'REJECTED' ? 'bg-rose-100 text-rose-700' :
+                                 f.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700' :
+                                 'bg-amber-100 text-amber-700'
+                               }`}>
+                                 {f.status === 'APPROVED' ? 'Validé' : f.status === 'REJECTED' ? 'Rejeté' : 'Action Requise'}
+                               </span>
+                            </div>
+                            {f.content && (
+                              <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
+                                 <p className="text-xs text-gray-600 font-medium">"{f.content}"</p>
+                                 {f.reviewer && <p className="text-[10px] text-gray-400 mt-2 font-bold">— {f.reviewer.firstName} {f.reviewer.lastName}</p>}
+                              </div>
+                            )}
+                         </div>
+                      </div>
+                    ))}
                  </div>
               </div>
            )}
@@ -978,6 +1000,7 @@ export default function ProductionWorkspace() {
            )}
         </div>
       </div>
+      </div>{/* /flex row */}
 
       {/* MODALS */}
       <FormModal

@@ -163,43 +163,58 @@ export class StaffPrismaService {
     });
 
     // ─── Pont HR → Pédagogie ──
-    // Si le staff créé est un enseignant (roleType=TEACHER) avec un schoolLevelId,
+    // Si le staff créé est un enseignant (roleType=TEACHER),
     // créer automatiquement un enregistrement Teacher dans le module Pédagogie
     // pour qu'il apparaisse dans les affectations de classes.
-    if (roleType === 'TEACHER' && (data.schoolLevelId || created.schoolLevelId)) {
+    // Si aucun schoolLevelId n'est fourni, on cherche un niveau par défaut.
+    if (roleType === 'TEACHER') {
       try {
         const existingTeacher = await this.prisma.teacher.findFirst({
           where: {
             tenantId: data.tenantId,
             OR: [
-              { email: data.email || '' },
+              ...(data.email ? [{ email: data.email }] : []),
               { matricule: finalEmployeeNumber },
             ],
           },
         });
 
         if (!existingTeacher) {
-          await this.prisma.teacher.create({
-            data: {
-              tenantId: data.tenantId,
-              schoolLevelId: data.schoolLevelId || created.schoolLevelId,
-              matricule: finalEmployeeNumber,
-              firstName: data.firstName,
-              lastName: data.lastName,
-              gender: data.gender || null,
-              dateOfBirth: data.birthDate ? new Date(data.birthDate) : null,
-              phone: data.phone || null,
-              email: data.email || null,
-              address: data.address || null,
-              position: data.position || 'Enseignant',
-              qualifications: data.qualifications || null,
-              hireDate: data.hireDate ? new Date(data.hireDate) : new Date(),
-              contractType: data.contractType || null,
-              status: 'active',
-              academicYearId: data.academicYearId || null,
-            },
-          });
-          this.logger.log(`Teacher auto-created in pedagogy for staff ${created.id} (${data.firstName} ${data.lastName})`);
+          // Resolve schoolLevelId — if staff doesn't have one, find a default
+          let schoolLevelId = data.schoolLevelId || created.schoolLevelId;
+          if (!schoolLevelId) {
+            const anyLevel = await this.prisma.schoolLevel.findFirst({
+              where: { tenantId: data.tenantId },
+              select: { id: true },
+            });
+            schoolLevelId = anyLevel?.id || null;
+          }
+
+          if (schoolLevelId) {
+            await this.prisma.teacher.create({
+              data: {
+                tenantId: data.tenantId,
+                schoolLevelId,
+                matricule: finalEmployeeNumber,
+                firstName: data.firstName,
+                lastName: data.lastName,
+                gender: data.gender || null,
+                dateOfBirth: data.birthDate ? new Date(data.birthDate) : null,
+                phone: data.phone || null,
+                email: data.email || null,
+                address: data.address || null,
+                position: data.position || 'Enseignant',
+                qualifications: data.qualifications || null,
+                hireDate: data.hireDate ? new Date(data.hireDate) : new Date(),
+                contractType: data.contractType || null,
+                status: 'active',
+                academicYearId: data.academicYearId || null,
+              },
+            });
+            this.logger.log(`Teacher auto-created in pedagogy for staff ${created.id} (${data.firstName} ${data.lastName})`);
+          } else {
+            this.logger.warn(`Could not auto-create Teacher for staff ${created.id}: no schoolLevelId and no default level found for tenant`);
+          }
         }
       } catch (err: any) {
         this.logger.warn(`Failed to auto-create Teacher in pedagogy: ${err.message}`);

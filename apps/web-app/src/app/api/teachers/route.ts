@@ -12,7 +12,7 @@ const API_URL = getApiBaseUrlForRoutes();
 
 export async function GET(request: NextRequest) {
   try {
-    const url = new URL(`${API_URL}/api/teachers`);
+    const url = new URL(`${API_URL}/teachers`);
     request.nextUrl.searchParams.forEach((value, key) => {
       url.searchParams.append(key, value);
     });
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(`${API_URL}/api/teachers`, {
+    const response = await fetch(`${API_URL}/teachers`, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),

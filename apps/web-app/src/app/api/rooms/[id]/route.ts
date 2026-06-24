@@ -17,7 +17,7 @@ export async function GET(
   const { id } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(normalizeApiUrl(`${API_URL}/api/rooms/${id}`), {
+    const response = await fetch(normalizeApiUrl(`${API_URL}/rooms/${id}`), {
       headers,
       cache: 'no-store',
     });
@@ -49,7 +49,7 @@ export async function PUT(
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
 
-    const response = await fetch(normalizeApiUrl(`${API_URL}/api/rooms/${id}`), {
+    const response = await fetch(normalizeApiUrl(`${API_URL}/rooms/${id}`), {
       method: 'PUT',
       headers,
       body: JSON.stringify(body),
@@ -81,7 +81,7 @@ export async function DELETE(
   const { id } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(normalizeApiUrl(`${API_URL}/api/rooms/${id}`), {
+    const response = await fetch(normalizeApiUrl(`${API_URL}/rooms/${id}`), {
       method: 'DELETE',
       headers,
       cache: 'no-store',

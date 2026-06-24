@@ -13,7 +13,7 @@ const API_URL = getApiBaseUrlForRoutes();
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const url = new URL(`${API_URL}/api/rooms`);
+    const url = new URL(`${API_URL}/rooms`);
     searchParams.forEach((value, key) => {
       // Normalize tenant_id → tenantId for backend compatibility
       const normalizedKey = key === 'tenant_id' ? 'tenantId' : key;
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(normalizeApiUrl(`${API_URL}/api/rooms`), {
+    const response = await fetch(normalizeApiUrl(`${API_URL}/rooms`), {
       method: 'POST',
       headers,
       body: JSON.stringify(body),

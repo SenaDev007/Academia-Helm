@@ -985,9 +985,11 @@ async function bootstrap() {
     logger.warn(`CMS tables fallback warning: ${cmsTablesErr.message}`);
   }
 
-  // ─── Department managerId FK migration: Teacher → Staff ──
-  // The Department.managerId originally referenced Teacher.id, but the frontend
-  // sends Staff IDs. We change the FK to reference Staff.id instead.
+  // ─── Department managerId FK migration: Teacher → Staff + remove @unique ──
+  // The Department.managerId originally referenced Teacher.id with @unique,
+  // but the frontend sends Staff IDs. We change the FK to reference Staff.id
+  // and remove the unique constraint so one person can manage multiple departments
+  // (context: in Africa, one person can hold multiple positions).
   // This is idempotent — safe to run multiple times.
   try {
     const prisma = app.get(PrismaService);
@@ -995,12 +997,16 @@ async function bootstrap() {
     await prisma.$executeRawUnsafe(
       `ALTER TABLE "departments" DROP CONSTRAINT IF EXISTS "departments_managerId_fkey"`,
     ).catch(() => {});
+    // Drop unique constraint on managerId (allows one person → multiple departments)
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "departments" DROP CONSTRAINT IF EXISTS "departments_managerId_key"`,
+    ).catch(() => {});
     // Add new FK constraint → staff.id with ON DELETE SET NULL
     await prisma.$executeRawUnsafe(
       `ALTER TABLE "departments" ADD CONSTRAINT "departments_managerId_fkey"
        FOREIGN KEY ("managerId") REFERENCES "staff"("id") ON DELETE SET NULL`,
     ).catch(() => {});
-    logger.log('✅ Department.managerId FK migrated: Teacher → Staff');
+    logger.log('✅ Department.managerId FK migrated: Teacher → Staff (unique constraint removed)');
   } catch (deptFkErr: any) {
     logger.warn(`Department FK migration warning: ${deptFkErr.message}`);
   }

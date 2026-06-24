@@ -24,6 +24,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Building2, Plus, Edit2, Trash2, Loader2, Save, X, Lightbulb, Check } from 'lucide-react';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 
 const PRIMARY = '#1A2BA6';
 
@@ -83,6 +84,7 @@ interface Props {
 }
 
 export default function DepartmentsManagement({ tenantId, showToast }: Props) {
+  const confirmDialog = useConfirmDialog();
   const [departments, setDepartments] = useState<Department[]>([]);
   const [staffList, setStaffList] = useState<StaffOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -231,7 +233,11 @@ export default function DepartmentsManagement({ tenantId, showToast }: Props) {
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Voulez-vous vraiment supprimer le département "${name}" ?`)) return;
+    const ok = await confirmDialog.danger(
+      `Voulez-vous vraiment supprimer le département "${name}" ? Cette action est irréversible.`,
+      'Supprimer le département',
+    );
+    if (!ok) return;
     try {
       const qs = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
       const res = await fetch(`/api/departments/${id}${qs}`, {
@@ -452,6 +458,9 @@ export default function DepartmentsManagement({ tenantId, showToast }: Props) {
           </table>
         )}
       </div>
+
+      {/* Modal de confirmation personnalisé */}
+      {confirmDialog.dialog}
     </div>
   );
 }

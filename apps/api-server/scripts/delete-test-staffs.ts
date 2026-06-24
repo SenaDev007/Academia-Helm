@@ -32,9 +32,36 @@
  * ============================================================================
  */
 
+import * as dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
+import { Pool } from 'pg';
+import { PrismaPg } from '@prisma/adapter-pg';
+import * as path from 'path';
 
-const prisma = new PrismaClient();
+// Load environment variables from apps/api-server/.env (override existing)
+const envPath = path.join(__dirname, '..', '.env');
+dotenv.config({ path: envPath, override: true });
+
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl || databaseUrl.startsWith('file:')) {
+  console.error('❌ DATABASE_URL non définie ou invalide (SQLite).');
+  console.error('   Créez apps/api-server/.env avec DATABASE_URL PostgreSQL');
+  console.error(`   Chemin attendu: ${envPath}`);
+  process.exit(1);
+}
+
+console.log(`🔌 Connexion à: ${databaseUrl.substring(0, 50)}...`);
+
+// Prisma 7 + PostgreSQL adapter (same pattern as prisma.service.ts)
+const pool = new Pool({
+  connectionString: databaseUrl,
+  max: 3,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 15000,
+  ssl: databaseUrl.includes('sslmode=') ? { rejectUnauthorized: false } : undefined,
+});
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({ adapter } as any);
 
 // Les 3 personnes à supprimer (prénom + nom)
 const TARGETS = [
@@ -262,4 +289,5 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
+    await pool.end();
   });

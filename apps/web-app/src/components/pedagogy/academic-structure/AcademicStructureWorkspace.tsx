@@ -126,9 +126,13 @@ function roomTypeDisplay(r: RoomRow): string {
   if (!r.roomType) return '—';
   const mapping: Record<string, string> = {
     CLASSROOM: 'Salle de classe',
-    LAB: 'Laboratoire',
-    IT: 'Informatique',
-    EXAM: 'Examen',
+    LABORATORY: 'Laboratoire',
+    LIBRARY: 'Bibliothèque',
+    OFFICE: 'Bureau',
+    MEETING_ROOM: 'Salle de réunion',
+    SPORTS_HALL: 'Gymnase',
+    MULTIPURPOSE: 'Salle polyvalente',
+    OTHER: 'Autre',
     OTHER: 'Autre',
   };
   return mapping[r.roomType.toUpperCase()] ?? r.roomType;
@@ -306,17 +310,29 @@ export function AcademicStructureWorkspace() {
         typeLabel = "salle de classe";
         baseDesc = "conçue pour accueillir les cours théoriques et les activités d'apprentissage quotidiennes";
         break;
-      case 'LAB':
+      case 'LABORATORY':
         typeLabel = "laboratoire de sciences";
         baseDesc = "aménagé spécifiquement pour les séances de travaux pratiques (TP) et les expérimentations scientifiques";
         break;
-      case 'IT':
-        typeLabel = "salle informatique";
-        baseDesc = "dédiée aux enseignements technologiques, aux travaux sur ordinateur et à l'apprentissage du numérique";
+      case 'LIBRARY':
+        typeLabel = "bibliothèque";
+        baseDesc = "dédiée à la lecture, à la recherche documentaire et au travail individuel des élèves";
         break;
-      case 'EXAM':
-        typeLabel = "salle d'examen";
-        baseDesc = "configurée de manière optimale pour garantir le calme et la conformité lors des épreuves et des évaluations";
+      case 'OFFICE':
+        typeLabel = "bureau";
+        baseDesc = "destiné au travail administratif et aux réunions de l'équipe pédagogique";
+        break;
+      case 'MEETING_ROOM':
+        typeLabel = "salle de réunion";
+        baseDesc = "aménagée pour les réunions du personnel et les concertations pédagogiques";
+        break;
+      case 'SPORTS_HALL':
+        typeLabel = "gymnase";
+        baseDesc = "équipée pour les activités sportives et l'éducation physique";
+        break;
+      case 'MULTIPURPOSE':
+        typeLabel = "salle polyvalente";
+        baseDesc = "adaptée à divers besoins pédagogiques et activités multidisciplinaires";
         break;
       default:
         typeLabel = "salle polyvalente";
@@ -1806,9 +1822,12 @@ export function AcademicStructureWorkspace() {
                 >
                   <option value="">Tous</option>
                   <option value="CLASSROOM">Salle de classe</option>
-                  <option value="LAB">Laboratoire</option>
-                  <option value="IT">Informatique</option>
-                  <option value="EXAM">Examen</option>
+                  <option value="LABORATORY">Laboratoire</option>
+                  <option value="LIBRARY">Bibliothèque</option>
+                  <option value="OFFICE">Bureau</option>
+                  <option value="MEETING_ROOM">Salle de réunion</option>
+                  <option value="SPORTS_HALL">Gymnase</option>
+                  <option value="MULTIPURPOSE">Salle polyvalente</option>
                   <option value="OTHER">Autre</option>
                 </select>
               </div>
@@ -2484,9 +2503,12 @@ export function AcademicStructureWorkspace() {
               onChange={(e) => handleRoomTypeChange(e.target.value)}
             >
               <option value="CLASSROOM">Salle de classe</option>
-              <option value="LAB">Laboratoire</option>
-              <option value="IT">Informatique</option>
-              <option value="EXAM">Examen</option>
+              <option value="LABORATORY">Laboratoire</option>
+              <option value="LIBRARY">Bibliothèque</option>
+              <option value="OFFICE">Bureau</option>
+              <option value="MEETING_ROOM">Salle de réunion</option>
+              <option value="SPORTS_HALL">Gymnase</option>
+              <option value="MULTIPURPOSE">Salle polyvalente</option>
               <option value="OTHER">Autre</option>
             </select>
           </label>

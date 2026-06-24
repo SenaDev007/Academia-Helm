@@ -50,7 +50,7 @@ export async function PUT(
     const headers = await getProxyAuthHeaders(request);
 
     const response = await fetch(`${API_URL}/api/rooms/${id}`, {
-      method: 'PATCH',
+      method: 'PUT',
       headers,
       body: JSON.stringify(body),
       cache: 'no-store',

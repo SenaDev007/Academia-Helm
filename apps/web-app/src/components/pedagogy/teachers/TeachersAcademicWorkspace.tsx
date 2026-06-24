@@ -115,6 +115,7 @@ export default function TeachersAcademicWorkspace() {
     lastName: '',
     matricule: '',
     email: '',
+    schoolLevelId: '',
   });
 
   const [availabilityForm, setAvailabilityForm] = useState({
@@ -1267,13 +1268,27 @@ export default function TeachersAcademicWorkspace() {
             </div>
             <div className="space-y-1">
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Email</label>
-              <input 
-                type="email" 
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white" 
-                placeholder="jean.dupont@ecole.com" 
+              <input
+                type="email"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white"
+                placeholder="jean.dupont@ecole.com"
                 value={teacherForm.email}
                 onChange={(e) => setTeacherForm({ ...teacherForm, email: e.target.value })}
               />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Niveau scolaire *</label>
+              <select
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white"
+                value={teacherForm.schoolLevelId}
+                onChange={(e) => setTeacherForm({ ...teacherForm, schoolLevelId: e.target.value })}
+                required
+              >
+                <option value="">— Sélectionner —</option>
+                {schoolLevels.map(l => (
+                  <option key={l.id} value={l.id}>{l.name || l.code}</option>
+                ))}
+              </select>
             </div>
           </div>
         </div>

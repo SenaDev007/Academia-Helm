@@ -497,6 +497,15 @@ export default function TimetablesWorkspace() {
 
   // Modals
   const [modal, setModal] = useState<'none' | 'create-timetable' | 'add-entry' | 'settings-breaks'>('none');
+  const [entryForm, setEntryForm] = useState({
+    classId: '',
+    teacherId: '',
+    subjectId: '',
+    roomId: '',
+    dayOfWeek: 1,
+    startTime: '08:00',
+    endTime: '09:00',
+  });
 
   // --- Loaders ---
 
@@ -580,13 +589,19 @@ export default function TimetablesWorkspace() {
   const handleAddEntry = async (data: any) => {
     if (!activeTimetableId || !academicYear?.id) return;
     try {
+      // Resolve a valid schoolLevelId (not 'ALL')
+      const resolvedSchoolLevelId = schoolLevel?.id || classes.find(c => c.id === data.classId)?.levelId || '';
+      if (!resolvedSchoolLevelId) {
+        toast({ title: "Erreur", description: "Impossible de déterminer le niveau scolaire.", variant: "destructive" });
+        return;
+      }
       await pedagogyFetch(`/api/timetables/${activeTimetableId}/entries`, {
         method: 'POST',
         body: {
           ...data,
           timetableId: activeTimetableId,
           academicYearId: academicYear.id,
-          schoolLevelId: schoolLevel?.id || 'ALL'
+          schoolLevelId: resolvedSchoolLevelId,
         }
       });
       loadEntries();
@@ -846,24 +861,89 @@ export default function TimetablesWorkspace() {
       >
         <div className="space-y-4 p-4">
           <p className="text-sm text-gray-500 mb-4">Remplissez les informations pour ajouter un nouveau créneau à l'emploi du temps.</p>
-          {/* Formulaire simplifié pour passer le type-check, à enrichir ultérieurement avec un vrai form handler */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Classe</label>
-              <select className="w-full p-2 border rounded-lg" defaultValue={viewMode === 'class' ? selectedId || '' : ''}>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Classe *</label>
+              <select
+                className="w-full p-2 border rounded-lg"
+                value={entryForm.classId || (viewMode === 'class' ? selectedId || '' : '')}
+                onChange={(e) => setEntryForm(f => ({ ...f, classId: e.target.value }))}
+              >
+                <option value="">— Sélectionner —</option>
                 {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Enseignant</label>
-              <select className="w-full p-2 border rounded-lg" defaultValue={viewMode === 'teacher' ? selectedId || '' : ''}>
+              <select
+                className="w-full p-2 border rounded-lg"
+                value={entryForm.teacherId || (viewMode === 'teacher' ? selectedId || '' : '')}
+                onChange={(e) => setEntryForm(f => ({ ...f, teacherId: e.target.value }))}
+              >
+                <option value="">— Sélectionner —</option>
                 {teachers.map(t => <option key={t.teacherId} value={t.teacherId}>{t.teacher.lastName} {t.teacher.firstName}</option>)}
               </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Salle</label>
+              <select
+                className="w-full p-2 border rounded-lg"
+                value={entryForm.roomId}
+                onChange={(e) => setEntryForm(f => ({ ...f, roomId: e.target.value }))}
+              >
+                <option value="">— Aucune —</option>
+                {rooms.map(r => <option key={r.id} value={r.id}>{r.name} ({r.code})</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Jour *</label>
+              <select
+                className="w-full p-2 border rounded-lg"
+                value={entryForm.dayOfWeek}
+                onChange={(e) => setEntryForm(f => ({ ...f, dayOfWeek: parseInt(e.target.value) }))}
+              >
+                <option value={1}>Lundi</option>
+                <option value={2}>Mardi</option>
+                <option value={3}>Mercredi</option>
+                <option value={4}>Jeudi</option>
+                <option value={5}>Vendredi</option>
+                <option value={6}>Samedi</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Heure début *</label>
+              <input
+                type="time"
+                className="w-full p-2 border rounded-lg"
+                value={entryForm.startTime}
+                onChange={(e) => setEntryForm(f => ({ ...f, startTime: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Heure fin *</label>
+              <input
+                type="time"
+                className="w-full p-2 border rounded-lg"
+                value={entryForm.endTime}
+                onChange={(e) => setEntryForm(f => ({ ...f, endTime: e.target.value }))}
+              />
             </div>
           </div>
           <div className="flex justify-end gap-3 mt-6">
             <button onClick={() => setModal('none')} className="px-4 py-2 text-sm font-bold text-gray-500">Annuler</button>
-            <button onClick={() => handleAddEntry({})} className="px-4 py-2 text-sm font-bold bg-indigo-600 text-white rounded-lg">Enregistrer</button>
+            <button
+              onClick={() => handleAddEntry({
+                classId: entryForm.classId || (viewMode === 'class' ? selectedId : ''),
+                teacherId: entryForm.teacherId || (viewMode === 'teacher' ? selectedId : ''),
+                roomId: entryForm.roomId || null,
+                dayOfWeek: entryForm.dayOfWeek,
+                startTime: entryForm.startTime,
+                endTime: entryForm.endTime,
+              })}
+              className="px-4 py-2 text-sm font-bold bg-indigo-600 text-white rounded-lg"
+            >
+              Enregistrer
+            </button>
           </div>
         </div>
       </FormModal>

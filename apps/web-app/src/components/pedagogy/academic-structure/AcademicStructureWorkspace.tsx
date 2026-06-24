@@ -198,6 +198,11 @@ export function AcademicStructureWorkspace() {
   const [classes, setClasses] = useState<AcademicClassRow[]>([]);
   const [series, setSeries] = useState<SeriesRow[]>([]);
   const [rooms, setRooms] = useState<RoomRow[]>([]);
+
+  // ─── Niveaux scolaires actifs (depuis Paramètres) ──
+  // /api/school-levels ne retourne que les niveaux activés dans Paramètres > Structure.
+  // Utilisé pour filtrer les classes, séries et sections par niveaux actifs.
+  const [activeSchoolLevels, setActiveSchoolLevels] = useState<Array<{ id: string; code: string; label: string; isActive: boolean }>>([]);
   const [roomFilters, setRoomFilters] = useState({
     search: '',
     roomType: '',
@@ -447,6 +452,20 @@ export function AcademicStructureWorkspace() {
     }
   }, [yearId, tenantQuery]);
 
+  // ─── Charger les niveaux scolaires actifs depuis /api/school-levels ──
+  // Cette route filtre déjà par isEnabled !== false (Paramètres > Structure).
+  const loadActiveSchoolLevels = useCallback(async () => {
+    try {
+      const res = await fetch('/api/school-levels', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        setActiveSchoolLevels(Array.isArray(data) ? data : []);
+      }
+    } catch (e) {
+      console.error('Error loading active school levels:', e);
+    }
+  }, []);
+
   const loadClasses = useCallback(async () => {
     if (!yearId) return;
     setLoading(true);
@@ -454,7 +473,29 @@ export function AcademicStructureWorkspace() {
       const data = await pedagogyFetch<AcademicClassRow[]>(
         academicStructureUrl('classes', { academicYearId: yearId, ...tenantQuery }),
       );
-      setClasses(Array.isArray(data) ? data : []);
+      // ─── Filtrer par niveaux actifs ──
+      // Ne garder que les classes dont le niveau (AcademicLevel) correspond
+      // à un SchoolLevel actif (activé dans Paramètres > Structure).
+      // La correspondance se fait par nom (AcademicLevel.name ~ SchoolLevel.code/label).
+      const allClasses = Array.isArray(data) ? data : [];
+      if (activeSchoolLevels.length === 0) {
+        // Si les niveaux actifs ne sont pas encore chargés, on affiche tout
+        // (sera re-filtré quand activeSchoolLevels sera disponible)
+        setClasses(allClasses);
+      } else {
+        const activeLevelNames = activeSchoolLevels.map((l) =>
+          (l.code || l.label || '').toUpperCase(),
+        );
+        const filtered = allClasses.filter((c) => {
+          if (!c.level?.name) return true; // pas de niveau = on garde
+          const levelName = c.level.name.toUpperCase();
+          // Vérifier si le nom du niveau correspond à un niveau actif
+          return activeLevelNames.some((activeName) =>
+            levelName.includes(activeName) || activeName.includes(levelName),
+          );
+        });
+        setClasses(filtered);
+      }
     } catch (e) {
       console.error(e);
       setClasses([]);
@@ -462,10 +503,15 @@ export function AcademicStructureWorkspace() {
     } finally {
       setLoading(false);
     }
-  }, [yearId, tenantQuery]);
+  }, [yearId, tenantQuery, activeSchoolLevels]);
 
   const loadSeries = useCallback(async () => {
-    if (!yearId || !secondaryLevelId) {
+    // ─── Les séries ne concernent que le niveau secondaire ──
+    // Si le secondaire n'est pas actif dans Paramètres, on ne charge rien.
+    const secondaryActive = activeSchoolLevels.some(
+      (l) => /secondaire/i.test(l.code) || /secondaire/i.test(l.label),
+    );
+    if (!yearId || !secondaryLevelId || !secondaryActive) {
       setSeries([]);
       return;
     }
@@ -482,7 +528,7 @@ export function AcademicStructureWorkspace() {
     } finally {
       setLoading(false);
     }
-  }, [yearId, secondaryLevelId, tenantQuery]);
+  }, [yearId, secondaryLevelId, tenantQuery, activeSchoolLevels]);
 
   const loadRooms = useCallback(async () => {
     if (!yearId) return;
@@ -527,6 +573,11 @@ export function AcademicStructureWorkspace() {
       setBilingualSettings(null);
     }
   }, [tenantQuery.tenant_id, tenant?.id]);
+
+  // Charger les niveaux actifs au montage (une seule fois)
+  useEffect(() => {
+    loadActiveSchoolLevels();
+  }, [loadActiveSchoolLevels]);
 
   useEffect(() => {
     if (tab === 'levels') loadLevels();
@@ -1705,11 +1756,21 @@ export function AcademicStructureWorkspace() {
 
       {!loading && tab === 'series' && (
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          {!secondaryLevelId ? (
-            <p className="p-6 text-sm text-amber-800">
-              Ajoutez d&apos;abord le niveau <strong>Secondaire</strong> (nom contenant « Secondaire » ou libellé
-              canonique SECONDAIRE) pour gérer les séries.
-            </p>
+          {!secondaryLevelId || !activeSchoolLevels.some(
+            (l) => /secondaire/i.test(l.code) || /secondaire/i.test(l.label),
+          ) ? (
+            <div className="p-6">
+              <div className="rounded-lg bg-amber-50 border border-amber-200 p-4">
+                <p className="text-sm text-amber-900 font-semibold mb-1">
+                  Le niveau Secondaire n&apos;est pas actif
+                </p>
+                <p className="text-sm text-amber-700">
+                  Les séries (A, C, D…) sont disponibles uniquement lorsque le niveau Secondaire est activé dans les{' '}
+                  <Link href="/app/app/settings?tab=structure" className="font-semibold underline">Paramètres &gt; Structure</Link>.
+                  Activez le niveau Secondaire pour gérer les séries.
+                </p>
+              </div>
+            </div>
           ) : (
             <>
               <div className="flex flex-col gap-2 border-b border-slate-100 bg-slate-50/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">

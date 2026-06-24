@@ -286,32 +286,52 @@ export default function SubjectsWorkspace() {
     if (!academicYear?.id) return;
     setLoading(true);
     try {
+      let data: Subject[];
       if (bilingualEnabled) {
-        // Mode bilingue : on filtre côté backend par la langue du track courant.
+        // Mode bilingme : on filtre côté backend par la langue du track courant.
         const params = new URLSearchParams({ academicYearId: academicYear.id });
         if (bilingualEnabled) params.append('language', currentTrack);
-        const data = await pedagogyFetch<Subject[]>(`/api/subjects?${params.toString()}`);
-        setSubjects(Array.isArray(data) ? data : []);
+        const result = await pedagogyFetch<Subject[]>(`/api/subjects?${params.toString()}`);
+        data = Array.isArray(result) ? result : [];
       } else {
-        const data = await pedagogyService.getSubjects(academicYear.id);
-        setSubjects(data || []);
+        const result = await pedagogyService.getSubjects(academicYear.id);
+        data = Array.isArray(result) ? result : [];
       }
+      // ─── Filtrer par niveaux actifs ──
+      // Ne garder que les matières dont le niveau scolaire est actif
+      // (activé dans Paramètres > Structure).
+      if (schoolLevels.length > 0) {
+        const activeLevelIds = schoolLevels.map((l: any) => l.id);
+        data = data.filter((s: any) => {
+          const subjectLevelId = s.schoolLevel?.id || s.schoolLevelId;
+          return !subjectLevelId || activeLevelIds.includes(subjectLevelId);
+        });
+      }
+      setSubjects(data);
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
-  }, [academicYear?.id, bilingualEnabled, currentTrack]);
+  }, [academicYear?.id, bilingualEnabled, currentTrack, schoolLevels]);
 
   const loadClasses = useCallback(async () => {
     if (!academicYear?.id) return;
     try {
       const data = await pedagogyService.getAcademicClasses(academicYear.id);
-      setClasses(data || []);
+      // ─── Filtrer par niveaux actifs ──
+      // /api/school-levels ne retourne que les niveaux activés dans Paramètres.
+      // On filtre les classes pour ne garder que celles dont le niveau est actif.
+      const activeLevelIds = schoolLevels.map((l: any) => l.id);
+      const filtered = (data || []).filter((c: any) => {
+        const classLevelId = c.level?.id || c.levelId || c.schoolLevelId;
+        return !classLevelId || activeLevelIds.includes(classLevelId);
+      });
+      setClasses(filtered);
     } catch (e) {
       console.error(e);
     }
-  }, [academicYear?.id]);
+  }, [academicYear?.id, schoolLevels]);
 
   const loadSchoolLevels = useCallback(async () => {
     try {
@@ -329,11 +349,19 @@ export default function SubjectsWorkspace() {
     if (!academicYear?.id) return;
     try {
       const data = await pedagogyFetch<any[]>(`/api/pedagogy/academic-series?academicYearId=${academicYear.id}`);
-      setSeries(data || []);
+      // ─── Filtrer par niveaux actifs ──
+      // Les séries ne concernent que le niveau secondaire. Si le secondaire
+      // n'est pas actif, on retourne un tableau vide.
+      const activeLevelIds = schoolLevels.map((l: any) => l.id);
+      const filtered = (data || []).filter((s: any) => {
+        const seriesLevelId = s.level?.id || s.levelId || s.schoolLevelId;
+        return !seriesLevelId || activeLevelIds.includes(seriesLevelId);
+      });
+      setSeries(filtered);
     } catch (e) {
       console.error('Error loading series:', e);
     }
-  }, [academicYear?.id]);
+  }, [academicYear?.id, schoolLevels]);
 
   const loadClassSubjects = useCallback(async () => {
     if (!academicYear?.id || classes.length === 0) return;
@@ -449,7 +477,7 @@ export default function SubjectsWorkspace() {
     }
     try {
       if (modal === 'create-subject') {
-        await pedagogyService.createSubject({
+        const created = await pedagogyService.createSubject({
           academicYearId: academicYear?.id,
           schoolLevelId: subjectForm.schoolLevelId,
           code: subjectForm.code.trim(),
@@ -460,6 +488,26 @@ export default function SubjectsWorkspace() {
           description: subjectForm.description,
           ...(bilingualEnabled && subjectForm.language ? { language: subjectForm.language } : {}),
         });
+        // ─── Insertion optimiste ──
+        // createEntityOffline met la matière dans l'outbox (sync async).
+        // On l'ajoute immédiatement au state local pour qu'elle apparaisse
+        // dans le catalogue sans attendre la synchronisation serveur.
+        if (created) {
+          const optimisticSubject = {
+            id: created.id || `temp-${Date.now()}`,
+            academicYearId: academicYear?.id,
+            schoolLevelId: subjectForm.schoolLevelId,
+            code: subjectForm.code.trim(),
+            name: subjectForm.name.trim(),
+            abbreviation: subjectForm.abbreviation.trim() || undefined,
+            coefficient: Number(subjectForm.coefficient) || 1.0,
+            weeklyHours: Number(subjectForm.weeklyHours) || 0,
+            description: subjectForm.description,
+            schoolLevel: schoolLevels.find((l) => l.id === subjectForm.schoolLevelId) || null,
+            ...(bilingualEnabled && subjectForm.language ? { language: subjectForm.language } : {}),
+          } as any;
+          setSubjects(prev => [optimisticSubject, ...prev] as any);
+        }
         toast({
           title: "Succès",
           description: "La matière a été créée.",
@@ -474,6 +522,17 @@ export default function SubjectsWorkspace() {
           description: subjectForm.description,
           ...(bilingualEnabled ? { language: subjectForm.language || null } : {}),
         });
+        // Mise à jour optimiste
+        setSubjects((prev: any) => prev.map((s: any) => s.id === subjectForm.id ? {
+          ...s,
+          code: subjectForm.code.trim(),
+          name: subjectForm.name.trim(),
+          abbreviation: subjectForm.abbreviation.trim() || undefined,
+          coefficient: Number(subjectForm.coefficient) || 1.0,
+          weeklyHours: Number(subjectForm.weeklyHours) || 0,
+          description: subjectForm.description,
+          ...(bilingualEnabled ? { language: subjectForm.language || null } : {}),
+        } : s));
         toast({
           title: "Succès",
           description: "La matière a été mise à jour.",
@@ -504,9 +563,10 @@ export default function SubjectsWorkspace() {
     const bulkWeeklyHours = Number(subjectForm.weeklyHours) ?? 0;
     let created = 0;
     let skipped = 0;
+    const optimisticSubjects: any[] = [];
     for (const suggestion of toCreate) {
       try {
-        await pedagogyService.createSubject({
+        const createdEntity = await pedagogyService.createSubject({
           academicYearId: academicYear.id,
           schoolLevelId: subjectForm.schoolLevelId,
           code: suggestion.code,
@@ -517,9 +577,28 @@ export default function SubjectsWorkspace() {
           ...(bilingualEnabled && subjectForm.language ? { language: subjectForm.language } : {}),
         });
         created++;
+        // Insertion optimiste
+        if (createdEntity) {
+          optimisticSubjects.push({
+            id: createdEntity.id || `temp-${Date.now()}-${suggestion.code}`,
+            academicYearId: academicYear.id,
+            schoolLevelId: subjectForm.schoolLevelId,
+            code: suggestion.code,
+            name: suggestion.name,
+            abbreviation: suggestion.abbreviation,
+            coefficient: bulkCoefficient,
+            weeklyHours: bulkWeeklyHours,
+            schoolLevel: schoolLevels.find((l) => l.id === subjectForm.schoolLevelId) || null,
+            ...(bilingualEnabled && subjectForm.language ? { language: subjectForm.language } : {}),
+          });
+        }
       } catch {
         skipped++;
       }
+    }
+    // Ajouter toutes les matières créées au state local immédiatement
+    if (optimisticSubjects.length > 0) {
+      setSubjects(prev => [...optimisticSubjects, ...prev] as any);
     }
     setBulkSaving(false);
     setSelectedSuggestions(new Set());

@@ -196,8 +196,27 @@ export default function SubjectsWorkspace() {
   // Filtre par niveau scolaire sur le tableau catalogue
   const [filterLevelId, setFilterLevelId] = useState<string>('ALL');
 
+  /** Noms des niveaux actifs (depuis /api/school-levels) en uppercase pour matching */
+  const activeLevelNames = useMemo(() => {
+    return schoolLevels.map((l: any) => (l.code || l.label || '').toUpperCase());
+  }, [schoolLevels]);
+
+  /** Vérifie si un niveau (par nom/code) est actif */
+  const isLevelActive = useCallback((levelName: string | undefined | null): boolean => {
+    if (!levelName) return true;
+    if (activeLevelNames.length === 0) return true;
+    const name = levelName.toUpperCase();
+    return activeLevelNames.some(
+      (active: string) => name.includes(active) || active.includes(name),
+    );
+  }, [activeLevelNames]);
+
   const filteredClasses = useMemo(() => {
     return classes.filter(c => {
+      // Filtrer par niveau actif (Paramètres > Structure)
+      const classLevelName = (c as any).level?.name || (c as any).level?.label;
+      if (!isLevelActive(classLevelName)) return false;
+
       if (filterClassLevelId && c.levelId !== filterClassLevelId && c.level?.id !== filterClassLevelId) {
         return false;
       }
@@ -206,7 +225,7 @@ export default function SubjectsWorkspace() {
       }
       return true;
     });
-  }, [classes, filterClassLevelId, filterClassSeriesId]);
+  }, [classes, filterClassLevelId, filterClassSeriesId, isLevelActive]);
 
   // Modal state
   const [modal, setModal] = useState<'none' | 'create-subject' | 'edit-subject' | 'mass-assignment'>('none');
@@ -254,20 +273,34 @@ export default function SubjectsWorkspace() {
     return key ? DEFAULT_SUBJECTS_CATALOGUE[key] ?? [] : [];
   }, [selectedLevelObj]);
 
-  /** Matières filtrées par niveau + recherche textuelle pour le tableau */
+  /** Séries filtrées par niveaux actifs (le secondaire doit être actif) */
+  const filteredSeries = useMemo(() => {
+    const secondaryActive = activeLevelNames.some((n: string) => n.includes('SECONDAIRE'));
+    if (!secondaryActive) return [];
+    return series;
+  }, [series, activeLevelNames]);
+
+  /** Matières filtrées par niveau actif + niveau sélectionné + recherche textuelle */
   const filteredSubjects = useMemo(() => {
-    return subjects.filter((s) => {
+    return subjects.filter((s: any) => {
+      // 1. Filtrer par niveau actif (Paramètres > Structure)
+      const subjectLevelName = s.schoolLevel?.name || s.schoolLevel?.label || s.schoolLevel?.code;
+      if (!isLevelActive(subjectLevelName)) return false;
+
+      // 2. Filtrer par recherche textuelle
       const matchesSearch =
         s.name.toLowerCase().includes(search.toLowerCase()) ||
         s.code.toLowerCase().includes(search.toLowerCase()) ||
         (s.abbreviation ?? '').toLowerCase().includes(search.toLowerCase());
+
+      // 3. Filtrer par niveau sélectionné (chip)
       const matchesLevel =
         filterLevelId === 'ALL' ||
         s.schoolLevel?.id === filterLevelId ||
         s.schoolLevelId === filterLevelId;
       return matchesSearch && matchesLevel;
     });
-  }, [subjects, search, filterLevelId]);
+  }, [subjects, search, filterLevelId, isLevelActive]);
 
   // Réinitialiser la sélection quand le niveau change ou quand on ferme le modal
   useEffect(() => {
@@ -288,7 +321,7 @@ export default function SubjectsWorkspace() {
     try {
       let data: Subject[];
       if (bilingualEnabled) {
-        // Mode bilingme : on filtre côté backend par la langue du track courant.
+        // Mode bilingue : on filtre côté backend par la langue du track courant.
         const params = new URLSearchParams({ academicYearId: academicYear.id });
         if (bilingualEnabled) params.append('language', currentTrack);
         const result = await pedagogyFetch<Subject[]>(`/api/subjects?${params.toString()}`);
@@ -297,41 +330,23 @@ export default function SubjectsWorkspace() {
         const result = await pedagogyService.getSubjects(academicYear.id);
         data = Array.isArray(result) ? result : [];
       }
-      // ─── Filtrer par niveaux actifs ──
-      // Ne garder que les matières dont le niveau scolaire est actif
-      // (activé dans Paramètres > Structure).
-      if (schoolLevels.length > 0) {
-        const activeLevelIds = schoolLevels.map((l: any) => l.id);
-        data = data.filter((s: any) => {
-          const subjectLevelId = s.schoolLevel?.id || s.schoolLevelId;
-          return !subjectLevelId || activeLevelIds.includes(subjectLevelId);
-        });
-      }
       setSubjects(data);
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
-  }, [academicYear?.id, bilingualEnabled, currentTrack, schoolLevels]);
+  }, [academicYear?.id, bilingualEnabled, currentTrack]);
 
   const loadClasses = useCallback(async () => {
     if (!academicYear?.id) return;
     try {
       const data = await pedagogyService.getAcademicClasses(academicYear.id);
-      // ─── Filtrer par niveaux actifs ──
-      // /api/school-levels ne retourne que les niveaux activés dans Paramètres.
-      // On filtre les classes pour ne garder que celles dont le niveau est actif.
-      const activeLevelIds = schoolLevels.map((l: any) => l.id);
-      const filtered = (data || []).filter((c: any) => {
-        const classLevelId = c.level?.id || c.levelId || c.schoolLevelId;
-        return !classLevelId || activeLevelIds.includes(classLevelId);
-      });
-      setClasses(filtered);
+      setClasses(data || []);
     } catch (e) {
       console.error(e);
     }
-  }, [academicYear?.id, schoolLevels]);
+  }, [academicYear?.id]);
 
   const loadSchoolLevels = useCallback(async () => {
     try {
@@ -349,19 +364,11 @@ export default function SubjectsWorkspace() {
     if (!academicYear?.id) return;
     try {
       const data = await pedagogyFetch<any[]>(`/api/pedagogy/academic-series?academicYearId=${academicYear.id}`);
-      // ─── Filtrer par niveaux actifs ──
-      // Les séries ne concernent que le niveau secondaire. Si le secondaire
-      // n'est pas actif, on retourne un tableau vide.
-      const activeLevelIds = schoolLevels.map((l: any) => l.id);
-      const filtered = (data || []).filter((s: any) => {
-        const seriesLevelId = s.level?.id || s.levelId || s.schoolLevelId;
-        return !seriesLevelId || activeLevelIds.includes(seriesLevelId);
-      });
-      setSeries(filtered);
+      setSeries(data || []);
     } catch (e) {
       console.error('Error loading series:', e);
     }
-  }, [academicYear?.id, schoolLevels]);
+  }, [academicYear?.id]);
 
   const loadClassSubjects = useCallback(async () => {
     if (!academicYear?.id || classes.length === 0) return;
@@ -894,7 +901,7 @@ export default function SubjectsWorkspace() {
                         : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'
                     )}
                   >
-                    Tous ({subjects.length})
+                    Tous ({filteredSubjects.length})
                   </button>
                   {schoolLevels.map((level) => {
                     const count = subjects.filter(
@@ -1021,7 +1028,7 @@ export default function SubjectsWorkspace() {
                           <div className="max-w-xs mx-auto space-y-2">
                             <BookOpen className="w-8 h-8 text-slate-300 mx-auto" />
                             <p className="text-sm font-medium">
-                              {subjects.length === 0
+                              {filteredSubjects.length === 0
                                 ? "Aucune matière n'est définie pour cette année scolaire."
                                 : `Aucune matière pour le niveau sélectionné.`
                               }
@@ -1200,14 +1207,14 @@ export default function SubjectsWorkspace() {
                            </div>
                          </td>
                        </tr>
-                     ) : classes.length === 0 ? (
+                     ) : filteredClasses.length === 0 ? (
                        <tr>
                          <td colSpan={5} className="py-20 text-center text-slate-500">
                            Aucune classe disponible pour cette année scolaire.
                          </td>
                        </tr>
                      ) : (
-                       classes.map((c) => {
+                       filteredClasses.map((c) => {
                          const classSubjects = classSubjectsMap[c.id] || [];
                          const totalHours = classSubjects.reduce(
                            (sum: number, cs: any) => sum + (cs.weeklyHours || 0),
@@ -1304,14 +1311,14 @@ export default function SubjectsWorkspace() {
                      </tr>
                    </thead>
                    <tbody>
-                     {subjects.length === 0 ? (
+                     {filteredSubjects.length === 0 ? (
                        <tr>
                          <td colSpan={5} className="py-20 text-center text-slate-500">
                            Aucune matière disponible pour associer un programme.
                          </td>
                        </tr>
                      ) : (
-                       subjects.map((s) => {
+                       filteredSubjects.map((s) => {
                          const latestProgram = s.programs && s.programs.length > 0 ? s.programs[0] : null;
                          const isApproved = !!latestProgram?.approvedAt;
 
@@ -1748,7 +1755,7 @@ export default function SubjectsWorkspace() {
                   className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500/20"
                 >
                   <option value="">Toutes les séries</option>
-                  {series.map(s => (
+                  {filteredSeries.map(s => (
                     <option key={s.id} value={s.id}>{s.name} {s.description ? `— ${s.description}` : ''}</option>
                   ))}
                 </select>

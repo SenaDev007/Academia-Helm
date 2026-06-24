@@ -1011,6 +1011,31 @@ async function bootstrap() {
     logger.warn(`Department FK migration warning: ${deptFkErr.message}`);
   }
 
+  // ─── Rooms table — add missing columns (idempotent) ──
+  // The Room model has columns that may not exist in the production DB
+  // if migrations weren't applied. This adds them safely.
+  try {
+    const prisma = app.get(PrismaService);
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "rooms" ADD COLUMN IF NOT EXISTS "schoolLevelId" TEXT`,
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "rooms" ADD COLUMN IF NOT EXISTS "equipment" JSONB NOT NULL DEFAULT '[]'::jsonb`,
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "rooms" ADD COLUMN IF NOT EXISTS "status" TEXT NOT NULL DEFAULT 'ACTIVE'`,
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "rooms" ADD COLUMN IF NOT EXISTS "description" TEXT`,
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "rooms" ADD COLUMN IF NOT EXISTS "createdBy" TEXT`,
+    ).catch(() => {});
+    logger.log('✅ Rooms table columns ensured (schoolLevelId, equipment, status, description, createdBy)');
+  } catch (roomsColsErr: any) {
+    logger.warn(`Rooms columns migration warning: ${roomsColsErr.message}`);
+  }
+
   await app.listen(port, '0.0.0.0');
 
   // ─── Auto-sync HR teachers → Pedagogy on startup ──

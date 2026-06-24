@@ -125,10 +125,154 @@ export default function TimetablesWorkspace() {
 
   const handleAutoGenerate = async () => {
     if (!activeTimetableId || !academicYear?.id || !selectedId) return;
+
+    if (viewMode === 'teacher') {
+      // ─── Teacher mode: generate timetable for a teacher ──
+      // Fetch all class-subject assignments for this teacher across all classes
+      setGenerating(true);
+      try {
+        const teacherAssignments = await pedagogyFetch<any[]>(
+          `/api/pedagogy/teacher-class-assignments?teacherId=${selectedId}&academicYearId=${academicYear.id}`
+        );
+
+        if (!teacherAssignments || teacherAssignments.length === 0) {
+          throw new Error("Aucune affectation trouvée pour cet enseignant. Veuillez d'abord assigner des classes à cet enseignant.");
+        }
+
+        // Build slots (same as class mode)
+        const slots: { day: number; start: string; end: string }[] = [];
+        for (let day = 1; day <= 6; day++) {
+          for (let hour = 8; hour < 17; hour++) {
+            const startStr = `${hour.toString().padStart(2, '0')}:00`;
+            const endStr = `${(hour + 1).toString().padStart(2, '0')}:00`;
+            const isBreak = breaks.some(b =>
+              (startStr >= b.startTime && startStr < b.endTime) ||
+              (endStr > b.startTime && endStr <= b.endTime)
+            );
+            if (!isBreak) {
+              slots.push({ day, start: startStr, end: endStr });
+            }
+          }
+        }
+
+        // Get teacher's availability profile
+        const teacherProfile = teachers.find((t: any) => t.teacherId === selectedId);
+        const availabilities = teacherProfile?.availabilities || [];
+
+        // Existing entries (to avoid conflicts)
+        const existingEntries = entries.filter(e => e.teacher?.id === selectedId);
+        const scheduledEntries: any[] = [];
+
+        // Shuffle slots
+        const shuffled = [...slots].sort(() => Math.random() - 0.5);
+
+        // Track how many hours assigned per day per class (max 2 same subject per day)
+        const hoursPerDayPerClass: Record<string, Record<number, number>> = {};
+
+        for (const assignment of teacherAssignments) {
+          const cs = assignment.classSubject;
+          if (!cs) continue;
+
+          const classId = cs.academicClass?.id;
+          const subjectId = cs.subject?.id;
+          const subjectName = cs.subject?.name || 'Matière';
+          const className = cs.academicClass?.name || '';
+          const weeklyHours = cs.weeklyHours || 2;
+
+          let assigned = 0;
+          for (const slot of shuffled) {
+            if (assigned >= weeklyHours) break;
+
+            // Check teacher availability
+            if (availabilities.length > 0) {
+              const available = availabilities.some((av: any) =>
+                av.dayOfWeek === slot.day &&
+                av.startTime <= slot.start &&
+                av.endTime >= slot.end
+              );
+              if (!available) continue;
+            }
+
+            // Check if teacher is already busy at this slot
+            const teacherBusy = existingEntries.some(e =>
+              e.dayOfWeek === slot.day && e.startTime === slot.start
+            ) || scheduledEntries.some(e =>
+              e.dayOfWeek === slot.day && e.startTime === slot.start
+            );
+            if (teacherBusy) continue;
+
+            // Check if class is already busy
+            const classBusy = entries.some(e =>
+              e.class?.id === classId &&
+              e.dayOfWeek === slot.day &&
+              e.startTime === slot.start
+            );
+            if (classBusy) continue;
+
+            // Max 2 hours of same subject per day
+            const dayKey = `${classId}-${slot.day}`;
+            if (!hoursPerDayPerClass[dayKey]) hoursPerDayPerClass[dayKey] = 0;
+            if (hoursPerDayPerClass[dayKey] >= 2) continue;
+
+            scheduledEntries.push({
+              dayOfWeek: slot.day,
+              startTime: slot.start,
+              endTime: slot.end,
+              subjectId,
+              subjectName,
+              teacherId: selectedId,
+              classId,
+              className,
+              roomId: null,
+            });
+            hoursPerDayPerClass[dayKey]++;
+            assigned++;
+          }
+        }
+
+        // Delete existing entries for this teacher and create new ones
+        for (const entry of existingEntries) {
+          if (entry.id) {
+            await pedagogyFetch(`/api/timetables/${activeTimetableId}/entries/${entry.id}`, { method: 'DELETE' });
+          }
+        }
+
+        for (const entry of scheduledEntries) {
+          await pedagogyFetch(`/api/timetables/${activeTimetableId}/entries`, {
+            method: 'POST',
+            body: JSON.stringify({
+              dayOfWeek: entry.dayOfWeek,
+              startTime: entry.startTime,
+              endTime: entry.endTime,
+              subjectId: entry.subjectId,
+              teacherId: entry.teacherId,
+              classId: entry.classId,
+              roomId: entry.roomId,
+            }),
+          });
+        }
+
+        await fetchEntries();
+
+        toast({
+          title: "✅ Emploi du temps généré (Mode Enseignant)",
+          description: `${scheduledEntries.length} créneaux planifiés pour ${teacherProfile?.teacher?.lastName || 'l\'enseignant'}.`,
+        });
+      } catch (error: any) {
+        toast({
+          title: "Erreur de génération",
+          description: error.message || "Une erreur est survenue lors de la génération de l'emploi du temps.",
+        });
+      } finally {
+        setGenerating(false);
+      }
+      return;
+    }
+
     if (viewMode !== 'class') {
       toast({
         title: "Sélection requise",
-        description: "Sélectionnez d'abord une classe à gauche pour générer son emploi du temps.",
+        description: "Sélectionnez d'abord une classe ou un enseignant à gauche pour générer son emploi du temps.",
       });
       return;
     }
@@ -634,7 +778,7 @@ export default function TimetablesWorkspace() {
               <Clock className="w-4 h-4 text-indigo-600" />
               PAUSES & PLAGES
             </button>
-            {viewMode === 'class' && (
+            {(viewMode === 'class' || viewMode === 'teacher') && (
               <button 
                 onClick={handleAutoGenerate}
                 disabled={generating}

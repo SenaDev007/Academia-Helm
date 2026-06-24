@@ -156,6 +156,7 @@ export class PedagogyPrismaService {
     tenantId: string;
     teacherId: string;
     classSubjectId: string;
+    classId?: string;
     academicYearId: string;
   }) {
     // Vérifier que l'enseignant existe
@@ -192,7 +193,11 @@ export class PedagogyPrismaService {
     return this.prisma.teacherClassAssignment.create({
       data: {
         ...prismaCreateDefaults(),
-        ...data,
+        tenantId: data.tenantId,
+        teacherId: data.teacherId,
+        classSubjectId: data.classSubjectId,
+        classId: data.classId || null,
+        academicYearId: data.academicYearId,
       },
       include: {
         teacher: true,
@@ -202,6 +207,7 @@ export class PedagogyPrismaService {
             subject: true,
           },
         },
+        physicalClass: true,
         academicYear: true,
       },
     });
@@ -344,6 +350,9 @@ export class PedagogyPrismaService {
               select: { id: true, name: true, levelId: true },
             },
           },
+        },
+        physicalClass: {
+          select: { id: true, name: true, code: true, schoolLevelId: true },
         },
       },
       orderBy: { createdAt: 'desc' },

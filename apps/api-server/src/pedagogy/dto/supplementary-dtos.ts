@@ -152,6 +152,8 @@ export class CreateClassSubjectDto {
 export class CreateTeacherClassAssignmentDto {
   @IsUUID() teacherId: string;
   @IsUUID() classSubjectId: string;
+  /// Classe physique (CI/A, CI/B) — optionnel mais recommandé
+  @IsOptional() @IsUUID() classId?: string;
   @IsOptional() @IsUUID() academicYearId?: string;
   @IsOptional() @IsNumber() @Type(() => Number) weeklyHours?: number;
   /** Frontend may send tenantId — ignored */

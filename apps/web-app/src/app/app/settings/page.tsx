@@ -21,18 +21,19 @@ import type { SettingsBootstrapPayload } from '@/lib/query/fetch-settings-bootst
 import { useSettingsBootstrapQuery } from '@/hooks/useSettingsBootstrapQuery';
 import { useSearchParams, usePathname, useRouter } from 'next/navigation';
 import NextImage from 'next/image';
-import { 
-  Globe, Shield, Brain, MessageSquare, CloudOff, History, 
-  ToggleLeft, ToggleRight, Stamp, GraduationCap, Languages, 
+import {
+  Globe, Shield, Brain, MessageSquare, CloudOff, History,
+  ToggleLeft, ToggleRight, Stamp, GraduationCap, Languages,
   Bell, Users, Calendar, Save, Loader2, CheckCircle, AlertCircle,
   Mail, UserCog, Lock, Key, Smartphone, CreditCard, Receipt, RefreshCw,
   Upload, Image, CalendarDays, UserCircle, School, Archive, CalendarRange,
-  Pencil, CopyPlus, Layers, Building2
+  Pencil, CopyPlus, Layers, Building2, Wallet
 } from 'lucide-react';
 import { ModuleHeader } from '@/components/modules/blueprint';
 import GeneratedStampsSignatures from '@/components/settings/GeneratedStampsSignatures';
 import SchoolCalendarConfigSection from '@/components/settings/SchoolCalendarConfigSection';
 import DepartmentsManagement from '@/components/settings/DepartmentsManagement';
+import { PaymentsSettingsSection } from '@/components/settings/feexpay/PaymentsSettingsSection';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import * as settingsService from '@/services/settings.service';
 import {
@@ -70,12 +71,12 @@ function formatRoleDisplayName(name: string | null | undefined): string {
   return String(name).replace(/_/g, ' ');
 }
 
-type TabId = 'identity' | 'academic-year' | 'school-calendar' | 'structure' | 'departments' | 'bilingual' | 'features' | 
-             'roles' | 'communication' | 'billing' | 'security' | 'seals' | 'orion' | 'atlas' | 'offline' | 'appareils' | 'history';
+type TabId = 'identity' | 'academic-year' | 'school-calendar' | 'structure' | 'departments' | 'bilingual' | 'features' |
+             'roles' | 'communication' | 'billing' | 'payments' | 'security' | 'seals' | 'orion' | 'atlas' | 'offline' | 'appareils' | 'history';
 
 const SETTINGS_TAB_IDS: TabId[] = [
   'identity', 'academic-year', 'school-calendar', 'structure', 'departments', 'bilingual', 'features',
-  'roles', 'communication', 'billing', 'security', 'seals', 'orion', 'atlas', 'offline', 'appareils', 'history',
+  'roles', 'communication', 'billing', 'payments', 'security', 'seals', 'orion', 'atlas', 'offline', 'appareils', 'history',
 ];
 
 const SCHOOL_IDENTITY_UPDATED_EVENT = 'settings-school-identity-updated';
@@ -1454,6 +1455,7 @@ export default function SettingsPage() {
     { id: 'roles' as TabId, label: 'Rôles', icon: UserCog },
     { id: 'communication' as TabId, label: 'Communication', icon: Mail },
     { id: 'billing' as TabId, label: 'Facturation', icon: CreditCard },
+    { id: 'payments' as TabId, label: 'Paiements', icon: Wallet },
     { id: 'security' as TabId, label: 'Sécurité', icon: Shield },
     { id: 'seals' as TabId, label: 'Cachets', icon: Stamp },
     { id: 'orion' as TabId, label: 'ORION', icon: Brain },
@@ -3788,6 +3790,9 @@ export default function SettingsPage() {
             </div>
           </div>
         );
+
+      case 'payments':
+        return <PaymentsSettingsSection />;
 
       case 'security':
         return (

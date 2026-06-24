@@ -23,6 +23,7 @@ import {
   Settings,
   FileEdit,
   Landmark,
+  UserPlus,
 } from 'lucide-react';
 
 export const HR_SUBMODULE_TABS = [
@@ -44,6 +45,12 @@ export const HR_SUBMODULE_TABS = [
     label: 'Recrutement',
     path: '/app/hr/recruitment',
     icon: Briefcase,
+  },
+  {
+    id: 'embauche',
+    label: 'Embauche',
+    path: '/app/hr/embauche',
+    icon: UserPlus,
   },
   {
     id: 'staff',

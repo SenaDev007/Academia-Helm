@@ -33,7 +33,9 @@ import {
   Sparkles,
   ArrowUpRight,
   History,
-  AlertTriangle
+  AlertTriangle,
+  Users,
+  Loader2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FormModal, ConfirmModal } from '@/components/modules/blueprint';
@@ -93,7 +95,7 @@ export default function ProductionWorkspace() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'diaries' | 'lessons' | 'journal' | 'tests' | 'weekly' | 'progress' | 'feedback'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'diaries' | 'lessons' | 'journal' | 'tests' | 'weekly' | 'progress' | 'feedback' | 'students'>('dashboard');
 
   useEffect(() => {
     const cleanup = networkDetectionService.onNetworkStatusChange((online) => {
@@ -467,11 +469,17 @@ export default function ProductionWorkspace() {
           >
             Progression
           </button>
-          <button 
+          <button
             onClick={() => setActiveTab('feedback')}
             className={cn("px-6 py-5 text-xs font-black uppercase tracking-widest border-b-2 transition-all whitespace-nowrap", activeTab === 'feedback' ? "border-rose-600 text-rose-600 bg-rose-50/30" : "border-transparent text-gray-400 hover:text-gray-600")}
           >
             Retours Direction
+          </button>
+          <button
+            onClick={() => setActiveTab('students')}
+            className={cn("px-6 py-5 text-xs font-black uppercase tracking-widest border-b-2 transition-all whitespace-nowrap", activeTab === 'students' ? "border-indigo-600 text-indigo-600 bg-indigo-50/30" : "border-transparent text-gray-400 hover:text-gray-600")}
+          >
+            Mes Élèves
           </button>
 
           <div className="ml-auto flex items-center px-6 gap-2 shrink-0">
@@ -963,6 +971,11 @@ export default function ProductionWorkspace() {
                  </div>
               </div>
            )}
+
+           {/* ── Students tab ── */}
+           {activeTab === 'students' && (
+              <StudentsOfClassView />
+           )}
         </div>
       </div>
 
@@ -1228,6 +1241,169 @@ export default function ProductionWorkspace() {
           }
         ]}
       />
+    </div>
+  );
+}
+
+// ─── StudentsOfClassView ──────────────────────────────────────────────────
+// Shows the student roster for the teacher's assigned classes.
+// Fetches from /api/students?classId=X for each class the teacher teaches.
+
+function StudentsOfClassView() {
+  const { academicYear } = useModuleContext();
+  const { user } = useAuth();
+  const [assignments, setAssignments] = useState<any[]>([]);
+  const [selectedClass, setSelectedClass] = useState<string>('');
+  const [students, setStudents] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [studentsLoading, setStudentsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!user?.id || !academicYear?.id) return;
+    (async () => {
+      try {
+        setLoading(true);
+        // Get teacher's assignments to know which classes they teach
+        const res = await pedagogyService.getTeacherAssignments(user.id, academicYear.id);
+        const list = Array.isArray(res) ? res : [];
+        setAssignments(list);
+        // Auto-select first class
+        if (list.length > 0 && list[0].classSubject?.academicClass) {
+          setSelectedClass(list[0].classSubject.academicClass.id);
+        }
+      } catch (e) {
+        console.error('Error loading assignments for students view:', e);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [user?.id, academicYear?.id]);
+
+  useEffect(() => {
+    if (!selectedClass) return;
+    (async () => {
+      try {
+        setStudentsLoading(true);
+        // Fetch students enrolled in this class
+        const res = await fetch(`/api/students?classId=${selectedClass}`, {
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setStudents(Array.isArray(data) ? data : (data?.data || []));
+        } else {
+          setStudents([]);
+        }
+      } catch (e) {
+        setStudents([]);
+      } finally {
+        setStudentsLoading(false);
+      }
+    })();
+  }, [selectedClass]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+      </div>
+    );
+  }
+
+  if (assignments.length === 0) {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
+          <Users className="h-12 w-12 text-slate-300 mx-auto mb-3" />
+          <p className="text-sm font-bold text-slate-700">Aucune classe assignée</p>
+          <p className="text-xs text-slate-400 mt-1">
+            Vous n'avez pas encore de classe assignée. Contactez la direction pour une affectation.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Extract unique classes from assignments
+  const uniqueClasses = Array.from(new Map(
+    assignments
+      .filter(a => a.classSubject?.academicClass)
+      .map(a => [a.classSubject.academicClass.id, a.classSubject.academicClass])
+  ).values());
+
+  return (
+    <div className="max-w-5xl mx-auto space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-black text-gray-900 tracking-tight">Mes Élèves</h3>
+        {uniqueClasses.length > 0 && (
+          <select
+            value={selectedClass}
+            onChange={(e) => setSelectedClass(e.target.value)}
+            className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold text-slate-600 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+          >
+            {uniqueClasses.map((c: any) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        )}
+      </div>
+
+      {studentsLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+        </div>
+      ) : students.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
+          <Users className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+          <p className="text-sm text-slate-400">Aucun élève inscrit dans cette classe.</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">#</th>
+                  <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Nom</th>
+                  <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase hidden sm:table-cell">Genre</th>
+                  <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase hidden md:table-cell">Date de naissance</th>
+                  <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Statut</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {students.map((s: any, i: number) => (
+                  <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-4 py-3 text-slate-400">{i + 1}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-bold shrink-0">
+                          {s.firstName?.[0]}{s.lastName?.[0]}
+                        </div>
+                        <span className="font-bold text-slate-900">{s.firstName} {s.lastName}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-500 hidden sm:table-cell">
+                      {s.gender === 'M' || s.gender === 'MALE' ? 'M' : s.gender === 'F' || s.gender === 'FEMALE' ? 'F' : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-slate-500 hidden md:table-cell">
+                      {s.dateOfBirth ? new Date(s.dateOfBirth).toLocaleDateString('fr-FR') : '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
+                        <CheckCircle2 className="h-3 w-3" /> Actif
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
+            <span className="text-xs text-slate-500">{students.length} élève(s)</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

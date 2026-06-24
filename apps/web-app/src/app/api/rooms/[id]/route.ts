@@ -57,8 +57,18 @@ export async function PUT(
     });
 
     if (!response.ok) {
+      // Forward the actual backend error message for better debugging
+      const errorText = await response.text();
+      let errorMessage = 'Failed to update room';
+      try {
+        const errorData = JSON.parse(errorText);
+        errorMessage = errorData.message || errorData.error || errorMessage;
+      } catch {
+        if (errorText.trim()) errorMessage = errorText.substring(0, 200);
+      }
+      console.error('Room update error:', response.status, errorMessage);
       return NextResponse.json(
-        { error: 'Failed to update room' },
+        { error: errorMessage, message: errorMessage },
         { status: response.status }
       );
     }
@@ -68,7 +78,7 @@ export async function PUT(
   } catch (error) {
     console.error('Error updating room:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', message: 'Internal server error' },
       { status: 500 }
     );
   }
@@ -88,8 +98,18 @@ export async function DELETE(
     });
 
     if (!response.ok) {
+      // Forward the actual backend error message for better debugging
+      const errorText = await response.text();
+      let errorMessage = 'Failed to delete room';
+      try {
+        const errorData = JSON.parse(errorText);
+        errorMessage = errorData.message || errorData.error || errorMessage;
+      } catch {
+        if (errorText.trim()) errorMessage = errorText.substring(0, 200);
+      }
+      console.error('Room delete error:', response.status, errorMessage);
       return NextResponse.json(
-        { error: 'Failed to delete room' },
+        { error: errorMessage, message: errorMessage },
         { status: response.status }
       );
     }
@@ -99,7 +119,7 @@ export async function DELETE(
   } catch (error) {
     console.error('Error deleting room:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', message: 'Internal server error' },
       { status: 500 }
     );
   }

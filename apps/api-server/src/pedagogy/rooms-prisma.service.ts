@@ -320,6 +320,8 @@ export class RoomsPrismaService {
       equipment?: string[];
       status?: string;
       description?: string;
+      academicYearId?: string;
+      tenantId?: string;
     }
   ) {
     const room = await this.findRoomById(id, tenantId);
@@ -339,9 +341,14 @@ export class RoomsPrismaService {
       }
     }
 
+    // ─── Nettoyer les champs qui ne doivent pas être mis à jour ──
+    // tenantId est ignoré (sécurité — ne pas changer de tenant)
+    // academicYearId est ignoré sur update (la salle garde son année de création)
+    const { tenantId: _ignoredTenantId, academicYearId: _ignoredAcademicYearId, ...updateData } = data;
+
     return this.prisma.room.update({
       where: { id },
-      data: { ...prismaUpdateDefaults(), ...data },
+      data: { ...prismaUpdateDefaults(), ...updateData },
       include: {
         schoolLevel: true,
         academicYear: true,
@@ -486,25 +493,43 @@ export class RoomsPrismaService {
   async deleteRoom(id: string, tenantId: string) {
     const room = await this.findRoomById(id, tenantId);
 
-    // Vérifier qu'aucun emploi du temps n'utilise cette salle
-    const timetableEntries = await this.prisma.timetableEntry.count({
-      where: {
-        roomId: id,
-        tenantId,
-      },
-    });
+    // ─── Nettoyer les dépendances avant suppression ──
+    // On supprime les enregistrements liés qui n'ont pas de onDelete: Cascade
+    // pour éviter les erreurs de FK constraint
 
-    if (timetableEntries > 0) {
-      throw new BadRequestException(
-        `Cannot delete room: ${timetableEntries} timetable entry(ies) are using it`
-      );
-    }
+    // 1. RoomAllocation
+    await this.prisma.roomAllocation.deleteMany({
+      where: { roomId: id, tenantId },
+    }).catch(() => {});
 
+    // 2. RoomMaintenance
+    await this.prisma.roomMaintenance.deleteMany({
+      where: { roomId: id, tenantId },
+    }).catch(() => {});
+
+    // 3. RoomSchedule
+    await this.prisma.roomSchedule.deleteMany({
+      where: { roomId: id, tenantId },
+    }).catch(() => {});
+
+    // 4. RoomReservation
+    await this.prisma.roomReservation.deleteMany({
+      where: { roomId: id, tenantId },
+    }).catch(() => {});
+
+    // 5. TimetableEntry — détacher la salle au lieu de bloquer la suppression
+    // (les entrées d'emploi du temps restent mais sans salle assignée)
+    await this.prisma.timetableEntry.updateMany({
+      where: { roomId: id, tenantId },
+      data: { roomId: null },
+    }).catch(() => {});
+
+    // 6. Supprimer la salle
     await this.prisma.room.delete({
       where: { id },
     });
 
-    return { success: true };
+    return { success: true, message: 'Salle supprimée avec succès' };
   }
 }
 

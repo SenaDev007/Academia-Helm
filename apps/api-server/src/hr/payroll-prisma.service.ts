@@ -282,21 +282,14 @@ export class PayrollPrismaService {
     const amount = Number(item.netSalary);
     const motif = `Salaire ${item.payroll.month}/${item.payroll.year} — ${item.staff.firstName} ${item.staff.lastName}`;
 
-    // Récupérer le shopId FeexPay de l'école (SchoolSettings) si configuré
-    // Sinon, utiliser le shopId global Academia Helm
-    const schoolSettings = await this.prisma.schoolSettings.findFirst({
-      where: { tenantId },
-      select: { feexpayShopId: true },
-    }).catch(() => null);
-    const schoolShopId = schoolSettings?.feexpayShopId || undefined;
-
     // Appeler FeexPay (payout depuis le compte de l'école, pas Academia Helm)
+    // Le tenantId permet au service de résoudre shopId + API key du tenant
     const result = await this.feexpayService.createPayout({
       amount,
       phoneNumber: momoInfo.number,
       operator: momoInfo.operator,
       motif,
-    }, schoolShopId);
+    }, undefined, tenantId);
 
     // Créer l'enregistrement SalaryPayment
     const salaryPayment = await this.prisma.salaryPayment.create({
@@ -435,7 +428,7 @@ export class PayrollPrismaService {
     // Si le paiement est PENDING et qu'on a une référence, vérifier le statut FeexPay
     if (payment.status === 'PENDING' && payment.reference) {
       try {
-        const feexpayStatus = await this.feexpayService.getPayoutStatus(payment.reference);
+        const feexpayStatus = await this.feexpayService.getPayoutStatus(payment.reference, tenantId);
         if (feexpayStatus.status === 'SUCCESSFUL') {
           await this.prisma.salaryPayment.update({
             where: { id: payment.id },

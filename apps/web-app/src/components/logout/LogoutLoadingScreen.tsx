@@ -12,6 +12,7 @@ import { useEffect, useState, useRef } from 'react';
 import Image from 'next/image';
 import { BRAND } from '@/lib/brand';
 import type { LogoutFlowProgress } from '@/lib/logout/secure-logout-flow.service';
+import FloatingEduParticles from '@/components/ui/FloatingEduParticles';
 
 /** Durée minimale d'affichage du loading de logout (ms) — réduit à 2s */
 const MIN_LOGOUT_LOADING_MS = 2000;
@@ -75,6 +76,9 @@ export function LogoutLoadingScreen({ progress }: LogoutLoadingScreenProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1A237E] safe-area-inset-top safe-area-inset-bottom">
+      {/* Particules éducatives flottantes — variant light pour fond navy */}
+      <FloatingEduParticles count={24} opacityMultiplier={2.0} variant="light" />
+
       {/* Ambiance subtile */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-20 -left-10 w-48 h-48 bg-[#f5b335]/5 rounded-full blur-[90px]" style={{ animation: 'academiaPulse 6s ease-in-out infinite' }} />

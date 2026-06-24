@@ -66,6 +66,8 @@
 
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { PrismaService } from '../../database/prisma.service';
+import { CredentialEncryptionService } from '../../common/services/credential-encryption.service';
 
 /** Opérateurs Mobile Money supportés (collection + payout). */
 export type FeexPayOperator =
@@ -127,7 +129,11 @@ export class FeexPayService {
   private readonly shopId: string;
   private readonly apiUrl: string;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly prisma: PrismaService,
+    private readonly encryptionService: CredentialEncryptionService,
+  ) {
     this.apiKey = this.configService.get<string>('FEEXPAY_API_KEY') || '';
     this.shopId = this.configService.get<string>('FEEXPAY_SHOP_ID') || '';
     // Base URL v2 par défaut (v1 = https://api.feexpay.me)
@@ -140,17 +146,97 @@ export class FeexPayService {
     }
   }
 
-  /** Vérifie si FeexPay est configuré. */
+  /** Vérifie si FeexPay global (Academia Helm) est configuré. */
   isConfigured(): boolean {
     return Boolean(this.apiKey && this.shopId);
   }
 
-  /** Headers d'authentification pour les appels API v2. */
-  private authHeaders(): HeadersInit {
+  /** Headers d'authentification pour les appels API v2 (avec clé globale par défaut). */
+  private authHeaders(apiKey?: string): HeadersInit {
     return {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${this.apiKey}`,
+      Authorization: `Bearer ${apiKey || this.apiKey}`,
     };
+  }
+
+  // ─── RÉSOLUTION DES CREDENTIALS PAR TENANT ──────────────────────────────
+
+  /**
+   * Résout les credentials FeexPay pour un tenant spécifique.
+   *
+   * Lit SchoolSettings.feexpayShopId + feexpayApiKey (chiffrée en base).
+   * Si le tenant n'a pas de config propre, retourne null (l'appelant doit
+   * décider de fallback sur les credentials globaux ou lever une erreur).
+   *
+   * @param tenantId ID du tenant
+   * @returns { shopId, apiKey } ou null si non configuré
+   */
+  async resolveTenantCredentials(tenantId: string): Promise<{ shopId: string; apiKey: string } | null> {
+    try {
+      const settings = await this.prisma.schoolSettings.findFirst({
+        where: { tenantId },
+        select: { feexpayShopId: true, feexpayApiKey: true },
+      });
+
+      if (!settings?.feexpayShopId) {
+        return null;
+      }
+
+      // Déchiffrer l'API key si elle est chiffrée, sinon utiliser tel quel (legacy)
+      let apiKey = '';
+      if (settings.feexpayApiKey) {
+        apiKey = this.encryptionService.isEncrypted(settings.feexpayApiKey)
+          ? this.encryptionService.decrypt(settings.feexpayApiKey)
+          : settings.feexpayApiKey;
+      }
+
+      if (!apiKey) {
+        // Fallback: si pas de clé API tenant, utiliser la clé globale
+        apiKey = this.apiKey;
+      }
+
+      return { shopId: settings.feexpayShopId, apiKey };
+    } catch (err: any) {
+      this.logger.error(`resolveTenantCredentials failed for tenant=${tenantId}: ${err.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Vérifie si un tenant a configuré FeexPay (shopId + apiKey).
+   */
+  async isTenantConfigured(tenantId: string): Promise<boolean> {
+    const creds = await this.resolveTenantCredentials(tenantId);
+    return creds !== null && !!creds.shopId && !!creds.apiKey;
+  }
+
+  /**
+   * Teste la connexion FeexPay d'un tenant en récupérant le solde du shop.
+   *
+   * @returns { ok: boolean, error?: string, balance?: any }
+   */
+  async testTenantConnection(tenantId: string): Promise<{ ok: boolean; error?: string; balance?: any }> {
+    const creds = await this.resolveTenantCredentials(tenantId);
+    if (!creds) {
+      return { ok: false, error: 'FeexPay non configuré pour ce tenant. Configurez votre Shop ID et API Key.' };
+    }
+
+    try {
+      const response = await fetch(
+        this.url(`/api/balance/public/getByShop/${creds.shopId}`),
+        { method: 'GET', headers: this.authHeaders(creds.apiKey) },
+      );
+
+      if (!response.ok) {
+        const errText = await response.text();
+        return { ok: false, error: `Erreur API FeexPay (${response.status}): ${errText.substring(0, 200)}` };
+      }
+
+      const balance = await response.json() as any;
+      return { ok: true, balance };
+    } catch (err: any) {
+      return { ok: false, error: `Erreur de connexion: ${err.message}` };
+    }
   }
 
   /** Construit l'URL d'un endpoint. */
@@ -161,15 +247,29 @@ export class FeexPayService {
   /**
    * Récupère le solde du marchand (par shop_public_id).
    * Endpoint : GET /api/balance/public/getByShop/{shop_public_id}
+   *
+   * Si tenantId fourni, utilise les credentials du tenant. Sinon, credentials globaux.
    */
-  async getShopBalance(): Promise<any> {
-    if (!this.isConfigured()) {
+  async getShopBalance(tenantId?: string): Promise<any> {
+    let shopId = this.shopId;
+    let apiKey = this.apiKey;
+
+    if (tenantId) {
+      const creds = await this.resolveTenantCredentials(tenantId);
+      if (!creds) {
+        throw new BadRequestException('FeexPay non configuré pour ce tenant');
+      }
+      shopId = creds.shopId;
+      apiKey = creds.apiKey;
+    }
+
+    if (!apiKey || !shopId) {
       throw new BadRequestException('FeexPay non configuré');
     }
     try {
       const response = await fetch(
-        this.url(`/api/balance/public/getByShop/${this.shopId}`),
-        { method: 'GET', headers: this.authHeaders() },
+        this.url(`/api/balance/public/getByShop/${shopId}`),
+        { method: 'GET', headers: this.authHeaders(apiKey) },
       );
       return await response.json() as any;
     } catch (err: any) {
@@ -189,10 +289,31 @@ export class FeexPayService {
    *
    * Le client reçoit une notification sur son téléphone pour confirmer le paiement.
    * Le statut final est envoyé via webhook (status=SUCCESSFUL|FAILED).
+   *
+   * 3 modes d'utilisation :
+   *   1. Abonnement AH (sans tenantId) → credentials globaux
+   *   2. Frais scolaires (avec tenantId) → credentials du tenant
+   *   3. Legacy (avec customShopId) → shopId custom + apiKey global
    */
-  async createMobileMoneyPayment(data: FeexPayPaymentRequest, customShopId?: string): Promise<FeexPayPaymentResult> {
-    const shopId = customShopId || this.shopId;
-    if (!this.apiKey || !shopId) {
+  async createMobileMoneyPayment(
+    data: FeexPayPaymentRequest,
+    customShopId?: string,
+    tenantId?: string,
+  ): Promise<FeexPayPaymentResult> {
+    let shopId = customShopId || this.shopId;
+    let apiKey = this.apiKey;
+
+    // Si tenantId fourni, résoudre les credentials du tenant
+    if (tenantId) {
+      const creds = await this.resolveTenantCredentials(tenantId);
+      if (!creds) {
+        throw new BadRequestException('FeexPay non configuré pour ce tenant. Veuillez configurer votre compte FeexPay dans les paramètres.');
+      }
+      shopId = creds.shopId;
+      apiKey = creds.apiKey;
+    }
+
+    if (!apiKey || !shopId) {
       throw new BadRequestException('FeexPay non configuré');
     }
 
@@ -222,7 +343,7 @@ export class FeexPayService {
         this.url(`/api/transactions/public/requesttopay/${operatorPath}`),
         {
           method: 'POST',
-          headers: this.authHeaders(),
+          headers: this.authHeaders(apiKey),
           body: JSON.stringify(body),
         },
       );
@@ -237,7 +358,7 @@ export class FeexPayService {
       }
 
       this.logger.log(
-        `FeexPay MO payment initiated: ref=${result.reference}, amount=${data.amount}, operator=${operator}`,
+        `FeexPay MO payment initiated: ref=${result.reference}, amount=${data.amount}, operator=${operator}, tenant=${tenantId || 'AH'}`,
       );
 
       return {
@@ -331,20 +452,32 @@ export class FeexPayService {
    *
    * Endpoint v2 : GET /api/transactions/public/single/status/{reference}
    * Statuts possibles : PENDING, SUCCESSFUL, FAILED
+   *
+   * Si tenantId fourni, utilise les credentials du tenant.
    */
-  async getTransactionStatus(reference: string): Promise<{
+  async getTransactionStatus(reference: string, tenantId?: string): Promise<{
     status: string;
     amount?: number;
     clientNumber?: string;
     raw?: any;
   }> {
-    if (!this.isConfigured()) {
+    let apiKey = this.apiKey;
+
+    if (tenantId) {
+      const creds = await this.resolveTenantCredentials(tenantId);
+      if (!creds) {
+        return { status: 'UNKNOWN' };
+      }
+      apiKey = creds.apiKey;
+    }
+
+    if (!apiKey) {
       return { status: 'UNKNOWN' };
     }
     try {
       const response = await fetch(
         this.url(`/api/transactions/public/single/status/${reference}`),
-        { method: 'GET', headers: this.authHeaders() },
+        { method: 'GET', headers: this.authHeaders(apiKey) },
       );
       const data = await response.json() as any;
       // La réponse peut être { reference, status, amount, ... } ou
@@ -371,12 +504,28 @@ export class FeexPayService {
    * Body : { amount, phoneNumber, shop, motif }
    *
    * Utilisé pour :
-   *   - Paiement des salaires (école → staff)
+   *   - Paiement des salaires (école → staff) — avec tenantId pour credentials du tenant
    *   - Transferts vers des comptes externes
    */
-  async createPayout(data: FeexPayPayoutRequest, customShopId?: string): Promise<FeexPayPayoutResult> {
-    const shopId = customShopId || this.shopId;
-    if (!this.apiKey || !shopId) {
+  async createPayout(
+    data: FeexPayPayoutRequest,
+    customShopId?: string,
+    tenantId?: string,
+  ): Promise<FeexPayPayoutResult> {
+    let shopId = customShopId || this.shopId;
+    let apiKey = this.apiKey;
+
+    // Si tenantId fourni, résoudre les credentials du tenant
+    if (tenantId) {
+      const creds = await this.resolveTenantCredentials(tenantId);
+      if (!creds) {
+        throw new BadRequestException('FeexPay non configuré pour ce tenant. Veuillez configurer votre compte FeexPay dans les paramètres.');
+      }
+      shopId = creds.shopId;
+      apiKey = creds.apiKey;
+    }
+
+    if (!apiKey || !shopId) {
       throw new BadRequestException('FeexPay non configuré');
     }
 
@@ -404,7 +553,7 @@ export class FeexPayService {
 
       const response = await fetch(payoutUrl, {
         method: 'POST',
-        headers: this.authHeaders(),
+        headers: this.authHeaders(apiKey),
         body: JSON.stringify(body),
       });
 
@@ -417,7 +566,7 @@ export class FeexPayService {
       }
 
       this.logger.log(
-        `FeexPay payout initiated: ref=${result.reference}, amount=${data.amount}, to=${data.phoneNumber}`,
+        `FeexPay payout initiated: ref=${result.reference}, amount=${data.amount}, to=${data.phoneNumber}, tenant=${tenantId || 'AH'}`,
       );
 
       return {
@@ -436,19 +585,31 @@ export class FeexPayService {
    * Vérifie le statut d'un payout.
    *
    * Endpoint v2 : GET /api/payouts/status/public/{reference}
+   *
+   * Si tenantId fourni, utilise les credentials du tenant.
    */
-  async getPayoutStatus(reference: string): Promise<{
+  async getPayoutStatus(reference: string, tenantId?: string): Promise<{
     status: string;
     amount?: number;
     raw?: any;
   }> {
-    if (!this.isConfigured()) {
+    let apiKey = this.apiKey;
+
+    if (tenantId) {
+      const creds = await this.resolveTenantCredentials(tenantId);
+      if (!creds) {
+        return { status: 'UNKNOWN' };
+      }
+      apiKey = creds.apiKey;
+    }
+
+    if (!apiKey) {
       return { status: 'UNKNOWN' };
     }
     try {
       const response = await fetch(
         this.url(`/api/payouts/status/public/${reference}`),
-        { method: 'GET', headers: this.authHeaders() },
+        { method: 'GET', headers: this.authHeaders(apiKey) },
       );
       const data = await response.json() as any;
       const inner = data.data || data;

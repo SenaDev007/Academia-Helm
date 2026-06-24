@@ -116,8 +116,8 @@ export default function SessionLockScreen() {
                 className="flex-1 p-6 sm:p-8 flex flex-col justify-center relative overflow-hidden"
                 style={{ background: `linear-gradient(155deg, ${NAVY} 0%, ${BLUE} 100%)` }}
               >
-                {/* Particules éducatives flottantes — TOUJOURS visibles */}
-                <FloatingEduParticles count={14} opacityMultiplier={2.0} />
+                {/* Particules éducatives flottantes — variant light pour fond navy */}
+                <FloatingEduParticles count={14} opacityMultiplier={2.0} variant="light" />
 
                 {/* Halos lumineux */}
                 <div className="pointer-events-none absolute -top-16 -left-10 h-48 w-48 rounded-full opacity-25 blur-3xl" style={{ background: '#ffffff' }} aria-hidden />
@@ -208,7 +208,11 @@ export default function SessionLockScreen() {
               <div className="hidden md:block w-px" style={{ background: `linear-gradient(to bottom, transparent, ${GOLD}40, transparent)` }} />
 
               {/* ── Colonne droite : formulaire (fond blanc) ── */}
-              <div className="flex-1 p-6 sm:p-8 md:p-10 bg-white flex flex-col justify-center">
+              <div className="flex-1 p-6 sm:p-8 md:p-10 bg-white flex flex-col justify-center relative overflow-hidden">
+                {/* Particules éducatives flottantes — variant dark pour fond blanc */}
+                <FloatingEduParticles count={10} opacityMultiplier={1.0} variant="dark" />
+
+                <div className="relative z-10">
                 {/* Message d'erreur */}
                 <AnimatePresence>
                   {error && (
@@ -330,6 +334,7 @@ export default function SessionLockScreen() {
                     Se déconnecter
                   </button>
                 </div>
+                </div>{/* /relative z-10 wrapper */}
               </div>
             </div>
           </motion.div>

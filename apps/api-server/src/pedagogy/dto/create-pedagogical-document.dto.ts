@@ -50,7 +50,7 @@ export class CreatePedagogicalDocumentDto {
 
   @IsString()
   @IsNotEmpty()
-  schoolLevelId: string;
+  @IsOptional() @IsString() schoolLevelId?: string;
 
   @IsString()
   @IsNotEmpty()

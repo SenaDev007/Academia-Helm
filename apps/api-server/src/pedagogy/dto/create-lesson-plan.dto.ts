@@ -47,7 +47,7 @@ export class CreateLessonPlanDto {
 
   @IsString()
   @IsNotEmpty()
-  schoolLevelId: string;
+  @IsOptional() @IsString() schoolLevelId?: string;
 
   @IsString()
   @IsNotEmpty()

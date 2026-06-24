@@ -430,7 +430,11 @@ class PedagogyService {
     if (tenantId) {
       return createEntityOffline(tenantId, 'MATERIAL_STOCK', data);
     }
-    return apiFetch('/pedagogy/material-stocks', { method: 'POST', body: data });
+    // Use material-movements with movementType=PURCHASE (material-stocks has no POST endpoint)
+    return apiFetch('/pedagogy/material-movements', {
+      method: 'POST',
+      body: { ...data, movementType: 'PURCHASE' },
+    });
   }
 
   async createMaterialAssignment(data: any): Promise<any> {

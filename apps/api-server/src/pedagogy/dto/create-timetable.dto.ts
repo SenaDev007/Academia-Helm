@@ -11,7 +11,7 @@ export class CreateTimetableDto {
 
   @IsString()
   @IsNotEmpty()
-  schoolLevelId: string;
+  @IsOptional() @IsString() schoolLevelId?: string;
 
   @IsString()
   @IsNotEmpty()

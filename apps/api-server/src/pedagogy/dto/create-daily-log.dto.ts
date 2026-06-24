@@ -32,7 +32,7 @@ export class CreateDailyLogDto {
   /** Required by Prisma schema */
   @IsUUID()
   @IsNotEmpty()
-  schoolLevelId: string;
+  @IsOptional() @IsString() schoolLevelId?: string;
 
   /** Frontend may send subjectId (not in Prisma model but accepted for lookups) */
   @IsUUID()

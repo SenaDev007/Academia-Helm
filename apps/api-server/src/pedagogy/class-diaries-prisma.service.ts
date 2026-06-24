@@ -22,7 +22,7 @@ export class ClassDiariesPrismaService {
   async createClassDiary(data: {
     tenantId: string;
     academicYearId: string;
-    schoolLevelId: string;
+    schoolLevelId?: string;
     classSubjectId: string;
     date: Date;
     homework?: string;
@@ -31,10 +31,17 @@ export class ClassDiariesPrismaService {
     // Vérifier que l'affectation classe/matière existe
     const classSubject = await this.prisma.classSubject.findFirst({
       where: { id: data.classSubjectId, tenantId: data.tenantId },
+      include: { academicClass: { select: { levelId: true } } },
     });
 
     if (!classSubject) {
       throw new NotFoundException(`ClassSubject with ID ${data.classSubjectId} not found`);
+    }
+
+    // Résoudre schoolLevelId si non fourni (depuis la classe)
+    const resolvedSchoolLevelId = data.schoolLevelId || classSubject.academicClass?.levelId || '';
+    if (!resolvedSchoolLevelId) {
+      throw new BadRequestException('schoolLevelId cannot be resolved');
     }
 
     // Vérifier l'unicité (un seul cahier par classe/matière/date)
@@ -53,6 +60,7 @@ export class ClassDiariesPrismaService {
       data: {
         ...prismaCreateDefaults(),
         ...data,
+        schoolLevelId: resolvedSchoolLevelId,
       },
       include: {
         classSubject: {

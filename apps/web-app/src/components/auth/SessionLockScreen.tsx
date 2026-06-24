@@ -1,15 +1,12 @@
 /**
  * ============================================================================
- * SESSION LOCK SCREEN — Horizontal layout (like login page)
+ * SESSION LOCK SCREEN — Horizontal layout with school branding + particles
  * ============================================================================
  *
- * Écran de verrouillage plein écran affiché après 15 minutes d'inactivité.
  * Layout horizontal :
- *   - Colonne gauche : fond Navy→Blue, logo animé, titre, particules
+ *   - Colonne gauche : fond Navy→Blue, logo+nom école, particules, titre
  *   - Colonne droite : formulaire blanc (Rester connecté + mot de passe)
- *
- * Après 15 minutes supplémentaires sans interaction → déconnexion automatique
- * et redirection vers le site public.
+ *   - Logo Academia Helm petit en bas à gauche
  * ============================================================================
  */
 
@@ -17,11 +14,12 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import Image from 'next/image';
 import { Lock, Mail, Eye, EyeOff, LogOut, Loader, AlertCircle, RefreshCw } from 'lucide-react';
+import Image from 'next/image';
 import { useSessionManager } from '@/contexts/SessionManagerContext';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { BRAND } from '@/lib/brand';
+import { useSchoolBranding } from '@/hooks/useSchoolBranding';
 import FloatingEduParticles from '@/components/ui/FloatingEduParticles';
 
 const NAVY = '#0b2f73';
@@ -31,6 +29,7 @@ const GOLD = '#f5b335';
 export default function SessionLockScreen() {
   const { sessionState, handleUnlock, handleLogoutFromLock, handleStayConnected } = useSessionManager();
   const { shouldReduceMotion } = useMotionBudget();
+  const schoolBranding = useSchoolBranding();
 
   const isVisible = sessionState === 'locked';
 
@@ -46,9 +45,7 @@ export default function SessionLockScreen() {
       const raw = localStorage.getItem('session');
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed.user?.email) {
-          setEmail(parsed.user.email);
-        }
+        if (parsed.user?.email) setEmail(parsed.user.email);
       }
     } catch {}
   }, [isVisible]);
@@ -89,6 +86,9 @@ export default function SessionLockScreen() {
 
   const dur = useMemo(() => (shouldReduceMotion ? 0 : 0.35), [shouldReduceMotion]);
 
+  const schoolName = schoolBranding?.name || schoolBranding?.schoolName || '';
+  const schoolLogo = schoolBranding?.logoUrl || null;
+
   return (
     <AnimatePresence>
       {isVisible && (
@@ -111,34 +111,50 @@ export default function SessionLockScreen() {
             style={{ boxShadow: `0 24px 48px -12px rgba(11,47,115,0.25), 0 0 0 1px ${GOLD}15` }}
           >
             <div className="flex flex-col md:flex-row min-h-[480px]">
-              {/* ── Colonne gauche : branding (fond Navy→Blue + particules) ── */}
+              {/* ── Colonne gauche : branding école (fond Navy→Blue + particules) ── */}
               <div
                 className="flex-1 p-6 sm:p-8 flex flex-col justify-center relative overflow-hidden"
                 style={{ background: `linear-gradient(155deg, ${NAVY} 0%, ${BLUE} 100%)` }}
               >
-                {/* Particules éducatives flottantes */}
-                {!shouldReduceMotion && <FloatingEduParticles count={12} opacityMultiplier={1.5} />}
+                {/* Particules éducatives flottantes — TOUJOURS visibles */}
+                <FloatingEduParticles count={14} opacityMultiplier={2.0} />
 
                 {/* Halos lumineux */}
                 <div className="pointer-events-none absolute -top-16 -left-10 h-48 w-48 rounded-full opacity-25 blur-3xl" style={{ background: '#ffffff' }} aria-hidden />
                 <div className="pointer-events-none absolute -bottom-20 -right-10 h-56 w-56 rounded-full opacity-15 blur-3xl" style={{ background: GOLD }} aria-hidden />
 
-                {/* Logo animé */}
+                {/* Logo + nom de l'ÉCOLE en haut (mis en avant) */}
                 <motion.div
-                  className="mb-4 flex justify-center md:justify-start relative z-10"
-                  initial={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
+                  className="mb-6 flex flex-col items-center md:items-start relative z-10"
+                  initial={shouldReduceMotion ? undefined : { opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.1, duration: dur }}
                 >
-                  <Image
-                    src={BRAND.logoPath}
-                    alt={BRAND.name}
-                    width={80}
-                    height={80}
-                    className="object-contain"
-                    style={shouldReduceMotion ? undefined : { animation: 'academiaPulse 3s ease-in-out infinite' }}
-                    priority
-                  />
+                  {/* Logo école */}
+                  <div className="mb-3">
+                    {schoolLogo ? (
+                      <img
+                        src={schoolLogo}
+                        alt={schoolName}
+                        className="object-contain"
+                        style={{ maxHeight: '64px', maxWidth: '180px' }}
+                      />
+                    ) : (
+                      <div
+                        className="w-16 h-16 rounded-xl flex items-center justify-center text-xl font-bold"
+                        style={{ background: 'rgba(255,255,255,0.15)', color: GOLD }}
+                      >
+                        {(schoolName || 'EC').substring(0, 2).toUpperCase()}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Nom de l'école */}
+                  {schoolName && (
+                    <h1 className="text-lg font-bold text-white tracking-tight text-center md:text-left">
+                      {schoolName}
+                    </h1>
+                  )}
                 </motion.div>
 
                 {/* Icône verrou animée */}
@@ -167,14 +183,24 @@ export default function SessionLockScreen() {
                   </p>
                 </motion.div>
 
-                {/* Footer branding */}
-                <div className="mt-6 relative z-10 text-center md:text-left">
-                  <p className="text-[10px] font-bold text-blue-200/40 uppercase tracking-widest">
-                    {BRAND.name}
-                  </p>
-                  <p className="text-[9px] text-blue-200/30 mt-0.5">
-                    {BRAND.subtitle}
-                  </p>
+                {/* Logo Academia Helm PETIT en bas à gauche */}
+                <div className="mt-8 flex items-center gap-2 relative z-10">
+                  <Image
+                    src={BRAND.logoPath}
+                    alt="Academia Helm"
+                    width={20}
+                    height={20}
+                    className="opacity-40"
+                    priority
+                  />
+                  <div>
+                    <p className="text-[9px] font-bold text-blue-200/40 uppercase tracking-widest leading-none">
+                      Academia Helm
+                    </p>
+                    <p className="text-[7px] text-blue-200/30 mt-0.5 leading-none">
+                      Plateforme de pilotage éducatif
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -222,7 +248,6 @@ export default function SessionLockScreen() {
 
                 {/* Formulaire */}
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  {/* Email (pré-rempli, désactivé) */}
                   <div>
                     <label htmlFor="lock-email" className="mb-1.5 block text-sm font-semibold text-slate-900">
                       Adresse email
@@ -243,7 +268,6 @@ export default function SessionLockScreen() {
                     </div>
                   </div>
 
-                  {/* Mot de passe */}
                   <div>
                     <label htmlFor="lock-password" className="mb-1.5 block text-sm font-semibold text-slate-900">
                       Mot de passe
@@ -275,7 +299,6 @@ export default function SessionLockScreen() {
                     </div>
                   </div>
 
-                  {/* Bouton Déverrouiller */}
                   <motion.button
                     type="submit"
                     disabled={isLoading || !password.trim()}
@@ -298,7 +321,6 @@ export default function SessionLockScreen() {
                   </motion.button>
                 </form>
 
-                {/* Lien de déconnexion */}
                 <div className="mt-6 text-center">
                   <button
                     onClick={handleLogoutFromLock}

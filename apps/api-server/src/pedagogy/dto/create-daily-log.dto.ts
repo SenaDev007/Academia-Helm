@@ -1,9 +1,10 @@
-import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsDateString, IsUUID } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsDateString, IsUUID, IsNumber } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateDailyLogDto {
   @IsUUID()
-  @IsNotEmpty()
-  teacherId: string;
+  @IsOptional()
+  teacherId?: string;
 
   /** Optional in Prisma schema (classId String?) */
   @IsUUID()
@@ -11,27 +12,25 @@ export class CreateDailyLogDto {
   classId?: string;
 
   @IsDateString()
-  @IsNotEmpty()
-  date: string;
+  @IsOptional()
+  date?: string;
 
   /** Prisma field is `summary` (not `content`) */
   @IsString()
-  @IsNotEmpty()
-  summary: string;
+  @IsOptional()
+  summary?: string;
 
   /** Prisma field: validated Boolean @default(false) */
   @IsBoolean()
   @IsOptional()
   validated?: boolean;
 
-  /** Required by Prisma schema */
+  /** Required by Prisma schema — now optional, resolved by service */
   @IsUUID()
-  @IsNotEmpty()
-  academicYearId: string;
+  @IsOptional()
+  academicYearId?: string;
 
-  /** Required by Prisma schema */
-  @IsUUID()
-  @IsNotEmpty()
+  /** Required by Prisma schema — now optional, resolved by service */
   @IsOptional() @IsString() schoolLevelId?: string;
 
   /** Frontend may send subjectId (not in Prisma model but accepted for lookups) */
@@ -53,4 +52,27 @@ export class CreateDailyLogDto {
   @IsString()
   @IsOptional()
   status?: string;
+
+  // ─── Homework-specific fields (accepted from frontend, mapped in service) ──
+
+  /** Homework title — mapped to summary by service if summary not provided */
+  @IsString()
+  @IsOptional()
+  title?: string;
+
+  /** Homework description — appended to summary by service */
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  /** Homework due date — mapped to `date` by service if date not provided */
+  @IsDateString()
+  @IsOptional()
+  dueDate?: string;
+
+  /** Homework max score — stored in summary metadata */
+  @IsNumber()
+  @IsOptional()
+  @Type(() => Number)
+  maxScore?: number;
 }

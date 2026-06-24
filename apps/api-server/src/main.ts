@@ -1011,11 +1011,13 @@ async function bootstrap() {
     logger.warn(`Department FK migration warning: ${deptFkErr.message}`);
   }
 
-  // ─── Rooms table — add missing columns (idempotent) ──
-  // The Room model has columns that may not exist in the production DB
+  // ─── Rooms table — add missing columns + ensure related tables exist (idempotent) ──
+  // The Room model and related tables may not have all columns in the production DB
   // if migrations weren't applied. This adds them safely.
   try {
     const prisma = app.get(PrismaService);
+
+    // 1. Ensure rooms table columns
     await prisma.$executeRawUnsafe(
       `ALTER TABLE "rooms" ADD COLUMN IF NOT EXISTS "schoolLevelId" TEXT`,
     ).catch(() => {});
@@ -1031,7 +1033,86 @@ async function bootstrap() {
     await prisma.$executeRawUnsafe(
       `ALTER TABLE "rooms" ADD COLUMN IF NOT EXISTS "createdBy" TEXT`,
     ).catch(() => {});
-    logger.log('✅ Rooms table columns ensured (schoolLevelId, equipment, status, description, createdBy)');
+
+    // 2. Ensure room_allocations table exists
+    await prisma.$executeRawUnsafe(
+      `CREATE TABLE IF NOT EXISTS "room_allocations" (
+        "id" TEXT NOT NULL,
+        "tenantId" TEXT NOT NULL,
+        "academicYearId" TEXT NOT NULL,
+        "roomId" TEXT NOT NULL,
+        "allocationType" TEXT NOT NULL,
+        "referenceId" TEXT,
+        "startTime" TIMESTAMP(3) NOT NULL,
+        "endTime" TIMESTAMP(3) NOT NULL,
+        "status" TEXT NOT NULL DEFAULT 'ACTIVE',
+        "notes" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "room_allocations_pkey" PRIMARY KEY ("id")
+      )`,
+    ).catch(() => {});
+
+    // 3. Ensure room_maintenances table exists
+    await prisma.$executeRawUnsafe(
+      `CREATE TABLE IF NOT EXISTS "room_maintenances" (
+        "id" TEXT NOT NULL,
+        "tenantId" TEXT NOT NULL,
+        "roomId" TEXT NOT NULL,
+        "startDate" TIMESTAMP(3) NOT NULL,
+        "endDate" TIMESTAMP(3),
+        "reason" TEXT,
+        "isActive" BOOLEAN NOT NULL DEFAULT true,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "room_maintenances_pkey" PRIMARY KEY ("id")
+      )`,
+    ).catch(() => {});
+
+    // 4. Ensure room_schedules table exists
+    await prisma.$executeRawUnsafe(
+      `CREATE TABLE IF NOT EXISTS "room_schedules" (
+        "id" TEXT NOT NULL,
+        "tenantId" TEXT NOT NULL,
+        "academicYearId" TEXT NOT NULL,
+        "roomId" TEXT NOT NULL,
+        "dayOfWeek" INTEGER NOT NULL,
+        "startTime" TEXT NOT NULL,
+        "endTime" TEXT NOT NULL,
+        "classId" TEXT,
+        "subjectId" TEXT,
+        "isActive" BOOLEAN NOT NULL DEFAULT true,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "room_schedules_pkey" PRIMARY KEY ("id")
+      )`,
+    ).catch(() => {});
+
+    // 5. Ensure room_reservations table exists
+    await prisma.$executeRawUnsafe(
+      `CREATE TABLE IF NOT EXISTS "room_reservations" (
+        "id" TEXT NOT NULL,
+        "tenantId" TEXT NOT NULL,
+        "academicYearId" TEXT NOT NULL,
+        "roomId" TEXT NOT NULL,
+        "requestedBy" TEXT,
+        "purpose" TEXT,
+        "startTime" TIMESTAMP(3) NOT NULL,
+        "endTime" TIMESTAMP(3) NOT NULL,
+        "status" TEXT NOT NULL DEFAULT 'PENDING',
+        "notes" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "room_reservations_pkey" PRIMARY KEY ("id")
+      )`,
+    ).catch(() => {});
+
+    // 6. Ensure timetable_entries has roomId column (for room detach on delete)
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "timetable_entries" ADD COLUMN IF NOT EXISTS "roomId" TEXT`,
+    ).catch(() => {});
+
+    logger.log('✅ Rooms table columns + related tables ensured (room_allocations, room_maintenances, room_schedules, room_reservations, timetable_entries.roomId)');
   } catch (roomsColsErr: any) {
     logger.warn(`Rooms columns migration warning: ${roomsColsErr.message}`);
   }

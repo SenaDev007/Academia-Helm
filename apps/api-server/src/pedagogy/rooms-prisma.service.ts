@@ -112,7 +112,27 @@ export class RoomsPrismaService {
   }
 
   /**
-   * Récupère une salle par ID
+   * Récupère une salle par ID (version simplifiée sans jointures lourdes)
+   * Utilisée pour update/delete où on a juste besoin de vérifier l'existence.
+   */
+  async findRoomByIdSimple(id: string, tenantId: string) {
+    const room = await this.prisma.room.findFirst({
+      where: { id, tenantId },
+      include: {
+        schoolLevel: true,
+        academicYear: true,
+      },
+    });
+
+    if (!room) {
+      throw new NotFoundException(`Room with ID ${id} not found`);
+    }
+
+    return room;
+  }
+
+  /**
+   * Récupère une salle par ID (version complète avec jointures)
    */
   async findRoomById(id: string, tenantId: string) {
     const room = await this.prisma.room.findFirst({
@@ -324,7 +344,7 @@ export class RoomsPrismaService {
       tenantId?: string;
     }
   ) {
-    const room = await this.findRoomById(id, tenantId);
+    const room = await this.findRoomByIdSimple(id, tenantId);
 
     // Vérifier l'unicité du code si modifié
     if (data.roomCode && data.roomCode !== room.roomCode) {
@@ -491,7 +511,7 @@ export class RoomsPrismaService {
    * Supprime une salle
    */
   async deleteRoom(id: string, tenantId: string) {
-    const room = await this.findRoomById(id, tenantId);
+    const room = await this.findRoomByIdSimple(id, tenantId);
 
     // ─── Nettoyer les dépendances avant suppression ──
     // On supprime les enregistrements liés qui n'ont pas de onDelete: Cascade

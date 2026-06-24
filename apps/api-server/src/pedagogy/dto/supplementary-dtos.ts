@@ -35,8 +35,6 @@ export class CreateRoomDto {
   @IsOptional() @IsInt() @Min(0) @Type(() => Number) capacity?: number;
   @IsOptional() @IsString() description?: string;
   @IsOptional() @IsString() status?: string;
-  @IsOptional() @IsString() building?: string;
-  @IsOptional() @IsInt() @Min(0) @Type(() => Number) floor?: number;
   @IsOptional() @IsArray() equipment?: any[];
   @IsOptional() @IsUUID() academicYearId?: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
@@ -51,8 +49,6 @@ export class UpdateRoomDto {
   @IsOptional() @IsInt() @Min(0) @Type(() => Number) capacity?: number;
   @IsOptional() @IsString() description?: string;
   @IsOptional() @IsString() status?: string;
-  @IsOptional() @IsString() building?: string;
-  @IsOptional() @IsInt() @Min(0) @Type(() => Number) floor?: number;
   @IsOptional() @IsArray() equipment?: any[];
   @IsOptional() @IsUUID() academicYearId?: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;

@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 const API_URL = getApiBaseUrlForRoutes();
@@ -17,7 +17,7 @@ export async function GET(
   const { id } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(`${API_URL}/api/rooms/${id}`, {
+    const response = await fetch(normalizeApiUrl(`${API_URL}/api/rooms/${id}`), {
       headers,
       cache: 'no-store',
     });
@@ -49,7 +49,7 @@ export async function PUT(
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
 
-    const response = await fetch(`${API_URL}/api/rooms/${id}`, {
+    const response = await fetch(normalizeApiUrl(`${API_URL}/api/rooms/${id}`), {
       method: 'PUT',
       headers,
       body: JSON.stringify(body),
@@ -81,7 +81,7 @@ export async function DELETE(
   const { id } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(`${API_URL}/api/rooms/${id}`, {
+    const response = await fetch(normalizeApiUrl(`${API_URL}/api/rooms/${id}`), {
       method: 'DELETE',
       headers,
       cache: 'no-store',

@@ -1016,6 +1016,79 @@ async function bootstrap() {
     }
   }, 5000); // 5 second delay to let the app fully start
 
+  // ─── Cleanup test data from pedagogy module ──
+  // One-time cleanup: delete all test levels, cycles, classes, subjects, rooms
+  setTimeout(async () => {
+    try {
+      const { PrismaService } = await import('./database/prisma.service');
+      const prisma = app.get(PrismaService);
+      const tenants = await prisma.tenant.findMany({ select: { id: true, name: true } });
+      for (const t of tenants) {
+        try {
+          // Delete test levels
+          const testLevels = await prisma.academicLevel.findMany({
+            where: { tenantId: t.id, name: { contains: 'test', mode: 'insensitive' } },
+            select: { id: true, name: true },
+          });
+          for (const l of testLevels) {
+            await prisma.academicLevel.delete({ where: { id: l.id } }).catch(() => {});
+          }
+
+          // Delete test cycles
+          const testCycles = await prisma.academicCycle.findMany({
+            where: { tenantId: t.id, name: { contains: 'test', mode: 'insensitive' } },
+            select: { id: true, name: true },
+          });
+          for (const c of testCycles) {
+            await prisma.academicCycle.delete({ where: { id: c.id } }).catch(() => {});
+          }
+
+          // Delete test classes
+          const testClasses = await prisma.academicClass.findMany({
+            where: {
+              tenantId: t.id,
+              OR: [
+                { name: { contains: 'test', mode: 'insensitive' } },
+                { code: { contains: 'test', mode: 'insensitive' } },
+              ],
+            },
+            select: { id: true, name: true },
+          });
+          for (const c of testClasses) {
+            await prisma.academicClass.delete({ where: { id: c.id } }).catch(() => {});
+          }
+
+          // Delete ALL subjects (fresh start)
+          const deletedSubjects = await prisma.subject.deleteMany({ where: { tenantId: t.id } });
+
+          // Delete test rooms
+          const testRooms = await prisma.room.findMany({
+            where: {
+              tenantId: t.id,
+              OR: [
+                { roomName: { contains: 'test', mode: 'insensitive' } },
+                { roomCode: { contains: 'test', mode: 'insensitive' } },
+              ],
+            },
+            select: { id: true, roomName: true },
+          });
+          for (const r of testRooms) {
+            await prisma.room.delete({ where: { id: r.id } }).catch(() => {});
+          }
+
+          const total = testLevels.length + testCycles.length + testClasses.length + deletedSubjects.count + testRooms.length;
+          if (total > 0) {
+            logger.log(`[${t.name}] Cleanup: ${testLevels.length} levels, ${testCycles.length} cycles, ${testClasses.length} classes, ${deletedSubjects.count} subjects, ${testRooms.length} rooms deleted`);
+          }
+        } catch (err: any) {
+          logger.warn(`[${t.name}] Cleanup failed: ${err.message}`);
+        }
+      }
+    } catch (err: any) {
+      logger.warn(`Cleanup skipped: ${err.message}`);
+    }
+  }, 8000); // 8 second delay (after teacher sync)
+
   // Log memory info on startup
   const memUsage = process.memoryUsage();
   logger.log(`Academia Helm API listening on http://0.0.0.0:${port} (PORT=${process.env.PORT ?? 'unset'})`);

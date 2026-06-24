@@ -15,6 +15,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AcademicStructurePrismaService } from './academic-structure-prisma.service';
+import { PrismaService } from '../database/prisma.service';
 import { DuplicateStructureDto } from './dto/duplicate-structure.dto';
 import { CreateAcademicLevelDto } from './dto/create-academic-level.dto';
 import { UpdateAcademicLevelDto } from './dto/update-academic-level.dto';
@@ -29,7 +30,10 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 @Controller('pedagogy/academic-structure')
 @UseGuards(JwtAuthGuard)
 export class AcademicStructurePrismaController {
-  constructor(private readonly service: AcademicStructurePrismaService) {}
+  constructor(
+    private readonly service: AcademicStructurePrismaService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   /** Duplication annuelle : structure source → année cible (transaction + audit). */
   @Post('duplicate')
@@ -157,5 +161,112 @@ export class AcademicStructurePrismaController {
   @Put('classes/:id/deactivate')
   async deactivateClass(@Param('id') id: string, @TenantId() tenantId: string) {
     return this.service.deactivateClass(id, tenantId);
+  }
+
+  /**
+   * POST /api/pedagogy/academic-structure/cleanup-test-data
+   * Supprime toutes les données de test (levels, cycles, classes, subjects)
+   * dont le nom contient "test" (insensible à la casse).
+   * À utiliser avec précaution — supprime définitivement.
+   */
+  @Post('cleanup-test-data')
+  async cleanupTestData(@TenantId() tenantId: string) {
+    const results = {
+      levels: 0,
+      cycles: 0,
+      classes: 0,
+      subjects: 0,
+      rooms: 0,
+      details: [] as string[],
+    };
+
+    // Delete test levels
+    try {
+      const testLevels = await this.prisma.academicLevel.findMany({
+        where: { tenantId, name: { contains: 'test', mode: 'insensitive' } },
+        select: { id: true, name: true },
+      });
+      for (const l of testLevels) {
+        await this.prisma.academicLevel.delete({ where: { id: l.id } }).catch(() => {});
+        results.details.push(`Deleted level: ${l.name}`);
+      }
+      results.levels = testLevels.length;
+    } catch (e: any) {
+      results.details.push(`Levels cleanup error: ${e.message}`);
+    }
+
+    // Delete test cycles
+    try {
+      const testCycles = await this.prisma.academicCycle.findMany({
+        where: { tenantId, name: { contains: 'test', mode: 'insensitive' } },
+        select: { id: true, name: true },
+      });
+      for (const c of testCycles) {
+        await this.prisma.academicCycle.delete({ where: { id: c.id } }).catch(() => {});
+        results.details.push(`Deleted cycle: ${c.name}`);
+      }
+      results.cycles = testCycles.length;
+    } catch (e: any) {
+      results.details.push(`Cycles cleanup error: ${e.message}`);
+    }
+
+    // Delete test classes (AcademicClass)
+    try {
+      const testClasses = await this.prisma.academicClass.findMany({
+        where: {
+          tenantId,
+          OR: [
+            { name: { contains: 'test', mode: 'insensitive' } },
+            { code: { contains: 'test', mode: 'insensitive' } },
+          ],
+        },
+        select: { id: true, name: true, code: true },
+      });
+      for (const c of testClasses) {
+        await this.prisma.academicClass.delete({ where: { id: c.id } }).catch(() => {});
+        results.details.push(`Deleted class: ${c.name} (${c.code})`);
+      }
+      results.classes = testClasses.length;
+    } catch (e: any) {
+      results.details.push(`Classes cleanup error: ${e.message}`);
+    }
+
+    // Delete ALL subjects for this tenant (fresh start)
+    try {
+      const deletedSubjects = await this.prisma.subject.deleteMany({
+        where: { tenantId },
+      });
+      results.subjects = deletedSubjects.count;
+      results.details.push(`Deleted all subjects: ${deletedSubjects.count}`);
+    } catch (e: any) {
+      results.details.push(`Subjects cleanup error: ${e.message}`);
+    }
+
+    // Delete test rooms
+    try {
+      const testRooms = await this.prisma.room.findMany({
+        where: {
+          tenantId,
+          OR: [
+            { roomName: { contains: 'test', mode: 'insensitive' } },
+            { roomCode: { contains: 'test', mode: 'insensitive' } },
+          ],
+        },
+        select: { id: true, roomName: true },
+      });
+      for (const r of testRooms) {
+        await this.prisma.room.delete({ where: { id: r.id } }).catch(() => {});
+        results.details.push(`Deleted room: ${r.roomName}`);
+      }
+      results.rooms = testRooms.length;
+    } catch (e: any) {
+      results.details.push(`Rooms cleanup error: ${e.message}`);
+    }
+
+    return {
+      success: true,
+      message: `Nettoyage terminé : ${results.levels} niveau(x), ${results.cycles} cycle(s), ${results.classes} classe(s), ${results.subjects} matière(s), ${results.rooms} salle(s) supprimé(s)`,
+      ...results,
+    };
   }
 }

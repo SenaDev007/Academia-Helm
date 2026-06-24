@@ -624,6 +624,108 @@ export default function TimetablesWorkspace() {
     }
   };
 
+  // --- Print / Download timetable ---
+  const getTimetableTitle = () => {
+    const entityName = viewMode === 'class'
+      ? classes.find(c => c.id === selectedId)?.name
+      : viewMode === 'teacher'
+      ? `${teachers.find(t => t.teacherId === selectedId)?.teacher?.lastName || ''} ${teachers.find(t => t.teacherId === selectedId)?.teacher?.firstName || ''}`
+      : rooms.find(r => r.id === selectedId)?.name || '';
+    return `Emploi du temps — ${viewMode === 'class' ? 'Classe' : viewMode === 'teacher' ? 'Enseignant' : 'Salle'} ${entityName}`;
+  };
+
+  const buildPrintableHtml = () => {
+    const N = '#0b2f73', B = '#1d4fa5', G = '#f5b335';
+    const title = getTimetableTitle();
+
+    // Build grid rows
+    const rows = HOURS.map(hour => {
+      const cells = DAYS.map(day => {
+        const entry = filteredEntries.find(e => e.dayOfWeek === day.id && e.startTime === `${hour.toString().padStart(2, '0')}:00`);
+        if (entry) {
+          const subjectName = entry.subject?.name || '—';
+          const teacherName = entry.teacher ? `${entry.teacher.firstName?.[0]}. ${entry.teacher.lastName}` : '';
+          const className = entry.class?.name || '';
+          const roomCode = entry.room?.code || '';
+          return `<td style="padding:6px;border:1px solid #ddd;text-align:center;background:#f0f7ff;">
+            <strong style="font-size:11px;color:${N};">${subjectName}</strong><br/>
+            <span style="font-size:9px;color:#666;">${viewMode === 'teacher' ? className : teacherName}</span><br/>
+            <span style="font-size:8px;color:#999;">${roomCode}</span>
+          </td>`;
+        }
+        // Check if it's a break
+        const isBreak = breaks.some(b => {
+          const startStr = `${hour.toString().padStart(2, '0')}:00`;
+          const endStr = `${(hour + 1).toString().padStart(2, '0')}:00`;
+          return (startStr >= b.startTime && startStr < b.endTime) || (endStr > b.startTime && endStr <= b.endTime);
+        });
+        if (isBreak) {
+          return `<td style="padding:6px;border:1px solid #ddd;text-align:center;background:#fef9e7;">
+            <span style="font-size:9px;color:#999;font-style:italic;">Pause</span>
+          </td>`;
+        }
+        return `<td style="padding:6px;border:1px solid #ddd;text-align:center;"></td>`;
+      }).join('');
+
+      return `<tr>
+        <td style="padding:6px;font-weight:bold;background:${N};color:#fff;border:1px solid #ddd;text-align:center;">
+          ${hour.toString().padStart(2, '0')}:00
+        </td>
+        ${cells}
+      </tr>`;
+    }).join('');
+
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;padding:20px;font-size:12px}
+.header{text-align:center;margin-bottom:15px;border-bottom:3px solid ${G};padding-bottom:10px}
+.header h1{color:${N};font-size:18px}
+.header h2{font-size:13px;color:${B};margin-top:3px}
+.header p{font-size:10px;margin-top:3px;color:#999}
+table{width:100%;border-collapse:collapse;margin-bottom:10px}
+th{background:${N};color:#fff;padding:8px;border:1px solid #ddd;font-size:11px}
+td{border:1px solid #ddd;padding:6px;font-size:11px}
+.footer{margin-top:20px;text-align:center;font-size:9px;color:#999;border-top:1px solid #ddd;padding-top:8px}
+@media print{body{padding:10px}}
+</style></head><body>
+<div class="header">
+<h1>EMPLOI DU TEMPS HEBDOMADAIRE</h1>
+<h2>${title}</h2>
+<p>Généré le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</p>
+</div>
+<table>
+<thead><tr>
+<th style="width:80px">Horaire</th>
+${DAYS.map(d => `<th>${d.label}</th>`).join('')}
+</tr></thead>
+<tbody>${rows}</tbody>
+</table>
+<div class="footer">
+<p>Academia Helm — Plateforme de pilotage éducatif</p>
+</div>
+</body></html>`;
+  };
+
+  const handlePrintTimetable = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    printWindow.document.write(buildPrintableHtml());
+    printWindow.document.close();
+    setTimeout(() => printWindow.print(), 500);
+  };
+
+  const handleDownloadTimetable = () => {
+    const html = buildPrintableHtml();
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `emploi_du_temps_${viewMode}_${selectedId || 'all'}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // --- Grid Component ---
   const GridCell = ({ day, hour }: { day: number, hour: number }) => {
     const timeStr = `${hour.toString().padStart(2, '0')}:00`;
@@ -810,9 +912,21 @@ export default function TimetablesWorkspace() {
                 {generating ? "GÉNÉRATION..." : "AUTO-GÉNÉRER"}
               </button>
             )}
-            <button className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-100 rounded-2xl text-xs font-black text-gray-600 hover:bg-gray-50 transition-all shadow-sm">
+            <button
+              onClick={handleDownloadTimetable}
+              className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-100 rounded-2xl text-xs font-black text-gray-600 hover:bg-gray-50 transition-all shadow-sm"
+              title="Télécharger l'emploi du temps (HTML)"
+            >
+              <Download className="w-4 h-4" />
+              TÉLÉCHARGER
+            </button>
+            <button
+              onClick={handlePrintTimetable}
+              className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-100 rounded-2xl text-xs font-black text-gray-600 hover:bg-gray-50 transition-all shadow-sm"
+              title="Imprimer l'emploi du temps"
+            >
               <Printer className="w-4 h-4" />
-              IMPRIMER PDF
+              IMPRIMER
             </button>
             <button 
               onClick={() => setModal('add-entry')}

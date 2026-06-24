@@ -142,7 +142,7 @@ export default function MaterialsWorkspace() {
       await pedagogyService.createPedagogicalMaterial({
         ...data,
         academicYearId: academicYear?.id,
-        schoolLevelId: schoolLevel?.id || "default-level",
+        schoolLevelId: schoolLevel?.id || undefined,
         isActive: true
       });
       toast({
@@ -209,7 +209,7 @@ export default function MaterialsWorkspace() {
         ...data,
         materialId: selectedMaterialId,
         academicYearId: academicYear.id,
-        schoolLevelId: schoolLevel?.id || "default-level",
+        schoolLevelId: schoolLevel?.id || undefined,
         quantity: parseInt(data.quantity)
       });
       toast({
@@ -232,7 +232,7 @@ export default function MaterialsWorkspace() {
     if (!selectedMaterialId || !academicYear?.id) return;
     try {
       const selectedClass = classes.find(c => c.id === data.classId);
-      const schoolLevelId = selectedClass?.schoolLevelId || schoolLevel?.id || "default-level";
+      const schoolLevelId = selectedClass?.schoolLevelId || schoolLevel?.id || undefined;
       
       await pedagogyService.createMaterialAssignment({
         ...data,

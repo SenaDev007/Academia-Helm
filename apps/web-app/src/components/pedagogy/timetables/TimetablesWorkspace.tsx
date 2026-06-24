@@ -374,7 +374,7 @@ export default function TimetablesWorkspace() {
             scheduledEntries.push({
               timetableId: activeTimetableId,
               academicYearId: academicYear.id,
-              schoolLevelId: schoolLevel?.id || 'ALL',
+              schoolLevelId: schoolLevel?.id || '',
               dayOfWeek: slot.day,
               startTime: slot.start,
               endTime: slot.end,
@@ -446,7 +446,7 @@ export default function TimetablesWorkspace() {
             scheduledEntries.push({
               timetableId: activeTimetableId,
               academicYearId: academicYear.id,
-              schoolLevelId: schoolLevel?.id || 'ALL',
+              schoolLevelId: schoolLevel?.id || '',
               dayOfWeek: slot.day,
               startTime: slot.start,
               endTime: slot.end,
@@ -531,7 +531,7 @@ export default function TimetablesWorkspace() {
           method: 'POST',
           body: {
             academicYearId: academicYear.id,
-            schoolLevelId: schoolLevel?.id || 'ALL',
+            schoolLevelId: schoolLevel?.id || '',
             name: `Emploi du Temps Principal ${academicYear.label}`,
             startDate: new Date(),
           }

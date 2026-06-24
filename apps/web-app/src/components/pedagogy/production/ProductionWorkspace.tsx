@@ -1267,8 +1267,11 @@ function StudentsOfClassView() {
         const res = await pedagogyService.getTeacherAssignments(user.id, academicYear.id);
         const list = Array.isArray(res) ? res : [];
         setAssignments(list);
-        // Auto-select first class
-        if (list.length > 0 && list[0].classSubject?.academicClass) {
+        // Auto-select first physical class (CI/A) if available, else official class
+        const firstWithPhysical = list.find(a => a.physicalClass);
+        if (firstWithPhysical?.physicalClass) {
+          setSelectedClass(firstWithPhysical.physicalClass.id);
+        } else if (list.length > 0 && list[0].classSubject?.academicClass) {
           setSelectedClass(list[0].classSubject.academicClass.id);
         }
       } catch (e) {
@@ -1325,11 +1328,14 @@ function StudentsOfClassView() {
     );
   }
 
-  // Extract unique classes from assignments
+  // Extract unique physical classes from assignments (prefer physicalClass, fallback to academicClass)
   const uniqueClasses = Array.from(new Map(
     assignments
-      .filter(a => a.classSubject?.academicClass)
-      .map(a => [a.classSubject.academicClass.id, a.classSubject.academicClass])
+      .filter(a => a.physicalClass || a.classSubject?.academicClass)
+      .map(a => {
+        const cls = a.physicalClass || a.classSubject.academicClass;
+        return [cls.id, cls];
+      })
   ).values());
 
   return (

@@ -108,6 +108,9 @@ export default function AssignmentsWorkspace() {
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
   const [classSubjects, setClassSubjects] = useState<ClassSubject[]>([]);
   const [teachers, setTeachers] = useState<TeacherProfile[]>([]);
+  // Physical classes (CI/A, CI/B) linked to the selected official class
+  const [physicalClasses, setPhysicalClasses] = useState<any[]>([]);
+  const [selectedPhysicalClassId, setSelectedPhysicalClassId] = useState<string | null>(null);
 
   // Selection
   const [activeSubject, setActiveSubject] = useState<ClassSubject | null>(null);
@@ -153,6 +156,41 @@ export default function AssignmentsWorkspace() {
   useEffect(() => { loadInitialData(); }, [loadInitialData]);
   useEffect(() => { loadClassSubjects(); }, [loadClassSubjects]);
 
+  // Load physical classes (CI/A, CI/B) when an official class is selected
+  useEffect(() => {
+    if (!selectedClassId || !academicYear?.id) {
+      setPhysicalClasses([]);
+      setSelectedPhysicalClassId(null);
+      return;
+    }
+    (async () => {
+      try {
+        // Fetch physical classes from /api/classes with officialClassId filter
+        const res = await fetch(`/api/classes?academicYearId=${academicYear.id}&officialClassId=${selectedClassId}`, {
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const list = Array.isArray(data) ? data : (data?.data || []);
+          setPhysicalClasses(list);
+          // Auto-select first physical class if available
+          if (list.length > 0) {
+            setSelectedPhysicalClassId(list[0].id);
+          } else {
+            setSelectedPhysicalClassId(null);
+          }
+        } else {
+          setPhysicalClasses([]);
+          setSelectedPhysicalClassId(null);
+        }
+      } catch {
+        setPhysicalClasses([]);
+        setSelectedPhysicalClassId(null);
+      }
+    })();
+  }, [selectedClassId, academicYear?.id]);
+
   // --- Derived state ---
 
   const selectedClass = classes.find(c => c.id === selectedClassId);
@@ -192,6 +230,7 @@ export default function AssignmentsWorkspace() {
         academicYearId: academicYear.id,
         teacherId,
         classSubjectId: activeSubject.id,
+        ...(selectedPhysicalClassId ? { classId: selectedPhysicalClassId } : {}),
       });
       await loadClassSubjects();
       setModal('none');
@@ -217,6 +256,7 @@ export default function AssignmentsWorkspace() {
           academicYearId: academicYear.id,
           teacherId,
           classSubjectId: cs.id,
+          ...(selectedPhysicalClassId ? { classId: selectedPhysicalClassId } : {}),
         })
       );
       await Promise.all(assignPromises);
@@ -392,15 +432,33 @@ export default function AssignmentsWorkspace() {
 
         {/* Header */}
         <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between">
-          <div>
-            <h3 className="text-base font-bold text-slate-900">
-              {selectedClass?.name || 'Sélectionnez une classe'}
-            </h3>
-            <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider mt-0.5">
-              {isHomeroom
-                ? '📚 Mode Titulaire — 1 enseignant pour toutes les matières'
-                : '🎓 Mode Spécialiste — 1 enseignant par matière'}
-            </p>
+          <div className="flex items-center gap-4 flex-wrap">
+            <div>
+              <h3 className="text-base font-bold text-slate-900">
+                {selectedClass?.name || 'Sélectionnez une classe'}
+              </h3>
+              <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider mt-0.5">
+                {isHomeroom
+                  ? '📚 Mode Titulaire — 1 enseignant pour toutes les matières'
+                  : '🎓 Mode Spécialiste — 1 enseignant par matière'}
+              </p>
+            </div>
+            {/* Physical class selector (CI/A, CI/B) */}
+            {physicalClasses.length > 0 && (
+              <div className="flex items-center gap-2">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Section:</label>
+                <select
+                  value={selectedPhysicalClassId || ''}
+                  onChange={(e) => setSelectedPhysicalClassId(e.target.value || null)}
+                  className="px-2.5 py-1.5 text-xs font-bold rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="">Toutes sections</option>
+                  {physicalClasses.map(pc => (
+                    <option key={pc.id} value={pc.id}>{pc.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           {selectedClass && (

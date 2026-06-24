@@ -1110,16 +1110,38 @@ export class ContractPdfService {
   }
 
   private async renderPdf(html: string): Promise<Buffer> {
+    // ─── Configuration du rendu PDF ──
+    // On utilise 'domcontentloaded' au lieu de 'networkidle0' pour éviter
+    // les timeouts quand des images externes (logo école) mettent trop de
+    // temps à charger ou sont inaccessibles depuis le conteneur serverless.
+    // On ajoute un petit délai après le chargement du DOM pour laisser les
+    // images locales (data URLs) et les styles se stabiliser.
+    const pdfOptions = {
+      format: 'A4' as const,
+      printBackground: true,
+      margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' },
+    };
+
+    const setContent = async (page: any) => {
+      // 'domcontentloaded' = attend que le DOM soit parsé (pas les images externes)
+      await page.setContent(html, {
+        waitUntil: 'domcontentloaded',
+        timeout: 30000, // 30s max pour le setContent
+      });
+      // Petit délai (500ms) pour laisser les fonts et data URLs se charger
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    };
+
+    const generateFromPage = async (page: any): Promise<Buffer> => {
+      await setContent(page);
+      const pdf = await page.pdf(pdfOptions);
+      return Buffer.from(pdf);
+    };
+
     try {
       const { page } = await this.puppeteerPool.acquirePage();
       try {
-        await page.setContent(html, { waitUntil: 'networkidle0' });
-        const pdf = await page.pdf({
-          format: 'A4',
-          printBackground: true,
-          margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' },
-        });
-        return Buffer.from(pdf);
+        return await generateFromPage(page);
       } finally {
         await this.puppeteerPool.releasePage(page);
       }
@@ -1131,13 +1153,7 @@ export class ContractPdfService {
         this.logger.log('Browser pool reset, retrying PDF generation...');
         const { page } = await this.puppeteerPool.acquirePage();
         try {
-          await page.setContent(html, { waitUntil: 'networkidle0' });
-          const pdf = await page.pdf({
-            format: 'A4',
-            printBackground: true,
-            margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' },
-          });
-          return Buffer.from(pdf);
+          return await generateFromPage(page);
         } finally {
           await this.puppeteerPool.releasePage(page);
         }

@@ -4,16 +4,17 @@
  * ============================================================================
  *
  * Handles:
- *   GET  /api/pedagogy/class-subjects?classId=X         → get subjects for a class
- *   POST /api/pedagogy/class-subjects                    → create single class-subject
- *   POST /api/pedagogy/class-subjects/bulk               → bulk assign subjects to classes
- *   DELETE /api/pedagogy/class-subjects/:id              → delete a class-subject
+ *   GET  /api/pedagogy/class-subjects?classId=X  → get subjects for a class
+ *        (converts classId query param to path segment: /class-subjects/:classId)
+ *   POST /api/pedagogy/class-subjects             → create single class-subject
+ *   POST /api/pedagogy/class-subjects/bulk        → bulk assign subjects to classes
+ *   DELETE /api/pedagogy/class-subjects/:id       → delete a class-subject
  *
  * Forwards to NestJS:
- *   /api/pedagogy/class-subjects/:classId
- *   /api/pedagogy/class-subjects/bulk
- *   /api/pedagogy/class-subjects (POST)
- *   /api/pedagogy/class-subjects/:id (DELETE)
+ *   GET   /api/pedagogy/class-subjects/:classId
+ *   POST  /api/pedagogy/class-subjects
+ *   POST  /api/pedagogy/class-subjects/bulk
+ *   DELETE /api/pedagogy/class-subjects/:id
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -26,8 +27,23 @@ async function forward(request: NextRequest, pathSegments: string[], method: str
   const headers = await getProxyAuthHeaders(request);
   const searchParams = request.nextUrl.searchParams;
 
-  // Build the backend URL based on path segments
-  const basePath = pathSegments.length ? `/${pathSegments.join('/')}` : '';
+  // ─── Special handling for GET with classId query param ──
+  // The frontend sends GET /api/pedagogy/class-subjects?classId=X
+  // The backend expects GET /api/pedagogy/class-subjects/:classId (path param)
+  // We need to convert the classId query param to a path segment.
+  let effectivePathSegments = [...pathSegments];
+
+  if (method === 'GET' && effectivePathSegments.length === 0) {
+    const classId = searchParams.get('classId');
+    if (classId) {
+      // Move classId from query param to path segment
+      effectivePathSegments = [classId];
+      searchParams.delete('classId');
+    }
+  }
+
+  // Build the backend URL based on effective path segments
+  const basePath = effectivePathSegments.length ? `/${effectivePathSegments.join('/')}` : '';
   const url = new URL(`${nestControllerUrl('pedagogy')}/class-subjects${basePath}`);
   searchParams.forEach((value, key) => url.searchParams.append(key, value));
 
@@ -37,7 +53,6 @@ async function forward(request: NextRequest, pathSegments: string[], method: str
     const text = await request.text();
     if (text.length > 0) {
       options.body = text;
-      // Ensure Content-Type is set for JSON
       (headers as Record<string, string>)['Content-Type'] = 'application/json';
     }
   }
@@ -68,8 +83,6 @@ async function forward(request: NextRequest, pathSegments: string[], method: str
   }
 }
 
-// GET /api/pedagogy/class-subjects?classId=X
-// GET /api/pedagogy/class-subjects/:id (if path segments provided)
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ path?: string[] }> },
@@ -78,8 +91,6 @@ export async function GET(
   return forward(request, path ?? [], 'GET');
 }
 
-// POST /api/pedagogy/class-subjects
-// POST /api/pedagogy/class-subjects/bulk
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ path?: string[] }> },
@@ -88,7 +99,6 @@ export async function POST(
   return forward(request, path ?? [], 'POST');
 }
 
-// PUT /api/pedagogy/class-subjects/:id
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ path?: string[] }> },
@@ -97,7 +107,6 @@ export async function PUT(
   return forward(request, path ?? [], 'PUT');
 }
 
-// DELETE /api/pedagogy/class-subjects/:id
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ path?: string[] }> },

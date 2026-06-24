@@ -190,8 +190,9 @@ export class FeexPayService {
    * Le client reçoit une notification sur son téléphone pour confirmer le paiement.
    * Le statut final est envoyé via webhook (status=SUCCESSFUL|FAILED).
    */
-  async createMobileMoneyPayment(data: FeexPayPaymentRequest): Promise<FeexPayPaymentResult> {
-    if (!this.isConfigured()) {
+  async createMobileMoneyPayment(data: FeexPayPaymentRequest, customShopId?: string): Promise<FeexPayPaymentResult> {
+    const shopId = customShopId || this.shopId;
+    if (!this.apiKey || !shopId) {
       throw new BadRequestException('FeexPay non configuré');
     }
 
@@ -207,13 +208,15 @@ export class FeexPayService {
 
     try {
       const body: Record<string, any> = {
-        shop: this.shopId,
+        shop: shopId,
         amount: data.amount,
         phoneNumber: this.normalizePhone(data.phoneNumber),
       };
-      if (data.callbackUrl) {
-        body.return_url = data.callbackUrl;
-      }
+      if (data.firstName) body.first_name = data.firstName;
+      if (data.lastName) body.last_name = data.lastName;
+      if (data.description) body.description = data.description;
+      if (data.metadata?.callback_info) body.callback_info = data.metadata.callback_info;
+      if (data.callbackUrl) body.return_url = data.callbackUrl;
 
       const response = await fetch(
         this.url(`/api/transactions/public/requesttopay/${operatorPath}`),
@@ -371,32 +374,39 @@ export class FeexPayService {
    *   - Paiement des salaires (école → staff)
    *   - Transferts vers des comptes externes
    */
-  async createPayout(data: FeexPayPayoutRequest): Promise<FeexPayPayoutResult> {
-    if (!this.isConfigured()) {
+  async createPayout(data: FeexPayPayoutRequest, customShopId?: string): Promise<FeexPayPayoutResult> {
+    const shopId = customShopId || this.shopId;
+    if (!this.apiKey || !shopId) {
       throw new BadRequestException('FeexPay non configuré');
     }
 
-    const operatorPath = OPERATOR_PATH[data.operator];
-    if (!operatorPath) {
-      throw new BadRequestException(`Opérateur payout non supporté: ${data.operator}`);
-    }
-
     try {
+      // ─── V2 Payout endpoints ──
+      // MTN/MOOV: POST /api/payouts/public/transfer/global (with network field)
+      // CELTIIS:  POST /api/payouts/public/celtiis_bj (with network='CELTIIS BJ')
+      let payoutUrl: string;
       const body: Record<string, any> = {
         amount: data.amount,
         phoneNumber: this.normalizePhone(data.phoneNumber),
-        shop: this.shopId,
+        shop: shopId,
         motif: data.motif || 'Transfert Academia Helm',
       };
 
-      const response = await fetch(
-        this.url(`/api/payouts/public/${operatorPath}`),
-        {
-          method: 'POST',
-          headers: this.authHeaders(),
-          body: JSON.stringify(body),
-        },
-      );
+      if (data.operator === 'CELTIIS') {
+        // CELTIIS Bénin — endpoint dédié
+        payoutUrl = this.url('/api/payouts/public/celtiis_bj');
+        body.network = 'CELTIIS BJ';
+      } else {
+        // MTN ou MOOV — endpoint global avec champ network
+        payoutUrl = this.url('/api/payouts/public/transfer/global');
+        body.network = data.operator; // 'MTN' ou 'MOOV'
+      }
+
+      const response = await fetch(payoutUrl, {
+        method: 'POST',
+        headers: this.authHeaders(),
+        body: JSON.stringify(body),
+      });
 
       const result = await response.json() as any;
 

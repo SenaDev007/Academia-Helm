@@ -3275,6 +3275,10 @@ model SchoolSettings {
   socialMediaLinks    Json?
   version             Int       @default(1)
   whatsapp            String?
+  /// FeexPay shop ID pour l'école (permet à chaque école d'avoir son propre compte)
+  feexpayShopId       String?
+  /// FeexPay API Key pour l'école (si différent du compte global Academia Helm)
+  feexpayApiKey       String?
   tenant              Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("school_settings")

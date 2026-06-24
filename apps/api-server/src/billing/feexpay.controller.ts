@@ -16,19 +16,25 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Body,
   Param,
   Headers,
   Req,
+  UseGuards,
   BadRequestException,
   Logger,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { Public } from '../auth/decorators/public.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { TenantGuard } from '../common/guards/tenant.guard';
+import { GetTenant } from '../common/decorators/tenant.decorator';
 import { FeexPayService, FeexPayOperator } from './services/feexpay.service';
 import { PrismaService } from '../database/prisma.service';
 
 @Controller('billing/feexpay')
+@UseGuards(JwtAuthGuard, TenantGuard)
 export class FeexPayController {
   private readonly logger = new Logger(FeexPayController.name);
 
@@ -222,6 +228,62 @@ export class FeexPayController {
       configured: this.feexpayService.isConfigured(),
       balance,
       webhookUrl: this.feexpayService.getWebhookUrl(),
+    };
+  }
+
+  /**
+   * GET /api/billing/feexpay/school-config
+   * Récupère la config FeexPay de l'école (shopId configuré ou non).
+   */
+  @Get('school-config')
+  async getSchoolFeexPayConfig(@GetTenant() tenant: any) {
+    const tid = tenant?.id;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const settings = await this.prisma.schoolSettings.findFirst({
+      where: { tenantId: tid },
+      select: { feexpayShopId: true, feexpayApiKey: true, schoolName: true },
+    });
+    return {
+      configured: !!settings?.feexpayShopId,
+      shopId: settings?.feexpayShopId || null,
+      hasCustomApiKey: !!settings?.feexpayApiKey,
+      schoolName: settings?.schoolName || '',
+      globalConfigured: this.feexpayService.isConfigured(),
+    };
+  }
+
+  /**
+   * PUT /api/billing/feexpay/school-config
+   * Configure le shopId FeexPay de l'école (pour recevoir les frais de scolarité
+   * et envoyer les salaires depuis le compte de l'école, pas Academia Helm).
+   */
+  @Put('school-config')
+  async updateSchoolFeexPayConfig(
+    @GetTenant() tenant: any,
+    @Body() body: { feexpayShopId: string; feexpayApiKey?: string },
+  ) {
+    const tid = tenant?.id;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    if (!body.feexpayShopId) throw new BadRequestException('feexpayShopId requis');
+
+    const updated = await this.prisma.schoolSettings.upsert({
+      where: { tenantId: tid },
+      update: {
+        feexpayShopId: body.feexpayShopId,
+        ...(body.feexpayApiKey ? { feexpayApiKey: body.feexpayApiKey } : {}),
+      },
+      create: {
+        tenantId: tid,
+        schoolName: 'École',
+        feexpayShopId: body.feexpayShopId,
+        ...(body.feexpayApiKey ? { feexpayApiKey: body.feexpayApiKey } : {}),
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Configuration FeexPay de l\'école enregistrée',
+      shopId: updated.feexpayShopId,
     };
   }
 }

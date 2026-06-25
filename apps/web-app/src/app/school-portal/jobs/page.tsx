@@ -214,10 +214,16 @@ export default function TenantCareersPage() {
             <span className="ml-2 text-slate-600 text-sm">Chargement des offres…</span>
           </div>
         ) : jobs.length === 0 ? (
-          <div className="text-center py-16">
-            <Briefcase className="h-12 w-12 text-slate-300 mx-auto mb-4" />
+          <div className="flex flex-col items-center justify-center py-12">
+            <img
+              src="/images/AcademiaHelm_NoRecruitment.webp"
+              alt="Aucune offre d'emploi"
+              className="w-full max-w-md rounded-2xl shadow-lg mb-6"
+            />
             <h3 className="text-lg font-bold text-slate-900 mb-2">Aucune offre d'emploi pour le moment</h3>
-            <p className="text-sm text-slate-500 mb-6">Les offres publiées par {schoolName} apparaîtront ici.</p>
+            <p className="text-sm text-slate-500 mb-6 text-center max-w-md">
+              {schoolName} n'a pas d'offre d'emploi active actuellement. Revenez bientôt ou contactez directement l'établissement.
+            </p>
             <Link href="/#contact" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold text-white" style={{ background: NAVY }}>
               Nous contacter <ChevronRight size={14} />
             </Link>
@@ -262,14 +268,28 @@ export default function TenantCareersPage() {
                 {selectedJob?.id === job.id && (
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
                     className="border-t border-slate-100 p-5 bg-slate-50/50">
-                    {job.description && <p className="text-sm text-slate-700 mb-3 whitespace-pre-wrap">{job.description}</p>}
+                    {job.description && (
+                      <div className="text-sm text-slate-700 mb-3 [&_p]:mb-2 [&_strong]:font-semibold [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 [&_h3]:font-bold [&_h3]:text-slate-900 [&_h3]:mb-1" dangerouslySetInnerHTML={{ __html: job.description }} />
+                    )}
                     {job.missions && (
-                      <div className="mb-3"><h4 className="text-xs font-bold text-slate-900 uppercase mb-1">Missions</h4><p className="text-sm text-slate-600 whitespace-pre-wrap">{job.missions}</p></div>
+                      <div className="mb-3">
+                        <h4 className="text-xs font-bold text-slate-900 uppercase mb-1">Missions</h4>
+                        <div className="text-sm text-slate-600 [&_p]:mb-2 [&_strong]:font-semibold [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4" dangerouslySetInnerHTML={{ __html: job.missions }} />
+                      </div>
+                    )}
+                    {job.responsibilities && (
+                      <div className="mb-3">
+                        <h4 className="text-xs font-bold text-slate-900 uppercase mb-1">Responsabilités</h4>
+                        <div className="text-sm text-slate-600 [&_p]:mb-2 [&_strong]:font-semibold [&_ul]:list-disc [&_ul]:ml-4" dangerouslySetInnerHTML={{ __html: job.responsibilities }} />
+                      </div>
                     )}
                     {job.academicLevel && (
                       <div className="mb-3"><h4 className="text-xs font-bold text-slate-900 uppercase mb-1">Profil requis</h4><p className="text-sm text-slate-600">{job.academicLevel}{job.experience ? ` — ${job.experience}` : ''}</p></div>
                     )}
-                    {job.salary && <p className="text-sm font-semibold" style={{ color: NAVY }}>Rémunération : {job.salary}</p>}
+                    {job.skillsRequired && (
+                      <div className="mb-3"><h4 className="text-xs font-bold text-slate-900 uppercase mb-1">Compétences</h4><div className="text-sm text-slate-600 [&_p]:mb-1 [&_ul]:list-disc [&_ul]:ml-4" dangerouslySetInnerHTML={{ __html: job.skillsRequired }} /></div>
+                    )}
+                    {job.salary && <p className="text-sm font-semibold mb-3" style={{ color: NAVY }}>Rémunération : {job.salary}</p>}
                     <a
                       href={`/jobs/${slug}/${job.slug}`}
                       className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white shadow-sm hover:shadow-md transition-all"

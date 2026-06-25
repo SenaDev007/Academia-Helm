@@ -326,7 +326,7 @@ export function generateOrganizationSchema() {
     '@type': 'Organization',
     name: 'YEHI OR Tech',
     alternateName: 'Academia Helm',
-    url: siteUrl,
+    url: 'https://yehiortech.com',
     logo: {
       '@type': 'ImageObject',
       url: `${siteUrl}${BRAND.logoPath}`,
@@ -465,7 +465,7 @@ export function generateSoftwareApplicationSchema() {
     developer: {
       '@type': 'Organization',
       name: 'YEHI OR Tech',
-      url: siteUrl,
+      url: 'https://yehiortech.com',
       sameAs: 'https://www.wikidata.org/wiki/Q140355900',
     },
     sameAs: 'https://www.wikidata.org/wiki/Q140356219',

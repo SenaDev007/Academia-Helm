@@ -259,6 +259,7 @@ const MAIN_MODULES = [
   { path: '/app/pedagogy', label: 'Organisation Pédagogique', icon: Building, featureCode: 'PEDAGOGY' },
   { path: '/app/hr', label: 'Personnel, RH & Paie', icon: UserCheck, featureCode: 'HR_PAYROLL', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'SCOLARITE', 'admin'] },
   { path: '/app/communication', label: 'Communication', icon: MessageSquare, featureCode: 'COMMUNICATION' },
+  { path: '/app/cms', label: 'Site Institutionnel', icon: Globe, roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'admin'] },
 ];
 
 /**

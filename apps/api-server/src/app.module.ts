@@ -49,6 +49,7 @@ import { MediaModule } from './media/media.module';
 import { ModulesComplementairesModule } from './modules-complementaires/modules-complementaires.module';
 import { KpiObjectivesModule } from './kpi-objectives/kpi-objectives.module';
 import { PedagogyModule } from './pedagogy/pedagogy.module';
+import { TenantWebsiteModule } from './tenant-website/tenant-website.module';
 import { ExamsGradesModule } from './exams-grades/exams-grades.module';
 import { FinanceModule } from './finance/finance.module';
 import { HRModule } from './hr/hr.module';
@@ -137,6 +138,7 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     DepartmentsModule,
     // RoomsModule removed — collides with RoomsPrismaController (PedagogyModule)
     PedagogyModule,
+    TenantWebsiteModule,
     
     // Exams & Grades module (Module 3)
     ExamsGradesModule,

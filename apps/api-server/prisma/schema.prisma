@@ -469,6 +469,15 @@ model Tenant {
   taxPayrollPeriods                TaxPayrollPeriod[]
   taxPayslips                      TaxPayslip[]
 
+  // Site institutionnel (CMS Tenant)
+  website                          TenantWebsite?
+  newsArticles                     TenantNewsArticle[]
+  tenantEvents                     TenantEvent[]
+  galleryItems                     TenantGalleryItem[]
+  testimonials                     TenantTestimonial[]
+  faqItems                         TenantFaqItem[]
+  contactMessages                  TenantContactMessage[]
+
   @@index([subdomain])
   @@index([slug])
   @@index([countryId])
@@ -14666,4 +14675,218 @@ model TaxPayslip {
 
   @@index([tenantId, academicYearId, period])
   @@map("tax_payslips")
+}
+
+// ============================================================================
+// TENANT WEBSITE — Site institutionnel intelligent par école
+// ============================================================================
+
+/// Configuration globale du site institutionnel d'un tenant.
+/// Un seul enregistrement par tenant (tenantId @unique).
+model TenantWebsite {
+  id                   String   @id @default(uuid())
+  tenantId             String   @unique
+  // Hero Banner
+  heroTitle            String?  @db.Text
+  heroSubtitle         String?  @db.Text
+  heroImageUrl         String?
+  heroCtaText          String?  @default("Pré-inscription")
+  heroCtaUrl           String?  @default("/public/pre-enrollment")
+  heroIsActive         Boolean  @default(true)
+  // Chiffres clés (JSON array: [{label, value, icon}])
+  keyFigures           Json     @default("[]")
+  // Mot du Promoteur
+  promoterWord         String?  @db.Text
+  promoterName         String?
+  promoterPhotoUrl     String?
+  promoterIsActive     Boolean  @default(true)
+  // Mot du Directeur
+  directorWord         String?  @db.Text
+  directorName         String?
+  directorPhotoUrl     String?
+  directorIsActive     Boolean  @default(true)
+  // Présentation
+  presentationTitle    String?
+  presentationContent  String?  @db.Text
+  presentationImageUrl String?
+  presentationIsActive Boolean  @default(true)
+  // Admissions
+  admissionsTitle      String?
+  admissionsContent    String?  @db.Text
+  admissionsIsActive   Boolean  @default(true)
+  // Vie scolaire
+  schoolLifeTitle      String?
+  schoolLifeContent    String?  @db.Text
+  schoolLifeIsActive   Boolean  @default(true)
+  // Footer
+  footerAboutText     String?  @db.Text
+  footerCopyrightText String?
+  footerIsActive      Boolean  @default(true)
+  // Réseaux sociaux (JSON: {facebook, twitter, instagram, linkedin, youtube, whatsapp, telegram})
+  socialLinks         Json     @default("{}")
+  // SEO
+  seoMetaTitle        String?
+  seoMetaDescription  String?  @db.Text
+  seoKeywords         String?
+  seoOgImageUrl       String?
+  // Contact
+  contactEmail        String?
+  contactPhone        String?
+  contactAddress      String?
+  contactMapUrl       String?
+  // Paramètres
+  isActive            Boolean  @default(true)
+  // IA
+  aiEnabled           Boolean  @default(false)
+  aiWelcomeMessage    String?  @db.Text
+  // Timestamps
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Relations
+  newsArticles        TenantNewsArticle[]
+  events              TenantEvent[]
+  galleryItems        TenantGalleryItem[]
+  testimonials        TenantTestimonial[]
+  faqItems            TenantFaqItem[]
+  contactMessages     TenantContactMessage[]
+
+  @@map("tenant_websites")
+}
+
+/// Article d'actualité du site institutionnel d'un tenant.
+model TenantNewsArticle {
+  id          String   @id @default(uuid())
+  tenantId    String
+  websiteId   String?
+  title       String
+  slug        String
+  excerpt     String?  @db.Text
+  content     String   @db.Text
+  coverImageUrl String?
+  category    String?
+  tags        String[]
+  status      String   @default("DRAFT") // DRAFT | PUBLISHED | ARCHIVED
+  publishedAt DateTime?
+  isFeatured  Boolean  @default(false)
+  viewCount   Int      @default(0)
+  seoTitle    String?
+  seoDescription String? @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  website     TenantWebsite? @relation(fields: [websiteId], references: [id], onDelete: SetNull)
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, status, publishedAt])
+  @@index([tenantId, category])
+  @@map("tenant_news_articles")
+}
+
+/// Événement d'agenda du site institutionnel d'un tenant.
+model TenantEvent {
+  id          String   @id @default(uuid())
+  tenantId    String
+  websiteId   String?
+  title       String
+  description String?  @db.Text
+  startDate   DateTime
+  endDate     DateTime?
+  location    String?
+  imageUrl    String?
+  category    String?
+  status      String   @default("UPCOMING") // UPCOMING | ONGOING | COMPLETED | CANCELLED
+  isFeatured  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  website     TenantWebsite? @relation(fields: [websiteId], references: [id], onDelete: SetNull)
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, startDate])
+  @@index([tenantId, status])
+  @@map("tenant_events")
+}
+
+/// Élément de galerie photo du site institutionnel d'un tenant.
+model TenantGalleryItem {
+  id          String   @id @default(uuid())
+  tenantId    String
+  websiteId   String?
+  imageUrl    String
+  thumbnailUrl String?
+  caption     String?
+  category    String?
+  displayOrder Int     @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  website     TenantWebsite? @relation(fields: [websiteId], references: [id], onDelete: SetNull)
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, isActive, displayOrder])
+  @@index([tenantId, category])
+  @@map("tenant_gallery_items")
+}
+
+/// Témoignage sur le site institutionnel d'un tenant.
+model TenantTestimonial {
+  id          String   @id @default(uuid())
+  tenantId    String
+  websiteId   String?
+  authorName  String
+  authorRole  String?  // ex: "Parent d'élève", "Ancien élève", "Enseignant"
+  authorPhotoUrl String?
+  content     String   @db.Text
+  rating      Int?     // 1-5
+  isFeatured  Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  displayOrder Int     @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  website     TenantWebsite? @relation(fields: [websiteId], references: [id], onDelete: SetNull)
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, isActive, displayOrder])
+  @@map("tenant_testimonials")
+}
+
+/// Question/réponse FAQ du site institutionnel d'un tenant.
+model TenantFaqItem {
+  id          String   @id @default(uuid())
+  tenantId    String
+  websiteId   String?
+  question    String
+  answer      String   @db.Text
+  category    String?
+  displayOrder Int     @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  website     TenantWebsite? @relation(fields: [websiteId], references: [id], onDelete: SetNull)
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, isActive, displayOrder])
+  @@index([tenantId, category])
+  @@map("tenant_faq_items")
+}
+
+/// Message de contact reçu via le site institutionnel d'un tenant.
+model TenantContactMessage {
+  id          String   @id @default(uuid())
+  tenantId    String
+  websiteId   String?
+  name        String
+  email       String
+  phone       String?
+  subject     String?
+  message     String   @db.Text
+  status      String   @default("NEW") // NEW | READ | REPLIED | ARCHIVED
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  website     TenantWebsite? @relation(fields: [websiteId], references: [id], onDelete: SetNull)
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status, createdAt])
+  @@map("tenant_contact_messages")
 }

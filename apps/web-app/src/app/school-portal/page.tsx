@@ -13,7 +13,7 @@
  */
 
 import { headers } from 'next/headers';
-import SchoolPortalSelector from '@/components/portal/SchoolPortalSelector';
+import InstitutionalWebsite from '@/components/portal/InstitutionalWebsite';
 import { BRAND } from '@/lib/brand';
 import { isReservedSubdomain } from '@/lib/tenant/constants';
 import { extractBrandingFromTenant } from '@/lib/tenant/branding';
@@ -89,5 +89,5 @@ export default async function SchoolPortalPage() {
     // headers() peut échouer dans certains contextes
   }
 
-  return <SchoolPortalSelector schoolInfo={schoolInfo} subdomain={subdomain} />;
+  return <InstitutionalWebsite schoolInfo={schoolInfo} subdomain={subdomain} />;
 }

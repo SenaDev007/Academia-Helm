@@ -1179,6 +1179,181 @@ async function bootstrap() {
     logger.warn(`Contract PDF columns migration warning: ${contractColsErr.message}`);
   }
 
+  // ─── Tenant Website tables — create if not exist (idempotent) ──
+  // CMS for the institutional website of each school.
+  try {
+    const prisma = app.get(PrismaService);
+
+    await prisma.$executeRawUnsafe(
+      `CREATE TABLE IF NOT EXISTS "tenant_websites" (
+        "id" TEXT NOT NULL,
+        "tenantId" TEXT NOT NULL,
+        "heroTitle" TEXT,
+        "heroSubtitle" TEXT,
+        "heroImageUrl" TEXT,
+        "heroCtaText" TEXT DEFAULT 'Pré-inscription',
+        "heroCtaUrl" TEXT DEFAULT '/public/pre-enrollment',
+        "heroIsActive" BOOLEAN NOT NULL DEFAULT true,
+        "keyFigures" JSONB NOT NULL DEFAULT '[]'::jsonb,
+        "promoterWord" TEXT,
+        "promoterName" TEXT,
+        "promoterPhotoUrl" TEXT,
+        "promoterIsActive" BOOLEAN NOT NULL DEFAULT true,
+        "directorWord" TEXT,
+        "directorName" TEXT,
+        "directorPhotoUrl" TEXT,
+        "directorIsActive" BOOLEAN NOT NULL DEFAULT true,
+        "presentationTitle" TEXT,
+        "presentationContent" TEXT,
+        "presentationImageUrl" TEXT,
+        "presentationIsActive" BOOLEAN NOT NULL DEFAULT true,
+        "admissionsTitle" TEXT,
+        "admissionsContent" TEXT,
+        "admissionsIsActive" BOOLEAN NOT NULL DEFAULT true,
+        "schoolLifeTitle" TEXT,
+        "schoolLifeContent" TEXT,
+        "schoolLifeIsActive" BOOLEAN NOT NULL DEFAULT true,
+        "footerAboutText" TEXT,
+        "footerCopyrightText" TEXT,
+        "footerIsActive" BOOLEAN NOT NULL DEFAULT true,
+        "socialLinks" JSONB NOT NULL DEFAULT '{}'::jsonb,
+        "seoMetaTitle" TEXT,
+        "seoMetaDescription" TEXT,
+        "seoKeywords" TEXT,
+        "seoOgImageUrl" TEXT,
+        "contactEmail" TEXT,
+        "contactPhone" TEXT,
+        "contactAddress" TEXT,
+        "contactMapUrl" TEXT,
+        "isActive" BOOLEAN NOT NULL DEFAULT true,
+        "aiEnabled" BOOLEAN NOT NULL DEFAULT false,
+        "aiWelcomeMessage" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "tenant_websites_pkey" PRIMARY KEY ("id"),
+        CONSTRAINT "tenant_websites_tenantId_key" UNIQUE ("tenantId")
+      )`,
+    ).catch(() => {});
+
+    await prisma.$executeRawUnsafe(
+      `CREATE TABLE IF NOT EXISTS "tenant_news_articles" (
+        "id" TEXT NOT NULL,
+        "tenantId" TEXT NOT NULL,
+        "websiteId" TEXT,
+        "title" TEXT NOT NULL,
+        "slug" TEXT NOT NULL,
+        "excerpt" TEXT,
+        "content" TEXT NOT NULL,
+        "coverImageUrl" TEXT,
+        "category" TEXT,
+        "tags" TEXT[] DEFAULT ARRAY[]::TEXT[],
+        "status" TEXT NOT NULL DEFAULT 'DRAFT',
+        "publishedAt" TIMESTAMP(3),
+        "isFeatured" BOOLEAN NOT NULL DEFAULT false,
+        "viewCount" INTEGER NOT NULL DEFAULT 0,
+        "seoTitle" TEXT,
+        "seoDescription" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "tenant_news_articles_pkey" PRIMARY KEY ("id"),
+        CONSTRAINT "tenant_news_articles_tenantId_slug_key" UNIQUE ("tenantId", "slug")
+      )`,
+    ).catch(() => {});
+
+    await prisma.$executeRawUnsafe(
+      `CREATE TABLE IF NOT EXISTS "tenant_events" (
+        "id" TEXT NOT NULL,
+        "tenantId" TEXT NOT NULL,
+        "websiteId" TEXT,
+        "title" TEXT NOT NULL,
+        "description" TEXT,
+        "startDate" TIMESTAMP(3) NOT NULL,
+        "endDate" TIMESTAMP(3),
+        "location" TEXT,
+        "imageUrl" TEXT,
+        "category" TEXT,
+        "status" TEXT NOT NULL DEFAULT 'UPCOMING',
+        "isFeatured" BOOLEAN NOT NULL DEFAULT false,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "tenant_events_pkey" PRIMARY KEY ("id")
+      )`,
+    ).catch(() => {});
+
+    await prisma.$executeRawUnsafe(
+      `CREATE TABLE IF NOT EXISTS "tenant_gallery_items" (
+        "id" TEXT NOT NULL,
+        "tenantId" TEXT NOT NULL,
+        "websiteId" TEXT,
+        "imageUrl" TEXT NOT NULL,
+        "thumbnailUrl" TEXT,
+        "caption" TEXT,
+        "category" TEXT,
+        "displayOrder" INTEGER NOT NULL DEFAULT 0,
+        "isActive" BOOLEAN NOT NULL DEFAULT true,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "tenant_gallery_items_pkey" PRIMARY KEY ("id")
+      )`,
+    ).catch(() => {});
+
+    await prisma.$executeRawUnsafe(
+      `CREATE TABLE IF NOT EXISTS "tenant_testimonials" (
+        "id" TEXT NOT NULL,
+        "tenantId" TEXT NOT NULL,
+        "websiteId" TEXT,
+        "authorName" TEXT NOT NULL,
+        "authorRole" TEXT,
+        "authorPhotoUrl" TEXT,
+        "content" TEXT NOT NULL,
+        "rating" INTEGER,
+        "isFeatured" BOOLEAN NOT NULL DEFAULT false,
+        "isActive" BOOLEAN NOT NULL DEFAULT true,
+        "displayOrder" INTEGER NOT NULL DEFAULT 0,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "tenant_testimonials_pkey" PRIMARY KEY ("id")
+      )`,
+    ).catch(() => {});
+
+    await prisma.$executeRawUnsafe(
+      `CREATE TABLE IF NOT EXISTS "tenant_faq_items" (
+        "id" TEXT NOT NULL,
+        "tenantId" TEXT NOT NULL,
+        "websiteId" TEXT,
+        "question" TEXT NOT NULL,
+        "answer" TEXT NOT NULL,
+        "category" TEXT,
+        "displayOrder" INTEGER NOT NULL DEFAULT 0,
+        "isActive" BOOLEAN NOT NULL DEFAULT true,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "tenant_faq_items_pkey" PRIMARY KEY ("id")
+      )`,
+    ).catch(() => {});
+
+    await prisma.$executeRawUnsafe(
+      `CREATE TABLE IF NOT EXISTS "tenant_contact_messages" (
+        "id" TEXT NOT NULL,
+        "tenantId" TEXT NOT NULL,
+        "websiteId" TEXT,
+        "name" TEXT NOT NULL,
+        "email" TEXT NOT NULL,
+        "phone" TEXT,
+        "subject" TEXT,
+        "message" TEXT NOT NULL,
+        "status" TEXT NOT NULL DEFAULT 'NEW',
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "tenant_contact_messages_pkey" PRIMARY KEY ("id")
+      )`,
+    ).catch(() => {});
+
+    logger.log('✅ Tenant Website tables ensured (tenant_websites, tenant_news_articles, tenant_events, tenant_gallery_items, tenant_testimonials, tenant_faq_items, tenant_contact_messages)');
+  } catch (twErr: any) {
+    logger.warn(`Tenant Website tables migration warning: ${twErr.message}`);
+  }
+
   await app.listen(port, '0.0.0.0');
 
   // ─── Auto-sync HR teachers → Pedagogy on startup ──

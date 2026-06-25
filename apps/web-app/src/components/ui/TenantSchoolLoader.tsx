@@ -8,30 +8,37 @@
  * Affiche le logo et le nom de l'école (pas Academia Helm) pendant
  * le chargement des pages sur les sous-domaines d'écoles.
  *
- * Récupère le branding depuis /api/public/schools/by-subdomain/:slug
+ * Durée minimale d'affichage : 2 secondes (comme le site principal)
+ * pour éviter le flash trop rapide.
  * ============================================================================
  */
 
 import { useState, useEffect } from 'react';
-import Image from 'next/image';
 import FloatingEduParticles from '@/components/ui/FloatingEduParticles';
 import { extractTenantSlug } from '@/lib/tenant/constants';
 
 const NAVY = '#0b2f73';
 const BLUE = '#1d4fa5';
 const GOLD = '#f5b335';
+const MIN_DISPLAY_MS = 2000;
 
 export default function TenantSchoolLoader() {
   const [schoolData, setSchoolData] = useState<{ name: string; logoUrl: string | null; schoolAcronym?: string | null; slogan?: string | null } | null>(null);
+  const [minElapsed, setMinElapsed] = useState(false);
 
   useEffect(() => {
+    // Timer pour la durée minimale d'affichage
+    const timer = setTimeout(() => setMinElapsed(true), MIN_DISPLAY_MS);
+
     const slug = extractTenantSlug(window.location.hostname);
-    if (!slug) return;
+    if (!slug) { setMinElapsed(true); return; }
 
     fetch(`/api/public/schools/by-subdomain/${slug}`, { cache: 'no-store' })
       .then(res => res.ok ? res.json() : null)
       .then(data => { if (data) setSchoolData(data); })
       .catch(() => {});
+
+    return () => clearTimeout(timer);
   }, []);
 
   const displayName = schoolData?.schoolAcronym || schoolData?.name || 'Établissement';
@@ -76,7 +83,27 @@ export default function TenantSchoolLoader() {
           <div className="h-2 w-2 rounded-full bg-[#3F51B5] animate-bounce" style={{ animationDelay: '120ms', animationDuration: '0.7s' }} />
           <div className="h-1.5 w-1.5 rounded-full bg-[#f5b335] animate-bounce" style={{ animationDelay: '240ms', animationDuration: '0.7s' }} />
         </div>
+
+        {/* Indicateur de progression (minimum 2s) */}
+        {!minElapsed && (
+          <div className="mt-6 w-32 h-1 bg-white/10 rounded-full overflow-hidden mx-auto">
+            <div
+              className="h-full rounded-full"
+              style={{
+                background: `linear-gradient(90deg, ${GOLD}, ${BLUE})`,
+                animation: 'loaderProgress 2s ease-in-out forwards',
+              }}
+            />
+          </div>
+        )}
       </div>
+
+      <style>{`
+        @keyframes loaderProgress {
+          0% { width: 0%; }
+          100% { width: 100%; }
+        }
+      `}</style>
     </div>
   );
 }

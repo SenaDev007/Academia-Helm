@@ -56,7 +56,6 @@ const PORTAL_DEFS = [
   { type: 'SCHOOL' as PortalType, title: 'École', subtitle: 'Direction & administration', icon: Building2, color: GOLD },
   { type: 'TEACHER' as PortalType, title: 'Enseignant', subtitle: 'Pédagogie & suivi', icon: GraduationCap, color: '#34d399' },
   { type: 'PARENT' as PortalType, title: 'Parent / Élève', subtitle: 'Suivi & communication', icon: Users, color: '#60a5fa' },
-  { type: 'PUBLIC' as PortalType, title: 'Public', subtitle: 'Pré-inscription & infos', icon: Globe, color: '#c084fc' },
 ];
 
 export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
@@ -431,7 +430,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-2xl md:text-3xl font-black text-white mb-3">Accédez à votre espace</h2>
           <p className="text-blue-100/70 mb-8 max-w-2xl mx-auto text-sm md:text-base">Choisissez le portail correspondant à votre profil pour vous connecter.</p>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {PORTAL_DEFS.map((portal) => {
               const Icon = portal.icon;
               return (

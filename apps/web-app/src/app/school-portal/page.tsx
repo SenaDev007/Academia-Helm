@@ -2,7 +2,6 @@
  * School Portal Selection Page
  *
  * Affichée lorsqu'un utilisateur accède directement à un sous-domaine d'école.
- * Présente les 4 portails disponibles dans le contexte de cette école.
  * Résout le branding de l'école (logo, nom, couleurs, slogan) côté serveur.
  *
  * STRATÉGIE DE RÉSOLUTION CÔTÉ SERVEUR :
@@ -19,25 +18,14 @@ import { isReservedSubdomain } from '@/lib/tenant/constants';
 import { extractBrandingFromTenant } from '@/lib/tenant/branding';
 import { getApiBaseUrl, getAppBaseUrl } from '@/lib/utils/urls';
 import type { Metadata } from 'next';
-import { generateSEOMetadata, detectRequestHostname } from '@/lib/seo';
 
 /**
  * generateMetadata — génère des meta tags dynamiques basés sur le tenant.
- * Récupère la config du site institutionnel (TenantWebsite) pour :
- *   - Titre SEO personnalisé
- *   - Description SEO
- *   - Mots-clés
- *   - Open Graph image
- *   - Canonical URL
  */
 export async function generateMetadata(): Promise<Metadata> {
-  const hostname = await detectRequestHostname();
-
   // Valeurs par défaut (fallback)
   let title = `${BRAND.name} — Plateforme de pilotage éducatif`;
   let description = 'Découvrez notre établissement scolaire et accédez à nos services en ligne.';
-  let keywords: string | undefined;
-  let ogImageUrl: string | undefined;
   let canonicalUrl: string | undefined;
 
   try {
@@ -50,7 +38,6 @@ export async function generateMetadata(): Promise<Metadata> {
       const baseUrl = `https://${parts.join('.')}`;
       canonicalUrl = baseUrl;
 
-      // Récupérer la config du site institutionnel
       const apiBaseUrl = getApiBaseUrl();
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -75,40 +62,27 @@ export async function generateMetadata(): Promise<Metadata> {
         if (website?.seoMetaDescription) {
           description = website.seoMetaDescription;
         }
-
-        if (website?.seoKeywords) {
-          keywords = website.seoKeywords;
-        }
-
-        if (website?.seoOgImageUrl) {
-          ogImageUrl = website.seoOgImageUrl;
-        }
       }
     }
   } catch {
-    // Fallback : utiliser les valeurs par défaut
+    // Fallback
   }
 
   return {
     title,
     description,
-    keywords: keywords ? keywords.split(',').map(k => k.trim()) : undefined,
-    alternates: {
-      canonical: canonicalUrl,
-    },
+    alternates: { canonical: canonicalUrl },
     openGraph: {
       title,
       description,
       type: 'website',
       siteName: title.split('—')[0]?.trim() || BRAND.name,
-      ...(ogImageUrl ? { images: [{ url: ogImageUrl, width: 1200, height: 630 }] } : {}),
       ...(canonicalUrl ? { url: canonicalUrl } : {}),
     },
     twitter: {
       card: 'summary_large_image',
       title,
       description,
-      ...(ogImageUrl ? { images: [ogImageUrl] } : {}),
     },
     robots: {
       index: true,
@@ -124,11 +98,6 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function SchoolPortalPage() {
-  // Délai minimum pour garantir l'affichage du loading (2 secondes)
-  // Le loading.tsx (TenantSchoolLoader) doit être visible suffisamment longtemps
-  const [minDelay] = await Promise.all([
-    new Promise(resolve => setTimeout(resolve, 1500)),
-    (async () => {
   // Tenter de résoudre les informations de l'école côté serveur
   let schoolInfo = null;
   let subdomain = null;
@@ -146,7 +115,7 @@ export default async function SchoolPortalPage() {
         const isLocal = appBaseUrl.includes('localhost') || appBaseUrl.includes('127.0.0.1');
 
         if (isLocal) {
-          // En local : BFF via 127.0.0.1 (self-request local = rapide)
+          // En local : BFF via 127.0.0.1 (self-request local = OK)
           const response = await fetch(
             `http://127.0.0.1:${process.env.PORT || 3001}/api/public/schools/by-subdomain/${subdomain}`,
             { cache: 'no-store' },
@@ -154,8 +123,7 @@ export default async function SchoolPortalPage() {
           if (response.ok) schoolInfo = await response.json();
         } else {
           // En production : Appel direct au backend NestJS
-          // (évite le self-request Vercel qui provoque des cold starts)
-          const apiBaseUrl = getApiBaseUrl(); // ex: https://api.academiahelm.com/api
+          const apiBaseUrl = getApiBaseUrl();
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 6000);
 
@@ -182,12 +150,6 @@ export default async function SchoolPortalPage() {
   } catch {
     // headers() peut échouer dans certains contextes
   }
-
-  return { schoolInfo, subdomain };
-    })(),
-  ]);
-
-  const { schoolInfo, subdomain } = minDelay as any;
 
   return <InstitutionalWebsite schoolInfo={schoolInfo} subdomain={subdomain} />;
 }

@@ -33,12 +33,7 @@ import TenantStructuredData from '@/components/portal/TenantStructuredData';
 import TenantRecruitmentBanner from '@/components/portal/TenantRecruitmentBanner';
 import { NotchNav } from '@/components/ui/notch-nav';
 import TenantFooter from '@/components/ui/footer-column';
-import { resolveTenantColors, HELM_DEFAULT } from '@/lib/tenant/use-tenant-colors';
-
-// Couleurs Helm par défaut (utilisées si l'école n'a pas configuré customColors)
-const NAVY = HELM_DEFAULT.primary;
-const BLUE = HELM_DEFAULT.secondary;
-const GOLD = HELM_DEFAULT.accent;
+import { resolveTenantColors } from '@/lib/tenant/use-tenant-colors';
 
 interface SchoolPortalInfo {
   tenantId?: string | null;
@@ -59,9 +54,9 @@ interface Props {
 }
 
 const PORTAL_DEFS = [
-  { type: 'SCHOOL' as PortalType, title: 'École', subtitle: 'Direction & administration', icon: Building2, color: GOLD },
-  { type: 'TEACHER' as PortalType, title: 'Enseignant', subtitle: 'Pédagogie & suivi', icon: GraduationCap, color: '#34d399' },
-  { type: 'PARENT' as PortalType, title: 'Parent / Élève', subtitle: 'Suivi & communication', icon: Users, color: '#60a5fa' },
+  { type: 'SCHOOL' as PortalType, title: 'École', subtitle: 'Direction & administration', icon: Building2 },
+  { type: 'TEACHER' as PortalType, title: 'Enseignant', subtitle: 'Pédagogie & suivi', icon: GraduationCap },
+  { type: 'PARENT' as PortalType, title: 'Parent / Élève', subtitle: 'Suivi & communication', icon: Users },
 ];
 
 export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
@@ -464,12 +459,12 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
           <h2 className="text-2xl md:text-3xl font-black text-white mb-3">Accédez à votre espace</h2>
           <p className="text-blue-100/70 mb-8 max-w-2xl mx-auto text-sm md:text-base">Choisissez le portail correspondant à votre profil pour vous connecter.</p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {PORTAL_DEFS.map((portal) => {
+            {PORTAL_DEFS.map((portal, idx) => {
               const Icon = portal.icon;
               return (
                 <button key={portal.type} onClick={() => handlePortalClick(portal.type)}
                   className="group flex flex-col items-center gap-3 p-5 rounded-2xl bg-white/8 backdrop-blur-md border border-white/15 hover:bg-white/15 hover:border-white/30 transition-all">
-                  <div className="w-11 h-11 rounded-xl flex items-center justify-center shadow-md" style={{ background: portal.color }}>
+                  <div className="w-11 h-11 rounded-xl flex items-center justify-center shadow-md" style={{ background: idx === 0 ? GOLD : idx === 1 ? '#34d399' : '#60a5fa' }}>
                     <Icon className="h-5 w-5 text-white" />
                   </div>
                   <div><p className="text-sm font-bold text-white">{portal.title}</p><p className="text-[11px] text-blue-100/60">{portal.subtitle}</p></div>

@@ -367,11 +367,8 @@ export function generateOrganizationSchema() {
       },
     ],
     sameAs: [
-      'https://facebook.com/yehiortech',
-      'https://linkedin.com/company/yehiortech',
-      'https://twitter.com/yehiortech',
-      'https://youtube.com/@yehiortech',
-      'https://www.instagram.com/yehiortech',
+      'https://www.facebook.com/yehiortec/',
+      'https://www.linkedin.com/company/yehiortech/',
     ],
     knowsAbout: [
       'gestion scolaire',

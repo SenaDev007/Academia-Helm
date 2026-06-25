@@ -46,6 +46,7 @@ import { QhsModule } from './qhs/qhs.module';
 import { SettingsModule } from './settings/settings.module';
 import { MeetingsModule } from './meetings/meetings.module';
 import { MediaModule } from './media/media.module';
+import { TenantMediaModule } from './tenant-media/tenant-media.module';
 import { ModulesComplementairesModule } from './modules-complementaires/modules-complementaires.module';
 import { KpiObjectivesModule } from './kpi-objectives/kpi-objectives.module';
 import { PedagogyModule } from './pedagogy/pedagogy.module';
@@ -207,6 +208,9 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
 
     // Médias — optimisation d’images (Sharp), réutilisable plateforme
     MediaModule,
+
+    // Bibliothèque médias tenant-scoped (CMS institutionnel)
+    TenantMediaModule,
     
     // Module 9 - Modules Complémentaires
     ModulesComplementairesModule,

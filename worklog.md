@@ -1113,3 +1113,93 @@ Stage Summary:
 - Les boutons sans endpoint backend affichent 'alert(Bientôt disponible)'
 - Toutes les mutations passent academicYearId automatiquement via buildModulesApiOptions
 - Les 8 modules complémentaires sont maintenant 100% fonctionnels (lecture + mutation)
+
+---
+Task ID: ah-tenant-media-library
+Agent: Main Agent
+Task: Bibliothèque médias tenant-scoped (endpoint /api/tenant-media + storage R2/S3 + MediaLibraryDialog)
+
+Work Log:
+- Audit exhaustif via subagent Explore :
+  * StorageService existe (R2/S3/Vercel Blob/local) — pas besoin de nouvelle dépendance
+  * ImageOptimizationService (Sharp) existe et est réutilisable
+  * Pattern RH document-upload.service.ts = référence pour upload tenant-scoped
+  * Pattern proxy Next.js `[[...path]]/route.ts` avec readProxyBodyText
+  * Aucun modèle tenant-scoped générique pour les médias → à créer
+- Constat important : le module tenant-website (backend) et les composants frontend CMS précédents (CmsWorkspace, cms/visual/*) ont été supprimés entre les 2 sessions. Seuls platform/cms-pages et platform/cms subsistent. La bibliothèque médias a donc été construite en brique autonome réutilisable.
+
+Backend NestJS (apps/api-server/src/tenant-media/) :
+- `tenant-media.service.ts` (504 lignes) :
+  * Création idempotente de la table `tenant_media` via ensureTableExists() (pattern RH)
+  * Upload : décode data URL → génère 3 variantes (original, hd 1600px WebP@82, thumbnail 400px WebP@72) → upload via StorageService → persiste en DB
+  * Pour PDF/vidéos : 1 seule variante (original)
+  * Cleanup automatique des fichiers partiellement uploadés en cas d'échec
+  * List paginée avec filtres (folder, type, search) + résolution URLs via resolveFileUrl
+  * Update métadonnées (name, alt, tags, folder)
+  * Delete (DB + storage best-effort)
+  * Usage tracking (incrementUsage/decrementUsage) pour détecter les médias orphelins
+  * listFolders() pour sidebar de la bibliothèque
+  * cleanupOrphans() : compare les clés storage avec DB + supprime les orphelins
+- `tenant-media.controller.ts` (8 endpoints) :
+  * POST /tenant-media (upload)
+  * GET /tenant-media (list paginée)
+  * GET /tenant-media/folders
+  * GET /tenant-media/:id
+  * PUT /tenant-media/:id (update)
+  * DELETE /tenant-media/:id
+  * POST /tenant-media/:id/use | /unuse (compteur usage)
+  * POST /tenant-media/cleanup-orphans
+  * Tous authentifiés (JwtAuthGuard + TenantGuard)
+- `tenant-media.module.ts` : importe StorageService + ImageOptimizationService + TenantMediaService
+- AppModule : module branché après MediaModule
+
+Frontend Next.js (apps/web-app/src/) :
+- `app/api/tenant-media/[[...path]]/route.ts` : proxy catch-all (GET/POST/PUT/DELETE/PATCH) vers NestJS, utilise readProxyBodyText + getProxyAuthHeaders
+- `services/tenant-media.service.ts` : client typé (upload/list/getById/update/delete/incrementUsage/decrementUsage/cleanupOrphans + helpers getDisplayUrl/readFileAsDataUrl/formatSize)
+- `components/media/MediaLibraryDialog.tsx` (450+ lignes) : modal complet façon WordPress
+  * Sidebar dossiers (avec compteurs) + filtres type (Tous/Images/Vidéos/Documents)
+  * Toolbar avec recherche + bouton "Ajouter des médias"
+  * Grille responsive (2-5 colonnes) avec thumbnails
+  * Drag-and-drop sur la zone grille
+  * Sélection au clic + bouton "Choisir ce média"
+  * Édition inline (nom, alt, tags) via sous-modal
+  * Suppression avec confirmation
+  * Badge "usages count" sur chaque média
+  * États : loading, error, empty (avec zone de drop)
+- `components/media/MediaPickerField.tsx` : champ réutilisable hybride
+  * Bouton "Téléverser" (upload direct → bibliothèque)
+  * Bouton "Bibliothèque" (ouvre MediaLibraryDialog)
+  * Aperçu + boutons "Changer" / "Retirer"
+  * Drop zone quand pas d'image
+  * 100% non-technique : aucune URL visible
+
+Script de migration (apps/api-server/scripts/migrate-data-urls-to-tenant-media.ts) :
+- Scanne 5 sources de data URLs :
+  1. media_assets.url (table globale plateforme)
+  2. cms_pages.content (JSON avec blocs image)
+  3. seo_meta.og_image_url
+  4. tenant_identity_profiles.logo_url (tenant-scoped)
+  5. tenant_websites.* (optionnel, si la table existe)
+- Pour chaque data URL : upload via /api/tenant-media → met à jour la ligne avec l'URL publique
+- Idempotent : ignore les URLs qui ne sont PAS des data URLs (http://, https://, chemins)
+- Usage : `ADMIN_JWT=xxx npx tsx scripts/migrate-data-urls-to-tenant-media.ts`
+- Récapitulatif final (scannés/migrés/ignorés/échecs)
+
+Verification:
+- Babel parser sur les 7 fichiers (3 backend + 4 frontend) : 7/7 OK, 0 erreur syntaxe
+- app.module.ts : compile OK après ajout de TenantMediaModule
+- Erreurs tsc pré-existantes ($queryRawUnsafe sur PrismaService) identiques à document-upload.service.ts — non bloquantes
+
+Stage Summary:
+- 8 fichiers créés :
+  * Backend : tenant-media.service.ts (504 lignes), tenant-media.controller.ts (130 lignes), tenant-media.module.ts
+  * Frontend : tenant-media.service.ts, MediaLibraryDialog.tsx (450 lignes), MediaPickerField.tsx (200 lignes), proxy route.ts (90 lignes)
+  * Script : migrate-data-urls-to-tenant-media.ts (220 lignes)
+- 1 fichier modifié : app.module.ts (+2 lignes : import + registration)
+- Table `tenant_media` créée automatiquement à la première requête (CREATE TABLE IF NOT EXISTS idempotent)
+- 3 variantes d'image générées automatiquement (original/hd/thumbnail) → économie bandwidth massive
+- Supporte R2/S3/Vercel Blob/local sans changement de code (via StorageService)
+- Compteur d'usage pour identifier les médias orphelins (cleanup orphelins endpoint)
+- 100% non-technique côté UI : aucun slug, URL, JSON, hex code visible
+- Réutilisable par tous les futurs modules (CMS institutionnel, plateformes pédagogiques, etc.)
+

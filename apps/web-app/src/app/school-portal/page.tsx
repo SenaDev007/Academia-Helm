@@ -12,6 +12,11 @@
  */
 
 import { headers } from 'next/headers';
+
+// Force dynamic rendering — la page utilise headers() qui ne peut pas être
+// pré-rendue statiquement. Sans cela, Vercel essaie de prerender et échoue.
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 import InstitutionalWebsite from '@/components/portal/InstitutionalWebsite';
 import { BRAND } from '@/lib/brand';
 import { isReservedSubdomain } from '@/lib/tenant/constants';

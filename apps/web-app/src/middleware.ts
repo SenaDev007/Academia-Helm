@@ -516,13 +516,18 @@ export async function middleware(request: NextRequest) {
   }
 
   // ── Route `/jobs` avec sous-domaine d'école ──
-  // Rewrite vers /school-portal/jobs pour afficher la page recrutement
-  // spécifique à l'école (pas la page publique principale avec toutes les écoles).
-  if (pathname === '/jobs' || pathname.startsWith('/jobs/')) {
+  // /jobs → rewrite vers /school-portal/jobs (page recrutement tenant)
+  // /jobs/{slug}/{jobSlug} → laisser passer vers /jobs/[schoolSlug]/[jobSlug]
+  //   (page de candidature existante qui gère le flux d'onboarding)
+  if (pathname === '/jobs') {
     if (subdomain) {
-      const rewriteUrl = new URL(`/school-portal${pathname}`, request.nextUrl.origin);
+      const rewriteUrl = new URL('/school-portal/jobs', request.nextUrl.origin);
       return NextResponse.rewrite(rewriteUrl);
     }
+    return response;
+  }
+  // /jobs/{slug}/{jobSlug} — ne pas rewrite, laisser la route /jobs/[schoolSlug]/[jobSlug] gérer
+  if (pathname.startsWith('/jobs/')) {
     return response;
   }
 

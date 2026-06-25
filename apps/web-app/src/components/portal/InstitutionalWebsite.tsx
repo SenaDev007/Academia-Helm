@@ -33,6 +33,7 @@ import TenantStructuredData from '@/components/portal/TenantStructuredData';
 import TenantRecruitmentBanner from '@/components/portal/TenantRecruitmentBanner';
 import { NotchNav } from '@/components/ui/notch-nav';
 import TenantFooter from '@/components/ui/footer-column';
+import TenantHeader from '@/components/portal/TenantHeader';
 import { resolveTenantColors } from '@/lib/tenant/use-tenant-colors';
 
 interface SchoolPortalInfo {
@@ -157,86 +158,15 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       />
 
       {/* ═══ HEADER ═══ */}
-      <header
-        className="fixed top-0 left-0 right-0 z-50 transition-all duration-300"
-        style={{
-          background: scrolled
-            ? `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 100%)`
-            : 'rgba(11, 47, 115, 0.95)',
-          backdropFilter: 'blur(12px)',
-          boxShadow: scrolled ? '0 4px 20px rgba(0,0,0,0.15)' : 'none',
-        }}
-      >
-        {/* Ligne dorée supérieure */}
-        <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)` }} />
+      <TenantHeader
+        schoolName={schoolName}
+        schoolAcronym={schoolAcronym}
+        schoolLogo={schoolLogo || undefined}
+        schoolSlogan={schoolSlogan || undefined}
+        colors={colors}
+        activeNav="Accueil"
+      />
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-14 md:h-16">
-            {/* Logo + Nom (acronyme si disponible) */}
-            <a href="#hero" className="flex items-center gap-3 shrink-0">
-              <LogoCircle logoUrl={schoolLogo} alt={schoolName} size={36} />
-              <div className="hidden sm:block">
-                <h1 className="text-sm md:text-base font-bold text-white leading-tight">{schoolDisplayName}</h1>
-                {schoolAcronym && schoolName !== schoolAcronym && (
-                  <p className="text-[10px] text-amber-300/70 leading-tight truncate max-w-[180px]">{schoolName}</p>
-                )}
-                {!schoolAcronym && schoolSlogan && (
-                  <p className="text-[10px] text-amber-300/80 leading-tight">{schoolSlogan}</p>
-                )}
-              </div>
-            </a>
-
-            {/* Navigation desktop — NotchNav premium */}
-            <div className="hidden lg:block">
-              <NotchNav
-                items={navLinks.map(l => ({ value: l.label, label: l.label, href: l.href }))}
-                defaultValue="Accueil"
-                onNavigate={(href) => {
-                  if (href.startsWith('#')) {
-                    document.querySelector(href)?.scrollIntoView({ behavior: 'smooth' });
-                  } else {
-                    window.location.href = href;
-                  }
-                }}
-                ariaLabel="Navigation école"
-              />
-            </div>
-
-            {/* Actions */}
-            <div className="flex items-center gap-2">
-              <button onClick={() => document.getElementById('portails')?.scrollIntoView({ behavior: 'smooth' })}
-                className="hidden md:inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold text-[#0b2f73] bg-[#f5b335] hover:bg-[#e09e1f] transition-all shadow-sm hover:shadow-md">
-                Portails <ArrowRight size={14} />
-              </button>
-              <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="lg:hidden p-2 text-white">
-                {mobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Menu mobile */}
-        <AnimatePresence>
-          {mobileMenuOpen && (
-            <motion.nav initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-              className="lg:hidden overflow-hidden border-t border-white/10">
-              <div className="px-4 py-3 space-y-1">
-                {navLinks.map((link) => (
-                  <a key={link.href} href={link.href} onClick={() => setMobileMenuOpen(false)}
-                    className="block px-3 py-2 text-sm font-medium text-blue-100/80 hover:bg-white/10 rounded-lg">
-                    {link.label}
-                  </a>
-                ))}
-                <button onClick={() => { setMobileMenuOpen(false); document.getElementById('portails')?.scrollIntoView({ behavior: 'smooth' }); }}
-                  className="block w-full text-left px-3 py-2 text-sm font-bold text-[#0b2f73] bg-[#f5b335] rounded-lg">
-                  Portails
-                </button>
-              </div>
-            </motion.nav>
-          )}
-        </AnimatePresence>
-      </header>
 
       {/* ═══ BANDE RECRUTEMENT ═══ */}
       <div className="pt-14 md:pt-16">

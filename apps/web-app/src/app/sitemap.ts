@@ -1,57 +1,93 @@
 /**
  * SEO — Sitemap.xml dynamique par tenant
- * GET /sitemap.xml — génère un sitemap basé sur le sous-domaine
+ * Next.js App Router sitemap pattern (export default function sitemap)
  */
 
-import { NextRequest } from 'next/server';
+import { MetadataRoute } from 'next';
+import { headers } from 'next/headers';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: NextRequest) {
-  const host = request.headers.get('host') || '';
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const headersList = await headers();
+  const host = headersList.get('host') || headersList.get('x-forwarded-host') || '';
   const parts = host.split(':').length > 1 ? host.split(':')[0].split('.') : host.split('.');
 
-  // Si pas un sous-domaine d'école, retourner un sitemap minimal
+  // Si pas un sous-domaine d'école, retourner un sitemap minimal pour le domaine principal
   if (parts.length < 3) {
-    return new Response(
-      `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://academiahelm.com</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
-</urlset>`,
-      { headers: { 'Content-Type': 'application/xml' } },
-    );
+    return [
+      {
+        url: 'https://academiahelm.com',
+        lastModified: new Date(),
+        changeFrequency: 'weekly',
+        priority: 1.0,
+      },
+    ];
   }
 
   const slug = parts[0];
   const baseUrl = `https://${slug}.academiahelm.com`;
 
+  const entries: MetadataRoute.Sitemap = [
+    {
+      url: baseUrl,
+      lastModified: new Date(),
+      changeFrequency: 'weekly',
+      priority: 1.0,
+    },
+    {
+      url: `${baseUrl}/#presentation`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.8,
+    },
+    {
+      url: `${baseUrl}/#actualites`,
+      lastModified: new Date(),
+      changeFrequency: 'weekly',
+      priority: 0.8,
+    },
+    {
+      url: `${baseUrl}/#agenda`,
+      lastModified: new Date(),
+      changeFrequency: 'weekly',
+      priority: 0.7,
+    },
+    {
+      url: `${baseUrl}/#galerie`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.6,
+    },
+    {
+      url: `${baseUrl}/#contact`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.7,
+    },
+  ];
+
   // Récupérer les actualités publiées pour le sitemap
-  let newsUrls = '';
   try {
     const API_URL = getApiBaseUrlForRoutes();
     const res = await fetch(`${API_URL}/tenant-website/public/${slug}`, { cache: 'no-store' });
     if (res.ok) {
       const data = await res.json();
       if (data?.newsArticles) {
-        newsUrls = data.newsArticles
-          .filter((a: any) => a.status === 'PUBLISHED')
-          .map((a: any) => `  <url><loc>${baseUrl}/actualites/${a.slug}</loc><lastmod>${new Date(a.updatedAt).toISOString()}</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>`)
-          .join('\n');
+        for (const article of data.newsArticles) {
+          if (article.status === 'PUBLISHED' && article.slug) {
+            entries.push({
+              url: `${baseUrl}/actualites/${article.slug}`,
+              lastModified: new Date(article.updatedAt || article.publishedAt || new Date()),
+              changeFrequency: 'monthly',
+              priority: 0.6,
+            });
+          }
+        }
       }
     }
   } catch {}
 
-  const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>${baseUrl}</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
-  <url><loc>${baseUrl}/#presentation</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
-  <url><loc>${baseUrl}/#actualites</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
-  <url><loc>${baseUrl}/#agenda</loc><changefreq>weekly</changefreq><priority>0.7</priority></url>
-  <url><loc>${baseUrl}/#galerie</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
-  <url><loc>${baseUrl}/#contact</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
-${newsUrls}
-</urlset>`;
-
-  return new Response(sitemap, { headers: { 'Content-Type': 'application/xml' } });
+  return entries;
 }

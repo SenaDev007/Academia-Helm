@@ -30,6 +30,7 @@ import { type PortalType } from '@/lib/auth/role-portal-map';
 import FloatingEduParticles from '@/components/ui/FloatingEduParticles';
 import TenantAiChatbot from '@/components/portal/TenantAiChatbot';
 import TenantStructuredData from '@/components/portal/TenantStructuredData';
+import TenantRecruitmentBanner from '@/components/portal/TenantRecruitmentBanner';
 
 const NAVY = '#0b2f73';
 const BLUE = '#1d4fa5';
@@ -61,6 +62,7 @@ const PORTAL_DEFS = [
 export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   const [schoolData, setSchoolData] = useState<SchoolPortalInfo | null>(schoolInfo || null);
   const [websiteData, setWebsiteData] = useState<WebsiteData | null>(null);
+  const [tenantId, setTenantId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(!schoolInfo);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -81,7 +83,12 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   const loadSchoolData = async () => {
     try {
       const res = await fetch(`/api/public/schools/by-subdomain/${slug}`, { cache: 'no-store' });
-      if (res.ok) setSchoolData(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        setSchoolData(data);
+        if (data?.tenantId) setTenantId(data.tenantId);
+        else if (data?.id) setTenantId(data.id);
+      }
     } catch (e) { console.error(e); } finally { setIsLoading(false); }
   };
 

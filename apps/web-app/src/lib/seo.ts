@@ -367,8 +367,16 @@ export function generateOrganizationSchema() {
       },
     ],
     sameAs: [
+      'https://www.wikidata.org/wiki/Q140355900',
       'https://www.facebook.com/yehiortec/',
       'https://www.linkedin.com/company/yehiortech/',
+    ],
+    identifier: [
+      {
+        '@type': 'PropertyValue',
+        name: 'Wikidata ID',
+        value: 'Q140355900',
+      },
     ],
     knowsAbout: [
       'gestion scolaire',
@@ -454,6 +462,18 @@ export function generateSoftwareApplicationSchema() {
     operatingSystem: 'Web',
     url: siteUrl,
     description: `${BRAND.description}. ${BRAND.slogan}`,
+    developer: {
+      '@type': 'Organization',
+      name: 'YEHI OR Tech',
+      url: siteUrl,
+      sameAs: 'https://www.wikidata.org/wiki/Q140355900',
+    },
+    sameAs: 'https://www.wikidata.org/wiki/Q140356219',
+    identifier: {
+      '@type': 'PropertyValue',
+      name: 'Wikidata ID',
+      value: 'Q140356219',
+    },
   };
 }
 
@@ -474,6 +494,12 @@ export function generateProductSchema() {
     image: [`${siteUrl}${DEFAULT_OG_IMAGE_PATH}`],
     url: siteUrl,
     category: 'EducationalApplication',
+    sameAs: 'https://www.wikidata.org/wiki/Q140356219',
+    manufacturer: {
+      '@type': 'Organization',
+      name: 'YEHI OR Tech',
+      sameAs: 'https://www.wikidata.org/wiki/Q140355900',
+    },
     offers: [
       {
         '@type': 'Offer',

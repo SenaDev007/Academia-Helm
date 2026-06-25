@@ -25,6 +25,7 @@ interface TenantStructuredDataProps {
   schoolSlogan?: string | null;
   schoolCity?: string | null;
   socialLinks?: Record<string, string> | null;
+  wikidataId?: string | null;
 }
 
 export default function TenantStructuredData({
@@ -37,6 +38,7 @@ export default function TenantStructuredData({
   schoolSlogan,
   schoolCity,
   socialLinks,
+  wikidataId,
 }: TenantStructuredDataProps) {
   // ─── EducationalOrganization ──
   const educationalOrg: any = {
@@ -59,7 +61,7 @@ export default function TenantStructuredData({
   if (schoolPhone) educationalOrg.telephone = schoolPhone;
   if (schoolEmail) educationalOrg.email = schoolEmail;
 
-  // Réseaux sociaux
+  // Réseaux sociaux + Wikidata
   const socialUrls: string[] = [];
   if (socialLinks) {
     for (const [, url] of Object.entries(socialLinks)) {
@@ -68,8 +70,16 @@ export default function TenantStructuredData({
       }
     }
   }
-  if (socialUrls.length > 0) {
-    educationalOrg.sameAs = socialUrls;
+  // Ajouter le QID Wikidata de la plateforme (YEHI OR Tech) dans sameAs
+  socialUrls.push('https://www.wikidata.org/wiki/Q140355900');
+  socialUrls.push('https://www.wikidata.org/wiki/Q140356219');
+  if (socialUrls.length > 0 || wikidataId) {
+    educationalOrg.sameAs = [
+      ...socialUrls,
+      ...(wikidataId ? [`https://www.wikidata.org/wiki/${wikidataId}`] : []),
+    ];
+    // Dédupliquer
+    educationalOrg.sameAs = [...new Set(educationalOrg.sameAs)];
   }
 
   // ─── WebSite ──

@@ -28,8 +28,18 @@ import { TenantWebsiteService } from './tenant-website.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
+import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { PrismaService } from '../database/prisma.service';
+
+/**
+ * Helper pour résoudre le tenantId depuis @GetTenant() ou @TenantId() fallback.
+ */
+function resolveTid(tenant: any, tenantIdFallback?: string): string {
+  const tid = tenant?.id || tenantIdFallback;
+  if (!tid) throw new BadRequestException('Tenant ID requis pour cette opération');
+  return tid;
+}
 
 @Controller('tenant-website')
 export class TenantWebsiteController {
@@ -127,9 +137,8 @@ export class TenantWebsiteController {
 
   @UseGuards(JwtAuthGuard, TenantGuard)
   @Get()
-  async getWebsiteConfig(@GetTenant() tenant: any) {
-    const tid = tenant?.id;
-    if (!tid) throw new BadRequestException('Tenant ID requis');
+  async getWebsiteConfig(@GetTenant() tenant: any, @TenantId() tidFallback?: string) {
+    const tid = resolveTid(tenant, tidFallback);
     return this.websiteService.getWebsiteConfig(tid);
   }
 
@@ -137,10 +146,10 @@ export class TenantWebsiteController {
   @Put()
   async updateWebsiteConfig(
     @GetTenant() tenant: any,
+    @TenantId() tidFallback: string,
     @Body() body: any,
   ) {
-    const tid = tenant?.id;
-    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const tid = resolveTid(tenant, tidFallback);
     return this.websiteService.updateWebsiteConfig(tid, body);
   }
 
@@ -156,8 +165,7 @@ export class TenantWebsiteController {
     @Query('category') category?: string,
     @Query('limit') limit?: string,
   ) {
-    const tid = tenant?.id;
-    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const tid = resolveTid(tenant);
     return this.websiteService.getNewsArticles(tid, {
       status,
       category,
@@ -171,8 +179,7 @@ export class TenantWebsiteController {
     @GetTenant() tenant: any,
     @Body() body: any,
   ) {
-    const tid = tenant?.id;
-    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const tid = resolveTid(tenant);
     if (!body.title || !body.content) {
       throw new BadRequestException('Titre et contenu sont requis');
     }
@@ -186,8 +193,7 @@ export class TenantWebsiteController {
     @Param('id') id: string,
     @Body() body: any,
   ) {
-    const tid = tenant?.id;
-    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const tid = resolveTid(tenant);
     return this.websiteService.updateNewsArticle(tid, id, body);
   }
 
@@ -197,8 +203,7 @@ export class TenantWebsiteController {
     @GetTenant() tenant: any,
     @Param('id') id: string,
   ) {
-    const tid = tenant?.id;
-    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const tid = resolveTid(tenant);
     return this.websiteService.deleteNewsArticle(tid, id);
   }
 
@@ -212,8 +217,7 @@ export class TenantWebsiteController {
     @GetTenant() tenant: any,
     @Query('status') status?: string,
   ) {
-    const tid = tenant?.id;
-    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const tid = resolveTid(tenant);
     return this.websiteService.getEvents(tid, { status });
   }
 
@@ -223,8 +227,7 @@ export class TenantWebsiteController {
     @GetTenant() tenant: any,
     @Body() body: any,
   ) {
-    const tid = tenant?.id;
-    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const tid = resolveTid(tenant);
     if (!body.title || !body.startDate) {
       throw new BadRequestException('Titre et date de début sont requis');
     }
@@ -238,8 +241,7 @@ export class TenantWebsiteController {
     @Param('id') id: string,
     @Body() body: any,
   ) {
-    const tid = tenant?.id;
-    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const tid = resolveTid(tenant);
     return this.websiteService.updateEvent(tid, id, body);
   }
 
@@ -249,8 +251,7 @@ export class TenantWebsiteController {
     @GetTenant() tenant: any,
     @Param('id') id: string,
   ) {
-    const tid = tenant?.id;
-    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const tid = resolveTid(tenant);
     return this.websiteService.deleteEvent(tid, id);
   }
 
@@ -261,8 +262,7 @@ export class TenantWebsiteController {
   @UseGuards(JwtAuthGuard, TenantGuard)
   @Get('gallery')
   async getGalleryItems(@GetTenant() tenant: any) {
-    const tid = tenant?.id;
-    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const tid = resolveTid(tenant);
     return this.websiteService.getGalleryItems(tid);
   }
 
@@ -272,8 +272,7 @@ export class TenantWebsiteController {
     @GetTenant() tenant: any,
     @Body() body: any,
   ) {
-    const tid = tenant?.id;
-    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const tid = resolveTid(tenant);
     if (!body.imageUrl) throw new BadRequestException('URL de l\'image est requise');
     return this.websiteService.createGalleryItem(tid, body);
   }
@@ -285,8 +284,7 @@ export class TenantWebsiteController {
     @Param('id') id: string,
     @Body() body: any,
   ) {
-    const tid = tenant?.id;
-    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const tid = resolveTid(tenant);
     return this.websiteService.updateGalleryItem(tid, id, body);
   }
 
@@ -296,8 +294,7 @@ export class TenantWebsiteController {
     @GetTenant() tenant: any,
     @Param('id') id: string,
   ) {
-    const tid = tenant?.id;
-    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const tid = resolveTid(tenant);
     return this.websiteService.deleteGalleryItem(tid, id);
   }
 
@@ -308,8 +305,7 @@ export class TenantWebsiteController {
   @UseGuards(JwtAuthGuard, TenantGuard)
   @Get('testimonials')
   async getTestimonials(@GetTenant() tenant: any) {
-    const tid = tenant?.id;
-    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const tid = resolveTid(tenant);
     return this.websiteService.getTestimonials(tid);
   }
 
@@ -319,8 +315,7 @@ export class TenantWebsiteController {
     @GetTenant() tenant: any,
     @Body() body: any,
   ) {
-    const tid = tenant?.id;
-    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const tid = resolveTid(tenant);
     if (!body.authorName || !body.content) {
       throw new BadRequestException('Nom de l\'auteur et contenu sont requis');
     }
@@ -334,8 +329,7 @@ export class TenantWebsiteController {
     @Param('id') id: string,
     @Body() body: any,
   ) {
-    const tid = tenant?.id;
-    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const tid = resolveTid(tenant);
     return this.websiteService.updateTestimonial(tid, id, body);
   }
 
@@ -345,8 +339,7 @@ export class TenantWebsiteController {
     @GetTenant() tenant: any,
     @Param('id') id: string,
   ) {
-    const tid = tenant?.id;
-    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const tid = resolveTid(tenant);
     return this.websiteService.deleteTestimonial(tid, id);
   }
 
@@ -357,8 +350,7 @@ export class TenantWebsiteController {
   @UseGuards(JwtAuthGuard, TenantGuard)
   @Get('faq')
   async getFaqItems(@GetTenant() tenant: any) {
-    const tid = tenant?.id;
-    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const tid = resolveTid(tenant);
     return this.websiteService.getFaqItems(tid);
   }
 
@@ -368,8 +360,7 @@ export class TenantWebsiteController {
     @GetTenant() tenant: any,
     @Body() body: any,
   ) {
-    const tid = tenant?.id;
-    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const tid = resolveTid(tenant);
     if (!body.question || !body.answer) {
       throw new BadRequestException('Question et réponse sont requises');
     }
@@ -383,8 +374,7 @@ export class TenantWebsiteController {
     @Param('id') id: string,
     @Body() body: any,
   ) {
-    const tid = tenant?.id;
-    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const tid = resolveTid(tenant);
     return this.websiteService.updateFaqItem(tid, id, body);
   }
 
@@ -394,8 +384,7 @@ export class TenantWebsiteController {
     @GetTenant() tenant: any,
     @Param('id') id: string,
   ) {
-    const tid = tenant?.id;
-    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const tid = resolveTid(tenant);
     return this.websiteService.deleteFaqItem(tid, id);
   }
 
@@ -409,8 +398,7 @@ export class TenantWebsiteController {
     @GetTenant() tenant: any,
     @Query('status') status?: string,
   ) {
-    const tid = tenant?.id;
-    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const tid = resolveTid(tenant);
     return this.websiteService.getContactMessages(tid, { status });
   }
 
@@ -421,8 +409,7 @@ export class TenantWebsiteController {
     @Param('id') id: string,
     @Body() body: { status: string },
   ) {
-    const tid = tenant?.id;
-    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const tid = resolveTid(tenant);
     return this.websiteService.updateContactMessageStatus(tid, id, body.status);
   }
 
@@ -432,8 +419,7 @@ export class TenantWebsiteController {
     @GetTenant() tenant: any,
     @Param('id') id: string,
   ) {
-    const tid = tenant?.id;
-    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const tid = resolveTid(tenant);
     return this.websiteService.deleteContactMessage(tid, id);
   }
 }

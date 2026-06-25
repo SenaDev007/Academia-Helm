@@ -515,6 +515,17 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
+  // ── Route `/jobs` avec sous-domaine d'école ──
+  // Rewrite vers /school-portal/jobs pour afficher la page recrutement
+  // spécifique à l'école (pas la page publique principale avec toutes les écoles).
+  if (pathname === '/jobs' || pathname.startsWith('/jobs/')) {
+    if (subdomain) {
+      const rewriteUrl = new URL(`/school-portal${pathname}`, request.nextUrl.origin);
+      return NextResponse.rewrite(rewriteUrl);
+    }
+    return response;
+  }
+
   // Routes publiques
   if (publicRoutes.some(route => pathname.startsWith(route))) {
     

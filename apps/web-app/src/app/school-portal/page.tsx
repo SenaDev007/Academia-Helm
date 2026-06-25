@@ -124,6 +124,11 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function SchoolPortalPage() {
+  // Délai minimum pour garantir l'affichage du loading (2 secondes)
+  // Le loading.tsx (TenantSchoolLoader) doit être visible suffisamment longtemps
+  const [minDelay] = await Promise.all([
+    new Promise(resolve => setTimeout(resolve, 1500)),
+    (async () => {
   // Tenter de résoudre les informations de l'école côté serveur
   let schoolInfo = null;
   let subdomain = null;
@@ -177,6 +182,12 @@ export default async function SchoolPortalPage() {
   } catch {
     // headers() peut échouer dans certains contextes
   }
+
+  return { schoolInfo, subdomain };
+    })(),
+  ]);
+
+  const { schoolInfo, subdomain } = minDelay as any;
 
   return <InstitutionalWebsite schoolInfo={schoolInfo} subdomain={subdomain} />;
 }

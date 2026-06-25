@@ -41,6 +41,7 @@ const BLUE = HELM_DEFAULT.secondary;
 const GOLD = HELM_DEFAULT.accent;
 
 interface SchoolPortalInfo {
+  tenantId?: string | null;
   name: string; slug: string; logoUrl: string | null; city: string | null;
   phone: string | null; address: string | null; primaryColor: string | null;
   secondaryColor: string | null; slogan: string | null; motto: string | null;

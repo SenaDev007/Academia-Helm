@@ -16,6 +16,7 @@
 
 /** Branding extrait et plat — utilisé par les composants UI */
 export interface SchoolBrandingData {
+  tenantId?: string | null;
   name: string;
   slug: string;
   logoUrl: string | null;
@@ -48,6 +49,7 @@ export function extractBrandingFromTenant(
   const school = data.schools ?? null;
 
   return {
+    tenantId: data.id || null,
     name: identity?.schoolName || settings?.schoolName || school?.name || data.name || slug,
     slug: data.slug || slug,
     logoUrl: identity?.logoUrl || settings?.logoUrl || school?.logo || null,

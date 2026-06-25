@@ -34,7 +34,8 @@ import {
   Trash2,
   Edit,
   ClipboardCheck,
-  ChevronRight
+  ChevronRight,
+  FileText,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -53,7 +54,7 @@ interface Material {
   id: string;
   name: string;
   code: string;
-  category: 'BOOK' | 'KIT' | 'EQUIPMENT' | 'TECH' | 'OTHER';
+  category: 'BOOK' | 'TEACHER_GUIDE' | 'OFFICIAL_DOCUMENT' | 'DIDACTIC_SUPPORT' | 'LAB_MATERIAL' | 'OTHER';
   description?: string;
   isActive: boolean;
   subject?: { name: string };
@@ -71,9 +72,10 @@ interface MaterialStock {
 
 const CATEGORIES = [
   { id: 'BOOK', label: 'Manuels Scolaires', icon: BookOpen, color: 'text-indigo-600 bg-indigo-50' },
-  { id: 'KIT', label: 'Kits Pédagogiques', icon: FlaskConical, color: 'text-rose-600 bg-rose-50' },
-  { id: 'TECH', label: 'Matériel Tech', icon: Monitor, color: 'text-emerald-600 bg-emerald-50' },
-  { id: 'EQUIPMENT', label: 'Équipement Sport/Art', icon: Package, color: 'text-amber-600 bg-amber-50' },
+  { id: 'TEACHER_GUIDE', label: 'Guides Pédagogiques', icon: BookOpen, color: 'text-rose-600 bg-rose-50' },
+  { id: 'OFFICIAL_DOCUMENT', label: 'Documents Officiels', icon: FileText, color: 'text-blue-600 bg-blue-50' },
+  { id: 'DIDACTIC_SUPPORT', label: 'Supports Didactiques', icon: Monitor, color: 'text-emerald-600 bg-emerald-50' },
+  { id: 'LAB_MATERIAL', label: 'Matériel de Labo', icon: FlaskConical, color: 'text-amber-600 bg-amber-50' },
 ];
 
 export default function MaterialsWorkspace() {
@@ -140,7 +142,7 @@ export default function MaterialsWorkspace() {
       await pedagogyService.createPedagogicalMaterial({
         ...data,
         academicYearId: academicYear?.id,
-        schoolLevelId: schoolLevel?.id || "default-level",
+        schoolLevelId: schoolLevel?.id || undefined,
         isActive: true
       });
       toast({
@@ -207,7 +209,7 @@ export default function MaterialsWorkspace() {
         ...data,
         materialId: selectedMaterialId,
         academicYearId: academicYear.id,
-        schoolLevelId: schoolLevel?.id || "default-level",
+        schoolLevelId: schoolLevel?.id || undefined,
         quantity: parseInt(data.quantity)
       });
       toast({
@@ -230,7 +232,7 @@ export default function MaterialsWorkspace() {
     if (!selectedMaterialId || !academicYear?.id) return;
     try {
       const selectedClass = classes.find(c => c.id === data.classId);
-      const schoolLevelId = selectedClass?.schoolLevelId || schoolLevel?.id || "default-level";
+      const schoolLevelId = selectedClass?.schoolLevelId || schoolLevel?.id || undefined;
       
       await pedagogyService.createMaterialAssignment({
         ...data,

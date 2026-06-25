@@ -968,6 +968,8 @@ model AcademicClass {
   updatedAt           DateTime             @updatedAt
   seriesId            String?
   classSubjects       ClassSubject[]       @relation("AcademicClassSubject")
+  /// Classes physiques (CI/A, CI/B) rattachées à cette classe officielle
+  physicalClasses     Class[]              @relation("PhysicalClassOfficialClass")
   academicYear        AcademicYear         @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   cycle               AcademicCycle        @relation(fields: [cycleId], references: [id])
   level               AcademicLevel        @relation(fields: [levelId], references: [id])
@@ -2319,6 +2321,9 @@ model Class {
   academicYearId             String
   schoolLevelId              String
   academicTrackId            String?
+  /// Lien vers la classe officielle (AcademicClass) dans le module Pédagogie
+  /// Ex: CI/A → officialClassId = AcademicClass "CI"
+  officialClassId            String?
   language                   String?
   name                       String
   code                       String
@@ -2336,10 +2341,14 @@ model Class {
   classTransfersFrom         ClassTransfer[]             @relation("ClassTransfersFrom")
   classTransfersTo           ClassTransfer[]             @relation("ClassTransfersTo")
   academicTrack              AcademicTrack?              @relation(fields: [academicTrackId], references: [id])
+  /// Classe officielle (AcademicClass) dont cette classe physique découle
+  officialClass              AcademicClass?              @relation("PhysicalClassOfficialClass", fields: [officialClassId], references: [id], onDelete: SetNull)
   academicYear               AcademicYear                @relation(fields: [academicYearId], references: [id])
   schoolLevel                SchoolLevel                 @relation(fields: [schoolLevelId], references: [id])
   tenant                     Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   dailyLogs                  DailyLog[]
+  /// Affectations enseignants pour cette classe physique
+  teacherClassAssignments    TeacherClassAssignment[]    @relation("TeacherClassAssignmentPhysicalClass")
   educastAccesses            EducastAccess[]             @relation("EducastAccessClass")
   educastContents            EducastContent[]            @relation("EducastContentClass")
   feeConfigurations          FeeConfiguration[]
@@ -2571,7 +2580,6 @@ model Teacher {
   updatedAt                  DateTime                    @updatedAt
   annualSupplies             AnnualTeacherSupply[]
   dailyLogs                  DailyLog[]
-  managedDepartment          Department?                 @relation("DepartmentManager")
   lessonJournals             LessonJournal[]
   pedagogicalDocuments       PedagogicalDocument[]
   mainTeacherAcademicClasses AcademicClass[]             @relation("AcademicClassMainTeacher")
@@ -2598,12 +2606,12 @@ model Department {
   tenantId    String
   name        String
   description String?
-  managerId   String?   @unique
+  managerId   String?
   createdBy   String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   creator     User?     @relation(fields: [createdBy], references: [id])
-  manager     Teacher?  @relation("DepartmentManager", fields: [managerId], references: [id])
+  manager     Staff?    @relation("DepartmentManager", fields: [managerId], references: [id], onDelete: SetNull)
   tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   teachers    Teacher[] @relation("DepartmentTeachers")
 
@@ -3266,6 +3274,10 @@ model SchoolSettings {
   socialMediaLinks    Json?
   version             Int       @default(1)
   whatsapp            String?
+  /// FeexPay shop ID pour l'école (permet à chaque école d'avoir son propre compte)
+  feexpayShopId       String?
+  /// FeexPay API Key pour l'école (si différent du compte global Academia Helm)
+  feexpayApiKey       String?
   tenant              Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("school_settings")
@@ -5023,6 +5035,7 @@ model Staff {
   globalResourceUsages      TenantResourceUsage[]      @relation("StaffResourceUsages")
   globalResourceAnnotations TenantResourceAnnotation[] @relation("StaffResourceAnnotations")
   organigramNodes           OrganigramNode[]           @relation("StaffOrganigramNodes")
+  managedDepartments        Department[]               @relation("DepartmentManager")
 
   @@index([tenantId])
   @@index([employeeNumber])
@@ -7150,11 +7163,15 @@ model TeacherClassAssignment {
   tenantId       String
   teacherId      String
   classSubjectId String
+  /// Classe physique (CI/A, CI/B) à laquelle l'enseignant est affecté
+  classId        String?
   academicYearId String
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   academicYear   AcademicYear @relation("TeacherClassAssignmentAcademicYear", fields: [academicYearId], references: [id])
   classSubject   ClassSubject @relation(fields: [classSubjectId], references: [id], onDelete: Cascade)
+  /// Classe physique (module Paramètres/Élèves)
+  physicalClass  Class?       @relation("TeacherClassAssignmentPhysicalClass", fields: [classId], references: [id], onDelete: SetNull)
   teacher        Teacher      @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -7162,6 +7179,7 @@ model TeacherClassAssignment {
   @@index([tenantId, academicYearId])
   @@index([teacherId])
   @@index([classSubjectId])
+  @@index([classId])
   @@map("teacher_class_assignments")
 }
 

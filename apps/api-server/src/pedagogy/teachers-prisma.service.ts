@@ -124,6 +124,30 @@ export class TeachersPrismaService {
       tenantId,
     };
 
+    // ─── Exclure le promoteur de la liste des enseignants ──
+    // Le promoteur est le propriétaire de l'école, pas un enseignant.
+    // On l'exclut en filtrant par email : si un User avec role PROMOTER
+    // a le même email que le Teacher, on l'exclut.
+    try {
+      const promoterUsers = await this.prisma.user.findMany({
+        where: {
+          tenantId,
+          role: { in: ['PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'SUPER_DIRECTOR'] },
+          email: { not: null },
+        },
+        select: { email: true },
+      });
+      const promoterEmails = promoterUsers
+        .map((u) => u.email)
+        .filter((e): e is string => !!e);
+
+      if (promoterEmails.length > 0) {
+        where.email = { notIn: promoterEmails };
+      }
+    } catch {
+      // Si la requête échoue (ex: table User pas encore migrée), on continue sans filtre
+    }
+
     if (filters?.schoolLevelId && filters.schoolLevelId !== 'ALL') {
       where.schoolLevelId = filters.schoolLevelId;
     }

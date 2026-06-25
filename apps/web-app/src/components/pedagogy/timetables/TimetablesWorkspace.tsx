@@ -115,10 +115,7 @@ export default function TimetablesWorkspace() {
     startTime: string;
     endTime: string;
   }
-  const [breaks, setBreaks] = useState<BreakPeriod[]>([
-    { id: '1', name: 'Récréation', startTime: '10:00', endTime: '10:30' },
-    { id: '2', name: 'Pause Déjeuner', startTime: '12:00', endTime: '13:00' }
-  ]);
+  const [breaks, setBreaks] = useState<BreakPeriod[]>([]);
 
   // Timetables automatic generation
   const [generating, setGenerating] = useState(false);
@@ -374,7 +371,7 @@ export default function TimetablesWorkspace() {
             scheduledEntries.push({
               timetableId: activeTimetableId,
               academicYearId: academicYear.id,
-              schoolLevelId: schoolLevel?.id || 'ALL',
+              schoolLevelId: schoolLevel?.id || '',
               dayOfWeek: slot.day,
               startTime: slot.start,
               endTime: slot.end,
@@ -446,7 +443,7 @@ export default function TimetablesWorkspace() {
             scheduledEntries.push({
               timetableId: activeTimetableId,
               academicYearId: academicYear.id,
-              schoolLevelId: schoolLevel?.id || 'ALL',
+              schoolLevelId: schoolLevel?.id || '',
               dayOfWeek: slot.day,
               startTime: slot.start,
               endTime: slot.end,
@@ -497,6 +494,15 @@ export default function TimetablesWorkspace() {
 
   // Modals
   const [modal, setModal] = useState<'none' | 'create-timetable' | 'add-entry' | 'settings-breaks'>('none');
+  const [entryForm, setEntryForm] = useState({
+    classId: '',
+    teacherId: '',
+    subjectId: '',
+    roomId: '',
+    dayOfWeek: 1,
+    startTime: '08:00',
+    endTime: '09:00',
+  });
 
   // --- Loaders ---
 
@@ -522,7 +528,7 @@ export default function TimetablesWorkspace() {
           method: 'POST',
           body: {
             academicYearId: academicYear.id,
-            schoolLevelId: schoolLevel?.id || 'ALL',
+            schoolLevelId: schoolLevel?.id || '',
             name: `Emploi du Temps Principal ${academicYear.label}`,
             startDate: new Date(),
           }
@@ -580,13 +586,19 @@ export default function TimetablesWorkspace() {
   const handleAddEntry = async (data: any) => {
     if (!activeTimetableId || !academicYear?.id) return;
     try {
+      // Resolve a valid schoolLevelId (not 'ALL')
+      const resolvedSchoolLevelId = schoolLevel?.id || classes.find(c => c.id === data.classId)?.levelId || '';
+      if (!resolvedSchoolLevelId) {
+        toast({ title: "Erreur", description: "Impossible de déterminer le niveau scolaire.", variant: "destructive" });
+        return;
+      }
       await pedagogyFetch(`/api/timetables/${activeTimetableId}/entries`, {
         method: 'POST',
         body: {
           ...data,
           timetableId: activeTimetableId,
           academicYearId: academicYear.id,
-          schoolLevelId: schoolLevel?.id || 'ALL'
+          schoolLevelId: resolvedSchoolLevelId,
         }
       });
       loadEntries();
@@ -607,6 +619,108 @@ export default function TimetablesWorkspace() {
     } catch (e) {
       console.error(e);
     }
+  };
+
+  // --- Print / Download timetable ---
+  const getTimetableTitle = () => {
+    const entityName = viewMode === 'class'
+      ? classes.find(c => c.id === selectedId)?.name
+      : viewMode === 'teacher'
+      ? `${teachers.find(t => t.teacherId === selectedId)?.teacher?.lastName || ''} ${teachers.find(t => t.teacherId === selectedId)?.teacher?.firstName || ''}`
+      : rooms.find(r => r.id === selectedId)?.name || '';
+    return `Emploi du temps — ${viewMode === 'class' ? 'Classe' : viewMode === 'teacher' ? 'Enseignant' : 'Salle'} ${entityName}`;
+  };
+
+  const buildPrintableHtml = () => {
+    const N = '#0b2f73', B = '#1d4fa5', G = '#f5b335';
+    const title = getTimetableTitle();
+
+    // Build grid rows
+    const rows = HOURS.map(hour => {
+      const cells = DAYS.map(day => {
+        const entry = filteredEntries.find(e => e.dayOfWeek === day.id && e.startTime === `${hour.toString().padStart(2, '0')}:00`);
+        if (entry) {
+          const subjectName = entry.subject?.name || '—';
+          const teacherName = entry.teacher ? `${entry.teacher.firstName?.[0]}. ${entry.teacher.lastName}` : '';
+          const className = entry.class?.name || '';
+          const roomCode = entry.room?.code || '';
+          return `<td style="padding:6px;border:1px solid #ddd;text-align:center;background:#f0f7ff;">
+            <strong style="font-size:11px;color:${N};">${subjectName}</strong><br/>
+            <span style="font-size:9px;color:#666;">${viewMode === 'teacher' ? className : teacherName}</span><br/>
+            <span style="font-size:8px;color:#999;">${roomCode}</span>
+          </td>`;
+        }
+        // Check if it's a break
+        const isBreak = breaks.some(b => {
+          const startStr = `${hour.toString().padStart(2, '0')}:00`;
+          const endStr = `${(hour + 1).toString().padStart(2, '0')}:00`;
+          return (startStr >= b.startTime && startStr < b.endTime) || (endStr > b.startTime && endStr <= b.endTime);
+        });
+        if (isBreak) {
+          return `<td style="padding:6px;border:1px solid #ddd;text-align:center;background:#fef9e7;">
+            <span style="font-size:9px;color:#999;font-style:italic;">Pause</span>
+          </td>`;
+        }
+        return `<td style="padding:6px;border:1px solid #ddd;text-align:center;"></td>`;
+      }).join('');
+
+      return `<tr>
+        <td style="padding:6px;font-weight:bold;background:${N};color:#fff;border:1px solid #ddd;text-align:center;">
+          ${hour.toString().padStart(2, '0')}:00
+        </td>
+        ${cells}
+      </tr>`;
+    }).join('');
+
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;padding:20px;font-size:12px}
+.header{text-align:center;margin-bottom:15px;border-bottom:3px solid ${G};padding-bottom:10px}
+.header h1{color:${N};font-size:18px}
+.header h2{font-size:13px;color:${B};margin-top:3px}
+.header p{font-size:10px;margin-top:3px;color:#999}
+table{width:100%;border-collapse:collapse;margin-bottom:10px}
+th{background:${N};color:#fff;padding:8px;border:1px solid #ddd;font-size:11px}
+td{border:1px solid #ddd;padding:6px;font-size:11px}
+.footer{margin-top:20px;text-align:center;font-size:9px;color:#999;border-top:1px solid #ddd;padding-top:8px}
+@media print{body{padding:10px}}
+</style></head><body>
+<div class="header">
+<h1>EMPLOI DU TEMPS HEBDOMADAIRE</h1>
+<h2>${title}</h2>
+<p>Généré le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</p>
+</div>
+<table>
+<thead><tr>
+<th style="width:80px">Horaire</th>
+${DAYS.map(d => `<th>${d.label}</th>`).join('')}
+</tr></thead>
+<tbody>${rows}</tbody>
+</table>
+<div class="footer">
+<p>Academia Helm — Plateforme de pilotage éducatif</p>
+</div>
+</body></html>`;
+  };
+
+  const handlePrintTimetable = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    printWindow.document.write(buildPrintableHtml());
+    printWindow.document.close();
+    setTimeout(() => printWindow.print(), 500);
+  };
+
+  const handleDownloadTimetable = () => {
+    const html = buildPrintableHtml();
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `emploi_du_temps_${viewMode}_${selectedId || 'all'}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   // --- Grid Component ---
@@ -674,10 +788,10 @@ export default function TimetablesWorkspace() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-12rem)] gap-6 overflow-hidden">
+    <div className="flex flex-col gap-6">
       {/* Bilingual track selector — affiché en haut si bilingue activé */}
       {isBilingual && (
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-slate-100 rounded-xl p-1 shadow-md">
+        <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1 shadow-sm self-center">
           <button
             type="button"
             onClick={() => setCurrentTrack('FR')}
@@ -694,41 +808,42 @@ export default function TimetablesWorkspace() {
           </button>
         </div>
       )}
+      <div className="flex flex-col lg:flex-row gap-6">
       {/* Sidebar de contrôle */}
-      <div className="w-72 bg-white rounded-3xl border border-gray-100 flex flex-col shadow-sm">
-        <div className="p-6 border-b border-gray-50 space-y-4">
+      <div className="w-full lg:w-72 bg-white rounded-2xl border border-gray-100 flex flex-col shadow-sm shrink-0">
+        <div className="p-5 border-b border-gray-50 space-y-4">
            <div className="flex items-center justify-between">
               <h2 className="text-lg font-black text-gray-900 flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-indigo-600" />
+                <Calendar className="w-5 h-5 text-blue-600" />
                 Planning
               </h2>
               <button className="p-2 hover:bg-gray-50 rounded-xl text-gray-400">
                 <MoreVertical className="w-4 h-4" />
               </button>
            </div>
-           
-           <div className="flex p-1 bg-gray-50 rounded-2xl">
-              <button 
+
+           <div className="flex p-1 bg-gray-50 rounded-xl">
+              <button
                 onClick={() => setViewMode('class')}
-                className={cn("flex-1 py-2 rounded-xl text-[10px] font-black uppercase transition-all", viewMode === 'class' ? "bg-white text-indigo-600 shadow-sm" : "text-gray-400")}
+                className={cn("flex-1 py-2 rounded-lg text-[10px] font-black uppercase transition-all", viewMode === 'class' ? "bg-white text-blue-600 shadow-sm" : "text-gray-400")}
               >Classe</button>
-              <button 
+              <button
                 onClick={() => setViewMode('teacher')}
-                className={cn("flex-1 py-2 rounded-xl text-[10px] font-black uppercase transition-all", viewMode === 'teacher' ? "bg-white text-indigo-600 shadow-sm" : "text-gray-400")}
+                className={cn("flex-1 py-2 rounded-lg text-[10px] font-black uppercase transition-all", viewMode === 'teacher' ? "bg-white text-blue-600 shadow-sm" : "text-gray-400")}
               >Prof</button>
-              <button 
+              <button
                 onClick={() => setViewMode('room')}
-                className={cn("flex-1 py-2 rounded-xl text-[10px] font-black uppercase transition-all", viewMode === 'room' ? "bg-white text-indigo-600 shadow-sm" : "text-gray-400")}
+                className={cn("flex-1 py-2 rounded-lg text-[10px] font-black uppercase transition-all", viewMode === 'room' ? "bg-white text-blue-600 shadow-sm" : "text-gray-400")}
               >Salle</button>
            </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+        <div className="p-4 space-y-2 max-h-[60vh] lg:max-h-none overflow-y-auto">
           {viewMode === 'class' && classes.map(c => (
-            <button 
-              key={c.id} 
+            <button
+              key={c.id}
               onClick={() => setSelectedId(c.id)}
-              className={cn("w-full p-3 rounded-2xl text-left transition-all", selectedId === c.id ? "bg-indigo-600 text-white shadow-lg shadow-indigo-100" : "hover:bg-gray-50 text-gray-700")}
+              className={cn("w-full p-3 rounded-xl text-left transition-all", selectedId === c.id ? "bg-blue-600 text-white shadow-lg shadow-blue-100" : "hover:bg-gray-50 text-gray-700")}
             >
               <p className="text-sm font-black">{c.name}</p>
             </button>
@@ -756,9 +871,9 @@ export default function TimetablesWorkspace() {
       </div>
 
       {/* Grille EDT */}
-      <div className="flex-1 bg-white rounded-3xl border border-gray-100 flex flex-col shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-gray-50 bg-gray-50/20 flex items-center justify-between">
-          <div className="flex items-center gap-6">
+      <div className="flex-1 bg-white rounded-2xl border border-gray-100 flex flex-col shadow-sm">
+        <div className="p-5 border-b border-gray-50 flex flex-col gap-4">
+          <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
                <h3 className="text-xl font-black text-gray-900 tracking-tight">Emploi du Temps Hebdomadaire</h3>
                <p className="text-xs text-gray-500 font-bold uppercase tracking-widest mt-1">
@@ -770,54 +885,66 @@ export default function TimetablesWorkspace() {
                </p>
             </div>
           </div>
-          <div className="flex gap-2">
-            <button 
+          <div className="flex gap-2 flex-wrap">
+            <button
               onClick={() => setModal('settings-breaks')}
-              className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-100 rounded-2xl text-xs font-black text-gray-600 hover:bg-gray-50 transition-all shadow-sm"
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all"
             >
-              <Clock className="w-4 h-4 text-indigo-600" />
-              PAUSES & PLAGES
+              <Clock className="w-4 h-4 text-blue-600" />
+              Pauses & Plages
             </button>
             {(viewMode === 'class' || viewMode === 'teacher') && (
-              <button 
+              <button
                 onClick={handleAutoGenerate}
                 disabled={generating}
                 className={cn(
-                  "flex items-center gap-2 px-5 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-2xl text-xs font-black transition-all shadow-sm",
+                  "flex items-center gap-2 px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-bold transition-all",
                   generating && "opacity-75 cursor-not-allowed"
                 )}
               >
                 {generating ? (
-                  <div className="w-3.5 h-3.5 border-2 border-indigo-700 border-t-transparent rounded-full animate-spin" />
+                  <div className="w-3.5 h-3.5 border-2 border-blue-700 border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <Calendar className="w-4 h-4" />
                 )}
-                {generating ? "GÉNÉRATION..." : "AUTO-GÉNÉRER"}
+                {generating ? "Génération..." : "Auto-générer"}
               </button>
             )}
-            <button className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-100 rounded-2xl text-xs font-black text-gray-600 hover:bg-gray-50 transition-all shadow-sm">
-              <Printer className="w-4 h-4" />
-              IMPRIMER PDF
+            <button
+              onClick={handleDownloadTimetable}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all"
+              title="Télécharger l'emploi du temps (HTML)"
+            >
+              <Download className="w-4 h-4" />
+              Télécharger
             </button>
-            <button 
+            <button
+              onClick={handlePrintTimetable}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all"
+              title="Imprimer l'emploi du temps"
+            >
+              <Printer className="w-4 h-4" />
+              Imprimer
+            </button>
+            <button
               onClick={() => setModal('add-entry')}
-              className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-2xl text-xs font-black hover:scale-105 transition-all shadow-lg shadow-indigo-100"
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition-all shadow-sm"
             >
               <Plus className="w-4 h-4" />
-              AJOUTER UN COURS
+              Ajouter un cours
             </button>
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto bg-gray-50/10">
+        <div className="overflow-x-auto bg-gray-50/30 p-4">
           <div className="min-w-[800px]">
              {/* Header Jours */}
-             <div className="grid grid-cols-[100px_repeat(6,1fr)] border-b border-gray-100 bg-white sticky top-0 z-20">
+             <div className="grid grid-cols-[100px_repeat(6,1fr)] border-b border-gray-100 bg-white rounded-t-xl overflow-hidden">
                 <div className="p-4 border-r border-gray-100 flex items-center justify-center bg-gray-50/50">
                   <Clock className="w-4 h-4 text-gray-300" />
                 </div>
                 {DAYS.map(day => (
-                  <div key={day.id} className="p-4 border-r border-gray-100 text-center">
+                  <div key={day.id} className="p-4 border-r border-gray-100 text-center last:border-r-0">
                     <span className="text-[11px] font-black uppercase text-gray-500 tracking-widest">{day.label}</span>
                   </div>
                 ))}
@@ -826,7 +953,7 @@ export default function TimetablesWorkspace() {
              {/* Lignes Heures */}
              {HOURS.map(hour => (
                <div key={hour} className="grid grid-cols-[100px_repeat(6,1fr)]">
-                  <div className="p-4 border-r border-b border-gray-100 flex items-center justify-center bg-white sticky left-0 z-10">
+                  <div className="p-4 border-r border-b border-gray-100 flex items-center justify-center bg-white">
                     <span className="text-xs font-black text-gray-400">{hour}:00</span>
                   </div>
                   {DAYS.map(day => (
@@ -837,6 +964,7 @@ export default function TimetablesWorkspace() {
           </div>
         </div>
       </div>
+      </div>{/* /flex row */}
 
       <FormModal
         isOpen={modal === 'add-entry'}
@@ -846,24 +974,89 @@ export default function TimetablesWorkspace() {
       >
         <div className="space-y-4 p-4">
           <p className="text-sm text-gray-500 mb-4">Remplissez les informations pour ajouter un nouveau créneau à l'emploi du temps.</p>
-          {/* Formulaire simplifié pour passer le type-check, à enrichir ultérieurement avec un vrai form handler */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Classe</label>
-              <select className="w-full p-2 border rounded-lg" defaultValue={viewMode === 'class' ? selectedId || '' : ''}>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Classe *</label>
+              <select
+                className="w-full p-2 border rounded-lg"
+                value={entryForm.classId || (viewMode === 'class' ? selectedId || '' : '')}
+                onChange={(e) => setEntryForm(f => ({ ...f, classId: e.target.value }))}
+              >
+                <option value="">— Sélectionner —</option>
                 {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Enseignant</label>
-              <select className="w-full p-2 border rounded-lg" defaultValue={viewMode === 'teacher' ? selectedId || '' : ''}>
+              <select
+                className="w-full p-2 border rounded-lg"
+                value={entryForm.teacherId || (viewMode === 'teacher' ? selectedId || '' : '')}
+                onChange={(e) => setEntryForm(f => ({ ...f, teacherId: e.target.value }))}
+              >
+                <option value="">— Sélectionner —</option>
                 {teachers.map(t => <option key={t.teacherId} value={t.teacherId}>{t.teacher.lastName} {t.teacher.firstName}</option>)}
               </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Salle</label>
+              <select
+                className="w-full p-2 border rounded-lg"
+                value={entryForm.roomId}
+                onChange={(e) => setEntryForm(f => ({ ...f, roomId: e.target.value }))}
+              >
+                <option value="">— Aucune —</option>
+                {rooms.map(r => <option key={r.id} value={r.id}>{r.name} ({r.code})</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Jour *</label>
+              <select
+                className="w-full p-2 border rounded-lg"
+                value={entryForm.dayOfWeek}
+                onChange={(e) => setEntryForm(f => ({ ...f, dayOfWeek: parseInt(e.target.value) }))}
+              >
+                <option value={1}>Lundi</option>
+                <option value={2}>Mardi</option>
+                <option value={3}>Mercredi</option>
+                <option value={4}>Jeudi</option>
+                <option value={5}>Vendredi</option>
+                <option value={6}>Samedi</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Heure début *</label>
+              <input
+                type="time"
+                className="w-full p-2 border rounded-lg"
+                value={entryForm.startTime}
+                onChange={(e) => setEntryForm(f => ({ ...f, startTime: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Heure fin *</label>
+              <input
+                type="time"
+                className="w-full p-2 border rounded-lg"
+                value={entryForm.endTime}
+                onChange={(e) => setEntryForm(f => ({ ...f, endTime: e.target.value }))}
+              />
             </div>
           </div>
           <div className="flex justify-end gap-3 mt-6">
             <button onClick={() => setModal('none')} className="px-4 py-2 text-sm font-bold text-gray-500">Annuler</button>
-            <button onClick={() => handleAddEntry({})} className="px-4 py-2 text-sm font-bold bg-indigo-600 text-white rounded-lg">Enregistrer</button>
+            <button
+              onClick={() => handleAddEntry({
+                classId: entryForm.classId || (viewMode === 'class' ? selectedId : ''),
+                teacherId: entryForm.teacherId || (viewMode === 'teacher' ? selectedId : ''),
+                roomId: entryForm.roomId || null,
+                dayOfWeek: entryForm.dayOfWeek,
+                startTime: entryForm.startTime,
+                endTime: entryForm.endTime,
+              })}
+              className="px-4 py-2 text-sm font-bold bg-indigo-600 text-white rounded-lg"
+            >
+              Enregistrer
+            </button>
           </div>
         </div>
       </FormModal>

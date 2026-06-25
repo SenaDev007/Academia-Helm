@@ -196,8 +196,27 @@ export default function SubjectsWorkspace() {
   // Filtre par niveau scolaire sur le tableau catalogue
   const [filterLevelId, setFilterLevelId] = useState<string>('ALL');
 
+  /** Noms des niveaux actifs (depuis /api/school-levels) en uppercase pour matching */
+  const activeLevelNames = useMemo(() => {
+    return schoolLevels.map((l: any) => (l.code || l.label || '').toUpperCase());
+  }, [schoolLevels]);
+
+  /** Vérifie si un niveau (par nom/code) est actif */
+  const isLevelActive = useCallback((levelName: string | undefined | null): boolean => {
+    if (!levelName) return true;
+    if (activeLevelNames.length === 0) return true;
+    const name = levelName.toUpperCase();
+    return activeLevelNames.some(
+      (active: string) => name.includes(active) || active.includes(name),
+    );
+  }, [activeLevelNames]);
+
   const filteredClasses = useMemo(() => {
     return classes.filter(c => {
+      // Filtrer par niveau actif (Paramètres > Structure)
+      const classLevelName = (c as any).level?.name || (c as any).level?.label;
+      if (!isLevelActive(classLevelName)) return false;
+
       if (filterClassLevelId && c.levelId !== filterClassLevelId && c.level?.id !== filterClassLevelId) {
         return false;
       }
@@ -206,7 +225,7 @@ export default function SubjectsWorkspace() {
       }
       return true;
     });
-  }, [classes, filterClassLevelId, filterClassSeriesId]);
+  }, [classes, filterClassLevelId, filterClassSeriesId, isLevelActive]);
 
   // Modal state
   const [modal, setModal] = useState<'none' | 'create-subject' | 'edit-subject' | 'mass-assignment'>('none');
@@ -254,20 +273,34 @@ export default function SubjectsWorkspace() {
     return key ? DEFAULT_SUBJECTS_CATALOGUE[key] ?? [] : [];
   }, [selectedLevelObj]);
 
-  /** Matières filtrées par niveau + recherche textuelle pour le tableau */
+  /** Séries filtrées par niveaux actifs (le secondaire doit être actif) */
+  const filteredSeries = useMemo(() => {
+    const secondaryActive = activeLevelNames.some((n: string) => n.includes('SECONDAIRE'));
+    if (!secondaryActive) return [];
+    return series;
+  }, [series, activeLevelNames]);
+
+  /** Matières filtrées par niveau actif + niveau sélectionné + recherche textuelle */
   const filteredSubjects = useMemo(() => {
-    return subjects.filter((s) => {
+    return subjects.filter((s: any) => {
+      // 1. Filtrer par niveau actif (Paramètres > Structure)
+      const subjectLevelName = s.schoolLevel?.name || s.schoolLevel?.label || s.schoolLevel?.code;
+      if (!isLevelActive(subjectLevelName)) return false;
+
+      // 2. Filtrer par recherche textuelle
       const matchesSearch =
         s.name.toLowerCase().includes(search.toLowerCase()) ||
         s.code.toLowerCase().includes(search.toLowerCase()) ||
         (s.abbreviation ?? '').toLowerCase().includes(search.toLowerCase());
+
+      // 3. Filtrer par niveau sélectionné (chip)
       const matchesLevel =
         filterLevelId === 'ALL' ||
         s.schoolLevel?.id === filterLevelId ||
         s.schoolLevelId === filterLevelId;
       return matchesSearch && matchesLevel;
     });
-  }, [subjects, search, filterLevelId]);
+  }, [subjects, search, filterLevelId, isLevelActive]);
 
   // Réinitialiser la sélection quand le niveau change ou quand on ferme le modal
   useEffect(() => {
@@ -286,16 +319,18 @@ export default function SubjectsWorkspace() {
     if (!academicYear?.id) return;
     setLoading(true);
     try {
+      let data: Subject[];
       if (bilingualEnabled) {
         // Mode bilingue : on filtre côté backend par la langue du track courant.
         const params = new URLSearchParams({ academicYearId: academicYear.id });
         if (bilingualEnabled) params.append('language', currentTrack);
-        const data = await pedagogyFetch<Subject[]>(`/api/subjects?${params.toString()}`);
-        setSubjects(Array.isArray(data) ? data : []);
+        const result = await pedagogyFetch<Subject[]>(`/api/subjects?${params.toString()}`);
+        data = Array.isArray(result) ? result : [];
       } else {
-        const data = await pedagogyService.getSubjects(academicYear.id);
-        setSubjects(data || []);
+        const result = await pedagogyService.getSubjects(academicYear.id);
+        data = Array.isArray(result) ? result : [];
       }
+      setSubjects(data);
     } catch (e) {
       console.error(e);
     } finally {
@@ -449,7 +484,7 @@ export default function SubjectsWorkspace() {
     }
     try {
       if (modal === 'create-subject') {
-        await pedagogyService.createSubject({
+        const created = await pedagogyService.createSubject({
           academicYearId: academicYear?.id,
           schoolLevelId: subjectForm.schoolLevelId,
           code: subjectForm.code.trim(),
@@ -460,6 +495,26 @@ export default function SubjectsWorkspace() {
           description: subjectForm.description,
           ...(bilingualEnabled && subjectForm.language ? { language: subjectForm.language } : {}),
         });
+        // ─── Insertion optimiste ──
+        // createEntityOffline met la matière dans l'outbox (sync async).
+        // On l'ajoute immédiatement au state local pour qu'elle apparaisse
+        // dans le catalogue sans attendre la synchronisation serveur.
+        if (created) {
+          const optimisticSubject = {
+            id: created.id || `temp-${Date.now()}`,
+            academicYearId: academicYear?.id,
+            schoolLevelId: subjectForm.schoolLevelId,
+            code: subjectForm.code.trim(),
+            name: subjectForm.name.trim(),
+            abbreviation: subjectForm.abbreviation.trim() || undefined,
+            coefficient: Number(subjectForm.coefficient) || 1.0,
+            weeklyHours: Number(subjectForm.weeklyHours) || 0,
+            description: subjectForm.description,
+            schoolLevel: schoolLevels.find((l) => l.id === subjectForm.schoolLevelId) || null,
+            ...(bilingualEnabled && subjectForm.language ? { language: subjectForm.language } : {}),
+          } as any;
+          setSubjects(prev => [optimisticSubject, ...prev] as any);
+        }
         toast({
           title: "Succès",
           description: "La matière a été créée.",
@@ -474,6 +529,17 @@ export default function SubjectsWorkspace() {
           description: subjectForm.description,
           ...(bilingualEnabled ? { language: subjectForm.language || null } : {}),
         });
+        // Mise à jour optimiste
+        setSubjects((prev: any) => prev.map((s: any) => s.id === subjectForm.id ? {
+          ...s,
+          code: subjectForm.code.trim(),
+          name: subjectForm.name.trim(),
+          abbreviation: subjectForm.abbreviation.trim() || undefined,
+          coefficient: Number(subjectForm.coefficient) || 1.0,
+          weeklyHours: Number(subjectForm.weeklyHours) || 0,
+          description: subjectForm.description,
+          ...(bilingualEnabled ? { language: subjectForm.language || null } : {}),
+        } : s));
         toast({
           title: "Succès",
           description: "La matière a été mise à jour.",
@@ -504,9 +570,10 @@ export default function SubjectsWorkspace() {
     const bulkWeeklyHours = Number(subjectForm.weeklyHours) ?? 0;
     let created = 0;
     let skipped = 0;
+    const optimisticSubjects: any[] = [];
     for (const suggestion of toCreate) {
       try {
-        await pedagogyService.createSubject({
+        const createdEntity = await pedagogyService.createSubject({
           academicYearId: academicYear.id,
           schoolLevelId: subjectForm.schoolLevelId,
           code: suggestion.code,
@@ -517,9 +584,28 @@ export default function SubjectsWorkspace() {
           ...(bilingualEnabled && subjectForm.language ? { language: subjectForm.language } : {}),
         });
         created++;
+        // Insertion optimiste
+        if (createdEntity) {
+          optimisticSubjects.push({
+            id: createdEntity.id || `temp-${Date.now()}-${suggestion.code}`,
+            academicYearId: academicYear.id,
+            schoolLevelId: subjectForm.schoolLevelId,
+            code: suggestion.code,
+            name: suggestion.name,
+            abbreviation: suggestion.abbreviation,
+            coefficient: bulkCoefficient,
+            weeklyHours: bulkWeeklyHours,
+            schoolLevel: schoolLevels.find((l) => l.id === subjectForm.schoolLevelId) || null,
+            ...(bilingualEnabled && subjectForm.language ? { language: subjectForm.language } : {}),
+          });
+        }
       } catch {
         skipped++;
       }
+    }
+    // Ajouter toutes les matières créées au state local immédiatement
+    if (optimisticSubjects.length > 0) {
+      setSubjects(prev => [...optimisticSubjects, ...prev] as any);
     }
     setBulkSaving(false);
     setSelectedSuggestions(new Set());
@@ -815,7 +901,7 @@ export default function SubjectsWorkspace() {
                         : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'
                     )}
                   >
-                    Tous ({subjects.length})
+                    Tous ({filteredSubjects.length})
                   </button>
                   {schoolLevels.map((level) => {
                     const count = subjects.filter(
@@ -942,7 +1028,7 @@ export default function SubjectsWorkspace() {
                           <div className="max-w-xs mx-auto space-y-2">
                             <BookOpen className="w-8 h-8 text-slate-300 mx-auto" />
                             <p className="text-sm font-medium">
-                              {subjects.length === 0
+                              {filteredSubjects.length === 0
                                 ? "Aucune matière n'est définie pour cette année scolaire."
                                 : `Aucune matière pour le niveau sélectionné.`
                               }
@@ -1121,14 +1207,14 @@ export default function SubjectsWorkspace() {
                            </div>
                          </td>
                        </tr>
-                     ) : classes.length === 0 ? (
+                     ) : filteredClasses.length === 0 ? (
                        <tr>
                          <td colSpan={5} className="py-20 text-center text-slate-500">
                            Aucune classe disponible pour cette année scolaire.
                          </td>
                        </tr>
                      ) : (
-                       classes.map((c) => {
+                       filteredClasses.map((c) => {
                          const classSubjects = classSubjectsMap[c.id] || [];
                          const totalHours = classSubjects.reduce(
                            (sum: number, cs: any) => sum + (cs.weeklyHours || 0),
@@ -1225,14 +1311,14 @@ export default function SubjectsWorkspace() {
                      </tr>
                    </thead>
                    <tbody>
-                     {subjects.length === 0 ? (
+                     {filteredSubjects.length === 0 ? (
                        <tr>
                          <td colSpan={5} className="py-20 text-center text-slate-500">
                            Aucune matière disponible pour associer un programme.
                          </td>
                        </tr>
                      ) : (
-                       subjects.map((s) => {
+                       filteredSubjects.map((s) => {
                          const latestProgram = s.programs && s.programs.length > 0 ? s.programs[0] : null;
                          const isApproved = !!latestProgram?.approvedAt;
 
@@ -1669,7 +1755,7 @@ export default function SubjectsWorkspace() {
                   className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500/20"
                 >
                   <option value="">Toutes les séries</option>
-                  {series.map(s => (
+                  {filteredSeries.map(s => (
                     <option key={s.id} value={s.id}>{s.name} {s.description ? `— ${s.description}` : ''}</option>
                   ))}
                 </select>

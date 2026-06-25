@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 const API_URL = getApiBaseUrlForRoutes();
@@ -17,7 +17,7 @@ export async function GET(
   const { id } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(`${API_URL}/api/rooms/${id}`, {
+    const response = await fetch(normalizeApiUrl(`${API_URL}/rooms/${id}`), {
       headers,
       cache: 'no-store',
     });
@@ -49,16 +49,26 @@ export async function PUT(
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
 
-    const response = await fetch(`${API_URL}/api/rooms/${id}`, {
-      method: 'PATCH',
+    const response = await fetch(normalizeApiUrl(`${API_URL}/rooms/${id}`), {
+      method: 'PUT',
       headers,
       body: JSON.stringify(body),
       cache: 'no-store',
     });
 
     if (!response.ok) {
+      // Forward the actual backend error message for better debugging
+      const errorText = await response.text();
+      let errorMessage = 'Failed to update room';
+      try {
+        const errorData = JSON.parse(errorText);
+        errorMessage = errorData.message || errorData.error || errorMessage;
+      } catch {
+        if (errorText.trim()) errorMessage = errorText.substring(0, 200);
+      }
+      console.error('Room update error:', response.status, errorMessage);
       return NextResponse.json(
-        { error: 'Failed to update room' },
+        { error: errorMessage, message: errorMessage },
         { status: response.status }
       );
     }
@@ -68,7 +78,7 @@ export async function PUT(
   } catch (error) {
     console.error('Error updating room:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', message: 'Internal server error' },
       { status: 500 }
     );
   }
@@ -81,15 +91,25 @@ export async function DELETE(
   const { id } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(`${API_URL}/api/rooms/${id}`, {
+    const response = await fetch(normalizeApiUrl(`${API_URL}/rooms/${id}`), {
       method: 'DELETE',
       headers,
       cache: 'no-store',
     });
 
     if (!response.ok) {
+      // Forward the actual backend error message for better debugging
+      const errorText = await response.text();
+      let errorMessage = 'Failed to delete room';
+      try {
+        const errorData = JSON.parse(errorText);
+        errorMessage = errorData.message || errorData.error || errorMessage;
+      } catch {
+        if (errorText.trim()) errorMessage = errorText.substring(0, 200);
+      }
+      console.error('Room delete error:', response.status, errorMessage);
       return NextResponse.json(
-        { error: 'Failed to delete room' },
+        { error: errorMessage, message: errorMessage },
         { status: response.status }
       );
     }
@@ -99,7 +119,7 @@ export async function DELETE(
   } catch (error) {
     console.error('Error deleting room:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', message: 'Internal server error' },
       { status: 500 }
     );
   }

@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { getMessageText } from '@/lib/messages/system-messages';
 import { getFadeMotion, getModalMotion } from '@/lib/motion/presets';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
+import FloatingEduParticles from '@/components/ui/FloatingEduParticles';
 
 export interface LogoutConfirmationModalProps {
   isOpen: boolean;
@@ -52,14 +53,16 @@ export function LogoutConfirmationModal({
           transition={fadeMotion.transition}
         >
           <motion.div
-            className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 border border-blue-100"
+            className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 border border-blue-100 relative overflow-hidden"
             initial={modalMotion.initial}
             animate={modalMotion.animate}
             exit={modalMotion.exit}
             transition={modalMotion.transition}
           >
+            {/* Particules éducatives flottantes — variant dark pour fond blanc */}
+            <FloatingEduParticles count={10} opacityMultiplier={1.5} variant="dark" />
             {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 relative z-10">
               <div className="flex items-center space-x-3">
                 <div className="h-10 w-10 rounded-full bg-orange-100 flex items-center justify-center">
                   <LogOut className="h-5 w-5 text-orange-600" />
@@ -78,7 +81,7 @@ export function LogoutConfirmationModal({
             </div>
 
             {/* Content */}
-            <div className="p-6">
+            <div className="p-6 relative z-10">
               <p className="text-gray-900 mb-2">
                 {getMessageText('logout.confirmation.title')}
               </p>
@@ -88,7 +91,7 @@ export function LogoutConfirmationModal({
             </div>
 
             {/* Actions */}
-            <div className="flex items-center justify-end space-x-3 p-6 border-t border-gray-200">
+            <div className="flex items-center justify-end space-x-3 p-6 border-t border-gray-200 relative z-10">
               <Button
                 variant="outline"
                 onClick={onCancel}

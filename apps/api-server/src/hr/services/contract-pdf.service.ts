@@ -133,8 +133,9 @@ export class ContractPdfService {
     contract: any;
   }> {
     // 1. Charger le contrat complet
-    // NOTE: employeeCNSS relation may not exist if Prisma client is outdated.
-    // We try with the full include first, and fall back to a simpler query if it fails.
+    // NOTE: Certaines relations/colonnes peuvent ne pas exister en base si les
+    // migrations n'ont pas été appliquées. On essaie d'abord avec les includes
+    // complets, puis on fallback vers des requêtes de plus en plus simples.
     let contract: any;
     try {
       contract = await this.prisma.contract.findFirst({
@@ -147,9 +148,8 @@ export class ContractPdfService {
         },
       });
     } catch (prismaErr: any) {
-      // P2022 = column does not exist, P2009 = validation error (unknown field/relation)
-      if (prismaErr?.code === 'P2022' || prismaErr?.code === 'P2009' || prismaErr?.message?.includes('column') || prismaErr?.message?.includes('does not exist')) {
-        this.logger.warn(`Full include query failed (likely missing column/relation), falling back to simpler query: ${prismaErr.message}`);
+      this.logger.warn(`Full include query failed, trying without employeeCNSS: ${prismaErr?.message}`);
+      try {
         contract = await this.prisma.contract.findFirst({
           where: { id: contractId, tenantId },
           include: {
@@ -159,22 +159,49 @@ export class ContractPdfService {
             template: true,
           },
         });
-      } else {
-        throw prismaErr;
+      } catch (prismaErr2: any) {
+        this.logger.warn(`Second query failed, trying minimal includes: ${prismaErr2?.message}`);
+        // Dernier recours : requête minimale sans aucune jointure potentiellement manquante
+        contract = await this.prisma.contract.findFirst({
+          where: { id: contractId, tenantId },
+          include: {
+            staff: true,
+          },
+        });
       }
     }
 
     if (!contract) throw new NotFoundException(`Contrat ${contractId} introuvable`);
 
     // 1b. Charger les données complètes de l'école depuis SchoolSettings / TenantIdentityProfile
-    const schoolSettings = await this.prisma.schoolSettings.findFirst({
-      where: { tenantId },
-    });
-    const identityProfile = await this.prisma.tenantIdentityProfile.findFirst({
-      where: { tenantId, isActive: true },
-      orderBy: { version: 'desc' },
-    });
-    const school = contract.tenant?.schools || await this.prisma.school.findFirst({ where: { tenantId } });
+    // Wrap dans try/catch : si une colonne manque (ex: feexpayShopId), on fallback vers null
+    let schoolSettings: any = null;
+    try {
+      schoolSettings = await this.prisma.schoolSettings.findFirst({
+        where: { tenantId },
+      });
+    } catch (ssErr: any) {
+      this.logger.warn(`SchoolSettings query failed, continuing without it: ${ssErr?.message}`);
+    }
+
+    let identityProfile: any = null;
+    try {
+      identityProfile = await this.prisma.tenantIdentityProfile.findFirst({
+        where: { tenantId, isActive: true },
+        orderBy: { version: 'desc' },
+      });
+    } catch (ipErr: any) {
+      this.logger.warn(`TenantIdentityProfile query failed, continuing without it: ${ipErr?.message}`);
+    }
+
+    let school: any = contract.tenant?.schools || null;
+    if (!school) {
+      try {
+        school = await this.prisma.school.findFirst({ where: { tenantId } });
+      } catch (schoolErr: any) {
+        this.logger.warn(`School query failed, continuing without it: ${schoolErr?.message}`);
+      }
+    }
 
     // Priorité : SchoolSettings > TenantIdentityProfile > School > Tenant
     const schoolName = schoolSettings?.schoolName || identityProfile?.schoolName || school?.name || contract.tenant?.name || 'L\'École';
@@ -1110,16 +1137,38 @@ export class ContractPdfService {
   }
 
   private async renderPdf(html: string): Promise<Buffer> {
+    // ─── Configuration du rendu PDF ──
+    // On utilise 'domcontentloaded' au lieu de 'networkidle0' pour éviter
+    // les timeouts quand des images externes (logo école) mettent trop de
+    // temps à charger ou sont inaccessibles depuis le conteneur serverless.
+    // On ajoute un petit délai après le chargement du DOM pour laisser les
+    // images locales (data URLs) et les styles se stabiliser.
+    const pdfOptions = {
+      format: 'A4' as const,
+      printBackground: true,
+      margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' },
+    };
+
+    const setContent = async (page: any) => {
+      // 'domcontentloaded' = attend que le DOM soit parsé (pas les images externes)
+      await page.setContent(html, {
+        waitUntil: 'domcontentloaded',
+        timeout: 30000, // 30s max pour le setContent
+      });
+      // Petit délai (500ms) pour laisser les fonts et data URLs se charger
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    };
+
+    const generateFromPage = async (page: any): Promise<Buffer> => {
+      await setContent(page);
+      const pdf = await page.pdf(pdfOptions);
+      return Buffer.from(pdf);
+    };
+
     try {
       const { page } = await this.puppeteerPool.acquirePage();
       try {
-        await page.setContent(html, { waitUntil: 'networkidle0' });
-        const pdf = await page.pdf({
-          format: 'A4',
-          printBackground: true,
-          margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' },
-        });
-        return Buffer.from(pdf);
+        return await generateFromPage(page);
       } finally {
         await this.puppeteerPool.releasePage(page);
       }
@@ -1131,13 +1180,7 @@ export class ContractPdfService {
         this.logger.log('Browser pool reset, retrying PDF generation...');
         const { page } = await this.puppeteerPool.acquirePage();
         try {
-          await page.setContent(html, { waitUntil: 'networkidle0' });
-          const pdf = await page.pdf({
-            format: 'A4',
-            printBackground: true,
-            margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' },
-          });
-          return Buffer.from(pdf);
+          return await generateFromPage(page);
         } finally {
           await this.puppeteerPool.releasePage(page);
         }

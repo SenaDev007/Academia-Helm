@@ -17,6 +17,7 @@ import {
 } from '@nestjs/common';
 import { RoomsPrismaService } from './rooms-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { TenantGuard } from '../common/guards/tenant.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import {
   CreateRoomDto,
@@ -27,7 +28,7 @@ import {
 } from './dto/supplementary-dtos';
 
 @Controller('rooms')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, TenantGuard)
 export class RoomsPrismaController {
   constructor(private readonly roomsService: RoomsPrismaService) {}
 

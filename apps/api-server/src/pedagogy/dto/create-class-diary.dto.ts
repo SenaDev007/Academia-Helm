@@ -27,7 +27,7 @@ export class CreateClassDiaryDto {
   /** Required by Prisma schema */
   @IsUUID()
   @IsNotEmpty()
-  schoolLevelId: string;
+  @IsOptional() @IsString() schoolLevelId?: string;
 
   /** Frontend may send content (legacy) — can be mapped to notes in service */
   @IsString()

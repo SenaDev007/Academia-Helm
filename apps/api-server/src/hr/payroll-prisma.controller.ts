@@ -239,6 +239,38 @@ export class PayrollPrismaController {
     return this.payrollService.getPaymentStatus(payrollItemId, tid);
   }
 
+  /**
+   * Valide manuellement le paiement d'un salarié (paiement en espèces / hors FeexPay).
+   *
+   * Utilisé quand l'école a payé en cash ou par virement et veut marquer la ligne
+   * comme payée sans passer par FeexPay (en cas de panne électronique, ou paiement
+   * physique direct).
+   *
+   * POST /hr/payroll/items/:id/manual-validate
+   * Body: { academicYearId, note? }
+   */
+  @Post('items/:id/manual-validate')
+  async manualValidatePayment(
+    @GetTenant() tenant: any,
+    @Param('id') payrollItemId: string,
+    @Body() body: { academicYearId: string; note?: string },
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    if (!body?.academicYearId) {
+      throw new BadRequestException('academicYearId requis dans le body');
+    }
+    return this.payrollService.manualValidatePayment(
+      payrollItemId,
+      tid,
+      body.academicYearId,
+      body.note,
+    );
+  }
+
   // ──────────────────────────────────────────────────────────────────────────
   // TAUX CNSS
   // ──────────────────────────────────────────────────────────────────────────

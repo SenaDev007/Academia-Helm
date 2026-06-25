@@ -92,12 +92,12 @@ export default function TeacherTasksWorkspace() {
     if (!academicYear?.id) return;
     try {
       const selectedClass = classes.find(c => c.id === data.classId);
-      const schoolLevelId = selectedClass?.schoolLevelId || schoolLevel?.id || "default-level";
+      const schoolLevelId = selectedClass?.schoolLevelId || schoolLevel?.id || undefined;
 
       await pedagogyService.createHomeworkEntry({
         ...data,
         academicYearId: academicYear.id,
-        schoolLevelId,
+        ...(schoolLevelId ? { schoolLevelId } : {}),
         dueDate: new Date(data.dueDate).toISOString(),
         maxScore: data.maxScore ? parseFloat(data.maxScore) : undefined
       });

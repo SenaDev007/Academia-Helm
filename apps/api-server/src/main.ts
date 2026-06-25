@@ -985,32 +985,303 @@ async function bootstrap() {
     logger.warn(`CMS tables fallback warning: ${cmsTablesErr.message}`);
   }
 
+  // ─── Department managerId FK migration: Teacher → Staff + remove @unique ──
+  // The Department.managerId originally referenced Teacher.id with @unique,
+  // but the frontend sends Staff IDs. We change the FK to reference Staff.id
+  // and remove the unique constraint so one person can manage multiple departments
+  // (context: in Africa, one person can hold multiple positions).
+  // This is idempotent — safe to run multiple times.
+  try {
+    const prisma = app.get(PrismaService);
+    // Drop old FK constraint (departments_managerId_fkey → teachers.id)
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "departments" DROP CONSTRAINT IF EXISTS "departments_managerId_fkey"`,
+    ).catch(() => {});
+    // Drop unique constraint on managerId (allows one person → multiple departments)
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "departments" DROP CONSTRAINT IF EXISTS "departments_managerId_key"`,
+    ).catch(() => {});
+    // Add new FK constraint → staff.id with ON DELETE SET NULL
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "departments" ADD CONSTRAINT "departments_managerId_fkey"
+       FOREIGN KEY ("managerId") REFERENCES "staff"("id") ON DELETE SET NULL`,
+    ).catch(() => {});
+    logger.log('✅ Department.managerId FK migrated: Teacher → Staff (unique constraint removed)');
+  } catch (deptFkErr: any) {
+    logger.warn(`Department FK migration warning: ${deptFkErr.message}`);
+  }
+
+  // ─── Rooms table — add missing columns + ensure related tables exist (idempotent) ──
+  // The Room model and related tables may not have all columns in the production DB
+  // if migrations weren't applied. This adds them safely.
+  try {
+    const prisma = app.get(PrismaService);
+
+    // 1. Ensure rooms table columns
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "rooms" ADD COLUMN IF NOT EXISTS "schoolLevelId" TEXT`,
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "rooms" ADD COLUMN IF NOT EXISTS "equipment" JSONB NOT NULL DEFAULT '[]'::jsonb`,
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "rooms" ADD COLUMN IF NOT EXISTS "status" TEXT NOT NULL DEFAULT 'ACTIVE'`,
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "rooms" ADD COLUMN IF NOT EXISTS "description" TEXT`,
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "rooms" ADD COLUMN IF NOT EXISTS "createdBy" TEXT`,
+    ).catch(() => {});
+
+    // 2. Ensure room_allocations table exists
+    await prisma.$executeRawUnsafe(
+      `CREATE TABLE IF NOT EXISTS "room_allocations" (
+        "id" TEXT NOT NULL,
+        "tenantId" TEXT NOT NULL,
+        "academicYearId" TEXT NOT NULL,
+        "roomId" TEXT NOT NULL,
+        "allocationType" TEXT NOT NULL,
+        "referenceId" TEXT,
+        "startTime" TIMESTAMP(3) NOT NULL,
+        "endTime" TIMESTAMP(3) NOT NULL,
+        "status" TEXT NOT NULL DEFAULT 'ACTIVE',
+        "notes" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "room_allocations_pkey" PRIMARY KEY ("id")
+      )`,
+    ).catch(() => {});
+
+    // 3. Ensure room_maintenances table exists
+    await prisma.$executeRawUnsafe(
+      `CREATE TABLE IF NOT EXISTS "room_maintenances" (
+        "id" TEXT NOT NULL,
+        "tenantId" TEXT NOT NULL,
+        "roomId" TEXT NOT NULL,
+        "startDate" TIMESTAMP(3) NOT NULL,
+        "endDate" TIMESTAMP(3),
+        "reason" TEXT,
+        "isActive" BOOLEAN NOT NULL DEFAULT true,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "room_maintenances_pkey" PRIMARY KEY ("id")
+      )`,
+    ).catch(() => {});
+
+    // 4. Ensure room_schedules table exists
+    await prisma.$executeRawUnsafe(
+      `CREATE TABLE IF NOT EXISTS "room_schedules" (
+        "id" TEXT NOT NULL,
+        "tenantId" TEXT NOT NULL,
+        "academicYearId" TEXT NOT NULL,
+        "roomId" TEXT NOT NULL,
+        "dayOfWeek" INTEGER NOT NULL,
+        "startTime" TEXT NOT NULL,
+        "endTime" TEXT NOT NULL,
+        "classId" TEXT,
+        "subjectId" TEXT,
+        "isActive" BOOLEAN NOT NULL DEFAULT true,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "room_schedules_pkey" PRIMARY KEY ("id")
+      )`,
+    ).catch(() => {});
+
+    // 5. Ensure room_reservations table exists
+    await prisma.$executeRawUnsafe(
+      `CREATE TABLE IF NOT EXISTS "room_reservations" (
+        "id" TEXT NOT NULL,
+        "tenantId" TEXT NOT NULL,
+        "academicYearId" TEXT NOT NULL,
+        "roomId" TEXT NOT NULL,
+        "requestedBy" TEXT,
+        "purpose" TEXT,
+        "startTime" TIMESTAMP(3) NOT NULL,
+        "endTime" TIMESTAMP(3) NOT NULL,
+        "status" TEXT NOT NULL DEFAULT 'PENDING',
+        "notes" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "room_reservations_pkey" PRIMARY KEY ("id")
+      )`,
+    ).catch(() => {});
+
+    // 6. Ensure timetable_entries has roomId column (for room detach on delete)
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "timetable_entries" ADD COLUMN IF NOT EXISTS "roomId" TEXT`,
+    ).catch(() => {});
+
+    logger.log('✅ Rooms table columns + related tables ensured (room_allocations, room_maintenances, room_schedules, room_reservations, timetable_entries.roomId)');
+  } catch (roomsColsErr: any) {
+    logger.warn(`Rooms columns migration warning: ${roomsColsErr.message}`);
+  }
+
+  // ─── Contract PDF — ensure missing columns in employment_contracts, school_settings, staff ──
+  // The contract PDF generation loads Contract + Staff + SchoolSettings + TenantIdentityProfile.
+  // If any column is missing in the production DB, Prisma throws "colonne inconnue".
+  // This adds all potentially missing columns idempotently.
+  try {
+    const prisma = app.get(PrismaService);
+
+    // 1. employment_contracts — schoolLevelId column (added to schema but may not be in DB)
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "employment_contracts" ADD COLUMN IF NOT EXISTS "schoolLevelId" TEXT`,
+    ).catch(() => {});
+
+    // 2. school_settings — feexpayShopId, feexpayApiKey (added for FeexPay integration)
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "school_settings" ADD COLUMN IF NOT EXISTS "feexpayShopId" TEXT`,
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "school_settings" ADD COLUMN IF NOT EXISTS "feexpayApiKey" TEXT`,
+    ).catch(() => {});
+
+    // 3. staff — ensure all columns referenced by contract PDF exist
+    // (bankDetails, mobileMoneyNumber, mobileMoneyOperator, etc.)
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "bankDetails" JSONB`,
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "mobileMoneyNumber" TEXT`,
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "mobileMoneyOperator" TEXT`,
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "contractType" TEXT`,
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "cnssNumber" TEXT`,
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "ifNumber" TEXT`,
+    ).catch(() => {});
+
+    // 4. Ensure employee_cnss table exists
+    await prisma.$executeRawUnsafe(
+      `CREATE TABLE IF NOT EXISTS "employee_cnss" (
+        "id" TEXT NOT NULL,
+        "tenantId" TEXT NOT NULL,
+        "staffId" TEXT NOT NULL,
+        "cnssNumber" TEXT,
+        "affiliationDate" DATE,
+        "isActive" BOOLEAN NOT NULL DEFAULT true,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "employee_cnss_pkey" PRIMARY KEY ("id"),
+        CONSTRAINT "employee_cnss_staffId_key" UNIQUE ("staffId")
+      )`,
+    ).catch(() => {});
+
+    logger.log('✅ Contract PDF columns ensured (employment_contracts.schoolLevelId, school_settings.feexpay*, staff.bankDetails/mobileMoney*, employee_cnss)');
+  } catch (contractColsErr: any) {
+    logger.warn(`Contract PDF columns migration warning: ${contractColsErr.message}`);
+  }
+
   await app.listen(port, '0.0.0.0');
 
   // ─── Auto-sync HR teachers → Pedagogy on startup ──
   // One-time backfill: for each tenant, sync existing Staff TEACHER records
   // to the Pedagogy Teacher table so they appear in class assignments.
-  try {
-    const { StaffPrismaService } = await import('./hr/staff-prisma.service');
-    const prisma = app.get('PrismaService') as any;
-    const staffService = app.get(StaffPrismaService) as any;
-    if (staffService && typeof staffService.syncTeachersToPedagogy === 'function') {
-      const tenants = await prisma.tenant.findMany({ select: { id: true, name: true } });
-      logger.log(`Auto-syncing ${tenants.length} tenant(s) teachers to pedagogy...`);
-      for (const t of tenants) {
-        try {
-          const result = await staffService.syncTeachersToPedagogy(t.id);
-          if (result.created > 0 || result.updated > 0) {
-            logger.log(`[${t.name}] Teacher sync: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped`);
+  // Run in background (non-blocking) to avoid slowing startup.
+  setTimeout(async () => {
+    try {
+      const { PrismaService } = await import('./database/prisma.service');
+      const { StaffPrismaService } = await import('./hr/staff-prisma.service');
+      const prisma = app.get(PrismaService);
+      const staffService = app.get(StaffPrismaService);
+      if (staffService && typeof staffService.syncTeachersToPedagogy === 'function') {
+        const tenants = await prisma.tenant.findMany({ select: { id: true, name: true } });
+        logger.log(`Auto-syncing ${tenants.length} tenant(s) teachers to pedagogy...`);
+        for (const t of tenants) {
+          try {
+            const result = await staffService.syncTeachersToPedagogy(t.id);
+            if (result.created > 0 || result.updated > 0) {
+              logger.log(`[${t.name}] Teacher sync: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped`);
+            }
+          } catch (err: any) {
+            logger.warn(`[${t.name}] Teacher sync failed: ${err.message}`);
           }
-        } catch (err: any) {
-          logger.warn(`[${t.name}] Teacher sync failed: ${err.message}`);
         }
       }
+    } catch (err: any) {
+      logger.warn(`Teacher auto-sync skipped: ${err.message}`);
     }
-  } catch (err: any) {
-    logger.warn(`Teacher auto-sync skipped: ${err.message}`);
-  }
+  }, 5000); // 5 second delay to let the app fully start
+
+  // ─── Cleanup test data from pedagogy module ──
+  // One-time cleanup: delete all test levels, cycles, classes, subjects, rooms
+  setTimeout(async () => {
+    try {
+      const { PrismaService } = await import('./database/prisma.service');
+      const prisma = app.get(PrismaService);
+      const tenants = await prisma.tenant.findMany({ select: { id: true, name: true } });
+      for (const t of tenants) {
+        try {
+          // Delete test levels
+          const testLevels = await prisma.academicLevel.findMany({
+            where: { tenantId: t.id, name: { contains: 'test', mode: 'insensitive' } },
+            select: { id: true, name: true },
+          });
+          for (const l of testLevels) {
+            await prisma.academicLevel.delete({ where: { id: l.id } }).catch(() => {});
+          }
+
+          // Delete test cycles
+          const testCycles = await prisma.academicCycle.findMany({
+            where: { tenantId: t.id, name: { contains: 'test', mode: 'insensitive' } },
+            select: { id: true, name: true },
+          });
+          for (const c of testCycles) {
+            await prisma.academicCycle.delete({ where: { id: c.id } }).catch(() => {});
+          }
+
+          // Delete test classes
+          const testClasses = await prisma.academicClass.findMany({
+            where: {
+              tenantId: t.id,
+              OR: [
+                { name: { contains: 'test', mode: 'insensitive' } },
+                { code: { contains: 'test', mode: 'insensitive' } },
+              ],
+            },
+            select: { id: true, name: true },
+          });
+          for (const c of testClasses) {
+            await prisma.academicClass.delete({ where: { id: c.id } }).catch(() => {});
+          }
+
+          // Delete ALL subjects (fresh start)
+          const deletedSubjects = await prisma.subject.deleteMany({ where: { tenantId: t.id } });
+
+          // Delete test rooms
+          const testRooms = await prisma.room.findMany({
+            where: {
+              tenantId: t.id,
+              OR: [
+                { roomName: { contains: 'test', mode: 'insensitive' } },
+                { roomCode: { contains: 'test', mode: 'insensitive' } },
+              ],
+            },
+            select: { id: true, roomName: true },
+          });
+          for (const r of testRooms) {
+            await prisma.room.delete({ where: { id: r.id } }).catch(() => {});
+          }
+
+          const total = testLevels.length + testCycles.length + testClasses.length + deletedSubjects.count + testRooms.length;
+          if (total > 0) {
+            logger.log(`[${t.name}] Cleanup: ${testLevels.length} levels, ${testCycles.length} cycles, ${testClasses.length} classes, ${deletedSubjects.count} subjects, ${testRooms.length} rooms deleted`);
+          }
+        } catch (err: any) {
+          logger.warn(`[${t.name}] Cleanup failed: ${err.message}`);
+        }
+      }
+    } catch (err: any) {
+      logger.warn(`Cleanup skipped: ${err.message}`);
+    }
+  }, 8000); // 8 second delay (after teacher sync)
 
   // Log memory info on startup
   const memUsage = process.memoryUsage();

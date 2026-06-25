@@ -1176,8 +1176,8 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden px-2 py-6 sm:px-4 sm:py-10 lg:px-6"
       style={{ background: 'linear-gradient(135deg, #f0f4ff 0%, #e8edf7 50%, #f5f0ff 100%)' }}>
 
-      {/* ── Particules académiques animées ── */}
-      <AcademicParticles />
+      {/* ── Particules académiques animées (mixed = visibles sur fond blanc ET navy) ── */}
+      <AcademicParticles variant="mixed" />
 
       {/* ── Background blobs — palette Helm ── */}
       <div className="pointer-events-none absolute inset-0 opacity-40" aria-hidden>

@@ -21,6 +21,7 @@ import {
   Send,
   Loader2,
   Wallet,
+  HandCoins,
 } from 'lucide-react';
 import { ModuleHeader } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -192,6 +193,45 @@ export default function PayrollDetailPage() {
       });
     } finally {
       setPayingAll(false);
+    }
+  };
+
+  // ─── Validation manuelle du paiement (espèces / hors FeexPay) ──
+  const handleManualValidate = async (itemId: string, staffName: string, amount: number) => {
+    if (!academicYear?.id) {
+      toast({ variant: 'error', title: 'Année académique requise', description: 'Sélectionnez une année académique active.' });
+      return;
+    }
+    const note = window.prompt(
+      `Validation manuelle du paiement de ${formatCurrency(amount)} à ${staffName}.\n\n` +
+      `Cette option est utilisée quand le paiement a été fait en espèces ou par virement ` +
+      `(hors FeexPay Mobile Money).\n\n` +
+      `Ajoutez une note (optionnel) :`,
+      'Paiement en espèces',
+    );
+    // user cancelled
+    if (note === null) return;
+
+    try {
+      setPayingItem(itemId);
+      const result = await hrFetch<any>(hrUrl(`payroll/items/${itemId}/manual-validate`, { tenantId: tenant.id }), {
+        method: 'POST',
+        body: { academicYearId: academicYear.id, note: note || undefined },
+      });
+      toast({
+        variant: 'success',
+        title: 'Paiement validé manuellement',
+        description: result.message || `${formatCurrency(amount)} validé pour ${staffName} (espèces)`,
+      });
+      fetchPayroll();
+    } catch (err: any) {
+      toast({
+        variant: 'error',
+        title: 'Erreur de validation',
+        description: err?.message || 'Impossible de valider le paiement',
+      });
+    } finally {
+      setPayingItem(null);
     }
   };
 
@@ -449,6 +489,7 @@ export default function PayrollDetailPage() {
                       {/* Bouton Paiement individuel via FeexPay */}
                       {(period.status === 'CALCULATED' || period.status === 'VALIDATED') &&
                        payroll.salaryPayment?.status !== 'COMPLETED' && (
+                        <>
                         <button
                           onClick={() => handlePaySalary(payroll.id, `${payroll.staff?.firstName} ${payroll.staff?.lastName}`, Number(payroll.netSalary))}
                           disabled={payingItem === payroll.id}
@@ -458,6 +499,16 @@ export default function PayrollDetailPage() {
                           {payingItem === payroll.id ? <Loader2 size={14} className="animate-spin" /> : <Wallet size={14} />}
                           Payer
                         </button>
+                        <button
+                          onClick={() => handleManualValidate(payroll.id, `${payroll.staff?.firstName} ${payroll.staff?.lastName}`, Number(payroll.netSalary))}
+                          disabled={payingItem === payroll.id}
+                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-all disabled:opacity-50 border border-gray-200"
+                          title="Valider manuellement (paiement en espèces / hors FeexPay)"
+                        >
+                          {payingItem === payroll.id ? <Loader2 size={14} className="animate-spin" /> : <HandCoins size={14} />}
+                          Valider
+                        </button>
+                        </>
                       )}
                       <button onClick={() => handlePreviewPayslip(payroll.id)} className="p-2 text-gray-400 hover:text-emerald-600 transition-colors" title="Aperçu Bulletin">
                         <FileText size={18} />

@@ -136,43 +136,43 @@ export function ConfirmDialog({
     <Dialog open={state.open} onOpenChange={(open) => !open && onCancel()}>
       <DialogContent
         showCloseButton={false}
-        className="sm:max-w-[420px] p-0 overflow-hidden"
+        className="sm:max-w-[440px] p-0 overflow-hidden rounded-2xl ring-1 ring-slate-200/60 shadow-xl"
       >
-        {/* Header with icon and title */}
-        <div className="px-6 pt-6 pb-4">
+        {/* ─── Header section with icon + title + description ─── */}
+        <div className="px-7 pt-7 pb-5">
           <div className="flex items-start gap-4">
             <div
               className={cn(
-                'flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-xl ring-1',
+                'flex-shrink-0 flex items-center justify-center w-14 h-14 rounded-2xl ring-1',
                 config.iconBg,
                 config.ringColor
               )}
             >
-              <Icon className={cn('w-6 h-6', config.iconColor)} />
+              <Icon className={cn('w-7 h-7', config.iconColor)} strokeWidth={2} />
             </div>
-            <div className="flex-1 min-w-0">
-              <DialogTitle className="text-base font-semibold text-slate-900">
+            <div className="flex-1 min-w-0 pt-0.5">
+              <DialogTitle className="text-lg font-bold text-slate-900 leading-tight">
                 {state.title || 'Confirmation'}
               </DialogTitle>
-              <DialogDescription className="mt-1.5 text-sm text-slate-600 leading-relaxed">
+              <DialogDescription className="mt-2 text-sm text-slate-600 leading-relaxed">
                 {state.description}
               </DialogDescription>
               {state.details && (
-                <p className="mt-2 text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                <div className="mt-3 text-xs text-slate-600 bg-slate-50 rounded-lg px-3.5 py-2.5 border border-slate-200/70 leading-relaxed">
                   {state.details}
-                </p>
+                </div>
               )}
             </div>
           </div>
         </div>
 
-        {/* Footer with action buttons */}
-        <DialogFooter className="border-t border-slate-100 px-6 py-4">
+        {/* ─── Footer with action buttons — well separated and padded ─── */}
+        <div className="flex items-center justify-end gap-3 px-7 py-5 bg-slate-50/80 border-t border-slate-200/60">
           <Button
             variant="outline"
             onClick={onCancel}
             disabled={state.resolving}
-            className="min-w-[100px]"
+            className="min-w-[110px] h-10 font-medium rounded-lg border-slate-300 text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors"
           >
             {state.cancelLabel}
           </Button>
@@ -181,15 +181,20 @@ export function ConfirmDialog({
             onClick={onConfirm}
             disabled={state.resolving}
             className={cn(
-              'min-w-[100px] gap-2',
-              state.type === 'danger' &&
-                'bg-red-600 hover:bg-red-700 text-white focus-visible:ring-red-500/30'
+              'min-w-[110px] h-10 font-semibold rounded-lg gap-2 transition-all',
+              state.type === 'danger'
+                ? 'bg-red-600 hover:bg-red-700 text-white shadow-sm shadow-red-200 focus-visible:ring-red-500/30'
+                : state.type === 'warning'
+                ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-sm shadow-amber-200'
+                : state.type === 'success'
+                ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm shadow-emerald-200'
+                : 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-200'
             )}
           >
             {state.resolving && <Loader2 className="h-4 w-4 animate-spin" />}
             {state.resolving ? 'Traitement...' : state.confirmLabel}
           </Button>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );

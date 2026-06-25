@@ -11,6 +11,12 @@
  * Icônes utilisées (toutes liées au domaine académique) :
  * GraduationCap, BookOpen, Lightbulb, Beaker, FlaskConical, Palette,
  * Music, Calculator, Globe, Languages, Microscope, Atom
+ *
+ * Variant prop contrôle la couleur des icônes pour la visibilité sur
+ * n'importe quel fond :
+ *   - 'light' : icônes blanches + dorées (pour fonds sombres/navy)
+ *   - 'dark'  : icônes navy + bleues (pour fonds clairs/blancs)
+ *   - 'mixed' : alternance light + dark (pour fonds mixtes)
  * ============================================================================
  */
 
@@ -25,6 +31,12 @@ const ICONS = [
   Palette, Music, Calculator, Globe, Languages, Atom, PenTool,
 ];
 
+// Color palettes per variant
+const LIGHT_COLORS = ['#ffffff', '#f5b335', '#FFD700', '#f0f4ff'];
+const DARK_COLORS = ['#0b2f73', '#1d4fa5', '#1A2BA6', '#15378a'];
+
+export type AcademicParticleVariant = 'light' | 'dark' | 'mixed';
+
 interface Particle {
   icon: typeof GraduationCap;
   x: number;
@@ -34,9 +46,14 @@ interface Particle {
   duration: number;
   delay: number;
   drift: number;
+  color: string;
 }
 
-export default function AcademicParticles() {
+interface AcademicParticlesProps {
+  variant?: AcademicParticleVariant;
+}
+
+export default function AcademicParticles({ variant = 'dark' }: AcademicParticlesProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Générer les particules une seule fois (mémoïsation via useRef)
@@ -44,15 +61,29 @@ export default function AcademicParticles() {
   if (particlesRef.current.length === 0) {
     const count = 24; // nombre de particules
     for (let i = 0; i < count; i++) {
+      // Resolve color based on variant
+      let color: string;
+      if (variant === 'light') {
+        color = LIGHT_COLORS[i % LIGHT_COLORS.length];
+      } else if (variant === 'dark') {
+        color = DARK_COLORS[i % DARK_COLORS.length];
+      } else {
+        // mixed: alternate between light and dark palettes
+        color = i % 2 === 0
+          ? LIGHT_COLORS[i % LIGHT_COLORS.length]
+          : DARK_COLORS[i % DARK_COLORS.length];
+      }
+
       particlesRef.current.push({
         icon: ICONS[i % ICONS.length],
         x: Math.random() * 100, // position horizontale (%)
         y: Math.random() * 100, // position verticale (%)
         size: 16 + Math.random() * 32, // taille (px)
-        opacity: 0.03 + Math.random() * 0.08, // opacité (très léger)
+        opacity: 0.05 + Math.random() * 0.10, // opacité (visible on both bg)
         duration: 15 + Math.random() * 25, // durée animation (s)
         delay: Math.random() * 10, // délai (s)
         drift: (Math.random() - 0.5) * 60, // dérive horizontale (px)
+        color,
       });
     }
   }
@@ -76,11 +107,11 @@ export default function AcademicParticles() {
             }}
           >
             <Icon
-              className="text-[#1A2BA6]"
               style={{
                 width: `${p.size}px`,
                 height: `${p.size}px`,
                 opacity: p.opacity,
+                color: p.color,
               }}
             />
           </div>

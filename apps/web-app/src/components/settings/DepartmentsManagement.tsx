@@ -12,6 +12,8 @@
  *   - Organigram (organizational chart)
  *   - Staff assignments
  *
+ * Includes a suggested departments list for a well-structured school.
+ *
  * Endpoints:
  *   GET    /api/departments              — list
  *   POST   /api/departments              — create
@@ -21,9 +23,44 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { Building2, Plus, Edit2, Trash2, Loader2, Save, X } from 'lucide-react';
+import { Building2, Plus, Edit2, Trash2, Loader2, Save, X, Lightbulb, Check } from 'lucide-react';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 
 const PRIMARY = '#1A2BA6';
+
+/**
+ * Liste de départements suggérés pour une école bien structurée.
+ * Couvre les départements administratifs, pédagogiques et de support.
+ */
+const SUGGESTED_DEPARTMENTS = [
+  // Direction & Administration
+  { name: 'Direction Générale', description: 'Direction générale de l\'établissement — Promoteur/Directeur' },
+  { name: 'Administration', description: 'Secrétariat, comptabilité et gestion administrative' },
+  { name: 'Comptabilité et Finances', description: 'Gestion financière, paie et budget' },
+  { name: 'Ressources Humaines', description: 'Gestion du personnel et recrutement' },
+
+  // Pédagogique — Maternelle
+  { name: 'Département Maternelle', description: 'Coordination pédagogique de la section maternelle' },
+
+  // Pédagogique — Primaire
+  { name: 'Département Primaire', description: 'Coordination pédagogique du cycle primaire (CI au CM2)' },
+
+  // Pédagogique — Secondaire
+  { name: 'Département Sciences', description: 'Mathématiques, Physique, SVT, Informatique' },
+  { name: 'Département Lettres et Langues', description: 'Français, Anglais, Espagnol, Philosophie' },
+  { name: 'Département Sciences Humaines', description: 'Histoire-Géographie, EMC, SES' },
+  { name: 'Département EPS', description: 'Éducation Physique et Sportive' },
+  { name: 'Département Arts', description: 'Arts plastiques, Musique, Théâtre' },
+
+  // Vie Scolaire
+  { name: 'Vie Scolaire', description: 'Surveillance, discipline et suivi des élèves' },
+  { name: 'Orientation', description: 'Conseil d\'orientation et accompagnement' },
+
+  // Support
+  { name: 'Documentation (CDI)', description: 'Centre de documentation et d\'information' },
+  { name: 'Maintenance', description: 'Entretien et maintenance des locaux' },
+  { name: 'Sécurité', description: 'Sécurité et accueil des visiteurs' },
+];
 
 interface Department {
   id: string;
@@ -38,6 +75,7 @@ interface StaffOption {
   firstName: string;
   lastName: string;
   position?: string | null;
+  roleType?: string | null;
 }
 
 interface Props {
@@ -46,6 +84,7 @@ interface Props {
 }
 
 export default function DepartmentsManagement({ tenantId, showToast }: Props) {
+  const confirmDialog = useConfirmDialog();
   const [departments, setDepartments] = useState<Department[]>([]);
   const [staffList, setStaffList] = useState<StaffOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,7 +111,12 @@ export default function DepartmentsManagement({ tenantId, showToast }: Props) {
 
   const loadStaff = useCallback(async () => {
     try {
-      const qs = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
+      // includePromoter=true : le promoteur DOIT apparaître dans la liste des responsables
+      // (il peut être responsable de la "Direction Générale")
+      const params = new URLSearchParams();
+      if (tenantId) params.set('tenantId', tenantId);
+      params.set('includePromoter', 'true');
+      const qs = `?${params.toString()}`;
       const res = await fetch(`/api/hr/staff${qs}`, { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
@@ -82,6 +126,7 @@ export default function DepartmentsManagement({ tenantId, showToast }: Props) {
           firstName: s.firstName || '',
           lastName: s.lastName || '',
           position: s.position || null,
+          roleType: s.roleType || null,
         })));
       }
     } catch {
@@ -116,6 +161,30 @@ export default function DepartmentsManagement({ tenantId, showToast }: Props) {
         showToast('success', 'Département créé avec succès');
         setForm({ name: '', description: '', managerId: '' });
         setShowForm(false);
+        loadDepartments();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showToast('error', data?.message || 'Erreur lors de la création');
+      }
+    } catch (err) {
+      showToast('error', 'Erreur réseau');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCreateSuggested = async (suggested: { name: string; description: string }) => {
+    setSaving(true);
+    try {
+      const qs = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
+      const res = await fetch(`/api/departments${qs}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ name: suggested.name, description: suggested.description }),
+      });
+      if (res.ok) {
+        showToast('success', `Département "${suggested.name}" créé`);
         loadDepartments();
       } else {
         const data = await res.json().catch(() => ({}));
@@ -164,7 +233,11 @@ export default function DepartmentsManagement({ tenantId, showToast }: Props) {
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Voulez-vous vraiment supprimer le département "${name}" ?`)) return;
+    const ok = await confirmDialog.danger(
+      `Voulez-vous vraiment supprimer le département "${name}" ? Cette action est irréversible.`,
+      'Supprimer le département',
+    );
+    if (!ok) return;
     try {
       const qs = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
       const res = await fetch(`/api/departments/${id}${qs}`, {
@@ -199,6 +272,12 @@ export default function DepartmentsManagement({ tenantId, showToast }: Props) {
     setShowForm(false);
   };
 
+  // Filter out already-created departments from suggestions
+  const existingNames = departments.map((d) => d.name.toLowerCase());
+  const availableSuggestions = SUGGESTED_DEPARTMENTS.filter(
+    (s) => !existingNames.includes(s.name.toLowerCase()),
+  );
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -231,6 +310,31 @@ export default function DepartmentsManagement({ tenantId, showToast }: Props) {
           Configurez ici la liste des départements de votre établissement.
         </p>
       </div>
+
+      {/* Suggested departments */}
+      {availableSuggestions.length > 0 && !showForm && (
+        <div className="bg-blue-50 rounded-lg border border-blue-200 p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Lightbulb className="w-5 h-5 text-blue-600" />
+            <h4 className="text-sm font-bold text-blue-900">Départements suggérés</h4>
+            <span className="text-xs text-blue-600 ml-auto">Cliquez pour ajouter rapidement</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {availableSuggestions.map((s) => (
+              <button
+                key={s.name}
+                onClick={() => handleCreateSuggested(s)}
+                disabled={saving}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-blue-200 rounded-lg text-xs font-medium text-blue-700 hover:bg-blue-100 transition disabled:opacity-50"
+                title={s.description}
+              >
+                <Plus className="w-3 h-3" />
+                {s.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Form (create/edit) */}
       {showForm && (
@@ -270,10 +374,13 @@ export default function DepartmentsManagement({ tenantId, showToast }: Props) {
                 <option value="">— Aucun responsable désigné —</option>
                 {staffList.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.firstName} {s.lastName}{s.position ? ` (${s.position})` : ''}
+                    {s.firstName} {s.lastName}{s.position ? ` (${s.position})` : ''}{s.roleType === 'PROMOTEUR' ? ' — Promoteur' : ''}
                   </option>
                 ))}
               </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Le promoteur de l'école peut être désigné comme responsable (ex: Direction Générale).
+              </p>
             </div>
             <div className="flex gap-2 pt-2">
               <button
@@ -301,7 +408,7 @@ export default function DepartmentsManagement({ tenantId, showToast }: Props) {
           <div className="p-12 text-center">
             <Building2 className="w-10 h-10 text-gray-300 mx-auto mb-3" />
             <p className="text-sm text-gray-500 font-medium mb-1">Aucun département configuré</p>
-            <p className="text-xs text-gray-400">Créez votre premier département pour l'utiliser dans les offres d'emploi et l'organigramme.</p>
+            <p className="text-xs text-gray-400">Créez votre premier département ou utilisez les suggestions ci-dessus.</p>
           </div>
         ) : (
           <table className="w-full">
@@ -321,7 +428,14 @@ export default function DepartmentsManagement({ tenantId, showToast }: Props) {
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{dept.name}</td>
                     <td className="px-4 py-3 text-sm text-gray-600">{dept.description || '—'}</td>
                     <td className="px-4 py-3 text-sm text-gray-600">
-                      {manager ? `${manager.firstName} ${manager.lastName}` : '—'}
+                      {manager ? (
+                        <span>
+                          {manager.firstName} {manager.lastName}
+                          {manager.roleType === 'PROMOTEUR' && (
+                            <span className="ml-1 text-xs text-blue-600 font-bold">(Promoteur)</span>
+                          )}
+                        </span>
+                      ) : '—'}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <button
@@ -344,6 +458,9 @@ export default function DepartmentsManagement({ tenantId, showToast }: Props) {
           </table>
         )}
       </div>
+
+      {/* Modal de confirmation personnalisé */}
+      {confirmDialog.dialog}
     </div>
   );
 }

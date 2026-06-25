@@ -27,7 +27,7 @@ export class CreatePedagogicalMaterialDto {
 
   @IsString()
   @IsNotEmpty()
-  schoolLevelId: string;
+  @IsOptional() @IsString() schoolLevelId?: string;
 
   @IsString()
   @IsOptional()

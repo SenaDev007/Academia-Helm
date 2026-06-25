@@ -282,13 +282,14 @@ export class PayrollPrismaService {
     const amount = Number(item.netSalary);
     const motif = `Salaire ${item.payroll.month}/${item.payroll.year} — ${item.staff.firstName} ${item.staff.lastName}`;
 
-    // Appeler FeexPay
+    // Appeler FeexPay (payout depuis le compte de l'école, pas Academia Helm)
+    // Le tenantId permet au service de résoudre shopId + API key du tenant
     const result = await this.feexpayService.createPayout({
       amount,
       phoneNumber: momoInfo.number,
       operator: momoInfo.operator,
       motif,
-    });
+    }, undefined, tenantId);
 
     // Créer l'enregistrement SalaryPayment
     const salaryPayment = await this.prisma.salaryPayment.create({
@@ -427,7 +428,7 @@ export class PayrollPrismaService {
     // Si le paiement est PENDING et qu'on a une référence, vérifier le statut FeexPay
     if (payment.status === 'PENDING' && payment.reference) {
       try {
-        const feexpayStatus = await this.feexpayService.getPayoutStatus(payment.reference);
+        const feexpayStatus = await this.feexpayService.getPayoutStatus(payment.reference, tenantId);
         if (feexpayStatus.status === 'SUCCESSFUL') {
           await this.prisma.salaryPayment.update({
             where: { id: payment.id },
@@ -453,6 +454,84 @@ export class PayrollPrismaService {
       paymentDate: payment.paymentDate,
       amount: payment.amount,
       paymentMethod: payment.paymentMethod,
+    };
+  }
+
+  /**
+   * Valide manuellement le paiement d'un salarié (paiement en espèces / hors FeexPay).
+   *
+   * Utilisé quand l'école a payé en cash ou par virement et veut marquer la ligne
+   * comme payée sans passer par FeexPay.
+   *
+   * Étapes :
+   *   1. Charge le PayrollItem + vérifie statut CALCULATED/VALIDATED
+   *   2. Vérifie qu'aucun SalaryPayment COMPLETED n'existe déjà
+   *   3. Crée un SalaryPayment avec status=COMPLETED, paymentMethod=CASH
+   *   4. Met à jour le PayrollItem → status=PAID
+   */
+  async manualValidatePayment(
+    payrollItemId: string,
+    tenantId: string,
+    academicYearId: string,
+    note?: string,
+  ) {
+    const item = await this.prisma.payrollItem.findFirst({
+      where: { id: payrollItemId, tenantId },
+      include: { staff: true, payroll: true },
+    });
+
+    if (!item) {
+      throw new NotFoundException(`Ligne de paie ${payrollItemId} introuvable.`);
+    }
+
+    if (!['CALCULATED', 'VALIDATED', 'PAID'].includes(item.status)) {
+      throw new BadRequestException(
+        `La ligne doit être calculée ou validée avant paiement. Statut actuel: ${item.status}`,
+      );
+    }
+
+    // Vérifier qu'aucun paiement COMPLETED n'existe déjà
+    const existingPaid = await this.prisma.salaryPayment.findFirst({
+      where: { payrollItemId, status: 'COMPLETED' },
+    });
+    if (existingPaid) {
+      throw new BadRequestException(
+        `Cette ligne est déjà marquée comme payée (paiement ${existingPaid.id}).`,
+      );
+    }
+
+    // Créer le SalaryPayment (CASH, COMPLETED)
+    const salaryPayment = await this.prisma.salaryPayment.create({
+      data: {
+        ...prismaCreateDefaults(),
+        tenantId,
+        academicYearId,
+        payrollItemId,
+        staffId: item.staffId,
+        amount: item.netSalary,
+        paymentMethod: 'CASH',
+        paymentDate: new Date(),
+        status: 'COMPLETED',
+        notes: note
+          ? `Paiement manuel validé (espèces) — ${note}`
+          : `Paiement manuel validé (espèces) — ${new Date().toISOString()}`,
+      },
+    });
+
+    // Mettre à jour le PayrollItem → PAID
+    await this.prisma.payrollItem.update({
+      where: { id: payrollItemId },
+      data: { ...prismaUpdateDefaults(), status: 'PAID' },
+    });
+
+    this.logger.log(
+      `Manual payment validated for ${item.staff?.firstName} ${item.staff?.lastName}: amount=${item.netSalary} FCFA (cash)`,
+    );
+
+    return {
+      success: true,
+      salaryPaymentId: salaryPayment.id,
+      message: `Paiement manuel validé pour ${item.staff?.firstName} ${item.staff?.lastName} — ${item.netSalary} FCFA (espèces)`,
     };
   }
 

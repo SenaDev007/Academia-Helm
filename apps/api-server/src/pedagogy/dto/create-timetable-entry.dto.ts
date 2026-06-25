@@ -47,7 +47,7 @@ export class CreateTimetableEntryDto {
   /** Required by Prisma schema */
   @IsUUID()
   @IsNotEmpty()
-  schoolLevelId: string;
+  @IsOptional() @IsString() schoolLevelId?: string;
 
   /** Frontend may send timeSlotId */
   @IsUUID()

@@ -209,7 +209,7 @@ interface TalentPool {
   createdAt: string;
 }
 
-export function RecruitmentWorkspace() {
+export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'candidates' | 'interviews' | 'tests' | 'embauches' | 'talent_pool' } = {}) {
   const { tenant } = useModuleContext();
   const confirmDialog = useConfirmDialog();
   const router = useRouter();
@@ -237,7 +237,7 @@ export function RecruitmentWorkspace() {
     'REJETÉ': 'Rejeté',
   };
 
-  const [activeTab, setActiveTab] = useState<'jobs' | 'candidates' | 'interviews' | 'tests' | 'embauches' | 'talent_pool'>('jobs');
+  const [activeTab, setActiveTab] = useState<'jobs' | 'candidates' | 'interviews' | 'tests' | 'embauches' | 'talent_pool'>(initialTab || 'jobs');
   const [loading, setLoading] = useState(false);
 
   // Core data states

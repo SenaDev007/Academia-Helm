@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Smartphone } from 'lucide-react';
 import { ModuleHeader, SubModuleNavigation, ModuleContentArea } from '@/components/modules/blueprint';
 import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import NewPaymentModal from './NewPaymentModal';
+import { SchoolFeePaymentDialog } from './SchoolFeePaymentDialog';
 import { financeService } from '@/services/finance.service';
 import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
 import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
@@ -19,6 +20,7 @@ const METHOD_LABELS: Record<string, string> = {
   MOBILE_MONEY: 'Mobile Money',
   WIRE: 'Virement',
   FEDAPAY: 'Fedapay',
+  FEEXPAY: 'FeexPay',
 };
 
 export default function TransactionsContent() {
@@ -28,6 +30,7 @@ export default function TransactionsContent() {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [onlineModalOpen, setOnlineModalOpen] = useState(false);
 
   const loadTransactions = async () => {
     if (!academicYear?.id) return;
@@ -60,6 +63,20 @@ export default function TransactionsContent() {
     loadTransactions();
   };
 
+  const handleOnlineSuccess = () => {
+    setOnlineModalOpen(false);
+    loadTransactions();
+  };
+
+  // Build student list from accounts for the online payment dialog
+  const studentList = accounts
+    .filter((a) => a.student)
+    .map((a) => ({
+      id: a.studentId,
+      name: `${a.student.lastName} ${a.student.firstName}`,
+      schoolLevelId: a.student.schoolLevelId,
+    }));
+
   return (
     <div className="space-y-6">
       <ModuleHeader
@@ -67,10 +84,16 @@ export default function TransactionsContent() {
         description="Paiements avec reçu AH-YYYY-NNNNNN et imputation prioritaire."
         icon="finance"
         actions={
-          <Button onClick={() => setModalOpen(true)}>
-            <Plus className="w-4 h-4 mr-2" />
-            Nouveau paiement
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={() => setModalOpen(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              Nouveau paiement
+            </Button>
+            <Button variant="outline" onClick={() => setOnlineModalOpen(true)}>
+              <Smartphone className="w-4 h-4 mr-2" />
+              Encaisser en ligne
+            </Button>
+          </div>
         }
       />
       <SubModuleNavigation tabs={subModuleTabs} currentPath="/app/finance/payments" />
@@ -90,11 +113,11 @@ export default function TransactionsContent() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-gray-500">Chargement...</TableCell>
+                <TableCell colSpan={7} className="text-center text-gray-500">Chargement...</TableCell>
               </TableRow>
             ) : transactions.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-gray-500">Aucune transaction.</TableCell>
+                <TableCell colSpan={7} className="text-center text-gray-500">Aucune transaction.</TableCell>
               </TableRow>
             ) : (
               transactions.map((t) => (
@@ -126,6 +149,15 @@ export default function TransactionsContent() {
           accounts={accounts}
           onClose={() => setModalOpen(false)}
           onSuccess={handleSuccess}
+        />
+      )}
+      {onlineModalOpen && (
+        <SchoolFeePaymentDialog
+          isOpen={onlineModalOpen}
+          onClose={() => setOnlineModalOpen(false)}
+          onSuccess={handleOnlineSuccess}
+          students={studentList}
+          academicYearId={academicYear?.id}
         />
       )}
     </div>

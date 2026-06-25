@@ -153,11 +153,25 @@ const nextConfig = {
           { key: 'Access-Control-Allow-Origin', value: '*' },
         ],
       },
-      // ✅ Cache pour les assets statiques Next.js (_next/static)
+      // ✅ Cache pour les assets statiques Next.js (_next/static) — content-hashed
       {
         source: '/_next/static/:path*',
         headers: [
           { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+        ],
+      },
+      // ✅ ANTI-CACHE pour les pages HTML (évite "Failed to load chunk")
+      // Les pages HTML ne doivent JAMAIS être cachées — elles contiennent les
+      // références aux chunks qui changent à chaque déploiement.
+      {
+        source: '/(.*)',
+        has: [
+          { type: 'header', key: 'Content-Type', value: 'text/html' },
+        ],
+        headers: [
+          { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate, proxy-revalidate' },
+          { key: 'Pragma', value: 'no-cache' },
+          { key: 'Expires', value: '0' },
         ],
       },
       // Headers de sécurité globaux

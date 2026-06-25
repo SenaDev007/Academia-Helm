@@ -31,6 +31,8 @@ import FloatingEduParticles from '@/components/ui/FloatingEduParticles';
 import TenantAiChatbot from '@/components/portal/TenantAiChatbot';
 import TenantStructuredData from '@/components/portal/TenantStructuredData';
 import TenantRecruitmentBanner from '@/components/portal/TenantRecruitmentBanner';
+import { NotchNav } from '@/components/ui/notch-nav';
+import TenantFooter from '@/components/ui/footer-column';
 
 const NAVY = '#0b2f73';
 const BLUE = '#1d4fa5';
@@ -177,15 +179,21 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
               </div>
             </a>
 
-            {/* Navigation desktop */}
-            <nav className="hidden lg:flex items-center gap-1">
-              {navLinks.map((link) => (
-                <a key={link.href} href={link.href}
-                  className="px-3 py-2 text-sm font-medium text-blue-100/80 hover:text-white hover:bg-white/10 rounded-lg transition-all">
-                  {link.label}
-                </a>
-              ))}
-            </nav>
+            {/* Navigation desktop — NotchNav premium */}
+            <div className="hidden lg:block">
+              <NotchNav
+                items={navLinks.map(l => ({ value: l.label, label: l.label, href: l.href }))}
+                defaultValue="Accueil"
+                onNavigate={(href) => {
+                  if (href.startsWith('#')) {
+                    document.querySelector(href)?.scrollIntoView({ behavior: 'smooth' });
+                  } else {
+                    window.location.href = href;
+                  }
+                }}
+                ariaLabel="Navigation école"
+              />
+            </div>
 
             {/* Actions */}
             <div className="flex items-center gap-2">
@@ -461,43 +469,23 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       </section>
 
       {/* ═══ FOOTER ═══ */}
-      <footer id="contact" className="bg-[#091f4a] text-slate-400 pt-12 pb-6">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid md:grid-cols-3 gap-8 mb-8">
-            <div>
-              <div className="flex items-center gap-3 mb-4">
-                <LogoCircle logoUrl={schoolLogo} alt={schoolName} size={32} />
-                <h3 className="text-white font-bold text-sm">{schoolName}</h3>
-              </div>
-              {(website?.footerAboutText || schoolData?.slogan) && <p className="text-xs leading-relaxed">{website?.footerAboutText || schoolData?.slogan}</p>}
-            </div>
-            <div>
-              <h4 className="text-white font-bold mb-4 text-sm">Contact</h4>
-              <ul className="space-y-2 text-xs">
-                {(website?.contactAddress || schoolData?.address) && <li className="flex items-start gap-2"><MapPin size={14} className="shrink-0 mt-0.5" /> {website?.contactAddress || schoolData?.address}</li>}
-                {(website?.contactPhone || schoolData?.phone) && <li className="flex items-center gap-2"><Phone size={14} className="shrink-0" /> {website?.contactPhone || schoolData?.phone}</li>}
-                {website?.contactEmail && <li className="flex items-center gap-2"><Mail size={14} className="shrink-0" /> {website.contactEmail}</li>}
-              </ul>
-            </div>
-            {website?.socialLinks && Object.keys(website.socialLinks).length > 0 && (
-              <div>
-                <h4 className="text-white font-bold mb-4 text-sm">Suivez-nous</h4>
-                <div className="flex gap-3">
-                  {Object.entries(website.socialLinks).map(([platform, url]) => url ? (
-                    <a key={platform} href={url as string} target="_blank" rel="noopener noreferrer" className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors" title={platform}>
-                      <ExternalLink size={14} />
-                    </a>
-                  ) : null)}
-                </div>
-              </div>
-            )}
-          </div>
-          <div className="border-t border-white/10 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
-            <p className="text-xs">{website?.footerCopyrightText || `© ${new Date().getFullYear()} ${schoolName}. Tous droits réservés.`}</p>
-            <p className="text-xs flex items-center gap-1">Propulsé par <span className="font-bold text-white">Academia Helm</span></p>
-          </div>
-        </div>
-      </footer>
+      <TenantFooter
+        schoolName={schoolName}
+        schoolLogo={schoolLogo || undefined}
+        schoolAcronym={schoolData?.schoolAcronym || undefined}
+        schoolSlogan={schoolSlogan || undefined}
+        schoolAddress={website?.contactAddress || schoolData?.address || undefined}
+        schoolCity={schoolData?.city || undefined}
+        schoolPhone={website?.contactPhone || schoolData?.phone || undefined}
+        schoolEmail={website?.contactEmail || undefined}
+        contactEmail={website?.contactEmail || undefined}
+        contactPhone={website?.contactPhone || undefined}
+        contactAddress={website?.contactAddress || undefined}
+        footerAboutText={website?.footerAboutText || undefined}
+        footerCopyrightText={website?.footerCopyrightText || undefined}
+        socialLinks={website?.socialLinks || undefined}
+        navLinks={navLinks}
+      />
 
       {website?.aiEnabled && (
         <TenantAiChatbot tenantSlug={slug} welcomeMessage={website.aiWelcomeMessage || undefined} faqItems={websiteData?.faqItems || []} />

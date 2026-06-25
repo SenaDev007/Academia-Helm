@@ -22,16 +22,105 @@ import type { Metadata } from 'next';
 import { generateSEOMetadata, detectRequestHostname } from '@/lib/seo';
 
 /**
- * generateMetadata — utilise l'image OG tenant pour les sous-domaines d'écoles.
+ * generateMetadata — génère des meta tags dynamiques basés sur le tenant.
+ * Récupère la config du site institutionnel (TenantWebsite) pour :
+ *   - Titre SEO personnalisé
+ *   - Description SEO
+ *   - Mots-clés
+ *   - Open Graph image
+ *   - Canonical URL
  */
 export async function generateMetadata(): Promise<Metadata> {
   const hostname = await detectRequestHostname();
-  return generateSEOMetadata({
-    title: `Connexion — ${BRAND.name}`,
-    description: `Choisissez votre portail pour vous connecter à votre établissement sur ${BRAND.name}`,
-    hostname,
-    noIndex: false,
-  });
+
+  // Valeurs par défaut (fallback)
+  let title = `${BRAND.name} — Plateforme de pilotage éducatif`;
+  let description = 'Découvrez notre établissement scolaire et accédez à nos services en ligne.';
+  let keywords: string | undefined;
+  let ogImageUrl: string | undefined;
+  let canonicalUrl: string | undefined;
+
+  try {
+    const headersList = await headers();
+    const host = headersList.get('host') || headersList.get('x-forwarded-host') || '';
+    const parts = host.split(':').length > 1 ? host.split(':')[0].split('.') : host.split('.');
+
+    if (parts.length >= 3 && !isReservedSubdomain(parts[0])) {
+      const slug = parts[0];
+      const baseUrl = `https://${parts.join('.')}`;
+      canonicalUrl = baseUrl;
+
+      // Récupérer la config du site institutionnel
+      const apiBaseUrl = getApiBaseUrl();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      const response = await fetch(
+        `${apiBaseUrl}/tenant-website/public/${encodeURIComponent(slug)}`,
+        { cache: 'no-store', signal: controller.signal },
+      );
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const data = await response.json();
+        const website = data?.website;
+        const schoolName = data?.website?.heroTitle || '';
+
+        if (website?.seoMetaTitle) {
+          title = website.seoMetaTitle;
+        } else if (schoolName) {
+          title = `${schoolName} — Établissement scolaire`;
+        }
+
+        if (website?.seoMetaDescription) {
+          description = website.seoMetaDescription;
+        }
+
+        if (website?.seoKeywords) {
+          keywords = website.seoKeywords;
+        }
+
+        if (website?.seoOgImageUrl) {
+          ogImageUrl = website.seoOgImageUrl;
+        }
+      }
+    }
+  } catch {
+    // Fallback : utiliser les valeurs par défaut
+  }
+
+  return {
+    title,
+    description,
+    keywords: keywords ? keywords.split(',').map(k => k.trim()) : undefined,
+    alternates: {
+      canonical: canonicalUrl,
+    },
+    openGraph: {
+      title,
+      description,
+      type: 'website',
+      siteName: title.split('—')[0]?.trim() || BRAND.name,
+      ...(ogImageUrl ? { images: [{ url: ogImageUrl, width: 1200, height: 630 }] } : {}),
+      ...(canonicalUrl ? { url: canonicalUrl } : {}),
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
+      ...(ogImageUrl ? { images: [ogImageUrl] } : {}),
+    },
+    robots: {
+      index: true,
+      follow: true,
+      googleBot: {
+        index: true,
+        follow: true,
+        'max-image-preview': 'large',
+        'max-snippet': -1,
+      },
+    },
+  };
 }
 
 export default async function SchoolPortalPage() {

@@ -40,6 +40,7 @@ import { extractTenantSlug } from '@/lib/tenant/constants';
 import { type PortalType } from '@/lib/auth/role-portal-map';
 import FloatingEduParticles from '@/components/ui/FloatingEduParticles';
 import TenantAiChatbot from '@/components/portal/TenantAiChatbot';
+import TenantStructuredData from '@/components/portal/TenantStructuredData';
 
 const NAVY = '#0b2f73';
 const BLUE = '#1d4fa5';
@@ -166,6 +167,18 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Institut
 
   return (
     <div className="min-h-screen bg-white">
+      {/* ═══ DONNÉES STRUCTURÉES SCHEMA.ORG ═══ */}
+      <TenantStructuredData
+        schoolName={schoolName}
+        schoolLogo={schoolLogo || undefined}
+        schoolAddress={website?.contactAddress || schoolData?.address || undefined}
+        schoolPhone={website?.contactPhone || schoolData?.phone || undefined}
+        schoolEmail={website?.contactEmail || undefined}
+        schoolWebsite={typeof window !== 'undefined' ? window.location.origin : ''}
+        schoolSlogan={schoolSlogan || undefined}
+        schoolCity={schoolData?.city || undefined}
+        socialLinks={website?.socialLinks || undefined}
+      />
       {/* ═══ HEADER ═══ */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md shadow-sm border-b border-slate-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

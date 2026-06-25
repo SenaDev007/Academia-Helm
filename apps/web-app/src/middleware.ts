@@ -500,15 +500,13 @@ export async function middleware(request: NextRequest) {
   }
 
   // ── Route racine `/` avec sous-domaine d'école ──
-  // Si l'utilisateur accède à school.academiahelm.com/ sans session,
-  // on REWRITE (pas redirect) vers /school-portal pour afficher les options
-  // de connexion spécifiques à cette école.
-  // Utiliser rewrite au lieu de redirect évite les boucles de redirection
-  // si le client redirige vers / après une erreur de login.
+  // Si l'utilisateur accède à school.academiahelm.com/, on REWRITE (pas redirect)
+  // vers /school-portal pour afficher le site institutionnel de l'école.
+  // Le rewrite se fait QUEL QUE SOIT le statut de session — même si l'utilisateur
+  // a une session valide, on affiche le site institutionnel sur la racine.
+  // L'accès à /app/* reste possible avec la session.
   if (pathname === '/') {
-    if (subdomain && !user?.id) {
-      // Sur un sous-domaine sans session → school portal selector
-      // Utiliser rewrite pour éviter les boucles de redirection
+    if (subdomain) {
       const rewriteUrl = new URL('/school-portal', request.nextUrl.origin);
       return NextResponse.rewrite(rewriteUrl);
     }

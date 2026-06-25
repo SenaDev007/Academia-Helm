@@ -213,7 +213,9 @@ const schoolSubdomainPublicRoutes = [
   '/forgot-password',
   '/reset-password',
   '/school-portal',
+  '/school-portal/jobs',
   '/public/pre-enrollment',
+  '/jobs',
 ];
 
 /**

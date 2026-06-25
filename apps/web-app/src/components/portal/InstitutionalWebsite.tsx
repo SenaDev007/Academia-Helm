@@ -129,6 +129,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
     { label: 'Présentation', href: '#presentation' },
     { label: 'Actualités', href: '#actualites' },
     { label: 'Agenda', href: '#agenda' },
+    { label: 'Recrutement', href: '/jobs' },
     { label: 'Contact', href: '#contact' },
   ];
 
@@ -222,8 +223,13 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         </AnimatePresence>
       </header>
 
+      {/* ═══ BANDE RECRUTEMENT ═══ */}
+      <div className="pt-14 md:pt-16">
+        <TenantRecruitmentBanner tenantId={tenantId || undefined} tenantSlug={slug} />
+      </div>
+
       {/* ═══ HERO ═══ */}
-      <section id="hero" className="relative min-h-[560px] md:min-h-[640px] flex items-center justify-center pt-14 md:pt-16 overflow-hidden">
+      <section id="hero" className="relative min-h-[560px] md:min-h-[640px] flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0">
           {heroImage ? (
             <Image src={heroImage} alt={schoolName} fill priority className="object-cover" sizes="100vw" />

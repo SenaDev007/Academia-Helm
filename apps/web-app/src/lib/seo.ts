@@ -498,6 +498,7 @@ export function generateProductSchema() {
     manufacturer: {
       '@type': 'Organization',
       name: 'YEHI OR Tech',
+      url: 'https://yehiortech.com',
       sameAs: 'https://www.wikidata.org/wiki/Q140355900',
     },
     offers: [

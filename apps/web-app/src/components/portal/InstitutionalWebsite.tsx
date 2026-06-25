@@ -39,6 +39,7 @@ interface SchoolPortalInfo {
   name: string; slug: string; logoUrl: string | null; city: string | null;
   phone: string | null; address: string | null; primaryColor: string | null;
   secondaryColor: string | null; slogan: string | null; motto: string | null;
+  schoolAcronym?: string | null;
 }
 
 interface WebsiteData {
@@ -107,6 +108,8 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
 
   const website = websiteData?.website;
   const schoolName = schoolData?.name || 'Établissement Scolaire';
+  const schoolAcronym = schoolData?.schoolAcronym || null;
+  const schoolDisplayName = schoolAcronym || schoolName;
   const schoolLogo = schoolData?.logoUrl;
   const schoolSlogan = schoolData?.slogan || website?.heroSubtitle || '';
 
@@ -153,12 +156,17 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-14 md:h-16">
-            {/* Logo + Nom */}
+            {/* Logo + Nom (acronyme si disponible) */}
             <a href="#hero" className="flex items-center gap-3 shrink-0">
               <LogoCircle logoUrl={schoolLogo} alt={schoolName} size={36} />
               <div className="hidden sm:block">
-                <h1 className="text-sm md:text-base font-bold text-white leading-tight">{schoolName}</h1>
-                {schoolSlogan && <p className="text-[10px] text-amber-300/80 leading-tight">{schoolSlogan}</p>}
+                <h1 className="text-sm md:text-base font-bold text-white leading-tight">{schoolDisplayName}</h1>
+                {schoolAcronym && schoolName !== schoolAcronym && (
+                  <p className="text-[10px] text-amber-300/70 leading-tight truncate max-w-[180px]">{schoolName}</p>
+                )}
+                {!schoolAcronym && schoolSlogan && (
+                  <p className="text-[10px] text-amber-300/80 leading-tight">{schoolSlogan}</p>
+                )}
               </div>
             </a>
 
@@ -174,9 +182,9 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
 
             {/* Actions */}
             <div className="flex items-center gap-2">
-              <button onClick={() => handlePortalClick('PUBLIC')}
+              <button onClick={() => document.getElementById('portails')?.scrollIntoView({ behavior: 'smooth' })}
                 className="hidden md:inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold text-[#0b2f73] bg-[#f5b335] hover:bg-[#e09e1f] transition-all shadow-sm hover:shadow-md">
-                {heroCtaText} <ArrowRight size={14} />
+                Portails <ArrowRight size={14} />
               </button>
               <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 className="lg:hidden p-2 text-white">
@@ -198,9 +206,9 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
                     {link.label}
                   </a>
                 ))}
-                <button onClick={() => { setMobileMenuOpen(false); handlePortalClick('PUBLIC'); }}
+                <button onClick={() => { setMobileMenuOpen(false); document.getElementById('portails')?.scrollIntoView({ behavior: 'smooth' }); }}
                   className="block w-full text-left px-3 py-2 text-sm font-bold text-[#0b2f73] bg-[#f5b335] rounded-lg">
-                  {heroCtaText}
+                  Portails
                 </button>
               </div>
             </motion.nav>
@@ -416,7 +424,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       )}
 
       {/* ═══ ACCÈS PORTAILS ═══ */}
-      <section className="relative py-16 md:py-20 overflow-hidden" style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 60%, #091f4a 100%)` }}>
+      <section id="portails" className="relative py-16 md:py-20 overflow-hidden" style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 60%, #091f4a 100%)` }}>
         <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)` }} />
         <div className="absolute bottom-0 left-0 right-0 h-[2px]" style={{ background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)` }} />
         <FloatingEduParticles count={12} opacityMultiplier={1.2} variant="light" />

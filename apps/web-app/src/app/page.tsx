@@ -34,9 +34,9 @@ export async function generateMetadata(): Promise<Metadata> {
 
   const ogImageAbsolute = buildAbsoluteOGImageUrl(hostname);
 
-  const title = 'Academia Helm - Plateforme de pilotage éducatif';
+  const title = 'Academia Helm - Plateforme de pilotage éducatif | YEHI OR Tech';
   const description =
-    'Academia Helm — La plateforme de pilotage éducatif nouvelle génération. ERP scolaire complet : RH, paie, pédagogie, finances, examens, communication. Prenez le gouvernail de votre institution.';
+    'Academia Helm par YEHI OR Tech — La plateforme de pilotage éducatif nouvelle génération. ERP scolaire complet : RH, paie, pédagogie, finances, examens, communication. Basée à Parakou, Bénin. Prenez le gouvernail de votre institution.';
 
   return {
     title,
@@ -54,7 +54,7 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     keywords: [
       'Academia Helm',
-      'Academia Hub',
+      'YEHI OR Tech',
       'plateforme de pilotage éducatif',
       'logiciel école',
       'logiciel gestion école',
@@ -63,6 +63,7 @@ export async function generateMetadata(): Promise<Metadata> {
       'gestion établissement scolaire',
       'ORION IA éducation',
       'gestion scolaire Bénin',
+      'gestion scolaire Parakou',
       "gestion scolaire Afrique de l'Ouest",
       'logiciel école Afrique',
       'RH éducation',

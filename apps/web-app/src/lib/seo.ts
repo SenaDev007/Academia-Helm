@@ -324,8 +324,8 @@ export function generateOrganizationSchema() {
   return {
     '@context': 'https://schema.org',
     '@type': 'Organization',
-    name: BRAND.name,
-    alternateName: 'Academia Hub',
+    name: 'YEHI OR Tech',
+    alternateName: 'Academia Helm',
     url: siteUrl,
     logo: {
       '@type': 'ImageObject',
@@ -334,41 +334,44 @@ export function generateOrganizationSchema() {
       height: 512,
     },
     image: `${siteUrl}${BRAND.logoPath}`,
-    description: `${BRAND.description}. ${BRAND.slogan}.`,
+    description: `YEHI OR Tech — Éditeur de solutions numériques pour l'éducation en Afrique. ${BRAND.description}. ${BRAND.slogan}.`,
     slogan: BRAND.slogan,
     foundingDate: '2025',
     foundingLocation: {
       '@type': 'Place',
-      name: 'Cotonou, Bénin',
+      name: 'Parakou, Bénin',
     },
     address: {
       '@type': 'PostalAddress',
-      streetAddress: 'Cotonou',
-      addressLocality: 'Cotonou',
-      addressRegion: 'Littoral',
-      postalCode: '229',
+      streetAddress: 'Parakou',
+      addressLocality: 'Parakou',
+      addressRegion: 'Borgou',
+      postalCode: '03',
       addressCountry: 'BJ',
     },
+    telephone: '+2290141360803',
     contactPoint: [
       {
         '@type': 'ContactPoint',
         contactType: 'customer support',
+        telephone: '+2290141360803',
         email: 'support@academiahelm.com',
         availableLanguage: ['French', 'English'],
       },
       {
         '@type': 'ContactPoint',
         contactType: 'sales',
-        email: 'contact@academiahelm.com',
+        telephone: '+2290141360803',
+        email: 'contact@yehiortech.com',
         availableLanguage: ['French', 'English'],
       },
     ],
     sameAs: [
-      'https://facebook.com/academiahelm',
-      'https://linkedin.com/company/academiahelm',
-      'https://twitter.com/academiahelm',
-      'https://youtube.com/@academiahelm',
-      'https://www.instagram.com/academiahelm',
+      'https://facebook.com/yehiortech',
+      'https://linkedin.com/company/yehiortech',
+      'https://twitter.com/yehiortech',
+      'https://youtube.com/@yehiortech',
+      'https://www.instagram.com/yehiortech',
     ],
     knowsAbout: [
       'gestion scolaire',
@@ -390,6 +393,22 @@ export function generateOrganizationSchema() {
       { '@type': 'Country', name: 'Niger' },
       { '@type': 'Country', name: 'Afrique de l\'Ouest' },
     ],
+    makesOffer: {
+      '@type': 'Offer',
+      itemOffered: {
+        '@type': 'SoftwareApplication',
+        name: 'Academia Helm',
+        applicationCategory: 'EducationalApplication',
+        operatingSystem: 'Web',
+        description: `${BRAND.description}. ${BRAND.slogan}`,
+        url: siteUrl,
+      },
+    },
+    brand: {
+      '@type': 'Brand',
+      name: 'Academia Helm',
+      logo: `${siteUrl}${BRAND.logoPath}`,
+    },
   };
 }
 

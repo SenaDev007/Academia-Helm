@@ -62,7 +62,7 @@ const PORTAL_DEFS = [
 export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   const [schoolData, setSchoolData] = useState<SchoolPortalInfo | null>(schoolInfo || null);
   const [websiteData, setWebsiteData] = useState<WebsiteData | null>(null);
-  const [tenantId, setTenantId] = useState<string | null>(null);
+  const [tenantId, setTenantId] = useState<string | null>((schoolInfo as any)?.tenantId || (schoolInfo as any)?.id || null);
   const [isLoading, setIsLoading] = useState(!schoolInfo);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);

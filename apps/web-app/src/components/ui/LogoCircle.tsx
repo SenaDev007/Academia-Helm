@@ -45,12 +45,11 @@ export default function LogoCircle({
 }: LogoCircleProps) {
   const hasLogo = !!logoUrl;
   const displayAlt = alt || BRAND.name;
-  // Logo fills the entire circle size — no padding, no visible circle border
   const logoSize = size;
 
   return (
     <div className={`relative inline-flex ${className}`} style={{ width: size, height: size }}>
-      {/* Halo doré pulsant — subtile glow around the logo, no visible circle */}
+      {/* Halo doré pulsant */}
       {animated && (
         <div
           className="absolute inset-0 rounded-full pointer-events-none"
@@ -61,9 +60,9 @@ export default function LogoCircle({
         />
       )}
 
-      {/* Logo only — no circle background, no border, fills full size */}
+      {/* Cadre circulaire avec overflow hidden — masque les logos carrés */}
       <div
-        className="relative z-10 flex items-center justify-center"
+        className="relative z-10 flex items-center justify-center rounded-full overflow-hidden"
         style={{ width: size, height: size }}
       >
         {hasLogo ? (
@@ -72,7 +71,7 @@ export default function LogoCircle({
             alt={displayAlt}
             width={logoSize}
             height={logoSize}
-            className="object-contain"
+            className="object-cover"
             style={animated ? { animation: 'academiaPulse 3s ease-in-out infinite' } : undefined}
             priority
           />
@@ -82,7 +81,7 @@ export default function LogoCircle({
             alt={displayAlt}
             width={logoSize}
             height={logoSize}
-            className="object-contain"
+            className="object-cover"
             style={animated ? { animation: 'academiaPulse 3s ease-in-out infinite' } : undefined}
             priority
           />

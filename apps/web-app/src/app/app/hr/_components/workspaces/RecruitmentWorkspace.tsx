@@ -1330,7 +1330,8 @@ export function RecruitmentWorkspace() {
   return (
     <>
     <div className="space-y-6 pb-12">
-      {/* Cockpit Analytics HTIP (Tome 2 & 3) */}
+      {/* Cockpit Analytics HTIP (Tome 2 & 3) — masqué en mode initialTab (Embauche standalone) */}
+      {!initialTab && (
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {[
           { label: 'Offres Actives', value: totalJobs, sub: 'Recrutement ouvert', bg: 'bg-indigo-50/50 border-indigo-100/50' },
@@ -1349,8 +1350,10 @@ export function RecruitmentWorkspace() {
           </div>
         ))}
       </div>
+      )}
 
-      {/* Sub tabs header navigation */}
+      {/* Sub tabs header navigation — masqué en mode initialTab (Embauche standalone) */}
+      {!initialTab && (
       <div className="flex items-center justify-between border-b border-slate-200 pb-3">
         <div className="flex flex-wrap gap-2">
           {[
@@ -1387,6 +1390,7 @@ export function RecruitmentWorkspace() {
           Guide du processus
         </button>
       </div>
+      )}
 
       {loading ? (
         <div className="space-y-3">{[1, 2, 3].map((i) => <div key={i} className="h-20 bg-slate-50 animate-pulse rounded-xl" />)}</div>
@@ -3135,8 +3139,8 @@ export function RecruitmentWorkspace() {
     </div>
     {confirmDialog.dialog}
 
-    {/* ═══ Onboarding Guide Modal ═══ */}
-    {isGuideOpen && (
+    {/* ═══ Onboarding Guide Modal — masqué en mode initialTab (Embauche standalone) ═══ */}
+    {isGuideOpen && !initialTab && (
       <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setIsGuideOpen(false)}>
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 20 }}

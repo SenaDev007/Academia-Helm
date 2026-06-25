@@ -1033,6 +1033,10 @@ async function bootstrap() {
     await prisma.$executeRawUnsafe(
       `ALTER TABLE "rooms" ADD COLUMN IF NOT EXISTS "createdBy" TEXT`,
     ).catch(() => {});
+    // Tenant website — customColors for palette personnalisation
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "tenant_websites" ADD COLUMN IF NOT EXISTS "customColors" JSONB`,
+    ).catch(() => {});
 
     // 2. Ensure room_allocations table exists
     await prisma.$executeRawUnsafe(

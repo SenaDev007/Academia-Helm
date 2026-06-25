@@ -33,10 +33,12 @@ import TenantStructuredData from '@/components/portal/TenantStructuredData';
 import TenantRecruitmentBanner from '@/components/portal/TenantRecruitmentBanner';
 import { NotchNav } from '@/components/ui/notch-nav';
 import TenantFooter from '@/components/ui/footer-column';
+import { resolveTenantColors, HELM_DEFAULT } from '@/lib/tenant/use-tenant-colors';
 
-const NAVY = '#0b2f73';
-const BLUE = '#1d4fa5';
-const GOLD = '#f5b335';
+// Couleurs Helm par défaut (utilisées si l'école n'a pas configuré customColors)
+const NAVY = HELM_DEFAULT.primary;
+const BLUE = HELM_DEFAULT.secondary;
+const GOLD = HELM_DEFAULT.accent;
 
 interface SchoolPortalInfo {
   name: string; slug: string; logoUrl: string | null; city: string | null;
@@ -120,6 +122,15 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   const schoolDisplayName = schoolAcronym || schoolName;
   const schoolLogo = schoolData?.logoUrl;
   const schoolSlogan = schoolData?.slogan || website?.heroSubtitle || '';
+
+  // ─── Résolution dynamique de la palette de couleurs ──
+  // Si l'école a configuré customColors → utilise ses couleurs
+  // Sinon → fallback sur la palette Helm par défaut
+  const colors = resolveTenantColors(website?.customColors);
+  const NAVY = colors.primary;
+  const BLUE = colors.secondary;
+  const GOLD = colors.accent;
+  const DARK = colors.dark;
 
   const heroTitle = website?.heroTitle || schoolName;
   const heroSubtitle = website?.heroSubtitle || schoolSlogan || 'Excellence éducative et accompagnement personnalisé';
@@ -242,7 +253,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
           {heroImage ? (
             <Image src={heroImage} alt={schoolName} fill priority className="object-cover" sizes="100vw" />
           ) : (
-            <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 50%, #091f4a 100%)` }} />
+            <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 50%, ${DARK} 100%)` }} />
           )}
           <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/50 to-black/70" />
         </div>
@@ -444,7 +455,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       )}
 
       {/* ═══ ACCÈS PORTAILS ═══ */}
-      <section id="portails" className="relative py-16 md:py-20 overflow-hidden" style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 60%, #091f4a 100%)` }}>
+      <section id="portails" className="relative py-16 md:py-20 overflow-hidden" style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 60%, ${DARK} 100%)` }}>
         <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)` }} />
         <div className="absolute bottom-0 left-0 right-0 h-[2px]" style={{ background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)` }} />
         <FloatingEduParticles count={12} opacityMultiplier={1.2} variant="light" />

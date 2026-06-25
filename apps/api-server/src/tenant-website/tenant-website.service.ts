@@ -73,6 +73,7 @@ export class TenantWebsiteService {
       'socialLinks',
       'seoMetaTitle', 'seoMetaDescription', 'seoKeywords', 'seoOgImageUrl',
       'contactEmail', 'contactPhone', 'contactAddress', 'contactMapUrl',
+      'customColors',
       'isActive', 'aiEnabled', 'aiWelcomeMessage',
     ];
 

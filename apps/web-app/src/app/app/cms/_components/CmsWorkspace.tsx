@@ -16,18 +16,20 @@ import {
   FileText, Presentation, School, UserPlus, BookOpen, Calendar, Images,
   Star, HelpCircle, Mail, Share2, Search, PanelBottom, Loader2,
   Save, Plus, Trash2, Edit2, X, Check, AlertCircle, ExternalLink,
+  Palette,
 } from 'lucide-react';
 import { toast } from '@/components/ui/toast';
 import { tenantWebsiteService } from '@/services/tenant-website.service';
 
 type SubTab =
-  | 'general' | 'identity' | 'hero' | 'figures' | 'promoter' | 'director'
+  | 'general' | 'identity' | 'colors' | 'hero' | 'figures' | 'promoter' | 'director'
   | 'presentation' | 'levels' | 'admissions' | 'teachers' | 'schoolLife'
   | 'news' | 'agenda' | 'gallery' | 'testimonials' | 'faq'
   | 'contact' | 'social' | 'seo' | 'footer' | 'settings';
 
 const TABS: { id: SubTab; label: string; icon: any }[] = [
   { id: 'general', label: 'Informations générales', icon: Settings },
+  { id: 'colors', label: 'Identité visuelle', icon: Palette },
   { id: 'hero', label: 'Hero Banner', icon: LayoutTemplate },
   { id: 'figures', label: 'Chiffres clés', icon: BarChart3 },
   { id: 'promoter', label: 'Mot du Promoteur', icon: MessageSquare },
@@ -113,6 +115,7 @@ export function CmsWorkspace() {
 
       {/* Content */}
       {activeTab === 'general' && <GeneralTab config={config} onSave={handleSave} saving={saving} />}
+      {activeTab === 'colors' && <ColorsTab config={config} onSave={handleSave} saving={saving} />}
       {activeTab === 'hero' && <HeroTab config={config} onSave={handleSave} saving={saving} />}
       {activeTab === 'figures' && <FiguresTab config={config} onSave={handleSave} saving={saving} />}
       {activeTab === 'promoter' && <PromoterTab config={config} onSave={handleSave} saving={saving} />}
@@ -710,6 +713,78 @@ function SettingsTab({ config, onSave, saving }: any) {
         </div>
       </div>
       <SaveButton onSave={() => onSave(form)} saving={saving} />
+    </div>
+  );
+}
+
+function ColorsTab({ config, onSave, saving }: any) {
+  const [colors, setColors] = useState<any[]>(
+    Array.isArray(config?.customColors) ? config.customColors : []
+  );
+
+  const addColor = () => {
+    if (colors.length >= 4) return;
+    setColors([...colors, { name: `Couleur ${colors.length + 1}`, value: '#0b2f73' }]);
+  };
+
+  const removeColor = (i: number) => setColors(colors.filter((_, idx) => idx !== i));
+
+  const updateColor = (i: number, field: 'name' | 'value', value: string) =>
+    setColors(colors.map((c, idx) => idx === i ? { ...c, [field]: value } : c));
+
+  return (
+    <div className="space-y-4">
+      <div className={sectionClass}>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">Identité visuelle</h3>
+            <p className="text-sm text-slate-500 mt-1">
+              Personnalisez la palette de couleurs de votre site institutionnel. Configurez 2 à 4 couleurs.
+              Si aucune couleur n'est configurée, la palette Academia Helm est utilisée par défaut.
+            </p>
+          </div>
+          <button onClick={addColor} disabled={colors.length >= 4} className={btnOutline}>
+            <Plus className="w-3.5 h-3.5" /> Ajouter
+          </button>
+        </div>
+
+        {/* Aperçu de la palette */}
+        {colors.length > 0 && (
+          <div className="flex gap-3 mb-4 p-4 rounded-xl bg-slate-50 border border-slate-100">
+            {colors.map((c, i) => (
+              <div key={i} className="flex flex-col items-center gap-1">
+                <div className="w-12 h-12 rounded-xl shadow-sm border-2 border-white" style={{ background: c.value }} />
+                <span className="text-[10px] text-slate-500 font-medium">{c.name}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {colors.length === 0 ? (
+          <div className="text-center py-8 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+            <Palette className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+            <p className="text-sm text-slate-400">Aucune couleur personnalisée. La palette Academia Helm est utilisée.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {colors.map((color, i) => (
+              <div key={i} className="flex gap-3 items-center p-3 rounded-xl border border-slate-100">
+                <input type="color" value={color.value} onChange={(e) => updateColor(i, 'value', e.target.value)} className="w-12 h-12 rounded-lg cursor-pointer border border-slate-200" />
+                <input className={inputClass} placeholder="Nom (ex: Primaire)" value={color.name} onChange={(e) => updateColor(i, 'name', e.target.value)} />
+                <input className={`${inputClass} font-mono max-w-[120px]`} placeholder="#000000" value={color.value} onChange={(e) => updateColor(i, 'value', e.target.value)} />
+                <button onClick={() => removeColor(i)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-4 p-3 bg-blue-50 border border-blue-100 rounded-lg">
+          <p className="text-xs text-blue-800">
+            <strong>Rôles :</strong> Couleur 1 = principale (header/hero) · Couleur 2 = accent (boutons) · Couleur 3 = secondaire (gradients) · Couleur 4 = sombre (footer)
+          </p>
+        </div>
+      </div>
+      <SaveButton onSave={() => onSave({ customColors: colors })} saving={saving} />
     </div>
   );
 }

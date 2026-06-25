@@ -14734,6 +14734,10 @@ model TenantWebsite {
   contactPhone        String?
   contactAddress      String?
   contactMapUrl       String?
+  // Identité visuelle — palette de couleurs personnalisée (1-4 couleurs)
+  // Format JSON: [{ "name": "Primaire", "value": "#0b2f73" }, { "name": "Accent", "value": "#f5b335" }]
+  // Si vide/null → utilise la palette Helm par défaut (Navy/Blue/Gold)
+  customColors        Json?
   // Paramètres
   isActive            Boolean  @default(true)
   // IA

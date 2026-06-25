@@ -36,21 +36,40 @@ export async function generateMetadata(): Promise<Metadata> {
 
   const title = 'Academia Helm - Plateforme de pilotage éducatif';
   const description =
-    'La plateforme de pilotage éducatif nouvelle génération. Prenez le gouvernail de votre institution.';
+    'Academia Helm — La plateforme de pilotage éducatif nouvelle génération. ERP scolaire complet : RH, paie, pédagogie, finances, examens, communication. Prenez le gouvernail de votre institution.';
 
   return {
     title,
     description,
-    robots: { index: true, follow: true },
+    robots: {
+      index: true,
+      follow: true,
+      googleBot: {
+        index: true,
+        follow: true,
+        'max-image-preview': 'large',
+        'max-snippet': -1,
+        'max-video-preview': -1,
+      },
+    },
     keywords: [
-      'pilotage éducatif',
+      'Academia Helm',
+      'Academia Hub',
+      'plateforme de pilotage éducatif',
       'logiciel école',
+      'logiciel gestion école',
+      'ERP scolaire',
       'plateforme éducation',
       'gestion établissement scolaire',
       'ORION IA éducation',
-      'Academia Helm',
       'gestion scolaire Bénin',
       "gestion scolaire Afrique de l'Ouest",
+      'logiciel école Afrique',
+      'RH éducation',
+      'paie enseignants',
+      'pédagogie numérique',
+      'examens et notes',
+      'communication école parents',
     ],
     openGraph: {
       title,

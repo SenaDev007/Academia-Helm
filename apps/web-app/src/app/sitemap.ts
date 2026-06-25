@@ -1,74 +1,57 @@
-import type { MetadataRoute } from 'next';
-import { getPublicSiteUrl } from '@/lib/seo';
-import { BLOG_POSTS } from '@/content/blog/posts';
-import { getAllBlogSlugs, getBlogPostBySlug } from '@/lib/blog/mdx';
-
-type SitemapEntry = MetadataRoute.Sitemap[number];
-
-const now = () => new Date();
-
-function entry(path: string, opts: Omit<SitemapEntry, 'url'>): SitemapEntry {
-  const base = getPublicSiteUrl();
-  const pathPart = path.startsWith('/') ? path : `/${path}`;
-  return {
-    url: `${base}${pathPart === '/' ? '' : pathPart}` || base,
-    ...opts,
-  };
-}
-
 /**
- * Pages publiques à indexer (hors flux onboarding, auth, app).
+ * SEO — Sitemap.xml dynamique par tenant
+ * GET /sitemap.xml — génère un sitemap basé sur le sous-domaine
  */
-export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const staticEntries: MetadataRoute.Sitemap = [
-    entry('/', { lastModified: now(), changeFrequency: 'weekly', priority: 1 }),
-    entry('/en', { lastModified: now(), changeFrequency: 'monthly', priority: 0.85 }),
-    entry('/pricing', { lastModified: now(), changeFrequency: 'weekly', priority: 0.95 }),
-    entry('/modules', { lastModified: now(), changeFrequency: 'monthly', priority: 0.9 }),
-    entry('/signup', { lastModified: now(), changeFrequency: 'monthly', priority: 0.9 }),
-    entry('/tarification', { lastModified: now(), changeFrequency: 'monthly', priority: 0.85 }),
-    entry('/orion', { lastModified: now(), changeFrequency: 'monthly', priority: 0.85 }),
-    entry('/patronat-examens', { lastModified: now(), changeFrequency: 'monthly', priority: 0.8 }),
-    entry('/contact', { lastModified: now(), changeFrequency: 'monthly', priority: 0.75 }),
-    entry('/testimonials', { lastModified: now(), changeFrequency: 'monthly', priority: 0.65 }),
-    entry('/legal/cgu', { lastModified: now(), changeFrequency: 'yearly', priority: 0.35 }),
-    entry('/legal/cgv', { lastModified: now(), changeFrequency: 'yearly', priority: 0.35 }),
-    entry('/legal/privacy', { lastModified: now(), changeFrequency: 'yearly', priority: 0.35 }),
-    entry('/legal/mentions', { lastModified: now(), changeFrequency: 'yearly', priority: 0.35 }),
-  ];
 
-  const pillarEntries: MetadataRoute.Sitemap = [
-    entry('/gestion-scolaire', { lastModified: now(), changeFrequency: 'weekly', priority: 0.95 }),
-    entry('/logiciel-gestion-ecole', { lastModified: now(), changeFrequency: 'weekly', priority: 0.95 }),
-    entry('/logiciel-ecole-afrique', { lastModified: now(), changeFrequency: 'weekly', priority: 0.95 }),
-    entry('/gestion-etablissement-scolaire', { lastModified: now(), changeFrequency: 'weekly', priority: 0.95 }),
-  ];
+import { NextRequest } from 'next/server';
+import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 
-  const blogIndexEntry: MetadataRoute.Sitemap = [
-    entry('/blog', { lastModified: now(), changeFrequency: 'weekly', priority: 0.85 }),
-  ];
+export const dynamic = 'force-dynamic';
 
-  const mdxSlugs = await getAllBlogSlugs();
-  const mdxPosts = await Promise.all(mdxSlugs.map((s) => getBlogPostBySlug(s)));
-  const mdxEntries: MetadataRoute.Sitemap = mdxPosts
-    .filter(Boolean)
-    .map((p) =>
-      entry(`/blog/${p!.slug}`, {
-        lastModified: p!.frontmatter.updatedAt ? new Date(p!.frontmatter.updatedAt) : new Date(p!.frontmatter.publishedAt),
-        changeFrequency: 'monthly',
-        priority: 0.7,
-      }),
+export async function GET(request: NextRequest) {
+  const host = request.headers.get('host') || '';
+  const parts = host.split(':').length > 1 ? host.split(':')[0].split('.') : host.split('.');
+
+  // Si pas un sous-domaine d'école, retourner un sitemap minimal
+  if (parts.length < 3) {
+    return new Response(
+      `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://academiahelm.com</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
+</urlset>`,
+      { headers: { 'Content-Type': 'application/xml' } },
     );
+  }
 
-  const fallbackEntries: MetadataRoute.Sitemap = BLOG_POSTS.map((p) =>
-    entry(`/blog/${p.slug}`, {
-      lastModified: p.updatedAt ? new Date(p.updatedAt) : new Date(p.publishedAt),
-      changeFrequency: 'monthly',
-      priority: 0.7,
-    }),
-  );
+  const slug = parts[0];
+  const baseUrl = `https://${slug}.academiahelm.com`;
 
-  const blogPostEntries = mdxEntries.length ? mdxEntries : fallbackEntries;
+  // Récupérer les actualités publiées pour le sitemap
+  let newsUrls = '';
+  try {
+    const API_URL = getApiBaseUrlForRoutes();
+    const res = await fetch(`${API_URL}/tenant-website/public/${slug}`, { cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.newsArticles) {
+        newsUrls = data.newsArticles
+          .filter((a: any) => a.status === 'PUBLISHED')
+          .map((a: any) => `  <url><loc>${baseUrl}/actualites/${a.slug}</loc><lastmod>${new Date(a.updatedAt).toISOString()}</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>`)
+          .join('\n');
+      }
+    }
+  } catch {}
 
-  return [...staticEntries, ...pillarEntries, ...blogIndexEntry, ...blogPostEntries];
+  const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>${baseUrl}</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url><loc>${baseUrl}/#presentation</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>${baseUrl}/#actualites</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>${baseUrl}/#agenda</loc><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>${baseUrl}/#galerie</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>${baseUrl}/#contact</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+${newsUrls}
+</urlset>`;
+
+  return new Response(sitemap, { headers: { 'Content-Type': 'application/xml' } });
 }

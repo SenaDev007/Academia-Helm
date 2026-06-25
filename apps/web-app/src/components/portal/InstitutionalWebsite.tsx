@@ -39,6 +39,7 @@ import { BRAND } from '@/lib/brand';
 import { extractTenantSlug } from '@/lib/tenant/constants';
 import { type PortalType } from '@/lib/auth/role-portal-map';
 import FloatingEduParticles from '@/components/ui/FloatingEduParticles';
+import TenantAiChatbot from '@/components/portal/TenantAiChatbot';
 
 const NAVY = '#0b2f73';
 const BLUE = '#1d4fa5';
@@ -607,6 +608,15 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Institut
           </div>
         </div>
       </footer>
+
+      {/* ═══ ASSISTANT IA ═══ */}
+      {website?.aiEnabled && (
+        <TenantAiChatbot
+          tenantSlug={slug}
+          welcomeMessage={website.aiWelcomeMessage || undefined}
+          faqItems={websiteData?.faqItems || []}
+        />
+      )}
     </div>
   );
 }

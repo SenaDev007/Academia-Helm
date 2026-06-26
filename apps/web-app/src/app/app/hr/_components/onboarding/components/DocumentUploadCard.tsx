@@ -90,7 +90,7 @@ export function DocumentUploadCard({
               <input
                 type="file"
                 className="hidden"
-                accept=".pdf,.png,.jpg,.jpeg"
+                accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
                 onChange={(e) => {
                   const selectedFile = e.target.files?.[0];
                   if (selectedFile) onFileSelect(selectedFile);

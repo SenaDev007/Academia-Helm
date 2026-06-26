@@ -29,7 +29,7 @@ const DEFAULT_POSITIONS = [
   'Professeur d\'Histoire-Géographie',
   'Professeur d\'EPS',
   'Professeur de Philosophie',
-  'Professeur d'Informatique',
+  'Professeur d\'Informatique',
   'Instituteur',
   'Éducateur',
   'Animateur',

@@ -152,6 +152,8 @@ export const IMAGE_OR_PDF_DATA_URL_PIPE = new DataUrlValidationPipe({
   allowedMimeTypes: [
     'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/avif',
     'application/pdf',
+    'application/msword', // .doc
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
   ],
   maxBytes: 20 * 1024 * 1024, // 20 Mo
   fieldName: 'fileDataUrl',

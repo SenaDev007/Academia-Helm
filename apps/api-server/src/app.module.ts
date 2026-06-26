@@ -50,6 +50,7 @@ import { TenantMediaModule } from './tenant-media/tenant-media.module';
 import { TenantThemeModule } from './tenant-theme/tenant-theme.module';
 import { TenantBlockSelectionModule } from './tenant-block-selection/tenant-block-selection.module';
 import { AdminStructureModule } from './admin-structure/admin-structure.module';
+import { StaffAdminAssignmentModule } from './staff-admin-assignment/staff-admin-assignment.module';
 import { ModulesComplementairesModule } from './modules-complementaires/modules-complementaires.module';
 import { KpiObjectivesModule } from './kpi-objectives/kpi-objectives.module';
 import { PedagogyModule } from './pedagogy/pedagogy.module';
@@ -223,6 +224,9 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
 
     // Mode d'administration scolaire (SEPARATE vs FUSED_MATERNELLE_PRIMAIRE)
     AdminStructureModule,
+
+    // Affectations administratives level-aware (Directeur Maternelle, etc.)
+    StaffAdminAssignmentModule,
     
     // Module 9 - Modules Complémentaires
     ModulesComplementairesModule,

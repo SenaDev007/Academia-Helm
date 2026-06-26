@@ -19,6 +19,7 @@ import { DashboardController } from './controllers/dashboard.controller';
 import { OpenRouterModule } from './services/openrouter.module';
 import { DatabaseModule } from '../database/database.module';
 import { SecurityModule } from '../security/security.module';
+import { AdminStructureService } from '../admin-structure/admin-structure.service';
 
 @Global()
 @Module({
@@ -38,6 +39,7 @@ import { SecurityModule } from '../security/security.module';
     PuppeteerPoolService,
     DomainManagementService,
     CredentialEncryptionService,
+    AdminStructureService, // Pour LevelScopeGuard
   ],
   exports: [
     CacheService,
@@ -50,6 +52,7 @@ import { SecurityModule } from '../security/security.module';
     DomainManagementService,
     CredentialEncryptionService,
     OpenRouterModule,
+    AdminStructureService, // Pour LevelScopeGuard dans autres modules
   ],
 })
 export class CommonModule {}

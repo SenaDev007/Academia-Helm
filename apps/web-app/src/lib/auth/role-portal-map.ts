@@ -137,6 +137,32 @@ const SCHOOL_ROLES: RolePortalEntry[] = [
   { role: 'RESP_SECONDAIRE', portal: 'SCHOOL', functionLabel: 'Responsable Secondaire', accreditations: ['SECONDARY_ADMIN'], levelScopes: ['SECONDARY'], permissions: ['STUDENT_MANAGE', 'SUBJECT_MANAGE', 'COEFFICIENT_MANAGE', 'EXAM_MANAGE', 'GRADE_VALIDATE', 'BULLETIN_VALIDATE', 'CLASS_COUNCIL'] },
   { role: 'CENSOR', portal: 'SCHOOL', functionLabel: 'Censeur', accreditations: ['SECONDARY_ADMIN'], levelScopes: ['SECONDARY'], permissions: ['TIMETABLE_MANAGE', 'PROGRAM_SUPERVISE', 'GRADE_SUPERVISE', 'COEFFICIENT_CHECK', 'EXAM_SUPERVISE', 'CLASS_COUNCIL'] },
   { role: 'GENERAL_MONITOR', portal: 'SCHOOL', functionLabel: 'Surveillant Général', accreditations: ['SECONDARY_ADMIN'], levelScopes: ['SECONDARY'], permissions: ['ATTENDANCE_MANAGE', 'DISCIPLINE_MANAGE', 'SANCTION_MANAGE', 'CONVOCATION_MANAGE', 'INCIDENT_LOG', 'LIFE_REPORT'] },
+
+  // 3.6 — Rôles administratifs level-specific (Phase 2 multi-niveaux)
+  // Ces rôles permettent d'avoir un Directeur/Secrétaire/Secrétaire comptable
+  // distinct pour chaque niveau (maternelle, primaire, secondaire).
+  // En mode FUSED_MATERNELLE_PRIMAIRE, utiliser les variants _MAT_PRI.
+
+  // Directeurs par niveau
+  { role: 'DIRECTEUR_MATERNELLE', portal: 'SCHOOL', functionLabel: 'Directeur Maternelle', accreditations: ['MATERNELLE_ADMIN'], levelScopes: ['MATERNELLE'], permissions: ['STUDENT_MANAGE', 'TEACHER_MANAGE', 'BULLETIN_VALIDATE', 'DISCIPLINE_MANAGE', 'COMMUNICATION_OFFICIAL'] },
+  { role: 'DIRECTEUR_PRIMAIRE', portal: 'SCHOOL', functionLabel: 'Directeur Primaire', accreditations: ['PRIMARY_ADMIN'], levelScopes: ['PRIMARY'], permissions: ['STUDENT_MANAGE', 'TEACHER_MANAGE', 'BULLETIN_VALIDATE', 'DISCIPLINE_MANAGE', 'COMMUNICATION_OFFICIAL'] },
+  { role: 'DIRECTEUR_SECONDAIRE', portal: 'SCHOOL', functionLabel: 'Directeur Secondaire', accreditations: ['SECONDARY_ADMIN'], levelScopes: ['SECONDARY'], permissions: ['STUDENT_MANAGE', 'TEACHER_MANAGE', 'BULLETIN_VALIDATE', 'DISCIPLINE_MANAGE', 'COMMUNICATION_OFFICIAL'] },
+  // Mode FUSED : Directeur Maternelle + Primaire fusionnés
+  { role: 'DIRECTEUR_MAT_PRI', portal: 'SCHOOL', functionLabel: 'Directeur Maternelle + Primaire', accreditations: ['MATERNELLE_ADMIN', 'PRIMARY_ADMIN'], levelScopes: ['MATERNELLE', 'PRIMARY'], permissions: ['STUDENT_MANAGE', 'TEACHER_MANAGE', 'BULLETIN_VALIDATE', 'DISCIPLINE_MANAGE', 'COMMUNICATION_OFFICIAL'] },
+
+  // Secrétaires par niveau
+  { role: 'SECRETAIRE_MATERNELLE', portal: 'SCHOOL', functionLabel: 'Secrétaire Maternelle', accreditations: ['MATERNELLE_ADMIN'], levelScopes: ['MATERNELLE'], permissions: ['STUDENT_ENROLL', 'STUDENT_VIEW', 'CERTIFICATE_GENERATE', 'LIST_EXPORT'] },
+  { role: 'SECRETAIRE_PRIMAIRE', portal: 'SCHOOL', functionLabel: 'Secrétaire Primaire', accreditations: ['PRIMARY_ADMIN'], levelScopes: ['PRIMARY'], permissions: ['STUDENT_ENROLL', 'STUDENT_VIEW', 'CERTIFICATE_GENERATE', 'LIST_EXPORT'] },
+  { role: 'SECRETAIRE_SECONDAIRE', portal: 'SCHOOL', functionLabel: 'Secrétaire Secondaire', accreditations: ['SECONDARY_ADMIN'], levelScopes: ['SECONDARY'], permissions: ['STUDENT_ENROLL', 'STUDENT_VIEW', 'CERTIFICATE_GENERATE', 'LIST_EXPORT'] },
+  // Mode FUSED : Secrétaire Maternelle + Primaire fusionnés
+  { role: 'SECRETAIRE_MAT_PRI', portal: 'SCHOOL', functionLabel: 'Secrétaire Maternelle + Primaire', accreditations: ['MATERNELLE_ADMIN', 'PRIMARY_ADMIN'], levelScopes: ['MATERNELLE', 'PRIMARY'], permissions: ['STUDENT_ENROLL', 'STUDENT_VIEW', 'CERTIFICATE_GENERATE', 'LIST_EXPORT'] },
+
+  // Secrétaires comptables par niveau
+  { role: 'SECRETAIRE_COMPTABLE_MATERNELLE', portal: 'SCHOOL', functionLabel: 'Secrétaire Comptable Maternelle', accreditations: ['MATERNELLE_ADMIN'], levelScopes: ['MATERNELLE'], permissions: ['STUDENT_ENROLL', 'STUDENT_VIEW', 'FEE_COLLECT', 'RECEIPT_GENERATE', 'LIST_EXPORT'] },
+  { role: 'SECRETAIRE_COMPTABLE_PRIMAIRE', portal: 'SCHOOL', functionLabel: 'Secrétaire Comptable Primaire', accreditations: ['PRIMARY_ADMIN'], levelScopes: ['PRIMARY'], permissions: ['STUDENT_ENROLL', 'STUDENT_VIEW', 'FEE_COLLECT', 'RECEIPT_GENERATE', 'LIST_EXPORT'] },
+  { role: 'SECRETAIRE_COMPTABLE_SECONDAIRE', portal: 'SCHOOL', functionLabel: 'Secrétaire Comptable Secondaire', accreditations: ['SECONDARY_ADMIN'], levelScopes: ['SECONDARY'], permissions: ['STUDENT_ENROLL', 'STUDENT_VIEW', 'FEE_COLLECT', 'RECEIPT_GENERATE', 'LIST_EXPORT'] },
+  // Mode FUSED : Secrétaire Comptable Maternelle + Primaire fusionnés
+  { role: 'SECRETAIRE_COMPTABLE_MAT_PRI', portal: 'SCHOOL', functionLabel: 'Secrétaire Comptable Maternelle + Primaire', accreditations: ['MATERNELLE_ADMIN', 'PRIMARY_ADMIN'], levelScopes: ['MATERNELLE', 'PRIMARY'], permissions: ['STUDENT_ENROLL', 'STUDENT_VIEW', 'FEE_COLLECT', 'RECEIPT_GENERATE', 'LIST_EXPORT'] },
   { role: 'ORIENTATION_MANAGER', portal: 'SCHOOL', functionLabel: 'Responsable Orientation', accreditations: ['SECONDARY_ADMIN'], levelScopes: ['SECONDARY'], permissions: ['ORIENTATION_MANAGE', 'SERIES_ASSIGN', 'STUDENT_COUNSEL', 'FAMILY_COMMUNICATE', 'EXAM_PREPARE'] },
 
   // 3.6 — Finance et Économat

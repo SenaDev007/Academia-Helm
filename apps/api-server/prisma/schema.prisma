@@ -360,6 +360,7 @@ model Tenant {
   smsLogs                          SmsLog[]
   staff                            Staff[]
   staffAssignments                 StaffAssignment[]
+  staffAdminAssignments            StaffAdminAssignment[]
   staffAttendance                  StaffAttendance[]
   staffDocuments                   StaffDocument[]
   staffEvaluations                 StaffEvaluation[]
@@ -5045,6 +5046,7 @@ model Staff {
   schoolLevel               SchoolLevel?               @relation(fields: [schoolLevelId], references: [id])
   tenant                    Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   assignments               StaffAssignment[]
+  adminAssignments          StaffAdminAssignment[]
   attendance                StaffAttendance[]
   documents                 StaffDocument[]
   evaluations               StaffEvaluation[]
@@ -5148,6 +5150,53 @@ model JobNumberSequence {
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("job_number_sequences")
+}
+
+/**
+ * Affectation administrative d'un staff à un niveau scolaire.
+ *
+ * Permet de modéliser les postes administratifs level-aware :
+ *   - Directeur Maternelle, Directeur Primaire, Directeur Secondaire
+ *   - Secrétaire Maternelle, Secrétaire Primaire, Secrétaire Secondaire
+ *   - Secrétaire Comptable Maternelle, etc.
+ *
+ * En mode FUSED_MATERNELLE_PRIMAIRE, un staff peut avoir une affectation
+ * avec schoolLevelCode = 'MAT_PRI' (gère à la fois maternelle et primaire).
+ *
+ * Le secondaire est TOUJOURS séparé — aucune affectation 'SEC_PRI' ou
+ * 'MAT_SEC' n'est possible.
+ *
+ * Contrainte : un staff ne peut pas avoir 2 affectations actives avec le
+ * même adminRole sur des niveaux chevauchants.
+ */
+model StaffAdminAssignment {
+  id              String   @id @default(uuid())
+  tenantId        String
+  staffId         String
+  /// Code du niveau administré : MAT, PRI, SEC, MAT_PRI, ALL
+  /// MAT_PRI = maternelle + primaire fusionnés (mode FUSED_MATERNELLE_PRIMAIRE)
+  /// ALL = tous les niveaux (super admin école)
+  schoolLevelCode String
+  /// Rôle administratif : DIRECTEUR, SECRETAIRE, SECRETAIRE_COMPTABLE,
+  /// CENSEUR, ECONOME, DIRECTEUR_GENERAL, etc.
+  adminRole       String
+  /// Année scolaire (optionnel — si null, affectation permanente)
+  academicYearId  String?
+  startDate       DateTime @default(now())
+  endDate         DateTime?
+  /// Indique si l'affectation est active
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  staff           Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, staffId, adminRole, schoolLevelCode, academicYearId])
+  @@index([tenantId, staffId])
+  @@index([tenantId, schoolLevelCode])
+  @@index([tenantId, adminRole, isActive])
+  @@map("staff_admin_assignments")
 }
 
 model StaffAssignment {

@@ -18,7 +18,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Loader2, MapPin, Phone, Mail, ChevronRight, Calendar,
-  Quote, Menu, X, ExternalLink, FileText,
+  Quote, Menu, X, ExternalLink, FileText, Sparkles,
   Building2, GraduationCap, Users, Globe, ArrowRight, Star, Images,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -70,6 +70,59 @@ const PORTAL_DEFS = [
   { type: 'TEACHER' as PortalType, title: 'Enseignant', subtitle: 'Pédagogie & suivi', icon: GraduationCap },
   { type: 'PARENT' as PortalType, title: 'Parent / Élève', subtitle: 'Suivi & communication', icon: Users },
 ];
+
+// ─── SectionHeader : en-tête de section standardisé (aligné PremiumLandingPage) ──
+function SectionHeader({ eyebrow, title, subtitle, navy, gold }: { eyebrow?: string; title: string; subtitle?: string; navy: string; gold: string }) {
+  return (
+    <div className="text-center mb-10 md:mb-14">
+      {eyebrow && (
+        <motion.span
+          initial={{ opacity: 0, y: 12 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-wider mb-4"
+          style={{ background: `${navy}14`, border: `1px solid ${navy}26`, color: navy }}
+        >
+          <Sparkles className="w-3.5 h-3.5" style={{ color: gold }} />
+          {eyebrow}
+        </motion.span>
+      )}
+      <motion.h2
+        initial={{ opacity: 0, y: 16 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true }}
+        className="text-3xl md:text-4xl font-extrabold tracking-tight mb-3"
+        style={{ color: '#0f172a' }}
+      >
+        {title}
+      </motion.h2>
+      {subtitle && (
+        <motion.p
+          initial={{ opacity: 0, y: 16 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ delay: 0.05 }}
+          className="text-sm md:text-base text-slate-500 max-w-2xl mx-auto leading-relaxed"
+        >
+          {subtitle}
+        </motion.p>
+      )}
+      {/* Ligne décorative dorée */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        whileInView={{ opacity: 1 }}
+        viewport={{ once: true }}
+        transition={{ delay: 0.1 }}
+        className="mt-5 flex items-center justify-center gap-3"
+        aria-hidden
+      >
+        <span className="h-px w-12 bg-gradient-to-r from-transparent to-amber-400" />
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+        <span className="h-px w-12 bg-gradient-to-l from-transparent to-amber-400" />
+      </motion.div>
+    </div>
+  );
+}
 
 export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   const [schoolData, setSchoolData] = useState<SchoolPortalInfo | null>(schoolInfo || null);
@@ -214,31 +267,54 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       </div>
 
       {/* ═══ HERO ═══ */}
-      <section id="hero" className="relative min-h-[560px] md:min-h-[640px] flex items-center justify-center overflow-hidden">
+      <section id="hero" className="relative min-h-[600px] md:min-h-[680px] flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0">
           {heroImage ? (
             <Image src={heroImage} alt={schoolName} fill priority className="object-cover" sizes="100vw" />
           ) : (
             <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 50%, ${DARK} 100%)` }} />
           )}
-          <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/50 to-black/70" />
+          {/* Overlay navy pour lisibilité — aligné sur PremiumLandingPage */}
+          <div className="absolute inset-0" style={{ background: `${NAVY}A6` }} />
+          {/* Halo doré en haut à droite — signature Academia Helm */}
+          <div className="absolute inset-0 opacity-[0.12] bg-[radial-gradient(circle_at_top_right,#f5b335_0%,transparent_45%)]" />
         </div>
+
+        {/* Particules dorées flottantes — ambiance premium */}
         <FloatingEduParticles count={18} opacityMultiplier={1.2} variant="light" />
 
-        <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 text-center py-20">
+        {/* Orbes flottants animés */}
+        <motion.div
+          animate={{ y: [0, -12, 0], opacity: [0.35, 0.75, 0.35] }}
+          transition={{ duration: 7.5, repeat: Infinity, ease: 'easeInOut' }}
+          className="absolute -top-10 -left-8 w-56 h-56 rounded-full bg-amber-300/20 blur-3xl pointer-events-none"
+        />
+
+        <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 text-center py-20">
           <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7 }}>
-            <div className="inline-block mb-4 px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/20">
-              <span className="text-xs font-semibold text-amber-300 uppercase tracking-wider">Bienvenue</span>
+            {/* Eyebrow badge — aligné sur PremiumLandingPage */}
+            <div className="inline-flex items-center gap-2 mb-5 px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/20">
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              <span className="text-xs font-bold text-amber-300 uppercase tracking-wider">Bienvenue</span>
             </div>
-            <h1 className="text-3xl md:text-5xl lg:text-6xl font-black text-white leading-tight mb-4 drop-shadow-lg">
+
+            <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold text-white leading-[1.15] tracking-tight mb-5 drop-shadow-lg">
               {heroTitle}
             </h1>
-            <p className="text-base md:text-xl text-blue-50/80 mb-8 max-w-2xl mx-auto leading-relaxed">
+            <p className="text-base md:text-xl text-blue-50/85 mb-8 max-w-2xl mx-auto leading-relaxed">
               {heroSubtitle}
             </p>
+
+            {/* Ligne décorative dorée — signature Academia Helm */}
+            <div className="flex items-center justify-center gap-3 mb-8" aria-hidden>
+              <span className="h-px w-12 bg-gradient-to-r from-transparent to-amber-400" />
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+              <span className="h-px w-12 bg-gradient-to-l from-transparent to-amber-400" />
+            </div>
+
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <button onClick={() => handlePortalClick('PUBLIC')}
-                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-bold text-[#0b2f73] shadow-lg transition-all hover:scale-105"
+                className="inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl text-sm font-bold text-[#0b2f73] shadow-lg transition-all hover:scale-105 hover:bg-[#f7c359]"
                 style={{ background: `linear-gradient(135deg, ${GOLD}, #e09e1f)` }}>
                 {heroCtaText} <ChevronRight size={16} />
               </button>
@@ -253,14 +329,30 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
 
       {/* ═══ CHIFFRES CLÉS ═══ */}
       {keyFigures.length > 0 && (
-        <section className="relative -mt-12 z-20 px-4 sm:px-6 lg:px-8">
-          <div className="max-w-5xl mx-auto">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <section className="relative -mt-16 z-20 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-6xl mx-auto">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-5">
               {keyFigures.map((fig: any, i: number) => (
-                <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }}
-                  className="bg-white rounded-2xl p-5 shadow-lg border border-slate-100 text-center hover:shadow-xl transition-all">
-                  <div className="text-2xl md:text-3xl font-black mb-1" style={{ color: NAVY }}>{fig.value}</div>
-                  <div className="text-xs text-slate-500 font-medium">{fig.label}</div>
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 24 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: i * 0.1, type: 'spring', stiffness: 200, damping: 18 }}
+                  whileHover={{ y: -6 }}
+                  className="group relative bg-white rounded-2xl p-5 md:p-6 shadow-[0_4px_30px_-10px_rgba(11,47,115,0.15)] border border-slate-100 hover:shadow-[0_24px_60px_-20px_rgba(11,47,115,0.30)] hover:border-[#0b2f73]/20 transition-all duration-300 text-center overflow-hidden"
+                >
+                  {/* Halo doré au hover */}
+                  <div className="absolute -top-16 -right-16 w-40 h-40 rounded-full bg-[#f5b335] opacity-0 group-hover:opacity-[0.08] blur-3xl transition-opacity duration-500" />
+
+                  {/* Valeur */}
+                  <div className="relative text-3xl md:text-4xl font-extrabold mb-1 tracking-tight" style={{ color: NAVY }}>
+                    {fig.value}
+                  </div>
+                  {/* Libellé */}
+                  <div className="relative text-xs md:text-sm text-slate-500 font-medium">{fig.label}</div>
+                  {/* Ligne dorée décorative */}
+                  <div className="relative mx-auto mt-3 h-0.5 w-8 rounded-full bg-gradient-to-r from-transparent via-amber-400 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                 </motion.div>
               ))}
             </div>
@@ -306,9 +398,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       {shouldShowSection(rawWebsite?.presentationIsActive) && (
         <section id="presentation" className="py-16 md:py-20 bg-white">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center mb-8">
-              <h2 className="text-2xl md:text-3xl font-black text-slate-900 mb-3">{withDefault(website.presentationTitle, DEFAULT_WEBSITE_CONFIG.presentationTitle)}</h2>
-              <div className="w-16 h-1 mx-auto rounded-full" style={{ background: `linear-gradient(90deg, ${NAVY}, ${GOLD})` }} />
+            <SectionHeader eyebrow="Notre école" title={withDefault(website.presentationTitle, DEFAULT_WEBSITE_CONFIG.presentationTitle)} navy={NAVY} gold={GOLD} />
             </div>
             {website.presentationImageUrl && (
               <div className="mb-8 rounded-2xl overflow-hidden shadow-lg">
@@ -324,9 +414,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       {shouldShowSection(rawWebsite?.admissionsIsActive) && (
         <section id="admissions" className="py-16 md:py-20 bg-white">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center mb-8">
-              <h2 className="text-2xl md:text-3xl font-black text-slate-900 mb-3">{withDefault(website.admissionsTitle, DEFAULT_WEBSITE_CONFIG.admissionsTitle)}</h2>
-              <div className="w-16 h-1 mx-auto rounded-full" style={{ background: `linear-gradient(90deg, ${NAVY}, ${GOLD})` }} />
+            <SectionHeader eyebrow="Rejoignez-nous" title={withDefault(website.admissionsTitle, DEFAULT_WEBSITE_CONFIG.admissionsTitle)} navy={NAVY} gold={GOLD} />
             </div>
             <p className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap">{withDefault(website.admissionsContent, DEFAULT_WEBSITE_CONFIG.admissionsContent)}</p>
             <div className="mt-8 text-center">
@@ -346,9 +434,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       {shouldShowSection(rawWebsite?.schoolLifeIsActive) && (
         <section id="vie-scolaire" className="py-16 md:py-20 bg-slate-50">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center mb-8">
-              <h2 className="text-2xl md:text-3xl font-black text-slate-900 mb-3">{withDefault(website.schoolLifeTitle, DEFAULT_WEBSITE_CONFIG.schoolLifeTitle)}</h2>
-              <div className="w-16 h-1 mx-auto rounded-full" style={{ background: `linear-gradient(90deg, ${NAVY}, ${GOLD})` }} />
+            <SectionHeader eyebrow="Vie quotidienne" title={withDefault(website.schoolLifeTitle, DEFAULT_WEBSITE_CONFIG.schoolLifeTitle)} navy={NAVY} gold={GOLD} />
             </div>
             <p className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap">{withDefault(website.schoolLifeContent, DEFAULT_WEBSITE_CONFIG.schoolLifeContent)}</p>
           </div>
@@ -359,9 +445,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       {newsArticles.length > 0 && (
         <section id="actualites" className="py-16 md:py-20 bg-slate-50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center mb-8">
-              <h2 className="text-2xl md:text-3xl font-black text-slate-900 mb-3">Actualités</h2>
-              <div className="w-16 h-1 mx-auto rounded-full" style={{ background: `linear-gradient(90deg, ${NAVY}, ${GOLD})` }} />
+            <SectionHeader eyebrow="Dernières nouvelles" title="Actualités" navy={NAVY} gold={GOLD} />
             </div>
             <div className="grid md:grid-cols-3 gap-6">
               {newsArticles.slice(0, 3).map((article: any) => (
@@ -395,9 +479,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       {events.length > 0 && (
         <section id="agenda" className="py-16 md:py-20 bg-white">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center mb-8">
-              <h2 className="text-2xl md:text-3xl font-black text-slate-900 mb-3">Agenda</h2>
-              <div className="w-16 h-1 mx-auto rounded-full" style={{ background: `linear-gradient(90deg, ${NAVY}, ${GOLD})` }} />
+            <SectionHeader eyebrow="À venir" title="Agenda" navy={NAVY} gold={GOLD} />
             </div>
             <div className="space-y-3">
               {events.slice(0, 5).map((event: any) => (
@@ -425,9 +507,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       {galleryItems.length > 0 && (
         <section className="py-16 md:py-20 bg-slate-50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center mb-8">
-              <h2 className="text-2xl md:text-3xl font-black text-slate-900 mb-3">Galerie</h2>
-              <div className="w-16 h-1 mx-auto rounded-full" style={{ background: `linear-gradient(90deg, ${NAVY}, ${GOLD})` }} />
+            <SectionHeader eyebrow="En images" title="Galerie" navy={NAVY} gold={GOLD} />
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {galleryItems.slice(0, 8).map((item: any) => (
@@ -452,9 +532,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       {testimonials.length > 0 && (
         <section className="py-16 md:py-20 bg-white">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center mb-8">
-              <h2 className="text-2xl md:text-3xl font-black text-slate-900 mb-3">Témoignages</h2>
-              <div className="w-16 h-1 mx-auto rounded-full" style={{ background: `linear-gradient(90deg, ${NAVY}, ${GOLD})` }} />
+            <SectionHeader eyebrow="Ils nous font confiance" title="Témoignages" navy={NAVY} gold={GOLD} />
             </div>
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {testimonials.slice(0, 6).map((t: any) => (
@@ -476,10 +554,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       {faqItems.length > 0 && (
         <section id="faq" className="py-16 md:py-20 bg-white">
           <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center mb-8">
-              <h2 className="text-2xl md:text-3xl font-black text-slate-900 mb-3">Questions fréquentes</h2>
-              <p className="text-sm text-slate-500">Les réponses aux questions les plus posées par les parents</p>
-              <div className="w-16 h-1 mx-auto mt-3 rounded-full" style={{ background: `linear-gradient(90deg, ${NAVY}, ${GOLD})` }} />
+            <SectionHeader eyebrow="Besoin d'aide ?" title="Questions fréquentes" subtitle="Les réponses aux questions les plus posées par les parents" navy={NAVY} gold={GOLD} />
             </div>
             <div className="space-y-4">
               {faqItems.map((item: any, idx: number) => (

@@ -29,7 +29,13 @@ import { getFadeMotion } from '@/lib/motion/presets';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import type { User, Tenant } from '@/types';
 import dynamic from 'next/dynamic';
-import { TenantThemeProvider } from '@/providers/TenantThemeProvider';
+
+// ⚠️ PAS de TenantThemeProvider ici — le back-office platform (admin.academiahelm.com)
+// doit TOUJOURS utiliser la palette Helm par défaut (navy/blue/gold).
+// Le thème du tenant s'applique uniquement sur :
+//   1. Le site institutionnel public du tenant (sous-domaine école)
+//   2. L'application du tenant (/app)
+// PAS sur le site principal (academiahelm.com) ni le back-office platform.
 
 const PilotageLayout = dynamic(
   () => import('@/components/pilotage/PilotageLayout'),
@@ -63,11 +69,9 @@ export default function PlatformAdminLayoutClient({
               <AcademicYearProvider>
                 <SchoolLevelProvider>
                   <BilingualProvider>
-                    <TenantThemeProvider>
-                      <PilotageLayout user={user} tenant={tenant}>
-                        {children}
-                      </PilotageLayout>
-                    </TenantThemeProvider>
+                    <PilotageLayout user={user} tenant={tenant}>
+                      {children}
+                    </PilotageLayout>
                   </BilingualProvider>
                 </SchoolLevelProvider>
               </AcademicYearProvider>

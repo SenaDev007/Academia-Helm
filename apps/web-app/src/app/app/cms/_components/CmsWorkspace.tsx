@@ -30,6 +30,7 @@ import { tenantWebsiteService } from '@/services/tenant-website.service';
 import { tenantThemeService } from '@/services/tenant-theme.service';
 import { ThemeGalleryDialog } from '@/components/cms/ThemeGalleryDialog';
 import { BlockGalleryDialog } from '@/components/cms/blocks/BlockGalleryDialog';
+import { MediaPickerField } from '@/components/media/MediaPickerField';
 
 type SubTab =
   | 'general' | 'colors' | 'themes' | 'components' | 'hero' | 'figures' | 'promoter' | 'director'
@@ -289,11 +290,23 @@ function HeroTab({ config, onSave, saving }: any) {
     heroCtaUrl: config?.heroCtaUrl || '/public/pre-enrollment',
     heroIsActive: config?.heroIsActive ?? true,
     heroAlignment: (config as any)?.heroAlignment || 'center',
+    heroAnimation: (config as any)?.heroAnimation || 'fade-up',
+    heroOverlayOpacity: (config as any)?.heroOverlayOpacity ?? 60,
   });
 
   const update = (field: string, value: any) => setForm({ ...form, [field]: value });
 
   const alignmentClass = form.heroAlignment === 'left' ? 'text-left' : form.heroAlignment === 'right' ? 'text-right' : 'text-center';
+  const overlayAlpha = Math.round((form.heroOverlayOpacity / 100) * 255).toString(16).padStart(2, '0');
+
+  const animationOptions = [
+    { value: 'fade-up', label: 'Fondu vers le haut' },
+    { value: 'fade-in', label: 'Fondu simple' },
+    { value: 'slide-left', label: 'Glissement depuis la gauche' },
+    { value: 'slide-right', label: 'Glissement depuis la droite' },
+    { value: 'zoom-in', label: 'Zoom avant' },
+    { value: 'none', label: 'Aucune animation' },
+  ];
 
   return (
     <SplitLayout
@@ -314,17 +327,38 @@ function HeroTab({ config, onSave, saving }: any) {
               <label className={labelClass}>Alignement du texte</label>
               <AlignmentPicker value={form.heroAlignment} onChange={(v) => update('heroAlignment', v)} />
             </div>
+            <div>
+              <label className={labelClass}>Opacité de l'overlay</label>
+              <div className="flex items-center gap-3">
+                <input type="range" min="0" max="100" value={form.heroOverlayOpacity} onChange={(e) => update('heroOverlayOpacity', Number(e.target.value))} className="flex-1" />
+                <span className="text-xs font-semibold text-slate-600 w-10 text-right">{form.heroOverlayOpacity}%</span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1">Contrôle l'assombrissement de l'image de fond pour la lisibilité du texte.</p>
+            </div>
             <ToggleField label="Afficher la bannière" checked={form.heroIsActive} onChange={(v) => update('heroIsActive', v)} />
           </ControlCard>
 
+          <ControlCard title="Effets & Animations" icon={Eye} defaultOpen={false}>
+            <div>
+              <label className={labelClass}>Animation d'entrée</label>
+              <select value={form.heroAnimation} onChange={(e) => update('heroAnimation', e.target.value)} className={inputClass}>
+                {animationOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+              </select>
+              <p className="text-[11px] text-slate-400 mt-1">L'animation se déclenche quand le visiteur arrive sur la page.</p>
+            </div>
+          </ControlCard>
+
           <ControlCard title="Image de fond" icon={ImageIcon} defaultOpen={false}>
-            <TextField label="URL de l'image" value={form.heroImageUrl} onChange={(v) => update('heroImageUrl', v)} placeholder="https://…" hint="Si vide, un dégradé navy/bleu sera utilisé." />
-            {form.heroImageUrl && (
-              <div className="mt-2 rounded-lg overflow-hidden border border-slate-200">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={form.heroImageUrl} alt="Aperçu" className="w-full h-32 object-cover" />
-              </div>
-            )}
+            <div>
+              <label className={labelClass}>Image de fond</label>
+              <MediaPickerField
+                value={form.heroImageUrl || null}
+                onChange={(url) => update('heroImageUrl', url || '')}
+                aspect="banner"
+                folder="hero"
+                hint="Si vide, un dégradé navy/bleu sera utilisé."
+              />
+            </div>
           </ControlCard>
 
           <AutoSaveBar saving={saving} onSave={() => onSave(form)} />
@@ -332,11 +366,11 @@ function HeroTab({ config, onSave, saving }: any) {
       }
       right={
         <div className="rounded-xl overflow-hidden shadow-lg">
-          {/* Preview Hero */}
+          {/* Preview Hero avec overlay dynamique */}
           <div className={`relative min-h-[300px] flex items-center justify-center p-8 ${alignmentClass}`}
             style={{
               background: form.heroImageUrl
-                ? `linear-gradient(135deg, rgba(11,47,115,0.7), rgba(29,79,165,0.5)), url(${form.heroImageUrl}) center/cover`
+                ? `linear-gradient(135deg, rgba(11,47,115,${form.heroOverlayOpacity / 100}), rgba(29,79,165,${form.heroOverlayOpacity / 200})), url(${form.heroImageUrl}) center/cover`
                 : 'linear-gradient(135deg, #0b2f73 0%, #1d4fa5 50%, #091f4a 100%)',
             }}>
             <div className="relative z-10 max-w-md">
@@ -347,12 +381,17 @@ function HeroTab({ config, onSave, saving }: any) {
                 {form.heroSubtitle || 'Votre slogan ou phrase d\'accroche apparaîtra ici.'}
               </p>
               <div className={`flex gap-2 ${form.heroAlignment === 'center' ? 'justify-center' : form.heroAlignment === 'right' ? 'justify-end' : 'justify-start'}`}>
-                <span className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-xs font-bold text-[#0b2f73] shadow-lg"
+                <span className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-xs font-bold text-[#0b2f73] shadow-lg transition-transform hover:scale-105"
                   style={{ background: 'linear-gradient(135deg, #f5b335, #e09e1f)' }}>
                   {form.heroCtaText || 'Pré-inscription'} →
                 </span>
               </div>
             </div>
+          </div>
+          {/* Indicateur overlay */}
+          <div className="px-3 py-2 bg-slate-100 text-[10px] text-slate-500 flex items-center justify-between">
+            <span>Overlay: {form.heroOverlayOpacity}%</span>
+            <span>Animation: {animationOptions.find(a => a.value === form.heroAnimation)?.label}</span>
           </div>
         </div>
       }
@@ -446,8 +485,16 @@ function WordTab({ config, onSave, saving, fieldPrefix, title, previewIcon }: an
           <ControlCard title="Contenu" icon={MessageSquare}>
             <TextField label="Nom" value={name} onChange={(v) => update(`${fieldPrefix}Name`, v)} placeholder="Ex: M. Jean Dupont" />
             <TextAreaField label="Message" value={word} onChange={(v) => update(`${fieldPrefix}Word`, v)} rows={8} placeholder="Chers parents, chers élèves…" />
-            <TextField label="Photo (URL)" value={photo} onChange={(v) => update(`${fieldPrefix}PhotoUrl`, v)} placeholder="https://…" />
-            {photo && <div className="rounded-lg overflow-hidden border border-slate-200 w-20 h-20"><img src={photo} alt="" className="w-full h-full object-cover" /></div>}
+            <div>
+              <label className={labelClass}>Photo</label>
+              <MediaPickerField
+                value={photo || null}
+                onChange={(url) => update(`${fieldPrefix}PhotoUrl`, url || '')}
+                aspect="square"
+                folder={fieldPrefix}
+                hint="Photo de préférence carrée (format portrait)."
+              />
+            </div>
           </ControlCard>
           <ControlCard title="Affichage" icon={Eye}>
             <ToggleField label={`Afficher le mot du ${title}`} checked={form[`${fieldPrefix}IsActive`]} onChange={(v) => update(`${fieldPrefix}IsActive`, v)} />
@@ -506,7 +553,15 @@ function PresentationTab({ config, onSave, saving }: any) {
           <ControlCard title="Contenu" icon={Presentation}>
             <TextField label="Titre" value={form.presentationTitle} onChange={(v) => update('presentationTitle', v)} placeholder="Présentation de l'établissement" />
             <TextAreaField label="Texte" value={form.presentationContent} onChange={(v) => update('presentationContent', v)} rows={10} placeholder="Notre établissement s'engage à…" />
-            <TextField label="Image (URL)" value={form.presentationImageUrl} onChange={(v) => update('presentationImageUrl', v)} placeholder="https://…" />
+            <div>
+              <label className={labelClass}>Image</label>
+              <MediaPickerField
+                value={form.presentationImageUrl || null}
+                onChange={(url) => update('presentationImageUrl', url || '')}
+                aspect="wide"
+                folder="presentation"
+              />
+            </div>
           </ControlCard>
           <ToggleField label="Afficher la section" checked={form.presentationIsActive} onChange={(v) => update('presentationIsActive', v)} />
           <AutoSaveBar saving={saving} onSave={() => onSave(form)} />
@@ -680,7 +735,15 @@ function NewsTab() {
               <TextField label="Catégorie" value={form.category || ''} onChange={(v) => setForm({ ...form, category: v })} placeholder="Annonce, Événement…" />
               <TextAreaField label="Résumé" value={form.excerpt || ''} onChange={(v) => setForm({ ...form, excerpt: v })} rows={2} />
               <TextAreaField label="Contenu" value={form.content || ''} onChange={(v) => setForm({ ...form, content: v })} rows={6} />
-              <TextField label="Image de couverture (URL)" value={form.coverImageUrl || ''} onChange={(v) => setForm({ ...form, coverImageUrl: v })} />
+              <div>
+                <label className={labelClass}>Image de couverture</label>
+                <MediaPickerField
+                  value={form.coverImageUrl || null}
+                  onChange={(url) => setForm({ ...form, coverImageUrl: url })}
+                  aspect="wide"
+                  folder="news"
+                />
+              </div>
               <div className="flex gap-4">
                 <ToggleField label="Publier" checked={form.status === 'PUBLISHED'} onChange={(v) => setForm({ ...form, status: v ? 'PUBLISHED' : 'DRAFT' })} />
                 <ToggleField label="À la une" checked={!!form.isFeatured} onChange={(v) => setForm({ ...form, isFeatured: v })} />
@@ -862,7 +925,15 @@ function GalleryTab() {
           {editing && (
             <div className="bg-blue-50 rounded-xl border border-blue-200 p-4 space-y-3">
               <div className="flex items-center justify-between"><h4 className="font-bold text-sm">{editing === 'new' ? 'Nouvelle photo' : 'Modifier'}</h4><button onClick={() => setEditing(null)}><X className="w-4 h-4" /></button></div>
-              <TextField label="Image (URL)" value={form.imageUrl || ''} onChange={(v) => setForm({ ...form, imageUrl: v })} />
+              <div>
+                <label className={labelClass}>Photo</label>
+                <MediaPickerField
+                  value={form.imageUrl || null}
+                  onChange={(url) => setForm({ ...form, imageUrl: url })}
+                  aspect="square"
+                  folder="gallery"
+                />
+              </div>
               <TextField label="Légende" value={form.caption || ''} onChange={(v) => setForm({ ...form, caption: v })} />
               <TextField label="Catégorie" value={form.category || ''} onChange={(v) => setForm({ ...form, category: v })} />
               <button onClick={handleSave} className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold"><Save className="w-3.5 h-3.5" /> Enregistrer</button>
@@ -1142,7 +1213,15 @@ function SeoTab({ config, onSave, saving }: any) {
       <ControlCard title="Référencement Google" icon={Search}>
         <TextField label="Titre affiché dans Google" value={form.seoMetaTitle} onChange={(v) => setForm({ ...form, seoMetaTitle: v })} hint={`${titleCount}/60 caractères`} />
         <TextAreaField label="Description affichée dans Google" value={form.seoMetaDescription} onChange={(v) => setForm({ ...form, seoMetaDescription: v })} rows={3} hint={`${descCount}/160 caractères`} />
-        <TextField label="Image de partage (Facebook/WhatsApp)" value={form.seoOgImageUrl} onChange={(v) => setForm({ ...form, seoOgImageUrl: v })} />
+        <div>
+          <label className={labelClass}>Image de partage (Facebook/WhatsApp)</label>
+          <MediaPickerField
+            value={form.seoOgImageUrl || null}
+            onChange={(url) => setForm({ ...form, seoOgImageUrl: url || '' })}
+            aspect="wide"
+            folder="og"
+          />
+        </div>
       </ControlCard>
       <AutoSaveBar saving={saving} onSave={() => onSave(form)} />
     </>} right={

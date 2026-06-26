@@ -6,11 +6,10 @@
  * Composant affiché lorsqu'un utilisateur accède directement à
  * un sous-domaine d'école (ex: cspeb-eveildafriqueeducation.academiahelm.com).
  *
- * Présente les 4 portails disponibles dans le contexte d'une école :
+ * Présente les 3 portails disponibles dans le contexte d'une école :
  *   - ÉCOLE : Gestion de l'établissement
  *   - ENSEIGNANT : Pédagogie & suivi
  *   - PARENT / ÉLÈVE : Suivi & communication
- *   - PUBLIC : Pré-inscription & acquisition
  *
  * Design V4 : Fond navy, cartes épurées sans icônes, palette Academia Helm
  *   Navy  #0b2f73  |  Blue  #1d4fa5  |  Gold  #f5b335
@@ -60,7 +59,7 @@ interface SchoolPortalInfo {
 }
 
 /**
- * Définition des 4 portails — sans icônes, design épuré
+ * Définition des 3 portails — sans icônes, design épuré
  */
 const SCHOOL_PORTAL_DEFS = [
   {
@@ -83,13 +82,6 @@ const SCHOOL_PORTAL_DEFS = [
     subtitle: 'Suivi & communication',
     accentFrom: '#60a5fa',
     accentTo: '#2563eb',
-  },
-  {
-    type: 'PUBLIC' as PortalType,
-    title: 'Portail Public',
-    subtitle: 'Pré-inscription & infos',
-    accentFrom: '#c084fc',
-    accentTo: '#7c3aed',
   },
 ];
 

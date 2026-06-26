@@ -26,6 +26,7 @@ import type { User, Tenant } from '@/types';
 import { ReviewPromptHost } from '@/components/reviews/ReviewPromptHost';
 import { CrispChat } from '@/components/CrispChat';
 import { SubscriptionBanner } from '@/components/billing/SubscriptionBanner';
+import { TenantThemeProvider } from '@/providers/TenantThemeProvider';
 
 export interface AppLayoutClientProps {
   children: React.ReactNode;
@@ -66,11 +67,13 @@ export default function AppLayoutClient({
                 <AcademicYearProvider>
                   <SchoolLevelProvider>
                     <BilingualProvider>
-                      <ReviewPromptHost user={user} tenant={tenant}>
-                        <PostLoginFlowWrapper user={user} tenant={tenant}>
-                          {children}
-                        </PostLoginFlowWrapper>
-                      </ReviewPromptHost>
+                      <TenantThemeProvider>
+                        <ReviewPromptHost user={user} tenant={tenant}>
+                          <PostLoginFlowWrapper user={user} tenant={tenant}>
+                            {children}
+                          </PostLoginFlowWrapper>
+                        </ReviewPromptHost>
+                      </TenantThemeProvider>
                     </BilingualProvider>
                   </SchoolLevelProvider>
                 </AcademicYearProvider>

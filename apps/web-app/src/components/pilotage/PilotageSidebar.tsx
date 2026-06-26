@@ -888,7 +888,7 @@ export default function PilotageSidebar({
     <>
       {/* 1. Mobile : drawer overlay — z-[60] au-dessus de la TopBar (z-50) et du backdrop (z-[55]) */}
       <aside
-        className={`fixed left-0 top-0 h-full w-72 z-[60] lg:hidden flex flex-col bg-[#0A2A5E] text-white shadow-2xl transition-transform duration-300 ease-in-out ${
+        className={`fixed left-0 top-0 h-full w-72 z-[60] lg:hidden flex flex-col bg-[hsl(var(--sidebar))] text-[hsl(var(--sidebar-foreground))] shadow-2xl transition-transform duration-300 ease-in-out ${
           mobileDrawerOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
         role="dialog"
@@ -904,7 +904,7 @@ export default function PilotageSidebar({
 
       {/* 2. Tablette : icônes seules (md → lg) */}
       <aside
-        className="hidden md:flex lg:hidden fixed left-0 top-[56px] h-[calc(100vh-56px)] w-16 flex-col bg-[#0A2A5E] text-white z-40 shadow-xl"
+        className="hidden md:flex lg:hidden fixed left-0 top-[56px] h-[calc(100vh-56px)] w-16 flex-col bg-[hsl(var(--sidebar))] text-[hsl(var(--sidebar-foreground))] z-40 shadow-xl"
         aria-label="Navigation raccourcie"
       >
         {/* Subtle side glow */}
@@ -968,7 +968,7 @@ export default function PilotageSidebar({
 
       {/* 3. PC : sidebar complète ou icônes (lg+) */}
       <aside
-        className={`hidden lg:flex fixed left-0 top-[56px] h-[calc(100vh-56px)] bg-[#0A2A5E] text-white transition-all duration-300 ease-in-out z-40 shadow-xl flex-col ${
+        className={`hidden lg:flex fixed left-0 top-[56px] h-[calc(100vh-56px)] bg-[hsl(var(--sidebar))] text-[hsl(var(--sidebar-foreground))] transition-all duration-300 ease-in-out z-40 shadow-xl flex-col ${
           isOpen ? 'w-64' : 'w-16'
         }`}
         aria-label="Navigation principale"

@@ -22,6 +22,7 @@ import {
   Sparkles, ArrowRight, Eye, LayoutTemplate,
 } from 'lucide-react';
 import { tenantThemeService, type TenantThemeSettings } from '@/services/tenant-theme.service';
+import { tenantBlockSelectionService } from '@/services/tenant-block-selection.service';
 import {
   ALL_THEMES, DEFAULT_ACADEMIA_HELM_THEME, getThemeById,
   type Theme, type ThemeMode,
@@ -328,10 +329,20 @@ export default function TenantThemePage() {
         onClose={() => setBlockGalleryOpen(false)}
         currentThemeId={settings?.themeId}
         currentMode={currentMode}
-        onSelect={(selection) => {
-          setSuccess(`Composant "${selection.variantId}" appliqué${selection.colorOverrides ? ' avec couleurs personnalisées' : ''}`);
-          setTimeout(() => setSuccess(null), 5000);
-          // TODO: persister la sélection en base (future itération)
+        onSelect={async (selection) => {
+          try {
+            // Récupérer la catégorie depuis le variantId (ex: 'navbar-classic' → 'navbar')
+            const category = selection.variantId.split('-')[0];
+            await tenantBlockSelectionService.upsert(
+              category,
+              selection.variantId,
+              selection.colorOverrides,
+            );
+            setSuccess(`Composant "${selection.variantId}" appliqué${selection.colorOverrides ? ' avec couleurs personnalisées' : ''}`);
+            setTimeout(() => setSuccess(null), 5000);
+          } catch (err: any) {
+            setError(err?.message || 'Erreur lors de la sauvegarde du composant');
+          }
         }}
       />
     </div>

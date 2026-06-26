@@ -29,6 +29,7 @@ import { getFadeMotion } from '@/lib/motion/presets';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import type { User, Tenant } from '@/types';
 import dynamic from 'next/dynamic';
+import { TenantThemeProvider } from '@/providers/TenantThemeProvider';
 
 const PilotageLayout = dynamic(
   () => import('@/components/pilotage/PilotageLayout'),
@@ -62,9 +63,11 @@ export default function PlatformAdminLayoutClient({
               <AcademicYearProvider>
                 <SchoolLevelProvider>
                   <BilingualProvider>
-                    <PilotageLayout user={user} tenant={tenant}>
-                      {children}
-                    </PilotageLayout>
+                    <TenantThemeProvider>
+                      <PilotageLayout user={user} tenant={tenant}>
+                        {children}
+                      </PilotageLayout>
+                    </TenantThemeProvider>
                   </BilingualProvider>
                 </SchoolLevelProvider>
               </AcademicYearProvider>

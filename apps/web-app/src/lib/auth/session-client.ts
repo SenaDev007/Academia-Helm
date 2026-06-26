@@ -8,14 +8,26 @@ const TOKEN_COOKIE = 'academia_token';
 
 /**
  * Récupère le token JWT (Client Component)
+ * 
+ * Lit le token depuis le cookie 'academia_token' en priorité,
+ * puis fallback sur localStorage 'accessToken' (utilisé par persistClientSession).
  */
 export function getClientToken(): string | null {
   if (typeof window === 'undefined') return null;
   
-  // Lire depuis les cookies du navigateur
+  // 1. Lire depuis les cookies du navigateur
   const cookies = document.cookie.split('; ');
   const tokenCookie = cookies.find(row => row.startsWith(`${TOKEN_COOKIE}=`));
-  return tokenCookie ? tokenCookie.split('=')[1] : null;
+  if (tokenCookie) {
+    const token = tokenCookie.split('=')[1];
+    if (token) return token;
+  }
+  
+  // 2. Fallback : lire depuis localStorage (utilisé par persistClientSession)
+  const localStorageToken = localStorage.getItem('accessToken')?.trim();
+  if (localStorageToken) return localStorageToken;
+  
+  return null;
 }
 
 /**

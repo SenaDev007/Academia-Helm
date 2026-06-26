@@ -31,6 +31,10 @@ import { tenantThemeService } from '@/services/tenant-theme.service';
 import { ThemeGalleryDialog } from '@/components/cms/ThemeGalleryDialog';
 import { BlockGalleryDialog } from '@/components/cms/blocks/BlockGalleryDialog';
 import { MediaPickerField } from '@/components/media/MediaPickerField';
+import { RichTextEditor } from '@/components/cms/RichTextEditor';
+import { ResponsivePreview } from '@/components/cms/ResponsivePreview';
+import { SpacingControls } from '@/components/cms/SpacingControls';
+import { useAutoSave, AutoSaveBadge } from '@/components/cms/useAutoSave';
 
 type SubTab =
   | 'general' | 'colors' | 'themes' | 'components' | 'hero' | 'figures' | 'promoter' | 'director'
@@ -70,7 +74,7 @@ const inputClass = 'w-full px-3 py-2.5 border border-slate-300 rounded-lg text-s
 const labelClass = 'block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide';
 const sectionClass = 'bg-white rounded-xl border border-slate-200 p-5 shadow-sm';
 
-/** Layout split : panneau gauche (contrôles) + panneau droit (preview live) */
+/** Layout split : panneau gauche (contrôles) + panneau droit (preview live responsive) */
 function SplitLayout({ left, right, previewTitle = 'Aperçu en direct' }: { left: React.ReactNode; right: React.ReactNode; previewTitle?: string }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-6">
@@ -78,18 +82,10 @@ function SplitLayout({ left, right, previewTitle = 'Aperçu en direct' }: { left
       <div className="space-y-4">
         {left}
       </div>
-      {/* Panneau preview */}
-      <div className="lg:sticky lg:top-4 lg:self-start">
-        <div className="bg-slate-100 rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-          <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-200/50 border-b border-slate-200">
-            <Eye className="w-4 h-4 text-slate-500" />
-            <span className="text-xs font-bold text-slate-600 uppercase tracking-wide">{previewTitle}</span>
-          </div>
-          <div className="p-4 max-h-[70vh] overflow-y-auto">
-            {right}
-          </div>
-        </div>
-      </div>
+      {/* Panneau preview responsive */}
+      <ResponsivePreview previewTitle={previewTitle}>
+        {right}
+      </ResponsivePreview>
     </div>
   );
 }
@@ -173,15 +169,15 @@ function AlignmentPicker({ value, onChange }: { value: 'left' | 'center' | 'righ
   );
 }
 
-/** Bouton sauvegarder flottant avec auto-save indicator */
-function AutoSaveBar({ saving, onSave }: { saving: boolean; onSave: () => void }) {
+/** Bouton sauvegarder flottant avec auto-save badge */
+function AutoSaveBar({ saving, onSave, autoSaveStatus }: { saving: boolean; onSave: () => void; autoSaveStatus?: any }) {
   return (
     <div className="flex items-center gap-3 sticky bottom-0 bg-white/90 backdrop-blur-sm py-3 px-4 border-t border-slate-100 -mx-5 -mb-5 rounded-b-xl">
       <button onClick={onSave} disabled={saving} className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-semibold transition">
         {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
         Enregistrer
       </button>
-      {saving && <span className="text-xs text-slate-400">Enregistrement en cours…</span>}
+      {autoSaveStatus && <AutoSaveBadge status={autoSaveStatus} />}
     </div>
   );
 }
@@ -195,6 +191,12 @@ export function CmsWorkspace() {
   const [config, setConfig] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // Auto-save hook — sauvegarde automatique après 1.5s d'inactivité
+  const { status: autoSaveStatus, save: autoSave } = useAutoSave(async (data: any) => {
+    const updated = await tenantWebsiteService.updateConfig(data);
+    setConfig(updated);
+  }, 1500);
 
   const loadConfig = useCallback(async () => {
     try {
@@ -223,6 +225,11 @@ export function CmsWorkspace() {
     }
   };
 
+  /** Handler qui déclenche à la fois l'auto-save et permet le save manuel */
+  const handleAutoSave = (data: any) => {
+    autoSave(data);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -234,21 +241,24 @@ export function CmsWorkspace() {
 
   return (
     <div className="space-y-4 pb-12">
-      {/* Sub-tab navigation */}
-      <div className="flex items-center gap-1.5 border-b border-slate-200 pb-3 overflow-x-auto">
-        {TABS.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
-                isActive ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-100'
-              }`}>
-              <Icon className="h-3.5 w-3.5" />
-              {tab.label}
-            </button>
-          );
-        })}
+      {/* Sub-tab navigation + auto-save badge */}
+      <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-3">
+        <div className="flex items-center gap-1.5 overflow-x-auto">
+          {TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+                  isActive ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-100'
+                }`}>
+                <Icon className="h-3.5 w-3.5" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+        <AutoSaveBadge status={autoSaveStatus} />
       </div>
 
       {/* Content */}
@@ -542,6 +552,8 @@ function PresentationTab({ config, onSave, saving }: any) {
     presentationContent: config?.presentationContent || '',
     presentationImageUrl: config?.presentationImageUrl || '',
     presentationIsActive: config?.presentationIsActive ?? true,
+    presentationPaddingTop: (config as any)?.presentationPaddingTop ?? 64,
+    presentationPaddingBottom: (config as any)?.presentationPaddingBottom ?? 64,
   });
   const update = (field: string, value: any) => setForm({ ...form, [field]: value });
 
@@ -552,7 +564,15 @@ function PresentationTab({ config, onSave, saving }: any) {
         <>
           <ControlCard title="Contenu" icon={Presentation}>
             <TextField label="Titre" value={form.presentationTitle} onChange={(v) => update('presentationTitle', v)} placeholder="Présentation de l'établissement" />
-            <TextAreaField label="Texte" value={form.presentationContent} onChange={(v) => update('presentationContent', v)} rows={10} placeholder="Notre établissement s'engage à…" />
+            <div>
+              <label className={labelClass}>Texte</label>
+              <RichTextEditor
+                value={form.presentationContent}
+                onChange={(html) => update('presentationContent', html)}
+                placeholder="Notre établissement s'engage à…"
+                rows={10}
+              />
+            </div>
             <div>
               <label className={labelClass}>Image</label>
               <MediaPickerField
@@ -563,15 +583,21 @@ function PresentationTab({ config, onSave, saving }: any) {
               />
             </div>
           </ControlCard>
+          <ControlCard title="Espacement" icon={LayoutTemplate} defaultOpen={false}>
+            <SpacingControls
+              value={{ paddingTop: form.presentationPaddingTop, paddingBottom: form.presentationPaddingBottom }}
+              onChange={(v) => { update('presentationPaddingTop', v.paddingTop); update('presentationPaddingBottom', v.paddingBottom); }}
+            />
+          </ControlCard>
           <ToggleField label="Afficher la section" checked={form.presentationIsActive} onChange={(v) => update('presentationIsActive', v)} />
           <AutoSaveBar saving={saving} onSave={() => onSave(form)} />
         </>
       }
       right={
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100" style={{ paddingTop: `${form.presentationPaddingTop}px`, paddingBottom: `${form.presentationPaddingBottom}px` }}>
           <h3 className="text-xl font-extrabold text-slate-900 mb-3">{form.presentationTitle || 'Présentation'}</h3>
           {form.presentationImageUrl && <img src={form.presentationImageUrl} alt="" className="w-full h-40 object-cover rounded-lg mb-4" />}
-          <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap">{form.presentationContent || 'Votre texte de présentation apparaîtra ici…'}</p>
+          <div className="text-sm text-slate-600 leading-relaxed prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: form.presentationContent || '<p>Votre texte de présentation apparaîtra ici…</p>' }} />
         </div>
       }
     />
@@ -587,6 +613,8 @@ function ContentTab({ config, onSave, saving, prefix, title, icon }: any) {
     [`${prefix}Title`]: config?.[`${prefix}Title`] || '',
     [`${prefix}Content`]: config?.[`${prefix}Content`] || '',
     [`${prefix}IsActive`]: config?.[`${prefix}IsActive`] ?? true,
+    [`${prefix}PaddingTop`]: (config as any)?.[`${prefix}PaddingTop`] ?? 64,
+    [`${prefix}PaddingBottom`]: (config as any)?.[`${prefix}PaddingBottom`] ?? 64,
   });
   const update = (field: string, value: any) => setForm({ ...form, [field]: value });
 
@@ -597,16 +625,30 @@ function ContentTab({ config, onSave, saving, prefix, title, icon }: any) {
         <>
           <ControlCard title="Contenu" icon={icon}>
             <TextField label="Titre" value={form[`${prefix}Title`]} onChange={(v) => update(`${prefix}Title`, v)} placeholder={title} />
-            <TextAreaField label="Texte" value={form[`${prefix}Content`]} onChange={(v) => update(`${prefix}Content`, v)} rows={10} placeholder={`Contenu de la section ${title.toLowerCase()}…`} />
+            <div>
+              <label className={labelClass}>Texte</label>
+              <RichTextEditor
+                value={form[`${prefix}Content`]}
+                onChange={(html) => update(`${prefix}Content`, html)}
+                placeholder={`Contenu de la section ${title.toLowerCase()}…`}
+                rows={8}
+              />
+            </div>
+          </ControlCard>
+          <ControlCard title="Espacement" icon={LayoutTemplate} defaultOpen={false}>
+            <SpacingControls
+              value={{ paddingTop: form[`${prefix}PaddingTop`], paddingBottom: form[`${prefix}PaddingBottom`] }}
+              onChange={(v) => { update(`${prefix}PaddingTop`, v.paddingTop); update(`${prefix}PaddingBottom`, v.paddingBottom); }}
+            />
           </ControlCard>
           <ToggleField label={`Afficher la section ${title.toLowerCase()}`} checked={form[`${prefix}IsActive`]} onChange={(v) => update(`${prefix}IsActive`, v)} />
           <AutoSaveBar saving={saving} onSave={() => onSave(form)} />
         </>
       }
       right={
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100" style={{ paddingTop: `${form[`${prefix}PaddingTop`]}px`, paddingBottom: `${form[`${prefix}PaddingBottom`]}px` }}>
           <h3 className="text-xl font-extrabold text-slate-900 mb-3">{form[`${prefix}Title`] || title}</h3>
-          <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap">{form[`${prefix}Content`] || `Votre contenu apparaîtra ici…`}</p>
+          <div className="text-sm text-slate-600 leading-relaxed prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: form[`${prefix}Content`] || `<p>Votre contenu apparaîtra ici…</p>` }} />
         </div>
       }
     />

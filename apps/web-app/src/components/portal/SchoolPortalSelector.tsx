@@ -34,6 +34,9 @@ import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getMotionDuration } from '@/lib/motion/presets';
 import { extractTenantSlug } from '@/lib/tenant/constants';
 import { type PortalType } from '@/lib/auth/role-portal-map';
+import { useThemeApplier } from '@/lib/themes/theme-applier';
+import { tenantThemeService } from '@/services/tenant-theme.service';
+import type { ThemeMode } from '@/lib/themes/themes.config';
 
 const NAVY = '#0b2f73';
 const BLUE = '#1d4fa5';
@@ -98,7 +101,13 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
   const [schoolData, setSchoolData] = useState<SchoolPortalInfo | null>(schoolInfo || null);
   const [isLoading, setIsLoading] = useState(!schoolInfo);
   const [imgError, setImgError] = useState(false);
+  // Thème du site institutionnel (récupéré depuis le tenant-theme service)
+  const [themeId, setThemeId] = useState<string | null>(null);
+  const [themeMode, setThemeMode] = useState<ThemeMode>('auto');
   const { shouldReduceMotion } = useMotionBudget();
+
+  // Applique le thème sur <html> dès que themeId/themeMode changent
+  useThemeApplier({ themeId, mode: themeMode });
 
   const dur = useMemo(
     () => getMotionDuration(shouldReduceMotion, 'normal'),
@@ -109,6 +118,24 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
   useEffect(() => {
     setImgError(false);
   }, [schoolData?.logoUrl]);
+
+  // Charger le thème du tenant en parallèle (appel public, non-bloquant)
+  useEffect(() => {
+    const slug = subdomain || (typeof window !== 'undefined' ? extractTenantSlug(window.location.host) : null);
+    if (!slug) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const settings = await tenantThemeService.getPublicSettings(slug);
+        if (cancelled) return;
+        if (settings?.themeId) setThemeId(settings.themeId);
+        if (settings?.mode) setThemeMode(settings.mode as ThemeMode);
+      } catch {
+        // Silencieux : on garde le thème par défaut Academia Helm
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [subdomain]);
 
   // Résoudre les informations de l'école depuis l'API si pas fournies
   useEffect(() => {

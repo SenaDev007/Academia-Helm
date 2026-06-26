@@ -1203,3 +1203,100 @@ Stage Summary:
 - 100% non-technique côté UI : aucun slug, URL, JSON, hex code visible
 - Réutilisable par tous les futurs modules (CMS institutionnel, plateformes pédagogiques, etc.)
 
+
+---
+Task ID: ah-themes-21st-dev-40-themes
+Agent: Main Agent
+Task: Système de thèmes CMS façon 21st.dev — 40 thèmes officiels + preview plein écran + mode dark/light/auto
+
+Work Log:
+- Extraction des 40 thèmes officiels de https://21st.dev/community/themes via agent-browser (page JS-heavy, extraction manuelle des CSS variables inline sur chaque .theme-wrapper)
+- 40 thèmes récupérés avec ~32 variables CSS chacun (background, foreground, card, popover, primary, secondary, muted, accent, destructive, border, input, ring, sidebar, chart-1 à 5, radius, font-sans/serif/mono, letter-spacing)
+- 3 thèmes manquants récupérés via recherche de spans dans les cards : Caffeine, Claude, T3 Chat
+- Génération automatique des variantes light (inversion des couleurs neutres : background↔foreground, card→blanc, muted→gris clair, border/input assombris pour visibilité) — conservation des couleurs d'accent (primary, secondary, accent, destructive, ring, charts)
+
+Backend NestJS (apps/api-server/src/tenant-theme/) :
+- `tenant-theme.service.ts` (140 lignes) :
+  * Table `tenant_theme_settings` créée idempotentement (1 enregistrement par tenant, UPSERT via ON CONFLICT)
+  * getSettings() : retourne themeId + mode (ou valeurs par défaut si non configuré)
+  * setSettings() : met à jour themeId et/ou mode avec validation (mode ∈ {light, dark, auto}, themeId string ≤ 100 chars)
+  * getPublicSettingsBySlug() : endpoint public pour le rendu du site institutionnel (résolution tenant par slug/subdomain)
+- `tenant-theme.controller.ts` (60 lignes) :
+  * GET /api/tenant-theme (auth) → settings du tenant courant
+  * PUT /api/tenant-theme (auth) → met à jour themeId + mode
+  * GET /api/tenant-theme/public/:slug (public, no auth) → pour le rendu du site public
+- `tenant-theme.module.ts` : déclare service + controller
+- AppModule : module branché après TenantMediaModule
+
+Frontend Next.js (apps/web-app/src/) :
+- `lib/themes/themes.config.ts` (3918 lignes) :
+  * 40 thèmes officiels 21st.dev avec dark (officiel) + light (auto-généré)
+  * Types TypeScript : Theme, ThemeVariant, ThemeColors, ThemeTypography, ThemeMode
+  * Helpers : hslToHex(), getThemeById(), resolveThemeVariant() (gère mode 'auto' via matchMedia)
+  * DEFAULT_ACADEMIA_HELM_THEME : palette Navy/Blue/Gold par défaut (utilisée tant qu'aucun thème n'est choisi)
+  * ALL_THEMES : tableau combinant le défaut Academia Helm + les 40 thèmes
+- `lib/themes/theme-applier.tsx` (200 lignes) :
+  * useThemeApplier() : hook qui applique les CSS vars sur <html> (ou un élément cible)
+  * Gestion du mode 'auto' : écoute matchMedia('(prefers-color-scheme: dark)') et se met à jour en temps réel
+  * <ThemeApplier /> : composant invisible pour le site public (placé en haut du rendu)
+  * <ThemeScope /> : wrapper pour les previews CMS admin (isole le thème dans un <div>, n'affecte pas <html>)
+  * getThemeCssVars() : helper SSR pour générer le CSS string sans effet de bord
+- `components/cms/ThemePreviewCard.tsx` (220 lignes) :
+  * Mini-page de preview façon 21st.dev : header (logo + menu) + hero (titre + sous-titre + 2 boutons) + bandeau chiffres clés (3 KPIs) + section cards (2 cartes) + footer
+  * 2 tailles : 'sm' (vignette galerie) et 'lg' (preview plein écran)
+  * Toutes les couleurs via hsl(var(--xxx)) — hérite du ThemeScope parent
+- `components/cms/ThemeGalleryDialog.tsx` (290 lignes) :
+  * Galerie façon 21st.dev : grille responsive de 40 vignettes (2-5 colonnes selon la taille d'écran)
+  * Toggle Dark/Light/Auto en haut (prévisualisation globale)
+  * Recherche par nom ou description
+  * Clic vignette → grand modal de preview plein écran avec ThemePreviewCard size='lg'
+  * Dans le modal : toggle Dark/Light/Auto + palette de couleurs visible (4 swatches : Primaire, Accent, Fond, Texte)
+  * Bouton "Appliquer ce thème" → appelle onSelect({themeId, mode})
+  * Badge "Actuel" sur le thème actuellement sélectionné
+  * Badge "Par défaut" sur Academia Helm
+- `app/platform/tenant-theme/page.tsx` (290 lignes) :
+  * Page admin autonome /platform/tenant-theme
+  * Carte "Thème actuel" avec preview live + palette + toggle mode
+  * Section "Thèmes populaires" (8 vignettes en raccourci)
+  * Bouton "Choisir un thème" → ouvre ThemeGalleryDialog
+  * Bannières succès/erreur
+- `services/tenant-theme.service.ts` (60 lignes) : client typé (getSettings, setSettings, getPublicSettings)
+- `app/api/tenant-theme/[[...path]]/route.ts` (80 lignes) : proxy catch-all (GET/POST/PUT/PATCH) vers NestJS, gestion auth + endpoints publics
+
+Intégration côté public :
+- `components/portal/SchoolPortalSelector.tsx` modifié :
+  * Ajout imports : useThemeApplier, tenantThemeService, ThemeMode
+  * Nouveaux états : themeId, themeMode (défaut: null + 'auto')
+  * useThemeApplier({ themeId, mode: themeMode }) applique le thème sur <html>
+  * useEffect parallèle qui charge le thème via tenantThemeService.getPublicSettings(slug)
+  * Non-bloquant : si l'API thème échoue, on garde le défaut Academia Helm
+
+Verification:
+- tsc --noEmit sur themes.config.ts seul : 0 erreur (3918 lignes)
+- tsc --noEmit sur les autres fichiers thème : 0 erreur de syntaxe (uniquement erreurs d'infrastructure @types/react)
+- Babel parser sur backend (3 fichiers) : 3/3 OK
+- Babel parser sur frontend (7 fichiers) : 6/7 OK (ThemePreviewCard a une erreur interne Babel mais tsc valide la syntaxe)
+- app.module.ts : compile OK après ajout de TenantThemeModule
+
+Stage Summary:
+- 11 fichiers créés :
+  * Backend : tenant-theme.service.ts (140 lignes), tenant-theme.controller.ts (60 lignes), tenant-theme.module.ts
+  * Frontend lib : themes.config.ts (3918 lignes), theme-applier.tsx (200 lignes)
+  * Frontend components : ThemePreviewCard.tsx (220 lignes), ThemeGalleryDialog.tsx (290 lignes)
+  * Frontend pages/services : tenant-theme/page.tsx (290 lignes), tenant-theme.service.ts (60 lignes)
+  * Proxy : api/tenant-theme/[[...path]]/route.ts (80 lignes)
+- 2 fichiers modifiés :
+  * api-server/src/app.module.ts (+2 lignes : import + registration TenantThemeModule)
+  * web-app/src/components/portal/SchoolPortalSelector.tsx (+25 lignes : imports + useThemeApplier + useEffect chargement thème)
+- 1 fichier de génération : scripts/generate-themes-config.py (réutilisable pour régénérer si 21st.dev ajoute de nouveaux thèmes)
+- Table `tenant_theme_settings` créée automatiquement à la première requête (CREATE TABLE IF NOT EXISTS idempotent)
+- 40 thèmes officiels 21st.dev + 1 thème par défaut Academia Helm = 41 thèmes disponibles
+- 3 modes par thème : light, dark, auto (suit l'OS du visiteur)
+- Workflow utilisateur 100% non-technique :
+  1. Directeur ouvre /platform/tenant-theme
+  2. Voit son thème actuel + preview live
+  3. Clic "Choisir un thème" → galerie 40 vignettes
+  4. Clic une vignette → preview plein écran + toggle Dark/Light/Auto
+  5. Clic "Appliquer ce thème" → toast de confirmation + site mis à jour
+- Côté public : le site charge le thème automatiquement (appel API non-bloquant), fallback Academia Helm si échec
+

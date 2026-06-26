@@ -31,6 +31,10 @@ import { GetTenant } from '../common/decorators/tenant.decorator';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { PrismaService } from '../database/prisma.service';
+import { OpenRouterService } from '../common/services/openrouter.service';
+import { SkipThrottle } from '@nestjs/throttler';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 /**
  * Helper pour résoudre le tenantId depuis @GetTenant() ou @TenantId() fallback.
@@ -42,12 +46,14 @@ function resolveTid(tenant: any, tenantIdFallback?: string): string {
 }
 
 @Controller('tenant-website')
+@Roles('SUPER_DIRECTOR', 'DIRECTOR', 'ADMIN', 'SCHOOL_ADMIN', 'SCHOOL_OWNER', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'admin')
 export class TenantWebsiteController {
   private readonly logger = new Logger(TenantWebsiteController.name);
 
   constructor(
     private readonly websiteService: TenantWebsiteService,
     private readonly prisma: PrismaService,
+    private readonly openRouter: OpenRouterService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -131,18 +137,143 @@ export class TenantWebsiteController {
     return this.websiteService.createContactMessage(tenant.id, body);
   }
 
+  /**
+   * POST /api/tenant-website/public/:tenantSlug/chat
+   * Chatbot IA public — répond aux questions des visiteurs en se basant sur
+   * les données publiques du site (FAQ, présentation, admissions, etc.).
+   *
+   * Body: { message: string, history?: Array<{role: 'user'|'assistant', content: string}> }
+   * Response: { reply: string, sources?: string[] }
+   */
+  @Public()
+  @SkipThrottle()
+  @Post('public/:tenantSlug/chat')
+  async publicChat(
+    @Param('tenantSlug') tenantSlug: string,
+    @Body() body: { message: string; history?: Array<{ role: 'user' | 'assistant'; content: string }> },
+  ) {
+    if (!body.message || typeof body.message !== 'string' || body.message.trim().length === 0) {
+      throw new BadRequestException('Le message est requis');
+    }
+    if (body.message.length > 1000) {
+      throw new BadRequestException('Le message est trop long (max 1000 caractères)');
+    }
+
+    // Résoudre le tenant
+    const tenant = await this.prisma.tenant.findFirst({
+      where: {
+        OR: [{ slug: tenantSlug }, { subdomain: tenantSlug }],
+        status: { in: ['active', 'trial'] },
+      },
+      select: { id: true, name: true },
+    });
+
+    if (!tenant) {
+      throw new BadRequestException('Établissement introuvable');
+    }
+
+    // Charger les données publiques (FAQ + config) pour le contexte IA
+    const publicData = await this.websiteService.getPublicWebsiteData(tenant.id);
+    if (!publicData) {
+      throw new BadRequestException('Site institutionnel non configuré');
+    }
+
+    const { website, faqItems } = publicData;
+
+    // Construire le contexte pour l'IA
+    const faqContext = faqItems && faqItems.length > 0
+      ? faqItems.map((f: any) => `Q: ${f.question}\nR: ${f.answer}`).join('\n\n')
+      : 'Aucune FAQ disponible.';
+
+    const schoolInfo = [
+      `Établissement: ${tenant.name}`,
+      website?.heroTitle ? `Slogan: ${website.heroTitle}` : null,
+      website?.heroSubtitle ? `Description: ${website.heroSubtitle}` : null,
+      website?.presentationContent ? `Présentation: ${website.presentationContent}` : null,
+      website?.admissionsContent ? `Admissions: ${website.admissionsContent}` : null,
+      website?.schoolLifeContent ? `Vie scolaire: ${website.schoolLifeContent}` : null,
+      website?.contactEmail ? `Email: ${website.contactEmail}` : null,
+      website?.contactPhone ? `Téléphone: ${website.contactPhone}` : null,
+      website?.contactAddress ? `Adresse: ${website.contactAddress}` : null,
+    ].filter(Boolean).join('\n');
+
+    const systemPrompt = `Tu es l'assistant virtuel du site institutionnel de l'établissement "${tenant.name}".
+Ton rôle est d'aider les visiteurs (parents, élèves, candidats) en répondant à leurs questions sur l'établissement.
+
+INFORMATIONS SUR L'ÉTABLISSEMENT:
+${schoolInfo}
+
+FAQ (Questions fréquentes):
+${faqContext}
+
+RÈGLES:
+1. Réponds uniquement en français.
+2. Sois courtois, précis et concis (max 3-4 phrases).
+3. Si la question porte sur des informations disponibles dans le contexte ci-dessus, utilise-les.
+4. Si tu ne connais pas la réponse, invite le visiteur à contacter l'établissement par email ou téléphone.
+5. N'invente JAMAIS d'informations (frais, dates, programmes) qui ne sont pas dans le contexte.
+6. Redirige vers la pré-inscription si la question concerne l'admission ou l'inscription.
+
+Message de bienvenue par défaut: ${website?.aiWelcomeMessage || 'Bonjour ! Comment puis-je vous aider ?'}`;
+
+    // Construire l'historique des messages
+    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+      { role: 'system', content: systemPrompt },
+    ];
+
+    if (Array.isArray(body.history)) {
+      for (const m of body.history.slice(-6)) { // Garde seulement les 6 derniers échanges
+        if (m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string') {
+          messages.push({ role: m.role, content: m.content });
+        }
+      }
+    }
+
+    messages.push({ role: 'user', content: body.message });
+
+    try {
+      const response = await this.openRouter.chat({
+        messages,
+        temperature: 0.7,
+        maxTokens: 500,
+      });
+
+      return {
+        reply: response.content || 'Désolé, je n\'ai pas pu traiter votre demande. N\'hésitez pas à nous contacter directement.',
+        sources: [],
+      };
+    } catch (err: any) {
+      this.logger.error(`Chat IA failed: ${err.message}`);
+      // Fallback : si l'IA échoue, on tente un matching FAQ simple
+      const msg = body.message.toLowerCase();
+      const faqMatch = faqItems?.find((f: any) => {
+        const q = (f.question || '').toLowerCase();
+        return q.split(' ').some((word: string) => word.length > 3 && msg.includes(word));
+      });
+
+      if (faqMatch) {
+        return { reply: faqMatch.answer, sources: ['FAQ'] };
+      }
+
+      return {
+        reply: 'Désolé, je rencontre un problème technique. Pour toute question, n\'hésitez pas à nous contacter directement par email ou téléphone.',
+        sources: [],
+      };
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════════════════
   //  CONFIGURATION GLOBALE (auth requise)
   // ═══════════════════════════════════════════════════════════════════════
 
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Get()
   async getWebsiteConfig(@GetTenant() tenant: any, @TenantId() tidFallback?: string) {
     const tid = resolveTid(tenant, tidFallback);
     return this.websiteService.getWebsiteConfig(tid);
   }
 
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Put()
   async updateWebsiteConfig(
     @GetTenant() tenant: any,
@@ -157,7 +288,7 @@ export class TenantWebsiteController {
   //  ACTUALITÉS (auth requise)
   // ═══════════════════════════════════════════════════════════════════════
 
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Get('news')
   async getNewsArticles(
     @GetTenant() tenant: any,
@@ -173,7 +304,7 @@ export class TenantWebsiteController {
     });
   }
 
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Post('news')
   async createNewsArticle(
     @GetTenant() tenant: any,
@@ -186,7 +317,7 @@ export class TenantWebsiteController {
     return this.websiteService.createNewsArticle(tid, body);
   }
 
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Put('news/:id')
   async updateNewsArticle(
     @GetTenant() tenant: any,
@@ -197,7 +328,7 @@ export class TenantWebsiteController {
     return this.websiteService.updateNewsArticle(tid, id, body);
   }
 
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Delete('news/:id')
   async deleteNewsArticle(
     @GetTenant() tenant: any,
@@ -211,7 +342,7 @@ export class TenantWebsiteController {
   //  ÉVÉNEMENTS (auth requise)
   // ═══════════════════════════════════════════════════════════════════════
 
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Get('events')
   async getEvents(
     @GetTenant() tenant: any,
@@ -221,7 +352,7 @@ export class TenantWebsiteController {
     return this.websiteService.getEvents(tid, { status });
   }
 
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Post('events')
   async createEvent(
     @GetTenant() tenant: any,
@@ -234,7 +365,7 @@ export class TenantWebsiteController {
     return this.websiteService.createEvent(tid, body);
   }
 
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Put('events/:id')
   async updateEvent(
     @GetTenant() tenant: any,
@@ -245,7 +376,7 @@ export class TenantWebsiteController {
     return this.websiteService.updateEvent(tid, id, body);
   }
 
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Delete('events/:id')
   async deleteEvent(
     @GetTenant() tenant: any,
@@ -259,14 +390,14 @@ export class TenantWebsiteController {
   //  GALERIE (auth requise)
   // ═══════════════════════════════════════════════════════════════════════
 
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Get('gallery')
   async getGalleryItems(@GetTenant() tenant: any) {
     const tid = resolveTid(tenant);
     return this.websiteService.getGalleryItems(tid);
   }
 
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Post('gallery')
   async createGalleryItem(
     @GetTenant() tenant: any,
@@ -277,7 +408,7 @@ export class TenantWebsiteController {
     return this.websiteService.createGalleryItem(tid, body);
   }
 
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Put('gallery/:id')
   async updateGalleryItem(
     @GetTenant() tenant: any,
@@ -288,7 +419,7 @@ export class TenantWebsiteController {
     return this.websiteService.updateGalleryItem(tid, id, body);
   }
 
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Delete('gallery/:id')
   async deleteGalleryItem(
     @GetTenant() tenant: any,
@@ -302,14 +433,14 @@ export class TenantWebsiteController {
   //  TÉMOIGNAGES (auth requise)
   // ═══════════════════════════════════════════════════════════════════════
 
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Get('testimonials')
   async getTestimonials(@GetTenant() tenant: any) {
     const tid = resolveTid(tenant);
     return this.websiteService.getTestimonials(tid);
   }
 
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Post('testimonials')
   async createTestimonial(
     @GetTenant() tenant: any,
@@ -322,7 +453,7 @@ export class TenantWebsiteController {
     return this.websiteService.createTestimonial(tid, body);
   }
 
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Put('testimonials/:id')
   async updateTestimonial(
     @GetTenant() tenant: any,
@@ -333,7 +464,7 @@ export class TenantWebsiteController {
     return this.websiteService.updateTestimonial(tid, id, body);
   }
 
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Delete('testimonials/:id')
   async deleteTestimonial(
     @GetTenant() tenant: any,
@@ -347,14 +478,14 @@ export class TenantWebsiteController {
   //  FAQ (auth requise)
   // ═══════════════════════════════════════════════════════════════════════
 
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Get('faq')
   async getFaqItems(@GetTenant() tenant: any) {
     const tid = resolveTid(tenant);
     return this.websiteService.getFaqItems(tid);
   }
 
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Post('faq')
   async createFaqItem(
     @GetTenant() tenant: any,
@@ -367,7 +498,7 @@ export class TenantWebsiteController {
     return this.websiteService.createFaqItem(tid, body);
   }
 
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Put('faq/:id')
   async updateFaqItem(
     @GetTenant() tenant: any,
@@ -378,7 +509,7 @@ export class TenantWebsiteController {
     return this.websiteService.updateFaqItem(tid, id, body);
   }
 
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Delete('faq/:id')
   async deleteFaqItem(
     @GetTenant() tenant: any,
@@ -392,7 +523,7 @@ export class TenantWebsiteController {
   //  MESSAGES DE CONTACT (auth requise — pour la gestion)
   // ═══════════════════════════════════════════════════════════════════════
 
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Get('contact')
   async getContactMessages(
     @GetTenant() tenant: any,
@@ -402,7 +533,7 @@ export class TenantWebsiteController {
     return this.websiteService.getContactMessages(tid, { status });
   }
 
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Put('contact/:id')
   async updateContactMessageStatus(
     @GetTenant() tenant: any,
@@ -413,7 +544,7 @@ export class TenantWebsiteController {
     return this.websiteService.updateContactMessageStatus(tid, id, body.status);
   }
 
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Delete('contact/:id')
   async deleteContactMessage(
     @GetTenant() tenant: any,

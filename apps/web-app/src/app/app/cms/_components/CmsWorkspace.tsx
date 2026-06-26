@@ -390,19 +390,40 @@ function SchoolLifeTab({ config, onSave, saving }: any) {
 
 // ═══ CRUD TABS (News, Events, Gallery, Testimonials, FAQ, Contact) ═══
 
+// Mapping explicite entity → nom des méthodes du service tenantWebsiteService.
+// Évite la construction dynamique `service['get'+entity]` qui cassait pour
+// Event/GalleryItem/Testimonial/FaqItem (singulier vs pluriel).
+const ENTITY_METHOD_MAP: Record<string, { get: string; create: string; update: string; delete: string }> = {
+  News:        { get: 'getNews',         create: 'createNews',         update: 'updateNews',         delete: 'deleteNews' },
+  Event:       { get: 'getEvents',       create: 'createEvent',        update: 'updateEvent',        delete: 'deleteEvent' },
+  GalleryItem: { get: 'getGallery',      create: 'createGalleryItem',  update: 'updateGalleryItem',  delete: 'deleteGalleryItem' },
+  Testimonial: { get: 'getTestimonials', create: 'createTestimonial',  update: 'updateTestimonial',  delete: 'deleteTestimonial' },
+  FaqItem:     { get: 'getFaq',          create: 'createFaqItem',      update: 'updateFaqItem',      delete: 'deleteFaqItem' },
+};
+
 function CrudTab({ entity, fields, service }: { entity: string; fields: any[]; service: any }) {
+  const methods = ENTITY_METHOD_MAP[entity];
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<any>(null);
   const [form, setForm] = useState<any>({});
 
   const load = useCallback(async () => {
+    if (!methods) {
+      console.error(`CrudTab: no method mapping for entity "${entity}"`);
+      setItems([]);
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
-      const data = await service[`get${entity}`]();
+      const data = await service[methods.get]();
       setItems(Array.isArray(data) ? data : []);
-    } catch { setItems([]); } finally { setLoading(false); }
-  }, [service, entity]);
+    } catch (err: any) {
+      console.error(`CrudTab load error (${entity}):`, err?.message);
+      setItems([]);
+    } finally { setLoading(false); }
+  }, [service, entity, methods]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -415,11 +436,12 @@ function CrudTab({ entity, fields, service }: { entity: string; fields: any[]; s
   const startEdit = (item: any) => { setForm({ ...item }); setEditing(item.id); };
 
   const handleSave = async () => {
+    if (!methods) return;
     try {
       if (editing === 'new') {
-        await service[`create${entity}`](form);
+        await service[methods.create](form);
       } else {
-        await service[`update${entity}`](editing, form);
+        await service[methods.update](editing, form);
       }
       toast({ variant: 'success', title: 'Enregistré' });
       setEditing(null); setForm({});
@@ -430,9 +452,10 @@ function CrudTab({ entity, fields, service }: { entity: string; fields: any[]; s
   };
 
   const handleDelete = async (id: string) => {
+    if (!methods) return;
     if (!confirm('Supprimer cet élément ?')) return;
     try {
-      await service[`delete${entity}`](id);
+      await service[methods.delete](id);
       toast({ variant: 'success', title: 'Supprimé' });
       load();
     } catch (err: any) {

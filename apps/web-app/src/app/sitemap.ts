@@ -36,36 +36,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: 'weekly',
       priority: 1.0,
     },
-    {
-      url: `${baseUrl}/#presentation`,
-      lastModified: new Date(),
-      changeFrequency: 'monthly',
-      priority: 0.8,
-    },
-    {
-      url: `${baseUrl}/#actualites`,
-      lastModified: new Date(),
-      changeFrequency: 'weekly',
-      priority: 0.8,
-    },
-    {
-      url: `${baseUrl}/#agenda`,
-      lastModified: new Date(),
-      changeFrequency: 'weekly',
-      priority: 0.7,
-    },
-    {
-      url: `${baseUrl}/#galerie`,
-      lastModified: new Date(),
-      changeFrequency: 'monthly',
-      priority: 0.6,
-    },
-    {
-      url: `${baseUrl}/#contact`,
-      lastModified: new Date(),
-      changeFrequency: 'monthly',
-      priority: 0.7,
-    },
+    // Note : on ne référence pas les ancres (#presentation, #actualites, etc.)
+    // car Google ignore les fragments dans les sitemaps. Les sections sont
+    // accessibles depuis la page d'accueil.
   ];
 
   // Récupérer les actualités publiées pour le sitemap
@@ -87,7 +60,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         }
       }
     }
-  } catch {}
+  } catch (err) {
+    console.error('[sitemap] Failed to fetch news articles:', err);
+  }
 
   return entries;
 }

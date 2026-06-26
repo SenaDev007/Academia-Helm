@@ -96,7 +96,21 @@ export class TenantWebsiteService {
    * témoignages actifs, FAQ active.
    */
   async getPublicWebsiteData(tenantId: string) {
-    const website = await this.getWebsiteConfig(tenantId);
+    // ⚠️ Ne PAS appeler getWebsiteConfig() ici : cette méthode est appelée
+    // par l'endpoint public GET /public/:slug (sans auth). Si on appelait
+    // getWebsiteConfig(), qui crée une ligne si elle n'existe pas, un simple
+    // visiteur non authentifié déclencherait un INSERT en base à chaque
+    // requête sur un slug inconnu → vecteur d'abus + charge DB.
+    // On lit sans créer, et on retourne null si la config n'existe pas.
+    const website = await this.prisma.tenantWebsite.findUnique({
+      where: { tenantId },
+    });
+
+    // Si le site n'est pas configuré ou désactivé, on retourne null
+    // (le frontend affichera un état "site non configuré")
+    if (!website || !website.isActive) {
+      return null;
+    }
 
     const [newsArticles, events, galleryItems, testimonials, faqItems] = await Promise.all([
       // Actualités publiées, triées par date de publication décroissante
@@ -515,10 +529,20 @@ export class TenantWebsiteService {
   private slugify(text: string): string {
     return text
       .toString()
+      // 1. Normaliser les accents (NFD) puis supprimer les diacritiques
+      //    "École Catholique" → "Ecole Catholique" (pas "cole catholique")
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
       .toLowerCase()
       .trim()
-      .replace(/[^\w\s-]/g, '') // remove non-word chars
-      .replace(/[\s_-]+/g, '-') // collapse spaces and underscores to hyphens
-      .replace(/^-+|-+$/g, ''); // remove leading/trailing hyphens
+      // 2. Remplacer les cédilles et autres caractères spéciaux connus
+      .replace(/œ/g, 'oe')
+      .replace(/æ/g, 'ae')
+      // 3. Supprimer les caractères non alphanumériques restants (sauf espaces et tirets)
+      .replace(/[^a-z0-9\s-]/g, '')
+      // 4. Coller les espaces et underscores en tirets
+      .replace(/[\s_-]+/g, '-')
+      // 5. Supprimer les tirets en début/fin
+      .replace(/^-+|-+$/g, '');
   }
 }

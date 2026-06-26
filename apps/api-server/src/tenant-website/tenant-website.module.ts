@@ -10,9 +10,10 @@ import { TenantWebsiteSyncController } from './tenant-website-sync.controller';
 import { TenantWebsiteService } from './tenant-website.service';
 import { DatabaseModule } from '../database/database.module';
 import { AuthModule } from '../auth/auth.module';
+import { OpenRouterModule } from '../common/services/openrouter.module';
 
 @Module({
-  imports: [DatabaseModule, AuthModule],
+  imports: [DatabaseModule, AuthModule, OpenRouterModule],
   controllers: [TenantWebsiteController, TenantWebsiteSyncController],
   providers: [TenantWebsiteService],
   exports: [TenantWebsiteService],

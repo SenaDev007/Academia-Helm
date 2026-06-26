@@ -31,6 +31,7 @@ import FloatingEduParticles from '@/components/ui/FloatingEduParticles';
 import TenantAiChatbot from '@/components/portal/TenantAiChatbot';
 import TenantStructuredData from '@/components/portal/TenantStructuredData';
 import TenantRecruitmentBanner from '@/components/portal/TenantRecruitmentBanner';
+import { ContactForm } from '@/components/portal/ContactForm';
 import { NotchNav } from '@/components/ui/notch-nav';
 import TenantFooter from '@/components/ui/footer-column';
 import TenantHeader from '@/components/portal/TenantHeader';
@@ -137,8 +138,10 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   const navLinks = [
     { label: 'Accueil', href: '#hero' },
     { label: 'Présentation', href: '#presentation' },
+    { label: 'Admissions', href: '#admissions' },
+    { label: 'Vie scolaire', href: '#vie-scolaire' },
     { label: 'Actualités', href: '#actualites' },
-    { label: 'Agenda', href: '#agenda' },
+    { label: 'FAQ', href: '#faq' },
     { label: 'Recrutement', href: '/jobs' },
     { label: 'Contact', href: '#contact' },
   ];
@@ -280,6 +283,41 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         </section>
       )}
 
+      {/* ═══ ADMISSIONS ═══ */}
+      {website?.admissionsIsActive && website?.admissionsContent && (
+        <section id="admissions" className="py-16 md:py-20 bg-white">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-8">
+              <h2 className="text-2xl md:text-3xl font-black text-slate-900 mb-3">{website.admissionsTitle || 'Admissions'}</h2>
+              <div className="w-16 h-1 mx-auto rounded-full" style={{ background: `linear-gradient(90deg, ${NAVY}, ${GOLD})` }} />
+            </div>
+            <p className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap">{website.admissionsContent}</p>
+            <div className="mt-8 text-center">
+              <a
+                href={website.heroCtaUrl || '/public/pre-enrollment'}
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-white font-semibold shadow-lg hover:shadow-xl transition-all"
+                style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
+              >
+                {website.heroCtaText || 'Pré-inscription'}
+              </a>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ═══ VIE SCOLAIRE ═══ */}
+      {website?.schoolLifeIsActive && website?.schoolLifeContent && (
+        <section id="vie-scolaire" className="py-16 md:py-20 bg-slate-50">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-8">
+              <h2 className="text-2xl md:text-3xl font-black text-slate-900 mb-3">{website.schoolLifeTitle || 'Vie scolaire'}</h2>
+              <div className="w-16 h-1 mx-auto rounded-full" style={{ background: `linear-gradient(90deg, ${NAVY}, ${GOLD})` }} />
+            </div>
+            <p className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap">{website.schoolLifeContent}</p>
+          </div>
+        </section>
+      )}
+
       {/* ═══ ACTUALITÉS ═══ */}
       {websiteData?.newsArticles && websiteData.newsArticles.length > 0 && (
         <section id="actualites" className="py-16 md:py-20 bg-slate-50">
@@ -379,6 +417,109 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
           </div>
         </section>
       )}
+
+      {/* ═══ FAQ ═══ */}
+      {websiteData?.faqItems && websiteData.faqItems.length > 0 && (
+        <section id="faq" className="py-16 md:py-20 bg-white">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-8">
+              <h2 className="text-2xl md:text-3xl font-black text-slate-900 mb-3">Questions fréquentes</h2>
+              <p className="text-sm text-slate-500">Les réponses aux questions les plus posées par les parents</p>
+              <div className="w-16 h-1 mx-auto mt-3 rounded-full" style={{ background: `linear-gradient(90deg, ${NAVY}, ${GOLD})` }} />
+            </div>
+            <div className="space-y-4">
+              {websiteData.faqItems.map((item: any, idx: number) => (
+                <details
+                  key={item.id || idx}
+                  className="group bg-slate-50 rounded-xl border border-slate-100 overflow-hidden hover:border-slate-200 transition"
+                >
+                  <summary className="flex items-center justify-between cursor-pointer p-4 sm:p-5 select-none">
+                    <h3 className="text-base font-semibold text-slate-900 pr-4">{item.question}</h3>
+                    <span className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-slate-400 group-open:rotate-45 transition-transform" style={{ background: GOLD + '20', color: NAVY }}>
+                      +
+                    </span>
+                  </summary>
+                  <div className="px-4 sm:px-5 pb-4 sm:pb-5 text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
+                    {item.answer}
+                  </div>
+                </details>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ═══ CONTACT ═══ */}
+      <section id="contact" className="py-16 md:py-20 bg-slate-50">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Coordonnées */}
+            <div>
+              <h2 className="text-2xl md:text-3xl font-black text-slate-900 mb-3">Contactez-nous</h2>
+              <div className="w-16 h-1 mb-6 rounded-full" style={{ background: `linear-gradient(90deg, ${NAVY}, ${GOLD})` }} />
+              <p className="text-sm text-slate-600 mb-6 leading-relaxed">
+                Une question sur l'inscription, les programmes ou la vie scolaire ? N'hésitez pas à nous écrire — nous vous répondrons dans les meilleurs délais.
+              </p>
+              <div className="space-y-3">
+                {website?.contactEmail && (
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: NAVY + '15' }}>
+                      <Mail className="w-4 h-4" style={{ color: NAVY }} />
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">Email</p>
+                      <a href={`mailto:${website.contactEmail}`} className="text-sm font-semibold text-slate-900 hover:underline">
+                        {website.contactEmail}
+                      </a>
+                    </div>
+                  </div>
+                )}
+                {website?.contactPhone && (
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: GOLD + '15' }}>
+                      <Phone className="w-4 h-4" style={{ color: GOLD }} />
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">Téléphone</p>
+                      <a href={`tel:${website.contactPhone}`} className="text-sm font-semibold text-slate-900 hover:underline">
+                        {website.contactPhone}
+                      </a>
+                    </div>
+                  </div>
+                )}
+                {website?.contactAddress && (
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: NAVY + '15' }}>
+                      <MapPin className="w-4 h-4" style={{ color: NAVY }} />
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">Adresse</p>
+                      <p className="text-sm font-semibold text-slate-900">{website.contactAddress}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+              {website?.contactMapUrl && (
+                <a
+                  href={website.contactMapUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 mt-6 text-sm font-semibold hover:underline"
+                  style={{ color: BLUE }}
+                >
+                  <MapPin className="w-4 h-4" />
+                  Voir sur Google Maps
+                </a>
+              )}
+            </div>
+
+            {/* Formulaire */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 sm:p-8">
+              <ContactForm tenantSlug={slug} accentColor={GOLD} primaryColor={NAVY} />
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* ═══ ACCÈS PORTAILS ═══ */}
       <section id="portails" className="relative py-16 md:py-20 overflow-hidden" style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 60%, ${DARK} 100%)` }}>

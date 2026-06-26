@@ -455,7 +455,6 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         <section id="presentation" className="py-16 md:py-20 bg-white">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
             <SectionHeader eyebrow="Notre école" title={withDefault(website.presentationTitle, DEFAULT_WEBSITE_CONFIG.presentationTitle)} navy={NAVY} gold={GOLD} />
-            </div>
             {website.presentationImageUrl && (
               <div className="mb-8 rounded-2xl overflow-hidden shadow-lg">
                 <img src={website.presentationImageUrl} alt="Présentation" className="w-full h-56 md:h-72 object-cover" />
@@ -471,7 +470,6 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         <section id="admissions" className="py-16 md:py-20 bg-white">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
             <SectionHeader eyebrow="Rejoignez-nous" title={withDefault(website.admissionsTitle, DEFAULT_WEBSITE_CONFIG.admissionsTitle)} navy={NAVY} gold={GOLD} />
-            </div>
             <p className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap">{resolveLevelField('admissionsContent', withDefault(website.admissionsContent, DEFAULT_WEBSITE_CONFIG.admissionsContent))}</p>
             <div className="mt-8 text-center">
               <a
@@ -491,7 +489,6 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         <section id="vie-scolaire" className="py-16 md:py-20 bg-slate-50">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
             <SectionHeader eyebrow="Vie quotidienne" title={withDefault(website.schoolLifeTitle, DEFAULT_WEBSITE_CONFIG.schoolLifeTitle)} navy={NAVY} gold={GOLD} />
-            </div>
             <p className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap">{resolveLevelField('schoolLifeContent', withDefault(website.schoolLifeContent, DEFAULT_WEBSITE_CONFIG.schoolLifeContent))}</p>
           </div>
         </section>
@@ -502,7 +499,6 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         <section id="actualites" className="py-16 md:py-20 bg-slate-50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <SectionHeader eyebrow="Dernières nouvelles" title="Actualités" navy={NAVY} gold={GOLD} />
-            </div>
             <div className="grid md:grid-cols-3 gap-6">
               {newsArticles.slice(0, 3).map((article: any) => (
                 <motion.article key={article.id} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
@@ -536,7 +532,6 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         <section id="agenda" className="py-16 md:py-20 bg-white">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
             <SectionHeader eyebrow="À venir" title="Agenda" navy={NAVY} gold={GOLD} />
-            </div>
             <div className="space-y-3">
               {events.slice(0, 5).map((event: any) => (
                 <div key={event.id} className="flex items-start gap-4 p-4 rounded-xl border border-slate-100 hover:shadow-sm transition-all bg-white">
@@ -564,7 +559,6 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         <section className="py-16 md:py-20 bg-slate-50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <SectionHeader eyebrow="En images" title="Galerie" navy={NAVY} gold={GOLD} />
-            </div>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {galleryItems.slice(0, 8).map((item: any) => (
                 <div key={item.id} className="relative aspect-square rounded-xl overflow-hidden shadow-sm hover:shadow-lg transition-all group">
@@ -589,7 +583,6 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         <section className="py-16 md:py-20 bg-white">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <SectionHeader eyebrow="Ils nous font confiance" title="Témoignages" navy={NAVY} gold={GOLD} />
-            </div>
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {testimonials.slice(0, 6).map((t: any) => (
                 <div key={t.id} className="bg-slate-50 rounded-2xl p-6 border border-slate-100">
@@ -611,7 +604,6 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         <section id="faq" className="py-16 md:py-20 bg-white">
           <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
             <SectionHeader eyebrow="Besoin d'aide ?" title="Questions fréquentes" subtitle="Les réponses aux questions les plus posées par les parents" navy={NAVY} gold={GOLD} />
-            </div>
             <div className="space-y-4">
               {faqItems.map((item: any, idx: number) => (
                 <details

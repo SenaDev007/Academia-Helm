@@ -361,6 +361,7 @@ model Tenant {
   staff                            Staff[]
   staffAssignments                 StaffAssignment[]
   staffAdminAssignments            StaffAdminAssignment[]
+  tenantWebsiteLevelSections      TenantWebsiteLevelSection[]
   staffAttendance                  StaffAttendance[]
   staffDocuments                   StaffDocument[]
   staffEvaluations                 StaffEvaluation[]

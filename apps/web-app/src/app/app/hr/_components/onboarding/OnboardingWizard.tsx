@@ -247,7 +247,11 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
   };
 
   const handleClose = () => {
-    if (state.completed) {
+    // Rafraîchir la liste si un staff a été créé (dès l'étape 1), même si
+    // l'utilisateur n'a pas terminé tout le wizard (étapes 2-7).
+    // Avant, onSuccess() n'était appelé que si state.completed était true,
+    // ce qui rendait le staff invisible jusqu'à un rechargement manuel.
+    if (state.staffId || state.completed) {
       onSuccess();
     }
     onClose();

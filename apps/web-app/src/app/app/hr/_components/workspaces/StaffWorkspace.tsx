@@ -19,6 +19,7 @@ const PRIMARY = '#1A2BA6';
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   ACTIVE:            { label: 'En poste',                className: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
   PENDING_SIGNATURE: { label: 'En attente de signature', className: 'bg-amber-50 text-amber-700 border border-amber-200' },
+  PENDING_HIRE:      { label: 'En attente d\'embauche',  className: 'bg-blue-50 text-blue-700 border border-blue-200' },
   INACTIVE:          { label: 'Inactif',                 className: 'bg-slate-100 text-slate-500 border border-slate-200' },
   SUSPENDED:         { label: 'Suspendu',                className: 'bg-rose-50 text-rose-700 border border-rose-200' },
 };
@@ -189,6 +190,7 @@ export function StaffWorkspace() {
             <option value="ALL">Tous les statuts</option>
             <option value="ACTIVE">Actif / En poste</option>
             <option value="PENDING_SIGNATURE">En attente de signature</option>
+            <option value="PENDING_HIRE">En attente d'embauche</option>
             <option value="INACTIVE">Inactif</option>
             <option value="SUSPENDED">Suspendu</option>
           </select>

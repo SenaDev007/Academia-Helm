@@ -34,6 +34,7 @@ import GeneratedStampsSignatures from '@/components/settings/GeneratedStampsSign
 import SchoolCalendarConfigSection from '@/components/settings/SchoolCalendarConfigSection';
 import { AdminStructureSection } from '@/components/settings/AdminStructureSection';
 import DepartmentsManagement from '@/components/settings/DepartmentsManagement';
+import PositionsManagement from '@/components/settings/PositionsManagement';
 import { PaymentsSettingsSection } from '@/components/settings/feexpay/PaymentsSettingsSection';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import * as settingsService from '@/services/settings.service';
@@ -2405,7 +2406,7 @@ export default function SettingsPage() {
         );
 
       case 'departments':
-        return <DepartmentsManagement tenantId={effectiveTenantId} showToast={showToast} />;
+        return <DepartmentsAndPositionsTab tenantId={effectiveTenantId} showToast={showToast} />;
 
       case 'structure':
         const levels = educationStructure?.levels ?? [];
@@ -4768,5 +4769,40 @@ export default function SettingsPage() {
       </div>
     </div>
     </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Composant: Départements + Postes (toggle entre les deux)
+// ═══════════════════════════════════════════════════════════════════════
+
+function DepartmentsAndPositionsTab({ tenantId, showToast }: { tenantId?: string; showToast: (type: 'success' | 'error', message: string) => void }) {
+  const [subTab, setSubTab] = useState<'departments' | 'positions'>('departments');
+
+  return (
+    <div className="space-y-4">
+      {/* Toggle entre Départements et Postes */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => setSubTab('departments')}
+          className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${subTab === 'departments' ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+        >
+          Départements
+        </button>
+        <button
+          onClick={() => setSubTab('positions')}
+          className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${subTab === 'positions' ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+        >
+          Postes occupés
+        </button>
+      </div>
+
+      {/* Content */}
+      {subTab === 'departments' ? (
+        <DepartmentsManagement tenantId={tenantId} showToast={showToast} />
+      ) : (
+        <PositionsManagement tenantId={tenantId} showToast={showToast} />
+      )}
+    </div>
   );
 }

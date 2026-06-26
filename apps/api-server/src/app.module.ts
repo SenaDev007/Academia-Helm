@@ -51,6 +51,7 @@ import { TenantThemeModule } from './tenant-theme/tenant-theme.module';
 import { TenantBlockSelectionModule } from './tenant-block-selection/tenant-block-selection.module';
 import { AdminStructureModule } from './admin-structure/admin-structure.module';
 import { StaffAdminAssignmentModule } from './staff-admin-assignment/staff-admin-assignment.module';
+import { PositionsModule } from './positions/positions.module';
 import { ModulesComplementairesModule } from './modules-complementaires/modules-complementaires.module';
 import { KpiObjectivesModule } from './kpi-objectives/kpi-objectives.module';
 import { PedagogyModule } from './pedagogy/pedagogy.module';
@@ -227,6 +228,9 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
 
     // Affectations administratives level-aware (Directeur Maternelle, etc.)
     StaffAdminAssignmentModule,
+
+    // Postes occupés (CRUD, suggestions par défaut)
+    PositionsModule,
     
     // Module 9 - Modules Complémentaires
     ModulesComplementairesModule,

@@ -23,7 +23,6 @@ import { tenantWebsiteService } from '@/services/tenant-website.service';
 import { tenantThemeService } from '@/services/tenant-theme.service';
 import { ThemeGalleryDialog } from '@/components/cms/ThemeGalleryDialog';
 import { BlockGalleryDialog } from '@/components/cms/blocks/BlockGalleryDialog';
-import { LayoutTemplate } from 'lucide-react';
 
 type SubTab =
   | 'general' | 'identity' | 'colors' | 'themes' | 'components' | 'hero' | 'figures' | 'promoter' | 'director'

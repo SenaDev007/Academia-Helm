@@ -18,8 +18,8 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Loader2, MapPin, Phone, Mail, ChevronRight, Calendar,
-  Quote, Menu, X, ExternalLink,
-  Building2, GraduationCap, Users, Globe, ArrowRight, Star,
+  Quote, Menu, X, ExternalLink, FileText,
+  Building2, GraduationCap, Users, Globe, ArrowRight, Star, Images,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Image from 'next/image';
@@ -36,6 +36,16 @@ import { NotchNav } from '@/components/ui/notch-nav';
 import TenantFooter from '@/components/ui/footer-column';
 import TenantHeader from '@/components/portal/TenantHeader';
 import { resolveTenantColors } from '@/lib/tenant/use-tenant-colors';
+import {
+  DEFAULT_WEBSITE_CONFIG,
+  DEFAULT_NEWS_ARTICLES,
+  DEFAULT_EVENTS,
+  DEFAULT_GALLERY_ITEMS,
+  DEFAULT_TESTIMONIALS,
+  DEFAULT_FAQ_ITEMS,
+  withDefault,
+  shouldShowSection,
+} from '@/lib/tenant/default-cms-content';
 
 interface SchoolPortalInfo {
   tenantId?: string | null;
@@ -114,27 +124,54 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
     );
   }
 
-  const website = websiteData?.website;
+  // ─── Merge des données réelles + valeurs par défaut ──
+  // Si le tenant n'a pas configuré son CMS, on utilise DEFAULT_WEBSITE_CONFIG
+  // pour que toutes les sections soient visibles avec du contenu de démo.
+  // Les vraies valeurs (si elles existent) remplacent les défauts.
+  const rawWebsite = websiteData?.website;
+  const website = rawWebsite || DEFAULT_WEBSITE_CONFIG;
   const schoolName = schoolData?.name || 'Établissement Scolaire';
   const schoolAcronym = schoolData?.schoolAcronym || null;
   const schoolDisplayName = schoolAcronym || schoolName;
   const schoolLogo = schoolData?.logoUrl;
-  const schoolSlogan = schoolData?.slogan || website?.heroSubtitle || '';
+  const schoolSlogan = schoolData?.slogan || withDefault(rawWebsite?.heroSubtitle, DEFAULT_WEBSITE_CONFIG.heroSubtitle);
 
   // ─── Résolution dynamique de la palette de couleurs ──
   // Si l'école a configuré customColors → utilise ses couleurs
   // Sinon → fallback sur la palette Helm par défaut
-  const colors = resolveTenantColors(website?.customColors);
+  const colors = resolveTenantColors(rawWebsite?.customColors);
   const NAVY = colors.primary;
   const BLUE = colors.secondary;
   const GOLD = colors.accent;
   const DARK = colors.dark;
 
-  const heroTitle = website?.heroTitle || schoolName;
-  const heroSubtitle = website?.heroSubtitle || schoolSlogan || 'Excellence éducative et accompagnement personnalisé';
-  const heroImage = website?.heroImageUrl;
-  const heroCtaText = website?.heroCtaText || 'Pré-inscription';
-  const keyFigures = Array.isArray(website?.keyFigures) ? website.keyFigures : [];
+  // ─── Hero avec defaults ──
+  const heroTitle = withDefault(rawWebsite?.heroTitle, DEFAULT_WEBSITE_CONFIG.heroTitle);
+  const heroSubtitle = withDefault(rawWebsite?.heroSubtitle, DEFAULT_WEBSITE_CONFIG.heroSubtitle);
+  const heroImage = rawWebsite?.heroImageUrl || null;
+  const heroCtaText = withDefault(rawWebsite?.heroCtaText, DEFAULT_WEBSITE_CONFIG.heroCtaText);
+  const heroCtaUrl = withDefault(rawWebsite?.heroCtaUrl, DEFAULT_WEBSITE_CONFIG.heroCtaUrl);
+
+  // ─── Chiffres clés avec defaults ──
+  const keyFigures = withDefault(rawWebsite?.keyFigures, DEFAULT_WEBSITE_CONFIG.keyFigures);
+
+  // ─── Collections avec defaults ──
+  const newsArticles = (websiteData?.newsArticles && websiteData.newsArticles.length > 0)
+    ? websiteData.newsArticles
+    : DEFAULT_NEWS_ARTICLES;
+  const events = (websiteData?.events && websiteData.events.length > 0)
+    ? websiteData.events
+    : DEFAULT_EVENTS;
+  const galleryItems = (websiteData?.galleryItems && websiteData.galleryItems.length > 0)
+    ? websiteData.galleryItems
+    : DEFAULT_GALLERY_ITEMS;
+  const testimonials = (websiteData?.testimonials && websiteData.testimonials.length > 0)
+    ? websiteData.testimonials
+    : DEFAULT_TESTIMONIALS;
+  const faqItems = (websiteData?.faqItems && websiteData.faqItems.length > 0)
+    ? websiteData.faqItems
+    : DEFAULT_FAQ_ITEMS;
+
   const navLinks = [
     { label: 'Accueil', href: '#hero' },
     { label: 'Présentation', href: '#presentation' },
@@ -151,9 +188,9 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       <TenantStructuredData
         schoolName={schoolName}
         schoolLogo={schoolLogo || undefined}
-        schoolAddress={website?.contactAddress || schoolData?.address || undefined}
-        schoolPhone={website?.contactPhone || schoolData?.phone || undefined}
-        schoolEmail={website?.contactEmail || undefined}
+        schoolAddress={withDefault(rawWebsite?.contactAddress, DEFAULT_WEBSITE_CONFIG.contactAddress) || schoolData?.address || undefined}
+        schoolPhone={withDefault(rawWebsite?.contactPhone, DEFAULT_WEBSITE_CONFIG.contactPhone) || schoolData?.phone || undefined}
+        schoolEmail={withDefault(rawWebsite?.contactEmail, DEFAULT_WEBSITE_CONFIG.contactEmail) || undefined}
         schoolWebsite={typeof window !== 'undefined' ? window.location.origin : ''}
         schoolSlogan={schoolSlogan || undefined}
         schoolCity={schoolData?.city || undefined}
@@ -232,31 +269,31 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       )}
 
       {/* ═══ MOTS DU PROMOTEUR / DIRECTEUR ═══ */}
-      {(website?.promoterIsActive && website?.promoterWord) || (website?.directorIsActive && website?.directorWord) ? (
+      {(shouldShowSection(rawWebsite?.promoterIsActive) || shouldShowSection(rawWebsite?.directorIsActive)) ? (
         <section className="py-16 md:py-20 bg-slate-50">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="grid md:grid-cols-2 gap-6">
-              {website?.promoterIsActive && website?.promoterWord && (
+              {shouldShowSection(rawWebsite?.promoterIsActive) && (
                 <motion.div initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }}
                   className="bg-white rounded-2xl p-6 md:p-8 shadow-sm border border-slate-100">
                   <Quote className="h-7 w-7 mb-3" style={{ color: GOLD }} />
                   <h3 className="text-base font-bold text-slate-900 mb-3">Mot du Promoteur</h3>
-                  <p className="text-sm text-slate-600 leading-relaxed mb-4 line-clamp-5">{website.promoterWord}</p>
+                  <p className="text-sm text-slate-600 leading-relaxed mb-4 line-clamp-5">{withDefault(website.promoterWord, DEFAULT_WEBSITE_CONFIG.promoterWord)}</p>
                   <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
                     {website.promoterPhotoUrl && <img src={website.promoterPhotoUrl} alt={website.promoterName || ''} className="w-10 h-10 rounded-full object-cover" />}
-                    <div><p className="text-sm font-bold text-slate-900">{website.promoterName || 'Promoteur'}</p><p className="text-xs text-slate-400">Promoteur</p></div>
+                    <div><p className="text-sm font-bold text-slate-900">{withDefault(website.promoterName, DEFAULT_WEBSITE_CONFIG.promoterName)}</p><p className="text-xs text-slate-400">Promoteur</p></div>
                   </div>
                 </motion.div>
               )}
-              {website?.directorIsActive && website?.directorWord && (
+              {shouldShowSection(rawWebsite?.directorIsActive) && (
                 <motion.div initial={{ opacity: 0, x: 20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }}
                   className="bg-white rounded-2xl p-6 md:p-8 shadow-sm border border-slate-100">
                   <Quote className="h-7 w-7 mb-3" style={{ color: BLUE }} />
                   <h3 className="text-base font-bold text-slate-900 mb-3">Mot du Directeur</h3>
-                  <p className="text-sm text-slate-600 leading-relaxed mb-4 line-clamp-5">{website.directorWord}</p>
+                  <p className="text-sm text-slate-600 leading-relaxed mb-4 line-clamp-5">{withDefault(website.directorWord, DEFAULT_WEBSITE_CONFIG.directorWord)}</p>
                   <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
                     {website.directorPhotoUrl && <img src={website.directorPhotoUrl} alt={website.directorName || ''} className="w-10 h-10 rounded-full object-cover" />}
-                    <div><p className="text-sm font-bold text-slate-900">{website.directorName || 'Directeur'}</p><p className="text-xs text-slate-400">Directeur</p></div>
+                    <div><p className="text-sm font-bold text-slate-900">{withDefault(website.directorName, DEFAULT_WEBSITE_CONFIG.directorName)}</p><p className="text-xs text-slate-400">Directeur</p></div>
                   </div>
                 </motion.div>
               )}
@@ -266,11 +303,11 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       ) : null}
 
       {/* ═══ PRÉSENTATION ═══ */}
-      {website?.presentationIsActive && website?.presentationContent && (
+      {shouldShowSection(rawWebsite?.presentationIsActive) && (
         <section id="presentation" className="py-16 md:py-20 bg-white">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-8">
-              <h2 className="text-2xl md:text-3xl font-black text-slate-900 mb-3">{website.presentationTitle || 'Présentation'}</h2>
+              <h2 className="text-2xl md:text-3xl font-black text-slate-900 mb-3">{withDefault(website.presentationTitle, DEFAULT_WEBSITE_CONFIG.presentationTitle)}</h2>
               <div className="w-16 h-1 mx-auto rounded-full" style={{ background: `linear-gradient(90deg, ${NAVY}, ${GOLD})` }} />
             </div>
             {website.presentationImageUrl && (
@@ -278,27 +315,27 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
                 <img src={website.presentationImageUrl} alt="Présentation" className="w-full h-56 md:h-72 object-cover" />
               </div>
             )}
-            <p className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap">{website.presentationContent}</p>
+            <p className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap">{withDefault(website.presentationContent, DEFAULT_WEBSITE_CONFIG.presentationContent)}</p>
           </div>
         </section>
       )}
 
       {/* ═══ ADMISSIONS ═══ */}
-      {website?.admissionsIsActive && website?.admissionsContent && (
+      {shouldShowSection(rawWebsite?.admissionsIsActive) && (
         <section id="admissions" className="py-16 md:py-20 bg-white">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-8">
-              <h2 className="text-2xl md:text-3xl font-black text-slate-900 mb-3">{website.admissionsTitle || 'Admissions'}</h2>
+              <h2 className="text-2xl md:text-3xl font-black text-slate-900 mb-3">{withDefault(website.admissionsTitle, DEFAULT_WEBSITE_CONFIG.admissionsTitle)}</h2>
               <div className="w-16 h-1 mx-auto rounded-full" style={{ background: `linear-gradient(90deg, ${NAVY}, ${GOLD})` }} />
             </div>
-            <p className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap">{website.admissionsContent}</p>
+            <p className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap">{withDefault(website.admissionsContent, DEFAULT_WEBSITE_CONFIG.admissionsContent)}</p>
             <div className="mt-8 text-center">
               <a
-                href={website.heroCtaUrl || '/public/pre-enrollment'}
+                href={heroCtaUrl}
                 className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-white font-semibold shadow-lg hover:shadow-xl transition-all"
                 style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
               >
-                {website.heroCtaText || 'Pré-inscription'}
+                {heroCtaText}
               </a>
             </div>
           </div>
@@ -306,20 +343,20 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       )}
 
       {/* ═══ VIE SCOLAIRE ═══ */}
-      {website?.schoolLifeIsActive && website?.schoolLifeContent && (
+      {shouldShowSection(rawWebsite?.schoolLifeIsActive) && (
         <section id="vie-scolaire" className="py-16 md:py-20 bg-slate-50">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-8">
-              <h2 className="text-2xl md:text-3xl font-black text-slate-900 mb-3">{website.schoolLifeTitle || 'Vie scolaire'}</h2>
+              <h2 className="text-2xl md:text-3xl font-black text-slate-900 mb-3">{withDefault(website.schoolLifeTitle, DEFAULT_WEBSITE_CONFIG.schoolLifeTitle)}</h2>
               <div className="w-16 h-1 mx-auto rounded-full" style={{ background: `linear-gradient(90deg, ${NAVY}, ${GOLD})` }} />
             </div>
-            <p className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap">{website.schoolLifeContent}</p>
+            <p className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap">{withDefault(website.schoolLifeContent, DEFAULT_WEBSITE_CONFIG.schoolLifeContent)}</p>
           </div>
         </section>
       )}
 
       {/* ═══ ACTUALITÉS ═══ */}
-      {websiteData?.newsArticles && websiteData.newsArticles.length > 0 && (
+      {newsArticles.length > 0 && (
         <section id="actualites" className="py-16 md:py-20 bg-slate-50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-8">
@@ -327,10 +364,20 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
               <div className="w-16 h-1 mx-auto rounded-full" style={{ background: `linear-gradient(90deg, ${NAVY}, ${GOLD})` }} />
             </div>
             <div className="grid md:grid-cols-3 gap-6">
-              {websiteData.newsArticles.slice(0, 3).map((article: any) => (
+              {newsArticles.slice(0, 3).map((article: any) => (
                 <motion.article key={article.id} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
-                  className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100 hover:shadow-lg transition-all">
-                  {article.coverImageUrl && <div className="h-44 overflow-hidden"><img src={article.coverImageUrl} alt={article.title} className="w-full h-full object-cover" /></div>}
+                  className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100 hover:shadow-lg transition-all cursor-pointer"
+                  onClick={() => { if (article.slug) window.location.href = `/actualites/${article.slug}`; }}>
+                  {article.coverImageUrl ? (
+                    <div className="h-44 overflow-hidden">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={article.coverImageUrl} alt={article.title} className="w-full h-full object-cover" />
+                    </div>
+                  ) : (
+                    <div className="h-44 overflow-hidden flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${NAVY}30, ${GOLD}20)` }}>
+                      <FileText className="w-10 h-10 text-white/30" />
+                    </div>
+                  )}
                   <div className="p-5">
                     {article.category && <span className="inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full mb-2" style={{ background: `${NAVY}15`, color: NAVY }}>{article.category}</span>}
                     <h3 className="text-base font-bold text-slate-900 mb-2 line-clamp-2">{article.title}</h3>
@@ -345,7 +392,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       )}
 
       {/* ═══ AGENDA ═══ */}
-      {websiteData?.events && websiteData.events.length > 0 && (
+      {events.length > 0 && (
         <section id="agenda" className="py-16 md:py-20 bg-white">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-8">
@@ -353,7 +400,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
               <div className="w-16 h-1 mx-auto rounded-full" style={{ background: `linear-gradient(90deg, ${NAVY}, ${GOLD})` }} />
             </div>
             <div className="space-y-3">
-              {websiteData.events.slice(0, 5).map((event: any) => (
+              {events.slice(0, 5).map((event: any) => (
                 <div key={event.id} className="flex items-start gap-4 p-4 rounded-xl border border-slate-100 hover:shadow-sm transition-all bg-white">
                   <div className="flex-shrink-0 w-12 h-12 rounded-xl flex flex-col items-center justify-center text-white" style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}>
                     <span className="text-base font-black leading-none">{new Date(event.startDate).getDate()}</span>
@@ -375,7 +422,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       )}
 
       {/* ═══ GALERIE ═══ */}
-      {websiteData?.galleryItems && websiteData.galleryItems.length > 0 && (
+      {galleryItems.length > 0 && (
         <section className="py-16 md:py-20 bg-slate-50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-8">
@@ -383,9 +430,16 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
               <div className="w-16 h-1 mx-auto rounded-full" style={{ background: `linear-gradient(90deg, ${NAVY}, ${GOLD})` }} />
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {websiteData.galleryItems.slice(0, 8).map((item: any) => (
+              {galleryItems.slice(0, 8).map((item: any) => (
                 <div key={item.id} className="relative aspect-square rounded-xl overflow-hidden shadow-sm hover:shadow-lg transition-all group">
-                  <img src={item.imageUrl} alt={item.caption || ''} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                  {item.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={item.imageUrl} alt={item.caption || ''} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${NAVY}40, ${GOLD}30)` }}>
+                      <Images className="w-8 h-8 text-white/40" />
+                    </div>
+                  )}
                   {item.caption && <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity">{item.caption}</div>}
                 </div>
               ))}
@@ -395,7 +449,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       )}
 
       {/* ═══ TÉMOIGNAGES ═══ */}
-      {websiteData?.testimonials && websiteData.testimonials.length > 0 && (
+      {testimonials.length > 0 && (
         <section className="py-16 md:py-20 bg-white">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-8">
@@ -403,7 +457,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
               <div className="w-16 h-1 mx-auto rounded-full" style={{ background: `linear-gradient(90deg, ${NAVY}, ${GOLD})` }} />
             </div>
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {websiteData.testimonials.slice(0, 6).map((t: any) => (
+              {testimonials.slice(0, 6).map((t: any) => (
                 <div key={t.id} className="bg-slate-50 rounded-2xl p-6 border border-slate-100">
                   <div className="flex gap-1 mb-3">{Array.from({ length: t.rating || 5 }).map((_, i) => <Star key={i} size={14} className="fill-amber-400 text-amber-400" />)}</div>
                   <p className="text-sm text-slate-700 leading-relaxed mb-4 italic">"{t.content}"</p>
@@ -419,7 +473,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       )}
 
       {/* ═══ FAQ ═══ */}
-      {websiteData?.faqItems && websiteData.faqItems.length > 0 && (
+      {faqItems.length > 0 && (
         <section id="faq" className="py-16 md:py-20 bg-white">
           <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-8">
@@ -428,7 +482,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
               <div className="w-16 h-1 mx-auto mt-3 rounded-full" style={{ background: `linear-gradient(90deg, ${NAVY}, ${GOLD})` }} />
             </div>
             <div className="space-y-4">
-              {websiteData.faqItems.map((item: any, idx: number) => (
+              {faqItems.map((item: any, idx: number) => (
                 <details
                   key={item.id || idx}
                   className="group bg-slate-50 rounded-xl border border-slate-100 overflow-hidden hover:border-slate-200 transition"
@@ -461,40 +515,40 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
                 Une question sur l'inscription, les programmes ou la vie scolaire ? N'hésitez pas à nous écrire — nous vous répondrons dans les meilleurs délais.
               </p>
               <div className="space-y-3">
-                {website?.contactEmail && (
+                {withDefault(rawWebsite?.contactEmail, DEFAULT_WEBSITE_CONFIG.contactEmail) && (
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: NAVY + '15' }}>
                       <Mail className="w-4 h-4" style={{ color: NAVY }} />
                     </div>
                     <div>
                       <p className="text-xs text-slate-500">Email</p>
-                      <a href={`mailto:${website.contactEmail}`} className="text-sm font-semibold text-slate-900 hover:underline">
-                        {website.contactEmail}
+                      <a href={`mailto:${withDefault(rawWebsite?.contactEmail, DEFAULT_WEBSITE_CONFIG.contactEmail)}`} className="text-sm font-semibold text-slate-900 hover:underline">
+                        {withDefault(rawWebsite?.contactEmail, DEFAULT_WEBSITE_CONFIG.contactEmail)}
                       </a>
                     </div>
                   </div>
                 )}
-                {website?.contactPhone && (
+                {withDefault(rawWebsite?.contactPhone, DEFAULT_WEBSITE_CONFIG.contactPhone) && (
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: GOLD + '15' }}>
                       <Phone className="w-4 h-4" style={{ color: GOLD }} />
                     </div>
                     <div>
                       <p className="text-xs text-slate-500">Téléphone</p>
-                      <a href={`tel:${website.contactPhone}`} className="text-sm font-semibold text-slate-900 hover:underline">
-                        {website.contactPhone}
+                      <a href={`tel:${withDefault(rawWebsite?.contactPhone, DEFAULT_WEBSITE_CONFIG.contactPhone)}`} className="text-sm font-semibold text-slate-900 hover:underline">
+                        {withDefault(rawWebsite?.contactPhone, DEFAULT_WEBSITE_CONFIG.contactPhone)}
                       </a>
                     </div>
                   </div>
                 )}
-                {website?.contactAddress && (
+                {withDefault(rawWebsite?.contactAddress, DEFAULT_WEBSITE_CONFIG.contactAddress) && (
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: NAVY + '15' }}>
                       <MapPin className="w-4 h-4" style={{ color: NAVY }} />
                     </div>
                     <div>
                       <p className="text-xs text-slate-500">Adresse</p>
-                      <p className="text-sm font-semibold text-slate-900">{website.contactAddress}</p>
+                      <p className="text-sm font-semibold text-slate-900">{withDefault(rawWebsite?.contactAddress, DEFAULT_WEBSITE_CONFIG.contactAddress)}</p>
                     </div>
                   </div>
                 )}
@@ -552,21 +606,21 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         schoolLogo={schoolLogo || undefined}
         schoolAcronym={schoolData?.schoolAcronym || undefined}
         schoolSlogan={schoolSlogan || undefined}
-        schoolAddress={website?.contactAddress || schoolData?.address || undefined}
+        schoolAddress={withDefault(rawWebsite?.contactAddress, DEFAULT_WEBSITE_CONFIG.contactAddress) || schoolData?.address || undefined}
         schoolCity={schoolData?.city || undefined}
-        schoolPhone={website?.contactPhone || schoolData?.phone || undefined}
-        schoolEmail={website?.contactEmail || undefined}
-        contactEmail={website?.contactEmail || undefined}
-        contactPhone={website?.contactPhone || undefined}
-        contactAddress={website?.contactAddress || undefined}
-        footerAboutText={website?.footerAboutText || undefined}
-        footerCopyrightText={website?.footerCopyrightText || undefined}
+        schoolPhone={withDefault(rawWebsite?.contactPhone, DEFAULT_WEBSITE_CONFIG.contactPhone) || schoolData?.phone || undefined}
+        schoolEmail={withDefault(rawWebsite?.contactEmail, DEFAULT_WEBSITE_CONFIG.contactEmail) || undefined}
+        contactEmail={withDefault(rawWebsite?.contactEmail, DEFAULT_WEBSITE_CONFIG.contactEmail) || undefined}
+        contactPhone={withDefault(rawWebsite?.contactPhone, DEFAULT_WEBSITE_CONFIG.contactPhone) || undefined}
+        contactAddress={withDefault(rawWebsite?.contactAddress, DEFAULT_WEBSITE_CONFIG.contactAddress) || undefined}
+        footerAboutText={withDefault(rawWebsite?.footerAboutText, DEFAULT_WEBSITE_CONFIG.footerAboutText) || undefined}
+        footerCopyrightText={withDefault(rawWebsite?.footerCopyrightText, DEFAULT_WEBSITE_CONFIG.footerCopyrightText) || undefined}
         socialLinks={website?.socialLinks || undefined}
         navLinks={navLinks}
       />
 
       {website?.aiEnabled && (
-        <TenantAiChatbot tenantSlug={slug} welcomeMessage={website.aiWelcomeMessage || undefined} faqItems={websiteData?.faqItems || []} />
+        <TenantAiChatbot tenantSlug={slug} welcomeMessage={withDefault(website.aiWelcomeMessage, DEFAULT_WEBSITE_CONFIG.aiWelcomeMessage) || undefined} faqItems={faqItems} />
       )}
     </div>
   );

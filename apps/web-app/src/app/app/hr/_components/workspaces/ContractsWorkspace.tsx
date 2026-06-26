@@ -72,7 +72,7 @@ export function ContractsWorkspace() {
       setContracts(result);
       // Also fetch staff to show those without contracts
       const staffResult = await hrFetch<any[]>(hrUrl('staff', { tenantId: tenant.id }));
-      setStaffList(staffResult.filter((s: any) => s.status === 'ACTIVE' || s.status === 'PENDING_SIGNATURE'));
+      setStaffList(staffResult.filter((s: any) => s.status === 'ACTIVE' || s.status === 'PENDING_SIGNATURE' || s.status === 'PENDING_HIRE'));
     } catch (error) {
       console.error('Error fetching contracts:', error);
     } finally {
@@ -86,7 +86,7 @@ export function ContractsWorkspace() {
   useEffect(() => {
     if (modalOpen && tenant?.id) {
       hrFetch<any[]>(hrUrl('staff', { tenantId: tenant.id }))
-        .then((list) => setStaffList(list.filter((s: any) => s.status === 'ACTIVE' || s.status === 'PENDING_SIGNATURE')))
+        .then((list) => setStaffList(list.filter((s: any) => s.status === 'ACTIVE' || s.status === 'PENDING_SIGNATURE' || s.status === 'PENDING_HIRE')))
         .catch(() => {});
     }
   }, [modalOpen, tenant?.id]);

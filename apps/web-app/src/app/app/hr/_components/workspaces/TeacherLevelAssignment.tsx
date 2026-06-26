@@ -134,21 +134,27 @@ export function TeacherLevelAssignment() {
     [availableLevels]
   );
 
-  // Load staff data (teachers only)
+  // Load staff data (ALL staff — not just teachers, because an admin staff
+  // can also teach. The director can assign any staff to a school level.)
   const loadTeachers = useCallback(async () => {
     if (!tenant?.id) return;
     setLoading(true);
     setError(null);
     try {
+      // Charger TOUS les staffs actifs (pas seulement PEDAGOGICAL)
+      // pour permettre à un staff admin d'être aussi enseignant
       const data = await hrFetch<StaffMember[]>(hrUrl('staff', {
         tenantId: tenant.id,
-        category: 'PEDAGOGICAL',
       }));
-      setStaffList(Array.isArray(data) ? data : []);
+      // Filtrer côté frontend : garder seulement les staffs actifs ou en attente
+      const activeStaff = (Array.isArray(data) ? data : []).filter(
+        (s: any) => s.status === 'ACTIVE' || s.status === 'PENDING_SIGNATURE' || s.status === 'PENDING_HIRE'
+      );
+      setStaffList(activeStaff);
     } catch (err: any) {
-      console.error('Error loading teachers:', err);
+      console.error('Error loading staff:', err);
       setError(err?.message || 'Erreur de chargement');
-      toast({ variant: 'error', title: 'Erreur de chargement des enseignants' });
+      toast({ variant: 'error', title: 'Erreur de chargement du personnel' });
       setStaffList([]);
     } finally {
       setLoading(false);
@@ -334,7 +340,7 @@ export function TeacherLevelAssignment() {
         <div>
           <h3 className="text-lg font-bold text-gray-900">Affectation par niveau scolaire</h3>
           <p className="text-sm text-gray-500 mt-1">
-            Catégorisez chaque enseignant dans son niveau pour faciliter l&apos;affectation aux classes dans le module Pédagogie.
+            Catégorisez chaque collaborateur dans son niveau pour faciliter l&apos;affectation aux classes dans le module Pédagogie. Un membre de l&apos;administration peut aussi enseigner — assignez-lui un niveau.
           </p>
         </div>
         {hasChanges && (

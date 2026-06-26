@@ -63,6 +63,7 @@ import {
   Mail,
   Search,
   Server,
+  Palette,
 } from 'lucide-react';
 import type { User } from '@/types';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
@@ -267,6 +268,7 @@ const MAIN_MODULES = [
  * (landing, blog, avis, pages marketing/légales, SEO, médias)
  */
 const PUBLIC_SITE_MODULES = [
+  { path: '/platform/tenant-theme', label: 'Site institutionnel', icon: Palette },
   { path: '/platform/cms', label: 'Contenu du site', icon: FileText },
   { path: '/platform/blog', label: 'Blog & Articles', icon: FileText },
   { path: '/platform/reviews', label: 'Avis & Témoignages', icon: Star },

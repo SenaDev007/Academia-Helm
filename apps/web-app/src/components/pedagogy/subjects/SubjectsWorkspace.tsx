@@ -43,7 +43,6 @@ import { useModuleContext } from '@/hooks/useModuleContext';
 import { useAuth } from '@/hooks/useAuth';
 import { useBilingual, BilingualTrack } from '@/contexts/BilingualContext';
 import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
-import { pedagogyService } from '@/services/pedagogy.service';
 import { compressImageFileToDataUrl } from '@/lib/media';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
@@ -319,20 +318,17 @@ export default function SubjectsWorkspace() {
     if (!academicYear?.id) return;
     setLoading(true);
     try {
-      let data: Subject[];
-      if (bilingualEnabled) {
-        // Mode bilingue : on filtre côté backend par la langue du track courant.
-        const params = new URLSearchParams({ academicYearId: academicYear.id });
-        if (bilingualEnabled) params.append('language', currentTrack);
-        const result = await pedagogyFetch<Subject[]>(`/api/subjects?${params.toString()}`);
-        data = Array.isArray(result) ? result : [];
-      } else {
-        const result = await pedagogyService.getSubjects(academicYear.id);
-        data = Array.isArray(result) ? result : [];
-      }
+      // Utiliser pedagogyFetch (proxy Next.js) au lieu de pedagogyService.getSubjects (apiFetch/Axios)
+      // pedagogyFetch utilise getClientAuthorizationHeader() qui lit localStorage — même pattern
+      // que l'onglet Structure (qui fonctionne).
+      const params = new URLSearchParams({ academicYearId: academicYear.id });
+      if (bilingualEnabled) params.append('language', currentTrack);
+      const result = await pedagogyFetch<Subject[]>(`/api/subjects?${params.toString()}`);
+      const data = Array.isArray(result) ? result : [];
       setSubjects(data);
     } catch (e) {
-      console.error(e);
+      console.error('[SubjectsWorkspace] Failed to load subjects:', e);
+      setSubjects([]);
     } finally {
       setLoading(false);
     }
@@ -341,8 +337,8 @@ export default function SubjectsWorkspace() {
   const loadClasses = useCallback(async () => {
     if (!academicYear?.id) return;
     try {
-      const data = await pedagogyService.getAcademicClasses(academicYear.id);
-      setClasses(data || []);
+      const data = await pedagogyFetch<any[]>(`/api/pedagogy/academic-classes?academicYearId=${academicYear.id}`);
+      setClasses(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error(e);
     }
@@ -378,7 +374,7 @@ export default function SubjectsWorkspace() {
       await Promise.all(
         classes.map(async (cls) => {
           try {
-            const data = await pedagogyService.getClassSubjects(cls.id, academicYear.id);
+            const data = await pedagogyFetch<any[]>(`/api/pedagogy/class-subjects?classId=${cls.id}&academicYearId=${academicYear.id}`);
             map[cls.id] = data || [];
           } catch (err) {
             console.error(`Failed to load subjects for class ${cls.id}`, err);
@@ -451,7 +447,7 @@ export default function SubjectsWorkspace() {
       return next;
     });
     try {
-      await pedagogyService.removeClassSubject(assignmentId);
+      await pedagogyFetch(`/api/pedagogy/class-subjects/${assignmentId}`, { method: 'DELETE' });
       toast({
         title: "Succès",
         description: "Matière retirée de la classe.",
@@ -484,7 +480,7 @@ export default function SubjectsWorkspace() {
     }
     try {
       if (modal === 'create-subject') {
-        const created = await pedagogyService.createSubject({
+        const created = await pedagogyFetch<any>(`/api/subjects`, { method: 'POST', body: {
           academicYearId: academicYear?.id,
           schoolLevelId: subjectForm.schoolLevelId,
           code: subjectForm.code.trim(),
@@ -520,7 +516,7 @@ export default function SubjectsWorkspace() {
           description: "La matière a été créée.",
         });
       } else {
-        await pedagogyService.updateSubject(subjectForm.id, {
+        await pedagogyFetch(`/api/subjects/${subjectForm.id}`, { method: 'PATCH', body: {
           code: subjectForm.code.trim(),
           name: subjectForm.name.trim(),
           abbreviation: subjectForm.abbreviation.trim() || undefined,
@@ -573,7 +569,7 @@ export default function SubjectsWorkspace() {
     const optimisticSubjects: any[] = [];
     for (const suggestion of toCreate) {
       try {
-        const createdEntity = await pedagogyService.createSubject({
+        const createdEntity = await pedagogyFetch<any>(`/api/subjects`, { method: 'POST', body: {
           academicYearId: academicYear.id,
           schoolLevelId: subjectForm.schoolLevelId,
           code: suggestion.code,
@@ -623,7 +619,7 @@ export default function SubjectsWorkspace() {
     // Mise à jour optimiste immédiate dans le state local
     setSubjects(prev => prev.filter(s => s.id !== id));
     try {
-      await pedagogyService.deleteSubject(id);
+      await pedagogyFetch(`/api/subjects/${id}`, { method: 'DELETE' });
       toast({
         title: "Succès",
         description: "Matière supprimée avec succès.",
@@ -656,7 +652,7 @@ export default function SubjectsWorkspace() {
     let failed = 0;
     for (const id of ids) {
       try {
-        await pedagogyService.deleteSubject(id);
+        await pedagogyFetch(`/api/subjects/${id}`, { method: 'DELETE' });
         deleted++;
       } catch {
         failed++;

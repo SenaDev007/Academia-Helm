@@ -17,6 +17,7 @@ import {
   Loader2,
   Plus,
   School,
+  Trash2,
   Users,
 } from 'lucide-react';
 import BaseModal from '@/components/modules/blueprint/modals/BaseModal';
@@ -275,6 +276,7 @@ export function AcademicStructureWorkspace() {
   const [roomModal, setRoomModal] = useState<
     null | { mode: 'create' } | { mode: 'edit'; room: RoomRow }
   >(null);
+  const [roomDeleteTarget, setRoomDeleteTarget] = useState<RoomRow | null>(null);
   const [roomForm, setRoomForm] = useState({
     roomCode: '',
     roomName: '',
@@ -1974,7 +1976,7 @@ export function AcademicStructureWorkspace() {
                       <button
                         type="button"
                         className="text-sm font-medium text-amber-700 hover:underline"
-                        onClick={() => deleteRoom(r.id)}
+                        onClick={() => setRoomDeleteTarget(r)}
                       >
                         Supprimer
                       </button>
@@ -2754,6 +2756,54 @@ export function AcademicStructureWorkspace() {
           </span>
         </label>
       </BaseModal>
+
+      {/* ═══ MODAL CONFIRMATION SUPPRESSION SALLE ═══ */}
+      {roomDeleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="p-6">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                  <Trash2 className="w-6 h-6 text-red-600" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-slate-900">Supprimer la salle</h3>
+                  <p className="text-sm text-slate-600 mt-1">
+                    Confirmez-vous la suppression de la salle{' '}
+                    <strong className="text-slate-900">{roomDeleteTarget.name}</strong>
+                    {roomDeleteTarget.code && (
+                      <> (code : <strong>{roomDeleteTarget.code}</strong>)</>
+                    )} ?
+                  </p>
+                  <p className="text-xs text-slate-400 mt-2">
+                    Cette action est irréversible.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-slate-50 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setRoomDeleteTarget(null)}
+                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await deleteRoom(roomDeleteTarget.id);
+                  setRoomDeleteTarget(null);
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold shadow-md transition"
+              >
+                <Trash2 className="w-4 h-4" />
+                Supprimer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

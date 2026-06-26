@@ -105,33 +105,38 @@ module.exports = {
           5: 'var(--chart-5)',
         },
         /* Design system Academia Helm (palette institutionnelle)
-         * Ces couleurs sont maintenant dynamiques — elles référencent les
-         * variables CSS du thème choisi par le directeur (via TenantThemeProvider).
-         * Fallback vers les valeurs hardcoded si les vars ne sont pas définies. */
+         * Couleurs HARDCODED — ne pas utiliser hsl(var(--xxx)) ici car les
+         * variables CSS ne sont pas disponibles au premier rendu (avant que
+         * TenantThemeProvider ne s'exécute côté client). Cela causait un
+         * flash noir (texte blanc → noir, sidebar navy → noir).
+         * 
+         * Le thème dynamique est appliqué SEULEMENT sur le site institutionnel
+         * public via ThemeApplier/injection CSS vars sur <html>.
+         * L'application admin garde TOUJOURS la palette Helm par défaut. */
         helm: {
-          navy: 'hsl(var(--sidebar, 222 47% 11%))',
-          navyl: 'hsl(var(--primary, 217 91% 45%))',
-          gold: 'hsl(var(--accent, 42 92% 56%))',
-          goldd: 'hsl(var(--accent, 42 92% 40%))',
+          navy: '#0D1F6E',
+          navyl: '#1A3490',
+          gold: '#F5A623',
+          goldd: '#C07800',
         },
-        // BLEU PRINCIPAL — adapté au thème via CSS vars
+        // BLEU PRINCIPAL — Royal Institutional Blue (60% de l'UI)
         blue: {
-          900: 'hsl(var(--sidebar, 222 47% 11%))',    // Base — Autorité, structure principale
-          800: 'hsl(var(--sidebar, 222 47% 14%))',    // Header, sidebar, fonds structurants
-          700: 'hsl(var(--primary, 217 91% 45%))',    // Hover, focus, highlights contrôlés
-          600: 'hsl(var(--primary, 217 91% 60%))',    // Éléments actifs, liens importants
-          500: 'hsl(var(--primary, 217 91% 65%))',    // Liens, texte secondaire
-          400: 'hsl(var(--primary, 217 91% 75%))',    // Texte atténué sur fond foncé
-          300: 'hsl(var(--sidebar-foreground, 210 40% 80%))', // Texte muted sur sidebar
-          200: 'hsl(var(--sidebar-foreground, 210 40% 70%))', // Texte très muted
-          100: 'hsl(var(--sidebar-foreground, 210 40% 90%))', // Texte hover clair
+          900: '#0A2A5E', // Base — Autorité, structure principale
+          800: '#0D3B85', // Header, sidebar, fonds structurants
+          700: '#114FC4', // Hover, focus, highlights contrôlés
+          600: '#1C6FE8', // Éléments actifs, liens importants
+          500: '#3b82f6', // Liens, texte secondaire
+          400: '#60a5fa', // Texte atténué sur fond foncé
+          300: '#93c5fd', // Texte muted sur sidebar
+          200: '#bfdbfe', // Texte très muted
+          100: '#dbeafe', // Texte hover clair
         },
         
-        // GOLD PREMIUM — adapté au thème via CSS var --accent
+        // GOLD PREMIUM — Living Gold (usage ≤ 5%)
         gold: {
-          600: 'hsl(var(--accent, 42 92% 40%))',  // Accent principal (ORION, badges premium)
-          500: 'hsl(var(--accent, 42 92% 56%))',  // Badges premium, focus, points d'accent
-          400: 'hsl(var(--accent, 42 92% 72%))',  // Hover très subtil (rare)
+          600: '#CFA63A', // Accent principal (ORION, badges premium)
+          500: '#F2C94C', // Badges premium, focus, points d'accent
+          400: '#FFE08A', // Hover très subtil (rare)
         },
         
         // NEUTRES — Structure & respiration (25% de l'UI)

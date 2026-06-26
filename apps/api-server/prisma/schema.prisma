@@ -7742,6 +7742,145 @@ model TimetableVersion {
   @@map("timetable_versions")
 }
 
+// ============================================================================
+// SMART TIMETABLE ENGINE (STE) — Modèles V1
+// ============================================================================
+
+/// Configuration d'emploi du temps par tenant + niveau scolaire.
+/// Définit les jours d'école, les créneaux horaires, les pauses.
+model TimetableConfig {
+  id              String   @id @default(uuid())
+  tenantId        String
+  schoolLevelId   String
+  academicYearId  String
+  /// Jours d'école (1=Lundi ... 6=Samedi, 7=Dimanche)
+  /// Stocké en JSON: [1,2,3,4,5] pour Lundi-Vendredi
+  schoolDays      Json     @default("[1,2,3,4,5]")
+  /// Créneaux horaires en JSON: [{start: "08:00", end: "10:00", type: "BLOCK"}, {start: "10:00", end: "10:15", type: "BREAK"}, ...]
+  timeBlocks      Json     @default("[]")
+  /// Heure de début de l'établissement (ex: "08:00")
+  dayStartTime    String   @default("08:00")
+  /// Heure de fin de l'établissement (ex: "18:00")
+  dayEndTime      String   @default("18:00")
+  /// Durée par défaut d'une séance en minutes
+  defaultSessionDuration Int @default(120)
+  /// Pause déjeuner — début
+  lunchBreakStart String?  @default("12:00")
+  /// Pause déjeuner — fin
+  lunchBreakEnd   String?  @default("14:00")
+  /// Activer les cours du samedi
+  saturdayEnabled Boolean  @default(false)
+  /// Activer les cours du soir
+  eveningEnabled  Boolean  @default(false)
+  eveningStart    String?  @default("16:00")
+  eveningEnd      String?  @default("18:00")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  schoolLevel     SchoolLevel @relation(fields: [schoolLevelId], references: [id])
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id])
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, schoolLevelId, academicYearId])
+  @@map("timetable_configs")
+}
+
+/// Disponibilité d'un enseignant par créneau (matrice de disponibilité).
+/// Status: AVAILABLE, UNAVAILABLE, PREFERRED, FORBIDDEN
+model TeacherAvailability {
+  id          String   @id @default(uuid())
+  tenantId    String
+  teacherId   String
+  /// Staff ID (lien vers la table staff)
+  staffId     String?
+  /// Jour de la semaine (1=Lundi ... 7=Dimanche)
+  dayOfWeek   Int
+  /// Heure de début (ex: "08:00")
+  startTime   String
+  /// Heure de fin (ex: "10:00")
+  endTime     String
+  /// Statut de disponibilité
+  status      String   @default("AVAILABLE") // AVAILABLE | UNAVAILABLE | PREFERRED | FORBIDDEN
+  /// Raison (optionnel, ex: "Réunion", "Congé", "Préférence pédagogique")
+  reason      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, teacherId, dayOfWeek, startTime, endTime])
+  @@index([tenantId, teacherId])
+  @@index([tenantId, dayOfWeek])
+  @@map("teacher_availability")
+}
+
+/// Solution d'emploi du temps générée par le moteur STE.
+/// Chaque génération produit plusieurs solutions avec un score.
+model TimetableSolution {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  schoolLevelId   String
+  timetableId     String?
+  /// Score global (0-100)
+  score           Int      @default(0)
+  /// Score de faisabilité (0-100) — respect des contraintes hard
+  feasibilityScore Int     @default(0)
+  /// Score pédagogique (0-100) — respect des contraintes soft
+  pedagogyScore   Int      @default(0)
+  /// Score de confort (0-100)
+  comfortScore    Int      @default(0)
+  /// Score de préférences (0-100)
+  preferenceScore Int      @default(0)
+  /// Nombre de conflits détectés
+  conflictCount   Int      @default(0)
+  /// Détail des conflits en JSON
+  conflicts       Json     @default("[]")
+  /// Entrées de l'emploi du temps en JSON (toutes les séances)
+  entries         Json     @default("[]")
+  /// Statut: DRAFT, PROPOSED, ACCEPTED, REJECTED, ARCHIVED
+  status          String   @default("DRAFT")
+  /// Notes du moteur (explications)
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  timetable       Timetable? @relation(fields: [timetableId], references: [id], onDelete: SetNull)
+  schoolLevel     SchoolLevel @relation(fields: [schoolLevelId], references: [id])
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id])
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, academicYearId, schoolLevelId])
+  @@index([tenantId, status])
+  @@map("timetable_solutions")
+}
+
+/// Contrainte d'emploi du temps (hard ou soft).
+/// Types: TEACHER_CONFLICT, ROOM_CONFLICT, SUBJECT_QUOTA, AVAILABILITY,
+///        NO_CONSECUTIVE_DAYS, PREFERRED_SLOT, ROOM_CAPACITY, etc.
+model TimetableConstraint {
+  id              String   @id @default(uuid())
+  tenantId        String
+  schoolLevelId   String?
+  /// Type de contrainte
+  type            String   // TEACHER_CONFLICT, ROOM_CONFLICT, SUBJECT_QUOTA, etc.
+  /// Hard (obligatoire) ou Soft (préférée)
+  severity        String   @default("HARD") // HARD | SOFT
+  /// Entité concernée (optionnel): subjectId, teacherId, classId, roomId
+  entityId        String?
+  /// Type d'entité: SUBJECT, TEACHER, CLASS, ROOM, GLOBAL
+  entityType      String?
+  /// Paramètres en JSON (ex: {dayOfWeek: 1, startTime: "08:00", endTime: "10:00"})
+  params          Json     @default("{}")
+  /// Poids de la contrainte (pour les soft, 1-10)
+  weight          Int      @default(5)
+  /// Activer/désactiver
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, type, severity])
+  @@map("timetable_constraints")
+}
+
 model MessageRecipient {
   id            String    @id @default(uuid())
   tenantId      String

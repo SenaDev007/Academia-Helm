@@ -120,38 +120,51 @@ class PedagogyService {
 
   // --- Subjects (Matières) ---
   async getSubjects(academicYearId: string): Promise<any> {
-    if (!networkDetectionService.isConnected()) {
-      return LocalSearchService.search("subjects", { tenantId: getTenantId(), filters: { academicYearId } });
-    }
     try {
       return await apiFetch(`/subjects?academicYearId=${academicYearId}`);
     } catch (e) {
+      console.error('[pedagogyService.getSubjects] API failed, falling back to local:', e);
       return LocalSearchService.search("subjects", { tenantId: getTenantId(), filters: { academicYearId } });
     }
   }
 
   async createSubject(data: any): Promise<any> {
-    const tenantId = getTenantId();
-    if (tenantId) {
-      return createEntityOffline(tenantId, 'SUBJECT', data);
+    try {
+      return await apiFetch('/subjects', { method: 'POST', body: data });
+    } catch (e) {
+      console.error('[pedagogyService.createSubject] API failed, falling back to offline:', e);
+      const tenantId = getTenantId();
+      if (tenantId) {
+        return createEntityOffline(tenantId, 'SUBJECT', data);
+      }
+      throw e;
     }
-    return apiFetch('/subjects', { method: 'POST', body: data });
   }
 
   async updateSubject(id: string, data: any): Promise<any> {
-    const tenantId = getTenantId();
-    if (tenantId) {
-      return updateEntityOffline(tenantId, 'SUBJECT', id, data);
+    try {
+      return await apiFetch(`/subjects/${id}`, { method: 'PATCH', body: data });
+    } catch (e) {
+      console.error('[pedagogyService.updateSubject] API failed, falling back to offline:', e);
+      const tenantId = getTenantId();
+      if (tenantId) {
+        return updateEntityOffline(tenantId, 'SUBJECT', id, data);
+      }
+      throw e;
     }
-    return apiFetch(`/subjects/${id}`, { method: 'PUT', body: data });
   }
 
   async deleteSubject(id: string): Promise<any> {
-    const tenantId = getTenantId();
-    if (tenantId) {
-      return deleteEntityOffline(tenantId, 'SUBJECT', id);
+    try {
+      return await apiFetch(`/subjects/${id}`, { method: 'DELETE' });
+    } catch (e) {
+      console.error('[pedagogyService.deleteSubject] API failed, falling back to offline:', e);
+      const tenantId = getTenantId();
+      if (tenantId) {
+        return deleteEntityOffline(tenantId, 'SUBJECT', id);
+      }
+      throw e;
     }
-    return apiFetch(`/subjects/${id}`, { method: 'DELETE' });
   }
 
   // --- Series (Séries du Secondaire) ---

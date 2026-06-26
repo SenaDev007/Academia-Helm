@@ -97,10 +97,42 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
           numberOfChildren: state.identity.numberOfChildren || undefined,
           nationalId: state.identity.nationalId || undefined,
           address: state.identity.address || undefined,
-          status: 'PENDING_SIGNATURE',
+          status: 'PENDING_HIRE', // Harmonisé avec le pipeline de recrutement
         },
       });
       setState((prev) => ({ ...prev, staffId: staffResponse.id }));
+
+      // Créer également un HrCandidate + HrApplication au statut ÉLIGIBLE
+      // pour que le staff apparaisse dans l'onglet Embauche (section candidats à déclarer éligible)
+      try {
+        const candidateResponse = await hrFetch<any>(hrUrl('recruitment/candidates', { tenantId }), {
+          method: 'POST',
+          body: {
+            firstName: state.identity.firstName,
+            lastName: state.identity.lastName,
+            email: state.identity.email,
+            phone: state.identity.phone,
+            staffId: staffResponse.id, // Lier le staff créé
+            status: 'ÉLIGIBLE',
+            source: 'INTERNAL_HIRE', // Indique que c'est un recrutement interne
+          },
+        });
+
+        // Créer une application au statut ÉLIGIBLE
+        if (candidateResponse?.id) {
+          await hrFetch(hrUrl('recruitment/applications', { tenantId }), {
+            method: 'POST',
+            body: {
+              candidateId: candidateResponse.id,
+              status: 'ÉLIGIBLE',
+              staffId: staffResponse.id,
+            },
+          });
+        }
+      } catch (err) {
+        // Non bloquant — le staff est créé, le candidat est optionnel
+        console.warn('[OnboardingWizard] Failed to create HrCandidate:', err);
+      }
     }
   };
 

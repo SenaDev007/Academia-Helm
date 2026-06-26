@@ -49,6 +49,7 @@ import { MediaModule } from './media/media.module';
 import { TenantMediaModule } from './tenant-media/tenant-media.module';
 import { TenantThemeModule } from './tenant-theme/tenant-theme.module';
 import { TenantBlockSelectionModule } from './tenant-block-selection/tenant-block-selection.module';
+import { AdminStructureModule } from './admin-structure/admin-structure.module';
 import { ModulesComplementairesModule } from './modules-complementaires/modules-complementaires.module';
 import { KpiObjectivesModule } from './kpi-objectives/kpi-objectives.module';
 import { PedagogyModule } from './pedagogy/pedagogy.module';
@@ -219,6 +220,9 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
 
     // Sélections de composants CMS (navbar, hero, footer, etc.)
     TenantBlockSelectionModule,
+
+    // Mode d'administration scolaire (SEPARATE vs FUSED_MATERNELLE_PRIMAIRE)
+    AdminStructureModule,
     
     // Module 9 - Modules Complémentaires
     ModulesComplementairesModule,

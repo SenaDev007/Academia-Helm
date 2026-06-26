@@ -1539,6 +1539,10 @@ model SchoolLevel {
   name                             String
   label                            String
   order                            Int                               @default(0)
+  /// Indique si le niveau est actif pour ce tenant. Permet de masquer
+  /// un niveau non utilisé (ex: école sans maternelle) sans le supprimer.
+  /// Par défaut true (rétro-compatibilité).
+  isActive                         Boolean                           @default(true)
   createdAt                        DateTime                          @default(now())
   updatedAt                        DateTime                          @updatedAt
   absences                         Absence[]
@@ -3287,6 +3291,14 @@ model SchoolSettings {
   feexpayShopId       String?
   /// FeexPay API Key pour l'école (si différent du compte global Academia Helm)
   feexpayApiKey       String?
+  /// Mode d'administration scolaire :
+  ///   - SEPARATE : chaque niveau (maternelle, primaire, secondaire) a sa propre
+  ///                administration (directeur, secrétaire, secrétaire comptable, etc.)
+  ///   - FUSED_MATERNELLE_PRIMAIRE : administration maternelle+primaire FUSIONNÉE
+  ///                (même staff gère les 2 niveaux), mais administration secondaire
+  ///                SÉPARÉE. Le secondaire reste toujours à part.
+  /// Par défaut SEPARATE (rétro-compatibilité — aucun changement pour les tenants existants).
+  adminStructureMode  String    @default("SEPARATE")
   tenant              Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("school_settings")

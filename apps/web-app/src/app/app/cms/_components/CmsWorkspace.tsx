@@ -20,9 +20,13 @@ import {
 } from 'lucide-react';
 import { toast } from '@/components/ui/toast';
 import { tenantWebsiteService } from '@/services/tenant-website.service';
+import { tenantThemeService } from '@/services/tenant-theme.service';
+import { ThemeGalleryDialog } from '@/components/cms/ThemeGalleryDialog';
+import { BlockGalleryDialog } from '@/components/cms/blocks/BlockGalleryDialog';
+import { LayoutTemplate } from 'lucide-react';
 
 type SubTab =
-  | 'general' | 'identity' | 'colors' | 'hero' | 'figures' | 'promoter' | 'director'
+  | 'general' | 'identity' | 'colors' | 'themes' | 'components' | 'hero' | 'figures' | 'promoter' | 'director'
   | 'presentation' | 'levels' | 'admissions' | 'teachers' | 'schoolLife'
   | 'news' | 'agenda' | 'gallery' | 'testimonials' | 'faq'
   | 'contact' | 'social' | 'seo' | 'footer' | 'settings';
@@ -30,6 +34,8 @@ type SubTab =
 const TABS: { id: SubTab; label: string; icon: any }[] = [
   { id: 'general', label: 'Informations générales', icon: Settings },
   { id: 'colors', label: 'Identité visuelle', icon: Palette },
+  { id: 'themes', label: 'Thèmes', icon: Palette },
+  { id: 'components', label: 'Composants', icon: LayoutTemplate },
   { id: 'hero', label: 'Hero Banner', icon: LayoutTemplate },
   { id: 'figures', label: 'Chiffres clés', icon: BarChart3 },
   { id: 'promoter', label: 'Mot du Promoteur', icon: MessageSquare },
@@ -116,6 +122,8 @@ export function CmsWorkspace() {
       {/* Content */}
       {activeTab === 'general' && <GeneralTab config={config} onSave={handleSave} saving={saving} />}
       {activeTab === 'colors' && <ColorsTab config={config} onSave={handleSave} saving={saving} />}
+      {activeTab === 'themes' && <ThemesTab />}
+      {activeTab === 'components' && <ComponentsTab />}
       {activeTab === 'hero' && <HeroTab config={config} onSave={handleSave} saving={saving} />}
       {activeTab === 'figures' && <FiguresTab config={config} onSave={handleSave} saving={saving} />}
       {activeTab === 'promoter' && <PromoterTab config={config} onSave={handleSave} saving={saving} />}
@@ -808,6 +816,174 @@ function ColorsTab({ config, onSave, saving }: any) {
         </div>
       </div>
       <SaveButton onSave={() => onSave({ customColors: colors })} saving={saving} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  TAB: THEMES — Galerie de 40 thèmes 21st.dev + mode dark/light/auto
+// ═══════════════════════════════════════════════════════════════════════
+
+function ThemesTab() {
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [currentThemeId, setCurrentThemeId] = useState<string | null>(null);
+  const [currentMode, setCurrentMode] = useState<'light' | 'dark' | 'auto'>('auto');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const settings = await tenantThemeService.getSettings();
+        setCurrentThemeId(settings.themeId);
+        setCurrentMode(settings.mode as 'light' | 'dark' | 'auto');
+      } catch (err: any) {
+        setError(err?.message || 'Erreur lors du chargement du thème');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const handleSelect = async (selection: { themeId: string; mode: 'light' | 'dark' | 'auto' }) => {
+    try {
+      await tenantThemeService.setSettings(selection);
+      setCurrentThemeId(selection.themeId);
+      setCurrentMode(selection.mode);
+      toast({ variant: 'success', title: 'Thème appliqué', description: 'Votre site institutionnel a été mis à jour.' });
+    } catch (err: any) {
+      toast({ variant: 'error', title: 'Erreur', description: err?.message });
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-slate-600">Chargement…</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+        <div className="flex items-start gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0">
+            <Palette className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">Thème du site institutionnel</h3>
+            <p className="text-sm text-slate-500 mt-0.5">
+              Choisissez un thème parmi 40 designs professionnels. Votre site s'adapte automatiquement.
+            </p>
+          </div>
+        </div>
+
+        {error && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2 mb-4">
+            <AlertCircle className="w-4 h-4 text-red-600 mt-0.5 shrink-0" />
+            <p className="text-sm text-red-700">{error}</p>
+          </div>
+        )}
+
+        <div className="p-4 bg-slate-50 rounded-lg border border-slate-100">
+          <p className="text-sm font-semibold text-slate-700">
+            Thème actuel :{' '}
+            <span className="text-blue-700">
+              {currentThemeId ? currentThemeId : 'Academia Helm (par défaut)'}
+            </span>
+          </p>
+          <p className="text-xs text-slate-500 mt-1">
+            Mode : {currentMode === 'light' ? 'Clair' : currentMode === 'dark' ? 'Sombre' : 'Auto'}
+          </p>
+        </div>
+
+        <button
+          onClick={() => setGalleryOpen(true)}
+          className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold shadow-md transition"
+        >
+          <Palette className="w-4 h-4" />
+          Choisir un thème
+        </button>
+      </div>
+
+      <ThemeGalleryDialog
+        open={galleryOpen}
+        onClose={() => setGalleryOpen(false)}
+        onSelect={handleSelect}
+        currentThemeId={currentThemeId}
+        currentMode={currentMode}
+      />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  TAB: COMPONENTS — Galerie de composants (navbar, hero, footer, etc.)
+// ═══════════════════════════════════════════════════════════════════════
+
+function ComponentsTab() {
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [currentThemeId, setCurrentThemeId] = useState<string | null>(null);
+  const [currentMode, setCurrentMode] = useState<'light' | 'dark' | 'auto'>('auto');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const settings = await tenantThemeService.getSettings();
+        setCurrentThemeId(settings.themeId);
+        setCurrentMode(settings.mode as 'light' | 'dark' | 'auto');
+      } catch {
+        // Silencieux
+      }
+    })();
+  }, []);
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+        <div className="flex items-start gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+            <LayoutTemplate className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">Composants du site</h3>
+            <p className="text-sm text-slate-500 mt-0.5">
+              Personnalisez les éléments de votre site (navbar, hero, footer, bordures, témoignages, etc.).
+              Tous les composants s'adaptent automatiquement au thème choisi.
+            </p>
+          </div>
+        </div>
+
+        {!currentThemeId && (
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2 mb-4">
+            <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+            <p className="text-sm text-amber-800">
+              Veuillez d'abord choisir un thème dans l'onglet « Thèmes » avant de personnaliser les composants.
+            </p>
+          </div>
+        )}
+
+        <button
+          onClick={() => setGalleryOpen(true)}
+          disabled={!currentThemeId}
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-sm font-semibold shadow-md transition"
+        >
+          <LayoutTemplate className="w-4 h-4" />
+          Parcourir les composants
+        </button>
+      </div>
+
+      <BlockGalleryDialog
+        open={galleryOpen}
+        onClose={() => setGalleryOpen(false)}
+        currentThemeId={currentThemeId}
+        currentMode={currentMode}
+        onSelect={() => {
+          toast({ variant: 'success', title: 'Composant appliqué' });
+        }}
+      />
     </div>
   );
 }

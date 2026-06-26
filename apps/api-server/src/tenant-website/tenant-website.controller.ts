@@ -553,4 +553,91 @@ Message de bienvenue par défaut: ${website?.aiWelcomeMessage || 'Bonjour ! Comm
     const tid = resolveTid(tenant);
     return this.websiteService.deleteContactMessage(tid, id);
   }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  SECTIONS PAR NIVEAU SCOLAIRE (multi-niveaux)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
+  @Get('level-sections')
+  async getLevelSections(
+    @GetTenant() tenant: any,
+    @TenantId() tenantIdFallback: string,
+  ) {
+    const tid = resolveTid(tenant, tenantIdFallback);
+    // S'assurer que la config website existe
+    await this.websiteService.getWebsiteConfig(tid);
+    const sections = await this.prisma.tenantWebsiteLevelSection.findMany({
+      where: { tenantId: tid },
+      include: { schoolLevel: { select: { id: true, code: true, name: true, label: true } } },
+    });
+    return sections;
+  }
+
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
+  @Put('level-sections/:schoolLevelId')
+  async upsertLevelSection(
+    @GetTenant() tenant: any,
+    @TenantId() tenantIdFallback: string,
+    @Param('schoolLevelId') schoolLevelId: string,
+    @Body() body: any,
+  ) {
+    const tid = resolveTid(tenant, tenantIdFallback);
+    // S'assurer que la config website existe
+    const website = await this.websiteService.getWebsiteConfig(tid);
+
+    // Vérifier que le schoolLevel appartient au tenant
+    const level = await this.prisma.schoolLevel.findFirst({
+      where: { id: schoolLevelId, tenantId: tid },
+    });
+    if (!level) throw new BadRequestException('Niveau scolaire introuvable');
+
+    // Upsert
+    const existing = await this.prisma.tenantWebsiteLevelSection.findFirst({
+      where: { tenantId: tid, schoolLevelId },
+    });
+
+    const allowedFields = [
+      'directorWord', 'directorName', 'directorPhotoUrl', 'directorIsActive',
+      'presentationTitle', 'presentationContent', 'presentationIsActive',
+      'admissionsTitle', 'admissionsContent', 'admissionsIsActive',
+      'schoolLifeTitle', 'schoolLifeContent', 'schoolLifeIsActive',
+    ];
+    const data: any = {};
+    for (const f of allowedFields) {
+      if (body[f] !== undefined) data[f] = body[f];
+    }
+
+    if (existing) {
+      return this.prisma.tenantWebsiteLevelSection.update({
+        where: { id: existing.id },
+        data,
+        include: { schoolLevel: { select: { id: true, code: true, name: true, label: true } } },
+      });
+    } else {
+      return this.prisma.tenantWebsiteLevelSection.create({
+        data: {
+          tenantId: tid,
+          websiteId: website.id,
+          schoolLevelId,
+          ...data,
+        },
+        include: { schoolLevel: { select: { id: true, code: true, name: true, label: true } } },
+      });
+    }
+  }
+
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
+  @Delete('level-sections/:schoolLevelId')
+  async deleteLevelSection(
+    @GetTenant() tenant: any,
+    @TenantId() tenantIdFallback: string,
+    @Param('schoolLevelId') schoolLevelId: string,
+  ) {
+    const tid = resolveTid(tenant, tenantIdFallback);
+    await this.prisma.tenantWebsiteLevelSection.deleteMany({
+      where: { tenantId: tid, schoolLevelId },
+    });
+    return { success: true };
+  }
 }

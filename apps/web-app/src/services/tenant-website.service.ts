@@ -71,4 +71,9 @@ export const tenantWebsiteService = {
   getContactMessages: (status?: string) => twFetch<any[]>(`contact${status ? `?status=${status}` : ''}`),
   updateContactStatus: (id: string, status: string) => twFetch<any>(`contact/${id}`, { method: 'PUT', body: { status } }),
   deleteContactMessage: (id: string) => twFetch<any>(`contact/${id}`, { method: 'DELETE' }),
+
+  // Level sections (multi-niveaux)
+  getLevelSections: () => twFetch<any[]>('level-sections'),
+  upsertLevelSection: (schoolLevelId: string, data: any) => twFetch<any>(`level-sections/${schoolLevelId}`, { method: 'PUT', body: data }),
+  deleteLevelSection: (schoolLevelId: string) => twFetch<any>(`level-sections/${schoolLevelId}`, { method: 'DELETE' }),
 };

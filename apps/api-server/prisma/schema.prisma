@@ -1686,6 +1686,7 @@ model SchoolLevel {
   weeklySemainiers                 WeeklySemainier[]
   lessonPlanVersions               LessonPlanVersion[]
   lessonPlanValidations            LessonPlanValidation[]
+  websiteLevelSections             TenantWebsiteLevelSection[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -13898,6 +13899,10 @@ model HrJob {
   assets           String?
   salary           String?
   contractType     String?
+  /// Niveau scolaire visé par le poste (MATERNELLE, PRIMARY, SECONDAIRE, MAT_PRI, ALL).
+  /// Permet de filtrer les offres par niveau sur le site public de recrutement.
+  /// MAT_PRI = poste couvrant maternelle + primaire (mode FUSED).
+  schoolLevelCode  String?
   publishedAt      DateTime?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
@@ -13905,6 +13910,7 @@ model HrJob {
   tenant           Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
+  @@index([tenantId, schoolLevelCode])
   @@map("hr_jobs")
 }
 
@@ -14816,8 +14822,51 @@ model TenantWebsite {
   testimonials        TenantTestimonial[]
   faqItems            TenantFaqItem[]
   contactMessages     TenantContactMessage[]
+  levelSections       TenantWebsiteLevelSection[]
 
   @@map("tenant_websites")
+}
+
+/**
+ * Section de site institutionnel spécifique à un niveau scolaire.
+ *
+ * Permet d'avoir du contenu différent par niveau (maternelle, primaire, secondaire) :
+ *   - Mot du directeur spécifique au niveau
+ *   - Présentation spécifique au niveau
+ *   - Section admissions spécifique au niveau
+ *   - Section vie scolaire spécifique au niveau
+ *
+ * Si aucune section niveau-spécifique n'existe → fallback sur TenantWebsite global.
+ */
+model TenantWebsiteLevelSection {
+  id                   String   @id @default(uuid())
+  tenantId             String
+  websiteId            String
+  schoolLevelId        String
+  // Contenu spécifique au niveau (null = fallback sur TenantWebsite global)
+  directorWord         String?  @db.Text
+  directorName         String?
+  directorPhotoUrl     String?
+  directorIsActive     Boolean?
+  presentationTitle    String?
+  presentationContent  String?  @db.Text
+  presentationIsActive Boolean?
+  admissionsTitle      String?
+  admissionsContent    String?  @db.Text
+  admissionsIsActive   Boolean?
+  schoolLifeTitle      String?
+  schoolLifeContent    String?  @db.Text
+  schoolLifeIsActive   Boolean?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  website              TenantWebsite @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  tenant               Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  schoolLevel          SchoolLevel   @relation(fields: [schoolLevelId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, schoolLevelId])
+  @@index([tenantId, schoolLevelId])
+  @@map("tenant_website_level_sections")
 }
 
 /// Article d'actualité du site institutionnel d'un tenant.

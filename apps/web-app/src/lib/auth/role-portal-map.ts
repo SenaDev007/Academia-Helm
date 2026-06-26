@@ -524,19 +524,59 @@ export function getVisibleModulesForRole(role: string): {
   }
 
   // École : accès selon le rôle et les accréditations
+  // Inclut les nouveaux rôles level-specific (DIRECTEUR_MATERNELLE, SECRETAIRE_PRIMAIRE, etc.)
+  const levelSpecificDirectorRoles = ['DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI'];
+  const levelSpecificSecretaryRoles = ['SECRETAIRE_MATERNELLE', 'SECRETAIRE_PRIMAIRE', 'SECRETAIRE_SECONDAIRE', 'SECRETAIRE_MAT_PRI'];
+  const levelSpecificComptableRoles = ['SECRETAIRE_COMPTABLE_MATERNELLE', 'SECRETAIRE_COMPTABLE_PRIMAIRE', 'SECRETAIRE_COMPTABLE_SECONDAIRE', 'SECRETAIRE_COMPTABLE_MAT_PRI'];
+
   return {
     showPlatformModules: false,
-    showDirectionModules: hasAll || ['PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR'].includes(role),
-    showFinanceModules: hasAll || ['PROMOTER', 'CFO', 'FINANCE_MANAGER', 'ACCOUNTANT', 'CASHIER', 'RECOVERY_MANAGER'].includes(role),
-    showPedagogyModules: hasAll || ['PROMOTER', 'PEDAGOGIC_DIRECTOR', 'CENSOR', 'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE', 'PEDAGOGIC_COORDINATOR'].includes(role),
+    showDirectionModules: hasAll || ['PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', ...levelSpecificDirectorRoles].includes(role),
+    showFinanceModules: hasAll || ['PROMOTER', 'CFO', 'FINANCE_MANAGER', 'ACCOUNTANT', 'CASHIER', 'RECOVERY_MANAGER', ...levelSpecificComptableRoles].includes(role),
+    showPedagogyModules: hasAll || ['PROMOTER', 'PEDAGOGIC_DIRECTOR', 'CENSOR', 'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE', 'PEDAGOGIC_COORDINATOR', ...levelSpecificDirectorRoles].includes(role),
     showHrModules: hasAll || ['PROMOTER', 'HR_MANAGER', 'PAYROLL_MANAGER'].includes(role),
     showCommunicationModules: hasAll || ['PROMOTER', 'COMMUNICATION_MANAGER', 'COMMUNICATION_AGENT', 'SCHOOL_LIFE_MANAGER'].includes(role),
     showStudentModules: hasAll || true, // La plupart des rôles école ont accès aux élèves
     showExamModules: hasAll || ['PROMOTER', 'CENSOR', 'EXAM_MANAGER', 'RESP_SECONDAIRE', 'PEDAGOGIC_COORDINATOR'].includes(role),
     showParentModules: false,
-    showSettingsModules: hasAll || ['PROMOTER', 'IT_MANAGER', 'SETTINGS_MANAGER'].includes(role),
+    showSettingsModules: hasAll || ['PROMOTER', 'IT_MANAGER', 'SETTINGS_MANAGER', ...levelSpecificDirectorRoles].includes(role),
     showSupplementaryModules: !!hasAll,
   };
+}
+
+/**
+ * Récupère les levelScopes d'un rôle.
+ * Retourne undefined si le rôle n'a pas de restriction de niveau (accès tous niveaux).
+ */
+export function getLevelScopesForRole(role: string): string[] | undefined {
+  const entry = ROLE_TO_ENTRY.get(role);
+  return entry?.levelScopes;
+}
+
+/**
+ * Vérifie si un rôle peut accéder à un niveau scolaire donné.
+ * En mode FUSED, un rôle avec levelScopes=['MATERNELLE'] peut aussi accéder au primaire
+ * (la résolution FUSED est gérée côté backend via AdminStructureService).
+ *
+ * @param role Le rôle de l'utilisateur
+ * @param levelCode Le code du niveau actif (MATERNELLE, PRIMARY, SECONDAIRE)
+ * @param fusedLevelCodes En mode FUSED, les niveaux conjoints (ex: ['MATERNELLE', 'PRIMARY'])
+ * @returns true si l'accès est autorisé
+ */
+export function canRoleAccessLevel(role: string, levelCode: string, fusedLevelCodes?: string[]): boolean {
+  const levelScopes = getLevelScopesForRole(role);
+  if (!levelScopes) return true; // Pas de restriction → accès tous niveaux
+
+  // Vérifier le niveau direct
+  if (levelScopes.includes(levelCode)) return true;
+
+  // En mode FUSED, vérifier aussi les niveaux conjoints
+  if (fusedLevelCodes && fusedLevelCodes.length > 1) {
+    // Si au moins un niveau conjoint est dans levelScopes → OK
+    return fusedLevelCodes.some((lc) => levelScopes.includes(lc));
+  }
+
+  return false;
 }
 
 // ─── Exports nominaux pour utilisation directe ──────────────────────────────

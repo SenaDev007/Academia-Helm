@@ -248,6 +248,47 @@ export class AdminStructureService {
   }
 
   /**
+   * Résout les UUIDs des niveaux administrés conjointement à partir d'un UUID de niveau.
+   *
+   * Exemple en mode FUSED_MATERNELLE_PRIMAIRE :
+   *   - resolveAdminLevelIdsForUser(tenantId, '<uuid-maternelle>') → ['<uuid-maternelle>', '<uuid-primaire>']
+   *   - resolveAdminLevelIdsForUser(tenantId, '<uuid-secondaire>') → ['<uuid-secondaire>']
+   *
+   * Utile pour les requêtes Prisma : `where: { schoolLevelId: { in: resolvedIds } }`
+   *
+   * @param currentLevelId UUID du niveau scolaire actif
+   * @returns Liste des UUIDs de niveaux que l'utilisateur peut administrer
+   */
+  async resolveAdminLevelIdsForUser(
+    tenantId: string,
+    currentLevelId: string,
+  ): Promise<string[]> {
+    // Récupérer le code du niveau
+    const level = await this.prisma.schoolLevel.findUnique({
+      where: { id: currentLevelId },
+      select: { code: true, tenantId: true },
+    });
+
+    if (!level || level.tenantId !== tenantId) {
+      return [currentLevelId]; // Sécurité : ne pas étendre si le niveau n'appartient pas au tenant
+    }
+
+    const resolvedCodes = await this.resolveAdminLevelsForUser(tenantId, level.code);
+
+    if (resolvedCodes.length <= 1) {
+      return [currentLevelId];
+    }
+
+    // Récupérer les UUIDs correspondant aux codes résolus
+    const levels = await this.prisma.schoolLevel.findMany({
+      where: { tenantId, code: { in: resolvedCodes } },
+      select: { id: true },
+    });
+
+    return levels.map((l) => l.id);
+  }
+
+  /**
    * Récupère le libellé affichable d'une unité administrative.
    */
   getUnitLabel(unit: string): string {

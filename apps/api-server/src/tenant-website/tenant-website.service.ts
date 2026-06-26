@@ -148,6 +148,19 @@ export class TenantWebsiteService {
       }),
     ]);
 
+    // Récupérer aussi les sections par niveau scolaire (multi-niveaux)
+    let levelSections: any[] = [];
+    try {
+      levelSections = await this.prisma.tenantWebsiteLevelSection.findMany({
+        where: { tenantId },
+        include: {
+          schoolLevel: { select: { id: true, code: true, name: true, label: true } },
+        },
+      });
+    } catch {
+      // Table peut ne pas exister encore — on ignore
+    }
+
     return {
       website,
       newsArticles,
@@ -155,6 +168,7 @@ export class TenantWebsiteService {
       galleryItems,
       testimonials,
       faqItems,
+      levelSections,
     };
   }
 

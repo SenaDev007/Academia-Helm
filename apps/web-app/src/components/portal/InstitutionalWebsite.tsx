@@ -225,6 +225,33 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
     ? websiteData.faqItems
     : DEFAULT_FAQ_ITEMS;
 
+  // ─── Sections par niveau scolaire (multi-niveaux) ──
+  // Si le tenant a configuré des sections spécifiques par niveau, on les utilise
+  // pour surcharger les sections globales (présentation, admissions, vie scolaire, mot du directeur).
+  // Le visiteur peut basculer entre les niveaux via un sous-sélecteur.
+  const levelSections = websiteData?.levelSections || [];
+  const [activeLevelCode, setActiveLevelCode] = useState<string | null>(null);
+
+  // Si des sections par niveau existent, initialiser sur le premier niveau
+  useEffect(() => {
+    if (levelSections.length > 0 && !activeLevelCode) {
+      setActiveLevelCode(levelSections[0]?.schoolLevel?.code || null);
+    }
+  }, [levelSections, activeLevelCode]);
+
+  // Récupérer la section du niveau actif (ou null = fallback sur global)
+  const activeLevelSection = levelSections.find(
+    (s: any) => s.schoolLevel?.code === activeLevelCode,
+  );
+
+  // Resolver : si une section niveau-spécifique existe et a une valeur, l'utiliser ; sinon fallback sur global
+  const resolveLevelField = (field: string, globalDefault: any) => {
+    if (activeLevelSection && activeLevelSection[field] !== null && activeLevelSection[field] !== undefined) {
+      return activeLevelSection[field];
+    }
+    return globalDefault;
+  };
+
   const navLinks = [
     { label: 'Accueil', href: '#hero' },
     { label: 'Présentation', href: '#presentation' },
@@ -327,6 +354,35 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         </div>
       </section>
 
+      {/* ═══ SÉLECTEUR DE NIVEAU (multi-niveaux) ═══ */}
+      {levelSections.length > 0 && (
+        <div className="relative z-30 bg-white border-b border-slate-100">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3">
+            <div className="flex items-center gap-2 overflow-x-auto">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide shrink-0 mr-2">
+                Niveau :
+              </span>
+              {levelSections.map((s: any) => {
+                const isActive = activeLevelCode === s.schoolLevel?.code;
+                return (
+                  <button
+                    key={s.schoolLevel?.id}
+                    onClick={() => setActiveLevelCode(s.schoolLevel?.code)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition whitespace-nowrap ${
+                      isActive
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {s.schoolLevel?.label || s.schoolLevel?.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ═══ CHIFFRES CLÉS ═══ */}
       {keyFigures.length > 0 && (
         <section className="relative -mt-16 z-20 px-4 sm:px-6 lg:px-8">
@@ -405,7 +461,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
                 <img src={website.presentationImageUrl} alt="Présentation" className="w-full h-56 md:h-72 object-cover" />
               </div>
             )}
-            <p className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap">{withDefault(website.presentationContent, DEFAULT_WEBSITE_CONFIG.presentationContent)}</p>
+            <p className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap">{resolveLevelField('presentationContent', withDefault(website.presentationContent, DEFAULT_WEBSITE_CONFIG.presentationContent))}</p>
           </div>
         </section>
       )}
@@ -416,7 +472,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
             <SectionHeader eyebrow="Rejoignez-nous" title={withDefault(website.admissionsTitle, DEFAULT_WEBSITE_CONFIG.admissionsTitle)} navy={NAVY} gold={GOLD} />
             </div>
-            <p className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap">{withDefault(website.admissionsContent, DEFAULT_WEBSITE_CONFIG.admissionsContent)}</p>
+            <p className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap">{resolveLevelField('admissionsContent', withDefault(website.admissionsContent, DEFAULT_WEBSITE_CONFIG.admissionsContent))}</p>
             <div className="mt-8 text-center">
               <a
                 href={heroCtaUrl}
@@ -436,7 +492,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
             <SectionHeader eyebrow="Vie quotidienne" title={withDefault(website.schoolLifeTitle, DEFAULT_WEBSITE_CONFIG.schoolLifeTitle)} navy={NAVY} gold={GOLD} />
             </div>
-            <p className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap">{withDefault(website.schoolLifeContent, DEFAULT_WEBSITE_CONFIG.schoolLifeContent)}</p>
+            <p className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap">{resolveLevelField('schoolLifeContent', withDefault(website.schoolLifeContent, DEFAULT_WEBSITE_CONFIG.schoolLifeContent))}</p>
           </div>
         </section>
       )}

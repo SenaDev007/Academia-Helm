@@ -38,11 +38,13 @@ import { useThemeApplier } from '@/lib/themes/theme-applier';
 import { tenantThemeService } from '@/services/tenant-theme.service';
 import type { ThemeMode } from '@/lib/themes/themes.config';
 
-const NAVY = '#0b2f73';
-const BLUE = '#1d4fa5';
-const GOLD = '#f5b335';
-const NAVY_DARK = '#091f4a';
-const NAVY_LIGHT = '#144798';
+// Palette dynamique basée sur les variables CSS du thème (injectées par useThemeApplier).
+// Fallback vers la palette Academia Helm par défaut si les variables ne sont pas définies.
+const NAVY = 'hsl(var(--sidebar, 222 47% 11%))';
+const BLUE = 'hsl(var(--primary, 217 91% 60%))';
+const GOLD = 'hsl(var(--accent, 42 92% 56%))';
+const NAVY_DARK = 'hsl(var(--background, 222 47% 8%))';
+const NAVY_LIGHT = 'hsl(var(--primary, 217 91% 45%))';
 
 interface SchoolPortalInfo {
   name: string;
@@ -251,7 +253,7 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
         <div
           className="absolute inset-0"
           style={{
-            background: `linear-gradient(160deg, ${NAVY_DARK}dd 0%, ${NAVY}cc 40%, ${NAVY_LIGHT}bb 100%)`,
+            background: `linear-gradient(160deg, hsl(var(--background, 222 47% 8%) / 0.87) 0%, hsl(var(--sidebar, 222 47% 11%) / 0.8) 40%, hsl(var(--primary, 217 91% 45%) / 0.73) 100%)`,
           }}
         />
       </div>
@@ -261,12 +263,12 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
         {/* Glow or en haut à droite */}
         <div
           className="absolute -top-32 -right-32 h-[400px] w-[400px] rounded-full"
-          style={{ background: `radial-gradient(circle, ${GOLD}15, transparent 65%)` }}
+          style={{ background: `radial-gradient(circle, hsl(var(--accent, 42 92% 56%) / 0.08), transparent 65%)` }}
         />
         {/* Glow bleu en bas à gauche */}
         <div
           className="absolute -bottom-32 -left-32 h-[400px] w-[400px] rounded-full"
-          style={{ background: `radial-gradient(circle, ${BLUE}18, transparent 65%)` }}
+          style={{ background: `radial-gradient(circle, hsl(var(--primary, 217 91% 60%) / 0.09), transparent 65%)` }}
         />
         {/* Motif subtil de points */}
         <div
@@ -281,7 +283,7 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
       {/* ── Ligne d'accent en haut ── */}
       <div
         className="absolute top-0 left-0 right-0 h-1"
-        style={{ background: `linear-gradient(90deg, ${GOLD}, ${NAVY_LIGHT}, ${GOLD})` }}
+        style={{ background: `linear-gradient(90deg, hsl(var(--accent, 42 92% 56%)), hsl(var(--primary, 217 91% 45%)), hsl(var(--accent, 42 92% 56%)))` }}
       />
 
       {/* ── Contenu principal ── */}
@@ -432,7 +434,7 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
             className="group inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium transition-all duration-200 bg-white/90 backdrop-blur-sm hover:bg-white"
             style={{
               color: NAVY,
-              border: `1.5px solid ${NAVY}20`,
+              border: `1.5px solid hsl(var(--sidebar, 222 47% 11%) / 0.12)`,
             }}
           >
             <span className="transition-transform duration-200 group-hover:-translate-x-0.5">&larr;</span>
@@ -445,7 +447,7 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
             className="group inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium transition-all duration-200 bg-white/90 backdrop-blur-sm hover:bg-white"
             style={{
               color: NAVY,
-              border: `1.5px solid ${NAVY}20`,
+              border: `1.5px solid hsl(var(--sidebar, 222 47% 11%) / 0.12)`,
             }}
           >
             Tous les portails

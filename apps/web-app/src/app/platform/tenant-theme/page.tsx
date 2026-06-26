@@ -19,7 +19,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Palette, Sun, Moon, Monitor, Check, Loader2, AlertCircle,
-  Sparkles, ArrowRight, Eye,
+  Sparkles, ArrowRight, Eye, LayoutTemplate,
 } from 'lucide-react';
 import { tenantThemeService, type TenantThemeSettings } from '@/services/tenant-theme.service';
 import {
@@ -29,6 +29,7 @@ import {
 import { ThemeScope } from '@/lib/themes/theme-applier';
 import { ThemePreviewCard } from '@/components/cms/ThemePreviewCard';
 import { ThemeGalleryDialog } from '@/components/cms/ThemeGalleryDialog';
+import { BlockGalleryDialog } from '@/components/cms/blocks/BlockGalleryDialog';
 
 const MODE_LABELS: Record<ThemeMode, { label: string; icon: any; description: string }> = {
   light: { label: 'Clair', icon: Sun, description: 'Thème clair (fond blanc)' },
@@ -43,6 +44,7 @@ export default function TenantThemePage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const [blockGalleryOpen, setBlockGalleryOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -120,13 +122,24 @@ export default function TenantThemePage() {
             Choisissez un thème parmi 40 designs professionnels. Votre site s&apos;adapte automatiquement.
           </p>
         </div>
-        <button
-          onClick={() => setGalleryOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold shadow-md transition"
-        >
-          <Palette className="w-4 h-4" />
-          Choisir un thème
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setBlockGalleryOpen(true)}
+            disabled={!settings?.themeId}
+            className="inline-flex items-center gap-2 px-4 py-2.5 border border-slate-200 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 rounded-xl text-sm font-semibold transition"
+            title={settings?.themeId ? 'Personnaliser navbar, hero, footer, etc.' : 'Choisissez d\'abord un thème'}
+          >
+            <LayoutTemplate className="w-4 h-4" />
+            Composants
+          </button>
+          <button
+            onClick={() => setGalleryOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold shadow-md transition"
+          >
+            <Palette className="w-4 h-4" />
+            Choisir un thème
+          </button>
+        </div>
       </div>
 
       {/* Bannières erreur / succès */}
@@ -307,6 +320,19 @@ export default function TenantThemePage() {
         onSelect={handleThemeSelect}
         currentThemeId={settings?.themeId}
         currentMode={currentMode}
+      />
+
+      {/* Block gallery dialog (navbar, hero, footer, etc.) */}
+      <BlockGalleryDialog
+        open={blockGalleryOpen}
+        onClose={() => setBlockGalleryOpen(false)}
+        currentThemeId={settings?.themeId}
+        currentMode={currentMode}
+        onSelect={(selection) => {
+          setSuccess(`Composant "${selection.variantId}" appliqué${selection.colorOverrides ? ' avec couleurs personnalisées' : ''}`);
+          setTimeout(() => setSuccess(null), 5000);
+          // TODO: persister la sélection en base (future itération)
+        }}
       />
     </div>
   );

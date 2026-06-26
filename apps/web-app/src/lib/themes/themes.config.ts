@@ -136,7 +136,7 @@ export function resolveThemeVariant(theme: Theme, mode: ThemeMode): ThemeVariant
 export const THEMES: Theme[] = [
   {
     id: 'amber-minimal',
-    name: 'Amber Minimal',
+    name: 'Helm Amber Minimal',
     description: 'Minimaliste ambré — épuré, accent chaleureux',
     source: '21st-dev',
     dark: {
@@ -228,7 +228,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'amethyst-haze',
-    name: 'Amethyst Haze',
+    name: 'Helm Amethyst Haze',
     description: 'Violet brumeux — doux et mystérieux',
     source: '21st-dev',
     dark: {
@@ -320,7 +320,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'bold-tech',
-    name: 'Bold Tech',
+    name: 'Helm Bold Tech',
     description: 'Tech moderne — bleu électrique vif',
     source: '21st-dev',
     dark: {
@@ -412,7 +412,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'bubblegum',
-    name: 'Bubblegum',
+    name: 'Helm Bubblegum',
     description: 'Rose bonbon — ludique et joyeux',
     source: '21st-dev',
     dark: {
@@ -504,7 +504,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'caffeine',
-    name: 'Caffeine',
+    name: 'Helm Caffeine',
     description: 'Chaleureux — crème et accents oranges',
     source: '21st-dev',
     dark: {
@@ -596,7 +596,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'candyland',
-    name: 'Candyland',
+    name: 'Helm Candyland',
     description: 'Rose pastel — féerique et doux',
     source: '21st-dev',
     dark: {
@@ -688,7 +688,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'catppuccin',
-    name: 'Catppuccin',
+    name: 'Helm Catppuccin',
     description: 'Palette pastel culte — douceur et repos',
     source: '21st-dev',
     dark: {
@@ -780,7 +780,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'claude',
-    name: 'Claude',
+    name: 'Helm Claude',
     description: 'Beige chaleureux — sobriété élégante',
     source: '21st-dev',
     dark: {
@@ -872,7 +872,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'claymorphism',
-    name: 'Claymorphism',
+    name: 'Helm Claymorphism',
     description: 'Argile 3D — formes douces et tactiles',
     source: '21st-dev',
     dark: {
@@ -964,7 +964,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'clean-slate',
-    name: 'Clean Slate',
+    name: 'Helm Clean Slate',
     description: 'Bleu minimaliste — pro et épuré',
     source: '21st-dev',
     dark: {
@@ -1056,7 +1056,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'cosmic-night',
-    name: 'Cosmic Night',
+    name: 'Helm Cosmic Night',
     description: 'Bleu nuit cosmique — profondeur stellaire',
     source: '21st-dev',
     dark: {
@@ -1148,7 +1148,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'default',
-    name: 'Default',
+    name: 'Helm Default',
     description: 'shadcn par défaut — neutre universel',
     source: '21st-dev',
     dark: {
@@ -1240,7 +1240,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'doom-64',
-    name: 'Doom 64',
+    name: 'Helm Doom 64',
     description: 'Rétro sombre néon — ambiance arcade',
     source: '21st-dev',
     dark: {
@@ -1332,7 +1332,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'elegant-luxury',
-    name: 'Elegant Luxury',
+    name: 'Helm Elegant Luxury',
     description: 'Or sur noir — luxe et prestige',
     source: '21st-dev',
     dark: {
@@ -1424,7 +1424,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'graphite',
-    name: 'Graphite',
+    name: 'Helm Graphite',
     description: 'Gris minimaliste — élégance discrète',
     source: '21st-dev',
     dark: {
@@ -1516,7 +1516,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'kodama-grove',
-    name: 'Kodama Grove',
+    name: 'Helm Kodama Grove',
     description: 'Vert forêt japonais — sérinité naturelle',
     source: '21st-dev',
     dark: {
@@ -1608,7 +1608,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'midnight-bloom',
-    name: 'Midnight Bloom',
+    name: 'Helm Midnight Bloom',
     description: 'Bleu nuit floral — mystérieux et raffiné',
     source: '21st-dev',
     dark: {
@@ -1700,7 +1700,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'mocha-mousse',
-    name: 'Mocha Mousse',
+    name: 'Helm Mocha Mousse',
     description: 'Marron café — chaleureux et réconfortant',
     source: '21st-dev',
     dark: {
@@ -1792,7 +1792,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'modern-minimal',
-    name: 'Modern Minimal',
+    name: 'Helm Modern Minimal',
     description: 'Noir épuré — minimalisme absolu',
     source: '21st-dev',
     dark: {
@@ -1884,7 +1884,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'mono',
-    name: 'Mono',
+    name: 'Helm Mono',
     description: 'Monochrome — pureté du noir et blanc',
     source: '21st-dev',
     dark: {
@@ -1976,7 +1976,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'nature',
-    name: 'Nature',
+    name: 'Helm Nature',
     description: 'Vert nature — fraîcheur et vitalité',
     source: '21st-dev',
     dark: {
@@ -2068,7 +2068,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'neo-brutalism',
-    name: 'Neo Brutalism',
+    name: 'Helm Neo Brutalism',
     description: 'Brutalisme — couleurs vives et contrastes',
     source: '21st-dev',
     dark: {
@@ -2160,7 +2160,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'northern-lights',
-    name: 'Northern Lights',
+    name: 'Helm Northern Lights',
     description: 'Aurores boréales — magie polaire',
     source: '21st-dev',
     dark: {
@@ -2252,7 +2252,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'notebook',
-    name: 'Notebook',
+    name: 'Helm Notebook',
     description: 'Cahier annoté — ambiance scolaire',
     source: '21st-dev',
     dark: {
@@ -2344,7 +2344,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'ocean-breeze',
-    name: 'Ocean Breeze',
+    name: 'Helm Ocean Breeze',
     description: 'Bleu océan — fraîcheur marine',
     source: '21st-dev',
     dark: {
@@ -2436,7 +2436,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'origin-ui',
-    name: 'Origin UI',
+    name: 'Helm Origin UI',
     description: 'Origin Labs — design tech moderne',
     source: '21st-dev',
     dark: {
@@ -2528,7 +2528,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'pastel-dreams',
-    name: 'Pastel Dreams',
+    name: 'Helm Pastel Dreams',
     description: 'Rêves pastel — douceur onirique',
     source: '21st-dev',
     dark: {
@@ -2620,7 +2620,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'perpetuity',
-    name: 'Perpetuity',
+    name: 'Helm Perpetuity',
     description: 'Bleu perpétuel — sobriété intemporelle',
     source: '21st-dev',
     dark: {
@@ -2712,7 +2712,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'quantum-rose',
-    name: 'Quantum Rose',
+    name: 'Helm Quantum Rose',
     description: 'Rose quantum néon — futuriste',
     source: '21st-dev',
     dark: {
@@ -2804,7 +2804,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'retro-arcade',
-    name: 'Retro Arcade',
+    name: 'Helm Retro Arcade',
     description: 'Cyan rétro — ambiance années 80',
     source: '21st-dev',
     dark: {
@@ -2896,7 +2896,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'soft-pop',
-    name: 'Soft Pop',
+    name: 'Helm Soft Pop',
     description: 'Pop art doux — moderne et accueillant',
     source: '21st-dev',
     dark: {
@@ -2988,7 +2988,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'solar-dusk',
-    name: 'Solar Dusk',
+    name: 'Helm Solar Dusk',
     description: 'Coucher de soleil — chaleur dorée',
     source: '21st-dev',
     dark: {
@@ -3080,7 +3080,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'starry-night',
-    name: 'Starry Night',
+    name: 'Helm Starry Night',
     description: 'Nuit étoilée — poésie céleste',
     source: '21st-dev',
     dark: {
@@ -3172,7 +3172,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'sunset-horizon',
-    name: 'Sunset Horizon',
+    name: 'Helm Sunset Horizon',
     description: 'Horizon couchant — dégradés chaleureux',
     source: '21st-dev',
     dark: {
@@ -3264,7 +3264,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'supabase',
-    name: 'Supabase',
+    name: 'Helm Supabase',
     description: 'Vert Supabase — tech et moderne',
     source: '21st-dev',
     dark: {
@@ -3356,7 +3356,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 't3-chat',
-    name: 'T3 Chat',
+    name: 'Helm T3 Chat',
     description: 'Violet T3 — interface chat moderne',
     source: '21st-dev',
     dark: {
@@ -3448,7 +3448,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'tangerine',
-    name: 'Tangerine',
+    name: 'Helm Tangerine',
     description: 'Orange mandarine — énergie et vitalité',
     source: '21st-dev',
     dark: {
@@ -3540,7 +3540,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'twitter',
-    name: 'Twitter',
+    name: 'Helm Twitter',
     description: 'Noir Twitter/X — minimalisme social',
     source: '21st-dev',
     dark: {
@@ -3632,7 +3632,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'vintage-paper',
-    name: 'Vintage Paper',
+    name: 'Helm Vintage Paper',
     description: 'Papier vintage — nostalgie littéraire',
     source: '21st-dev',
     dark: {
@@ -3724,7 +3724,7 @@ export const THEMES: Theme[] = [
   },
   {
     id: 'violet-bloom',
-    name: 'Violet Bloom',
+    name: 'Helm Violet Bloom',
     description: 'Violet floral — élégance botanique',
     source: '21st-dev',
     dark: {

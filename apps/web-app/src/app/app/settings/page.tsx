@@ -32,6 +32,7 @@ import {
 import { ModuleHeader } from '@/components/modules/blueprint';
 import GeneratedStampsSignatures from '@/components/settings/GeneratedStampsSignatures';
 import SchoolCalendarConfigSection from '@/components/settings/SchoolCalendarConfigSection';
+import { AdminStructureSection } from '@/components/settings/AdminStructureSection';
 import DepartmentsManagement from '@/components/settings/DepartmentsManagement';
 import { PaymentsSettingsSection } from '@/components/settings/feexpay/PaymentsSettingsSection';
 import { useAppSession } from '@/contexts/AppSessionContext';
@@ -71,11 +72,11 @@ function formatRoleDisplayName(name: string | null | undefined): string {
   return String(name).replace(/_/g, ' ');
 }
 
-type TabId = 'identity' | 'academic-year' | 'school-calendar' | 'structure' | 'departments' | 'bilingual' | 'features' |
+type TabId = 'identity' | 'academic-year' | 'school-calendar' | 'structure' | 'admin-structure' | 'departments' | 'bilingual' | 'features' |
              'roles' | 'communication' | 'billing' | 'payments' | 'security' | 'seals' | 'orion' | 'atlas' | 'offline' | 'appareils' | 'history';
 
 const SETTINGS_TAB_IDS: TabId[] = [
-  'identity', 'academic-year', 'school-calendar', 'structure', 'departments', 'bilingual', 'features',
+  'identity', 'academic-year', 'school-calendar', 'structure', 'admin-structure', 'departments', 'bilingual', 'features',
   'roles', 'communication', 'billing', 'payments', 'security', 'seals', 'orion', 'atlas', 'offline', 'appareils', 'history',
 ];
 
@@ -1447,6 +1448,7 @@ export default function SettingsPage() {
     { id: 'identity' as TabId, label: 'Identité', icon: Globe },
     { id: 'academic-year' as TabId, label: 'Année scolaire', icon: Calendar },
     { id: 'structure' as TabId, label: 'Structure', icon: GraduationCap },
+    { id: 'admin-structure' as TabId, label: 'Administration', icon: Building2 },
     { id: 'departments' as TabId, label: 'Départements', icon: Building2 },
     { id: 'school-calendar' as TabId, label: 'Calendrier scolaire', icon: CalendarRange },
     // M3 — Masquer l'onglet Bilingue si le plan ne l'autorise pas
@@ -2394,6 +2396,13 @@ export default function SettingsPage() {
 
       case 'school-calendar':
         return <SchoolCalendarConfigSection tenantId={effectiveTenantId} showToast={showToast} />;
+
+      case 'admin-structure':
+        return (
+          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+            <AdminStructureSection tenantId={effectiveTenantId ?? undefined} />
+          </div>
+        );
 
       case 'departments':
         return <DepartmentsManagement tenantId={effectiveTenantId} showToast={showToast} />;

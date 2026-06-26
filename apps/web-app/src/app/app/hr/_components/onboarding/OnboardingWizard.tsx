@@ -105,7 +105,7 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
       // Créer également un HrCandidate + HrApplication au statut ÉLIGIBLE
       // pour que le staff apparaisse dans l'onglet Embauche (section candidats à déclarer éligible)
       try {
-        const candidateResponse = await hrFetch<any>(hrUrl('recruitment/candidates', { tenantId }), {
+        await hrFetch(hrUrl('recruitment/candidates', { tenantId }), {
           method: 'POST',
           body: {
             firstName: state.identity.firstName,
@@ -114,21 +114,9 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
             phone: state.identity.phone,
             staffId: staffResponse.id, // Lier le staff créé
             status: 'ÉLIGIBLE',
-            source: 'INTERNAL_HIRE', // Indique que c'est un recrutement interne
+            source: 'INTERNAL_HIRE', // Le backend crée automatiquement un HrJob "Interne" + une application ÉLIGIBLE
           },
         });
-
-        // Créer une application au statut ÉLIGIBLE
-        if (candidateResponse?.id) {
-          await hrFetch(hrUrl('recruitment/applications', { tenantId }), {
-            method: 'POST',
-            body: {
-              candidateId: candidateResponse.id,
-              status: 'ÉLIGIBLE',
-              staffId: staffResponse.id,
-            },
-          });
-        }
       } catch (err) {
         // Non bloquant — le staff est créé, le candidat est optionnel
         console.warn('[OnboardingWizard] Failed to create HrCandidate:', err);

@@ -497,6 +497,46 @@ export class RecruitmentPrismaService {
             status: data.status || 'NOUVEAU',
           },
         });
+      } else if (data.source === 'INTERNAL_HIRE') {
+        // Recrutement interne (via OnboardingWizard) — pas d'offre d'emploi
+        // Créer ou récupérer un HrJob "Interne" générique pour ce tenant
+        let internalJob = await tx.hrJob.findFirst({
+          where: { tenantId, ref: 'INTERNAL' },
+        });
+        if (!internalJob) {
+          internalJob = await tx.hrJob.create({
+            data: {
+              ...prismaCreateDefaults(),
+              tenantId,
+              ref: 'INTERNAL',
+              slug: `internal-${tenantId}`,
+              title: 'Recrutement Interne',
+              dept: 'Administration',
+              loc: 'Interne',
+              status: 'BROUILLON',
+              description: 'Poste créé automatiquement pour les recrutements internes (processus d\'embauche directe).',
+              schoolLevelCode: null,
+            },
+          });
+        }
+
+        // Créer une application au statut ÉLIGIBLE avec le staffId lié
+        await tx.hrApplication.create({
+          data: {
+            ...prismaCreateDefaults(),
+            tenantId,
+            candidateId: candidate.id,
+            jobId: internalJob.id,
+            status: data.status || 'ÉLIGIBLE',
+            staffId: data.staffId || null,
+            score: 0,
+            scoreCV: 0,
+            scoreLetter: 0,
+            scoreMatching: 0,
+            risks: 'Aucun',
+            matchDetail: 'Recrutement interne — éligible par défaut (processus d\'embauche directe).',
+          },
+        });
       }
 
       // Return the candidate WITH its applications so the frontend

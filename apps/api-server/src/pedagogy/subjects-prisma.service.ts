@@ -92,14 +92,24 @@ export class SubjectsPrismaService {
     }
 
     // Mode bilingue : filtrer par langue (FR/EN)
-    // Important : on inclut aussi les matières SANS language (null) pour qu'elles
-    // restent visibles même en mode bilingue. Sinon, si l'utilisateur a créé des
-    // matières avant d'activer le mode bilingue, elles disparaissent du catalogue.
+    // IMPORTANT : filtrage STRICT par langue.
+    // - language=FR → montre les matières FR + les matières sans langue (null) 
+    //   pour rétro-compatibilité (matières créées avant l'activation du bilingue)
+    // - language=EN → montre UNIQUEMENT les matières EN (pas les null)
+    //   Sinon les matières FR sans langue apparaîtraient en mode EN
     if (filters?.language) {
-      where.AND = [
-        ...(where.AND as any[] || []),
-        { OR: [{ language: filters.language }, { language: null }] },
-      ];
+      if (filters.language === 'EN') {
+        where.AND = [
+          ...(where.AND as any[] || []),
+          { language: 'EN' },
+        ];
+      } else {
+        // FR : inclut les matières FR et null (rétro-compatibilité)
+        where.AND = [
+          ...(where.AND as any[] || []),
+          { OR: [{ language: 'FR' }, { language: null }] },
+        ];
+      }
     }
 
     if (filters?.search) {
@@ -210,21 +220,27 @@ export class SubjectsPrismaService {
   async deleteSubject(id: string, tenantId: string) {
     const subject = await this.findSubjectById(id, tenantId);
 
-    // Vérifier qu'aucune classe n'utilise cette matière
-    const classSubjects = await this.prisma.classSubject.count({
-      where: {
-        subjectId: id,
-        tenantId,
-      },
-    });
-
-    if (classSubjects > 0) {
-      throw new BadRequestException(
-        `Cannot delete subject: ${classSubjects} class(es) are using it`
-      );
+    // ─── Cascade delete : supprimer d'abord les ClassSubject qui référencent cette matière ──
+    // Sans ça, la suppression échoue avec une erreur de contrainte de clé étrangère
+    // (les matières sont référencées par ClassSubject, ExamScore, etc.)
+    try {
+      await this.prisma.classSubject.deleteMany({
+        where: { subjectId: id, tenantId },
+      });
+    } catch (err: any) {
+      this.logger.warn(`Failed to cascade delete ClassSubject for subject ${id}: ${err.message}`);
     }
 
-    // Suppression physique (ou archivage selon les règles métier)
+    // Supprimer aussi les SubjectAssignment (affectations teacher→classe→matière)
+    try {
+      await this.prisma.subjectAssignment.deleteMany({
+        where: { subjectId: id, tenantId },
+      });
+    } catch (err: any) {
+      this.logger.warn(`Failed to cascade delete SubjectAssignment for subject ${id}: ${err.message}`);
+    }
+
+    // Suppression physique de la matière
     await this.prisma.subject.delete({
       where: { id },
     });

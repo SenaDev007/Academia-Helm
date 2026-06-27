@@ -281,25 +281,10 @@ export default function SubjectsWorkspace() {
 
   /** Matières filtrées par niveau actif + niveau sélectionné + recherche textuelle */
   const filteredSubjects = useMemo(() => {
-    // Debug : logger l'état du filtre pour diagnostiquer
-    const debug = {
-      totalSubjects: subjects.length,
-      activeLevelNames,
-      filterLevelId,
-      search,
-    };
-    if (subjects.length > 0) {
-      console.log('[SubjectsWorkspace] filteredSubjects debug:', debug);
-    }
     return subjects.filter((s: any) => {
       // 1. Filtrer par niveau actif (Paramètres > Structure)
-      // Si schoolLevels n'est pas encore chargé (activeLevelNames = []), on garde tout
-      // (le fallback isLevelActive retourne true)
       const subjectLevelName = s.schoolLevel?.name || s.schoolLevel?.label || s.schoolLevel?.code;
-      if (!isLevelActive(subjectLevelName)) {
-        console.log('[SubjectsWorkspace] Subject filtered out by isLevelActive:', s.name, 'subjectLevelName:', subjectLevelName, 'activeLevelNames:', activeLevelNames);
-        return false;
-      }
+      if (!isLevelActive(subjectLevelName)) return false;
 
       // 2. Filtrer par recherche textuelle
       const matchesSearch =
@@ -308,13 +293,18 @@ export default function SubjectsWorkspace() {
         (s.abbreviation ?? '').toLowerCase().includes(search.toLowerCase());
 
       // 3. Filtrer par niveau sélectionné (chip)
+      // IMPORTANT : on compare par CODE (ex: 'MATERNELLE') et non par ID, car
+      // les chips utilisent schoolLevels (de /api/school-levels = EducationLevel)
+      // dont les IDs diffèrent de SchoolLevel.id utilisé par les subjects.
+      const selectedLevel = schoolLevels.find(l => l.id === filterLevelId);
       const matchesLevel =
         filterLevelId === 'ALL' ||
         s.schoolLevel?.id === filterLevelId ||
-        s.schoolLevelId === filterLevelId;
+        s.schoolLevelId === filterLevelId ||
+        (selectedLevel && s.schoolLevel?.code === selectedLevel.code);
       return matchesSearch && matchesLevel;
     });
-  }, [subjects, search, filterLevelId, isLevelActive, activeLevelNames]);
+  }, [subjects, search, filterLevelId, isLevelActive, activeLevelNames, schoolLevels]);
 
   // Réinitialiser la sélection quand le niveau change ou quand on ferme le modal
   useEffect(() => {
@@ -333,26 +323,10 @@ export default function SubjectsWorkspace() {
     if (!academicYear?.id) return;
     setLoading(true);
     try {
-      // Utiliser pedagogyFetch (proxy Next.js) au lieu de pedagogyService.getSubjects (apiFetch/Axios)
-      // pedagogyFetch utilise getClientAuthorizationHeader() qui lit localStorage — même pattern
-      // que l'onglet Structure (qui fonctionne).
       const params = new URLSearchParams({ academicYearId: academicYear.id });
       if (bilingualEnabled) params.append('language', currentTrack);
       const result = await pedagogyFetch<Subject[]>(`/api/subjects?${params.toString()}`);
       const data = Array.isArray(result) ? result : [];
-      // Debug : logger le résultat pour diagnostiquer les problèmes d'affichage
-      console.log('[SubjectsWorkspace] loadSubjects result:', {
-        count: data.length,
-        academicYearId: academicYear.id,
-        bilingualEnabled,
-        currentTrack,
-        firstSubject: data[0] ? {
-          id: data[0].id,
-          name: data[0].name,
-          schoolLevelId: data[0].schoolLevelId,
-          schoolLevel: data[0].schoolLevel,
-        } : null,
-      });
       setSubjects(data);
     } catch (e) {
       console.error('[SubjectsWorkspace] Failed to load subjects:', e);
@@ -517,7 +491,7 @@ export default function SubjectsWorkspace() {
           coefficient: Number(subjectForm.coefficient) || 1.0,
           weeklyHours: Number(subjectForm.weeklyHours) || 0,
           description: subjectForm.description,
-          ...(bilingualEnabled && subjectForm.language ? { language: subjectForm.language } : {}),
+          ...(bilingualEnabled ? { language: currentTrack } : {}),
         }});
         // ─── Insertion optimiste ──
         // createEntityOffline met la matière dans l'outbox (sync async).
@@ -535,7 +509,7 @@ export default function SubjectsWorkspace() {
             weeklyHours: Number(subjectForm.weeklyHours) || 0,
             description: subjectForm.description,
             schoolLevel: schoolLevels.find((l) => l.id === subjectForm.schoolLevelId) || null,
-            ...(bilingualEnabled && subjectForm.language ? { language: subjectForm.language } : {}),
+            ...(bilingualEnabled ? { language: currentTrack } : {}),
           } as any;
           setSubjects(prev => [optimisticSubject, ...prev] as any);
         }
@@ -551,7 +525,7 @@ export default function SubjectsWorkspace() {
           coefficient: Number(subjectForm.coefficient) || 1.0,
           weeklyHours: Number(subjectForm.weeklyHours) || 0,
           description: subjectForm.description,
-          ...(bilingualEnabled ? { language: subjectForm.language || null } : {}),
+          ...(bilingualEnabled ? { language: currentTrack } : {}),
         }});
         // Mise à jour optimiste
         setSubjects((prev: any) => prev.map((s: any) => s.id === subjectForm.id ? {
@@ -562,7 +536,7 @@ export default function SubjectsWorkspace() {
           coefficient: Number(subjectForm.coefficient) || 1.0,
           weeklyHours: Number(subjectForm.weeklyHours) || 0,
           description: subjectForm.description,
-          ...(bilingualEnabled ? { language: subjectForm.language || null } : {}),
+          ...(bilingualEnabled ? { language: currentTrack } : {}),
         } : s));
         toast({
           title: "Succès",
@@ -605,7 +579,7 @@ export default function SubjectsWorkspace() {
           abbreviation: suggestion.abbreviation,
           coefficient: bulkCoefficient,
           weeklyHours: bulkWeeklyHours,
-          ...(bilingualEnabled && subjectForm.language ? { language: subjectForm.language } : {}),
+          ...(bilingualEnabled ? { language: currentTrack } : {}),
         }});
         created++;
         // Insertion optimiste
@@ -620,7 +594,7 @@ export default function SubjectsWorkspace() {
             coefficient: bulkCoefficient,
             weeklyHours: bulkWeeklyHours,
             schoolLevel: schoolLevels.find((l) => l.id === subjectForm.schoolLevelId) || null,
-            ...(bilingualEnabled && subjectForm.language ? { language: subjectForm.language } : {}),
+            ...(bilingualEnabled ? { language: currentTrack } : {}),
           });
         }
       } catch {
@@ -1540,22 +1514,21 @@ export default function SubjectsWorkspace() {
             </div>
           </div>
 
-          {/* Langue (FR/EN) — visible uniquement en mode bilingue */}
+          {/* Langue (FR/EN) — visible uniquement en mode bilingue.
+              La langue est déterminée par le switch FR/EN en haut de la page.
+              L'utilisateur ne peut pas la changer dans le modal — il doit basculer
+              le switch pour créer des matières dans l'autre langue. */}
           {bilingualEnabled && (
             <div className="space-y-1">
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Piste linguistique
               </label>
-              <select
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white"
-                value={subjectForm.language || currentTrack}
-                onChange={(e) => setSubjectForm({ ...subjectForm, language: e.target.value })}
-              >
-                <option value="FR">Français (FR)</option>
-                <option value="EN">Anglais (EN)</option>
-              </select>
+              <div className="px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-sm font-bold text-slate-700">
+                {currentTrack === 'FR' ? 'Français (FR)' : 'English (EN)'}
+              </div>
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                La matière sera rattachée à la piste sélectionnée et ne sera proposée qu&apos;aux classes de la même piste.
+                La matière sera rattachée à la piste <strong>{currentTrack}</strong>.
+                Pour créer une matière dans l&apos;autre langue, basculez le switch FR/EN en haut de la page.
               </p>
             </div>
           )}

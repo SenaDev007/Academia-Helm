@@ -84,17 +84,11 @@ export function BilingualProvider({ children }: { children: ReactNode }) {
           const defaultLang = (data as any).defaultLanguage || (data as any).defaultUILanguage || 'FR';
           const initial: LanguageTrack = defaultLang === 'EN' ? 'EN' : 'FR';
 
-          // Restaurer la track depuis localStorage si valide
-          if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem(STORAGE_KEY) as LanguageTrack | null;
-            if (saved === 'FR' || saved === 'EN') {
-              setCurrentTrackState(saved);
-            } else {
-              setCurrentTrackState(initial);
-            }
-          } else {
-            setCurrentTrackState(initial);
-          }
+          // Par défaut, toujours commencer sur FR (langue principale au Bénin).
+          // On ne restaure PAS depuis localStorage pour éviter qu'un utilisateur
+          // qui a basculé sur EN une fois reste bloqué sur EN à chaque visite.
+          // L'utilisateur peut basculer manuellement via le switch FR/EN.
+          setCurrentTrackState('FR');
         }
       } catch (err) {
         // Silencieux : si l'API n'est pas disponible, on reste en mode non-bilingue

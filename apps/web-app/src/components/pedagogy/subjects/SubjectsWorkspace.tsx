@@ -518,13 +518,10 @@ export default function SubjectsWorkspace() {
           description: subjectForm.description,
           ...(bilingualEnabled ? { language: currentTrack } : {}),
         }});
-        // ─── Insertion optimiste ──
-        // createEntityOffline met la matière dans l'outbox (sync async).
-        // On l'ajoute immédiatement au state local pour qu'elle apparaisse
-        // dans le catalogue sans attendre la synchronisation serveur.
-        if (created) {
+        // Vérifier que la création a VRAIMENT réussi
+        if (created && created.id) {
           const optimisticSubject = {
-            id: created.id || `temp-${Date.now()}`,
+            id: created.id,
             academicYearId: academicYear?.id,
             schoolLevelId: subjectForm.schoolLevelId,
             code: subjectForm.code.trim(),
@@ -537,11 +534,14 @@ export default function SubjectsWorkspace() {
             ...(bilingualEnabled ? { language: currentTrack } : {}),
           } as any;
           setSubjects(prev => [optimisticSubject, ...prev] as any);
+          toast({
+            title: "Succès",
+            description: "La matière a été créée.",
+          });
+        } else {
+          // Backend a répondu 200 mais sans objet valide
+          throw new Error('Le backend a répondu sans données valides (création non confirmée). Vérifiez que Fly.io est bien redéployé.');
         }
-        toast({
-          title: "Succès",
-          description: "La matière a été créée.",
-        });
       } else {
         await pedagogyFetch(`/api/subjects/${subjectForm.id}`, { method: 'PATCH', body: {
           code: subjectForm.code.trim(),
@@ -607,11 +607,11 @@ export default function SubjectsWorkspace() {
           weeklyHours: bulkWeeklyHours,
           ...(bilingualEnabled ? { language: currentTrack } : {}),
         }});
-        created++;
-        // Insertion optimiste
-        if (createdEntity) {
+        // Vérifier que la création a VRAIMENT réussi — le backend doit renvoyer un objet avec un id
+        if (createdEntity && createdEntity.id) {
+          created++;
           optimisticSubjects.push({
-            id: createdEntity.id || `temp-${Date.now()}-${suggestion.code}`,
+            id: createdEntity.id,
             academicYearId: academicYear.id,
             schoolLevelId: subjectForm.schoolLevelId,
             code: suggestion.code,
@@ -622,11 +622,15 @@ export default function SubjectsWorkspace() {
             schoolLevel: schoolLevels.find((l) => l.id === subjectForm.schoolLevelId) || null,
             ...(bilingualEnabled ? { language: currentTrack } : {}),
           });
+        } else {
+          // Le backend a répondu 200 mais sans objet valide — probablement un crash silencieux
+          skipped++;
+          lastError = 'Le backend a répondu sans données valides (création non confirmée)';
+          console.error('[SubjectsWorkspace] Backend returned empty/invalid response for:', suggestion.code, createdEntity);
         }
       } catch (e: any) {
         console.error('[SubjectsWorkspace] Failed to create subject:', suggestion.code, e.message);
         skipped++;
-        // Garder le dernier message d'erreur pour le toast
         lastError = e.message;
       }
     }

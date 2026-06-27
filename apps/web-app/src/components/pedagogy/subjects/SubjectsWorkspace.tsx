@@ -281,10 +281,25 @@ export default function SubjectsWorkspace() {
 
   /** Matières filtrées par niveau actif + niveau sélectionné + recherche textuelle */
   const filteredSubjects = useMemo(() => {
+    // Debug : logger l'état du filtre pour diagnostiquer
+    const debug = {
+      totalSubjects: subjects.length,
+      activeLevelNames,
+      filterLevelId,
+      search,
+    };
+    if (subjects.length > 0) {
+      console.log('[SubjectsWorkspace] filteredSubjects debug:', debug);
+    }
     return subjects.filter((s: any) => {
       // 1. Filtrer par niveau actif (Paramètres > Structure)
+      // Si schoolLevels n'est pas encore chargé (activeLevelNames = []), on garde tout
+      // (le fallback isLevelActive retourne true)
       const subjectLevelName = s.schoolLevel?.name || s.schoolLevel?.label || s.schoolLevel?.code;
-      if (!isLevelActive(subjectLevelName)) return false;
+      if (!isLevelActive(subjectLevelName)) {
+        console.log('[SubjectsWorkspace] Subject filtered out by isLevelActive:', s.name, 'subjectLevelName:', subjectLevelName, 'activeLevelNames:', activeLevelNames);
+        return false;
+      }
 
       // 2. Filtrer par recherche textuelle
       const matchesSearch =
@@ -299,7 +314,7 @@ export default function SubjectsWorkspace() {
         s.schoolLevelId === filterLevelId;
       return matchesSearch && matchesLevel;
     });
-  }, [subjects, search, filterLevelId, isLevelActive]);
+  }, [subjects, search, filterLevelId, isLevelActive, activeLevelNames]);
 
   // Réinitialiser la sélection quand le niveau change ou quand on ferme le modal
   useEffect(() => {
@@ -325,6 +340,19 @@ export default function SubjectsWorkspace() {
       if (bilingualEnabled) params.append('language', currentTrack);
       const result = await pedagogyFetch<Subject[]>(`/api/subjects?${params.toString()}`);
       const data = Array.isArray(result) ? result : [];
+      // Debug : logger le résultat pour diagnostiquer les problèmes d'affichage
+      console.log('[SubjectsWorkspace] loadSubjects result:', {
+        count: data.length,
+        academicYearId: academicYear.id,
+        bilingualEnabled,
+        currentTrack,
+        firstSubject: data[0] ? {
+          id: data[0].id,
+          name: data[0].name,
+          schoolLevelId: data[0].schoolLevelId,
+          schoolLevel: data[0].schoolLevel,
+        } : null,
+      });
       setSubjects(data);
     } catch (e) {
       console.error('[SubjectsWorkspace] Failed to load subjects:', e);

@@ -238,14 +238,30 @@ export default function TeachersAcademicWorkspace() {
   const handleCreateProfile = async () => {
     if (!selectedTeacherId || !academicYear?.id) return;
     try {
-      const newProfile = await pedagogyService.createTeacherProfile({
-        academicYearId: academicYear.id,
-        teacherId: selectedTeacherId,
-        maxWeeklyHours: 18, // Default
-        isSemainier: false
+      // Utiliser pedagogyFetch (proxy Next) au lieu de pedagogyService.createTeacherProfile
+      // (legacy Axios via createEntityOffline qui ne renvoie PAS l'include teacher →
+      // crash "Cannot read properties of undefined (reading 'firstName')" au rendu)
+      const newProfile = await pedagogyFetch<any>(`/api/pedagogy/teacher-profiles`, {
+        method: 'POST',
+        body: {
+          academicYearId: academicYear.id,
+          teacherId: selectedTeacherId,
+          maxWeeklyHours: 18, // Default
+          isSemainier: false,
+        },
       });
-      setProfiles(prev => [...prev, newProfile]);
-      setActiveProfile(newProfile);
+      // Re-fetch du profil complet pour garantir l'inclusion de teacher
+      // (au cas où le POST ne renvoie pas tous les includes)
+      let fullProfile = newProfile;
+      if (newProfile?.id && !newProfile?.teacher) {
+        try {
+          fullProfile = await pedagogyFetch<any>(`/api/pedagogy/teacher-profiles/${newProfile.id}`);
+        } catch {
+          // fallback sur la réponse POST
+        }
+      }
+      setProfiles(prev => [...prev, fullProfile]);
+      setActiveProfile(fullProfile);
       toast({
         title: "Succès",
         description: "Profil académique initialisé avec succès.",
@@ -665,18 +681,18 @@ export default function TeachersAcademicWorkspace() {
                     {/* Header Profil */}
                     <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div 
+                        <div
                           className="w-12 h-12 rounded-lg flex items-center justify-center text-white text-lg font-bold shadow-md"
                           style={{ backgroundColor: PRIMARY }}
                         >
-                          {activeProfile.teacher.firstName[0]}{activeProfile.teacher.lastName[0]}
+                          {activeProfile?.teacher?.firstName?.[0] ?? '?'}{activeProfile?.teacher?.lastName?.[0] ?? ''}
                         </div>
                         <div>
                           <h3 className="text-base font-bold text-slate-900">
-                            {activeProfile.teacher.lastName} {activeProfile.teacher.firstName}
+                            {activeProfile?.teacher?.lastName ?? '—'} {activeProfile?.teacher?.firstName ?? ''}
                           </h3>
                           <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-0.5 flex items-center gap-1.5">
-                            <span>{activeProfile.teacher.matricule}</span>
+                            <span>{activeProfile?.teacher?.matricule ?? '—'}</span>
                             <span className="w-1 h-1 rounded-full bg-slate-300" />
                             <span className={activeProfile.isActive ? "text-emerald-600" : "text-red-500"}>
                               {activeProfile.isActive ? 'Actif' : 'Inactif'}

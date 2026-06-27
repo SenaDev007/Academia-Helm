@@ -92,14 +92,26 @@ export class SubjectsPrismaService {
     }
 
     // Mode bilingue : filtrer par langue (FR/EN)
+    // Important : on inclut aussi les matières SANS language (null) pour qu'elles
+    // restent visibles même en mode bilingue. Sinon, si l'utilisateur a créé des
+    // matières avant d'activer le mode bilingue, elles disparaissent du catalogue.
     if (filters?.language) {
-      where.language = filters.language;
+      where.AND = [
+        ...(where.AND as any[] || []),
+        { OR: [{ language: filters.language }, { language: null }] },
+      ];
     }
 
     if (filters?.search) {
-      where.OR = [
-        { name: { contains: filters.search, mode: 'insensitive' } },
-        { code: { contains: filters.search, mode: 'insensitive' } },
+      // Utiliser AND pour combiner avec un éventuel filtre language (au lieu d'écraser OR)
+      where.AND = [
+        ...(where.AND as any[] || []),
+        {
+          OR: [
+            { name: { contains: filters.search, mode: 'insensitive' } },
+            { code: { contains: filters.search, mode: 'insensitive' } },
+          ],
+        },
       ];
     }
 

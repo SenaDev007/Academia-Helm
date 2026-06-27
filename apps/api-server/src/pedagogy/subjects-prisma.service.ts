@@ -32,6 +32,58 @@ export class SubjectsPrismaService {
     weeklyHours?: number;
     description?: string;
   }) {
+    // ─── Résoudre le schoolLevelId ──
+    // Le frontend envoie parfois un EducationLevel.id (de /api/school-levels)
+    // au lieu d'un SchoolLevel.id. On doit faire la correspondance par nom/code.
+    let resolvedSchoolLevelId = data.schoolLevelId;
+
+    // Vérifier si l'ID existe dans school_levels
+    const schoolLevel = await this.prisma.schoolLevel.findFirst({
+      where: { id: data.schoolLevelId, tenantId: data.tenantId },
+      select: { id: true, code: true, name: true },
+    });
+
+    if (!schoolLevel) {
+      // L'ID n'existe pas dans school_levels — c'est probablement un EducationLevel.id
+      // On cherche l'EducationLevel correspondant pour récupérer son nom
+      const eduLevel = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT name FROM "education_levels" WHERE id = $1 AND "tenantId" = $2 LIMIT 1
+      `, data.schoolLevelId, data.tenantId);
+
+      if (eduLevel.length > 0 && eduLevel[0].name) {
+        // Trouver le SchoolLevel correspondant par code (ex: PRIMAIRE, MATERNELLE)
+        const matchingSchoolLevel = await this.prisma.schoolLevel.findFirst({
+          where: {
+            tenantId: data.tenantId,
+            OR: [
+              { code: { equals: eduLevel[0].name, mode: 'insensitive' } },
+              { name: { equals: eduLevel[0].name, mode: 'insensitive' } },
+            ],
+          },
+          select: { id: true, code: true },
+        });
+
+        if (matchingSchoolLevel) {
+          resolvedSchoolLevelId = matchingSchoolLevel.id;
+          this.logger.log(`Resolved schoolLevelId: ${data.schoolLevelId} (EducationLevel) → ${matchingSchoolLevel.id} (SchoolLevel ${matchingSchoolLevel.code})`);
+        } else {
+          throw new BadRequestException(
+            `Niveau scolaire introuvable. ID reçu: ${data.schoolLevelId}, ` +
+            `EducationLevel name: ${eduLevel[0].name}. ` +
+            `Aucun SchoolLevel correspondant trouvé pour ce tenant.`
+          );
+        }
+      } else {
+        throw new BadRequestException(
+          `Niveau scolaire introuvable: ${data.schoolLevelId}. ` +
+          `Ni school_levels ni education_levels ne contiennent cet ID.`
+        );
+      }
+    }
+
+    // Utiliser l'ID résolu
+    data.schoolLevelId = resolvedSchoolLevelId;
+
     // Vérifier l'unicité du code
     const existing = await this.prisma.subject.findFirst({
       where: {

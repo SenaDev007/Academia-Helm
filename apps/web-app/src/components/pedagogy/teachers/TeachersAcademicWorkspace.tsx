@@ -677,12 +677,12 @@ export default function TeachersAcademicWorkspace() {
         })}
       </div>
 
-      {/* Main Views — pas de conteneur border/bg (le ModuleContentArea le fournit déjà) */}
+      {/* Main Views — layout fluide, pas de hauteur fixe ni overflow-hidden */}
       <div className="space-y-4">
         {activeSubTab === 'teachers' && (
-          <div className="flex h-[calc(100vh-23rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Liste des enseignants (Gauche) */}
-            <div className="w-1/3 border-r border-slate-200 flex flex-col bg-slate-50/20">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/20 flex flex-col">
               <div className="p-4 border-b border-slate-200 bg-slate-50/50 space-y-3">
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
@@ -702,7 +702,7 @@ export default function TeachersAcademicWorkspace() {
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-2 space-y-1 bg-white">
+              <div className="p-2 space-y-1 bg-white">
                 {loading ? (
                   <div className="p-8 text-center space-y-3">
                     <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin mx-auto" style={{ borderColor: PRIMARY, borderTopColor: 'transparent' }} />
@@ -754,11 +754,11 @@ export default function TeachersAcademicWorkspace() {
               </div>
             </div>
 
-            {/* Fiche active (Droite) */}
-            <div className="flex-1 bg-white flex flex-col overflow-hidden">
+            {/* Fiche active (Droite) — lg:col-span-2 pour prendre 2/3 de la largeur */}
+            <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col">
               {selectedTeacherId ? (
                 activeProfile ? (
-                  <div className="flex-1 flex flex-col overflow-hidden">
+                  <div className="flex flex-col">
                     {/* Header Profil */}
                     <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between">
                       <div className="flex items-center gap-3">
@@ -799,7 +799,7 @@ export default function TeachersAcademicWorkspace() {
                     </div>
 
                     {/* Contenu Profil */}
-                    <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-white">
+                    <div className="p-4 space-y-4 bg-white">
                       {/* KPI Summary Cards */}
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50/30 flex items-center gap-3">
@@ -971,7 +971,7 @@ export default function TeachersAcademicWorkspace() {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-4">
+                  <div className="flex flex-col items-center justify-center p-8 text-center space-y-4">
                     <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 border border-slate-200 shadow-sm">
                       <Users className="w-8 h-8" />
                     </div>
@@ -991,7 +991,7 @@ export default function TeachersAcademicWorkspace() {
                   </div>
                 )
               ) : (
-                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-400 text-xs italic">
+                <div className="flex flex-col items-center justify-center p-8 text-center text-slate-400 text-xs italic">
                   Sélectionnez un enseignant pour afficher son profil.
                 </div>
               )}
@@ -1000,9 +1000,7 @@ export default function TeachersAcademicWorkspace() {
         )}
 
         {activeSubTab === 'assignments' && (
-          <div className="h-full overflow-hidden">
-            <AssignmentsWorkspace />
-          </div>
+          <AssignmentsWorkspace />
         )}
 
         {activeSubTab === 'multigrade' && (
@@ -1054,7 +1052,7 @@ export default function TeachersAcademicWorkspace() {
             </div>
 
             {/* List Table of Workloads */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
               <div className="p-4 border-b border-slate-200 bg-slate-50/50">
                 <h3 className="text-sm font-bold text-slate-900">Suivi Global de la Charge Académique</h3>
                 <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider mt-1">Comparatif charges réelles vs capacités maximales</p>

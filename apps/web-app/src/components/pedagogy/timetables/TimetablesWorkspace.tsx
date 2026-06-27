@@ -395,7 +395,7 @@ function AvailabilityTab({ config, schoolLevelId }: { config: any; schoolLevelId
         </div>
       </div>
       <div className="flex flex-col lg:flex-row gap-4">
-        <div className="lg:w-64 bg-slate-50 rounded-xl border border-slate-200 p-3 max-h-[500px] overflow-y-auto">
+        <div className="lg:w-64 bg-slate-50 rounded-xl border border-slate-200 p-3">
           <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-1">{teachers.length} enseignant{teachers.length > 1 ? 's' : ''}</p>
           <div className="space-y-1">
             {teachers.map(t => (

@@ -53,8 +53,18 @@ export async function POST(request: NextRequest) {
     });
 
     if (!response.ok) {
+      // Transmettre le message d'erreur exact du backend (pas juste "Failed to create subject")
+      const errorText = await response.text();
+      let errorMessage = 'Failed to create subject';
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.message || errorJson.error || errorMessage;
+      } catch {
+        if (errorText.trim()) errorMessage = errorText.substring(0, 200);
+      }
+      console.error('[api/subjects POST] Backend error:', response.status, errorMessage);
       return NextResponse.json(
-        { error: 'Failed to create subject' },
+        { error: errorMessage, message: errorMessage, statusCode: response.status },
         { status: response.status }
       );
     }
@@ -64,7 +74,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error creating subject:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', message: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }

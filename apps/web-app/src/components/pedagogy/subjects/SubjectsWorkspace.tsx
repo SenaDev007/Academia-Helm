@@ -593,6 +593,7 @@ export default function SubjectsWorkspace() {
     const bulkWeeklyHours = Number(subjectForm.weeklyHours) ?? 0;
     let created = 0;
     let skipped = 0;
+    let lastError = '';
     const optimisticSubjects: any[] = [];
     for (const suggestion of toCreate) {
       try {
@@ -622,8 +623,11 @@ export default function SubjectsWorkspace() {
             ...(bilingualEnabled ? { language: currentTrack } : {}),
           });
         }
-      } catch {
+      } catch (e: any) {
+        console.error('[SubjectsWorkspace] Failed to create subject:', suggestion.code, e.message);
         skipped++;
+        // Garder le dernier message d'erreur pour le toast
+        lastError = e.message;
       }
     }
     // Ajouter toutes les matières créées au state local immédiatement
@@ -636,8 +640,9 @@ export default function SubjectsWorkspace() {
     toast({
       title: created > 0 ? `${created} matière${created > 1 ? 's' : ''} créée${created > 1 ? 's' : ''}` : 'Aucune matière créée',
       description: skipped > 0
-        ? `${skipped} matière${skipped > 1 ? 's' : ''} ignorée${skipped > 1 ? 's' : ''} (déjà existante${skipped > 1 ? 's' : ''}).`
+        ? `${skipped} matière${skipped > 1 ? 's' : ''} ignorée${skipped > 1 ? 's' : ''}. Erreur: ${lastError || 'déjà existante'}`
         : 'Toutes les matières sélectionnées ont été ajoutées.',
+      variant: skipped > 0 && created === 0 ? 'destructive' : undefined,
     });
     if (created > 0) setModal('none');
   };

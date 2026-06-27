@@ -112,8 +112,17 @@ export async function DELETE(
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
+      let errorMessage = 'Failed to delete subject';
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.message || errorJson.error || errorMessage;
+      } catch {
+        if (errorText.trim()) errorMessage = errorText.substring(0, 200);
+      }
+      console.error('[api/subjects DELETE] Backend error:', response.status, errorMessage);
       return NextResponse.json(
-        { error: 'Failed to delete subject' },
+        { error: errorMessage, message: errorMessage },
         { status: response.status }
       );
     }
@@ -123,7 +132,7 @@ export async function DELETE(
   } catch (error) {
     console.error('Error deleting subject:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', message: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }

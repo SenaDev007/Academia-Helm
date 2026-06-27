@@ -8,12 +8,14 @@
  * ============================================================================
  */
 
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 
 @Injectable()
 export class SubjectsPrismaService {
+  private readonly logger = new Logger(SubjectsPrismaService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   /**

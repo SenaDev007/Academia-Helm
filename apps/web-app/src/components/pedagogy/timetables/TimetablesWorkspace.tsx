@@ -3,13 +3,14 @@
  * TIMETABLES WORKSPACE — Smart Timetable Engine (STE) V2+
  * ============================================================================
  *
- * Interface 6-onglets V2+ :
+ * Interface 5-onglets V2+ :
  *   1. Configuration   — Jours d'école, créneaux horaires
  *   2. Disponibilités  — Grille enseignant × jour × créneau (3 états)
  *   3. Contraintes     — V2+ : contraintes hard/soft (6 types)
  *   4. Génération      — V2+ : mono-solution ou multi-solutions Pareto
- *   5. Solutions       — V2+ : front de Pareto + comparaison
- *   6. Édition manuelle — L'ancien éditeur visuel
+ *   5. Emploi du temps — Solutions générées (Pareto) + édition manuelle
+ *                        (toggle interne : passer du mode STE au mode manuel
+ *                        sans changer d'onglet)
  * ============================================================================
  */
 
@@ -19,20 +20,22 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Settings, Calendar, Zap, CheckCircle, Loader2, Trash2,
   Clock, AlertCircle, Star, Eye, Pencil, X,
-  Users, Info, Shield, GitCompare, Sparkles,
+  Users, Info, Shield, GitCompare, Sparkles, Printer, Download, Plus,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
+import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
-import ManualTimetablesEditor from './ManualTimetablesEditor';
 
 const DAYS = [
   { value: 1, label: 'Lundi' }, { value: 2, label: 'Mardi' }, { value: 3, label: 'Mercredi' },
   { value: 4, label: 'Jeudi' }, { value: 5, label: 'Vendredi' }, { value: 6, label: 'Samedi' }, { value: 7, label: 'Dimanche' },
 ];
+
+const HOURS = Array.from({ length: 11 }, (_, i) => i + 8); // 8:00 to 18:00
 
 const DEFAULT_TIME_BLOCKS = [
   { start: '08:00', end: '10:00', type: 'BLOCK' },
@@ -44,15 +47,14 @@ const DEFAULT_TIME_BLOCKS = [
   { start: '16:15', end: '18:00', type: 'BLOCK' },
 ];
 
-type TabId = 'config' | 'availability' | 'constraints' | 'generate' | 'solutions' | 'manual';
+type TabId = 'config' | 'availability' | 'constraints' | 'generate' | 'timetable';
 
 const TABS: { id: TabId; label: string; icon: any; description: string }[] = [
   { id: 'config', label: 'Configuration', icon: Settings, description: 'Jours & créneaux' },
   { id: 'availability', label: 'Disponibilités', icon: Calendar, description: 'Grille enseignants' },
   { id: 'constraints', label: 'Contraintes', icon: Shield, description: 'V2+ : hard/soft' },
   { id: 'generate', label: 'Génération', icon: Zap, description: 'Mono ou multi-Pareto' },
-  { id: 'solutions', label: 'Solutions', icon: CheckCircle, description: 'Front de Pareto' },
-  { id: 'manual', label: 'Édition manuelle', icon: Pencil, description: 'Éditeur hérité' },
+  { id: 'timetable', label: 'Emploi du temps', icon: Calendar, description: 'Solutions + édition' },
 ];
 
 async function steFetch<T>(path: string, options?: { method?: string; body?: any }): Promise<T> {
@@ -195,9 +197,12 @@ export default function TimetablesWorkspace() {
               {tab === 'config' && <ConfigTab config={config} loading={configLoading} schoolLevelId={schoolLevelId} academicYearId={academicYearId} onSaved={loadConfig} />}
               {tab === 'availability' && <AvailabilityTab config={config} schoolLevelId={schoolLevelId} />}
               {tab === 'constraints' && <ConstraintsTab schoolLevelId={schoolLevelId} />}
-              {tab === 'generate' && <GenerateTab schoolLevelId={schoolLevelId} academicYearId={academicYearId} solutionsCount={solutions.length} onGenerated={() => { loadSolutions(); setTab('solutions'); }} />}
-              {tab === 'solutions' && (
-                <SolutionsTab solutions={solutions} loading={false}
+              {tab === 'generate' && <GenerateTab schoolLevelId={schoolLevelId} academicYearId={academicYearId} solutionsCount={solutions.length} onGenerated={() => { loadSolutions(); setTab('timetable'); }} />}
+              {tab === 'timetable' && (
+                <TimetableTab
+                  solutions={solutions}
+                  schoolLevelId={schoolLevelId}
+                  academicYearId={academicYearId}
                   onAccept={async (id: string) => {
                     try {
                       await steFetch(`/api/timetable-engine/solutions/${id}/accept`, { method: 'POST' });
@@ -206,9 +211,9 @@ export default function TimetablesWorkspace() {
                     } catch (e: any) { toast({ title: 'Erreur', description: e?.message, variant: 'destructive' }); }
                   }}
                   onView={setSelectedSolution}
-                  onRegenerate={() => setTab('generate')} />
+                  onRegenerate={() => setTab('generate')}
+                />
               )}
-              {tab === 'manual' && <ManualTimetablesEditor />}
             </motion.div>
           </AnimatePresence>
         </div>
@@ -756,16 +761,56 @@ function GenerateTab({ schoolLevelId, academicYearId, solutionsCount, onGenerate
   );
 }
 
-// ═══ TAB 5: SOLUTIONS V2+ ═══
+// ═══ TAB 5: EMPLOI DU TEMPS (unifié — Solutions + Édition manuelle) ═══
 
-function SolutionsTab({ solutions, loading, onAccept, onView, onRegenerate }: any) {
-  if (loading) return <div className="flex items-center justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-blue-600" /><span className="ml-2 text-sm text-slate-500">Chargement…</span></div>;
+function TimetableTab({ solutions, schoolLevelId, academicYearId, onAccept, onView, onRegenerate }: any) {
+  const [mode, setMode] = useState<'solutions' | 'manual'>('solutions');
+
+  return (
+    <div className="space-y-4">
+      {/* Mode toggle */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="inline-flex p-1 bg-slate-100 rounded-xl">
+          <button
+            onClick={() => setMode('solutions')}
+            className={cn('px-4 py-2 rounded-lg text-xs font-bold transition inline-flex items-center gap-1.5',
+              mode === 'solutions' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50')}
+          >
+            <Sparkles className="w-3.5 h-3.5" /> Solutions générées {solutions.length > 0 && `(${solutions.length})`}
+          </button>
+          <button
+            onClick={() => setMode('manual')}
+            className={cn('px-4 py-2 rounded-lg text-xs font-bold transition inline-flex items-center gap-1.5',
+              mode === 'manual' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50')}
+          >
+            <Pencil className="w-3.5 h-3.5" /> Édition manuelle
+          </button>
+        </div>
+        {mode === 'solutions' && solutions.length > 0 && (
+          <button onClick={onRegenerate} className="text-xs text-blue-600 hover:underline font-bold">
+            ↻ Régénérer
+          </button>
+        )}
+      </div>
+
+      {mode === 'solutions' ? (
+        <SolutionsList solutions={solutions} onAccept={onAccept} onView={onView} onRegenerate={onRegenerate} />
+      ) : (
+        <ManualEditor schoolLevelId={schoolLevelId} academicYearId={academicYearId} />
+      )}
+    </div>
+  );
+}
+
+function SolutionsList({ solutions, onAccept, onView, onRegenerate }: any) {
   if (solutions.length === 0) return (
     <div className="bg-slate-50 rounded-xl border border-slate-200 p-10 text-center">
       <AlertCircle className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-      <h3 className="text-sm font-bold text-slate-800 mb-1">Aucune solution</h3>
-      <p className="text-xs text-slate-500 mb-4">Lancez le moteur pour créer votre premier EDT.</p>
-      <button onClick={onRegenerate} className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold"><Zap className="w-3.5 h-3.5" /> Générer</button>
+      <h3 className="text-sm font-bold text-slate-800 mb-1">Aucune solution générée</h3>
+      <p className="text-xs text-slate-500 mb-4">Lancez le moteur pour créer votre premier EDT, ou passez en édition manuelle.</p>
+      <div className="flex gap-2 justify-center">
+        <button onClick={onRegenerate} className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold"><Zap className="w-3.5 h-3.5" /> Générer</button>
+      </div>
     </div>
   );
 
@@ -822,6 +867,324 @@ function SolutionsTab({ solutions, loading, onAccept, onView, onRegenerate }: an
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ─── ManualEditor : édition visuelle héritée, intégrée ───────────────────
+
+interface ManualTimetable {
+  id: string;
+  name: string;
+  isActive: boolean;
+}
+
+interface ManualEntry {
+  id: string;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  subject?: { id: string; name: string; code: string };
+  teacher?: { id: string; firstName: string; lastName: string };
+  room?: { id: string; name: string; code: string };
+  class?: { id: string; name: string };
+}
+
+function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string; academicYearId: string }) {
+  const { toast } = useToast();
+  const { schoolLevel } = useModuleContext();
+
+  const [timetables, setTimetables] = useState<ManualTimetable[]>([]);
+  const [activeTimetableId, setActiveTimetableId] = useState<string | null>(null);
+  const [entries, setEntries] = useState<ManualEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const [viewMode, setViewMode] = useState<'class' | 'teacher' | 'room'>('class');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const [classes, setClasses] = useState<any[]>([]);
+  const [rooms, setRooms] = useState<any[]>([]);
+  const [teachers, setTeachers] = useState<any[]>([]);
+
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [entryForm, setEntryForm] = useState<any>({
+    classId: '', teacherId: '', roomId: null, dayOfWeek: 1, startTime: '08:00', endTime: '10:00',
+  });
+
+  // ─── Loaders ───
+  const loadData = useCallback(async () => {
+    if (!academicYearId) return;
+    setLoading(true);
+    try {
+      const [tts, cls, rms, tchs] = await Promise.all([
+        pedagogyFetch<ManualTimetable[]>(`/api/timetables?academicYearId=${academicYearId}`).catch(() => []),
+        pedagogyFetch<any[]>(`/api/pedagogy/academic-structure/classes?academicYearId=${academicYearId}`).catch(() => []),
+        pedagogyFetch<any[]>(`/api/rooms`).catch(() => []),
+        pedagogyFetch<any[]>(`/api/pedagogy/teacher-profiles?academicYearId=${academicYearId}`).catch(() => []),
+      ]);
+      setClasses(cls || []); setRooms(rms || []); setTeachers(tchs || []);
+      if (tts && tts.length > 0) {
+        setActiveTimetableId(tts[0].id);
+        setTimetables(tts);
+      } else {
+        const newTt = await pedagogyFetch<ManualTimetable>('/api/timetables', {
+          method: 'POST', body: {
+            academicYearId, schoolLevelId: schoolLevel?.id || schoolLevelId,
+            name: `EDT Principal ${new Date().getFullYear()}`, startDate: new Date(),
+          },
+        });
+        if (newTt) { setTimetables([newTt]); setActiveTimetableId(newTt.id); }
+      }
+      if (cls && cls.length > 0) setSelectedId(cls[0].id);
+    } catch (e: any) {
+      console.error(e);
+    } finally { setLoading(false); }
+  }, [academicYearId, schoolLevelId, schoolLevel?.id]);
+
+  const loadEntries = useCallback(async () => {
+    if (!activeTimetableId) return;
+    try {
+      const data = await pedagogyFetch<any>(`/api/timetables/${activeTimetableId}`);
+      setEntries(data?.entries || []);
+    } catch (e) { console.error(e); }
+  }, [activeTimetableId]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { loadEntries(); }, [loadEntries]);
+
+  const filteredEntries = useMemo(() => {
+    if (!selectedId) return entries;
+    return entries.filter(e => {
+      if (viewMode === 'class') return e.class?.id === selectedId;
+      if (viewMode === 'teacher') return e.teacher?.id === selectedId;
+      if (viewMode === 'room') return e.room?.id === selectedId;
+      return true;
+    });
+  }, [entries, viewMode, selectedId]);
+
+  // ─── Actions ───
+  const handleAddEntry = async () => {
+    if (!activeTimetableId || !academicYearId) return;
+    if (!entryForm.classId) { toast({ title: 'Erreur', description: 'Sélectionnez une classe.', variant: 'destructive' }); return; }
+    try {
+      const resolvedSchoolLevelId = schoolLevel?.id || schoolLevelId;
+      await pedagogyFetch(`/api/timetables/${activeTimetableId}/entries`, {
+        method: 'POST', body: {
+          ...entryForm, timetableId: activeTimetableId, academicYearId, schoolLevelId: resolvedSchoolLevelId,
+        },
+      });
+      await loadEntries();
+      setShowAddModal(false);
+      setEntryForm({ classId: '', teacherId: '', roomId: null, dayOfWeek: 1, startTime: '08:00', endTime: '10:00' });
+      toast({ title: '✅ Séance ajoutée' });
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message || 'Erreur lors de l\'ajout. Vérifiez les conflits.', variant: 'destructive' });
+    }
+  };
+
+  const handleDeleteEntry = async (id: string) => {
+    if (!confirm('Supprimer cette séance ?')) return;
+    try {
+      await pedagogyFetch(`/api/timetable/entries/${id}`, { method: 'DELETE' }).catch(() =>
+        pedagogyFetch(`/api/timetables/entries/${id}`, { method: 'DELETE' }),
+      );
+      await loadEntries();
+      toast({ title: '✅ Séance supprimée' });
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+    }
+  };
+
+  // ─── Print / Download ───
+  const getTimetableTitle = () => {
+    const entityName = viewMode === 'class' ? classes.find(c => c.id === selectedId)?.name :
+      viewMode === 'teacher' ? (() => { const t = teachers.find(t => t.teacherId === selectedId); return t ? `${t.teacher?.lastName} ${t.teacher?.firstName}` : ''; })() :
+      rooms.find(r => r.id === selectedId)?.name || '';
+    return `EDT — ${viewMode === 'class' ? 'Classe' : viewMode === 'teacher' ? 'Enseignant' : 'Salle'} ${entityName}`;
+  };
+
+  const buildPrintableHtml = () => {
+    const N = '#0b2f73', B = '#1d4fa5', G = '#f5b335';
+    const title = getTimetableTitle();
+    const rows = HOURS.map(hour => {
+      const cells = DAYS.slice(0, 6).map(day => {
+        const entry = filteredEntries.find(e => e.dayOfWeek === day.value && e.startTime === `${hour.toString().padStart(2, '0')}:00`);
+        if (entry) {
+          const subjectName = entry.subject?.name || '—';
+          const teacherName = entry.teacher ? `${entry.teacher.firstName?.[0]}. ${entry.teacher.lastName}` : '';
+          const className = entry.class?.name || '';
+          const roomCode = entry.room?.code || '';
+          return `<td style="padding:6px;border:1px solid #ddd;text-align:center;background:#f0f7ff;"><strong style="font-size:11px;color:${N};">${subjectName}</strong><br/><span style="font-size:9px;color:#666;">${viewMode === 'teacher' ? className : teacherName}</span><br/><span style="font-size:8px;color:#999;">${roomCode}</span></td>`;
+        }
+        return `<td style="padding:6px;border:1px solid #ddd;text-align:center;"></td>`;
+      }).join('');
+      return `<tr><td style="padding:6px;font-weight:bold;background:${N};color:#fff;border:1px solid #ddd;text-align:center;">${hour.toString().padStart(2, '0')}:00</td>${cells}</tr>`;
+    }).join('');
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;padding:20px;font-size:12px}.header{text-align:center;margin-bottom:15px;border-bottom:3px solid ${G};padding-bottom:10px}.header h1{color:${N};font-size:18px}.header h2{font-size:13px;color:${B};margin-top:3px}table{width:100%;border-collapse:collapse}th{background:${N};color:#fff;padding:8px;border:1px solid #ddd;font-size:11px}td{border:1px solid #ddd;padding:6px;font-size:11px}@media print{body{padding:10px}}</style></head><body><div class="header"><h1>EMPLOI DU TEMPS HEBDOMADAIRE</h1><h2>${title}</h2><p>Généré le ${new Date().toLocaleDateString('fr-FR')}</p></div><table><thead><tr><th style="width:80px">Horaire</th>${DAYS.slice(0,6).map(d => `<th>${d.label}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></body></html>`;
+  };
+
+  const handlePrint = () => {
+    const w = window.open('', '_blank'); if (!w) return;
+    w.document.write(buildPrintableHtml()); w.document.close();
+    setTimeout(() => w.print(), 500);
+  };
+
+  const handleDownload = () => {
+    const blob = new Blob([buildPrintableHtml()], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `edt_${viewMode}_${selectedId || 'all'}.html`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  if (loading) return <div className="flex items-center justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-blue-600" /><span className="ml-2 text-sm text-slate-500">Chargement…</span></div>;
+
+  return (
+    <div className="space-y-4">
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-3 bg-slate-50 rounded-xl border border-slate-200 p-3">
+        {/* View mode selector */}
+        <div className="flex p-1 bg-white rounded-lg border border-slate-200">
+          <button onClick={() => setViewMode('class')} className={cn('px-3 py-1.5 rounded-md text-[10px] font-black uppercase', viewMode === 'class' ? 'bg-blue-600 text-white' : 'text-slate-500')}>Classe</button>
+          <button onClick={() => setViewMode('teacher')} className={cn('px-3 py-1.5 rounded-md text-[10px] font-black uppercase', viewMode === 'teacher' ? 'bg-indigo-600 text-white' : 'text-slate-500')}>Prof</button>
+          <button onClick={() => setViewMode('room')} className={cn('px-3 py-1.5 rounded-md text-[10px] font-black uppercase', viewMode === 'room' ? 'bg-indigo-600 text-white' : 'text-slate-500')}>Salle</button>
+        </div>
+
+        {/* Entity selector */}
+        <select
+          value={selectedId || ''}
+          onChange={e => setSelectedId(e.target.value)}
+          className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm bg-white"
+        >
+          <option value="">— Sélectionner —</option>
+          {viewMode === 'class' && classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          {viewMode === 'teacher' && teachers.map(t => <option key={t.teacherId} value={t.teacherId}>{t.teacher?.lastName} {t.teacher?.firstName}</option>)}
+          {viewMode === 'room' && rooms.map(r => <option key={r.id} value={r.id}>{r.name} ({r.code})</option>)}
+        </select>
+
+        <div className="flex gap-2 ml-auto">
+          <button onClick={() => setShowAddModal(true)} disabled={!activeTimetableId}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold">
+            <Plus className="w-3.5 h-3.5" /> Ajouter séance
+          </button>
+          <button onClick={handlePrint} disabled={filteredEntries.length === 0}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-800 disabled:opacity-50 text-white rounded-lg text-xs font-bold">
+            <Printer className="w-3.5 h-3.5" /> Imprimer
+          </button>
+          <button onClick={handleDownload} disabled={filteredEntries.length === 0}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-800 disabled:opacity-50 text-white rounded-lg text-xs font-bold">
+            <Download className="w-3.5 h-3.5" /> Export
+          </button>
+        </div>
+      </div>
+
+      {/* Grid */}
+      {selectedId ? (
+        <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+          <table className="w-full text-sm border-collapse min-w-[700px]">
+            <thead>
+              <tr className="bg-slate-100">
+                <th className="p-2 text-left text-xs font-bold text-slate-700 border border-slate-200 w-20">Horaire</th>
+                {DAYS.slice(0, 6).map(d => (
+                  <th key={d.value} className="p-2 text-center text-xs font-bold text-slate-700 border border-slate-200 min-w-[120px]">{d.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {HOURS.map(hour => (
+                <tr key={hour}>
+                  <td className="p-2 font-bold text-slate-700 border border-slate-200 bg-slate-50 text-xs">
+                    {hour.toString().padStart(2, '0')}:00
+                  </td>
+                  {DAYS.slice(0, 6).map(day => {
+                    const entry = filteredEntries.find(e => e.dayOfWeek === day.value && e.startTime === `${hour.toString().padStart(2, '0')}:00`);
+                    return (
+                      <td key={day.value} className="p-1 border border-slate-200 align-top">
+                        {entry && (
+                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-1.5 group relative">
+                            <div className="text-[10px] font-bold text-blue-700">{entry.startTime}–{entry.endTime}</div>
+                            <div className="text-xs font-bold text-slate-800 leading-tight">{entry.subject?.name || '—'}</div>
+                            {viewMode !== 'teacher' && entry.teacher && <div className="text-[10px] text-slate-500">{entry.teacher.firstName?.[0]}. {entry.teacher.lastName}</div>}
+                            {viewMode === 'teacher' && entry.class && <div className="text-[10px] text-slate-500">{entry.class.name}</div>}
+                            {entry.room && <div className="text-[10px] text-slate-400">📍 {entry.room.code}</div>}
+                            <button
+                              onClick={() => handleDeleteEntry(entry.id)}
+                              className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-1 bg-red-500 text-white rounded transition"
+                              title="Supprimer"
+                            >
+                              <X className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="bg-slate-50 rounded-xl border border-slate-200 p-10 text-center">
+          <Users className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+          <p className="text-sm text-slate-500">Sélectionnez une classe, un enseignant ou une salle pour afficher la grille.</p>
+        </div>
+      )}
+
+      {/* Add entry modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowAddModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-slate-100">
+              <h3 className="font-bold text-slate-900">Nouveau créneau</h3>
+              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-700"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Classe *</label>
+                  <select value={entryForm.classId} onChange={e => setEntryForm({ ...entryForm, classId: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white">
+                    <option value="">—</option>
+                    {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Enseignant</label>
+                  <select value={entryForm.teacherId} onChange={e => setEntryForm({ ...entryForm, teacherId: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white">
+                    <option value="">—</option>
+                    {teachers.map(t => <option key={t.teacherId} value={t.teacherId}>{t.teacher?.lastName} {t.teacher?.firstName}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Salle</label>
+                  <select value={entryForm.roomId || ''} onChange={e => setEntryForm({ ...entryForm, roomId: e.target.value || null })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white">
+                    <option value="">— Aucune —</option>
+                    {rooms.map(r => <option key={r.id} value={r.id}>{r.name} ({r.code})</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Jour *</label>
+                  <select value={entryForm.dayOfWeek} onChange={e => setEntryForm({ ...entryForm, dayOfWeek: parseInt(e.target.value) })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white">
+                    {DAYS.slice(0, 6).map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Heure début *</label>
+                  <input type="time" value={entryForm.startTime} onChange={e => setEntryForm({ ...entryForm, startTime: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Heure fin *</label>
+                  <input type="time" value={entryForm.endTime} onChange={e => setEntryForm({ ...entryForm, endTime: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+                </div>
+              </div>
+            </div>
+            <div className="p-4 border-t border-slate-100 flex justify-end gap-2">
+              <button onClick={() => setShowAddModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-xs font-bold">Annuler</button>
+              <button onClick={handleAddEntry} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold">Enregistrer</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

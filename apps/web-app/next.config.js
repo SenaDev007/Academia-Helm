@@ -250,6 +250,23 @@ const nextConfig = {
       },
     ];
   },
+
+  // ✅ Redirects permanents — page-level redirects (pas de redirect() dans page.tsx
+  // qui casse le prerendering statique en Next.js 16 Turbopack)
+  async redirects() {
+    return [
+      {
+        source: '/app/pedagogy/timetable-engine',
+        destination: '/app/pedagogy/timetables',
+        permanent: false,
+      },
+      {
+        source: '/app/pedagogy/timetable-engine/:path*',
+        destination: '/app/pedagogy/timetables',
+        permanent: false,
+      },
+    ];
+  },
 };
 
 // PWA en prod ; bundle analyzer si ANALYZE=true (audit poids JS pour la perf)

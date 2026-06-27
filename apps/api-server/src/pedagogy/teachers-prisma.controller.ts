@@ -43,12 +43,14 @@ export class TeachersPrismaController {
     @Query('departmentId') departmentId?: string,
     @Query('status') status?: string,
     @Query('search') search?: string,
+    @Query('language') language?: string,
   ) {
     return this.teachersService.findAllTeachers(tenantId, {
       schoolLevelId,
       departmentId,
       status,
       search,
+      language,
     });
   }
 

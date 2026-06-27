@@ -879,4 +879,12 @@ export class BatchAssignLevelDto {
   @IsOptional()
   @IsString()
   academicYearId?: string;
+
+  /// Langues assignées au staff : ['FR'], ['EN'], ['FR','EN'], ou null/undefined.
+  /// Si fourni, met à jour Staff.assignedLanguages et sync vers Teacher.assignedLanguages.
+  /// Si non fourni, ne modifie pas assignedLanguages (garde la valeur existante).
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  languages?: string[];
 }

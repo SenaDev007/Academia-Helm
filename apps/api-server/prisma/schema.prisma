@@ -392,6 +392,7 @@ model Tenant {
   targetTransfers                  StudentTransferRequest[]          @relation("TargetSchoolTransfers")
   students                         Student[]
   subjectAssignments               SubjectAssignment[]
+  multigradeAssignments            MultigradeAssignment[]
   subjects                         Subject[]
   subscriptionInvoices             SubscriptionInvoice[]
   subscriptions                    Subscription?
@@ -753,6 +754,7 @@ model AcademicYear {
   studentTransfers                 StudentTransferRequest[]
   students                         Student[]
   subjectAssignments               SubjectAssignment[]
+  multigradeAssignments            MultigradeAssignment[]
   subjects                         Subject[]
   taxWithholdings                  TaxWithholding[]                  @relation("TaxWithholdingAcademicYear")
   teacherClassAssignments          TeacherClassAssignment[]          @relation("TeacherClassAssignmentAcademicYear")
@@ -2585,6 +2587,10 @@ model Teacher {
   hireDate                   DateTime?
   contractType               String?
   status                     String                      @default("active")
+  /// Langues enseignées par ce Teacher : ["FR"], ["EN"], ["FR","EN"], ou null.
+  /// Si bilingue désactivé → ["FR"] par défaut. Si bilingue activé → ["FR","EN"] par défaut.
+  /// Utilisé pour filtrer les profs dans Pédagogie quand l'utilisateur bascule en FR/EN.
+  assignedLanguages          Json?
   workingHours               Int?
   salary                     Decimal?                    @db.Decimal(10, 2)
   bankDetails                String?
@@ -2603,6 +2609,7 @@ model Teacher {
   subjectAssignments         SubjectAssignment[]
   teacherClassAssignments    TeacherClassAssignment[]
   materialAssignments        TeacherMaterialAssignment[]
+  multigradeAssignments      MultigradeAssignment[]
   teacherSubjects            TeacherSubject[]
   academicYear               AcademicYear?               @relation(fields: [academicYearId], references: [id])
   creator                    User?                       @relation(fields: [createdBy], references: [id])
@@ -5001,6 +5008,10 @@ model Staff {
   position                  String?
   department                String?
   roleType                  String                     @default("TEACHER")
+  /// Langues enseignées par ce Staff (si roleType=TEACHER) : ["FR"], ["EN"], ["FR","EN"], null.
+  /// Sync vers Teacher.assignedLanguages quand le Staff est lié à un Teacher.
+  /// Si bilingue désactivé → ["FR"] par défaut. Si bilingue activé → ["FR","EN"] par défaut.
+  assignedLanguages         Json?
   hireDate                  DateTime?
   contractType              String?
   status                    String                     @default("PENDING_SIGNATURE")
@@ -5953,6 +5964,36 @@ model RoomAllocation {
   @@index([allocationType])
   @@index([startTime, endTime])
   @@map("room_allocations")
+}
+
+/// Affectation multigrade — un enseignant qui enseigne à 2 classes du même niveau
+/// en alternance (horaires décalés, pas simultanés). Cas typique au Bénin : un prof
+/// primaire fait CE1 + CE2 (CE1 à 8h, CE2 à 10h). Maximum 2 classes par groupe.
+/// Pas de multigrade inter-niveau (les 2 classes doivent être du même schoolLevelId).
+model MultigradeAssignment {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  teacherId       String
+  /// Tableau des 2 classIds regroupées : ["classId1", "classId2"]
+  /// Exactement 2 classes (pas plus, pas moins)
+  classIds        Json
+  /// Langue (FR/EN/null) — utile si bilingue activé. Si null = toutes langues.
+  language        String?
+  /// Indique si l'affectation multigrade est active
+  isActive        Boolean  @default(true)
+  /// Notes optionnelles (ex: "Prof partagé entre CE1 et CE2 pour raisons de effectifs")
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teacher         Teacher  @relation(fields: [teacherId], references: [id])
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id])
+
+  @@unique([tenantId, academicYearId, teacherId, classIds])
+  @@index([tenantId, academicYearId])
+  @@index([tenantId, teacherId])
+  @@map("multigrade_assignments")
 }
 
 model SubjectAssignment {

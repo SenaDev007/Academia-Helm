@@ -40,6 +40,7 @@ import { toast } from '@/components/ui/toast';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
+import { useBilingual } from '@/contexts/BilingualContext';
 
 // ── Types ──
 
@@ -63,6 +64,14 @@ interface StaffMember {
   status?: string;
   phone?: string;
   email?: string;
+  /// Langues assignées : ['FR'], ['EN'], ['FR','EN'], ou null (FR+EN par défaut)
+  assignedLanguages?: string[] | null;
+}
+
+/// État d'affectation pending : levelId + languages (bilingue)
+interface PendingAssignment {
+  levelId: string | null;
+  languages?: string[];
 }
 
 interface SchoolLevelOption {
@@ -119,13 +128,14 @@ const LEVEL_EMPTY_STYLES = {
 export function TeacherLevelAssignment() {
   const { tenant } = useModuleContext();
   const { availableLevels, currentLevel } = useSchoolLevel();
+  const { isEnabled: bilingualEnabled } = useBilingual();
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLevel, setSelectedLevel] = useState<string | null>(null);
-  const [pendingAssignments, setPendingAssignments] = useState<Record<string, string | null>>({});
+  const [pendingAssignments, setPendingAssignments] = useState<Record<string, PendingAssignment>>({});
   const [hasChanges, setHasChanges] = useState(false);
 
   // Filter available levels to only school levels (not ALL)
@@ -184,7 +194,7 @@ export function TeacherLevelAssignment() {
     if (selectedLevel) {
       result = result.filter(s => {
         const effectiveLevel = pendingAssignments[s.id] !== undefined
-          ? pendingAssignments[s.id]
+          ? pendingAssignments[s.id].levelId
           : s.schoolLevelId;
         if (selectedLevel === 'UNASSIGNED') {
           return !effectiveLevel;
@@ -204,7 +214,7 @@ export function TeacherLevelAssignment() {
   const getEffectiveLevel = (staff: StaffMember): SchoolLevelOption | null => {
     // If there's a pending assignment, use it directly (EducationLevel.id)
     if (pendingAssignments[staff.id] !== undefined) {
-      const pendingId = pendingAssignments[staff.id];
+      const pendingId = pendingAssignments[staff.id].levelId;
       if (!pendingId) return null;
       return schoolLevels.find(l => l.id === pendingId) || null;
     }
@@ -236,7 +246,7 @@ export function TeacherLevelAssignment() {
       let effectiveLevel: string | null = null;
       if (pendingAssignments[s.id] !== undefined) {
         // Pending: EducationLevel.id (direct match)
-        effectiveLevel = pendingAssignments[s.id];
+        effectiveLevel = pendingAssignments[s.id].levelId;
       } else if (s.schoolLevelId) {
         // Stored: SchoolLevel.id — try direct match, else match by code
         if (stats[s.schoolLevelId] !== undefined) {
@@ -268,11 +278,56 @@ export function TeacherLevelAssignment() {
       if (levelId === currentLevelId) {
         delete newAssignments[staffId];
       } else {
-        newAssignments[staffId] = levelId;
+        // Préserver les languages pending si déjà définis, sinon null
+        const existingLanguages = newAssignments[staffId]?.languages;
+        newAssignments[staffId] = { levelId, languages: existingLanguages };
       }
       return newAssignments;
     });
   };
+
+  // Handle language toggle for a single teacher (bilingue)
+  const handleToggleLanguage = (staffId: string, lang: 'FR' | 'EN') => {
+    const staff = staffList.find(s => s.id === staffId);
+    if (!staff) return;
+
+    // Langues actuelles (pending si défini, sinon staff.assignedLanguages, sinon ['FR','EN'] défaut)
+    const pending = pendingAssignments[staffId];
+    const currentLangs = pending?.languages
+      ?? staff.assignedLanguages
+      ?? ['FR', 'EN'];
+
+    // Toggle
+    const newLangs = currentLangs.includes(lang)
+      ? currentLangs.filter((l) => l !== lang)
+      : [...currentLangs, lang];
+
+    // Si vide, on remet FR par défaut (au moins une langue requise)
+    const finalLangs = newLangs.length === 0 ? ['FR'] : newLangs;
+
+    setPendingAssignments(prev => {
+      const newAssignments = { ...prev };
+      const currentLevelId = getEffectiveLevel(staff)?.id || null;
+      const pendingLevel = newAssignments[staffId]?.levelId ?? currentLevelId;
+
+      // Si pas de changement (level identique + languages identiques), on supprime le pending
+      const originalLangs = staff.assignedLanguages ?? ['FR', 'EN'];
+      if (pendingLevel === currentLevelId && arraysEqual(finalLangs, originalLangs)) {
+        delete newAssignments[staffId];
+      } else {
+        newAssignments[staffId] = { levelId: pendingLevel, languages: finalLangs };
+      }
+      return newAssignments;
+    });
+  };
+
+  // Helper : comparaison de tableaux de strings
+  function arraysEqual(a: string[], b: string[]): boolean {
+    if (a.length !== b.length) return false;
+    const sortedA = [...a].sort();
+    const sortedB = [...b].sort();
+    return sortedA.every((v, i) => v === sortedB[i]);
+  }
 
   // Check if there are unsaved changes
   useEffect(() => {
@@ -285,30 +340,27 @@ export function TeacherLevelAssignment() {
     setSaving(true);
 
     try {
-      // Group by level for batch assignment
-      const assignmentsByLevel: Record<string, string[]> = {};
-      Object.entries(pendingAssignments).forEach(([staffId, levelId]) => {
-        const key = levelId || 'UNASSIGN';
-        if (!assignmentsByLevel[key]) assignmentsByLevel[key] = [];
-        assignmentsByLevel[key].push(staffId);
-      });
-
-      // Send batch requests per level
-      for (const [levelId, staffIds] of Object.entries(assignmentsByLevel)) {
-        if (levelId === 'UNASSIGN') {
-          // For unassigning, we update each staff individually to set schoolLevelId to null
-          for (const staffId of staffIds) {
-            await hrFetch(hrUrl(`staff/${staffId}`), {
-              method: 'PUT',
-              body: { schoolLevelId: null },
-            });
-          }
+      // Stratégie : une requête par staff (plus simple avec les languages qui varient)
+      // L'API batch-assign-level accepte maintenant languages[] dans le body.
+      for (const [staffId, assignment] of Object.entries(pendingAssignments)) {
+        const { levelId, languages } = assignment;
+        if (!levelId) {
+          // Unassign : schoolLevelId = null
+          await hrFetch(hrUrl(`staff/${staffId}`), {
+            method: 'PUT',
+            body: {
+              schoolLevelId: null,
+              ...(languages !== undefined ? { assignedLanguages: languages } : {}),
+            },
+          });
         } else {
+          // Assign : utiliser batch-assign-level avec 1 staff + languages
           await hrFetch(hrUrl('staff/batch-assign-level'), {
             method: 'PUT',
             body: {
-              staffIds,
+              staffIds: [staffId],
               schoolLevelId: levelId,
+              ...(languages !== undefined ? { languages } : {}),
             },
           });
         }
@@ -553,7 +605,7 @@ export function TeacherLevelAssignment() {
                         const style = getLevelStyle(level.code);
                         const Icon = style.icon;
                         const isActive = effectiveLevel?.id === level.id;
-                        const isPendingLevel = pendingAssignments[staff.id] === level.id;
+                        const isPendingLevel = pendingAssignments[staff.id]?.levelId === level.id;
 
                         return (
                           <button
@@ -582,6 +634,38 @@ export function TeacherLevelAssignment() {
                       })}
                     </div>
                   </div>
+
+                  {/* Langues (bilingue) — visible uniquement si bilingue activé */}
+                  {bilingualEnabled && effectiveLevel && (
+                    <div className="mt-2 flex items-center gap-2 px-2 py-1.5 bg-blue-50/50 rounded-lg border border-blue-100">
+                      <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Langue :</span>
+                      {(['FR', 'EN'] as const).map((lang) => {
+                        const pending = pendingAssignments[staff.id];
+                        const currentLangs = pending?.languages
+                          ?? staff.assignedLanguages
+                          ?? ['FR', 'EN'];
+                        const isLangActive = currentLangs.includes(lang);
+                        const isLangPending = pending?.languages !== undefined
+                          && pending.languages !== (staff.assignedLanguages ?? ['FR', 'EN']);
+                        return (
+                          <button
+                            key={lang}
+                            onClick={() => handleToggleLanguage(staff.id, lang)}
+                            className={cn(
+                              'px-2 py-0.5 rounded text-[10px] font-bold transition-all',
+                              isLangActive
+                                ? 'bg-blue-600 text-white shadow-sm'
+                                : 'bg-white text-blue-400 border border-blue-200 hover:bg-blue-50',
+                              isLangPending && 'ring-1 ring-amber-400',
+                            )}
+                            title={isLangActive ? `Désactiver ${lang}` : `Activer ${lang}`}
+                          >
+                            {lang}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </motion.div>
               );
             })}

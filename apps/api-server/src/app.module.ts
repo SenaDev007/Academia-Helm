@@ -53,6 +53,7 @@ import { AdminStructureModule } from './admin-structure/admin-structure.module';
 import { StaffAdminAssignmentModule } from './staff-admin-assignment/staff-admin-assignment.module';
 import { PositionsModule } from './positions/positions.module';
 import { TimetableEngineModule } from './timetable-engine/timetable-engine.module';
+import { MultigradeModule } from './multigrade/multigrade.module';
 import { ModulesComplementairesModule } from './modules-complementaires/modules-complementaires.module';
 import { KpiObjectivesModule } from './kpi-objectives/kpi-objectives.module';
 import { PedagogyModule } from './pedagogy/pedagogy.module';
@@ -235,6 +236,7 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
 
     // Smart Timetable Engine (génération automatique d'emplois du temps)
     TimetableEngineModule,
+    MultigradeModule,
     
     // Module 9 - Modules Complémentaires
     ModulesComplementairesModule,

@@ -1139,10 +1139,16 @@ export class StaffPrismaService {
       resolvedAcademicYearId = activeYear.id;
     }
 
-    // Update all staff members
+    // Update all staff members — inclut assignedLanguages si fourni (bilingue)
+    const updateData: any = { schoolLevelId: resolvedSchoolLevelId };
+    if (dto.languages !== undefined) {
+      // Validation : languages doit être un tableau de strings parmi ['FR','EN']
+      const validLanguages = (dto.languages || []).filter((l) => l === 'FR' || l === 'EN');
+      updateData.assignedLanguages = validLanguages.length > 0 ? validLanguages : ['FR'];
+    }
     const result = await this.prisma.staff.updateMany({
       where: { id: { in: staffIds }, tenantId },
-      data: { schoolLevelId: resolvedSchoolLevelId },
+      data: updateData,
     });
 
     // ─── Sync schoolLevelId to Pedagogy Teacher records ──
@@ -1177,7 +1183,10 @@ export class StaffPrismaService {
           // Le Teacher existe déjà — on met à jour son schoolLevelId
           await this.prisma.teacher.update({
             where: { id: teacher.id },
-            data: { schoolLevelId: resolvedSchoolLevelId },
+            data: {
+              schoolLevelId: resolvedSchoolLevelId,
+              ...(dto.languages !== undefined ? { assignedLanguages: updateData.assignedLanguages } : {}),
+            },
           });
         } else {
           // Aucun Teacher n'existe pour ce Staff — on le crée
@@ -1199,6 +1208,10 @@ export class StaffPrismaService {
                 contractType: s.contractType,
                 status: 'active',
                 academicYearId: resolvedAcademicYearId,
+                // Sync assignedLanguages si fourni (bilingue), sinon FR+EN par défaut
+                assignedLanguages: dto.languages !== undefined
+                  ? updateData.assignedLanguages
+                  : ['FR', 'EN'],
               },
             });
             this.logger.log(`Auto-created Teacher ${newTeacher.id} for Staff ${s.id} (${s.firstName} ${s.lastName})`);

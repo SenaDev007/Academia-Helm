@@ -118,11 +118,25 @@ export class TeachersPrismaService {
       departmentId?: string;
       status?: string;
       search?: string;
+      /// Langue (FR/EN) — si fournie, filtre les teachers dont assignedLanguages
+      /// inclut cette langue. Si null/non fourni, pas de filtre.
+      language?: string;
     }
   ) {
     const where: any = {
       tenantId,
     };
+
+    // ─── Filtre par langue (bilingue) ──
+    // assignedLanguages est un Json array : ["FR"], ["EN"], ["FR","EN"], ou null.
+    // Si language=FR, on garde les teachers dont assignedLanguages contient FR
+    // (ou assignedLanguages IS NULL = toutes langues, pour rétro-compatibilité).
+    if (filters?.language) {
+      where.OR = [
+        { assignedLanguages: { array_contains: filters.language } },
+        { assignedLanguages: null },
+      ];
+    }
 
     // ─── Exclure le promoteur de la liste des enseignants ──
     // Le promoteur est le propriétaire de l'école, pas un enseignant.

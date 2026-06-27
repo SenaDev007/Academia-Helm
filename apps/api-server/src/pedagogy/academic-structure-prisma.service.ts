@@ -6,6 +6,7 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
+import { randomUUID as cryptoRandomUUID } from 'crypto';
 
 export interface DuplicateStructureResult {
   fromAcademicYearId: string;
@@ -16,6 +17,9 @@ export interface DuplicateStructureResult {
   seriesCopied: number;
   seriesSubjectsCopied: number;
   roomsCopied: number;
+  subjectsCopied: number;
+  profilesCopied: number;
+  timetablesCopied: number;
 }
 
 /**
@@ -1086,6 +1090,140 @@ export class AcademicStructurePrismaService {
         });
       }
 
+      // ─── Dupliquer les matières (Subjects) ──
+      const sourceSubjects = await tx.subject.findMany({
+        where: { tenantId, academicYearId: fromAcademicYearId },
+      });
+      let subjectsCopied = 0;
+      for (const s of sourceSubjects) {
+        // Skip si déjà existant (même code + schoolLevelId)
+        const existing = await tx.subject.findFirst({
+          where: { tenantId, academicYearId: toAcademicYearId, schoolLevelId: s.schoolLevelId, code: s.code },
+        });
+        if (existing) continue;
+        await tx.subject.create({
+          data: {
+            tenantId,
+            academicYearId: toAcademicYearId,
+            schoolLevelId: s.schoolLevelId,
+            academicTrackId: s.academicTrackId,
+            name: s.name,
+            code: s.code,
+            abbreviation: s.abbreviation,
+            coefficient: s.coefficient,
+            language: s.language,
+            weeklyHours: s.weeklyHours,
+            description: s.description,
+          },
+        });
+        subjectsCopied++;
+      }
+
+      // ─── Dupliquer les profils académiques enseignants ──
+      const sourceProfiles = await tx.teacherAcademicProfile.findMany({
+        where: { tenantId, academicYearId: fromAcademicYearId },
+        include: {
+          subjectQualifications: true,
+          levelAuthorizations: true,
+          availabilities: true,
+        },
+      });
+      let profilesCopied = 0;
+      for (const p of sourceProfiles) {
+        // Skip si déjà existant
+        const existing = await tx.teacherAcademicProfile.findFirst({
+          where: { tenantId, academicYearId: toAcademicYearId, teacherId: p.teacherId },
+        });
+        if (existing) continue;
+
+        const newProfile = await tx.teacherAcademicProfile.create({
+          data: {
+            tenantId,
+            academicYearId: toAcademicYearId,
+            teacherId: p.teacherId,
+            maxWeeklyHours: p.maxWeeklyHours,
+            isSemainier: p.isSemainier,
+            isActive: p.isActive,
+          },
+        });
+
+        // Dupliquer les qualifications
+        for (const q of p.subjectQualifications) {
+          await tx.teacherSubjectQualification.create({
+            data: {
+              tenantId,
+              profileId: newProfile.id,
+              subjectId: q.subjectId,
+              isAuthorized: q.isAuthorized,
+            },
+          });
+        }
+
+        // Dupliquer les autorisations de niveau
+        for (const la of p.levelAuthorizations) {
+          await tx.teacherLevelAuthorization.create({
+            data: {
+              tenantId,
+              profileId: newProfile.id,
+              levelId: la.levelId,
+            },
+          });
+        }
+
+        // Dupliquer les disponibilités
+        for (const av of p.availabilities) {
+          await tx.teacherAvailability.create({
+            data: {
+              tenantId,
+              profileId: newProfile.id,
+              dayOfWeek: av.dayOfWeek,
+              startTime: av.startTime,
+              endTime: av.endTime,
+              isAvailable: av.isAvailable,
+            },
+          });
+        }
+
+        profilesCopied++;
+      }
+
+      // ─── Dupliquer les configs d'emploi du temps (timetable_configs) ──
+      let timetablesCopied = 0;
+      try {
+        const sourceConfigs = await tx.$queryRawUnsafe<any[]>(`
+          SELECT * FROM "timetable_configs"
+          WHERE "tenantId" = $1 AND "academicYearId" = $2
+        `, tenantId, fromAcademicYearId);
+
+        for (const c of sourceConfigs) {
+          // Skip si déjà existant
+          const existing = await tx.$queryRawUnsafe<any[]>(`
+            SELECT id FROM "timetable_configs"
+            WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "schoolLevelId" = $3
+            LIMIT 1
+          `, tenantId, toAcademicYearId, c.schoolLevelId);
+          if (existing.length > 0) continue;
+
+          const newId = cryptoRandomUUID();
+          await tx.$executeRawUnsafe(`
+            INSERT INTO "timetable_configs"
+            ("id", "tenantId", "schoolLevelId", "academicYearId", "schoolDays", "timeBlocks",
+             "dayStartTime", "dayEndTime", "defaultSessionDuration", "lunchBreakStart", "lunchBreakEnd",
+             "saturdayEnabled", "eveningEnabled", "eveningStart", "eveningEnd")
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+          `, newId, tenantId, c.schoolLevelId, toAcademicYearId,
+            c.schoolDays || '[1,2,3,4,5]', c.timeBlocks || '[]',
+            c.dayStartTime || '08:00', c.dayEndTime || '18:00',
+            c.defaultSessionDuration || 120,
+            c.lunchBreakStart, c.lunchBreakEnd,
+            c.saturdayEnabled || false, c.eveningEnabled || false,
+            c.eveningStart, c.eveningEnd);
+          timetablesCopied++;
+        }
+      } catch (e: any) {
+        this.logger.warn(`Failed to duplicate timetable configs: ${e.message}`);
+      }
+
       return {
         levelsCopied: structureAlreadyExists ? 0 : sourceLevels.length,
         cyclesCopied: structureAlreadyExists ? 0 : sourceCycles.length,
@@ -1093,6 +1231,9 @@ export class AcademicStructurePrismaService {
         seriesCopied: structureAlreadyExists ? 0 : sourceSeries.length,
         seriesSubjectsCopied: structureAlreadyExists ? 0 : seriesSubjectsCopied,
         roomsCopied,
+        subjectsCopied,
+        profilesCopied,
+        timetablesCopied,
       };
     });
 

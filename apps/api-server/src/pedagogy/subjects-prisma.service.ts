@@ -215,36 +215,54 @@ export class SubjectsPrismaService {
   }
 
   /**
-   * Supprime une matière (soft delete via archivage)
+   * Supprime une matière via SQL direct (bypass Prisma cascade issues).
+   * Supprime d'abord toutes les tables qui référencent subjectId, puis la matière.
    */
   async deleteSubject(id: string, tenantId: string) {
     const subject = await this.findSubjectById(id, tenantId);
 
-    // ─── Cascade delete : supprimer d'abord les ClassSubject qui référencent cette matière ──
-    // Sans ça, la suppression échoue avec une erreur de contrainte de clé étrangère
-    // (les matières sont référencées par ClassSubject, ExamScore, etc.)
-    try {
-      await this.prisma.classSubject.deleteMany({
-        where: { subjectId: id, tenantId },
-      });
-    } catch (err: any) {
-      this.logger.warn(`Failed to cascade delete ClassSubject for subject ${id}: ${err.message}`);
+    // ─── Suppression directe via SQL (bypass Prisma) ──
+    // On supprime TOUTES les tables qui pourraient référencer subjectId.
+    // Utilisation de $executeRawUnsafe pour éviter les erreurs de cascade Prisma.
+    const cleanupTables = [
+      { table: 'class_subjects', column: 'subjectId' },
+      { table: 'subject_assignments', column: 'subjectId' },
+      { table: 'teacher_subjects', column: 'subjectId' },
+      { table: 'exam_subjects', column: 'subjectId' },
+      { table: 'exam_scores', column: 'subjectId' },
+      { table: 'subject_programs', column: 'subjectId' },
+      { table: 'lesson_plans', column: 'subjectId' },
+      { table: 'lesson_journals', column: 'subjectId' },
+      { table: 'homework_entries', column: 'subjectId' },
+      { table: 'grades', column: 'subjectId' },
+      { table: 'grade_calculations', column: 'subjectId' },
+      { table: 'pedagogical_documents', column: 'subjectId' },
+      { table: 'daily_logs', column: 'subjectId' },
+    ];
+
+    for (const { table, column } of cleanupTables) {
+      try {
+        await this.prisma.$executeRawUnsafe(
+          `DELETE FROM "${table}" WHERE "${column}" = $1`,
+          id,
+        );
+      } catch (err: any) {
+        // Table inexistante ou colonne manquante — on continue
+        this.logger.warn(`Skip cleanup ${table}.${column} for subject ${id}: ${err.message}`);
+      }
     }
 
-    // Supprimer aussi les SubjectAssignment (affectations teacher→classe→matière)
+    // Suppression physique de la matière via SQL direct
     try {
-      await this.prisma.subjectAssignment.deleteMany({
-        where: { subjectId: id, tenantId },
-      });
+      await this.prisma.$executeRawUnsafe(
+        `DELETE FROM "subjects" WHERE "id" = $1 AND "tenantId" = $2`,
+        id, tenantId,
+      );
     } catch (err: any) {
-      this.logger.warn(`Failed to cascade delete SubjectAssignment for subject ${id}: ${err.message}`);
+      throw new BadRequestException(`Failed to delete subject: ${err.message}`);
     }
 
-    // Suppression physique de la matière
-    await this.prisma.subject.delete({
-      where: { id },
-    });
-
+    this.logger.log(`Subject ${id} deleted via direct SQL (tenant=${tenantId})`);
     return { success: true };
   }
 

@@ -102,6 +102,26 @@ const DEFAULT_SUBJECTS_CATALOGUE: Record<
   ],
 };
 
+// --- Catalogue de matières par défaut pour l'ANGLAIS (EN) ---
+// Liste exacte fournie par l'utilisateur (pas une traduction du FR).
+// Appliquée à tous les niveaux (Maternelle/Primaire/Secondaire) en mode EN.
+const DEFAULT_SUBJECTS_CATALOGUE_EN: Array<{ name: string; code: string; abbreviation: string }> = [
+  { name: 'Mathematics',                              abbreviation: 'MATH', code: 'MATH-EN-01' },
+  { name: 'English Language',                         abbreviation: 'ENG',  code: 'ENG-EN-02'  },
+  { name: 'Basic Science',                            abbreviation: 'BS',   code: 'BS-EN-03'   },
+  { name: 'Social Studies',                           abbreviation: 'SST',  code: 'SST-EN-04'  },
+  { name: 'Agricultural Science',                     abbreviation: 'AGR',  code: 'AGR-EN-05'  },
+  { name: 'Computer Science',                         abbreviation: 'CS',   code: 'CS-EN-06'   },
+  { name: 'Civic Education',                          abbreviation: 'CIV',  code: 'CIV-EN-07'  },
+  { name: 'Verbal Reasoning',                         abbreviation: 'VR',   code: 'VR-EN-08'   },
+  { name: 'Quantitative Reasoning',                   abbreviation: 'QR',   code: 'QR-EN-09'   },
+  { name: 'Cultural and Creative Arts (CCA)',         abbreviation: 'CCA',  code: 'CCA-EN-10'  },
+  { name: 'Christian Religious Knowledge (CRK)',      abbreviation: 'CRK',  code: 'CRK-EN-11'  },
+  { name: 'Handwriting',                              abbreviation: 'HW',   code: 'HW-EN-12'   },
+  { name: 'Drawing',                                  abbreviation: 'DRW',  code: 'DRW-EN-13'  },
+  { name: 'Physical and Health Education (PHE)',      abbreviation: 'PHE',  code: 'PHE-EN-14'  },
+];
+
 
 /** Résout un SchoolLevel vers la clé de catalogue (MATERNELLE | PRIMAIRE | SECONDAIRE | null) */
 function resolveLevelKey(level?: { code?: string; name?: string; label?: string }): string | null {
@@ -268,9 +288,14 @@ export default function SubjectsWorkspace() {
 
   /** Suggestions de matières pour le niveau sélectionné dans le modal */
   const defaultSuggestionsForLevel = useMemo(() => {
+    // En mode EN, on utilise le catalogue anglais (liste exacte fournie par l'utilisateur)
+    if (bilingualEnabled && currentTrack === 'EN') {
+      return DEFAULT_SUBJECTS_CATALOGUE_EN;
+    }
+    // En mode FR (ou bilingue désactivé), on utilise le catalogue français par niveau
     const key = resolveLevelKey(selectedLevelObj);
     return key ? DEFAULT_SUBJECTS_CATALOGUE[key] ?? [] : [];
-  }, [selectedLevelObj]);
+  }, [selectedLevelObj, bilingualEnabled, currentTrack]);
 
   /** Séries filtrées par niveaux actifs (le secondaire doit être actif) */
   const filteredSeries = useMemo(() => {
@@ -832,9 +857,9 @@ export default function SubjectsWorkspace() {
       {/* Navigation Interne */}
       <div className="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-50/80 p-1">
         {[
-          { id: 'catalogue', label: 'Catalogue Matières', icon: BookOpen },
-          { id: 'classes', label: 'Affectation Classes', icon: ClipboardList },
-          { id: 'programs', label: 'Programmes Officiels', icon: FileText },
+          { id: 'catalogue', label: currentTrack === 'EN' ? 'Subjects Catalogue' : 'Catalogue Matières', icon: BookOpen },
+          { id: 'classes', label: currentTrack === 'EN' ? 'Class Assignments' : 'Affectation Classes', icon: ClipboardList },
+          { id: 'programs', label: currentTrack === 'EN' ? 'Official Programs' : 'Programmes Officiels', icon: FileText },
         ].map((t) => {
           const Icon = t.icon;
           const active = tab === t.id;
@@ -870,6 +895,24 @@ export default function SubjectsWorkspace() {
         >
           {tab === 'catalogue' && (
             <div className="p-6 space-y-6">
+              {/* Indicateur de mode linguistique */}
+              {bilingualEnabled && (
+                <div className={cn(
+                  'flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold border',
+                  currentTrack === 'FR'
+                    ? 'bg-blue-50 border-blue-200 text-blue-700'
+                    : 'bg-amber-50 border-amber-200 text-amber-700',
+                )}>
+                  <span className="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-black text-white"
+                    style={{ backgroundColor: currentTrack === 'FR' ? '#0b2f73' : '#F5A623' }}>
+                    {currentTrack}
+                  </span>
+                  {currentTrack === 'FR'
+                    ? 'Vous êtes actuellement en mode Français. Les matières affichées et créées seront en français.'
+                    : 'You are currently in English mode. Displayed and created subjects will be in English.'}
+                </div>
+              )}
+
               {/* Toolbar : Recherche + Filtre par niveau */}
               <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
                 {/* Barre de recherche */}
@@ -877,7 +920,7 @@ export default function SubjectsWorkspace() {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
                     type="text"
-                    placeholder="Chercher une matière (Code, Nom, Abrév.)"
+                    placeholder={currentTrack === 'EN' ? 'Search subject (Code, Name, Abbr.)' : 'Chercher une matière (Code, Nom, Abrév.)'}
                     className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 text-sm font-medium transition-all"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
@@ -1003,11 +1046,11 @@ export default function SubjectsWorkspace() {
                           }}
                         />
                       </th>
-                      <th className="px-4 py-3">Matière</th>
-                      <th className="px-4 py-3">Niveau Scolaire</th>
-                      <th className="px-4 py-3 text-center">Volume Hebdo</th>
-                      <th className="px-4 py-3 text-center">Coefficient</th>
-                      <th className="px-4 py-3 text-right">Actions</th>
+                      <th className="px-4 py-3">{currentTrack === 'EN' ? 'Subject' : 'Matière'}</th>
+                      <th className="px-4 py-3">{currentTrack === 'EN' ? 'School Level' : 'Niveau Scolaire'}</th>
+                      <th className="px-4 py-3 text-center">{currentTrack === 'EN' ? 'Weekly Hours' : 'Volume Hebdo'}</th>
+                      <th className="px-4 py-3 text-center">{currentTrack === 'EN' ? 'Coefficient' : 'Coefficient'}</th>
+                      <th className="px-4 py-3 text-right">{currentTrack === 'EN' ? 'Actions' : 'Actions'}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1027,8 +1070,12 @@ export default function SubjectsWorkspace() {
                             <BookOpen className="w-8 h-8 text-slate-300 mx-auto" />
                             <p className="text-sm font-medium">
                               {filteredSubjects.length === 0
-                                ? "Aucune matière n'est définie pour cette année scolaire."
-                                : `Aucune matière pour le niveau sélectionné.`
+                                ? (currentTrack === 'EN'
+                                    ? 'No subject defined for this school year.'
+                                    : "Aucune matière n'est définie pour cette année scolaire.")
+                                : (currentTrack === 'EN'
+                                    ? 'No subject for the selected level.'
+                                    : `Aucune matière pour le niveau sélectionné.`)
                               }
                             </p>
                             {filterLevelId !== 'ALL' && (

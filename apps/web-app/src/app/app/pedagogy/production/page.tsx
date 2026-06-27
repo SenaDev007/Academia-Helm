@@ -25,12 +25,7 @@ export default function ProductionPage() {
         description: academicYear
           ? `Cahiers de textes et programmations — année ${academicYear.label}`
           : 'Espace de travail enseignant : fiches, cahiers et suivi de progression',
-        icon: 'bookOpen',
-        kpis: [
-          { label: 'Séances Saisies', value: '142', trend: '+12', trendType: 'up' },
-          { label: 'Couverture Moy.', value: '64%', trend: '+4%', trendType: 'up' },
-          { label: 'Retards Saisie', value: '2', trend: '-5', trendType: 'down' },
-        ]
+        icon: 'bookOpen'
       }}
       subModules={{
         modules: getVisiblePedagogyTabs(userRole).map((tab) => {

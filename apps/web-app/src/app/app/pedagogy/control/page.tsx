@@ -25,12 +25,7 @@ export default function ControlPage() {
         description: academicYear
           ? `Supervision institutionnelle et audit de conformité — année ${academicYear.label}`
           : 'Pilotage pédagogique global, approbations et intelligence prédictive ORION',
-        icon: 'shieldCheck',
-        kpis: [
-          { label: 'Indice Qualité', value: 'A-', trend: '+0.2', trendType: 'up' },
-          { label: 'Risques Détectés', value: '3', trend: '-2', trendType: 'down' },
-          { label: 'Attente Visas', value: '14', trend: '+5', trendType: 'up' },
-        ]
+        icon: 'shieldCheck'
       }}
       subModules={{
         modules: getVisiblePedagogyTabs(userRole).map((tab) => {

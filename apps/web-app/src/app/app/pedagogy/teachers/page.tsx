@@ -26,11 +26,6 @@ export default function TeachersPage() {
           ? `Profils académiques, habilitations, affectations par classe et charge globale — année ${academicYear.label}`
           : 'Gestion unifiée du corps enseignant et des charges de cours',
         icon: 'users',
-        kpis: [
-          { label: 'Effectif', value: '24', trend: 'Stable', trendType: 'neutral' },
-          { label: 'Habilités', value: '18', trend: '+2', trendType: 'up' },
-          { label: 'Charge Moy.', value: '16h', trend: '-1h', trendType: 'down' },
-        ]
       }}
       subModules={{
         modules: getVisiblePedagogyTabs(userRole).map((tab) => {

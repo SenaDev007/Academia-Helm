@@ -45,7 +45,6 @@ export class MultigradeService {
           select: {
             id: true, firstName: true, lastName: true, matricule: true, email: true,
             schoolLevelId: true, assignedLanguages: true,
-            photoUrl: true, // Si la photo a été ajoutée via le fix précédent
           },
         },
       },

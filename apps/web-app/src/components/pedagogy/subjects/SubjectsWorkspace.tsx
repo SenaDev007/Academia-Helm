@@ -950,8 +950,15 @@ export default function SubjectsWorkspace() {
                     Tous ({filteredSubjects.length})
                   </button>
                   {schoolLevels.map((level) => {
+                    // Comparer par CODE (ex: 'MATERNELLE') au lieu d'ID, car les chips
+                    // utilisent schoolLevels (EducationLevel) dont les IDs diffèrent de
+                    // SchoolLevel.id utilisé par les subjects.
+                    const levelCode = (level.code || level.name || '').toUpperCase();
                     const count = subjects.filter(
-                      s => s.schoolLevel?.id === level.id || s.schoolLevelId === level.id
+                      s => {
+                        const sCode = (s.schoolLevel?.code || s.schoolLevel?.name || '').toUpperCase();
+                        return sCode === levelCode || s.schoolLevel?.id === level.id || s.schoolLevelId === level.id;
+                      }
                     ).length;
                     return (
                       <button

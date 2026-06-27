@@ -15,6 +15,7 @@ export interface DuplicateStructureResult {
   classesCopied: number;
   seriesCopied: number;
   seriesSubjectsCopied: number;
+  roomsCopied: number;
 }
 
 /**
@@ -894,14 +895,13 @@ export class AcademicStructurePrismaService {
       throw new NotFoundException('Année cible introuvable pour ce tenant.');
     }
 
+    // Vérifier si l'année cible a déjà une structure — si oui, on continue quand même
+    // (upsert mode : on duplique seulement ce qui manque)
     const existingTargetLevels = await this.prisma.academicLevel.count({
       where: { tenantId, academicYearId: toAcademicYearId },
     });
-    if (existingTargetLevels > 0) {
-      throw new BadRequestException(
-        "L'année cible contient déjà une structure pédagogique. Supprimez ou videz-la avant duplication.",
-      );
-    }
+    const structureAlreadyExists = existingTargetLevels > 0;
+    // Ne plus bloquer — on continue et on duplique les salles même si la structure existe
 
     const sourceLevels = await this.prisma.academicLevel.findMany({
       where: { tenantId, academicYearId: fromAcademicYearId },
@@ -913,18 +913,74 @@ export class AcademicStructurePrismaService {
 
     const result = await this.prisma.$transaction(async (tx) => {
       const levelMap = new Map<string, string>();
-      for (const l of sourceLevels) {
-        const created = await tx.academicLevel.create({
+
+      // ─── Dupliquer les salles (Room) vers la nouvelle année ──
+      // Les salles de l'année source (ou globales avec academicYearId=null) sont copiées
+      // vers l'année cible avec le même roomCode, roomName, capacity, etc.
+      const sourceRooms = await tx.room.findMany({
+        where: {
+          tenantId,
+          OR: [
+            { academicYearId: fromAcademicYearId },
+            { academicYearId: null }, // salles globales
+          ],
+        },
+      });
+      const roomMap = new Map<string, string>();
+      let roomsCopied = 0;
+
+      for (const r of sourceRooms) {
+        // Vérifier si une salle avec le même roomCode existe déjà pour l'année cible
+        const existingRoom = await tx.room.findFirst({
+          where: { tenantId, academicYearId: toAcademicYearId, roomCode: r.roomCode },
+        });
+        if (existingRoom) {
+          roomMap.set(r.id, existingRoom.id);
+          continue; // skip — déjà existe
+        }
+
+        const newRoom = await tx.room.create({
           data: {
-            ...prismaCreateDefaults(),
             tenantId,
             academicYearId: toAcademicYearId,
-            name: l.name,
-            orderIndex: l.orderIndex,
-            isActive: l.isActive,
+            roomCode: r.roomCode,
+            roomName: r.roomName,
+            roomType: r.roomType,
+            capacity: r.capacity,
+            schoolLevelId: r.schoolLevelId,
+            equipment: r.equipment,
+            status: r.status,
+            description: r.description,
           },
         });
-        levelMap.set(l.id, created.id);
+        roomMap.set(r.id, newRoom.id);
+        roomsCopied++;
+      }
+
+      // ─── Dupliquer les niveaux (si pas déjà existants) ──
+      if (!structureAlreadyExists) {
+        for (const l of sourceLevels) {
+          const created = await tx.academicLevel.create({
+            data: {
+              ...prismaCreateDefaults(),
+              tenantId,
+              academicYearId: toAcademicYearId,
+              name: l.name,
+              orderIndex: l.orderIndex,
+              isActive: l.isActive,
+            },
+          });
+          levelMap.set(l.id, created.id);
+        }
+      } else {
+        // La structure existe déjà — on mappe les niveaux source → cible par nom
+        const targetLevels = await tx.academicLevel.findMany({
+          where: { tenantId, academicYearId: toAcademicYearId },
+        });
+        for (const l of sourceLevels) {
+          const match = targetLevels.find(tl => tl.name === l.name);
+          if (match) levelMap.set(l.id, match.id);
+        }
       }
 
       const sourceCycles = await tx.academicCycle.findMany({
@@ -1031,11 +1087,12 @@ export class AcademicStructurePrismaService {
       }
 
       return {
-        levelsCopied: sourceLevels.length,
-        cyclesCopied: sourceCycles.length,
-        classesCopied: sourceClasses.length,
-        seriesCopied: sourceSeries.length,
-        seriesSubjectsCopied,
+        levelsCopied: structureAlreadyExists ? 0 : sourceLevels.length,
+        cyclesCopied: structureAlreadyExists ? 0 : sourceCycles.length,
+        classesCopied: structureAlreadyExists ? 0 : sourceClasses.length,
+        seriesCopied: structureAlreadyExists ? 0 : sourceSeries.length,
+        seriesSubjectsCopied: structureAlreadyExists ? 0 : seriesSubjectsCopied,
+        roomsCopied,
       };
     });
 

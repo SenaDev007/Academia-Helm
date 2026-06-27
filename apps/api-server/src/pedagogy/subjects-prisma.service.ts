@@ -43,9 +43,26 @@ export class SubjectsPrismaService {
     });
 
     if (existing) {
-      throw new BadRequestException(`Subject with code ${data.code} already exists`);
+      // UPSERT : si la matière existe déjà, on la MET À JOUR au lieu de planter.
+      return this.prisma.subject.update({
+        where: { id: existing.id },
+        data: {
+          name: data.name,
+          abbreviation: data.abbreviation || existing.abbreviation,
+          coefficient: data.coefficient || 1.0,
+          weeklyHours: data.weeklyHours ?? existing.weeklyHours,
+          description: data.description ?? existing.description,
+          language: data.language ?? existing.language,
+        },
+        include: {
+          schoolLevel: true,
+          academicYear: true,
+          academicTrack: true,
+        },
+      });
     }
 
+    // Sinon, créer une nouvelle matière
     return this.prisma.subject.create({
       data: {
         ...prismaCreateDefaults(),

@@ -344,11 +344,11 @@ export default function AssignmentsWorkspace() {
   }, [classes]);
 
   return (
-    <div className="flex h-[calc(100vh-23rem)] overflow-hidden bg-white">
+    <div className="grid grid-cols-1 lg:grid-cols-[18rem_1fr] gap-4">
 
       {/* ── Sidebar : Liste des Classes ── */}
-      <div className="w-72 border-r border-slate-200 flex flex-col bg-slate-50/20 overflow-hidden">
-        <div className="p-4 border-b border-slate-200 bg-slate-50/50">
+      <div className="rounded-xl border border-slate-200 bg-slate-50/20 flex flex-col">
+        <div className="p-4 border-b border-slate-200 bg-slate-50/50 rounded-t-xl">
           <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
             <Layers className="w-4 h-4" style={{ color: PRIMARY }} />
             Classes officielles
@@ -358,7 +358,7 @@ export default function AssignmentsWorkspace() {
           </p>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-2 space-y-3 bg-white">
+        <div className="p-2 space-y-3 bg-white rounded-b-xl">
           {Object.entries(groupedClasses).map(([levelName, levelClasses]) => (
             <div key={levelName}>
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider px-3 py-1">
@@ -408,7 +408,7 @@ export default function AssignmentsWorkspace() {
       </div>
 
       {/* ── Zone principale ── */}
-      <div className="flex-1 flex flex-col gap-0 bg-white overflow-hidden">
+      <div className="flex flex-col gap-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
 
         {/* Bilingual track selector */}
         {isBilingual && (
@@ -521,9 +521,9 @@ export default function AssignmentsWorkspace() {
         )}
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4 bg-white">
+        <div className="p-4 bg-white">
           {!selectedClass ? (
-            <div className="flex flex-col items-center justify-center h-full text-center">
+            <div className="flex flex-col items-center justify-center py-12 text-center">
               <Layers className="w-12 h-12 text-slate-300 mb-4" />
               <p className="text-slate-400 text-xs font-bold">Sélectionnez une classe à gauche</p>
             </div>
@@ -782,7 +782,7 @@ export default function AssignmentsWorkspace() {
           </div>
 
           {/* Liste */}
-          <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
+          <div className="space-y-1.5 pr-1">
             {filteredTeachers.map(t => {
               const isCurrentHomeroom = currentHomeroom?.id === t.teacherId;
               const authorized = isAuthorized(t, selectedClass?.level?.id);
@@ -885,7 +885,7 @@ export default function AssignmentsWorkspace() {
           </div>
 
           {/* Liste */}
-          <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
+          <div className="space-y-1.5 pr-1">
             {filteredTeachers.map(t => {
               const qualified = isQualified(t, activeSubject?.subject.id || '');
               const authorized = isAuthorized(t, selectedClass?.level?.id);

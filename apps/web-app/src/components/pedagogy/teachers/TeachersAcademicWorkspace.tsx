@@ -1058,7 +1058,7 @@ export default function TeachersAcademicWorkspace() {
                 <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider mt-1">Comparatif charges réelles vs capacités maximales</p>
               </div>
 
-              <div className="overflow-x-auto p-4">
+              <div className="p-4">
                 {workloadLoading ? (
                   <div className="flex flex-col items-center justify-center py-12 gap-3">
                     <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: PRIMARY, borderTopColor: 'transparent' }} />
@@ -1069,8 +1069,8 @@ export default function TeachersAcademicWorkspace() {
                     Aucun dossier enseignant disponible.
                   </div>
                 ) : (
-                  <div className="overflow-x-auto border border-slate-200 rounded-lg">
-                    <table className="w-full text-left border-collapse text-xs">
+                  <div className="border border-slate-200 rounded-lg overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs min-w-[800px]">
                       <thead>
                         <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                           <th className="px-4 py-3 font-bold">Enseignant</th>

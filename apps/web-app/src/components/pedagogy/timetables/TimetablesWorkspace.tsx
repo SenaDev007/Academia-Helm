@@ -20,7 +20,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Settings, Calendar, Zap, CheckCircle, Loader2, Trash2,
   Clock, AlertCircle, Star, Eye, Pencil, X,
-  Users, Info, Shield, GitCompare, Sparkles, Printer, Download, Plus,
+  Users, Info, Shield, GitCompare, Sparkles, Printer, Download, Plus, Layers,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -1233,11 +1233,26 @@ function SolutionGridModal({ solution, onClose }: { solution: any; onClose: () =
                       {usedDays.map(d => (
                         <td key={d} className="p-1.5 border border-slate-200 align-top">
                           {(byDay[d] || []).map((e: any, i: number) => (
-                            <div key={i} className="bg-blue-50 border border-blue-200 rounded-lg p-2 mb-1">
-                              <div className="text-[10px] font-bold text-blue-700 mb-0.5">{e.startTime} → {e.endTime}</div>
+                            <div key={i} className={cn(
+                              'border rounded-lg p-2 mb-1',
+                              e.isMultigrade
+                                ? 'bg-amber-50 border-amber-300'
+                                : 'bg-blue-50 border-blue-200',
+                            )}>
+                              <div className="flex items-center justify-between mb-0.5">
+                                <div className="text-[10px] font-bold text-blue-700">{e.startTime} → {e.endTime}</div>
+                                {e.isMultigrade && (
+                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-500 text-white rounded text-[8px] font-bold uppercase" title={`Multigrade — alternance avec ${e.multigradePairedClass || 'classe jumelée'}`}>
+                                    <Layers className="w-2 h-2" /> MG
+                                  </span>
+                                )}
+                              </div>
                               <div className="text-xs font-bold text-slate-800">{e.subjectName}</div>
                               <div className="text-[10px] text-slate-500">{e.teacherName}</div>
                               {e.roomName && <div className="text-[10px] text-slate-400">📍 {e.roomName}</div>}
+                              {e.isMultigrade && e.multigradePairedClass && (
+                                <div className="text-[9px] text-amber-600 font-bold mt-0.5">↔ {e.multigradePairedClass}</div>
+                              )}
                             </div>
                           ))}
                         </td>

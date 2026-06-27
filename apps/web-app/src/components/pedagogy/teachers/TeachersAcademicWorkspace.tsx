@@ -35,7 +35,8 @@ import {
   BarChart3,
   TrendingUp,
   ShieldAlert,
-  Award
+  Award,
+  Layers
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -49,6 +50,7 @@ import { pedagogyService } from '@/services/pedagogy.service';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import AssignmentsWorkspace from '../assignments/AssignmentsWorkspace';
+import { MultigradeTab } from './MultigradeTab';
 
 // --- Helpers ---
 
@@ -229,7 +231,7 @@ export default function TeachersAcademicWorkspace() {
   }, [selectedTeacherId, teachers]);
 
   // Tabs selection
-  const [activeSubTab, setActiveSubTab] = useState<'teachers' | 'assignments' | 'workloads'>('teachers');
+  const [activeSubTab, setActiveSubTab] = useState<'teachers' | 'assignments' | 'workloads' | 'multigrade'>('teachers');
 
   // --- Workload Analysis ---
   const [workloadLoading, setWorkloadLoading] = useState(false);
@@ -650,6 +652,7 @@ export default function TeachersAcademicWorkspace() {
         {[
           { id: 'teachers', label: 'Profils & Disponibilités', icon: Users },
           { id: 'assignments', label: 'Affectations par Classe', icon: ClipboardList },
+          { id: 'multigrade', label: 'Multigrade', icon: Layers },
           { id: 'workloads', label: 'Charge Horaire Globale', icon: BarChart3 },
         ].map((t) => {
           const Icon = t.icon;
@@ -1000,6 +1003,10 @@ export default function TeachersAcademicWorkspace() {
           <div className="h-full overflow-hidden">
             <AssignmentsWorkspace />
           </div>
+        )}
+
+        {activeSubTab === 'multigrade' && (
+          <MultigradeTab />
         )}
 
         {activeSubTab === 'workloads' && (

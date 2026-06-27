@@ -38,6 +38,11 @@ export interface TimetableEntry {
   dayOfWeek: number;
   startTime: string;
   endTime: string;
+  /// V2+ Multigrade : true si cette séance fait partie d'un groupe multigrade
+  /// (enseignant qui alterne entre 2 classes du même niveau)
+  isMultigrade?: boolean;
+  /// V2+ Multigrade : nom de la classe jumelée (ex: "CE2" si CE1+CE2)
+  multigradePairedClass?: string;
 }
 
 export interface TimetableConflict {
@@ -179,6 +184,9 @@ interface GenerationContext {
   assignments: AssignmentWithContext[];
   teacherAvailability: Map<string, string>;
   totalAssignments: number;
+  /// V2+ Multigrade : map classId → { pairedClassId, pairedClassName, teacherId }
+  /// Si une classe CE1 est jumelée avec CE2, multigradeMap.get("CE1") = { pairedClassId: "CE2", ... }
+  multigradeMap: Map<string, { pairedClassId: string; pairedClassName: string; teacherId: string }>;
 }
 
 @Injectable()
@@ -474,12 +482,107 @@ export class TimetableEngineService {
       });
     }
 
+    // ─── V2+ Multigrade : charger les groupes multigrade actifs ──
+    // Construire une map bidirectionnelle : classId → { pairedClassId, pairedClassName, teacherId }
+    // Si CE1+CE2 sont jumelées par le teacher T, alors :
+    //   multigradeMap.get("CE1") = { pairedClassId: "CE2", pairedClassName: "CE2", teacherId: "T" }
+    //   multigradeMap.get("CE2") = { pairedClassId: "CE1", pairedClassName: "CE1", teacherId: "T" }
+    const multigradeMap = new Map<string, { pairedClassId: string; pairedClassName: string; teacherId: string }>();
+    try {
+      const multigradeAssignments = await this.prisma.multigradeAssignment.findMany({
+        where: { tenantId, academicYearId, isActive: true },
+        include: {
+          teacher: { select: { id: true, firstName: true, lastName: true } },
+        },
+      });
+
+      for (const mg of multigradeAssignments) {
+        const classIds = Array.isArray(mg.classIds) ? mg.classIds : [];
+        if (classIds.length !== 2) continue;
+
+        const class1 = classes.find(c => c.id === classIds[0]);
+        const class2 = classes.find(c => c.id === classIds[1]);
+        if (!class1 || !class2) continue;
+
+        // Map bidirectionnelle
+        multigradeMap.set(classIds[0], {
+          pairedClassId: classIds[1],
+          pairedClassName: class2.name,
+          teacherId: mg.teacherId,
+        });
+        multigradeMap.set(classIds[1], {
+          pairedClassId: classIds[0],
+          pairedClassName: class1.name,
+          teacherId: mg.teacherId,
+        });
+      }
+
+      if (multigradeMap.size > 0) {
+        this.logger.log(`Multigrade: ${multigradeAssignments.length} groupe(s) actif(s), ${multigradeMap.size} classes jumelées`);
+
+        // ─── Expansion multigrade : garantir la parité des matières ──
+        // Pour chaque groupe multigrade (CE1+CE2 avec teacher T) :
+        // - Si T a une SubjectAssignment pour CE1-Maths mais pas pour CE2-Maths,
+        //   créer une assignment virtuelle CE2-Maths avec le même teacher T.
+        // - Le STE placera naturellement CE2-Maths à un créneau différent
+        //   (le teacher ne peut pas être dans 2 classes au même moment).
+        for (const mg of multigradeAssignments) {
+          const classIds = Array.isArray(mg.classIds) ? mg.classIds : [];
+          if (classIds.length !== 2) continue;
+
+          const [c1Id, c2Id] = classIds;
+          const c1Name = classes.find(c => c.id === c1Id)?.name || c1Id;
+          const c2Name = classes.find(c => c.id === c2Id)?.name || c2Id;
+
+          // Assignments du teacher pour chaque classe
+          const c1Assignments = assignmentsWithContext.filter(a =>
+            a.classId === c1Id && a.teacherId === mg.teacherId);
+          const c2Assignments = assignmentsWithContext.filter(a =>
+            a.classId === c2Id && a.teacherId === mg.teacherId);
+
+          // Sujets que c1 a mais pas c2
+          const c1SubjectIds = new Set(c1Assignments.map(a => a.subjectId));
+          const c2SubjectIds = new Set(c2Assignments.map(a => a.subjectId));
+
+          let added = 0;
+          for (const a of c1Assignments) {
+            if (!c2SubjectIds.has(a.subjectId)) {
+              // Créer une assignment virtuelle pour c2 avec le même subject
+              assignmentsWithContext.push({
+                ...a,
+                classId: c2Id,
+                className: c2Name,
+              });
+              added++;
+            }
+          }
+          for (const a of c2Assignments) {
+            if (!c1SubjectIds.has(a.subjectId)) {
+              assignmentsWithContext.push({
+                ...a,
+                classId: c1Id,
+                className: c1Name,
+              });
+              added++;
+            }
+          }
+
+          if (added > 0) {
+            this.logger.log(`Multigrade expansion: ${added} assignment(s) virtuelle(s) créée(s) pour ${c1Name}+${c2Name} (teacher ${mg.teacherId})`);
+          }
+        }
+      }
+    } catch (err: any) {
+      this.logger.warn(`Failed to load multigrade assignments: ${err.message}`);
+    }
+
     return {
       tenantId, academicYearId, schoolLevelId,
       schoolDays, timeBlocks, classes, subjects, rooms,
       assignments: assignmentsWithContext,
       teacherAvailability,
       totalAssignments: classes.length * subjects.length,
+      multigradeMap,
     };
   }
 
@@ -690,12 +793,17 @@ export class TimetableEngineService {
     if (prefDayConstraint && prefDayConstraint.params.dayOfWeek === day) state.teacherPreferredDayHits++;
     if (prefDayConstraint) state.teacherPreferredDayTotal++;
 
+    // V2+ Multigrade : marquer l'entrée si la classe fait partie d'un groupe multigrade
+    const mgInfo = ctx.multigradeMap.get(ctx2.classId);
+
     state.entries.push({
       classId: ctx2.classId, className: ctx2.className,
       subjectId: ctx2.subjectId, subjectName: ctx2.subjectName,
       teacherId: ctx2.teacherId, teacherName: ctx2.teacherName,
       roomId: assignedRoom?.id || null, roomName: assignedRoom?.name || null,
       dayOfWeek: day, startTime: block.start, endTime: block.end,
+      isMultigrade: !!mgInfo,
+      multigradePairedClass: mgInfo?.pairedClassName,
     });
   }
 

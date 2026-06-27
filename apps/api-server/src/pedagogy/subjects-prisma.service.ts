@@ -73,7 +73,14 @@ export class SubjectsPrismaService {
       search?: string;
     }
   ) {
-    await this.syncSubjectsFromSettings(tenantId, filters?.academicYearId);
+    // ⚠️ NE PAS appeler syncSubjectsFromSettings ici !
+    // Avant, cette méthode re-créait automatiquement les matières par défaut
+    // quand la table était vide → les matières supprimées réapparaissaient
+    // quelques secondes après la suppression.
+    // L'utilisateur peut créer des matières manuellement via les suggestions
+    // du modal de création (DEFAULT_SUBJECTS_CATALOGUE).
+    // Si on veut réactiver l'auto-seed, il faut ajouter un flag "hasSeeded"
+    // pour éviter le re-seed après suppression.
 
     const where: any = {
       tenantId,

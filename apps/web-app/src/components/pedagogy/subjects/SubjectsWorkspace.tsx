@@ -236,15 +236,23 @@ export default function SubjectsWorkspace() {
       const classLevelName = (c as any).level?.name || (c as any).level?.label;
       if (!isLevelActive(classLevelName)) return false;
 
-      if (filterClassLevelId && c.levelId !== filterClassLevelId && c.level?.id !== filterClassLevelId) {
-        return false;
+      // Filtrer par CODE de niveau (pas par ID — mismatch EducationLevel vs SchoolLevel)
+      if (filterClassLevelId) {
+        const selectedLevel = schoolLevels.find(l => l.id === filterClassLevelId);
+        if (selectedLevel) {
+          const levelCode = (selectedLevel.code || selectedLevel.name || '').toUpperCase();
+          const classLevelCode = ((c as any).level?.code || (c as any).level?.name || '').toUpperCase();
+          if (classLevelCode !== levelCode && c.levelId !== filterClassLevelId && (c as any).level?.id !== filterClassLevelId) {
+            return false;
+          }
+        }
       }
       if (filterClassSeriesId && c.seriesId !== filterClassSeriesId && c.series?.id !== filterClassSeriesId) {
         return false;
       }
       return true;
     });
-  }, [classes, filterClassLevelId, filterClassSeriesId, isLevelActive]);
+  }, [classes, filterClassLevelId, filterClassSeriesId, isLevelActive, schoolLevels]);
 
   // Modal state
   const [modal, setModal] = useState<'none' | 'create-subject' | 'edit-subject' | 'mass-assignment'>('none');
@@ -1787,39 +1795,65 @@ export default function SubjectsWorkspace() {
           <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 flex gap-3">
              <Info className="w-5 h-5 text-slate-500 mt-1 shrink-0" />
              <p className="text-sm text-slate-700 leading-relaxed">
-               Cet assistant permet de lier plusieurs matières à plusieurs classes simultanément. 
-               Si vous activez l'option <b>"Priorité aux coefficients de série"</b>, le système ignorera les valeurs saisies ici pour utiliser celles définies dans le catalogue des séries pour chaque couple classe/matière.
+               Sélectionnez un niveau scolaire, puis les matières et classes à affecter.
+               Pour le Secondaire uniquement, vous pouvez filtrer par série.
+               Si une matière est déjà affectée à une classe, elle sera ignorée (pas de doublon).
              </p>
+          </div>
+
+          {/* Étape 1 : Sélecteur de niveau (cascade) */}
+          <div className="space-y-2">
+            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Étape 1 : Niveau scolaire
+            </label>
+            <div className="flex gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setFilterClassLevelId('')}
+                className={cn('px-4 py-2 rounded-lg text-sm font-bold transition',
+                  !filterClassLevelId ? 'bg-slate-800 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400')}
+              >
+                Tous les niveaux
+              </button>
+              {schoolLevels.map(l => (
+                <button
+                  key={l.id}
+                  type="button"
+                  onClick={() => setFilterClassLevelId(l.id)}
+                  className={cn('px-4 py-2 rounded-lg text-sm font-bold transition',
+                    filterClassLevelId === l.id ? 'bg-slate-800 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400')}
+                >
+                  {l.label || l.name}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-8">
             {/* Colonne Classes */}
             <div className="space-y-3">
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Étape 1 : Choisir les Classes ({selectedClasses.length})</label>
-              
-              {/* Filtres de sélection rapide */}
-              <div className="grid grid-cols-2 gap-2">
-                <select
-                  value={filterClassLevelId}
-                  onChange={(e) => setFilterClassLevelId(e.target.value)}
-                  className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500/20"
-                >
-                  <option value="">Tous les niveaux</option>
-                  {schoolLevels.map(l => (
-                    <option key={l.id} value={l.id}>{l.label || l.name}</option>
-                  ))}
-                </select>
-                <select
-                  value={filterClassSeriesId}
-                  onChange={(e) => setFilterClassSeriesId(e.target.value)}
-                  className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500/20"
-                >
-                  <option value="">Toutes les séries</option>
-                  {filteredSeries.map(s => (
-                    <option key={s.id} value={s.id}>{s.name} {s.description ? `— ${s.description}` : ''}</option>
-                  ))}
-                </select>
-              </div>
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Étape 2 : Classes ({selectedClasses.length})
+              </label>
+
+              {/* Sélecteur série — uniquement si Secondaire est sélectionné */}
+              {(() => {
+                const selectedLevel = schoolLevels.find(l => l.id === filterClassLevelId);
+                const isSecondary = selectedLevel && (selectedLevel.code || selectedLevel.name || '').toUpperCase().includes('SECOND');
+                if (!isSecondary) return null;
+                return (
+                  <select
+                    value={filterClassSeriesId}
+                    onChange={(e) => setFilterClassSeriesId(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500/20"
+                  >
+                    <option value="">Toutes les séries</option>
+                    {filteredSeries.map(s => (
+                      <option key={s.id} value={s.id}>{s.name} {s.description ? `— ${s.description}` : ''}</option>
+                    ))}
+                  </select>
+                );
+              })()}
 
               {/* Raccourcis de sélection */}
               <div className="flex gap-2 justify-between">
@@ -1847,12 +1881,12 @@ export default function SubjectsWorkspace() {
 
               <div className="bg-slate-50 rounded-lg p-4 max-h-60 overflow-y-auto space-y-2 border border-slate-200">
                 {filteredClasses.length === 0 ? (
-                  <p className="text-xs text-slate-400 text-center py-6">Aucune classe ne correspond aux filtres.</p>
+                  <p className="text-xs text-slate-400 text-center py-6">Aucune classe ne correspond à ce niveau.</p>
                 ) : (
                   filteredClasses.map(c => (
                     <label key={c.id} className="flex items-center gap-3 p-2 hover:bg-white rounded-lg transition-colors cursor-pointer group border border-transparent hover:border-slate-200">
-                      <input 
-                        type="checkbox" 
+                      <input
+                        type="checkbox"
                         className="w-4 h-4 rounded border-gray-300 focus:ring-slate-500"
                         style={{ color: PRIMARY }}
                         checked={selectedClasses.includes(c.id)}
@@ -1872,89 +1906,106 @@ export default function SubjectsWorkspace() {
             {/* Colonne Matières */}
             <div className="space-y-3">
                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                 Étape 2 : Choisir les Matières ({selectedSubjects.length})
+                 Étape 3 : Matières ({(() => {
+                   // Filtrer les matières par CODE de niveau (pas par ID)
+                   const selectedLevel = schoolLevels.find(l => l.id === filterClassLevelId);
+                   const levelCode = selectedLevel ? (selectedLevel.code || selectedLevel.name || '').toUpperCase() : '';
+                   return subjects.filter(s => {
+                     if (!levelCode) return true;
+                     const sCode = (s.schoolLevel?.code || s.schoolLevel?.name || '').toUpperCase();
+                     return sCode === levelCode;
+                   }).length;
+                 })()})
                </label>
 
-               {/* Synchronisation et sélection rapide des matières filtrées */}
+               {/* Bouton Tout sélectionner / désélectionner */}
                <div className="flex gap-2 justify-between">
                  <button
                    type="button"
                    onClick={() => {
+                     // Filtrer par CODE de niveau
+                     const selectedLevel = schoolLevels.find(l => l.id === filterClassLevelId);
+                     const levelCode = selectedLevel ? (selectedLevel.code || selectedLevel.name || '').toUpperCase() : '';
                      const matchedSubjects = subjects.filter(s => {
-                       if (!filterClassLevelId) return true;
-                       return s.schoolLevelId === filterClassLevelId || (s.schoolLevel && s.schoolLevel.id === filterClassLevelId);
+                       if (!levelCode) return true;
+                       const sCode = (s.schoolLevel?.code || s.schoolLevel?.name || '').toUpperCase();
+                       return sCode === levelCode;
                      });
                      const matchedIds = matchedSubjects.map(s => s.id);
                      setSelectedSubjects(Array.from(new Set([...selectedSubjects, ...matchedIds])));
                    }}
                    className="text-[10px] font-bold text-slate-600 hover:text-slate-900 hover:underline"
                  >
-                   Sélectionner filtrées
+                   Tout sélectionner
                  </button>
                  <button
                    type="button"
-                   onClick={() => {
-                     const matchedSubjects = subjects.filter(s => {
-                       if (!filterClassLevelId) return true;
-                       return s.schoolLevelId === filterClassLevelId || (s.schoolLevel && s.schoolLevel.id === filterClassLevelId);
-                     });
-                     const matchedIds = matchedSubjects.map(s => s.id);
-                     setSelectedSubjects(selectedSubjects.filter(id => !matchedIds.includes(id)));
-                   }}
+                   onClick={() => setSelectedSubjects([])}
                    className="text-[10px] font-bold text-slate-600 hover:text-slate-900 hover:underline"
                  >
-                   Désélectionner filtrées
+                   Tout désélectionner
                  </button>
                </div>
 
                <div className="bg-slate-50 rounded-lg p-4 max-h-60 overflow-y-auto space-y-2 border border-slate-200">
-                {subjects
-                  .filter(s => {
-                    // Si un niveau de classe est filtré à l'étape 1, on affiche uniquement les matières de ce niveau
-                    if (!filterClassLevelId) return true;
-                    return s.schoolLevelId === filterClassLevelId || (s.schoolLevel && s.schoolLevel.id === filterClassLevelId);
-                  })
-                  .length === 0 ? (
-                    <p className="text-xs text-slate-400 text-center py-6">Aucune matière ne correspond à ce niveau.</p>
-                  ) : (
-                    subjects
-                      .filter(s => {
-                        if (!filterClassLevelId) return true;
-                        return s.schoolLevelId === filterClassLevelId || (s.schoolLevel && s.schoolLevel.id === filterClassLevelId);
-                      })
-                      .map(s => (
-                        <label key={s.id} className="flex items-center gap-3 p-2 hover:bg-white rounded-lg transition-colors cursor-pointer group border border-transparent hover:border-slate-200">
-                          <input 
-                            type="checkbox" 
-                            className="w-4 h-4 rounded border-gray-300 focus:ring-slate-500"
-                            style={{ color: PRIMARY }}
-                            checked={selectedSubjects.includes(s.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) setSelectedSubjects([...selectedSubjects, s.id]);
-                              else setSelectedSubjects(selectedSubjects.filter(id => id !== s.id));
-                            }}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <span className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 block truncate">{s.name}</span>
-                            <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">{s.code}</span>
-                          </div>
-                          {s.schoolLevel && (
-                            <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[9px] font-semibold border border-slate-200 shrink-0">
-                              {s.schoolLevel.label || s.schoolLevel.name}
-                            </span>
-                          )}
-                        </label>
-                      ))
-                  )}
+                {(() => {
+                  // Filtrer les matières par CODE de niveau (pas par ID)
+                  const selectedLevel = schoolLevels.find(l => l.id === filterClassLevelId);
+                  const levelCode = selectedLevel ? (selectedLevel.code || selectedLevel.name || '').toUpperCase() : '';
+                  const filteredSubjects = subjects.filter(s => {
+                    if (!levelCode) return true;
+                    const sCode = (s.schoolLevel?.code || s.schoolLevel?.name || '').toUpperCase();
+                    return sCode === levelCode;
+                  });
+
+                  if (filteredSubjects.length === 0) {
+                    return <p className="text-xs text-slate-400 text-center py-6">Aucune matière ne correspond à ce niveau.</p>;
+                  }
+
+                  return filteredSubjects.map(s => (
+                    <label key={s.id} className="flex items-center gap-3 p-2 hover:bg-white rounded-lg transition-colors cursor-pointer group border border-transparent hover:border-slate-200">
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 rounded border-gray-300 focus:ring-slate-500"
+                        style={{ color: PRIMARY }}
+                        checked={selectedSubjects.includes(s.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) setSelectedSubjects([...selectedSubjects, s.id]);
+                          else setSelectedSubjects(selectedSubjects.filter(id => id !== s.id));
+                        }}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 block truncate">{s.name}</span>
+                        <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">{s.code}</span>
+                      </div>
+                      {s.schoolLevel && (
+                        <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[9px] font-semibold border border-slate-200 shrink-0">
+                          {s.schoolLevel.label || s.schoolLevel.name}
+                        </span>
+                      )}
+                    </label>
+                  ));
+                })()}
               </div>
             </div>
           </div>
 
+          {/* Info affectation en masse */}
+          {selectedClasses.length > 0 && selectedSubjects.length > 0 && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center gap-2">
+              <Info className="w-4 h-4 text-blue-600 shrink-0" />
+              <p className="text-xs text-blue-800">
+                <strong>{selectedSubjects.length}</strong> matière(s) seront affectées à <strong>{selectedClasses.length}</strong> classe(s).
+                Les affectations existantes seront ignorées (pas de doublon).
+              </p>
+            </div>
+          )}
+
           <div className="pt-4 border-t border-slate-200 grid grid-cols-3 gap-6">
              <div className="space-y-1">
                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Coefficient Global</label>
-               <input 
-                type="number" 
+               <input
+                type="number"
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800"
                 value={massConfig.coefficient}
                 onChange={(e) => setMassConfig({...massConfig, coefficient: parseFloat(e.target.value)})}
@@ -1962,17 +2013,17 @@ export default function SubjectsWorkspace() {
              </div>
              <div className="space-y-1">
                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Heures Hebdo</label>
-               <input 
-                type="number" 
+               <input
+                type="number"
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800"
                 value={massConfig.weeklyHours}
                 onChange={(e) => setMassConfig({...massConfig, weeklyHours: parseInt(e.target.value)})}
                />
              </div>
              <div className="flex items-center gap-3 pt-6">
-                <input 
-                  type="checkbox" 
-                  id="use-series" 
+                <input
+                  type="checkbox"
+                  id="use-series"
                   className="w-5 h-5 rounded border-gray-300 focus:ring-slate-500"
                   style={{ color: PRIMARY }}
                   checked={massConfig.useSeries}

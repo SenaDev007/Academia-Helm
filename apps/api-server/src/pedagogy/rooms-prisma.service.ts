@@ -31,10 +31,11 @@ export class RoomsPrismaService {
     status?: string; // ACTIVE | MAINTENANCE | UNAVAILABLE
     description?: string;
   }) {
-    // Vérifier l'unicité du code
+    // Vérifier l'unicité du code (par tenant + academicYearId + roomCode)
     const existing = await this.prisma.room.findFirst({
       where: {
         tenantId: data.tenantId,
+        academicYearId: data.academicYearId || null,
         roomCode: data.roomCode,
       },
     });

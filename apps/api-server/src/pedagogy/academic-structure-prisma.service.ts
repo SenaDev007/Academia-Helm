@@ -1109,6 +1109,43 @@ export class AcademicStructurePrismaService {
         });
       }
 
+      // ─── Si aucune salle n'a été copiée, créer une salle par classe ──
+      // (cas typique : l'école n'a pas créé de salles dans l'onglet Salles,
+      // mais chaque classe a besoin d'une salle pour l'EDT)
+      if (roomsCopied === 0) {
+        const targetClassesForRooms = await tx.academicClass.findMany({
+          where: { tenantId, academicYearId: toAcademicYearId },
+        });
+        for (const cl of targetClassesForRooms) {
+          const roomCode = `ROOM-${cl.code}`;
+          // Vérifier si la salle existe déjà
+          const existing = await tx.room.findFirst({
+            where: { tenantId, academicYearId: toAcademicYearId, roomCode },
+          });
+          if (existing) continue;
+
+          const newRoom = await tx.room.create({
+            data: {
+              tenantId,
+              academicYearId: toAcademicYearId,
+              roomCode,
+              roomName: `Salle ${cl.name}`,
+              roomType: 'CLASSROOM',
+              capacity: cl.capacity || 40,
+              schoolLevelId: cl.levelId,
+              status: 'ACTIVE',
+            },
+          });
+          roomsCopied++;
+
+          // Lier la classe à cette salle
+          await tx.academicClass.update({
+            where: { id: cl.id },
+            data: { roomId: newRoom.id },
+          });
+        }
+      }
+
       // ─── Dupliquer les matières (Subjects) ──
       const sourceSubjects = await tx.subject.findMany({
         where: { tenantId, academicYearId: fromAcademicYearId },

@@ -2918,7 +2918,7 @@ model Room {
   tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   timetableEntries TimetableEntry[]
 
-  @@unique([tenantId, roomCode])
+  @@unique([tenantId, academicYearId, roomCode])
   @@index([tenantId, academicYearId])
   @@index([roomType])
   @@index([status])

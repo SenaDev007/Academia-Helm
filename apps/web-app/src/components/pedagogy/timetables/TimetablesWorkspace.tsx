@@ -173,7 +173,9 @@ export default function TimetablesWorkspace() {
         </div>
       </motion.div>
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      {/* Tabs + content — pas de conteneur border/bg (le ModuleContentArea le fournit déjà) */}
+      <div className="space-y-4">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="flex overflow-x-auto border-b border-slate-100">
           {TABS.map((t) => {
             const Icon = t.icon;
@@ -217,6 +219,7 @@ export default function TimetablesWorkspace() {
             </motion.div>
           </AnimatePresence>
         </div>
+      </div>
       </div>
 
       {selectedSolution && <SolutionGridModal solution={selectedSolution} onClose={() => setSelectedSolution(null)} />}

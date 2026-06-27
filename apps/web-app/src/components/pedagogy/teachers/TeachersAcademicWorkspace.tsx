@@ -677,10 +677,10 @@ export default function TeachersAcademicWorkspace() {
         })}
       </div>
 
-      {/* Main Views */}
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      {/* Main Views — pas de conteneur border/bg (le ModuleContentArea le fournit déjà) */}
+      <div className="space-y-4">
         {activeSubTab === 'teachers' && (
-          <div className="flex h-[calc(100vh-23rem)] overflow-hidden">
+          <div className="flex h-[calc(100vh-23rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
             {/* Liste des enseignants (Gauche) */}
             <div className="w-1/3 border-r border-slate-200 flex flex-col bg-slate-50/20">
               <div className="p-4 border-b border-slate-200 bg-slate-50/50 space-y-3">

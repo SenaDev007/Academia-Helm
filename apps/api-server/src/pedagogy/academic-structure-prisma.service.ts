@@ -992,13 +992,23 @@ export class AcademicStructurePrismaService {
         orderBy: { orderIndex: 'asc' },
       });
       const cycleMap = new Map<string, string>();
+      // Si la structure existe déjà, récupérer les cycles cibles existants
+      const targetCycles = structureAlreadyExists
+        ? await tx.academicCycle.findMany({ where: { tenantId, academicYearId: toAcademicYearId } })
+        : [];
       for (const c of sourceCycles) {
         const newLevelId = levelMap.get(c.levelId);
-        if (!newLevelId) {
-          throw new BadRequestException(
-            `Cycle "${c.name}" : niveau source introuvable (données incohérentes).`,
-          );
+        if (!newLevelId) continue; // skip au lieu de throw
+
+        if (structureAlreadyExists) {
+          // Chercher un cycle existant avec le même nom + niveau
+          const existing = targetCycles.find(tc => tc.name === c.name && tc.levelId === newLevelId);
+          if (existing) {
+            cycleMap.set(c.id, existing.id);
+            continue; // skip
+          }
         }
+
         const created = await tx.academicCycle.create({
           data: {
             ...prismaCreateDefaults(),
@@ -1018,12 +1028,16 @@ export class AcademicStructurePrismaService {
         orderBy: { name: 'asc' },
       });
       const seriesMap = new Map<string, string>();
+      const targetSeries = structureAlreadyExists
+        ? await tx.academicSeries.findMany({ where: { tenantId, academicYearId: toAcademicYearId } })
+        : [];
       for (const s of sourceSeries) {
         const newLevelId = levelMap.get(s.levelId);
-        if (!newLevelId) {
-          throw new BadRequestException(
-            `Série "${s.name}" : niveau source introuvable (données incohérentes).`,
-          );
+        if (!newLevelId) continue;
+
+        if (structureAlreadyExists) {
+          const existing = targetSeries.find(ts => ts.name === s.name && ts.levelId === newLevelId);
+          if (existing) { seriesMap.set(s.id, existing.id); continue; }
         }
         const created = await tx.academicSeries.create({
           data: {
@@ -1064,13 +1078,18 @@ export class AcademicStructurePrismaService {
         where: { tenantId, academicYearId: fromAcademicYearId },
         orderBy: [{ cycle: { orderIndex: 'asc' } }, { name: 'asc' }],
       });
+      const targetClasses = structureAlreadyExists
+        ? await tx.academicClass.findMany({ where: { tenantId, academicYearId: toAcademicYearId } })
+        : [];
       for (const cl of sourceClasses) {
         const newLevelId = levelMap.get(cl.levelId);
         const newCycleId = cycleMap.get(cl.cycleId);
-        if (!newLevelId || !newCycleId) {
-          throw new BadRequestException(
-            `Classe "${cl.name}" : niveau ou cycle source introuvable (données incohérentes).`,
-          );
+        if (!newLevelId || !newCycleId) continue;
+
+        if (structureAlreadyExists) {
+          // Skip si une classe avec le même code existe déjà
+          const existing = targetClasses.find(tc => tc.code === cl.code);
+          if (existing) continue;
         }
         await tx.academicClass.create({
           data: {

@@ -1148,10 +1148,18 @@ export class StaffPrismaService {
     // ─── Sync schoolLevelId to Pedagogy Teacher records ──
     // When a teacher is assigned to a school level in HR, update their
     // Teacher record in pedagogy so they appear in the correct level's assignments.
+    // IMPORTANT : si aucun Teacher n'existe encore pour ce Staff (ex: membre admin
+    // qui se voit affecter un niveau pour enseigner), on le CRÉE automatiquement.
+    // Sinon, le staff n'apparaîtra jamais dans Pédagogie > Enseignants.
     try {
       const staffRecords = await this.prisma.staff.findMany({
         where: { id: { in: staffIds }, tenantId },
-        select: { id: true, email: true, employeeNumber: true },
+        select: {
+          id: true, email: true, employeeNumber: true,
+          firstName: true, lastName: true, phone: true,
+          gender: true, position: true, department: true,
+          hireDate: true, contractType: true,
+        },
       });
       for (const s of staffRecords) {
         // Match by email or matricule (employeeNumber)
@@ -1166,10 +1174,38 @@ export class StaffPrismaService {
           select: { id: true },
         });
         if (teacher) {
+          // Le Teacher existe déjà — on met à jour son schoolLevelId
           await this.prisma.teacher.update({
             where: { id: teacher.id },
             data: { schoolLevelId: resolvedSchoolLevelId },
           });
+        } else {
+          // Aucun Teacher n'existe pour ce Staff — on le crée
+          // (cas typique : membre de l'administration affecté pour enseigner)
+          try {
+            const newTeacher = await this.prisma.teacher.create({
+              data: {
+                tenantId,
+                schoolLevelId: resolvedSchoolLevelId,
+                matricule: s.employeeNumber || `STF-${s.id.slice(-8)}`,
+                firstName: s.firstName,
+                lastName: s.lastName,
+                gender: s.gender,
+                phone: s.phone,
+                email: s.email,
+                position: s.position,
+                departmentId: undefined, // Staff.department est un String, Teacher.departmentId est un FK — on ne sync pas ici
+                hireDate: s.hireDate,
+                contractType: s.contractType,
+                status: 'active',
+                academicYearId: resolvedAcademicYearId,
+              },
+            });
+            this.logger.log(`Auto-created Teacher ${newTeacher.id} for Staff ${s.id} (${s.firstName} ${s.lastName})`);
+          } catch (createErr: any) {
+            // Si la création échoue (ex: matricule déjà pris), on log et on continue
+            this.logger.warn(`Failed to auto-create Teacher for Staff ${s.id}: ${createErr.message}`);
+          }
         }
       }
     } catch (err: any) {

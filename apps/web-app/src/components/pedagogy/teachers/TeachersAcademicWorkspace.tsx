@@ -74,6 +74,84 @@ interface Teacher {
   matricule: string;
   email?: string;
   status?: string;
+  /** Photo de profil (depuis StaffPhoto via jointure backend par email).
+   * Si null/undefined → le frontend affiche les initiales. */
+  photoUrl?: string | null;
+  photoUrlHd?: string | null;
+}
+
+/**
+ * TeacherAvatar — affiche la photo de profil si disponible, sinon les initiales.
+ * Tailles supportées : 'sm' (w-8 h-8), 'md' (w-9 h-9), 'lg' (w-12 h-12).
+ */
+function TeacherAvatar({
+  teacher,
+  size = 'md',
+  bgColor,
+  textColor = '#fff',
+  roundedClass = 'rounded-lg',
+}: {
+  teacher: { firstName?: string; lastName?: string; photoUrl?: string | null };
+  size?: 'sm' | 'md' | 'lg';
+  bgColor?: string;
+  textColor?: string;
+  roundedClass?: string;
+}) {
+  const sizeClass = size === 'sm' ? 'w-8 h-8 text-xs' : size === 'lg' ? 'w-12 h-12 text-lg' : 'w-9 h-9 text-xs';
+  const initials = `${(teacher.firstName?.[0] ?? '?')}${(teacher.lastName?.[0] ?? '')}`.toUpperCase();
+  const [imgError, setImgError] = useState(false);
+
+  // Si photoUrl existe ET pas d'erreur de chargement, on affiche l'image
+  if (teacher.photoUrl && !imgError) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={teacher.photoUrl}
+        alt={`${teacher.firstName ?? ''} ${teacher.lastName ?? ''}`}
+        className={`${sizeClass} ${roundedClass} object-cover shadow-sm`}
+        onError={() => setImgError(true)}
+      />
+    );
+  }
+
+  // Fallback initiales (si pas de photoUrl OU si l'image a échoué à charger)
+  return (
+    <div
+      className={`${sizeClass} ${roundedClass} flex items-center justify-center font-bold shadow-sm`}
+      style={bgColor ? { backgroundColor: bgColor, color: textColor } : { backgroundColor: '#f1f5f9', color: '#475569' }}
+    >
+      {initials}
+    </div>
+  );
+}
+
+/** Version simplifiée pour les sous-objets teacher (ex: activeProfile.teacher) */
+function TeacherAvatarWithFallback({
+  teacher,
+  size = 'md',
+  bgColor,
+  textColor = '#fff',
+  roundedClass = 'rounded-lg',
+}: {
+  teacher: { firstName?: string; lastName?: string; photoUrl?: string | null } | null | undefined;
+  size?: 'sm' | 'md' | 'lg';
+  bgColor?: string;
+  textColor?: string;
+  roundedClass?: string;
+}) {
+  if (!teacher) {
+    // Pas de teacher — on affiche juste un placeholder
+    const sizeClass = size === 'sm' ? 'w-8 h-8 text-xs' : size === 'lg' ? 'w-12 h-12 text-lg' : 'w-9 h-9 text-xs';
+    return (
+      <div
+        className={`${sizeClass} ${roundedClass} flex items-center justify-center font-bold shadow-sm`}
+        style={bgColor ? { backgroundColor: bgColor, color: textColor } : { backgroundColor: '#f1f5f9', color: '#475569' }}
+      >
+        ?
+      </div>
+    );
+  }
+  return <TeacherAvatar teacher={teacher} size={size} bgColor={bgColor} textColor={textColor} roundedClass={roundedClass} />;
 }
 
 interface TeacherAcademicProfile {
@@ -647,12 +725,12 @@ export default function TeachersAcademicWorkspace() {
                         style={isSelected ? { borderLeft: `3px solid ${PRIMARY}`, paddingLeft: '9px' } : undefined}
                       >
                         <div className="flex items-center gap-3">
-                          <div 
-                            className="w-9 h-9 rounded-lg flex items-center justify-center font-bold text-xs shadow-sm transition-all"
-                            style={isSelected ? { backgroundColor: PRIMARY, color: '#fff' } : { backgroundColor: '#f1f5f9', color: '#475569' }}
-                          >
-                            {teacher.firstName[0]}{teacher.lastName[0]}
-                          </div>
+                          <TeacherAvatar
+                            teacher={teacher}
+                            size="md"
+                            bgColor={isSelected ? PRIMARY : undefined}
+                            textColor={isSelected ? '#fff' : '#475569'}
+                          />
                           <div>
                             <p className={cn("font-bold text-xs", isSelected ? "text-slate-900" : "text-slate-800")}>
                               {teacher.lastName} {teacher.firstName}
@@ -681,12 +759,11 @@ export default function TeachersAcademicWorkspace() {
                     {/* Header Profil */}
                     <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div
-                          className="w-12 h-12 rounded-lg flex items-center justify-center text-white text-lg font-bold shadow-md"
-                          style={{ backgroundColor: PRIMARY }}
-                        >
-                          {activeProfile?.teacher?.firstName?.[0] ?? '?'}{activeProfile?.teacher?.lastName?.[0] ?? ''}
-                        </div>
+                        <TeacherAvatarWithFallback
+                          teacher={activeProfile?.teacher}
+                          size="lg"
+                          bgColor={PRIMARY}
+                        />
                         <div>
                           <h3 className="text-base font-bold text-slate-900">
                             {activeProfile?.teacher?.lastName ?? '—'} {activeProfile?.teacher?.firstName ?? ''}
@@ -1042,12 +1119,12 @@ export default function TeachersAcademicWorkspace() {
                               {/* Teacher Info */}
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-3">
-                                  <div 
-                                    className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs"
-                                    style={isHomeroom ? { backgroundColor: `${ACCENT}20`, color: ACCENT } : { backgroundColor: '#f1f5f9', color: '#475569' }}
-                                  >
-                                    {t.firstName[0]}{t.lastName[0]}
-                                  </div>
+                                  <TeacherAvatar
+                                    teacher={t}
+                                    size="sm"
+                                    bgColor={isHomeroom ? `${ACCENT}20` : undefined}
+                                    textColor={isHomeroom ? ACCENT : '#475569'}
+                                  />
                                   <div>
                                     <div className="flex items-center gap-2">
                                       <p className="font-bold text-slate-900">{t.lastName} {t.firstName}</p>

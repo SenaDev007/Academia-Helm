@@ -169,7 +169,7 @@ export class TeachersPrismaService {
       ];
     }
 
-    return this.prisma.teacher.findMany({
+    const teachers = await this.prisma.teacher.findMany({
       where,
       include: {
         schoolLevel: true,
@@ -185,6 +185,56 @@ export class TeachersPrismaService {
         { firstName: 'asc' },
       ],
     });
+
+    // ─── Enrichir avec la photo de profil depuis Staff (par email) ──
+    // Le modèle Teacher n'a pas de champ photo direct. On fait une jointure
+    // manuelle avec Staff (par email) pour récupérer StaffPhoto.thumbnailUrl.
+    // Si pas de photo, le frontend affichera les initiales (fallback).
+    try {
+      const teacherEmails = teachers
+        .map((t) => t.email)
+        .filter((e): e is string => !!e);
+
+      if (teacherEmails.length > 0) {
+        const staffWithPhotos = await this.prisma.staff.findMany({
+          where: {
+            tenantId,
+            email: { in: teacherEmails },
+          },
+          select: {
+            email: true,
+            photo: {
+              select: {
+                thumbnailUrl: true,
+                originalUrl: true,
+                hdUrl: true,
+              },
+            },
+          },
+        });
+
+        // Map email → photo URL pour lookup rapide
+        const photoByEmail = new Map<string, { thumbnailUrl: string; originalUrl: string; hdUrl: string }>();
+        for (const s of staffWithPhotos) {
+          if (s.email && s.photo) {
+            photoByEmail.set(s.email, s.photo);
+          }
+        }
+
+        // Enrichir chaque teacher avec photoUrl
+        return teachers.map((t) => ({
+          ...t,
+          photoUrl: t.email ? (photoByEmail.get(t.email)?.thumbnailUrl ?? null) : null,
+          photoUrlHd: t.email ? (photoByEmail.get(t.email)?.hdUrl ?? null) : null,
+          photoUrlOriginal: t.email ? (photoByEmail.get(t.email)?.originalUrl ?? null) : null,
+        }));
+      }
+    } catch (err: any) {
+      // Si l'enrichissement échoue (ex: table Staff pas encore migrée), on continue sans photo
+      // Le frontend affichera les initiales (fallback)
+    }
+
+    return teachers;
   }
 
   /**

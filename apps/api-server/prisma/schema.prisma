@@ -7784,9 +7784,12 @@ model TimetableConfig {
   @@map("timetable_configs")
 }
 
-/// Disponibilité d'un enseignant par créneau (matrice de disponibilité).
+/// Disponibilité d'un enseignant par créneau pour le Smart Timetable Engine (STE).
+/// Table physique : teacher_availability (différente de pedagogy_teacher_availabilities
+/// utilisée par TeacherAcademicProfile — d'où le nom de modèle distinct pour éviter
+/// le conflit Prisma "model already exists").
 /// Status: AVAILABLE, UNAVAILABLE, PREFERRED, FORBIDDEN
-model TeacherAvailability {
+model TimetableTeacherAvailability {
   id          String   @id @default(uuid())
   tenantId    String
   teacherId   String

@@ -41,7 +41,7 @@ import {
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useAuth } from '@/hooks/useAuth';
-import { useBilingual, BilingualTrack } from '@/contexts/BilingualContext';
+import { useBilingual } from '@/contexts/BilingualContext';
 import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
 import { compressImageFileToDataUrl } from '@/lib/media';
 import { useToast } from '@/components/ui/use-toast';
@@ -490,7 +490,7 @@ export default function SubjectsWorkspace() {
           weeklyHours: Number(subjectForm.weeklyHours) || 0,
           description: subjectForm.description,
           ...(bilingualEnabled && subjectForm.language ? { language: subjectForm.language } : {}),
-        });
+        }});
         // ─── Insertion optimiste ──
         // createEntityOffline met la matière dans l'outbox (sync async).
         // On l'ajoute immédiatement au state local pour qu'elle apparaisse
@@ -524,7 +524,7 @@ export default function SubjectsWorkspace() {
           weeklyHours: Number(subjectForm.weeklyHours) || 0,
           description: subjectForm.description,
           ...(bilingualEnabled ? { language: subjectForm.language || null } : {}),
-        });
+        }});
         // Mise à jour optimiste
         setSubjects((prev: any) => prev.map((s: any) => s.id === subjectForm.id ? {
           ...s,
@@ -578,7 +578,7 @@ export default function SubjectsWorkspace() {
           coefficient: bulkCoefficient,
           weeklyHours: bulkWeeklyHours,
           ...(bilingualEnabled && subjectForm.language ? { language: subjectForm.language } : {}),
-        });
+        }});
         created++;
         // Insertion optimiste
         if (createdEntity) {

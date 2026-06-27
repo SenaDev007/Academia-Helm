@@ -7776,9 +7776,9 @@ model TimetableConfig {
   eveningEnd      String?  @default("18:00")
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-  schoolLevel     SchoolLevel @relation(fields: [schoolLevelId], references: [id])
-  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id])
-  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // Note : les FK (tenantId, schoolLevelId, academicYearId) sont gérées via raw SQL
+  // dans timetable-engine.service.ts ($queryRawUnsafe). Pas de @relation Prisma pour
+  // éviter l'erreur P1012 "missing opposite relation field" sur Prisma 7.8+.
 
   @@unique([tenantId, schoolLevelId, academicYearId])
   @@map("timetable_configs")
@@ -7807,7 +7807,7 @@ model TimetableTeacherAvailability {
   reason      String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // FK tenantId gérée via raw SQL — pas de @relation (cf. TimetableConfig)
 
   @@unique([tenantId, teacherId, dayOfWeek, startTime, endTime])
   @@index([tenantId, teacherId])
@@ -7845,10 +7845,8 @@ model TimetableSolution {
   notes           String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-  timetable       Timetable? @relation(fields: [timetableId], references: [id], onDelete: SetNull)
-  schoolLevel     SchoolLevel @relation(fields: [schoolLevelId], references: [id])
-  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id])
-  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // FK (tenantId, academicYearId, schoolLevelId, timetableId) gérées via raw SQL
+  // — pas de @relation (cf. TimetableConfig)
 
   @@index([tenantId, academicYearId, schoolLevelId])
   @@index([tenantId, status])
@@ -7878,7 +7876,7 @@ model TimetableConstraint {
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // FK tenantId gérée via raw SQL — pas de @relation (cf. TimetableConfig)
 
   @@index([tenantId, type, severity])
   @@map("timetable_constraints")

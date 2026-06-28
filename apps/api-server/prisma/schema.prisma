@@ -2406,7 +2406,7 @@ model Class {
 model Subject {
   id                           String                        @id @default(uuid())
   tenantId                     String
-  academicYearId               String
+  academicYearId               String?
   schoolLevelId                String
   academicTrackId              String?
   name                         String
@@ -2438,7 +2438,7 @@ model Subject {
   staffAssignments             StaffAssignment[]
   assignments                  SubjectAssignment[]
   academicTrack                AcademicTrack?                @relation(fields: [academicTrackId], references: [id])
-  academicYear                 AcademicYear                  @relation(fields: [academicYearId], references: [id])
+  academicYear                 AcademicYear?                 @relation(fields: [academicYearId], references: [id], onDelete: SetNull)
   schoolLevel                  SchoolLevel                   @relation(fields: [schoolLevelId], references: [id])
   tenant                       Tenant                        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   teacherSubjects              TeacherSubject[]              @relation("TeacherSubjectSubject")

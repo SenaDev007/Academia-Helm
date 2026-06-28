@@ -675,11 +675,38 @@ export default function AssignmentsWorkspace() {
         isOpen={modal === 'assign-homeroom'}
         onClose={() => { setModal('none'); setSearch(''); setSelectedTeacherInModal(null); }}
         onConfirm={async () => {
-          // Guard : ne pas exécuter si déjà en cours ou si aucun enseignant sélectionné
           if (bulkAssigning || !selectedTeacherInModal) return;
           await handleAssignHomeroom(selectedTeacherInModal);
         }}
         size="large"
+        actions={
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => { setModal('none'); setSearch(''); setSelectedTeacherInModal(null); }}
+              disabled={bulkAssigning}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+            >
+              Annuler
+            </button>
+            <button
+              type="submit"
+              form="modal-form"
+              disabled={bulkAssigning || !selectedTeacherInModal}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              style={{ backgroundColor: bulkAssigning ? '#94a3b8' : PRIMARY }}
+            >
+              {bulkAssigning ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Affectation en cours...
+                </>
+              ) : (
+                'Confirmer'
+              )}
+            </button>
+          </div>
+        }
       >
         <div className="space-y-4">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start gap-2">
@@ -757,6 +784,34 @@ export default function AssignmentsWorkspace() {
           await handleAssignTeacher(selectedTeacherInModal);
         }}
         size="large"
+        actions={
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => { setModal('none'); setSearch(''); setSelectedTeacherInModal(null); }}
+              disabled={bulkAssigning}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+            >
+              Annuler
+            </button>
+            <button
+              type="submit"
+              form="modal-form"
+              disabled={bulkAssigning || !selectedTeacherInModal}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              style={{ backgroundColor: bulkAssigning ? '#94a3b8' : PRIMARY }}
+            >
+              {bulkAssigning ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Affectation...
+                </>
+              ) : (
+                'Confirmer'
+              )}
+            </button>
+          </div>
+        }
       >
         <div className="space-y-4">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">

@@ -110,6 +110,8 @@ export default function AssignmentsWorkspace() {
   const [teachersWithPhotos, setTeachersWithPhotos] = useState<any[]>([]);
   const [classSubjects, setClassSubjects] = useState<ClassSubject[]>([]);
   const [bulkAssigning, setBulkAssigning] = useState(false);
+  // Multigrade assignments (pré-remplissage des titulaires)
+  const [multigradeAssignments, setMultigradeAssignments] = useState<any[]>([]);
 
   // Selection — selectedPhysicalClassId is the PRIMARY selection
   const [selectedPhysicalClassId, setSelectedPhysicalClassId] = useState<string | null>(null);
@@ -125,17 +127,19 @@ export default function AssignmentsWorkspace() {
     if (!academicYear?.id) return;
     setLoading(true);
     try {
-      const [classesData, teachersData, teachersWithPhotosData] = await Promise.all([
+      const [classesData, teachersData, teachersWithPhotosData, multigradeData] = await Promise.all([
         pedagogyFetch<AcademicClass[]>(`/api/pedagogy/academic-structure/classes?academicYearId=${academicYear.id}`),
         pedagogyFetch<TeacherProfile[]>(`/api/pedagogy/teacher-profiles?academicYearId=${academicYear.id}`),
-        // Charger aussi la liste des enseignants (avec photoUrl via la jointure StaffPhoto)
         pedagogyFetch<any[]>(`/api/teachers`),
+        // Charger les affectations multigrade pour pré-remplir les titulaires
+        pedagogyFetch<any[]>(`/api/multigrade?academicYearId=${academicYear.id}&isActive=true`).catch(() => []),
       ]);
 
       const activeClasses = (classesData || []).filter(c => c.isActive !== false);
       setAcademicClasses(activeClasses);
       setTeachers(teachersData || []);
       setTeachersWithPhotos(teachersWithPhotosData || []);
+      setMultigradeAssignments(multigradeData || []);
 
       // Charger TOUTES les classes physiques pour cette année
       // On utilise pedagogyFetch (proxy) qui n'a pas le guard x-school-level-id
@@ -378,6 +382,29 @@ export default function AssignmentsWorkspace() {
     return t?.photoUrl || null;
   };
 
+  // Helper : trouver le titulaire multigrade pour une section physique donnée.
+  // Si l'enseignant est en multigrade et que cette section fait partie de ses
+  // classes assignées, on retourne l'enseignant pour le pré-remplir comme titulaire.
+  const getMultigradeTeacher = (physicalClassId: string): { teacherId: string; teacherName: string } | null => {
+    for (const mg of multigradeAssignments) {
+      const classIds: string[] = Array.isArray(mg.classIds) ? mg.classIds : [];
+      // Les classIds du multigrade sont des IDs de classe physique (Class)
+      if (classIds.includes(physicalClassId)) {
+        const teacher = mg.teacher;
+        if (teacher) {
+          return {
+            teacherId: teacher.id,
+            teacherName: `${teacher.lastName} ${teacher.firstName}`,
+          };
+        }
+      }
+    }
+    return null;
+  };
+
+  // Titulaire multigrade pour la section actuellement sélectionnée
+  const multigradeSuggestion = selectedPhysicalClassId ? getMultigradeTeacher(selectedPhysicalClassId) : null;
+
   // Helper : trouver assignedLanguages d'un enseignant depuis teachersWithPhotos
   const getTeacherLanguages = (teacherId: string): string[] => {
     const t = teachersWithPhotos.find(t => t.id === teacherId);
@@ -532,7 +559,42 @@ export default function AssignmentsWorkspace() {
             ) : isHomeroom ? (
               /* ══ MODE TITULAIRE (Maternelle / Primaire) ══ */
               <div className="max-w-2xl mx-auto space-y-4">
-                {/* Bannière */}
+                {/* Bannière multigrade : si un titulaire multigrade est suggéré pour cette section */}
+                {multigradeSuggestion && !homeroomFullyAssigned && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+                    <Layers className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-xs font-bold text-amber-900">Multigrade détecté</p>
+                      <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
+                        <strong>{multigradeSuggestion.teacherName}</strong> est assigné à cette section
+                        via le multigrade. Vous pouvez le désigner directement comme titulaire.
+                      </p>
+                      <button
+                        onClick={() => {
+                          setSelectedTeacherInModal(multigradeSuggestion.teacherId);
+                          setModal('assign-homeroom');
+                        }}
+                        className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-white"
+                        style={{ backgroundColor: ACCENT }}
+                      >
+                        <UserPlus className="w-3.5 h-3.5" />
+                        Désigner {multigradeSuggestion.teacherName}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {/* Bannière informative générale multigrade */}
+                {multigradeAssignments.length > 0 && !multigradeSuggestion && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center gap-2">
+                    <Layers className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    <p className="text-[11px] text-blue-700 font-medium">
+                      {multigradeAssignments.length} enseignant(s) en multigrade configuré(s).
+                      Cette section n'est pas concernée par le multigrade.
+                    </p>
+                  </div>
+                )}
+
+                {/* Bannière explicative */}
                 <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 flex items-start gap-3">
                   <Info className="w-4 h-4 text-slate-500 mt-0.5 flex-shrink-0" />
                   <div>

@@ -877,8 +877,8 @@ export default function TeachersAcademicWorkspace() {
       <div className="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-50/80 p-1">
         {[
           { id: 'teachers', label: 'Profils & Disponibilités', icon: Users },
-          { id: 'assignments', label: 'Affectations par Classe', icon: ClipboardList },
           { id: 'multigrade', label: 'Multigrade', icon: Layers },
+          { id: 'assignments', label: 'Affectations par Classe', icon: ClipboardList },
           { id: 'workloads', label: 'Charge Horaire Globale', icon: BarChart3 },
         ].map((t) => {
           const Icon = t.icon;

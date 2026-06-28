@@ -1010,13 +1010,14 @@ export class AcademicStructurePrismaService {
         // Sections physiques rattachées (table `classes`, modèle `Class`).
         // Sert à afficher les chips CE1 A, CE1 B... dans le sous-onglet Classes
         // et à calculer la capacité totale (somme des sections).
+        // ⚠️ Le modèle Class n'a pas de champ `isActive` (contrairement à
+        // AcademicClass). Toutes les sections sont actives par défaut.
         physicalClasses: {
           select: {
             id: true,
             name: true,
             code: true,
             capacity: true,
-            isActive: true,
           },
           orderBy: { name: 'asc' },
         },

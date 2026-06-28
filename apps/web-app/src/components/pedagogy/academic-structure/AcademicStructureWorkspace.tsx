@@ -74,12 +74,13 @@ interface AcademicClassRow {
   room?: { id: string; roomCode: string; roomName: string } | null;
   // Sections physiques rattachées (table `classes`, modèle `Class`).
   // Affichées sous forme de chips dans le sous-onglet Classes.
+  // ⚠️ Le modèle Class n'a pas de champ `isActive` — toutes les sections
+  // sont considérées comme actives.
   physicalClasses?: Array<{
     id: string;
     name: string;
     code: string;
     capacity?: number | null;
-    isActive: boolean;
   }>;
 }
 
@@ -1781,12 +1782,7 @@ export function AcademicStructureWorkspace() {
                             {sections.map((s) => (
                               <span
                                 key={s.id}
-                                className={cn(
-                                  'inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium border',
-                                  s.isActive
-                                    ? 'bg-slate-100 text-slate-800 border-slate-200'
-                                    : 'bg-slate-50 text-slate-400 border-slate-200 line-through',
-                                )}
+                                className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium border bg-slate-100 text-slate-800 border-slate-200"
                                 title={`Code : ${s.code}${s.capacity != null ? ` · Capacité : ${s.capacity}` : ''}`}
                               >
                                 {s.name}

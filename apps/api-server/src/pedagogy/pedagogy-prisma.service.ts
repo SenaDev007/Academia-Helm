@@ -239,24 +239,31 @@ export class PedagogyPrismaService {
    * Récupère les affectations d'une classe
    */
   async getClassSubjects(classId: string, tenantId: string, academicYearId?: string) {
-    // ⚠️ IMPORTANT : Le paramètre `classId` reçu du frontend est en réalité
-    // un `AcademicClass.id` (table pedagogy_academic_classes).
-    // Or le modèle ClassSubject a DEUX colonnes :
-    //   - `classId`        → pointe vers `Class.id` (classes physiques, table `classes`)
-    //   - `academicClassId`→ pointe vers `AcademicClass.id` (classes pédagogiques,
-    //                        table `pedagogy_academic_classes`)
+    // ⚠️ IMPORTANT : Le paramètre `classId` reçu du frontend peut être :
+    //   - un `AcademicClass.id` (table pedagogy_academic_classes) — cas le plus fréquent
+    //   - un `Class.id` (table classes, sections physiques) — rare mais possible
     //
-    // Dans la pratique, `createBulkClassSubjects` ne remplit QUE `academicClassId`
-    // (jamais `classId`). Il faut donc filtrer par `academicClassId` pour retrouver
-    // les liens — sinon on retourne toujours 0 matière (tous les `classId` sont NULL).
-    const where: any = {
-      academicClassId: classId,
-      tenantId,
-    };
+    // Le modèle ClassSubject a DEUX colonnes :
+    //   - `classId`        → pointe vers `Class.id` (classes physiques, table `classes`)
+    //   - `academicClassId`→ pointe vers `AcademicClass.id` (classes pédagogiques)
+    //
+    // En production, `createBulkClassSubjects` ne remplit QUE `academicClassId`.
+    // Mais par sécurité, on cherche dans LES DEUX colonnes (avec OR) pour récupérer
+    // tous les liens quelle que soit la façon dont ils ont été créés.
 
+    const baseWhere: any = { tenantId };
     if (academicYearId) {
-      where.academicYearId = academicYearId;
+      baseWhere.academicYearId = academicYearId;
     }
+
+    // Recherche par academicClassId (cas normal) OU par classId (cas rare)
+    const where: any = {
+      ...baseWhere,
+      OR: [
+        { academicClassId: classId },
+        { classId: classId },
+      ],
+    };
 
     const results = await this.prisma.classSubject.findMany({
       where,
@@ -272,8 +279,6 @@ export class PedagogyPrismaService {
     });
 
     // Log défensif pour diagnostiquer le bug "Aucune matière affectée"
-    // Si tu vois ce log avec count=0 alors que la BDD a des liens, c'est que
-    // le paramètre classId reçu n'est pas un AcademicClass.id valide.
     console.log(`[getClassSubjects] classId=${classId} tenantId=${tenantId} yearId=${academicYearId ?? 'none'} → ${results.length} résultat(s)`);
 
     return results;

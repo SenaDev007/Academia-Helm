@@ -133,9 +133,16 @@ export default function AssignmentsWorkspace() {
         pedagogyService.getAcademicClasses(academicYear.id),
         pedagogyService.getTeacherProfiles(academicYear.id),
       ]);
-      setClasses(classesData || []);
+      // Filtrer : ne garder que les classes ACTIVES (isActive=true).
+      // Les classes inactives (ex: Secondaire non activé dans Paramètres)
+      // ne doivent pas apparaître dans le panneau de gauche.
+      // Cela inclut aussi les classes dont le niveau (AcademicLevel.isActive)
+      // est désactivé — le backend les marque comme isActive=false lors de la sync.
+      const activeClasses = (classesData || []).filter((c: any) => c.isActive !== false);
+      setClasses(activeClasses);
       setTeachers(teachersData || []);
-      if (classesData && classesData.length > 0) setSelectedClassId(classesData[0].id);
+      if (activeClasses.length > 0) setSelectedClassId(activeClasses[0].id);
+      else setSelectedClassId(null);
     } catch (e) {
       console.error(e);
     } finally {

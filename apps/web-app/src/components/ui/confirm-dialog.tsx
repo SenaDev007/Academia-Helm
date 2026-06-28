@@ -139,7 +139,7 @@ export function ConfirmDialog({
         className="sm:max-w-[440px] p-0 overflow-hidden rounded-2xl ring-1 ring-slate-200/60 shadow-xl"
       >
         {/* ─── Header section with icon + title + description ─── */}
-        <div className="px-7 pt-7 pb-5">
+        <div className="px-7 pt-7 pb-5 text-slate-900">
           <div className="flex items-start gap-4">
             <div
               className={cn(
@@ -154,11 +154,11 @@ export function ConfirmDialog({
               <DialogTitle className="text-lg font-bold text-slate-900 leading-tight">
                 {state.title || 'Confirmation'}
               </DialogTitle>
-              <DialogDescription className="mt-2 text-sm text-slate-600 leading-relaxed whitespace-pre-line">
+              <DialogDescription className="mt-2 text-sm text-slate-700 leading-relaxed whitespace-pre-line">
                 {state.description}
               </DialogDescription>
               {state.details && (
-                <div className="mt-3 text-xs text-slate-600 bg-slate-50 rounded-lg px-3.5 py-2.5 border border-slate-200/70 leading-relaxed">
+                <div className="mt-3 text-xs text-slate-700 bg-slate-50 rounded-lg px-3.5 py-2.5 border border-slate-200/70 leading-relaxed whitespace-pre-line">
                   {state.details}
                 </div>
               )}

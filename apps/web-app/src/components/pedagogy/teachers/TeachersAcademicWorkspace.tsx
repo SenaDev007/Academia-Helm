@@ -446,6 +446,13 @@ export default function TeachersAcademicWorkspace() {
      setSubjects(data || []);
   }, [academicYear?.id]);
 
+  // Charger les matières au montage + à l'ouverture du modal d'habilitation.
+  // Nécessaire pour le calcul dynamique du nombre de matières dans la carte
+  // statistique "Habilitations" (Maternelle/Primaire = toutes les matières du niveau).
+  useEffect(() => {
+    loadSubjects();
+  }, [loadSubjects]);
+
   useEffect(() => {
     if (modal === 'add-qualification') loadSubjects();
   }, [modal, loadSubjects]);

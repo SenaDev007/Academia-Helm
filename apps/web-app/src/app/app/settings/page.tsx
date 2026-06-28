@@ -205,6 +205,13 @@ export default function SettingsPage() {
   const [bulkCount, setBulkCount] = useState<number>(3);
   const [bulkSuffixType, setBulkSuffixType] = useState<'letters' | 'numbers'>('letters');
   const [bulkCapacity, setBulkCapacity] = useState<number | ''>('');
+  // ── Sections par classe (subdivisions A/B/C, table `classes`) ──
+  const [classSections, setClassSections] = useState<any[]>([]);
+  const [sectionsBusy, setSectionsBusy] = useState(false);
+  const [newSectionAcademicClassId, setNewSectionAcademicClassId] = useState<string | null>(null);
+  const [newSectionName, setNewSectionName] = useState('');
+  const [newSectionCode, setNewSectionCode] = useState('');
+  const [newSectionCapacity, setNewSectionCapacity] = useState<number | ''>('');
   const [bilingualForm, setBilingualForm] = useState<any>({});
   const [bilingualBillingImpact, setBilingualBillingImpact] = useState<{ monthly?: number; annual?: number; currency?: string } | null>(null);
   const [bilingualMigrationNeeded, setBilingualMigrationNeeded] = useState<boolean | null>(null);
@@ -956,7 +963,7 @@ export default function SettingsPage() {
     }
     const name = (newClassroomName || '').trim();
     if (!name) {
-      showToast('error', 'Nom de la classe physique requis (ex. CE1 A).');
+      showToast('error', 'Nom de la classe officielle requis (ex. CE1).');
       return;
     }
     try {
@@ -975,7 +982,7 @@ export default function SettingsPage() {
       setNewClassroomCapacity('');
       const list = await settingsService.getEducationClassrooms(structureYearIdOrActive, effectiveTenantId ?? undefined);
       setEducationClassrooms(Array.isArray(list) ? list : []);
-      showToast('success', 'Classe physique créée.');
+      showToast('success', 'Classe officielle créée.');
     } catch (error: any) {
       showToast('error', error.message || 'Erreur');
     } finally {
@@ -1121,6 +1128,166 @@ export default function SettingsPage() {
       setStructureBusy(false);
     }
   };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // SECTIONS PAR CLASSE (subdivisions A/B/C, table `classes`)
+  // ─────────────────────────────────────────────────────────────────────────
+  // Les sections sont les subdivisions physiques d'une classe officielle.
+  // Exemples : « CE1 A », « CE1 B », « 6ème 1 ».
+  // Chaque classe officielle (AcademicClass) a AU MOINS une section, créée
+  // automatiquement par le backend. L'UI ci-dessous permet d'en ajouter
+  // manuellement (pour les écoles avec plusieurs sections par classe).
+
+  const loadClassSections = useCallback(async () => {
+    if (!structureYearIdOrActive) {
+      setClassSections([]);
+      return;
+    }
+    try {
+      const res = await fetch(
+        `/api/pedagogy/academic-structure/sections?academicYearId=${structureYearIdOrActive}`,
+        { credentials: 'include', cache: 'no-store' }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setClassSections(Array.isArray(data) ? data : []);
+      } else {
+        setClassSections([]);
+      }
+    } catch (err) {
+      console.error('Failed to load class sections:', err);
+      setClassSections([]);
+    }
+  }, [structureYearIdOrActive]);
+
+  useEffect(() => {
+    loadClassSections();
+  }, [loadClassSections]);
+
+  const handleCreateClassSection = async () => {
+    if (!newSectionAcademicClassId || !structureYearIdOrActive) {
+      showToast('error', 'Sélectionnez une classe officielle.');
+      return;
+    }
+    const name = (newSectionName || '').trim();
+    if (!name) {
+      showToast('error', 'Nom de la section requis (ex. « CE1 A »).');
+      return;
+    }
+    // Auto-générer le code si vide (ex : « CE1 A » → « CE1_A »)
+    const code = (newSectionCode || '').trim() || name.replace(/\s+/g, '_').toUpperCase();
+    try {
+      setSectionsBusy(true);
+      const res = await fetch(`/api/pedagogy/academic-structure/sections`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          academicYearId: structureYearIdOrActive,
+          academicClassId: newSectionAcademicClassId,
+          name,
+          code,
+          capacity: newSectionCapacity === '' ? undefined : Number(newSectionCapacity),
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || err.error || `Erreur ${res.status}`);
+      }
+      setNewSectionAcademicClassId(null);
+      setNewSectionName('');
+      setNewSectionCode('');
+      setNewSectionCapacity('');
+      await loadClassSections();
+      showToast('success', 'Section créée.');
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur');
+    } finally {
+      setSectionsBusy(false);
+    }
+  };
+
+  const handleDeleteClassSection = async (id: string, name: string) => {
+    if (!confirm(`Supprimer la section « ${name} » ? Cette action est irréversible.`)) return;
+    try {
+      setSectionsBusy(true);
+      const res = await fetch(`/api/pedagogy/academic-structure/sections/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || err.error || `Erreur ${res.status}`);
+      }
+      await loadClassSections();
+      showToast('success', 'Section supprimée.');
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur');
+    } finally {
+      setSectionsBusy(false);
+    }
+  };
+
+  const handleSyncSections = async () => {
+    if (!structureYearIdOrActive) return;
+    try {
+      setSectionsBusy(true);
+      const res = await fetch(
+        `/api/pedagogy/academic-structure/sections/sync?academicYearId=${structureYearIdOrActive}`,
+        { method: 'POST', credentials: 'include' }
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || err.error || `Erreur ${res.status}`);
+      }
+      const result = await res.json();
+      await loadClassSections();
+      showToast(
+        'success',
+        `Synchronisation terminée : ${result.created} section(s) créée(s), ${result.existing} existante(s).`
+      );
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur');
+    } finally {
+      setSectionsBusy(false);
+    }
+  };
+
+  // Liste des AcademicClass actives pour cette année (pour le <select> du formulaire)
+  // On utilise les classrooms déjà chargés (ils sont liés aux AcademicClass via le sync auto)
+  const academicClassesForSections = useMemo(() => {
+    // Les classrooms sont chargés pour cette année ; on en déduit les classes officielles uniques
+    const seen = new Set<string>();
+    return sortedClassrooms
+      .filter((c: any) => {
+        const key = c.grade?.id || c.name;
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((c: any) => ({
+        id: c.id, // Classroom.id — sera mappé côté backend via l'AcademicClass correspondante
+        label: c.name,
+        code: c.code,
+      }));
+  }, [sortedClassrooms]);
+
+  // Groupage des sections par classe officielle pour l'affichage
+  const sectionsByOfficialClass = useMemo(() => {
+    const map: Record<string, { officialClass: any; sections: any[] }> = {};
+    for (const s of classSections) {
+      const ocId = s.officialClass?.id || 'none';
+      if (!map[ocId]) {
+        map[ocId] = { officialClass: s.officialClass, sections: [] };
+      }
+      map[ocId].sections.push(s);
+    }
+    return Object.values(map).sort((a, b) => {
+      const an = a.officialClass?.name || '';
+      const bn = b.officialClass?.name || '';
+      return an.localeCompare(bn);
+    });
+  }, [classSections]);
 
   const handleSaveBilingual = async () => {
     try {
@@ -2424,7 +2591,7 @@ export default function SettingsPage() {
                 Hiérarchie académique officielle (élèves, notes, bulletins et ORION en dépendent) :
               </p>
               <p className="text-xs text-gray-500 mb-4">
-                École → Année scolaire → Niveau (Maternelle / Primaire / Secondaire) → Cycle → Classe pédagogique (CE1, 6ème…) → Classe physique (CE1 A, CE1 B, 6ème 2…).
+                École → Année scolaire → Niveau (Maternelle / Primaire / Secondaire) → Cycle → Classe officielle (CE1, 6ème…) → Section physique (CE1 A, CE1 B, 6ème 2…).
               </p>
               {levels.length === 0 ? (
                 <div className="py-6 text-center">
@@ -2489,9 +2656,9 @@ export default function SettingsPage() {
 
             {levels.length > 0 && (
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Classes physiques (par année)</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Classe officielle (par année)</h3>
                 <p className="text-sm text-gray-600 mb-4">
-                  Créez les classes réelles (CE1 A, CE1 B, 6ème 1…) pour chaque année scolaire. Une classe physique dépend d&apos;une année et d&apos;un grade.
+                  Déclarez les classes officielles (CE1, CM2, 6ème…) pour chaque année scolaire. Une classe officielle correspond à un grade défini dans la structure pédagogique ci-dessus. Pour subdiviser une classe en sections A/B/C (ex : « CE1 A », « CE1 B »), utilisez la section « Sections par classe » plus bas.
                 </p>
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Année scolaire</label>
@@ -2679,7 +2846,7 @@ export default function SettingsPage() {
                       </div>
                     )}
                     {sortedClassrooms.length === 0 ? (
-                      <p className="text-sm text-gray-500 py-4">Aucune classe physique pour cette année. Ajoutez-en ci-dessus.</p>
+                      <p className="text-sm text-gray-500 py-4">Aucune classe officielle pour cette année. Ajoutez-en ci-dessus.</p>
                     ) : (
                       <div className="overflow-x-auto">
                         <table className="min-w-full text-sm border border-gray-200 rounded-md overflow-hidden">
@@ -2796,6 +2963,137 @@ export default function SettingsPage() {
                       </div>
                     )}
                   </>
+                )}
+              </div>
+            )}
+
+            {/* ─── SECTIONS PAR CLASSE (subdivisions A/B/C, table `classes`) ─── */}
+            {levels.length > 0 && (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <div className="flex items-start justify-between mb-2">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-1">Sections par classe</h3>
+                    <p className="text-sm text-gray-600">
+                      Subdivisions physiques des classes officielles (ex : « CE1 A », « CE1 B »). Chaque classe officielle a au moins une section, créée automatiquement. Les élèves, bulletins et affectations enseignants se font au niveau des sections.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSyncSections}
+                    disabled={sectionsBusy || !structureYearIdOrActive}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-md border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+                    title="Recréer les sections manquantes pour chaque classe officielle"
+                  >
+                    Synchroniser
+                  </button>
+                </div>
+
+                {/* Formulaire d'ajout d'une section */}
+                <div className="mt-4 mb-4 p-4 bg-gray-50 rounded-md border border-gray-200">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Ajouter une section</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Classe officielle</label>
+                      <select
+                        value={newSectionAcademicClassId ?? ''}
+                        onChange={(e) => setNewSectionAcademicClassId(e.target.value || null)}
+                        className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                      >
+                        <option value="">Choisir…</option>
+                        {academicClassesForSections.map((c: any) => (
+                          <option key={c.id} value={c.id}>{c.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Nom de la section</label>
+                      <input
+                        type="text"
+                        placeholder="ex : CE1 A"
+                        value={newSectionName}
+                        onChange={(e) => setNewSectionName(e.target.value)}
+                        className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Code (optionnel)</label>
+                      <input
+                        type="text"
+                        placeholder="ex : CE1_A"
+                        value={newSectionCode}
+                        onChange={(e) => setNewSectionCode(e.target.value)}
+                        className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Capacité</label>
+                      <input
+                        type="number"
+                        min={1}
+                        placeholder="—"
+                        value={newSectionCapacity}
+                        onChange={(e) => setNewSectionCapacity(e.target.value === '' ? '' : parseInt(e.target.value, 10) || '')}
+                        className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleCreateClassSection}
+                      disabled={sectionsBusy}
+                      className="text-sm font-semibold px-4 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {sectionsBusy ? 'Création…' : 'Ajouter la section'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Liste des sections groupées par classe officielle */}
+                {sectionsByOfficialClass.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-4">
+                    {structureYearIdOrActive
+                      ? 'Aucune section pour cette année. Cliquez sur « Synchroniser » pour créer automatiquement une section par défaut pour chaque classe officielle.'
+                      : 'Sélectionnez une année scolaire.'}
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {sectionsByOfficialClass.map(({ officialClass, sections }) => (
+                      <div key={officialClass?.id || 'none'} className="border border-gray-200 rounded-md p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <h5 className="text-sm font-semibold text-gray-800">
+                            {officialClass?.name || 'Classe inconnue'}
+                            <span className="ml-2 text-xs font-normal text-gray-500">
+                              {sections.length} section{sections.length > 1 ? 's' : ''}
+                            </span>
+                          </h5>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {sections.map((s: any) => (
+                            <span
+                              key={s.id}
+                              className="inline-flex items-center gap-2 rounded-md bg-slate-100 border border-slate-300 pl-3 pr-1.5 py-1 text-sm"
+                              title={`Code : ${s.code}${s.capacity ? ` · Capacité : ${s.capacity}` : ''}`}
+                            >
+                              <span className="font-medium text-slate-800">{s.name}</span>
+                              {s.capacity != null && (
+                                <span className="text-xs text-slate-500">({s.capacity} places)</span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteClassSection(s.id, s.name)}
+                                disabled={sectionsBusy}
+                                className="ml-1 text-slate-400 hover:text-red-600 disabled:opacity-50"
+                                title="Supprimer cette section"
+                              >
+                                ×
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             )}

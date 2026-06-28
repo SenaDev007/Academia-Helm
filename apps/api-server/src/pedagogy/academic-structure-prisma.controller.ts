@@ -9,6 +9,7 @@ import {
   Get,
   Post,
   Put,
+  Delete,
   Body,
   Param,
   Query,
@@ -161,6 +162,70 @@ export class AcademicStructurePrismaController {
   @Put('classes/:id/deactivate')
   async deactivateClass(@Param('id') id: string, @TenantId() tenantId: string) {
     return this.service.deactivateClass(id, tenantId);
+  }
+
+  // ---------- Sections physiques (subdivisions A/B/C, table `classes`) ----------
+  //
+  // ARCHITECTURE 3 COUCHES (voir commentaire dans academic-structure-prisma.service.ts) :
+  //   1. Classroom       = classe officielle par année (Paramètres > Structure)
+  //   2. AcademicClass   = abstraction pédagogique (Matière, Emplois du temps)
+  //   3. Class (section) = subdivision physique réelle (Élèves, Bulletins, Affectations)
+  //
+  // Les endpoints ci-dessous permettent de gérer manuellement les sections
+  // (subdivisions A/B/C) depuis l'UI « Sections par classe » de Paramètres.
+
+  /** GET /sections?academicYearId=... — liste toutes les sections de l'année */
+  @Get('sections')
+  async findAllSections(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!academicYearId) return [];
+    return this.service.findAllClassSections(tenantId, academicYearId);
+  }
+
+  /** POST /sections — crée une nouvelle section (ex : « CE1 A ») */
+  @Post('sections')
+  async createSection(
+    @TenantId() tenantId: string,
+    @Body() body: {
+      academicYearId: string;
+      academicClassId: string;
+      name: string;
+      code: string;
+      capacity?: number;
+      language?: string;
+    },
+  ) {
+    return this.service.createClassSection({
+      ...body,
+      tenantId,
+    });
+  }
+
+  /** DELETE /sections/:id — supprime une section (avec garde « au moins une section par classe ») */
+  @Delete('sections/:id')
+  async deleteSection(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.service.deleteClassSection(id, tenantId);
+  }
+
+  /**
+   * POST /sections/sync?academicYearId=... — force la synchronisation automatique
+   * (crée une section par défaut pour chaque AcademicClass active sans section).
+   * Utile pour initialiser la table `classes` après déploiement.
+   */
+  @Post('sections/sync')
+  async syncSections(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!academicYearId) {
+      return { error: 'academicYearId est requis' };
+    }
+    return this.service.syncClassSectionsFromAcademicClasses(tenantId, academicYearId);
   }
 
   /**

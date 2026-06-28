@@ -2311,6 +2311,33 @@ model StudentPhoto {
   @@map("student_photos")
 }
 
+/// ============================================================================
+/// MODÈLE `Class` — SECTION PHYSIQUE RÉELLE (subdivision A/B/C d'une classe)
+/// ============================================================================
+/// ARCHITECTURE 3 COUCHES — ne pas confondre :
+///
+///   1. `Classroom` (table `classrooms`) : déclaration annuelle d'une classe
+///      par grade (Paramètres > Structure > « Classe officielle par année »).
+///      Liée à `EducationGrade` via `gradeId`.
+///
+///   2. `AcademicClass` (table `pedagogy_academic_classes`) : abstraction
+///      pédagogique synchronisée automatiquement depuis `Classroom`. Utilisée
+///      par Matière & Programme, Emplois du temps. Liée à `AcademicLevel` et
+///      `AcademicCycle`.
+///
+///   3. `Class` (table `classes`, CE MODÈLE) : section physique réelle d'une
+///      `AcademicClass`. Exemples : « CE1 A », « CE1 B », « 6ème 1 ».
+///      Utilisée par Élèves (inscriptions), Bulletins, Affectation enseignants,
+///      Présences, etc. Liée à `AcademicClass` via `officialClassId`.
+///
+/// INVARIANT : chaque `AcademicClass` active a TOUJOURS au moins une section
+/// `Class` (créée automatiquement par `syncClassSectionsFromAcademicClasses()`
+/// dans academic-structure-prisma.service.ts).
+///
+/// Pour les écoles avec une seule section par classe (cas Eveil d'Afrique),
+/// une section par défaut sans suffixe est créée. Les écoles avec plusieurs
+/// sections peuvent en ajouter via l'UI « Sections par classe » (Paramètres).
+/// ============================================================================
 model Class {
   id                         String                      @id @default(uuid())
   tenantId                   String
@@ -7224,12 +7251,17 @@ model TeacherSubject {
 model ClassSubject {
   id              String                   @id @default(uuid())
   tenantId        String
+  /// @deprecated — toujours NULL en production. La relation utilisée est `academicClassId`.
+  /// Conservé temporairement pour compat (bilingual-settings.service.ts, class-diaries-prisma.service.ts).
+  /// À supprimer dans une migration future après refactor de ces fichiers.
   classId         String?
   subjectId       String
   academicYearId  String
   weeklyHours     Int                      @default(0)
   createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt
+  /// Relation utilisée en production : lie ce ClassSubject à une AcademicClass
+  /// (table `pedagogy_academic_classes`).
   academicClassId String?
   coefficient     Float                    @default(1.0)
   classDiaries    ClassDiary[]             @relation("ClassDiaryClassSubject")

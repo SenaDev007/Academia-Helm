@@ -498,6 +498,260 @@ export class AcademicStructurePrismaService {
     }
   }
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────
+   * SYNCHRONISATION DES SECTIONS PHYSIQUES (table `classes` / modèle `Class`)
+   * ─────────────────────────────────────────────────────────────────────────
+   *
+   * ARCHITECTURE 3 COUCHES (comprendre avant de modifier) :
+   *
+   *  1. Classroom (Paramètres > Structure > « Classe officielle par année »)
+   *     ─ déclaration annuelle d'une classe par grade (ex : « CE1 » pour 2026-2027)
+   *     ─ liée à EducationGrade via gradeId
+   *
+   *  2. AcademicClass (table pedagogy_academic_classes, sync auto depuis Classroom)
+   *     ─ abstraction pédagogique utilisée par Matière & Programme, Emplois du temps
+   *     ─ sync via syncAcademicClassesFromEducationSettings()
+   *
+   *  3. Class (table `classes`, subdivisions physiques A/B/C)
+   *     ─ sections réelles : « CE1 A », « CE1 B », « CE1 C »
+   *     ─ utilisée par Élèves, Bulletins, Affectation enseignants, etc.
+   *     ─ officialClassId → AcademicClass.id (la classe officielle dont découle la section)
+   *
+   * Cette méthode assure que CHAQUE AcademicClass active ait au moins UNE section
+   * Class correspondante. Si aucune section n'existe, on en crée une par défaut
+   * (sans suffixe A/B) — cas des écoles avec une seule section par classe.
+   *
+   * Les écoles avec plusieurs sections (CE1 A, CE1 B) peuvent en ajouter via
+   * l'UI « Sections par classe » dans Paramètres > Structure.
+   */
+  async syncClassSectionsFromAcademicClasses(
+    tenantId: string,
+    academicYearId: string,
+  ): Promise<{ created: number; existing: number }> {
+    let created = 0;
+    let existing = 0;
+    try {
+      // Récupérer les AcademicClass actives pour cette année
+      const academicClasses = await this.prisma.academicClass.findMany({
+        where: { tenantId, academicYearId, isActive: true },
+        include: {
+          level: { select: { id: true, name: true } },
+        },
+      });
+      if (academicClasses.length === 0) return { created, existing };
+
+      // Charger tous les SchoolLevels du tenant pour résoudre level.name → schoolLevelId
+      // (ex : « Maternelle » → SchoolLevel.code='MATERNELLE')
+      const schoolLevels = await this.prisma.schoolLevel.findMany({
+        where: { tenantId },
+        select: { id: true, code: true, name: true },
+      });
+
+      // Map : level.name normalisé → schoolLevel.id
+      // On essaie plusieurs variantes : code exact, name exact, puis matching partiel
+      const resolveSchoolLevelId = (levelName: string): string | null => {
+        const ln = (levelName || '').trim().toUpperCase();
+        // 1. Match exact sur code (ex: « MATERNELLE »)
+        let sl = schoolLevels.find(s => (s.code || '').toUpperCase() === ln);
+        if (sl) return sl.id;
+        // 2. Match exact sur name
+        sl = schoolLevels.find(s => (s.name || '').toUpperCase() === ln);
+        if (sl) return sl.id;
+        // 3. Match partiel (ex: « Maternelle » dans « MATERNELLE »)
+        sl = schoolLevels.find(s => {
+          const sc = (s.code || '').toUpperCase();
+          const sn = (s.name || '').toUpperCase();
+          return sc.includes(ln) || sn.includes(ln) || ln.includes(sc) || ln.includes(sn);
+        });
+        return sl?.id ?? null;
+      };
+
+      await this.prisma.$transaction(async (tx) => {
+        for (const ac of academicClasses) {
+          // Vérifier s'il existe déjà au moins une section pour cette AcademicClass
+          const existingSection = await tx.class.findFirst({
+            where: { tenantId, academicYearId, officialClassId: ac.id },
+            select: { id: true },
+          });
+          if (existingSection) {
+            existing++;
+            continue;
+          }
+
+          // Résoudre schoolLevelId depuis level.name
+          const schoolLevelId = resolveSchoolLevelId(ac.level?.name || '');
+          if (!schoolLevelId) {
+            this.logger.warn(
+              `syncClassSections: impossible de résoudre schoolLevelId pour le niveau "${ac.level?.name}" (AcademicClass ${ac.code}). Section non créée.`,
+            );
+            continue;
+          }
+
+          // Créer une section par défaut (sans suffixe A/B)
+          await tx.class.create({
+            data: {
+              ...prismaCreateDefaults(),
+              tenantId,
+              academicYearId,
+              schoolLevelId,
+              officialClassId: ac.id,
+              name: ac.name,
+              code: ac.code,
+              capacity: ac.capacity,
+              ...(ac.languageTrack ? { language: ac.languageTrack } : {}),
+            },
+          });
+          created++;
+        }
+      });
+
+      if (created > 0) {
+        this.logger.log(
+          `syncClassSections: ${created} section(s) créée(s), ${existing} existante(s) pour le tenant ${tenantId} / année ${academicYearId}.`,
+        );
+      }
+    } catch (e) {
+      this.logger.warn(
+        `syncClassSectionsFromAcademicClasses: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+    return { created, existing };
+  }
+
+  /**
+   * Crée manuellement une nouvelle section (subdivision A/B/C) rattachée à une AcademicClass.
+   * Utilisé par l'UI « Sections par classe » dans Paramètres > Structure.
+   */
+  async createClassSection(data: {
+    tenantId: string;
+    academicYearId: string;
+    academicClassId: string;
+    name: string; // ex : « CE1 A »
+    code: string; // ex : « CE1_A »
+    capacity?: number;
+    language?: string;
+  }): Promise<any> {
+    // Vérifier que l'AcademicClass existe et appartient au tenant
+    const academicClass = await this.prisma.academicClass.findFirst({
+      where: { id: data.academicClassId, tenantId: data.tenantId },
+      include: { level: { select: { name: true } } },
+    });
+    if (!academicClass) {
+      throw new NotFoundException(`Classe officielle introuvable (id=${data.academicClassId}).`);
+    }
+
+    // Vérifier l'unicité du code de section pour cette année + tenant
+    const existing = await this.prisma.class.findFirst({
+      where: { tenantId: data.tenantId, academicYearId: data.academicYearId, code: data.code },
+    });
+    if (existing) {
+      throw new BadRequestException(`Une section avec le code "${data.code}" existe déjà pour cette année.`);
+    }
+
+    // Résoudre schoolLevelId depuis level.name
+    const schoolLevels = await this.prisma.schoolLevel.findMany({
+      where: { tenantId: data.tenantId },
+      select: { id: true, code: true, name: true },
+    });
+    const ln = (academicClass.level?.name || '').trim().toUpperCase();
+    let schoolLevelId: string | null = null;
+    for (const sl of schoolLevels) {
+      const sc = (sl.code || '').toUpperCase();
+      const sn = (sl.name || '').toUpperCase();
+      if (sc === ln || sn === ln || sc.includes(ln) || sn.includes(ln)) {
+        schoolLevelId = sl.id;
+        break;
+      }
+    }
+    if (!schoolLevelId) {
+      throw new BadRequestException(
+        `Impossible de résoudre le niveau scolaire pour "${academicClass.level?.name}". Vérifiez la configuration des SchoolLevels.`,
+      );
+    }
+
+    return this.prisma.class.create({
+      data: {
+        ...prismaCreateDefaults(),
+        tenantId: data.tenantId,
+        academicYearId: data.academicYearId,
+        schoolLevelId,
+        officialClassId: data.academicClassId,
+        name: data.name,
+        code: data.code,
+        capacity: data.capacity ?? null,
+        ...(data.language ? { language: data.language } : {}),
+      },
+      include: {
+        officialClass: { select: { id: true, name: true, code: true } },
+        schoolLevel: { select: { id: true, code: true, name: true } },
+      },
+    });
+  }
+
+  /**
+   * Supprime une section (subdivision A/B/C).
+   * Si c'est la dernière section de l'AcademicClass, on empêche la suppression
+   * (il faut toujours au moins une section par classe officielle).
+   */
+  async deleteClassSection(id: string, tenantId: string): Promise<{ success: boolean }> {
+    const section = await this.prisma.class.findFirst({
+      where: { id, tenantId },
+      select: { id: true, officialClassId: true, academicYearId: true, name: true },
+    });
+    if (!section) {
+      throw new NotFoundException(`Section introuvable (id=${id}).`);
+    }
+
+    // Si la section est liée à une AcademicClass, vérifier qu'il en reste au moins une
+    if (section.officialClassId) {
+      const otherSectionsCount = await this.prisma.class.count({
+        where: {
+          tenantId,
+          academicYearId: section.academicYearId,
+          officialClassId: section.officialClassId,
+          id: { not: id },
+        },
+      });
+      if (otherSectionsCount === 0) {
+        throw new BadRequestException(
+          `Impossible de supprimer la dernière section de la classe. ` +
+          `Chaque classe officielle doit avoir au moins une section.`,
+        );
+      }
+    }
+
+    await this.prisma.class.delete({ where: { id } });
+    this.logger.log(`Section ${id} (« ${section.name} ») supprimée par le tenant ${tenantId}.`);
+    return { success: true };
+  }
+
+  /**
+   * Liste toutes les sections (Class) d'une année scolaire, groupées par AcademicClass.
+   */
+  async findAllClassSections(tenantId: string, academicYearId: string) {
+    return this.prisma.class.findMany({
+      where: { tenantId, academicYearId },
+      include: {
+        officialClass: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            level: { select: { id: true, name: true } },
+            cycle: { select: { id: true, name: true } },
+          },
+        },
+        schoolLevel: { select: { id: true, code: true, name: true } },
+      },
+      orderBy: [
+        { officialClass: { level: { orderIndex: 'asc' } } },
+        { officialClass: { cycle: { orderIndex: 'asc' } } },
+        { name: 'asc' },
+      ],
+    });
+  }
+
   /** 2nd cycle du secondaire (Paramètres) : libellés type « 2nd cycle », « 2ème cycle ». */
   private isEducationSecondCycleCycleName(cycleName: string): boolean {
     const key = normalizeCycleNameKey(cycleName);
@@ -738,6 +992,9 @@ export class AcademicStructurePrismaService {
   ) {
     await this.syncAcademicClassesFromEducationSettings(tenantId, academicYearId);
     await this.syncAcademicClassLanguageTracksFromBilingualSettings(tenantId, academicYearId);
+    // Assure que chaque AcademicClass active a au moins une section Class correspondante
+    // (table `classes`) — débloque Élèves, Bulletins, Affectation enseignants qui dépendent de Class.
+    await this.syncClassSectionsFromAcademicClasses(tenantId, academicYearId);
     const where: Record<string, unknown> = { tenantId, academicYearId };
     if (filters?.levelId) where.levelId = filters.levelId;
     if (filters?.cycleId) where.cycleId = filters.cycleId;

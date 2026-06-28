@@ -233,11 +233,14 @@ export default function AssignmentsWorkspace() {
   const handleAssignTeacher = async (teacherId: string) => {
     if (!activeSubject || !academicYear?.id) return;
     try {
-      await pedagogyService.createTeacherAssignment({
-        academicYearId: academicYear.id,
-        teacherId,
-        classSubjectId: activeSubject.id,
-        ...(selectedPhysicalClassId ? { classId: selectedPhysicalClassId } : {}),
+      await pedagogyFetch(`/api/pedagogy/teacher-class-assignments`, {
+        method: 'POST',
+        body: {
+          academicYearId: academicYear.id,
+          teacherId,
+          classSubjectId: activeSubject.id,
+          ...(selectedPhysicalClassId ? { classId: selectedPhysicalClassId } : {}),
+        },
       });
       await loadClassSubjects();
       setModal('none');
@@ -247,23 +250,30 @@ export default function AssignmentsWorkspace() {
     }
   };
 
-  /** MATERNELLE/PRIMAIRE : affecter le titulaire à TOUTES les matières de la classe */
+  /** MATERNELLE/PRIMAIRE : affecter le titulaire à TOUTES les matières de la classe physique */
   const handleAssignHomeroom = async (teacherId: string) => {
     if (!academicYear?.id || visibleClassSubjects.length === 0) return;
     setBulkAssigning(true);
     try {
       // Supprimer d'abord toutes les affectations existantes (sur les matières visibles)
       const removePromises = visibleClassSubjects
-        .flatMap(cs => (cs.assignments || []).map(a => pedagogyService.deleteTeacherAssignment(a.id)));
+        .flatMap(cs => (cs.assignments || []).map(a =>
+          pedagogyFetch(`/api/pedagogy/teacher-class-assignments/${a.id}`, { method: 'DELETE' }).catch(() => {})
+        ));
       await Promise.all(removePromises);
 
-      // Créer une affectation pour chaque matière visible
+      // Créer une affectation pour chaque matière visible, avec classId (classe physique)
+      // Le titulaire est rattaché à la CLASSE PHYSIQUE (section réelle : CI/A, CI/B),
+      // pas à la classe officielle. Un titulaire par section physique.
       const assignPromises = visibleClassSubjects.map(cs =>
-        pedagogyService.createTeacherAssignment({
-          academicYearId: academicYear.id,
-          teacherId,
-          classSubjectId: cs.id,
-          ...(selectedPhysicalClassId ? { classId: selectedPhysicalClassId } : {}),
+        pedagogyFetch(`/api/pedagogy/teacher-class-assignments`, {
+          method: 'POST',
+          body: {
+            academicYearId: academicYear.id,
+            teacherId,
+            classSubjectId: cs.id,
+            ...(selectedPhysicalClassId ? { classId: selectedPhysicalClassId } : {}),
+          },
         })
       );
       await Promise.all(assignPromises);
@@ -272,7 +282,7 @@ export default function AssignmentsWorkspace() {
       setSearch('');
       toast({
         title: '✅ Titulaire affecté',
-        description: `Le titulaire a été assigné à toutes les ${visibleClassSubjects.length} matières de la classe.`,
+        description: `Le titulaire a été assigné à toutes les ${visibleClassSubjects.length} matières de la classe physique.`,
       });
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message || "Impossible d'affecter le titulaire.", variant: 'destructive' });
@@ -287,7 +297,9 @@ export default function AssignmentsWorkspace() {
     setBulkAssigning(true);
     try {
       const removePromises = visibleClassSubjects
-        .flatMap(cs => (cs.assignments || []).map(a => pedagogyService.deleteTeacherAssignment(a.id)));
+        .flatMap(cs => (cs.assignments || []).map(a =>
+          pedagogyFetch(`/api/pedagogy/teacher-class-assignments/${a.id}`, { method: 'DELETE' }).catch(() => {})
+        ));
       await Promise.all(removePromises);
       await loadClassSubjects();
       setModal('none');
@@ -302,7 +314,7 @@ export default function AssignmentsWorkspace() {
   /** SECONDAIRE : retirer une affectation individuelle */
   const handleRemoveAssignment = async (assignmentId: string) => {
     try {
-      await pedagogyService.deleteTeacherAssignment(assignmentId);
+      await pedagogyFetch(`/api/pedagogy/teacher-class-assignments/${assignmentId}`, { method: 'DELETE' });
       await loadClassSubjects();
       toast({ title: 'Succès', description: 'Affectation retirée avec succès.' });
     } catch (e: any) {
@@ -547,8 +559,9 @@ export default function AssignmentsWorkspace() {
                   <p className="text-xs font-bold text-slate-800">Modèle Titulaire Unique</p>
                   <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed font-medium">
                     En Maternelle et en Primaire, <strong>un seul enseignant titulaire</strong> gère l'ensemble
-                    des matières de sa classe. Définissez-le ici — il sera automatiquement affecté
-                    à toutes les {visibleClassSubjects.length} matières de <strong>{selectedClass.name}</strong>.
+                    des matières de sa <strong>classe physique</strong> (section réelle : CI/A, CI/B…).
+                    Définissez-le ici — il sera automatiquement affecté
+                    à toutes les {visibleClassSubjects.length} matières.
                   </p>
                 </div>
               </div>

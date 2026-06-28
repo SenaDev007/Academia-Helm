@@ -675,9 +675,9 @@ export default function AssignmentsWorkspace() {
         isOpen={modal === 'assign-homeroom'}
         onClose={() => { setModal('none'); setSearch(''); setSelectedTeacherInModal(null); }}
         onConfirm={async () => {
-          if (selectedTeacherInModal) {
-            await handleAssignHomeroom(selectedTeacherInModal);
-          }
+          // Guard : ne pas exécuter si déjà en cours ou si aucun enseignant sélectionné
+          if (bulkAssigning || !selectedTeacherInModal) return;
+          await handleAssignHomeroom(selectedTeacherInModal);
         }}
         size="large"
       >
@@ -753,9 +753,8 @@ export default function AssignmentsWorkspace() {
         isOpen={modal === 'assign-teacher'}
         onClose={() => { setModal('none'); setSearch(''); setSelectedTeacherInModal(null); }}
         onConfirm={async () => {
-          if (selectedTeacherInModal) {
-            await handleAssignTeacher(selectedTeacherInModal);
-          }
+          if (bulkAssigning || !selectedTeacherInModal) return;
+          await handleAssignTeacher(selectedTeacherInModal);
         }}
         size="large"
       >

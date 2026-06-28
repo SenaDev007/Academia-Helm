@@ -196,8 +196,14 @@ export default function SubjectsWorkspace() {
   });
 
   // Class filtering for mass assignment
+  // Filtres du tableau principal (Affectation Classes)
   const [filterClassLevelId, setFilterClassLevelId] = useState<string>('');
   const [filterClassSeriesId, setFilterClassSeriesId] = useState<string>('');
+
+  // Filtres du modal d'affectation en masse (séparés du tableau principal
+  // pour éviter que la sélection d'un niveau dans le modal ne filtre le tableau)
+  const [modalLevelId, setModalLevelId] = useState<string>('');
+  const [modalSeriesId, setModalSeriesId] = useState<string>('');
 
   // Filtre par niveau scolaire sur le tableau catalogue
   const [filterLevelId, setFilterLevelId] = useState<string>('ALL');
@@ -225,7 +231,7 @@ export default function SubjectsWorkspace() {
 
       // Filtrer par CODE de niveau (pas par ID — mismatch EducationLevel vs SchoolLevel)
       if (filterClassLevelId) {
-        const selectedLevel = schoolLevels.find(l => l.id === filterClassLevelId);
+        const selectedLevel = schoolLevels.find(l => l.id === modalLevelId);
         if (selectedLevel) {
           const levelCode = (selectedLevel.code || selectedLevel.name || '').toUpperCase();
           const classLevelCode = ((c as any).level?.code || (c as any).level?.name || '').toUpperCase();
@@ -248,6 +254,33 @@ export default function SubjectsWorkspace() {
       return true;
     });
   }, [classes, filterClassLevelId, filterClassSeriesId, isLevelActive, schoolLevels]);
+
+  // Classes filtrées pour le MODAL d'affectation (utilise modalLevelId/modalSeriesId,
+  // séparé du tableau principal pour éviter de polluer le filtre du tableau)
+  const filteredClassesForModal = useMemo(() => {
+    return classes.filter(c => {
+      const classLevelName = (c as any).level?.name || (c as any).level?.label;
+      if (!isLevelActive(classLevelName)) return false;
+
+      if (modalLevelId) {
+        const selectedLevel = schoolLevels.find(l => l.id === modalLevelId);
+        if (selectedLevel) {
+          const levelCode = (selectedLevel.code || selectedLevel.name || '').toUpperCase();
+          const classLevelCode = ((c as any).level?.code || (c as any).level?.name || '').toUpperCase();
+          if (classLevelCode) {
+            const matches = classLevelCode === levelCode ||
+              classLevelCode.includes(levelCode) ||
+              levelCode.includes(classLevelCode);
+            if (!matches) return false;
+          }
+        }
+      }
+      if (modalSeriesId && c.seriesId !== modalSeriesId && c.series?.id !== modalSeriesId) {
+        return false;
+      }
+      return true;
+    });
+  }, [classes, modalLevelId, modalSeriesId, isLevelActive, schoolLevels]);
 
   // Modal state
   const [modal, setModal] = useState<'none' | 'create-subject' | 'edit-subject' | 'mass-assignment'>('none');
@@ -476,6 +509,9 @@ export default function SubjectsWorkspace() {
        setModal('none');
        setSelectedClasses([]);
        setSelectedSubjects([]);
+       // Réinitialiser les filtres du modal (pas ceux du tableau principal)
+       setModalLevelId('');
+       setModalSeriesId('');
        loadSubjects();
        loadClassSubjects();
      } catch (e: any) {
@@ -1200,6 +1236,32 @@ export default function SubjectsWorkspace() {
                  </button>
                </div>
 
+               {/* Filtres du tableau principal (par niveau scolaire) */}
+               <div className="flex flex-wrap items-center gap-2 mb-4">
+                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1">
+                   <Filter className="w-3.5 h-3.5" /> Filtrer par niveau :
+                 </span>
+                 <button
+                   type="button"
+                   onClick={() => { setFilterClassLevelId(''); setFilterClassSeriesId(''); }}
+                   className={cn('px-3 py-1.5 rounded-lg text-xs font-bold transition',
+                     !filterClassLevelId ? 'bg-slate-800 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400')}
+                 >
+                   Tous les niveaux
+                 </button>
+                 {schoolLevels.map(l => (
+                   <button
+                     key={l.id}
+                     type="button"
+                     onClick={() => setFilterClassLevelId(l.id)}
+                     className={cn('px-3 py-1.5 rounded-lg text-xs font-bold transition',
+                       filterClassLevelId === l.id ? 'bg-slate-800 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400')}
+                   >
+                     {l.label || l.name}
+                   </button>
+                 ))}
+               </div>
+
                {/* Table Classes Assignments */}
                <div className="overflow-x-auto rounded-xl border border-slate-200">
                  <table className="min-w-full text-sm">
@@ -1231,10 +1293,14 @@ export default function SubjectsWorkspace() {
                      ) : (
                        filteredClasses.map((c) => {
                          const classSubjects = classSubjectsMap[c.id] || [];
-                         const totalHours = classSubjects.reduce(
-                           (sum: number, cs: any) => sum + (cs.weeklyHours || 0),
-                           0
-                         );
+                         // ⚠️ IMPORTANT : weeklyHours représente le volume hebdomadaire TOTAL pour
+                         // toutes les matières ensemble (pas par matière). Comme toutes les matières
+                         // d'une même classe ont le même weeklyHours (renseigné une fois dans le modal
+                         // d'affectation), on prend la valeur du premier lien — pas la somme.
+                         // Si différentes valeurs existent (cas rare), on prend le max.
+                         const weeklyHoursTotal = classSubjects.length > 0
+                           ? Math.max(...classSubjects.map((cs: any) => cs.weeklyHours || 0))
+                           : 0;
 
                          return (
                            <tr key={c.id} className="border-b border-slate-100 hover:bg-slate-50/80">
@@ -1261,7 +1327,7 @@ export default function SubjectsWorkspace() {
                                        className="inline-flex items-center gap-1 rounded bg-slate-100 pl-2 pr-1.5 py-0.5 text-xs font-semibold text-slate-800 border border-slate-200"
                                      >
                                        <span>
-                                         {cs.subject?.name} <span className="text-[10px] text-slate-500 font-normal">(Coeff. {cs.coefficient} · {cs.weeklyHours}h)</span>
+                                         {cs.subject?.name} <span className="text-[10px] text-slate-500 font-normal">(Coeff. {cs.coefficient})</span>
                                        </span>
                                        <button
                                          type="button"
@@ -1276,21 +1342,64 @@ export default function SubjectsWorkspace() {
                                )}
                              </td>
                              <td className="px-4 py-3 text-center font-bold text-slate-700">
-                               {totalHours}h
+                               {weeklyHoursTotal > 0 ? `${weeklyHoursTotal}h` : "—"}
                              </td>
                              <td className="px-4 py-3 text-right">
-                               <button
-                                 type="button"
-                                 onClick={() => {
-                                   setSelectedClasses([c.id]);
-                                   setSelectedSubjects([]);
-                                   setModal('mass-assignment');
-                                 }}
-                                 className="text-sm font-medium hover:underline"
-                                 style={{ color: PRIMARY }}
-                               >
-                                 Affecter
-                               </button>
+                               <div className="flex items-center justify-end gap-3">
+                                 <button
+                                   type="button"
+                                   onClick={() => {
+                                     setSelectedClasses([c.id]);
+                                     setSelectedSubjects([]);
+                                     setModalLevelId('');
+                                     setModalSeriesId('');
+                                     setModal('mass-assignment');
+                                   }}
+                                   className="text-sm font-medium hover:underline"
+                                   style={{ color: PRIMARY }}
+                                 >
+                                   Affecter
+                                 </button>
+                                 <button
+                                   type="button"
+                                   onClick={() => {
+                                     setSelectedClasses([c.id]);
+                                     setSelectedSubjects(classSubjects.map((cs: any) => cs.subjectId).filter(Boolean));
+                                     setModalLevelId('');
+                                     setModalSeriesId('');
+                                     setModal('mass-assignment');
+                                   }}
+                                   disabled={classSubjects.length === 0}
+                                   className="text-sm font-medium text-amber-700 hover:underline disabled:opacity-40 disabled:no-underline"
+                                   title={classSubjects.length === 0 ? 'Aucune matiere a modifier' : 'Modifier les affectations'}
+                                 >
+                                   Modifier
+                                 </button>
+                                 <button
+                                   type="button"
+                                   onClick={() => {
+                                     if (classSubjects.length === 0) return;
+                                     if (confirm(`Supprimer toutes les affectations de ${c.name} (${classSubjects.length} matiere(s)) ?`)) {
+                                       Promise.all(
+                                         classSubjects.map((cs: any) =>
+                                           pedagogyFetch(`/api/pedagogy/class-subjects/${cs.id}`, { method: 'DELETE' }).catch(() => {})
+                                         )
+                                       ).then(() => {
+                                         loadClassSubjects();
+                                         toast({
+                                           title: "Succes",
+                                           description: `${classSubjects.length} affectation(s) supprimee(s) pour ${c.name}.`,
+                                         });
+                                       });
+                                     }
+                                   }}
+                                   disabled={classSubjects.length === 0}
+                                   className="text-sm font-medium text-red-600 hover:underline disabled:opacity-40 disabled:no-underline"
+                                   title={classSubjects.length === 0 ? 'Aucune affectation a supprimer' : 'Supprimer toutes les affectations'}
+                                 >
+                                   Supprimer
+                                 </button>
+                               </div>
                              </td>
                            </tr>
                          );
@@ -1607,7 +1716,14 @@ export default function SubjectsWorkspace() {
       <FormModal
         title="Assistant d'affectation en masse"
         isOpen={modal === 'mass-assignment'}
-        onClose={() => setModal('none')}
+        onClose={() => {
+          setModal('none');
+          setSelectedClasses([]);
+          setSelectedSubjects([]);
+          // Réinitialiser les filtres du modal (pas ceux du tableau principal)
+          setModalLevelId('');
+          setModalSeriesId('');
+        }}
         onConfirm={handleMassAssign}
         size="large"
       >
@@ -1629,9 +1745,9 @@ export default function SubjectsWorkspace() {
             <div className="flex gap-2 flex-wrap">
               <button
                 type="button"
-                onClick={() => setFilterClassLevelId('')}
+                onClick={() => setModalLevelId('')}
                 className={cn('px-4 py-2 rounded-lg text-sm font-bold transition',
-                  !filterClassLevelId ? 'bg-slate-800 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400')}
+                  !modalLevelId ? 'bg-slate-800 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400')}
               >
                 Tous les niveaux
               </button>
@@ -1639,9 +1755,9 @@ export default function SubjectsWorkspace() {
                 <button
                   key={l.id}
                   type="button"
-                  onClick={() => setFilterClassLevelId(l.id)}
+                  onClick={() => setModalLevelId(l.id)}
                   className={cn('px-4 py-2 rounded-lg text-sm font-bold transition',
-                    filterClassLevelId === l.id ? 'bg-slate-800 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400')}
+                    modalLevelId === l.id ? 'bg-slate-800 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400')}
                 >
                   {l.label || l.name}
                 </button>
@@ -1658,13 +1774,13 @@ export default function SubjectsWorkspace() {
 
               {/* Sélecteur série — uniquement si Secondaire est sélectionné */}
               {(() => {
-                const selectedLevel = schoolLevels.find(l => l.id === filterClassLevelId);
+                const selectedLevel = schoolLevels.find(l => l.id === modalLevelId);
                 const isSecondary = selectedLevel && (selectedLevel.code || selectedLevel.name || '').toUpperCase().includes('SECOND');
                 if (!isSecondary) return null;
                 return (
                   <select
-                    value={filterClassSeriesId}
-                    onChange={(e) => setFilterClassSeriesId(e.target.value)}
+                    value={modalSeriesId}
+                    onChange={(e) => setModalSeriesId(e.target.value)}
                     className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500/20"
                   >
                     <option value="">Toutes les séries</option>
@@ -1680,7 +1796,7 @@ export default function SubjectsWorkspace() {
                 <button
                   type="button"
                   onClick={() => {
-                    const allFilteredIds = filteredClasses.map(c => c.id);
+                    const allFilteredIds = filteredClassesForModal.map(c => c.id);
                     setSelectedClasses(Array.from(new Set([...selectedClasses, ...allFilteredIds])));
                   }}
                   className="text-[10px] font-bold text-slate-600 hover:text-slate-900 hover:underline"
@@ -1690,7 +1806,7 @@ export default function SubjectsWorkspace() {
                 <button
                   type="button"
                   onClick={() => {
-                    const allFilteredIds = filteredClasses.map(c => c.id);
+                    const allFilteredIds = filteredClassesForModal.map(c => c.id);
                     setSelectedClasses(selectedClasses.filter(id => !allFilteredIds.includes(id)));
                   }}
                   className="text-[10px] font-bold text-slate-600 hover:text-slate-900 hover:underline"
@@ -1700,10 +1816,10 @@ export default function SubjectsWorkspace() {
               </div>
 
               <div className="bg-slate-50 rounded-lg p-4 max-h-60 overflow-y-auto space-y-2 border border-slate-200">
-                {filteredClasses.length === 0 ? (
+                {filteredClassesForModal.length === 0 ? (
                   <p className="text-xs text-slate-400 text-center py-6">Aucune classe ne correspond à ce niveau.</p>
                 ) : (
-                  filteredClasses.map(c => (
+                  filteredClassesForModal.map(c => (
                     <label key={c.id} className="flex items-center gap-3 p-2 hover:bg-white rounded-lg transition-colors cursor-pointer group border border-transparent hover:border-slate-200">
                       <input
                         type="checkbox"
@@ -1728,7 +1844,7 @@ export default function SubjectsWorkspace() {
                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
                  Étape 3 : Matières ({(() => {
                    // Filtrer les matières par CODE de niveau (pas par ID)
-                   const selectedLevel = schoolLevels.find(l => l.id === filterClassLevelId);
+                   const selectedLevel = schoolLevels.find(l => l.id === modalLevelId);
                    const levelCode = selectedLevel ? (selectedLevel.code || selectedLevel.name || '').toUpperCase() : '';
                    return subjects.filter(s => {
                      if (!levelCode) return true;
@@ -1744,7 +1860,7 @@ export default function SubjectsWorkspace() {
                    type="button"
                    onClick={() => {
                      // Filtrer par CODE de niveau
-                     const selectedLevel = schoolLevels.find(l => l.id === filterClassLevelId);
+                     const selectedLevel = schoolLevels.find(l => l.id === modalLevelId);
                      const levelCode = selectedLevel ? (selectedLevel.code || selectedLevel.name || '').toUpperCase() : '';
                      const matchedSubjects = subjects.filter(s => {
                        if (!levelCode) return true;
@@ -1770,7 +1886,7 @@ export default function SubjectsWorkspace() {
                <div className="bg-slate-50 rounded-lg p-4 max-h-60 overflow-y-auto space-y-2 border border-slate-200">
                 {(() => {
                   // Filtrer les matières par CODE de niveau (pas par ID)
-                  const selectedLevel = schoolLevels.find(l => l.id === filterClassLevelId);
+                  const selectedLevel = schoolLevels.find(l => l.id === modalLevelId);
                   const levelCode = selectedLevel ? (selectedLevel.code || selectedLevel.name || '').toUpperCase() : '';
                   const filteredSubjects = subjects.filter(s => {
                     if (!levelCode) return true;

@@ -378,19 +378,27 @@ export default function AssignmentsWorkspace() {
     return t?.photoUrl || null;
   };
 
-  // Filtrer les enseignants éligibles (même niveau)
+  // Helper : trouver assignedLanguages d'un enseignant depuis teachersWithPhotos
+  const getTeacherLanguages = (teacherId: string): string[] => {
+    const t = teachersWithPhotos.find(t => t.id === teacherId);
+    return t?.assignedLanguages || [];
+  };
+
+  // Filtrer les enseignants éligibles
+  // En mode bilingue, filtrer par la langue de l'enseignant (FR ou EN)
+  // La langue vient de teachersWithPhotos (GET /api/teachers) qui inclut
+  // assignedLanguages — TeacherProfile ne l'inclut pas.
   const eligibleTeachers = useMemo(() => {
     return teachers.filter(t => {
-      // En mode bilingue, filtrer par langue de l'enseignant
       if (isBilingual) {
-        const langs = t.assignedLanguages || [];
+        const langs = getTeacherLanguages(t.teacher.id);
         const teacherLang = langs.length > 0 ? langs[0] : null;
         if (currentTrack === 'EN' && teacherLang !== 'EN') return false;
         if (currentTrack === 'FR' && teacherLang === 'EN') return false;
       }
       return true;
     });
-  }, [teachers, isBilingual, currentTrack]);
+  }, [teachers, isBilingual, currentTrack, teachersWithPhotos]);
 
   // --- Render ---
 
@@ -544,9 +552,11 @@ export default function AssignmentsWorkspace() {
                   homeroomFullyAssigned ? 'border-slate-200' : 'border-dashed border-slate-300',
                 )}>
                   <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${PRIMARY}15` }}>
-                      {homeroomFullyAssigned
-                        ? <UserCheck className="w-5 h-5" style={{ color: PRIMARY }} />
+                    <div className="w-10 h-10 rounded-lg overflow-hidden flex items-center justify-center" style={{ backgroundColor: `${PRIMARY}15` }}>
+                      {homeroomFullyAssigned && currentHomeroom
+                        ? (getTeacherPhoto(currentHomeroom.id)
+                          ? <img src={getTeacherPhoto(currentHomeroom.id)!} alt="" className="w-full h-full object-cover" />
+                          : <UserCheck className="w-5 h-5" style={{ color: PRIMARY }} />)
                         : <Star className="w-5 h-5 text-slate-400" />}
                     </div>
                     <div>

@@ -601,7 +601,18 @@ export default function SubjectsWorkspace() {
    * Les valeurs de coefficient et volume horaire hebdomadaire sont lues depuis le formulaire.
    */
   const handleBulkCreateSuggestions = async () => {
-    if (selectedSuggestions.size === 0 || !subjectForm.schoolLevelId || !academicYear?.id) return;
+    if (selectedSuggestions.size === 0 || !subjectForm.schoolLevelId) return;
+    // Vérification défensive : academicYear.id doit être présent.
+    // Si l'utilisateur n'a pas sélectionné d'année scolaire globalement,
+    // on affiche un message clair au lieu d'envoyer une requête qui échouera.
+    if (!academicYear?.id) {
+      toast({
+        title: "Année scolaire manquante",
+        description: "Veuillez sélectionner une année scolaire dans le sélecteur global avant de créer des matières.",
+        variant: "destructive",
+      });
+      return;
+    }
     setBulkSaving(true);
     const toCreate = defaultSuggestionsForLevel.filter(s => selectedSuggestions.has(s.code));
     // Lire les valeurs communes depuis le formulaire (définies par l'utilisateur)

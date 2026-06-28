@@ -36,8 +36,8 @@ export class CreateSubjectDto {
   schoolLevelId: string;
 
   @IsString()
-  @IsOptional()
-  academicYearId?: string;
+  @IsNotEmpty()
+  academicYearId: string;
 
   @IsString()
   @IsOptional()

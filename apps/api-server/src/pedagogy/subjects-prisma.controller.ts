@@ -14,6 +14,7 @@ import {
   Param,
   Query,
   UseGuards,
+  Logger,
 } from '@nestjs/common';
 import { SubjectsPrismaService } from './subjects-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -24,6 +25,7 @@ import { UpdateSubjectDto } from './dto/update-subject.dto';
 @Controller('subjects')
 @UseGuards(JwtAuthGuard)
 export class SubjectsPrismaController {
+  private readonly logger = new Logger(SubjectsPrismaController.name);
   constructor(private readonly subjectsService: SubjectsPrismaService) {}
 
   @Post()
@@ -31,6 +33,10 @@ export class SubjectsPrismaController {
     @TenantId() tenantId: string,
     @Body() createDto: CreateSubjectDto,
   ) {
+    // Log défensif : trace exactement ce que le frontend envoie
+    // pour diagnostiquer les erreurs « Argument `academicYear` is missing »
+    this.logger.log(`POST /subjects — payload keys: ${Object.keys(createDto).join(', ')}, academicYearId=${JSON.stringify((createDto as any).academicYearId)}, schoolLevelId=${JSON.stringify((createDto as any).schoolLevelId)}, code=${JSON.stringify((createDto as any).code)}`);
+
     const formattedData = { ...createDto };
     if (createDto.coefficient !== undefined) {
       formattedData.coefficient = Number(createDto.coefficient) || 1.0;

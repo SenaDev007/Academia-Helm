@@ -34,6 +34,19 @@ export class SubjectsPrismaService {
     weeklyHours?: number;
     description?: string;
   }) {
+    // ─── Validation défensive : academicYearId est REQUIS ──
+    // Le Subject model a une relation REQUIRED avec AcademicYear.
+    // Si academicYearId est undefined/null, Prisma lèverait une erreur cryptique
+    // « Argument `academicYear` is missing ». On valide explicitement ici.
+    if (!data.academicYearId || typeof data.academicYearId !== 'string' || data.academicYearId.trim() === '') {
+      this.logger.error(`createSubject called with invalid academicYearId: ${JSON.stringify(data.academicYearId)}. Full payload keys: ${Object.keys(data).join(', ')}`);
+      throw new BadRequestException(
+        `academicYearId est requis pour créer une matière. ` +
+        `Valeur reçue: ${JSON.stringify(data.academicYearId)}. ` +
+        `Vérifiez que l'année scolaire est bien sélectionnée dans le sélecteur global.`
+      );
+    }
+
     // ─── Résoudre le schoolLevelId ──
     // Le frontend envoie parfois un EducationLevel.id (de /api/school-levels)
     // au lieu d'un SchoolLevel.id. On doit faire la correspondance par nom/code.
@@ -117,11 +130,23 @@ export class SubjectsPrismaService {
     }
 
     // Sinon, créer une nouvelle matière
+    // Utilisation de `connect` explicite pour academicYear et schoolLevel
+    // afin d'éviter toute ambiguïté avec Prisma 7.8 (REQUIRED relation).
+    const { tenantId, academicYearId, schoolLevelId, academicTrackId, language, name, abbreviation, code, coefficient, weeklyHours, description } = data;
     return this.prisma.subject.create({
       data: {
         ...prismaCreateDefaults(),
-        ...data,
-        coefficient: data.coefficient || 1.0,
+        tenantId,
+        academicYear: { connect: { id: academicYearId } },
+        schoolLevel: { connect: { id: data.schoolLevelId } },
+        ...(academicTrackId ? { academicTrack: { connect: { id: academicTrackId } } } : {}),
+        name,
+        abbreviation: abbreviation || null,
+        code,
+        coefficient: coefficient || 1.0,
+        weeklyHours: weeklyHours ?? 0,
+        description: description || null,
+        ...(language ? { language } : {}),
       },
       include: {
         schoolLevel: true,

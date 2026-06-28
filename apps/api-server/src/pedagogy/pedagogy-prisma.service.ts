@@ -239,8 +239,18 @@ export class PedagogyPrismaService {
    * Récupère les affectations d'une classe
    */
   async getClassSubjects(classId: string, tenantId: string, academicYearId?: string) {
+    // ⚠️ IMPORTANT : Le paramètre `classId` reçu du frontend est en réalité
+    // un `AcademicClass.id` (table pedagogy_academic_classes).
+    // Or le modèle ClassSubject a DEUX colonnes :
+    //   - `classId`        → pointe vers `Class.id` (classes physiques, table `classes`)
+    //   - `academicClassId`→ pointe vers `AcademicClass.id` (classes pédagogiques,
+    //                        table `pedagogy_academic_classes`)
+    //
+    // Dans la pratique, `createBulkClassSubjects` ne remplit QUE `academicClassId`
+    // (jamais `classId`). Il faut donc filtrer par `academicClassId` pour retrouver
+    // les liens — sinon on retourne toujours 0 matière (tous les `classId` sont NULL).
     const where: any = {
-      classId,
+      academicClassId: classId,
       tenantId,
     };
 

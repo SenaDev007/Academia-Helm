@@ -258,7 +258,7 @@ export class PedagogyPrismaService {
       where.academicYearId = academicYearId;
     }
 
-    return this.prisma.classSubject.findMany({
+    const results = await this.prisma.classSubject.findMany({
       where,
       include: {
         subject: true,
@@ -270,6 +270,13 @@ export class PedagogyPrismaService {
         },
       },
     });
+
+    // Log défensif pour diagnostiquer le bug "Aucune matière affectée"
+    // Si tu vois ce log avec count=0 alors que la BDD a des liens, c'est que
+    // le paramètre classId reçu n'est pas un AcademicClass.id valide.
+    console.log(`[getClassSubjects] classId=${classId} tenantId=${tenantId} yearId=${academicYearId ?? 'none'} → ${results.length} résultat(s)`);
+
+    return results;
   }
 
   /**

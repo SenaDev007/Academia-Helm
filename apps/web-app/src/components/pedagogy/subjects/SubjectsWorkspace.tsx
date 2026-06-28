@@ -403,16 +403,23 @@ export default function SubjectsWorkspace() {
         classes.map(async (cls) => {
           try {
             const data = await pedagogyFetch<any[]>(`/api/pedagogy/class-subjects?classId=${cls.id}&academicYearId=${academicYear.id}`);
-            map[cls.id] = data || [];
+            // Log défensif pour diagnostiquer le bug "Aucune matière affectée"
+            // Si data est vide alors qu'on s'attend à avoir des liens, on log pour debug
+            if (!Array.isArray(data) || data.length === 0) {
+              console.debug(`[loadClassSubjects] classId=${cls.id} (${cls.name}) → 0 matière reçue du backend`);
+            } else {
+              console.debug(`[loadClassSubjects] classId=${cls.id} (${cls.name}) → ${data.length} matière(s) reçue(s)`);
+            }
+            map[cls.id] = Array.isArray(data) ? data : [];
           } catch (err) {
-            console.error(`Failed to load subjects for class ${cls.id}`, err);
+            console.error(`[loadClassSubjects] Failed to load subjects for class ${cls.id} (${cls.name}):`, err);
             map[cls.id] = [];
           }
         })
       );
       setClassSubjectsMap(map);
     } catch (e) {
-      console.error(e);
+      console.error('[loadClassSubjects] Global error:', e);
     } finally {
       setLoadingClassSubjects(false);
     }

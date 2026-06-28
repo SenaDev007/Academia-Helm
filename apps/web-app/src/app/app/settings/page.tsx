@@ -212,6 +212,12 @@ export default function SettingsPage() {
   const [newSectionName, setNewSectionName] = useState('');
   const [newSectionCode, setNewSectionCode] = useState('');
   const [newSectionCapacity, setNewSectionCapacity] = useState<number | ''>('');
+  // Création multiple de sections
+  const [showBulkSections, setShowBulkSections] = useState(false);
+  const [bulkSectionAcademicClassId, setBulkSectionAcademicClassId] = useState<string | null>(null);
+  const [bulkSectionCount, setBulkSectionCount] = useState<number>(2);
+  const [bulkSectionSuffixType, setBulkSectionSuffixType] = useState<'letters' | 'numbers'>('letters');
+  const [bulkSectionCapacity, setBulkSectionCapacity] = useState<number | ''>('');
   const [bilingualForm, setBilingualForm] = useState<any>({});
   const [bilingualBillingImpact, setBilingualBillingImpact] = useState<{ monthly?: number; annual?: number; currency?: string } | null>(null);
   const [bilingualMigrationNeeded, setBilingualMigrationNeeded] = useState<boolean | null>(null);
@@ -1245,6 +1251,85 @@ export default function SettingsPage() {
       showToast(
         'success',
         `Synchronisation terminée : ${result.created} section(s) créée(s), ${result.existing} existante(s).`
+      );
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur');
+    } finally {
+      setSectionsBusy(false);
+    }
+  };
+
+  // Création multiple de sections (CE1 A, CE1 B, CE1 C…) pour une classe officielle
+  const handleBulkCreateSections = async () => {
+    if (!bulkSectionAcademicClassId || !structureYearIdOrActive) {
+      showToast('error', 'Sélectionnez une classe officielle.');
+      return;
+    }
+    if (bulkSectionCount < 1 || bulkSectionCount > 30) {
+      showToast('error', 'Le nombre de sections doit être entre 1 et 30.');
+      return;
+    }
+    const academicClass = academicClassesForSections.find((c: any) => c.id === bulkSectionAcademicClassId);
+    if (!academicClass) {
+      showToast('error', 'Classe officielle introuvable.');
+      return;
+    }
+    const baseName = academicClass.label || academicClass.code || 'Classe';
+    const suffixes: string[] = [];
+    if (bulkSectionSuffixType === 'letters') {
+      for (let i = 0; i < bulkSectionCount; i++) {
+        suffixes.push(String.fromCharCode(65 + i)); // A, B, C, …
+      }
+    } else {
+      for (let i = 1; i <= bulkSectionCount; i++) {
+        suffixes.push(String(i));
+      }
+    }
+    const capacity = bulkSectionCapacity === '' ? undefined : Number(bulkSectionCapacity);
+    try {
+      setSectionsBusy(true);
+      let created = 0;
+      let skipped = 0;
+      for (const suffix of suffixes) {
+        const name = `${baseName} ${suffix}`;
+        const code = `${baseName.replace(/\s+/g, '_').toUpperCase()}_${suffix}`;
+        try {
+          const res = await fetch(`/api/pedagogy/academic-structure/sections`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              academicYearId: structureYearIdOrActive,
+              academicClassId: bulkSectionAcademicClassId,
+              name,
+              code,
+              capacity,
+            }),
+          });
+          if (res.ok) {
+            created++;
+          } else {
+            const err = await res.json().catch(() => ({}));
+            // Si la section existe déjà (conflit de code), on compte comme skip sans planter
+            if (String(err.message || '').includes('existe déjà') || res.status === 409) {
+              skipped++;
+            } else {
+              console.warn(`Failed to create section ${name}:`, err.message);
+              skipped++;
+            }
+          }
+        } catch {
+          skipped++;
+        }
+      }
+      await loadClassSections();
+      setShowBulkSections(false);
+      setBulkSectionAcademicClassId(null);
+      setBulkSectionCount(2);
+      setBulkSectionCapacity('');
+      showToast(
+        'success',
+        `${created} section(s) créée(s)${skipped > 0 ? `, ${skipped} ignorée(s) (déjà existantes ou erreur)` : ''}.`
       );
     } catch (error: any) {
       showToast('error', error.message || 'Erreur');
@@ -2690,16 +2775,8 @@ export default function SettingsPage() {
                         type="text"
                         value={newClassroomName}
                         onChange={(e) => setNewClassroomName(e.target.value)}
-                        placeholder="ex. CE1 A, 6ème 2"
-                        className="rounded-md border border-gray-300 px-3 py-2 text-sm w-40"
-                      />
-                      <input
-                        type="number"
-                        min={1}
-                        value={newClassroomCapacity}
-                        onChange={(e) => setNewClassroomCapacity(e.target.value === '' ? '' : parseInt(e.target.value, 10) || '')}
-                        placeholder="Capacité (opt.)"
-                        className="rounded-md border border-gray-300 px-3 py-2 text-sm w-24"
+                        placeholder="ex. CE1, 6ème, Terminale D"
+                        className="rounded-md border border-gray-300 px-3 py-2 text-sm w-56"
                       />
                         <button
                         type="button"
@@ -2708,7 +2785,7 @@ export default function SettingsPage() {
                         className="inline-flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                       >
                         {structureBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                        Ajouter la classe
+                        Ajouter la classe officielle
                       </button>
                     </div>
                     {showSeriesReminderAdd && (
@@ -2747,14 +2824,6 @@ export default function SettingsPage() {
                     <div className="flex flex-wrap gap-2 mb-4">
                       <button
                         type="button"
-                        onClick={() => setShowBulkCreate(!showBulkCreate)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100"
-                      >
-                        <Layers className="w-3.5 h-3.5" />
-                        Création multiple
-                      </button>
-                      <button
-                        type="button"
                         onClick={handleDuplicateEducationClassrooms}
                         disabled={structureBusy || academicYears.length < 2}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 disabled:opacity-50"
@@ -2763,88 +2832,6 @@ export default function SettingsPage() {
                         Dupliquer les classes vers l&apos;année suivante
                       </button>
                     </div>
-                    {showBulkCreate && (
-                      <div className="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                        <h4 className="text-sm font-medium text-gray-700 mb-3">Créer plusieurs classes d&apos;un coup</h4>
-                        <div className="flex flex-wrap items-center gap-3">
-                          <select
-                            value={bulkGradeId ?? ''}
-                            onChange={(e) => setBulkGradeId(e.target.value || null)}
-                            className="rounded-md border border-gray-300 px-3 py-2 text-sm"
-                          >
-                            <option value="">Classe pédagogique (grade)</option>
-                            {allGrades.map((g: any) => (
-                              <option key={g.id} value={g.id}>{g.level.name} → {g.cycle.name} → {formatGradeLabel(g.name)}</option>
-                            ))}
-                          </select>
-                          <label className="flex items-center gap-2 text-sm">
-                            <span>Nombre :</span>
-                            <input
-                              type="number"
-                              min={1}
-                              max={30}
-                              value={bulkCount}
-                              onChange={(e) => setBulkCount(Math.min(30, Math.max(1, parseInt(e.target.value, 10) || 1)))}
-                              className="rounded-md border border-gray-300 px-2 py-1.5 w-16 text-sm"
-                            />
-                          </label>
-                          <label className="flex items-center gap-2 text-sm">
-                            <span>Suffixe :</span>
-                            <select
-                              value={bulkSuffixType}
-                              onChange={(e) => setBulkSuffixType(e.target.value as 'letters' | 'numbers')}
-                              className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-                            >
-                              <option value="letters">Lettres (A, B, C…)</option>
-                              <option value="numbers">Chiffres (1, 2, 3…)</option>
-                            </select>
-                          </label>
-                          <input
-                            type="number"
-                            min={1}
-                            placeholder="Capacité (opt.)"
-                            value={bulkCapacity}
-                            onChange={(e) => setBulkCapacity(e.target.value === '' ? '' : parseInt(e.target.value, 10) || '')}
-                            className="rounded-md border border-gray-300 px-2 py-1.5 w-24 text-sm"
-                          />
-                          <button
-                            type="button"
-                            onClick={handleBulkCreateClassrooms}
-                            disabled={!!(structureBusy || !bulkGradeId || (showSeriesReminderBulk && !selectedGradeForBulk?.series?.code))}
-                            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-                          >
-                            {structureBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Layers className="w-4 h-4" />}
-                            Créer les {bulkCount} classes
-                          </button>
-                        </div>
-                        <p className="text-xs text-gray-500 mt-2">
-                          Ex. grade CE1, 3 classes, lettres → CE1 A, CE1 B, CE1 C
-                        </p>
-                        {showSeriesReminderBulk && (
-                          <div className="mt-3">
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Série (2nd cycle secondaire) <span className="text-amber-600">*</span></label>
-                            <select
-                              value={selectedGradeForBulk?.series?.code ?? ''}
-                              onChange={(e) => {
-                                const code = e.target.value;
-                                if (!code || !selectedGradeForBulk) return;
-                                const base = selectedGradeForBulk.name.split(' ')[0];
-                                const newGrade = allGrades.find(
-                                  (g: any) => g?.level?.name === 'SECONDAIRE' && g?.cycle?.name === '2nd cycle' && g.name.startsWith(base) && g.series?.code === code
-                                );
-                                if (newGrade) setBulkGradeId(newGrade.id);
-                              }}
-                              className="rounded-md border border-amber-300 bg-amber-50/50 px-3 py-2 text-sm w-48"
-                            >
-                              <option value="">Choisir la série</option>
-                              {secondCycleSeriesOptions.map((s: any) => (
-                                <option key={s.code} value={s.code}>{s.code} — {s.name ?? s.code}</option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-                      </div>
-                    )}
                     {sortedClassrooms.length === 0 ? (
                       <p className="text-sm text-gray-500 py-4">Aucune classe officielle pour cette année. Ajoutez-en ci-dessus.</p>
                     ) : (
@@ -2855,7 +2842,6 @@ export default function SettingsPage() {
                               <th className="text-left py-2 px-3 font-medium text-gray-700">Nom</th>
                               <th className="text-left py-2 px-3 font-medium text-gray-700">Classe pédagogique</th>
                               <th className="text-left py-2 px-3 font-medium text-gray-700 w-20">Série</th>
-                              <th className="text-left py-2 px-3 font-medium text-gray-700 w-24">Capacité</th>
                               <th className="text-right py-2 px-3 font-medium text-gray-700">Actions</th>
                             </tr>
                           </thead>
@@ -2893,20 +2879,6 @@ export default function SettingsPage() {
                                     </select>
                                   ) : (
                                     c.grade?.series?.code ?? '—'
-                                  )}
-                                </td>
-                                <td className="py-2 px-3">
-                                  {editingClassroomId === c.id ? (
-                                    <input
-                                      type="number"
-                                      min={1}
-                                      value={editingClassroomCapacity}
-                                      onChange={(e) => setEditingClassroomCapacity(e.target.value === '' ? '' : parseInt(e.target.value, 10) || '')}
-                                      placeholder="—"
-                                      className="rounded border border-gray-300 px-2 py-1 w-20"
-                                    />
-                                  ) : (
-                                    <span>{c.capacity != null ? c.capacity : '—'}</span>
                                   )}
                                 </td>
                                 <td className="py-2 px-3 text-right">
@@ -2977,16 +2949,87 @@ export default function SettingsPage() {
                       Subdivisions physiques des classes officielles (ex : « CE1 A », « CE1 B »). Chaque classe officielle a au moins une section, créée automatiquement. Les élèves, bulletins et affectations enseignants se font au niveau des sections.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleSyncSections}
-                    disabled={sectionsBusy || !structureYearIdOrActive}
-                    className="text-xs font-semibold px-3 py-1.5 rounded-md border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50"
-                    title="Recréer les sections manquantes pour chaque classe officielle"
-                  >
-                    Synchroniser
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowBulkSections(!showBulkSections)}
+                      disabled={sectionsBusy || !structureYearIdOrActive}
+                      className="text-xs font-semibold px-3 py-1.5 rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                      title="Créer plusieurs sections d'un coup (ex : CE1 A, CE1 B, CE1 C)"
+                    >
+                      Création multiple
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSyncSections}
+                      disabled={sectionsBusy || !structureYearIdOrActive}
+                      className="text-xs font-semibold px-3 py-1.5 rounded-md border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+                      title="Recréer les sections manquantes pour chaque classe officielle"
+                    >
+                      Synchroniser
+                    </button>
+                  </div>
                 </div>
+
+                {/* Création multiple de sections */}
+                {showBulkSections && (
+                  <div className="mt-4 mb-4 p-4 bg-blue-50 rounded-md border border-blue-200">
+                    <h4 className="text-sm font-semibold text-gray-700 mb-3">Créer plusieurs sections d&apos;un coup</h4>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <select
+                        value={bulkSectionAcademicClassId ?? ''}
+                        onChange={(e) => setBulkSectionAcademicClassId(e.target.value || null)}
+                        className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                      >
+                        <option value="">Classe officielle</option>
+                        {academicClassesForSections.map((c: any) => (
+                          <option key={c.id} value={c.id}>{c.label}</option>
+                        ))}
+                      </select>
+                      <label className="flex items-center gap-2 text-sm">
+                        <span>Nombre :</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={30}
+                          value={bulkSectionCount}
+                          onChange={(e) => setBulkSectionCount(Math.min(30, Math.max(1, parseInt(e.target.value, 10) || 1)))}
+                          className="rounded-md border border-gray-300 px-2 py-1.5 w-16 text-sm"
+                        />
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <span>Suffixe :</span>
+                        <select
+                          value={bulkSectionSuffixType}
+                          onChange={(e) => setBulkSectionSuffixType(e.target.value as 'letters' | 'numbers')}
+                          className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                        >
+                          <option value="letters">Lettres (A, B, C…)</option>
+                          <option value="numbers">Chiffres (1, 2, 3…)</option>
+                        </select>
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        placeholder="Capacité (opt.)"
+                        value={bulkSectionCapacity}
+                        onChange={(e) => setBulkSectionCapacity(e.target.value === '' ? '' : parseInt(e.target.value, 10) || '')}
+                        className="rounded-md border border-gray-300 px-2 py-1.5 w-28 text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleBulkCreateSections}
+                        disabled={sectionsBusy || !bulkSectionAcademicClassId}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {sectionsBusy ? 'Création…' : `Créer les ${bulkSectionCount} sections`}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      Ex. classe officielle CE1, 3 sections, lettres → CE1 A, CE1 B, CE1 C
+                    </p>
+                  </div>
+                )}
 
                 {/* Formulaire d'ajout d'une section */}
                 <div className="mt-4 mb-4 p-4 bg-gray-50 rounded-md border border-gray-200">

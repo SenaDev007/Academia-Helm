@@ -1287,7 +1287,7 @@ export function AcademicStructureWorkspace() {
     { id: 'levels', label: 'Niveaux', icon: Layers },
     { id: 'cycles', label: 'Cycles', icon: School },
     { id: 'classes', label: 'Classes', icon: Users },
-    { id: 'sections', label: 'Sections', icon: LayoutGrid },
+    { id: 'sections', label: 'Pistes linguistiques', icon: LayoutGrid },
     { id: 'series', label: 'Séries', icon: GraduationCap },
     { id: 'rooms', label: 'Salles', icon: Building2 },
   ];
@@ -1708,7 +1708,7 @@ export function AcademicStructureWorkspace() {
               <Link href={settingsHref} className="font-semibold underline" style={{ color: PRIMARY }}>
                 structure pédagogique
               </Link>{' '}
-              (niveaux → cycles → grades). Libellés, codes, rattachements niveau/cycle et capacité (somme des classes physiques du grade pour cette année en paramètres) sont resynchronisés à chaque chargement de cet onglet.
+              (niveaux → cycles → grades). Libellés, codes, rattachements niveau/cycle et capacité (somme des sections du grade pour cette année en paramètres) sont resynchronisés à chaque chargement de cet onglet.
             </p>
             {bilingualCtxEnabled && (
               <div
@@ -1826,7 +1826,7 @@ export function AcademicStructureWorkspace() {
 
       {!loading && tab === 'sections' && (
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h3 className="text-base font-semibold text-slate-900">Sections &amp; pistes linguistiques</h3>
+          <h3 className="text-base font-semibold text-slate-900">Pistes linguistiques par classe</h3>
           <p className="mt-2 text-sm text-slate-600">
             Les pistes linguistiques (FR / EN) sur chaque classe sont alignées sur l’
             <Link href={settingsHrefBilingual} className="font-semibold underline" style={{ color: PRIMARY }}>
@@ -1837,6 +1837,10 @@ export function AcademicStructureWorkspace() {
             {bilingualEnabled
               ? 'Le mode bilingue est activé : vous pouvez attribuer FR ou EN par classe.'
               : 'Sans option bilingue, seule la langue par défaut des paramètres s’applique (souvent FR).'}
+          </p>
+          <p className="mt-2 text-xs text-slate-500">
+            ℹ️ Pour créer des subdivisions physiques d&apos;une classe (CE1 A, CE1 B…), allez dans{' '}
+            <Link href="/app/app/settings?tab=structure" className="font-semibold underline">Paramètres &gt; Structure &gt; Sections par classe</Link>.
           </p>
           <div className="mt-4 overflow-x-auto rounded-lg border border-slate-100">
             <table className="min-w-full text-sm">

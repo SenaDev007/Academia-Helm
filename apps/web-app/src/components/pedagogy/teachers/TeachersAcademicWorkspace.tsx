@@ -84,6 +84,9 @@ interface Teacher {
   schoolLevel?: { id: string; name: string; code?: string } | null;
   /** Nom du niveau scolaire (raccourci pour l'affichage). */
   schoolLevelName?: string;
+  /** Langues assignées (FR, EN) — depuis Teacher.assignedLanguages (Json array).
+   * Utilisé pour filtrer le nombre de matières dans la carte statistique. */
+  assignedLanguages?: string[] | null;
 }
 
 /**
@@ -1015,20 +1018,41 @@ export default function TeachersAcademicWorkspace() {
                     <div className="p-4 space-y-4 bg-white">
                       {/* KPI Summary Cards */}
                       {(() => {
-                        const selectedTeacher = teachers.find(t => t.id === selectedTeacherId);
+                        const selectedTeacher = teachers.find(t => t.id === selectedTeacherId) as any;
                         const teacherLevelName = selectedTeacher?.schoolLevelName || selectedTeacher?.schoolLevel?.name || '';
                         const teacherLevelCode = (selectedTeacher?.schoolLevel?.code || teacherLevelName || '').toUpperCase();
                         const isMaternelleOrPrimaire = teacherLevelCode.includes('MATERN') || teacherLevelCode.includes('PRIMA');
 
+                        // Langue de l'enseignant (FR ou EN) depuis assignedLanguages.
+                        // Si l'enseignant a ['FR','EN'] (bilingue), on prend la première langue.
+                        // Si null/undefined, on ne filtre pas par langue (rétro-compat).
+                        const teacherLanguages: string[] = selectedTeacher?.assignedLanguages || [];
+                        const teacherLang = teacherLanguages.length > 0 ? teacherLanguages[0] : null;
+
                         // Nombre de matières :
-                        // - Maternelle/Primaire : toutes les matières du niveau (polyvalent)
+                        // - Maternelle/Primaire : toutes les matières du niveau ET de la langue de l'enseignant
+                        //   (un enseignant FR ne peut enseigner que les matières FR, un enseignant EN les matières EN)
                         // - Secondaire : le nombre d'habilitations déclarées
                         const subjectCount = isMaternelleOrPrimaire
                           ? subjects.filter(s => {
+                              // Filtre par niveau
                               const sCode = (s.schoolLevel?.code || s.schoolLevel?.name || '').toUpperCase();
-                              return sCode === teacherLevelCode || sCode.includes(teacherLevelCode) || teacherLevelCode.includes(sCode);
+                              const matchesLevel = sCode === teacherLevelCode || sCode.includes(teacherLevelCode) || teacherLevelCode.includes(sCode);
+                              if (!matchesLevel) return false;
+                              // Filtre par langue (si l'enseignant a une langue assignée)
+                              if (teacherLang) {
+                                const sLang = (s.language || '').toUpperCase();
+                                // Pour FR : inclut FR + null (rétro-compat)
+                                // Pour EN : inclut EN seulement
+                                if (teacherLang === 'EN' && sLang !== 'EN') return false;
+                                if (teacherLang === 'FR' && sLang === 'EN') return false;
+                              }
+                              return true;
                             }).length
                           : activeProfile.subjectQualifications.length;
+
+                        // Libellé de la langue pour l'affichage
+                        const langLabel = teacherLang ? ` ${teacherLang}` : '';
 
                         // Nombre de niveaux autorisés :
                         // - Toujours au moins 1 (le niveau d'affectation depuis RH)
@@ -1051,7 +1075,7 @@ export default function TeachersAcademicWorkspace() {
                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Habilitations</p>
                                 <p className="text-sm font-bold text-slate-900">
                                   {isMaternelleOrPrimaire
-                                    ? `${subjectCount} matières (${teacherLevelName})`
+                                    ? `${subjectCount} matières (${teacherLevelName}${langLabel})`
                                     : `${subjectCount} matière${subjectCount > 1 ? 's' : ''}`}
                                 </p>
                               </div>

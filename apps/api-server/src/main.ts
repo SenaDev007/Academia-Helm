@@ -1390,77 +1390,97 @@ async function bootstrap() {
   }, 5000); // 5 second delay to let the app fully start
 
   // ─── Cleanup test data from pedagogy module ──
-  // One-time cleanup: delete all test levels, cycles, classes, subjects, rooms
-  setTimeout(async () => {
-    try {
-      const { PrismaService } = await import('./database/prisma.service');
-      const prisma = app.get(PrismaService);
-      const tenants = await prisma.tenant.findMany({ select: { id: true, name: true } });
-      for (const t of tenants) {
-        try {
-          // Delete test levels
-          const testLevels = await prisma.academicLevel.findMany({
-            where: { tenantId: t.id, name: { contains: 'test', mode: 'insensitive' } },
-            select: { id: true, name: true },
-          });
-          for (const l of testLevels) {
-            await prisma.academicLevel.delete({ where: { id: l.id } }).catch(() => {});
-          }
+  // DISABLED in production — was deleting ALL subjects (no "test" filter) on every startup.
+  // Root cause of "subjects auto-deleted on every Fly.io redeploy" bug.
+  // If cleanup is needed in the future, use an explicit admin HTTP endpoint with audit log,
+  // never an unconditional startup script. See: subjects-prisma.controller / academic-structure-prisma.controller.
+  // To re-enable for local dev only, set ENABLE_DEV_CLEANUP=true in your .env.
+  if (process.env.ENABLE_DEV_CLEANUP === 'true' && process.env.NODE_ENV !== 'production') {
+    setTimeout(async () => {
+      try {
+        const { PrismaService } = await import('./database/prisma.service');
+        const prisma = app.get(PrismaService);
+        const tenants = await prisma.tenant.findMany({ select: { id: true, name: true } });
+        for (const t of tenants) {
+          try {
+            // Delete test levels (name contains 'test')
+            const testLevels = await prisma.academicLevel.findMany({
+              where: { tenantId: t.id, name: { contains: 'test', mode: 'insensitive' } },
+              select: { id: true, name: true },
+            });
+            for (const l of testLevels) {
+              await prisma.academicLevel.delete({ where: { id: l.id } }).catch(() => {});
+            }
 
-          // Delete test cycles
-          const testCycles = await prisma.academicCycle.findMany({
-            where: { tenantId: t.id, name: { contains: 'test', mode: 'insensitive' } },
-            select: { id: true, name: true },
-          });
-          for (const c of testCycles) {
-            await prisma.academicCycle.delete({ where: { id: c.id } }).catch(() => {});
-          }
+            // Delete test cycles (name contains 'test')
+            const testCycles = await prisma.academicCycle.findMany({
+              where: { tenantId: t.id, name: { contains: 'test', mode: 'insensitive' } },
+              select: { id: true, name: true },
+            });
+            for (const c of testCycles) {
+              await prisma.academicCycle.delete({ where: { id: c.id } }).catch(() => {});
+            }
 
-          // Delete test classes
-          const testClasses = await prisma.academicClass.findMany({
-            where: {
-              tenantId: t.id,
-              OR: [
-                { name: { contains: 'test', mode: 'insensitive' } },
-                { code: { contains: 'test', mode: 'insensitive' } },
-              ],
-            },
-            select: { id: true, name: true },
-          });
-          for (const c of testClasses) {
-            await prisma.academicClass.delete({ where: { id: c.id } }).catch(() => {});
-          }
+            // Delete test classes (name or code contains 'test')
+            const testClasses = await prisma.academicClass.findMany({
+              where: {
+                tenantId: t.id,
+                OR: [
+                  { name: { contains: 'test', mode: 'insensitive' } },
+                  { code: { contains: 'test', mode: 'insensitive' } },
+                ],
+              },
+              select: { id: true, name: true },
+            });
+            for (const c of testClasses) {
+              await prisma.academicClass.delete({ where: { id: c.id } }).catch(() => {});
+            }
 
-          // Delete ALL subjects (fresh start)
-          const deletedSubjects = await prisma.subject.deleteMany({ where: { tenantId: t.id } });
+            // Delete ONLY test subjects (name or code contains 'test') — NEVER all subjects
+            const testSubjects = await prisma.subject.findMany({
+              where: {
+                tenantId: t.id,
+                OR: [
+                  { name: { contains: 'test', mode: 'insensitive' } },
+                  { code: { contains: 'test', mode: 'insensitive' } },
+                ],
+              },
+              select: { id: true },
+            });
+            const deletedSubjects = testSubjects.length > 0
+              ? await prisma.subject.deleteMany({ where: { id: { in: testSubjects.map(s => s.id) } } })
+              : { count: 0 };
 
-          // Delete test rooms
-          const testRooms = await prisma.room.findMany({
-            where: {
-              tenantId: t.id,
-              OR: [
-                { roomName: { contains: 'test', mode: 'insensitive' } },
-                { roomCode: { contains: 'test', mode: 'insensitive' } },
-              ],
-            },
-            select: { id: true, roomName: true },
-          });
-          for (const r of testRooms) {
-            await prisma.room.delete({ where: { id: r.id } }).catch(() => {});
-          }
+            // Delete test rooms (roomName or roomCode contains 'test')
+            const testRooms = await prisma.room.findMany({
+              where: {
+                tenantId: t.id,
+                OR: [
+                  { roomName: { contains: 'test', mode: 'insensitive' } },
+                  { roomCode: { contains: 'test', mode: 'insensitive' } },
+                ],
+              },
+              select: { id: true, roomName: true },
+            });
+            for (const r of testRooms) {
+              await prisma.room.delete({ where: { id: r.id } }).catch(() => {});
+            }
 
-          const total = testLevels.length + testCycles.length + testClasses.length + deletedSubjects.count + testRooms.length;
-          if (total > 0) {
-            logger.log(`[${t.name}] Cleanup: ${testLevels.length} levels, ${testCycles.length} cycles, ${testClasses.length} classes, ${deletedSubjects.count} subjects, ${testRooms.length} rooms deleted`);
+            const total = testLevels.length + testCycles.length + testClasses.length + deletedSubjects.count + testRooms.length;
+            if (total > 0) {
+              logger.log(`[${t.name}] DEV cleanup: ${testLevels.length} levels, ${testCycles.length} cycles, ${testClasses.length} classes, ${deletedSubjects.count} subjects, ${testRooms.length} rooms deleted`);
+            }
+          } catch (err: any) {
+            logger.warn(`[${t.name}] DEV cleanup failed: ${err.message}`);
           }
-        } catch (err: any) {
-          logger.warn(`[${t.name}] Cleanup failed: ${err.message}`);
         }
+      } catch (err: any) {
+        logger.warn(`DEV cleanup skipped: ${err.message}`);
       }
-    } catch (err: any) {
-      logger.warn(`Cleanup skipped: ${err.message}`);
-    }
-  }, 8000); // 8 second delay (after teacher sync)
+    }, 8000); // 8 second delay (after teacher sync)
+  } else {
+    logger.log('DEV cleanup disabled (production-safe mode). Set ENABLE_DEV_CLEANUP=true & NODE_ENV!=production to enable.');
+  }
 
   // Log memory info on startup
   const memUsage = process.memoryUsage();

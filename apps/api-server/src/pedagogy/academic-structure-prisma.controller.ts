@@ -231,13 +231,25 @@ export class AcademicStructurePrismaController {
       results.details.push(`Classes cleanup error: ${e.message}`);
     }
 
-    // Delete ALL subjects for this tenant (fresh start)
+    // Delete ONLY test subjects (name or code contains 'test') — never all subjects
     try {
-      const deletedSubjects = await this.prisma.subject.deleteMany({
-        where: { tenantId },
+      const testSubjects = await this.prisma.subject.findMany({
+        where: {
+          tenantId,
+          OR: [
+            { name: { contains: 'test', mode: 'insensitive' } },
+            { code: { contains: 'test', mode: 'insensitive' } },
+          ],
+        },
+        select: { id: true, name: true, code: true },
       });
-      results.subjects = deletedSubjects.count;
-      results.details.push(`Deleted all subjects: ${deletedSubjects.count}`);
+      let subjectsDeleted = 0;
+      for (const s of testSubjects) {
+        await this.prisma.subject.delete({ where: { id: s.id } }).catch(() => {});
+        subjectsDeleted++;
+        results.details.push(`Deleted subject: ${s.name} (${s.code})`);
+      }
+      results.subjects = subjectsDeleted;
     } catch (e: any) {
       results.details.push(`Subjects cleanup error: ${e.message}`);
     }

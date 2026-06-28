@@ -237,18 +237,20 @@ export default function AssignmentsWorkspace() {
     });
   }, [filteredPhysicalClasses, academicClasses]);
 
-  // Titulaire actuel = l'enseignant assigné à toutes les matières de la section physique
+  // Titulaire actuel = l'enseignant assigné aux matières de la section physique
+  // On accepte les affectations avec le bon classId OU sans classId (anciennes, rétro-compat)
   const currentHomeroom = useMemo(() => {
     if (!isHomeroom || classSubjects.length === 0 || !selectedPhysicalClassId) return null;
-    const assignments = classSubjects
-      .flatMap(cs => (cs.assignments || []))
-      .filter(a => a.classId === selectedPhysicalClassId);
-    if (assignments.length === 0) return null;
-    return assignments[0]?.teacher || null;
+    // Chercher une affectation qui correspond à cette section (classId match OU classId NULL)
+    for (const cs of classSubjects) {
+      const assign = (cs.assignments || []).find(a => a.classId === selectedPhysicalClassId || !a.classId);
+      if (assign?.teacher) return assign.teacher;
+    }
+    return null;
   }, [isHomeroom, classSubjects, selectedPhysicalClassId]);
 
   const homeroomFullyAssigned = isHomeroom && classSubjects.length > 0 &&
-    classSubjects.every(cs => (cs.assignments || []).some(a => a.classId === selectedPhysicalClassId));
+    classSubjects.every(cs => (cs.assignments || []).some(a => a.classId === selectedPhysicalClassId || !a.classId));
 
   // --- Actions ---
 
@@ -257,9 +259,11 @@ export default function AssignmentsWorkspace() {
     if (!academicYear?.id || classSubjects.length === 0 || !selectedPhysicalClassId) return;
     setBulkAssigning(true);
     try {
-      // 1. Supprimer les affectations existantes pour cette section physique
+      // 1. Supprimer TOUTES les affectations existantes pour ces classSubjects
+      //    (pas seulement celles avec le bon classId — les anciennes avec classId=NULL
+      //    doivent aussi être supprimées pour éviter le conflit "already exists")
       const removePromises = classSubjects
-        .flatMap(cs => (cs.assignments || []).filter(a => a.classId === selectedPhysicalClassId))
+        .flatMap(cs => (cs.assignments || []))
         .map(a => pedagogyFetch(`/api/pedagogy/teacher-class-assignments/${a.id}`, { method: 'DELETE' }).catch(() => {}));
       await Promise.all(removePromises);
 
@@ -295,8 +299,9 @@ export default function AssignmentsWorkspace() {
     if (!academicYear?.id || !selectedPhysicalClassId) return;
     setBulkAssigning(true);
     try {
+      // Supprimer TOUTES les affectations existantes pour ces classSubjects
       const removePromises = classSubjects
-        .flatMap(cs => (cs.assignments || []).filter(a => a.classId === selectedPhysicalClassId))
+        .flatMap(cs => (cs.assignments || []))
         .map(a => pedagogyFetch(`/api/pedagogy/teacher-class-assignments/${a.id}`, { method: 'DELETE' }).catch(() => {}));
       await Promise.all(removePromises);
       await loadClassSubjects();

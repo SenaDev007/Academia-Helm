@@ -242,9 +242,17 @@ export default function SubjectsWorkspace() {
         if (selectedLevel) {
           const levelCode = (selectedLevel.code || selectedLevel.name || '').toUpperCase();
           const classLevelCode = ((c as any).level?.code || (c as any).level?.name || '').toUpperCase();
-          if (classLevelCode !== levelCode && c.levelId !== filterClassLevelId && (c as any).level?.id !== filterClassLevelId) {
-            return false;
+
+          // Si on ne peut pas déterminer le niveau de la classe (pas de level inclus),
+          // on ne la filtre PAS — on l'affiche (mieux vaut trop que pas assez)
+          if (classLevelCode) {
+            // On a le code → comparer par code (insensible à la casse)
+            const matches = classLevelCode === levelCode ||
+              classLevelCode.includes(levelCode) ||
+              levelCode.includes(classLevelCode);
+            if (!matches) return false;
           }
+          // Si classLevelCode est vide, on ne filtre pas (on garde la classe)
         }
       }
       if (filterClassSeriesId && c.seriesId !== filterClassSeriesId && c.series?.id !== filterClassSeriesId) {

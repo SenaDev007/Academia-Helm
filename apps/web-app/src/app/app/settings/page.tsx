@@ -1477,7 +1477,29 @@ export default function SettingsPage() {
       }));
   }, [sortedClassrooms]);
 
-  // Groupage des sections par classe officielle pour l'affichage
+  // Ordre canonique d'affichage des classes officielles (par nom normalisé).
+  // Maternelle → Primaire (CI, CP, CE1, CE2, CM1, CM2) → Secondaire 1er cycle (6e→3e) → 2nd cycle (2nde→Terminale).
+  const CANONICAL_CLASS_ORDER = [
+    'maternelle 1', 'maternelle 2',
+    'ci', 'cp', 'ce1', 'ce2', 'cm1', 'cm2',
+    '6eme', '6e', '5eme', '5e', '4eme', '4e', '3eme', '3e',
+    '2nde', 'seconde', '1ere', '1ère', 'premiere', 'première',
+    'terminale', 'tle', 'terminal',
+  ];
+  const getClassCanonicalOrder = (name: string): number => {
+    const lower = (name || '').toLowerCase().trim();
+    // Match exact
+    const idx = CANONICAL_CLASS_ORDER.indexOf(lower);
+    if (idx >= 0) return idx;
+    // Match par préfixe (ex: « 2nde B » commence par « 2nde », « Terminale D » par « terminale »)
+    for (let i = 0; i < CANONICAL_CLASS_ORDER.length; i++) {
+      if (lower.startsWith(CANONICAL_CLASS_ORDER[i])) return i;
+    }
+    return CANONICAL_CLASS_ORDER.length; // Inconnu → à la fin
+  };
+
+  // Groupage des sections par classe officielle pour l'affichage.
+  // Tri par ordre canonique (Maternelle 1 → Maternelle 2 → CI → ... → Terminale D).
   const sectionsByOfficialClass = useMemo(() => {
     const map: Record<string, { officialClass: any; sections: any[] }> = {};
     for (const s of classSections) {
@@ -1487,12 +1509,58 @@ export default function SettingsPage() {
       }
       map[ocId].sections.push(s);
     }
+    // Trier les groupes par ordre canonique du nom de la classe officielle
     return Object.values(map).sort((a, b) => {
       const an = a.officialClass?.name || '';
       const bn = b.officialClass?.name || '';
+      const ao = getClassCanonicalOrder(an);
+      const bo = getClassCanonicalOrder(bn);
+      if (ao !== bo) return ao - bo;
+      // Même préfixe → tri alphabétique secondaire (ex: « 2nde A1 » vs « 2nde B »)
       return an.localeCompare(bn);
     });
   }, [classSections]);
+
+  // État d'édition inline d'une section (id de la section en cours d'édition)
+  const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
+  const [editingSectionName, setEditingSectionName] = useState('');
+  const [editingSectionCode, setEditingSectionCode] = useState('');
+  const [editingSectionCapacity, setEditingSectionCapacity] = useState<number | ''>('');
+
+  const handleUpdateClassSection = async (id: string) => {
+    const name = (editingSectionName || '').trim();
+    if (!name) {
+      showToast('error', 'Le nom de la section est requis.');
+      return;
+    }
+    try {
+      setSectionsBusy(true);
+      const body: any = { name };
+      if (editingSectionCode.trim()) body.code = editingSectionCode.trim();
+      body.capacity = editingSectionCapacity === '' ? null : Number(editingSectionCapacity);
+
+      const res = await fetch(`/api/pedagogy/academic-structure/sections/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || err.error || `Erreur ${res.status}`);
+      }
+      await loadClassSections();
+      setEditingSectionId(null);
+      setEditingSectionName('');
+      setEditingSectionCode('');
+      setEditingSectionCapacity('');
+      showToast('success', 'Section mise à jour.');
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur');
+    } finally {
+      setSectionsBusy(false);
+    }
+  };
 
   const handleSaveBilingual = async () => {
     try {
@@ -3318,18 +3386,18 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                {/* Liste des sections groupées par classe officielle */}
+                {/* Liste des sections groupées par classe officielle (table avec édition) */}
                 {sectionsByOfficialClass.length === 0 ? (
                   <p className="text-sm text-gray-500 py-4">
                     {structureYearIdOrActive
-                      ? 'Aucune section pour cette année. Cliquez sur « Synchroniser » pour créer automatiquement une section par défaut pour chaque classe officielle.'
+                      ? 'Aucune section pour cette année. Utilisez « Synchroniser » pour créer une section par défaut par classe officielle, ou ajoutez-en manuellement ci-dessus.'
                       : 'Sélectionnez une année scolaire.'}
                   </p>
                 ) : (
                   <div className="space-y-3">
                     {sectionsByOfficialClass.map(({ officialClass, sections }) => (
-                      <div key={officialClass?.id || 'none'} className="border border-gray-200 rounded-md p-3">
-                        <div className="flex items-center justify-between mb-2">
+                      <div key={officialClass?.id || 'none'} className="border border-gray-200 rounded-md overflow-hidden">
+                        <div className="bg-slate-50 px-3 py-2 border-b border-gray-200">
                           <h5 className="text-sm font-semibold text-gray-800">
                             {officialClass?.name || 'Classe inconnue'}
                             <span className="ml-2 text-xs font-normal text-gray-500">
@@ -3337,29 +3405,111 @@ export default function SettingsPage() {
                             </span>
                           </h5>
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                          {sections.map((s: any) => (
-                            <span
-                              key={s.id}
-                              className="inline-flex items-center gap-2 rounded-md bg-slate-100 border border-slate-300 pl-3 pr-1.5 py-1 text-sm"
-                              title={`Code : ${s.code}${s.capacity ? ` · Capacité : ${s.capacity}` : ''}`}
-                            >
-                              <span className="font-medium text-slate-800">{s.name}</span>
-                              {s.capacity != null && (
-                                <span className="text-xs text-slate-500">({s.capacity} places)</span>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteClassSection(s.id, s.name)}
-                                disabled={sectionsBusy}
-                                className="ml-1 text-slate-400 hover:text-red-600 disabled:opacity-50"
-                                title="Supprimer cette section"
-                              >
-                                ×
-                              </button>
-                            </span>
-                          ))}
-                        </div>
+                        <table className="min-w-full text-sm">
+                          <thead>
+                            <tr className="bg-white text-left text-xs font-semibold uppercase tracking-wide text-gray-500 border-b border-gray-100">
+                              <th className="px-3 py-2 w-1/3">Nom</th>
+                              <th className="px-3 py-2 w-1/4">Code</th>
+                              <th className="px-3 py-2 w-1/6">Capacité</th>
+                              <th className="px-3 py-2 text-right w-1/6">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sections.map((s: any) => (
+                              <tr key={s.id} className="border-b border-gray-50 last:border-0 hover:bg-slate-50/60">
+                                <td className="px-3 py-2">
+                                  {editingSectionId === s.id ? (
+                                    <input
+                                      type="text"
+                                      value={editingSectionName}
+                                      onChange={(e) => setEditingSectionName(e.target.value)}
+                                      className="rounded border border-gray-300 px-2 py-1 w-full text-sm"
+                                      autoFocus
+                                    />
+                                  ) : (
+                                    <span className="font-medium text-gray-800">{s.name}</span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2 text-gray-600">
+                                  {editingSectionId === s.id ? (
+                                    <input
+                                      type="text"
+                                      value={editingSectionCode}
+                                      onChange={(e) => setEditingSectionCode(e.target.value)}
+                                      className="rounded border border-gray-300 px-2 py-1 w-full text-sm"
+                                    />
+                                  ) : (
+                                    <span className="font-mono text-xs">{s.code || '—'}</span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2 text-gray-600">
+                                  {editingSectionId === s.id ? (
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      value={editingSectionCapacity}
+                                      onChange={(e) => setEditingSectionCapacity(e.target.value === '' ? '' : parseInt(e.target.value, 10) || '')}
+                                      placeholder="—"
+                                      className="rounded border border-gray-300 px-2 py-1 w-20 text-sm"
+                                    />
+                                  ) : (
+                                    <span>{s.capacity != null ? s.capacity : '—'}</span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2 text-right">
+                                  {editingSectionId === s.id ? (
+                                    <span className="flex items-center justify-end gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleUpdateClassSection(s.id)}
+                                        disabled={sectionsBusy}
+                                        className="text-xs font-semibold text-blue-600 hover:underline disabled:opacity-50"
+                                      >
+                                        Enregistrer
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingSectionId(null);
+                                          setEditingSectionName('');
+                                          setEditingSectionCode('');
+                                          setEditingSectionCapacity('');
+                                        }}
+                                        className="text-xs font-semibold text-gray-500 hover:underline"
+                                      >
+                                        Annuler
+                                      </button>
+                                    </span>
+                                  ) : (
+                                    <span className="flex items-center justify-end gap-3">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingSectionId(s.id);
+                                          setEditingSectionName(s.name || '');
+                                          setEditingSectionCode(s.code || '');
+                                          setEditingSectionCapacity(s.capacity ?? '');
+                                        }}
+                                        disabled={sectionsBusy}
+                                        className="text-xs font-semibold text-blue-600 hover:underline disabled:opacity-50"
+                                      >
+                                        Modifier
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteClassSection(s.id, s.name)}
+                                        disabled={sectionsBusy}
+                                        className="text-xs font-semibold text-red-600 hover:underline disabled:opacity-50"
+                                      >
+                                        Supprimer
+                                      </button>
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
                     ))}
                   </div>

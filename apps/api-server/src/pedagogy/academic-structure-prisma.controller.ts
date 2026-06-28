@@ -212,6 +212,16 @@ export class AcademicStructurePrismaController {
     return this.service.deleteClassSection(id, tenantId);
   }
 
+  /** PUT /sections/:id — met à jour une section (name, code, capacity) */
+  @Put('sections/:id')
+  async updateSection(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Body() body: { name?: string; code?: string; capacity?: number | null },
+  ) {
+    return this.service.updateClassSection(id, tenantId, body);
+  }
+
   /**
    * POST /sections/sync?academicYearId=... — force la synchronisation automatique
    * (crée une section par défaut pour chaque AcademicClass active sans section).

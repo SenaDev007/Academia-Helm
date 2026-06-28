@@ -727,6 +727,48 @@ export class AcademicStructurePrismaService {
   }
 
   /**
+   * Met à jour une section (subdivision A/B/C) — name, code, capacity.
+   */
+  async updateClassSection(
+    id: string,
+    tenantId: string,
+    data: { name?: string; code?: string; capacity?: number | null },
+  ): Promise<any> {
+    const section = await this.prisma.class.findFirst({
+      where: { id, tenantId },
+      select: { id: true, name: true, code: true, capacity: true },
+    });
+    if (!section) {
+      throw new NotFoundException(`Section introuvable (id=${id}).`);
+    }
+
+    // Vérifier l'unicité du code si modifié
+    if (data.code && data.code !== section.code) {
+      const existing = await this.prisma.class.findFirst({
+        where: { tenantId, code: data.code, id: { not: id } },
+        select: { id: true },
+      });
+      if (existing) {
+        throw new BadRequestException(`Une autre section avec le code "${data.code}" existe déjà.`);
+      }
+    }
+
+    return this.prisma.class.update({
+      where: { id },
+      data: {
+        ...prismaUpdateDefaults(),
+        ...(data.name !== undefined ? { name: data.name } : {}),
+        ...(data.code !== undefined ? { code: data.code } : {}),
+        ...(data.capacity !== undefined ? { capacity: data.capacity } : {}),
+      },
+      include: {
+        officialClass: { select: { id: true, name: true, code: true } },
+        schoolLevel: { select: { id: true, code: true, name: true } },
+      },
+    });
+  }
+
+  /**
    * Liste toutes les sections (Class) d'une année scolaire, groupées par AcademicClass.
    */
   async findAllClassSections(tenantId: string, academicYearId: string) {
@@ -992,9 +1034,14 @@ export class AcademicStructurePrismaService {
   ) {
     await this.syncAcademicClassesFromEducationSettings(tenantId, academicYearId);
     await this.syncAcademicClassLanguageTracksFromBilingualSettings(tenantId, academicYearId);
-    // Assure que chaque AcademicClass active a au moins une section Class correspondante
-    // (table `classes`) — débloque Élèves, Bulletins, Affectation enseignants qui dépendent de Class.
-    await this.syncClassSectionsFromAcademicClasses(tenantId, academicYearId);
+    // NOTE : syncClassSectionsFromAcademicClasses() n'est PLUS appelé automatiquement ici.
+    // Les sections physiques (table `classes`) ne doivent être créées QUE par action
+    // explicite de l'utilisateur via :
+    //   - le bouton « Synchroniser » dans Paramètres > Sections par classe,
+    //   - le formulaire « Ajouter une section »,
+    //   - ou le bouton « Création multiple ».
+    // L'auto-création était trop agressive et donnait l'impression que les
+    // sections existaient sans que l'utilisateur ne les ait créées.
     const where: Record<string, unknown> = { tenantId, academicYearId };
     if (filters?.levelId) where.levelId = filters.levelId;
     if (filters?.cycleId) where.cycleId = filters.cycleId;

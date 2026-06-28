@@ -372,15 +372,14 @@ export function TeacherLevelAssignment() {
     }
 
     // ─── Modale de confirmation ───
-    const description = changeSummaries.length > 0
+    const summaryText = changeSummaries.length > 0
       ? `Vous êtes sur le point d'enregistrer ${changeSummaries.length} affectation(s) :\n\n${changeSummaries.join('\n')}\n\nCette action mettra à jour le profil pédagogique des enseignants concernés.`
       : `Vous êtes sur le point d'enregistrer les affectations. Cette action mettra à jour le profil pédagogique des enseignants.`;
 
-    const ok = await confirmDialog.warning({
-      title: 'Confirmer les affectations',
-      description,
-      confirmLabel: 'Enregistrer',
-    });
+    const ok = await confirmDialog.warning(
+      summaryText,
+      'Confirmer les affectations',
+    );
     if (!ok) return;
 
     setSaving(true);

@@ -229,6 +229,40 @@ export default function SettingsPage() {
     return out;
   }, [educationStructure?.levels]);
 
+  /**
+   * Grades groupés par <optgroup> pour les <select> de l'UI.
+   * Format : [{ label: 'MATERNELLE', grades: [...] }, { label: 'PRIMAIRE', grades: [...] }, ...]
+   *
+   * Règles de regroupement :
+   * - Maternelle et Primaire : un seul optgroup par niveau (cycle = grade, pas besoin de distinguer)
+   * - Secondaire : un optgroup par cycle (« SECONDAIRE — 1er cycle », « SECONDAIRE — 2nd cycle »)
+   *   pour distinguer 6ème/5ème/4ème/3ème (1er cycle) de 2nde/1ère/Terminale (2nd cycle)
+   * - Le label affiché est uniquement le nom du grade (ex : « CE1 », « 2nde B », « Terminale D »)
+   *   — la série est déjà dans le nom du grade, pas besoin de la répéter.
+   */
+  const groupedGradesForSelect = useMemo(() => {
+    const groups: Array<{ label: string; grades: Array<{ id: string; name: string }> }> = [];
+    const groupMap: Record<string, number> = {};
+    for (const g of allGradesFromStructure) {
+      const levelName = g.level?.name || '';
+      const cycleName = g.cycle?.name || '';
+      let groupLabel: string;
+      if (levelName.toUpperCase() === 'SECONDAIRE') {
+        // Pour le secondaire, distinguer les cycles
+        groupLabel = `SECONDAIRE — ${cycleName}`;
+      } else {
+        // Maternelle / Primaire : un seul groupe par niveau
+        groupLabel = levelName.toUpperCase();
+      }
+      if (!(groupLabel in groupMap)) {
+        groupMap[groupLabel] = groups.length;
+        groups.push({ label: groupLabel, grades: [] });
+      }
+      groups[groupMap[groupLabel]].grades.push({ id: g.id, name: g.name });
+    }
+    return groups;
+  }, [allGradesFromStructure]);
+
   /** Classes physiques triées par ordre niveau → cycle → grade → nom (pour le tableau). */
   const sortedClassrooms = useMemo(() => {
     const list = [...(educationClassrooms ?? [])];
@@ -2766,9 +2800,13 @@ export default function SettingsPage() {
                         onChange={(e) => setNewClassroomGradeId(e.target.value || null)}
                         className="rounded-md border border-gray-300 px-3 py-2 text-sm"
                       >
-                        <option value="">Classe pédagogique (grade)</option>
-                        {allGrades.map((g) => (
-                          <option key={g.id} value={g.id}>{g.level.name} → {g.cycle.name} → {formatGradeLabel(g.name)}</option>
+                        <option value="">Classe officielle (grade)</option>
+                        {groupedGradesForSelect.map((grp) => (
+                          <optgroup key={grp.label} label={grp.label}>
+                            {grp.grades.map((g) => (
+                              <option key={g.id} value={g.id}>{formatGradeLabel(g.name)}</option>
+                            ))}
+                          </optgroup>
                         ))}
                       </select>
                       <input

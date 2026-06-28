@@ -12,11 +12,13 @@ import {
   Building2,
   Copy,
   GraduationCap,
+  Info,
   Layers,
   LayoutGrid,
   Loader2,
   Plus,
   School,
+  Sparkles,
   Trash2,
   Users,
 } from 'lucide-react';
@@ -287,6 +289,118 @@ export function AcademicStructureWorkspace() {
     equipmentCsv: '',
   });
   const [isDescriptionManual, setIsDescriptionManual] = useState(false);
+
+  // ─── Assistant création multi-salles ──
+  const [bulkRoomModal, setBulkRoomModal] = useState(false);
+  const [bulkRoomType, setBulkRoomType] = useState('CLASSROOM');
+  const [bulkRoomCapacity, setBulkRoomCapacity] = useState(40);
+  const [bulkRoomSaving, setBulkRoomSaving] = useState(false);
+  const [bulkRoomSelections, setBulkRoomSelections] = useState<
+    Array<{ selected: boolean; roomCode: string; roomName: string; capacity: number; alreadyExists: boolean }>
+  >([]);
+
+  // Suggestions de salles par type
+  const ROOM_SUGGESTIONS: Record<string, Array<{ code: string; name: string; capacity: number; equipment: string[] }>> = {
+    CLASSROOM: [
+      { code: 'S01', name: 'Salle de classe 01', capacity: 40, equipment: ['Tableau blanc', 'Prises électriques'] },
+      { code: 'S02', name: 'Salle de classe 02', capacity: 40, equipment: ['Tableau blanc', 'Prises électriques'] },
+      { code: 'S03', name: 'Salle de classe 03', capacity: 40, equipment: ['Tableau blanc', 'Prises électriques'] },
+      { code: 'S04', name: 'Salle de classe 04', capacity: 35, equipment: ['Tableau blanc', 'Prises électriques'] },
+      { code: 'S05', name: 'Salle de classe 05', capacity: 35, equipment: ['Tableau blanc', 'Prises électriques'] },
+      { code: 'S06', name: 'Salle de classe 06', capacity: 30, equipment: ['Tableau blanc', 'Prises électriques'] },
+      { code: 'S07', name: 'Salle de classe 07', capacity: 30, equipment: ['Tableau blanc', 'Prises électriques'] },
+      { code: 'S08', name: 'Salle de classe 08', capacity: 25, equipment: ['Tableau blanc', 'Prises électriques'] },
+      { code: 'S09', name: 'Salle de classe 09', capacity: 25, equipment: ['Tableau blanc', 'Prises électriques'] },
+      { code: 'S10', name: 'Salle de classe 10', capacity: 25, equipment: ['Tableau blanc', 'Prises électriques'] },
+    ],
+    LABORATORY: [
+      { code: 'LAB-SCI', name: 'Laboratoire de Sciences', capacity: 30, equipment: ['Microscopes', 'Verrerie', 'Lavabo', 'Prises électriques'] },
+      { code: 'LAB-PHY', name: 'Laboratoire de Physique', capacity: 30, equipment: ['Prises électriques', 'Armoire de rangement'] },
+      { code: 'LAB-CHIM', name: 'Laboratoire de Chimie', capacity: 30, equipment: ['Verrerie', 'Lavabo', 'Armoire de rangement'] },
+      { code: 'LAB-BIO', name: 'Laboratoire de Biologie', capacity: 30, equipment: ['Microscopes', 'Lavabo'] },
+      { code: 'LAB-INFO', name: 'Salle Informatique', capacity: 25, equipment: ['Ordinateurs', 'Wi-Fi', 'Prises électriques', 'Climatisation'] },
+    ],
+    LIBRARY: [
+      { code: 'BIB', name: 'Bibliothèque', capacity: 50, equipment: ['Armoire de rangement', 'Wi-Fi', 'Climatisation'] },
+    ],
+    OFFICE: [
+      { code: 'BUR-DIR', name: 'Bureau Direction', capacity: 5, equipment: ['Climatisation'] },
+      { code: 'BUR-SEC', name: 'Bureau Secrétariat', capacity: 5, equipment: ['Climatisation'] },
+      { code: 'BUR-PED', name: 'Bureau Pédagogie', capacity: 5, equipment: [] },
+      { code: 'BUR-RH', name: 'Bureau RH', capacity: 5, equipment: [] },
+    ],
+    MEETING_ROOM: [
+      { code: 'REU-01', name: 'Salle de réunion 01', capacity: 15, equipment: ['Tableau blanc', 'Vidéoprojecteur'] },
+      { code: 'REU-02', name: 'Salle de réunion 02', capacity: 10, equipment: ['Tableau blanc'] },
+    ],
+    SPORTS_HALL: [
+      { code: 'GYM', name: 'Gymnase', capacity: 60, equipment: ['Haut-parleurs'] },
+      { code: 'FIT', name: 'Salle de Fitness', capacity: 20, equipment: [] },
+    ],
+    MULTIPURPOSE: [
+      { code: 'POLY-01', name: 'Salle polyvalente 01', capacity: 50, equipment: ['Tableau blanc', 'Vidéoprojecteur', 'Climatisation'] },
+      { code: 'POLY-02', name: 'Salle polyvalente 02', capacity: 40, equipment: ['Tableau blanc', 'Vidéoprojecteur'] },
+    ],
+  };
+
+  const generateRoomSuggestions = useCallback((type: string, existingRooms: RoomRow[]) => {
+    const suggestions = ROOM_SUGGESTIONS[type] || [];
+    const existingCodes = new Set(existingRooms.map(r => r.roomCode));
+    return suggestions.map(s => ({
+      selected: !existingCodes.has(s.code),
+      roomCode: s.code,
+      roomName: s.name,
+      capacity: s.capacity,
+      alreadyExists: existingCodes.has(s.code),
+    }));
+  }, []);
+
+  const saveBulkRooms = async () => {
+    if (!yearId) return;
+    const toCreate = bulkRoomSelections.filter(s => s.selected && !s.alreadyExists);
+    if (toCreate.length === 0) {
+      setNotice({ type: 'err', text: 'Aucune salle à créer (toutes existent déjà ou désélectionnées).' });
+      return;
+    }
+    setBulkRoomSaving(true);
+    let created = 0;
+    let failed = 0;
+    const typeEquipment = (ROOM_SUGGESTIONS[bulkRoomType] || []).reduce((acc, s) => {
+      acc[s.code] = s.equipment || [];
+      return acc;
+    }, {} as Record<string, string[]>);
+
+    for (const s of toCreate) {
+      try {
+        await pedagogyFetch('/api/rooms', {
+          method: 'POST',
+          body: {
+            academicYearId: yearId,
+            roomCode: s.roomCode.trim(),
+            roomName: s.roomName.trim(),
+            roomType: bulkRoomType,
+            capacity: s.capacity,
+            status: 'ACTIVE',
+            equipment: typeEquipment[s.roomCode] || [],
+          },
+        });
+        created++;
+      } catch (e) {
+        console.error(`Failed to create room ${s.roomCode}:`, e);
+        failed++;
+      }
+    }
+    setBulkRoomSaving(false);
+    setBulkRoomModal(false);
+    setBulkRoomSelections([]);
+    await loadRooms();
+    setNotice({
+      type: created > 0 ? 'ok' : 'err',
+      text: created > 0
+        ? `${created} salle(s) créée(s)${failed > 0 ? `, ${failed} échec(s)` : ''}.`
+        : `Échec de la création (${failed} erreur(s)).`,
+    });
+  };
 
   const COMMON_EQUIPMENT = useMemo(() => [
     'Tableau blanc',
@@ -1322,6 +1436,21 @@ export function AcademicStructureWorkspace() {
             >
               <Plus className="h-4 w-4" />
               Ajouter
+            </button>
+          )}
+          {tab === 'rooms' && (
+            <button
+              type="button"
+              onClick={() => {
+                setBulkRoomType('CLASSROOM');
+                setBulkRoomSelections(generateRoomSuggestions('CLASSROOM', rooms));
+                setBulkRoomModal(true);
+              }}
+              className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:opacity-95"
+              style={{ backgroundColor: '#F5A623' }}
+            >
+              <Sparkles className="h-4 w-4" />
+              Assistant multi-salles
             </button>
           )}
           <button
@@ -2671,6 +2800,166 @@ export function AcademicStructureWorkspace() {
           </div>
           <p className="text-xs text-slate-500 sm:col-span-2">
             Les salles sont filtrées sur l’année scolaire active.
+          </p>
+        </div>
+      </BaseModal>
+
+      {/* ─── Modal : Assistant création multi-salles ─── */}
+      <BaseModal
+        title="Assistant de création multi-salles"
+        isOpen={bulkRoomModal}
+        onClose={() => setBulkRoomModal(false)}
+        showContext={false}
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setBulkRoomModal(false)}
+              className="rounded-lg border border-slate-200 px-4 py-2 text-sm"
+            >
+              Annuler
+            </button>
+            <button
+              type="button"
+              onClick={saveBulkRooms}
+              disabled={bulkRoomSaving || bulkRoomSelections.filter(s => s.selected).length === 0}
+              className="rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              style={{ backgroundColor: PRIMARY }}
+            >
+              {bulkRoomSaving ? 'Création...' : `Créer ${bulkRoomSelections.filter(s => s.selected).length} salle(s)`}
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 flex gap-2">
+            <Info className="w-4 h-4 text-slate-500 mt-0.5 shrink-0" />
+            <p className="text-xs text-slate-600">
+              Sélectionnez un type de salle, puis choisissez les salles à créer parmi les suggestions.
+              Vous pouvez ajuster le code, le nom et la capacité de chaque salle avant création.
+            </p>
+          </div>
+
+          {/* Type de salle */}
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Type de salle</label>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { value: 'CLASSROOM', label: 'Salle de classe' },
+                { value: 'LABORATORY', label: 'Laboratoire' },
+                { value: 'LIBRARY', label: 'Bibliothèque' },
+                { value: 'OFFICE', label: 'Bureau' },
+                { value: 'MEETING_ROOM', label: 'Salle de réunion' },
+                { value: 'SPORTS_HALL', label: 'Gymnase' },
+                { value: 'MULTIPURPOSE', label: 'Salle polyvalente' },
+              ].map(t => (
+                <button
+                  key={t.value}
+                  type="button"
+                  onClick={() => {
+                    setBulkRoomType(t.value);
+                    setBulkRoomSelections(generateRoomSuggestions(t.value, rooms));
+                  }}
+                  className={cn(
+                    'px-3 py-1.5 rounded-lg text-xs font-bold transition',
+                    bulkRoomType === t.value
+                      ? 'bg-slate-800 text-white shadow-sm'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400'
+                  )}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Capacité par défaut */}
+          <div className="flex items-center gap-3">
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Capacité par défaut</label>
+            <input
+              type="number"
+              min={1}
+              value={bulkRoomCapacity}
+              onChange={(e) => {
+                const cap = Math.max(1, Number(e.target.value) || 1);
+                setBulkRoomCapacity(cap);
+                setBulkRoomSelections(prev => prev.map(s => ({ ...s, capacity: cap })));
+              }}
+              className="w-24 rounded-lg border border-slate-200 px-3 py-1.5 text-sm"
+            />
+          </div>
+
+          {/* Sélection rapide */}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setBulkRoomSelections(prev => prev.map(s => ({ ...s, selected: true })))}
+              className="text-xs font-bold text-slate-600 hover:text-slate-900 hover:underline"
+            >
+              Tout sélectionner
+            </button>
+            <button
+              type="button"
+              onClick={() => setBulkRoomSelections(prev => prev.map(s => ({ ...s, selected: false })))}
+              className="text-xs font-bold text-slate-600 hover:text-slate-900 hover:underline"
+            >
+              Tout désélectionner
+            </button>
+          </div>
+
+          {/* Liste des suggestions */}
+          <div className="bg-slate-50 rounded-lg p-3 max-h-80 overflow-y-auto space-y-2 border border-slate-200">
+            {bulkRoomSelections.length === 0 ? (
+              <p className="text-xs text-slate-400 text-center py-6">
+                Sélectionnez un type de salle pour voir les suggestions.
+              </p>
+            ) : (
+              bulkRoomSelections.map((s, i) => (
+                <div key={i} className={cn(
+                  'flex items-center gap-3 p-2 rounded-lg transition border',
+                  s.selected ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-50 border-transparent opacity-60'
+                )}>
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 rounded border-gray-300"
+                    style={{ color: PRIMARY }}
+                    checked={s.selected}
+                    onChange={(e) => setBulkRoomSelections(prev => prev.map((p, idx) => idx === i ? { ...p, selected: e.target.checked } : p))}
+                  />
+                  <input
+                    type="text"
+                    value={s.roomCode}
+                    onChange={(e) => setBulkRoomSelections(prev => prev.map((p, idx) => idx === i ? { ...p, roomCode: e.target.value } : p))}
+                    className="w-20 rounded border border-slate-200 px-2 py-1 text-xs font-mono"
+                    placeholder="Code"
+                  />
+                  <input
+                    type="text"
+                    value={s.roomName}
+                    onChange={(e) => setBulkRoomSelections(prev => prev.map((p, idx) => idx === i ? { ...p, roomName: e.target.value } : p))}
+                    className="flex-1 rounded border border-slate-200 px-2 py-1 text-xs"
+                    placeholder="Nom"
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    value={s.capacity}
+                    onChange={(e) => setBulkRoomSelections(prev => prev.map((p, idx) => idx === i ? { ...p, capacity: Math.max(1, Number(e.target.value) || 1) } : p))}
+                    className="w-16 rounded border border-slate-200 px-2 py-1 text-xs"
+                    placeholder="Cap."
+                  />
+                  {s.alreadyExists && (
+                    <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">
+                      Existe
+                    </span>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+
+          <p className="text-xs text-slate-500">
+            Les salles déjà existantes (même code) sont marquées "Existe" et seront ignorées lors de la création.
           </p>
         </div>
       </BaseModal>

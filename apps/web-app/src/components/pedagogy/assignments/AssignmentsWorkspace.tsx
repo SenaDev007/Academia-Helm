@@ -420,7 +420,7 @@ export default function AssignmentsWorkspace() {
                           </span>
                           {pc.name}
                         </span>
-                        <ChevronRight className={cn('w-3.5 h-3.5 ml-auto transition-transform', isSelected && 'rotate-90')} />
+                        <ChevronRight className="w-3.5 h-3.5 ml-auto text-slate-400" />
                       </button>
                     );
                   })}

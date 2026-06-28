@@ -389,7 +389,7 @@ export default function AssignmentsWorkspace() {
               <div className="text-center py-8 text-xs text-slate-400">
                 Aucune section physique trouvée.
                 <br />
-                Créez des sections dans Paramètres > Structure.
+                Créez des sections dans Paramètres &gt; Structure.
               </div>
             ) : (
               groupedSections.map(({ officialClass, sections }) => (

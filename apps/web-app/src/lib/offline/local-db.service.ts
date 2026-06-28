@@ -98,7 +98,7 @@ class LocalDbService {
       'teacher_class_assignments', 'academic_series', 'series_subjects',
       'teacher_profiles', 'pedagogical_materials', 'material_stocks',
       'material_movements', 'teacher_material_assignments',
-      'teaching_assignments', 'subject_programs',
+      'teaching_assignments',
       'timetables', 'timetable_entries',
       'academic_classes', 'academic_cycles', 'academic_levels',
       // ─── Discipline & Incidents ───

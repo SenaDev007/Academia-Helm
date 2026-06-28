@@ -236,7 +236,6 @@ export class SubjectsPrismaService {
         schoolLevel: true,
         academicYear: true,
         academicTrack: true,
-        subjectPrograms: true,
       },
       orderBy: [
         { code: 'asc' },
@@ -335,7 +334,6 @@ export class SubjectsPrismaService {
       { table: 'teacher_subjects', column: 'subjectId' },
       { table: 'exam_subjects', column: 'subjectId' },
       { table: 'exam_scores', column: 'subjectId' },
-      { table: 'subject_programs', column: 'subjectId' },
       { table: 'lesson_plans', column: 'subjectId' },
       { table: 'lesson_journals', column: 'subjectId' },
       { table: 'homework_entries', column: 'subjectId' },

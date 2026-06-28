@@ -196,15 +196,6 @@ export class UpdateSeriesSubjectDto {
   @IsOptional() @IsNumber() @Type(() => Number) weeklyHours?: number;
 }
 
-export class CreateSubjectProgramDto {
-  @IsUUID() academicYearId: string;
-  @IsUUID() subjectId: string;
-  @IsString() documentUrl: string;
-  @IsString() version: string;
-  /** Frontend may send tenantId — ignored */
-  @IsOptional() @IsString() tenantId?: string;
-}
-
 // ─── Teacher Profile Sub-route DTOs ─────────────────────────────────────────
 
 export class AddQualificationDto {

@@ -17,7 +17,6 @@ import {
   Plus, 
   BookOpen, 
   Layers, 
-  FileText, 
   Search, 
   Edit, 
   Trash2, 
@@ -43,11 +42,8 @@ import { useModuleContext } from '@/hooks/useModuleContext';
 import { useAuth } from '@/hooks/useAuth';
 import { useBilingual } from '@/contexts/BilingualContext';
 import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
-import { compressImageFileToDataUrl } from '@/lib/media';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
-import { fr } from 'date-fns/locale';
 
 const PRIMARY = '#1A2BA6';
 const ACCENT = '#F5A623';
@@ -146,7 +142,6 @@ interface Subject {
   language?: string;
   schoolLevelId?: string;
   schoolLevel?: { id: string; name?: string; label: string; code: string };
-  programs?: SubjectProgram[];
 }
 
 interface AcademicSeries {
@@ -156,16 +151,8 @@ interface AcademicSeries {
   level?: { id: string; name: string };
 }
 
-interface SubjectProgram {
-  id: string;
-  subjectId: string;
-  documentUrl: string;
-  version: string;
-  approvedAt?: string;
-}
-
 // --- Tabs ---
-type SubTab = 'catalogue' | 'classes' | 'programs';
+type SubTab = 'catalogue' | 'classes';
 
 export default function SubjectsWorkspace() {
   const { academicYear, tenantId } = useModuleContext();
@@ -264,8 +251,6 @@ export default function SubjectsWorkspace() {
 
   // Modal state
   const [modal, setModal] = useState<'none' | 'create-subject' | 'edit-subject' | 'mass-assignment'>('none');
-
-  const [uploading, setUploading] = useState(false);
 
   // Confirmation states
   const [subjectToDelete, setSubjectToDelete] = useState<Subject | null>(null);
@@ -735,85 +720,6 @@ export default function SubjectsWorkspace() {
   };
 
 
-
-  const handleUploadProgram = async (subjectId: string, file: File) => {
-    setUploading(true);
-    try {
-      // Pattern data URL : compresser/lire côté navigateur et envoyer en JSON
-      const isImage = file.type.startsWith('image/');
-      let fileDataUrl: string;
-      if (isImage) {
-        fileDataUrl = await compressImageFileToDataUrl(file, {
-          maxEdge: 1600,
-          quality: 0.85,
-          mimeType: 'image/jpeg',
-        });
-      } else {
-        fileDataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = () => reject(new Error('Lecture du fichier impossible'));
-          reader.readAsDataURL(file);
-        });
-      }
-
-      const { url } = await pedagogyFetch<{ url: string }>('/api/pedagogy/academic-series/programs/upload-program', {
-        method: 'POST',
-        body: {
-          fileDataUrl,
-          fileName: file.name,
-          mimeType: file.type || (isImage ? 'image/jpeg' : 'application/pdf'),
-          folder: 'programs',
-        }
-      });
-
-      await pedagogyFetch('/api/pedagogy/academic-series/programs', {
-        method: 'POST',
-        body: {
-          academicYearId: academicYear?.id,
-          subjectId,
-          documentUrl: url,
-          version: '1.0'
-        }
-      });
-
-      loadSubjects();
-      toast({
-        title: "Succès",
-        description: "Le programme officiel a été téléversé avec succès.",
-      });
-    } catch (e: any) {
-      toast({
-        title: "Erreur",
-        description: e.message || "Impossible de téléverser le document.",
-        variant: "destructive"
-      });
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleApproveProgram = async (programId: string) => {
-    if (!user?.id) return;
-    try {
-      await pedagogyFetch(`/api/pedagogy/academic-series/programs/${programId}/approve`, {
-        method: 'PUT',
-        body: { userId: user.id }
-      });
-      loadSubjects();
-      toast({
-        title: "Succès",
-        description: "Le programme officiel a été approuvé et signé.",
-      });
-    } catch (e: any) {
-      toast({
-        title: "Erreur",
-        description: e.message || "Impossible d'approuver le document.",
-        variant: "destructive"
-      });
-    }
-  };
-
   return (
     <div className="space-y-6">
       {/* Banner / Connection Paramètres */}
@@ -895,7 +801,6 @@ export default function SubjectsWorkspace() {
         {[
           { id: 'catalogue', label: currentTrack === 'EN' ? 'Subjects Catalogue' : 'Catalogue Matières', icon: BookOpen },
           { id: 'classes', label: currentTrack === 'EN' ? 'Class Assignments' : 'Affectation Classes', icon: ClipboardList },
-          { id: 'programs', label: currentTrack === 'EN' ? 'Official Programs' : 'Programmes Officiels', icon: FileText },
         ].map((t) => {
           const Icon = t.icon;
           const active = tab === t.id;
@@ -1376,132 +1281,6 @@ export default function SubjectsWorkspace() {
           )}
 
 
-          {tab === 'programs' && (
-            <div className="p-6 space-y-6">
-               <div className="flex flex-col gap-1">
-                  <h3 className="text-base font-semibold text-slate-900">Programmes Officiels de Référence</h3>
-                  <p className="text-xs text-slate-500">Documents PDF de référence institutionnelle (Signés & Scellés).</p>
-               </div>
-
-               <div className="overflow-x-auto rounded-xl border border-slate-200">
-                 <table className="min-w-full text-sm">
-                   <thead>
-                     <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                       <th className="px-4 py-3">Matière</th>
-                       <th className="px-4 py-3">Niveau Scolaire</th>
-                       <th className="px-4 py-3 text-center">
-                         <span className="cursor-help border-b border-dashed border-slate-300 pb-0.5" title="Version du programme d'études officiel (commence à 1.0 par défaut)">
-                           Version
-                         </span>
-                       </th>
-                       <th className="px-4 py-3 text-center">Statut d'Approbation</th>
-                       <th className="px-4 py-3 text-right">Actions</th>
-                     </tr>
-                   </thead>
-                   <tbody>
-                     {filteredSubjects.length === 0 ? (
-                       <tr>
-                         <td colSpan={5} className="py-20 text-center text-slate-500">
-                           Aucune matière disponible pour associer un programme.
-                         </td>
-                       </tr>
-                     ) : (
-                       filteredSubjects.map((s) => {
-                         const latestProgram = s.programs && s.programs.length > 0 ? s.programs[0] : null;
-                         const isApproved = !!latestProgram?.approvedAt;
-
-                         return (
-                           <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50/80">
-                             <td className="px-4 py-3">
-                               <div>
-                                 <div className="font-semibold text-slate-900">{s.name}</div>
-                                 <div className="text-xs text-slate-400 uppercase">{s.code}</div>
-                               </div>
-                             </td>
-                             <td className="px-4 py-3 text-slate-600">
-                               {s.schoolLevel?.name ?? 
-                                s.schoolLevel?.label ?? 
-                                schoolLevels.find(l => l.id === s.schoolLevelId || l.id === (s as any).level)?.label ??
-                                schoolLevels.find(l => l.id === s.schoolLevelId || l.id === (s as any).level)?.name ??
-                                '—'}
-                             </td>
-                             <td className="px-4 py-3 text-center text-slate-600 font-medium">
-                               {latestProgram ? `v${latestProgram.version}` : '—'}
-                             </td>
-                             <td className="px-4 py-3 text-center">
-                               {latestProgram ? (
-                                 isApproved ? (
-                                   <span className="inline-flex items-center gap-1 rounded bg-emerald-50 text-emerald-700 px-2 py-0.5 text-xs font-semibold border border-emerald-200">
-                                     <CheckCircle2 className="w-3.5 h-3.5" />
-                                     Validé le {format(new Date(latestProgram.approvedAt!), 'dd/MM/yyyy', { locale: fr })}
-                                   </span>
-                                 ) : (
-                                   <span className="inline-flex items-center gap-1 rounded bg-amber-50 text-amber-700 px-2 py-0.5 text-xs font-semibold border border-amber-200">
-                                     <AlertCircle className="w-3.5 h-3.5" />
-                                     En attente d'approbation
-                                   </span>
-                                 )
-                               ) : (
-                                 <span className="inline-flex items-center gap-1 rounded bg-slate-100 text-slate-600 px-2 py-0.5 text-xs font-semibold border border-slate-200">
-                                   Non importé
-                                 </span>
-                               )}
-                             </td>
-                             <td className="px-4 py-3 text-right">
-                               <div className="flex items-center justify-end gap-2">
-                                 {latestProgram && (
-                                   <>
-                                     <a 
-                                       href={latestProgram.documentUrl} 
-                                       target="_blank" 
-                                       rel="noreferrer"
-                                       className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 bg-slate-100 text-slate-800 border border-slate-200 rounded hover:bg-slate-200 transition-colors animate-none"
-                                     >
-                                       <Download className="w-3 h-3" />
-                                       Télécharger
-                                     </a>
-                                     {!isApproved && (
-                                       <button 
-                                         type="button"
-                                         onClick={() => handleApproveProgram(latestProgram.id)}
-                                         className="text-xs font-semibold px-2.5 py-1 text-white rounded hover:opacity-95 transition-all"
-                                         style={{ backgroundColor: PRIMARY }}
-                                       >
-                                         Approuver
-                                       </button>
-                                     )}
-                                   </>
-                                 )}
-                                 <div className="relative inline-block">
-                                    <input 
-                                       type="file" 
-                                       className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
-                                       accept=".pdf"
-                                       onChange={(e) => {
-                                          const file = e.target.files?.[0];
-                                          if (file) handleUploadProgram(s.id, file);
-                                       }}
-                                       disabled={uploading}
-                                    />
-                                    <button 
-                                      type="button"
-                                      className="text-xs font-semibold px-2.5 py-1 bg-slate-100 text-slate-800 border border-slate-200 rounded hover:bg-slate-200 transition-colors disabled:opacity-50"
-                                      disabled={uploading}
-                                    >
-                                      {latestProgram ? 'Remplacer PDF' : 'Importer PDF'}
-                                    </button>
-                                 </div>
-                               </div>
-                             </td>
-                           </tr>
-                         );
-                       })
-                     )}
-                   </tbody>
-                 </table>
-               </div>
-            </div>
-          )}
         </motion.div>
       </AnimatePresence>
 

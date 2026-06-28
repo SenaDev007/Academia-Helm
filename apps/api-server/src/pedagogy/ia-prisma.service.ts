@@ -39,7 +39,6 @@
  *   - OrionRiskFlag (table: orion_risk_flags)
  *   - PedagogicalMaterial (table: pedagogical_materials)
  *   - SeriesSubject (table: pedagogy_series_subjects)
- *   - SubjectProgram (table: pedagogy_subject_programs)
  *   - GlobalPedagogicalResource (table: global_pedagogical_resources)
  * ============================================================================
  */
@@ -767,29 +766,16 @@ RÈGLES :
   }
 
   /**
-   * Récupère les notions du programme pour une matière et classe
+   * Récupère les notions du programme pour une matière et classe.
+   *
+   * NOTE : La fonctionnalité « Programme officiel » (SubjectProgram) a été
+   * supprimée de l'application (voir commit history). Cette méthode renvoie
+   * désormais toujours un tableau vide. conservée temporairement comme no-op
+   * car elle est appelée par d'autres chemins (analyse de qualité, etc.).
+   * À retirer définitivement quand tous les appels seront nettoyés.
    */
-  private async getProgramNotions(tenantId: string, subjectId?: string, classId?: string): Promise<string[]> {
-    if (!subjectId) return [];
-
-    try {
-      const programs = await this.prisma.subjectProgram.findMany({
-        where: { tenantId, subjectId },
-        select: { title: true, description: true, notions: true },
-        take: 10,
-      });
-
-      const notions: string[] = [];
-      for (const prog of programs) {
-        if (prog.title) notions.push(prog.title);
-        if (prog.notions && Array.isArray(prog.notions)) {
-          notions.push(...prog.notions.filter((n: any) => typeof n === 'string'));
-        }
-      }
-      return [...new Set(notions)];
-    } catch {
-      return [];
-    }
+  private async getProgramNotions(_tenantId: string, _subjectId?: string, _classId?: string): Promise<string[]> {
+    return [];
   }
 
   /**
@@ -978,18 +964,22 @@ RÈGLES :
       }
 
       case 'coverage': {
-        const programs = await this.prisma.subjectProgram.findMany({
-          where: { tenantId },
-          select: { subjectId: true, title: true },
+        // NOTE : La fonctionnalité « Programme officiel » (SubjectProgram) a été
+        // supprimée. La couverture du programme est désormais calculée à partir
+        // des plans de cours publiés (lessonPlans) — voir calculateCoverageScore().
+        // Cette branche 'coverage' est conservée pour compatibilité mais ne
+        // repose plus sur SubjectProgram.
+        const lessonPlansCount = await this.prisma.lessonPlan.count({
+          where: { tenantId, status: 'PUBLISHED' },
         });
-        const coveragePercent = programs.length > 0 ? Math.min(100, Math.round((programs.length / 10) * 100)) : 0;
+        const coveragePercent = lessonPlansCount > 0 ? Math.min(100, Math.round((lessonPlansCount / 10) * 100)) : 0;
         analysisResults.coveragePercent = coveragePercent;
-        analysisResults.programsReferenced = programs.length;
+        analysisResults.programsReferenced = lessonPlansCount;
         analysisResults.recommendations = [
           coveragePercent < 50
-            ? 'La couverture du programme est insuffisante. Vérifiez que les notions essentielles sont couvertes.'
+            ? 'La couverture pédagogique est insuffisante. Vérifiez que les plans de cours sont publiés.'
             : 'La couverture est satisfaisante. Envisagez d\'ajouter des exercices de renforcement.',
-          'S\'assurer que chaque chapitre du programme a au moins une évaluation associée',
+          'S\'assurer que chaque matière a au moins un plan de cours publié',
         ];
         break;
       }

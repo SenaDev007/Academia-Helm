@@ -280,7 +280,6 @@ model Tenant {
   roomSchedules                    RoomSchedule[]
   pedagogySeriesSubjects           SeriesSubject[]                   @relation("TenantSeriesSubjects")
   pedagogicalSignatures            PedagogicalSignature[]            @relation("TenantPedagogicalSignatures")
-  pedagogySubjectPrograms          SubjectProgram[]                  @relation("TenantSubjectPrograms")
   teacherAcademicProfiles          TeacherAcademicProfile[]          @relation("TenantTeacherAcademicProfiles")
   teacherAvailabilities            TeacherAvailability[]             @relation("TenantTeacherAvailabilities")
   teacherLevelAuthorizations       TeacherLevelAuthorization[]       @relation("TenantTeacherLevelAuthorizations")
@@ -689,7 +688,6 @@ model AcademicYear {
   pedagogicalKpiSnapshots          PedagogicalKpiSnapshot[]
   roomSchedules                    RoomSchedule[]
   seriesSubjects                   SeriesSubject[]
-  subjectPrograms                  SubjectProgram[]
   teacherAcademicProfiles          TeacherAcademicProfile[]
   teacherAvailabilities            TeacherAvailability[]
   teacherLevelAuthorizations       TeacherLevelAuthorization[]
@@ -1048,26 +1046,6 @@ model SeriesSubject {
 }
 
 /// Programme officiel (PDF) attachÃ© Ã  une matiÃ¨re, versionnÃ©.
-model SubjectProgram {
-  id             String       @id @default(uuid())
-  tenantId       String
-  academicYearId String
-  subjectId      String
-  documentUrl    String
-  version        String
-  approvedById   String?
-  approvedAt     DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
-  subject        Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  tenant         Tenant       @relation("TenantSubjectPrograms", fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@index([tenantId, academicYearId])
-  @@index([subjectId])
-  @@map("pedagogy_subject_programs")
-}
-
 /// Profil acadÃ©mique enseignant (charge max, statut pÃ©dagogique) â€” SM3
 model TeacherAcademicProfile {
   id                    String                        @id @default(uuid())
@@ -2431,7 +2409,6 @@ model Subject {
   pedagogicalMaterials         PedagogicalMaterial[]         @relation("PedagogicalMaterialSubject")
   pedagogicalSheets            PedagogicalSheet[]
   seriesSubjects               SeriesSubject[]
-  subjectPrograms              SubjectProgram[]
   teacherSubjectQualifications TeacherSubjectQualification[]
   teachingAssignments          TeachingAssignment[]
   reportCardItems              ReportCardItem[]

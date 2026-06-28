@@ -1531,22 +1531,7 @@ CREATE TABLE IF NOT EXISTS pedagogy_academic_series (
 );
 
 -- ============================================================================
--- TABLE 66: PEDAGOGY_SUBJECT_PROGRAMS
--- ============================================================================
-CREATE TABLE IF NOT EXISTS pedagogy_subject_programs (
-  id TEXT PRIMARY KEY,
-  tenantId TEXT NOT NULL,
-  subjectId TEXT NOT NULL,
-  title TEXT NOT NULL,
-  content TEXT NOT NULL,
-  objective TEXT,
-  durationWeeks INTEGER,
-  createdAt TEXT DEFAULT (datetime('now')) NOT NULL,
-  updatedAt TEXT DEFAULT (datetime('now')) NOT NULL
-);
-
--- ============================================================================
--- TABLE 67: PEDAGOGY_TEACHING_ASSIGNMENTS
+-- TABLE 66: PEDAGOGY_TEACHING_ASSIGNMENTS
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS pedagogy_teaching_assignments (
   id TEXT PRIMARY KEY,

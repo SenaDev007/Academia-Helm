@@ -107,6 +107,7 @@ export default function AssignmentsWorkspace() {
   const [academicClasses, setAcademicClasses] = useState<AcademicClass[]>([]);
   const [physicalClasses, setPhysicalClasses] = useState<PhysicalClass[]>([]);
   const [teachers, setTeachers] = useState<TeacherProfile[]>([]);
+  const [teachersWithPhotos, setTeachersWithPhotos] = useState<any[]>([]);
   const [classSubjects, setClassSubjects] = useState<ClassSubject[]>([]);
   const [bulkAssigning, setBulkAssigning] = useState(false);
 
@@ -116,6 +117,7 @@ export default function AssignmentsWorkspace() {
   const [modal, setModal] = useState<'none' | 'assign-homeroom' | 'assign-teacher' | 'confirm-remove'>('none');
   const [removingAssignmentId, setRemovingAssignmentId] = useState<string | null>(null);
   const [activeSubject, setActiveSubject] = useState<ClassSubject | null>(null);
+  const [selectedTeacherInModal, setSelectedTeacherInModal] = useState<string | null>(null);
 
   // --- Loaders ---
 
@@ -123,13 +125,17 @@ export default function AssignmentsWorkspace() {
     if (!academicYear?.id) return;
     setLoading(true);
     try {
-      const [classesData, teachersData] = await Promise.all([
+      const [classesData, teachersData, teachersWithPhotosData] = await Promise.all([
         pedagogyFetch<AcademicClass[]>(`/api/pedagogy/academic-structure/classes?academicYearId=${academicYear.id}`),
         pedagogyFetch<TeacherProfile[]>(`/api/pedagogy/teacher-profiles?academicYearId=${academicYear.id}`),
+        // Charger aussi la liste des enseignants (avec photoUrl via la jointure StaffPhoto)
+        pedagogyFetch<any[]>(`/api/teachers`),
       ]);
 
-      // Filtrer : ne garder que les classes officielles ACTIVES
       const activeClasses = (classesData || []).filter(c => c.isActive !== false);
+      setAcademicClasses(activeClasses);
+      setTeachers(teachersData || []);
+      setTeachersWithPhotos(teachersWithPhotosData || []);
 
       // Charger TOUTES les classes physiques pour cette année
       // On utilise pedagogyFetch (proxy) qui n'a pas le guard x-school-level-id
@@ -347,6 +353,12 @@ export default function AssignmentsWorkspace() {
     }
   };
 
+  // Helper : trouver la photo d'un enseignant depuis teachersWithPhotos
+  const getTeacherPhoto = (teacherId: string): string | null => {
+    const t = teachersWithPhotos.find(t => t.id === teacherId);
+    return t?.photoUrl || null;
+  };
+
   // Filtrer les enseignants éligibles (même niveau)
   const eligibleTeachers = useMemo(() => {
     return teachers.filter(t => {
@@ -534,7 +546,7 @@ export default function AssignmentsWorkspace() {
                     {homeroomFullyAssigned ? (
                       <>
                         <button
-                          onClick={() => { setSearch(''); setModal('assign-homeroom'); }}
+                          onClick={() => { setSearch(''); setSelectedTeacherInModal(null); setModal('assign-homeroom'); }}
                           disabled={bulkAssigning}
                           className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 transition-all"
                         >
@@ -550,7 +562,7 @@ export default function AssignmentsWorkspace() {
                       </>
                     ) : (
                       <button
-                        onClick={() => { setSearch(''); setModal('assign-homeroom'); }}
+                        onClick={() => { setSearch(''); setSelectedTeacherInModal(null); setModal('assign-homeroom'); }}
                         disabled={bulkAssigning || classSubjects.length === 0}
                         className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg text-white shadow-sm transition hover:opacity-95 disabled:opacity-50"
                         style={{ backgroundColor: PRIMARY }}
@@ -604,7 +616,7 @@ export default function AssignmentsWorkspace() {
                                 {assignment.teacher.lastName} {assignment.teacher.firstName}
                               </span>
                               <button
-                                onClick={() => { setActiveSubject(cs); setModal('assign-teacher'); }}
+                                onClick={() => { setActiveSubject(cs); setSelectedTeacherInModal(null); setModal('assign-teacher'); }}
                                 className="text-[10px] font-semibold text-blue-600 hover:underline"
                               >
                                 Remplacer
@@ -618,7 +630,7 @@ export default function AssignmentsWorkspace() {
                             </>
                           ) : (
                             <button
-                              onClick={() => { setActiveSubject(cs); setModal('assign-teacher'); }}
+                              onClick={() => { setActiveSubject(cs); setSelectedTeacherInModal(null); setModal('assign-teacher'); }}
                               className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1.5 rounded-lg text-white"
                               style={{ backgroundColor: PRIMARY }}
                             >
@@ -642,8 +654,12 @@ export default function AssignmentsWorkspace() {
       <FormModal
         title={`Désigner le titulaire — ${selectedPhysicalClass?.name || ''}`}
         isOpen={modal === 'assign-homeroom'}
-        onClose={() => { setModal('none'); setSearch(''); }}
-        onConfirm={() => {}}
+        onClose={() => { setModal('none'); setSearch(''); setSelectedTeacherInModal(null); }}
+        onConfirm={async () => {
+          if (selectedTeacherInModal) {
+            await handleAssignHomeroom(selectedTeacherInModal);
+          }
+        }}
         size="large"
       >
         <div className="space-y-4">
@@ -666,7 +682,7 @@ export default function AssignmentsWorkspace() {
             />
           </div>
 
-          <div className="max-h-72 overflow-y-auto space-y-1.5">
+          <div className="space-y-1.5">
             {eligibleTeachers.length === 0 ? (
               <p className="text-center text-xs text-slate-400 py-6">Aucun enseignant disponible.</p>
             ) : (
@@ -677,23 +693,36 @@ export default function AssignmentsWorkspace() {
                   return `${t.teacher.lastName} ${t.teacher.firstName}`.toLowerCase().includes(s)
                     || (t.teacher.matricule || '').toLowerCase().includes(s);
                 })
-                .map(t => (
-                  <button
-                    key={t.id}
-                    onClick={() => handleAssignHomeroom(t.teacher.id)}
-                    disabled={bulkAssigning}
-                    className="w-full flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:border-slate-400 hover:bg-slate-50 transition-all text-left disabled:opacity-50"
-                  >
-                    <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-600">
-                      {t.teacher.firstName?.[0]}{t.teacher.lastName?.[0]}
-                    </div>
-                    <div>
-                      <p className="font-bold text-slate-800 text-sm">{t.teacher.lastName} {t.teacher.firstName}</p>
-                      <p className="text-[10px] text-slate-400 font-medium">{t.teacher.matricule} · {t.maxWeeklyHours}h/sem max</p>
-                    </div>
-                    <UserPlus className="w-4 h-4 ml-auto text-slate-400" />
-                  </button>
-                ))
+                .map(t => {
+                  const isSelected = selectedTeacherInModal === t.teacher.id;
+                  const photoUrl = getTeacherPhoto(t.teacher.id);
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => setSelectedTeacherInModal(t.teacher.id)}
+                      disabled={bulkAssigning}
+                      className={cn(
+                        'w-full flex items-center gap-3 p-3 rounded-lg border transition-all text-left disabled:opacity-50',
+                        isSelected
+                          ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-200'
+                          : 'border-slate-200 hover:border-slate-400 hover:bg-slate-50',
+                      )}
+                    >
+                      {photoUrl ? (
+                        <img src={photoUrl} alt="" className="w-8 h-8 rounded-lg object-cover" />
+                      ) : (
+                        <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-600">
+                          {t.teacher.firstName?.[0]}{t.teacher.lastName?.[0]}
+                        </div>
+                      )}
+                      <div>
+                        <p className="font-bold text-slate-800 text-sm">{t.teacher.lastName} {t.teacher.firstName}</p>
+                        <p className="text-[10px] text-slate-400 font-medium">{t.teacher.matricule} · {t.maxWeeklyHours}h/sem max</p>
+                      </div>
+                      {isSelected && <CheckCircle2 className="w-4 h-4 ml-auto" style={{ color: PRIMARY }} />}
+                    </button>
+                  );
+                })
             )}
           </div>
         </div>
@@ -703,8 +732,12 @@ export default function AssignmentsWorkspace() {
       <FormModal
         title={`Affecter un enseignant — ${activeSubject?.subject?.name || ''}`}
         isOpen={modal === 'assign-teacher'}
-        onClose={() => { setModal('none'); setSearch(''); }}
-        onConfirm={() => {}}
+        onClose={() => { setModal('none'); setSearch(''); setSelectedTeacherInModal(null); }}
+        onConfirm={async () => {
+          if (selectedTeacherInModal) {
+            await handleAssignTeacher(selectedTeacherInModal);
+          }
+        }}
         size="large"
       >
         <div className="space-y-4">
@@ -725,29 +758,42 @@ export default function AssignmentsWorkspace() {
             />
           </div>
 
-          <div className="max-h-72 overflow-y-auto space-y-1.5">
+          <div className="space-y-1.5">
             {eligibleTeachers
               .filter(t => {
                 if (!search) return true;
                 const s = search.toLowerCase();
                 return `${t.teacher.lastName} ${t.teacher.firstName}`.toLowerCase().includes(s);
               })
-              .map(t => (
-                <button
-                  key={t.id}
-                  onClick={() => handleAssignTeacher(t.teacher.id)}
-                  className="w-full flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:border-slate-400 hover:bg-slate-50 transition-all text-left"
-                >
-                  <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-600">
-                    {t.teacher.firstName?.[0]}{t.teacher.lastName?.[0]}
-                  </div>
-                  <div>
-                    <p className="font-bold text-slate-800 text-sm">{t.teacher.lastName} {t.teacher.firstName}</p>
-                    <p className="text-[10px] text-slate-400 font-medium">{t.teacher.matricule}</p>
-                  </div>
-                  <UserPlus className="w-4 h-4 ml-auto text-slate-400" />
-                </button>
-              ))}
+              .map(t => {
+                const isSelected = selectedTeacherInModal === t.teacher.id;
+                const photoUrl = getTeacherPhoto(t.teacher.id);
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => setSelectedTeacherInModal(t.teacher.id)}
+                    className={cn(
+                      'w-full flex items-center gap-3 p-3 rounded-lg border transition-all text-left',
+                      isSelected
+                        ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-200'
+                        : 'border-slate-200 hover:border-slate-400 hover:bg-slate-50',
+                    )}
+                  >
+                    {photoUrl ? (
+                      <img src={photoUrl} alt="" className="w-8 h-8 rounded-lg object-cover" />
+                    ) : (
+                      <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-600">
+                        {t.teacher.firstName?.[0]}{t.teacher.lastName?.[0]}
+                      </div>
+                    )}
+                    <div>
+                      <p className="font-bold text-slate-800 text-sm">{t.teacher.lastName} {t.teacher.firstName}</p>
+                      <p className="text-[10px] text-slate-400 font-medium">{t.teacher.matricule}</p>
+                    </div>
+                    {isSelected && <CheckCircle2 className="w-4 h-4 ml-auto" style={{ color: PRIMARY }} />}
+                  </button>
+                );
+              })}
           </div>
         </div>
       </FormModal>

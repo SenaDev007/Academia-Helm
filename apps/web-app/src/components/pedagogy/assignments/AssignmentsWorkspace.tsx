@@ -266,33 +266,52 @@ export default function AssignmentsWorkspace() {
     setBulkAssigning(true);
     try {
       // 1. Supprimer TOUTES les affectations existantes pour ces classSubjects
-      //    (pas seulement celles avec le bon classId — les anciennes avec classId=NULL
-      //    doivent aussi être supprimées pour éviter le conflit "already exists")
-      const removePromises = classSubjects
-        .flatMap(cs => (cs.assignments || []))
-        .map(a => pedagogyFetch(`/api/pedagogy/teacher-class-assignments/${a.id}`, { method: 'DELETE' }).catch(() => {}));
-      await Promise.all(removePromises);
+      //    Séquentiel pour éviter le rate limit
+      const allAssignments = classSubjects.flatMap(cs => (cs.assignments || []));
+      for (const a of allAssignments) {
+        await pedagogyFetch(`/api/pedagogy/teacher-class-assignments/${a.id}`, { method: 'DELETE' }).catch(() => {});
+      }
 
-      // 2. Créer une affectation pour chaque matière, avec classId = section physique
-      const assignPromises = classSubjects.map(cs =>
-        pedagogyFetch(`/api/pedagogy/teacher-class-assignments`, {
-          method: 'POST',
-          body: {
-            academicYearId: academicYear.id,
-            teacherId,
-            classSubjectId: cs.id,
-            classId: selectedPhysicalClassId,
-          },
-        })
-      );
-      await Promise.all(assignPromises);
+      // 2. Créer une affectation pour chaque matière SÉQUENTIELLEMENT
+      //    (pas en parallèle — évite le rate limit "too many requests" et garantit
+      //    que TOUTES les matières sont persistées, pas seulement une partie)
+      let created = 0;
+      let failed = 0;
+      for (const cs of classSubjects) {
+        try {
+          await pedagogyFetch(`/api/pedagogy/teacher-class-assignments`, {
+            method: 'POST',
+            body: {
+              academicYearId: academicYear.id,
+              teacherId,
+              classSubjectId: cs.id,
+              classId: selectedPhysicalClassId,
+            },
+          });
+          created++;
+        } catch {
+          // Si une matière échoue, on continue avec les autres
+          failed++;
+        }
+      }
+
       await loadClassSubjects();
       setModal('none');
       setSearch('');
-      toast({
-        title: '✅ Titulaire affecté',
-        description: `Le titulaire a été assigné à toutes les ${classSubjects.length} matières de ${selectedPhysicalClass?.name}.`,
-      });
+      setSelectedTeacherInModal(null);
+
+      if (failed === 0) {
+        toast({
+          title: '✅ Titulaire affecté',
+          description: `Le titulaire a été assigné à toutes les ${created} matières de ${selectedPhysicalClass?.name}.`,
+        });
+      } else {
+        toast({
+          title: '⚠️ Affectation partielle',
+          description: `${created} matière(s) affectée(s), ${failed} échec(s) sur ${classSubjects.length}. Réessayez pour compléter.`,
+          variant: 'destructive',
+        });
+      }
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message || "Impossible d'affecter le titulaire.", variant: 'destructive' });
     } finally {
@@ -305,11 +324,11 @@ export default function AssignmentsWorkspace() {
     if (!academicYear?.id || !selectedPhysicalClassId) return;
     setBulkAssigning(true);
     try {
-      // Supprimer TOUTES les affectations existantes pour ces classSubjects
-      const removePromises = classSubjects
-        .flatMap(cs => (cs.assignments || []))
-        .map(a => pedagogyFetch(`/api/pedagogy/teacher-class-assignments/${a.id}`, { method: 'DELETE' }).catch(() => {}));
-      await Promise.all(removePromises);
+      // Supprimer TOUTES les affectations existantes pour ces classSubjects (séquentiel)
+      const allAssignments = classSubjects.flatMap(cs => (cs.assignments || []));
+      for (const a of allAssignments) {
+        await pedagogyFetch(`/api/pedagogy/teacher-class-assignments/${a.id}`, { method: 'DELETE' }).catch(() => {});
+      }
       await loadClassSubjects();
       setModal('none');
       toast({ title: 'Titulaire retiré', description: `Le titulaire de ${selectedPhysicalClass?.name} a été retiré.` });

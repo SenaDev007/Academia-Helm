@@ -295,10 +295,14 @@ export class PedagogyPrismaService {
       include: {
         subject: true,
         academicYear: true,
-        // NOTE : on ne fait PLUS include assignments (TeacherClassAssignment)
-        // car la table teacher_class_assignments manque la colonne classId
-        // déclarée dans le modèle Prisma. Inclure assignments fait crasher
-        // la requête avec P2022 "Colonne manquante". Voir migration à venir.
+        // Inclure les affectations enseignant (TeacherClassAssignment).
+        // La colonne classId a été ajoutée à teacher_class_assignments via
+        // la migration 20260628140000 — l'include ne crash plus avec P2022.
+        assignments: {
+          include: {
+            teacher: true,
+          },
+        },
       },
     });
 

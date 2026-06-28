@@ -213,12 +213,12 @@ export default function AssignmentsWorkspace() {
   // Titulaire courant (Maternelle/Primaire) : le prof du premier classSubject assigné
   const currentHomeroom = useMemo(() => {
     if (!isHomeroom) return null;
-    const assigned = visibleClassSubjects.find(cs => cs.assignments.length > 0);
+    const assigned = visibleClassSubjects.find(cs => (cs.assignments || []).length > 0);
     return assigned?.assignments[0]?.teacher || null;
   }, [isHomeroom, visibleClassSubjects]);
 
   const homeroomFullyAssigned = isHomeroom && visibleClassSubjects.length > 0 &&
-    visibleClassSubjects.every(cs => cs.assignments.length > 0);
+    visibleClassSubjects.every(cs => (cs.assignments || []).length > 0);
 
   // --- Actions ---
 
@@ -247,7 +247,7 @@ export default function AssignmentsWorkspace() {
     try {
       // Supprimer d'abord toutes les affectations existantes (sur les matières visibles)
       const removePromises = visibleClassSubjects
-        .flatMap(cs => cs.assignments.map(a => pedagogyService.deleteTeacherAssignment(a.id)));
+        .flatMap(cs => (cs.assignments || []).map(a => pedagogyService.deleteTeacherAssignment(a.id)));
       await Promise.all(removePromises);
 
       // Créer une affectation pour chaque matière visible
@@ -280,7 +280,7 @@ export default function AssignmentsWorkspace() {
     setBulkAssigning(true);
     try {
       const removePromises = visibleClassSubjects
-        .flatMap(cs => cs.assignments.map(a => pedagogyService.deleteTeacherAssignment(a.id)));
+        .flatMap(cs => (cs.assignments || []).map(a => pedagogyService.deleteTeacherAssignment(a.id)));
       await Promise.all(removePromises);
       await loadClassSubjects();
       setModal('none');
@@ -495,7 +495,7 @@ export default function AssignmentsWorkspace() {
                   {visibleClassSubjects.length} matière{visibleClassSubjects.length > 1 ? 's' : ''}
                   {' '}• {isHomeroom
                     ? (homeroomFullyAssigned ? '✅ Titulaire affecté' : '⚠️ Sans titulaire')
-                    : `${visibleClassSubjects.filter(cs => cs.assignments.length > 0).length}/${visibleClassSubjects.length} affectées`
+                    : `${visibleClassSubjects.filter(cs => (cs.assignments || []).length > 0).length}/${visibleClassSubjects.length} affectées`
                   }
                 </p>
               </div>
@@ -663,7 +663,7 @@ export default function AssignmentsWorkspace() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {visibleClassSubjects.map(cs => {
-                  const assigned = cs.assignments[0]?.teacher;
+                  const assigned = (cs.assignments || [])[0]?.teacher;
                   return (
                     <motion.div
                       key={cs.id}
@@ -689,7 +689,7 @@ export default function AssignmentsWorkspace() {
                         </div>
                         {assigned && (
                           <button
-                            onClick={() => handleRemoveAssignment(cs.assignments[0].id)}
+                            onClick={() => handleRemoveAssignment((cs.assignments || [])[0]?.id)}
                             className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
                           >
                             <Trash2 className="w-4 h-4" />

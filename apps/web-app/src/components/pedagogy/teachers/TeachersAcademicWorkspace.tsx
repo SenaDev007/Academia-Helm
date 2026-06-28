@@ -1043,13 +1043,15 @@ export default function TeachersAcademicWorkspace() {
 
                         {/* Matrice */}
                         {(() => {
-                          // Créneaux horaires standards (08:00 → 18:00 par tranches de 2h)
-                          const TIME_SLOTS = [
-                            { start: '08:00', end: '10:00', label: '08h-10h' },
-                            { start: '10:00', end: '12:00', label: '10h-12h' },
-                            { start: '14:00', end: '16:00', label: '14h-16h' },
-                            { start: '16:00', end: '18:00', label: '16h-18h' },
-                          ];
+                          // Créneaux horaires de 7h à 19h par tranches d'1 heure.
+                          // Granularité 1h pour permettre les cours d'1h comme les
+                          // blocs de 2h. 7h-8h, 8h-9h, 9h-10h, ..., 18h-19h = 12 créneaux.
+                          const TIME_SLOTS: Array<{ start: string; end: string; label: string }> = [];
+                          for (let h = 7; h < 19; h++) {
+                            const start = `${String(h).padStart(2, '0')}:00`;
+                            const end = `${String(h + 1).padStart(2, '0')}:00`;
+                            TIME_SLOTS.push({ start, end, label: `${h}h-${h + 1}h` });
+                          }
                           const MATRIX_DAYS = [
                             { id: 1, label: 'Lun' },
                             { id: 2, label: 'Mar' },
@@ -1230,15 +1232,15 @@ export default function TeachersAcademicWorkspace() {
                   </div>
                 ) : (
                   <div className="border border-slate-200 rounded-lg overflow-x-auto">
-                    <table className="w-full text-left border-collapse text-xs min-w-[800px]">
+                    <table className="w-full text-left border-collapse text-xs min-w-[1000px]">
                       <thead>
                         <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          <th className="px-4 py-3 font-bold">Enseignant</th>
-                          <th className="px-4 py-3 font-bold">Niveaux Autorisés</th>
-                          <th className="px-4 py-3 font-bold">Habilitations</th>
-                          <th className="px-4 py-3 font-bold">Charge / Capacité</th>
-                          <th className="px-4 py-3 font-bold text-center">Statut</th>
-                          <th className="px-4 py-3 font-bold text-right">Détails des cours</th>
+                          <th className="px-4 py-3 font-bold whitespace-nowrap">Enseignant</th>
+                          <th className="px-4 py-3 font-bold whitespace-nowrap">Niveaux Autorisés</th>
+                          <th className="px-4 py-3 font-bold whitespace-nowrap">Habilitations</th>
+                          <th className="px-4 py-3 font-bold whitespace-nowrap">Charge / Capacité</th>
+                          <th className="px-4 py-3 font-bold text-center whitespace-nowrap">Statut</th>
+                          <th className="px-4 py-3 font-bold text-right whitespace-nowrap">Détails des cours</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 bg-white">
@@ -1368,13 +1370,13 @@ export default function TeachersAcademicWorkspace() {
 
                               {/* Assigned courses / classes details */}
                               <td className="py-4 text-right">
-                                <div className="inline-flex flex-col items-end gap-1 max-w-[220px] text-left">
+                                <div className="inline-flex flex-col items-end gap-1 text-left">
                                   {isHomeroom ? (
                                     // Mode Titulaire : afficher les classes prises en charge
                                     Object.keys(homeroomClasses).length > 0 ? (
                                       Object.entries(homeroomClasses).map(([className, info]: [string, any]) => (
-                                        <div key={className} className="text-[10px] font-bold bg-amber-50 border border-amber-100 text-amber-800 rounded-lg px-2 py-1 flex items-center justify-between gap-3 w-full">
-                                          <span className="truncate">★ {className}</span>
+                                        <div key={className} className="text-[10px] font-bold bg-amber-50 border border-amber-100 text-amber-800 rounded-lg px-2 py-1 flex items-center justify-between gap-3 whitespace-nowrap">
+                                          <span>★ {className}</span>
                                           <span className="font-black whitespace-nowrap">{info.totalHours}h</span>
                                         </div>
                                       ))
@@ -1385,8 +1387,8 @@ export default function TeachersAcademicWorkspace() {
                                     // Mode Spécialiste : afficher les cours par matière
                                     globalWorkloads[t.id]?.details && globalWorkloads[t.id].details.length > 0 ? (
                                       globalWorkloads[t.id].details.map((d: any, idx: number) => (
-                                        <div key={idx} className="text-[10px] font-bold text-gray-600 bg-gray-50 border border-gray-100 rounded-lg px-2 py-1 flex items-center justify-between gap-3 w-full">
-                                          <span className="truncate">{d.className} – {d.subjectCode}</span>
+                                        <div key={idx} className="text-[10px] font-bold text-gray-600 bg-gray-50 border border-gray-100 rounded-lg px-2 py-1 flex items-center justify-between gap-3 whitespace-nowrap">
+                                          <span>{d.className} – {d.subjectCode}</span>
                                           <span className="font-black text-indigo-600 whitespace-nowrap">{d.hours}h</span>
                                         </div>
                                       ))

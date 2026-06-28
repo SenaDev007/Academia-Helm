@@ -45,6 +45,7 @@ import {
   ReadOnlyModal 
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { useBilingual } from '@/contexts/BilingualContext';
 import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
 import { pedagogyService } from '@/services/pedagogy.service';
 import { useToast } from '@/components/ui/use-toast';
@@ -178,6 +179,7 @@ interface TeacherAcademicProfile {
 
 export default function TeachersAcademicWorkspace() {
   const { academicYear, tenantId } = useModuleContext();
+  const { isEnabled: bilingualEnabled, currentTrack } = useBilingual();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -1023,15 +1025,13 @@ export default function TeachersAcademicWorkspace() {
                         const teacherLevelCode = (selectedTeacher?.schoolLevel?.code || teacherLevelName || '').toUpperCase();
                         const isMaternelleOrPrimaire = teacherLevelCode.includes('MATERN') || teacherLevelCode.includes('PRIMA');
 
-                        // Langue de l'enseignant (FR ou EN) depuis assignedLanguages.
-                        // Si l'enseignant a ['FR','EN'] (bilingue), on prend la première langue.
-                        // Si null/undefined, on ne filtre pas par langue (rétro-compat).
-                        const teacherLanguages: string[] = selectedTeacher?.assignedLanguages || [];
-                        const teacherLang = teacherLanguages.length > 0 ? teacherLanguages[0] : null;
+                        // Langue active : utilise le switch FR/EN global (currentTrack) si bilingue activé.
+                        // C'est la source de vérité la plus fiable car c'est ce que l'utilisateur voit à l'écran.
+                        // En mode non-bilingue, on ne filtre pas par langue (toutes les matières).
+                        const activeLang = bilingualEnabled ? currentTrack : null;
 
                         // Nombre de matières :
-                        // - Maternelle/Primaire : toutes les matières du niveau ET de la langue de l'enseignant
-                        //   (un enseignant FR ne peut enseigner que les matières FR, un enseignant EN les matières EN)
+                        // - Maternelle/Primaire : toutes les matières du niveau ET de la langue active (FR ou EN)
                         // - Secondaire : le nombre d'habilitations déclarées
                         const subjectCount = isMaternelleOrPrimaire
                           ? subjects.filter(s => {
@@ -1039,20 +1039,22 @@ export default function TeachersAcademicWorkspace() {
                               const sCode = (s.schoolLevel?.code || s.schoolLevel?.name || '').toUpperCase();
                               const matchesLevel = sCode === teacherLevelCode || sCode.includes(teacherLevelCode) || teacherLevelCode.includes(sCode);
                               if (!matchesLevel) return false;
-                              // Filtre par langue (si l'enseignant a une langue assignée)
-                              if (teacherLang) {
-                                const sLang = (s.language || '').toUpperCase();
-                                // Pour FR : inclut FR + null (rétro-compat)
-                                // Pour EN : inclut EN seulement
-                                if (teacherLang === 'EN' && sLang !== 'EN') return false;
-                                if (teacherLang === 'FR' && sLang === 'EN') return false;
+                              // Filtre par langue active (FR ou EN depuis le switch global)
+                              if (activeLang === 'EN') {
+                                // Mode EN : uniquement les matières EN
+                                return (s.language || '').toUpperCase() === 'EN';
                               }
+                              if (activeLang === 'FR') {
+                                // Mode FR : matières FR + null (rétro-compat)
+                                return (s.language || '').toUpperCase() !== 'EN';
+                              }
+                              // Pas de bilingue activé → toutes les matières
                               return true;
                             }).length
                           : activeProfile.subjectQualifications.length;
 
                         // Libellé de la langue pour l'affichage
-                        const langLabel = teacherLang ? ` ${teacherLang}` : '';
+                        const langLabel = activeLang ? ` ${activeLang}` : '';
 
                         // Nombre de niveaux autorisés :
                         // - Toujours au moins 1 (le niveau d'affectation depuis RH)

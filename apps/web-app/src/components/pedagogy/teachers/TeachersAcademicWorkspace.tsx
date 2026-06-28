@@ -88,6 +88,9 @@ interface Teacher {
   /** Langues assignées (FR, EN) — depuis Teacher.assignedLanguages (Json array).
    * Utilisé pour filtrer le nombre de matières dans la carte statistique. */
   assignedLanguages?: string[] | null;
+  /** Langue de l'enseignant extraite et normalisée ('FR' ou 'EN' ou null).
+   * Calculée une fois au chargement depuis assignedLanguages (parsing robuste). */
+  teacherLanguage?: string | null;
 }
 
 /**
@@ -301,11 +304,37 @@ export default function TeachersAcademicWorkspace() {
         pedagogyService.getTeachers(),
         pedagogyService.getTeacherProfiles(academicYear.id)
       ]);
-      // Enrichir avec schoolLevelName pour l'affichage dans le header du panneau droit
-      const enrichedTeachers = (teachersData || []).map((t: any) => ({
-        ...t,
-        schoolLevelName: t.schoolLevel?.name || null,
-      }));
+      // Enrichir chaque enseignant avec :
+      // - schoolLevelName : nom du niveau scolaire (pour le header)
+      // - teacherLanguage : langue de l'enseignant ('FR' ou 'EN') extraite de assignedLanguages
+      //   (parsing robuste : assignedLanguages est un Json? qui peut être un array ['FR'],
+      //   une string '["FR"]', ou null)
+      const enrichedTeachers = (teachersData || []).map((t: any) => {
+        // Extraire la langue de l'enseignant depuis assignedLanguages (Json?)
+        let teacherLanguage: string | null = null;
+        const raw = t.assignedLanguages;
+        if (raw) {
+          let langs: string[] = [];
+          if (Array.isArray(raw)) {
+            langs = raw;
+          } else if (typeof raw === 'string') {
+            try {
+              const parsed = JSON.parse(raw);
+              langs = Array.isArray(parsed) ? parsed : [parsed];
+            } catch {
+              langs = [raw];
+            }
+          }
+          // Prendre la première langue valide
+          const first = langs.find((l: any) => typeof l === 'string' && (l.toUpperCase() === 'FR' || l.toUpperCase() === 'EN'));
+          if (first) teacherLanguage = first.toUpperCase();
+        }
+        return {
+          ...t,
+          schoolLevelName: t.schoolLevel?.name || null,
+          teacherLanguage,
+        };
+      });
       setTeachers(enrichedTeachers);
       setProfiles(profilesData || []);
     } catch (e) {
@@ -1025,13 +1054,17 @@ export default function TeachersAcademicWorkspace() {
                         const teacherLevelCode = (selectedTeacher?.schoolLevel?.code || teacherLevelName || '').toUpperCase();
                         const isMaternelleOrPrimaire = teacherLevelCode.includes('MATERN') || teacherLevelCode.includes('PRIMA');
 
-                        // Langue active : utilise le switch FR/EN global (currentTrack) si bilingue activé.
-                        // C'est la source de vérité la plus fiable car c'est ce que l'utilisateur voit à l'écran.
-                        // En mode non-bilingue, on ne filtre pas par langue (toutes les matières).
-                        const activeLang = bilingualEnabled ? currentTrack : null;
+                        // Langue PROPRE à l'enseignant (pas le switch global).
+                        // Chaque enseignant a sa propre piste linguistique (FR ou EN) assignée
+                        // dans le module RH. Le compteur de matières doit refléter SA langue,
+                        // indépendamment du switch FR/EN en haut de la page.
+                        // teacherLanguage est extrait de assignedLanguages au moment du loadData()
+                        // (parsing robuste — gère array, string JSON, null).
+                        const teacherLang = selectedTeacher?.teacherLanguage || null;
 
                         // Nombre de matières :
-                        // - Maternelle/Primaire : toutes les matières du niveau ET de la langue active (FR ou EN)
+                        // - Maternelle/Primaire : toutes les matières du niveau ET de la langue de l'enseignant
+                        //   (un enseignant FR voit les matières FR, un enseignant EN voit les matières EN)
                         // - Secondaire : le nombre d'habilitations déclarées
                         const subjectCount = isMaternelleOrPrimaire
                           ? subjects.filter(s => {
@@ -1039,22 +1072,22 @@ export default function TeachersAcademicWorkspace() {
                               const sCode = (s.schoolLevel?.code || s.schoolLevel?.name || '').toUpperCase();
                               const matchesLevel = sCode === teacherLevelCode || sCode.includes(teacherLevelCode) || teacherLevelCode.includes(sCode);
                               if (!matchesLevel) return false;
-                              // Filtre par langue active (FR ou EN depuis le switch global)
-                              if (activeLang === 'EN') {
-                                // Mode EN : uniquement les matières EN
+                              // Filtre par langue de l'enseignant
+                              if (teacherLang === 'EN') {
+                                // Enseignant EN : uniquement les matières EN
                                 return (s.language || '').toUpperCase() === 'EN';
                               }
-                              if (activeLang === 'FR') {
-                                // Mode FR : matières FR + null (rétro-compat)
+                              if (teacherLang === 'FR') {
+                                // Enseignant FR : matières FR + null (rétro-compat)
                                 return (s.language || '').toUpperCase() !== 'EN';
                               }
-                              // Pas de bilingue activé → toutes les matières
+                              // Pas de langue assignée → toutes les matières du niveau
                               return true;
                             }).length
                           : activeProfile.subjectQualifications.length;
 
                         // Libellé de la langue pour l'affichage
-                        const langLabel = activeLang ? ` ${activeLang}` : '';
+                        const langLabel = teacherLang ? ` ${teacherLang}` : '';
 
                         // Nombre de niveaux autorisés :
                         // - Toujours au moins 1 (le niveau d'affectation depuis RH)

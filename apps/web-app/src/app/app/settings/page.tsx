@@ -218,6 +218,9 @@ export default function SettingsPage() {
   const [bulkSectionCount, setBulkSectionCount] = useState<number>(2);
   const [bulkSectionSuffixType, setBulkSectionSuffixType] = useState<'letters' | 'numbers'>('letters');
   const [bulkSectionCapacity, setBulkSectionCapacity] = useState<number | ''>('');
+  // Sélection multiple de grades pour création groupée de classes officielles
+  const [selectedGradeIds, setSelectedGradeIds] = useState<Set<string>>(new Set());
+  const [showBulkOfficialClasses, setShowBulkOfficialClasses] = useState(false);
   const [bilingualForm, setBilingualForm] = useState<any>({});
   const [bilingualBillingImpact, setBilingualBillingImpact] = useState<{ monthly?: number; annual?: number; currency?: string } | null>(null);
   const [bilingualMigrationNeeded, setBilingualMigrationNeeded] = useState<boolean | null>(null);
@@ -1028,6 +1031,89 @@ export default function SettingsPage() {
     } finally {
       setStructureBusy(false);
     }
+  };
+
+  /**
+   * Création groupée de classes officielles : pour chaque grade sélectionné,
+   * crée un Classroom avec name = grade.name (le nom du grade suffit, pas
+   * besoin de suffixe A/B — les suffixes sont pour les sections physiques).
+   * Les grades déjà créés (présents dans educationClassrooms) sont ignorés
+   * automatiquement côté backend (POST /education/classrooms est idempotent
+   * sur la combinaison année + grade).
+   */
+  const handleBulkCreateOfficialClasses = async () => {
+    if (!structureYearIdOrActive) {
+      showToast('error', 'Sélectionnez une année scolaire.');
+      return;
+    }
+    if (selectedGradeIds.size === 0) {
+      showToast('error', 'Sélectionnez au moins une classe officielle à créer.');
+      return;
+    }
+    try {
+      setStructureBusy(true);
+      let created = 0;
+      let skipped = 0;
+      const toCreate = allGradesFromStructure.filter((g) => selectedGradeIds.has(g.id));
+      for (const grade of toCreate) {
+        try {
+          await settingsService.createEducationClassroom(
+            {
+              academicYearId: structureYearIdOrActive,
+              gradeId: grade.id,
+              name: grade.name,
+            },
+            effectiveTenantId ?? undefined
+          );
+          created++;
+        } catch (err: any) {
+          // Si la classe existe déjà (conflit unique), on compte comme skip
+          const msg = String(err?.message || '');
+          if (msg.includes('existe') || msg.includes('conflit') || msg.includes('unique') || msg.includes('Conflict') || msg.includes('duplicate')) {
+            skipped++;
+          } else {
+            console.warn(`Failed to create classroom for ${grade.name}:`, msg);
+            skipped++;
+          }
+        }
+      }
+      const list = await settingsService.getEducationClassrooms(structureYearIdOrActive, effectiveTenantId ?? undefined);
+      setEducationClassrooms(Array.isArray(list) ? list : []);
+      setSelectedGradeIds(new Set());
+      setShowBulkOfficialClasses(false);
+      showToast(
+        'success',
+        `${created} classe(s) officielle(s) créée(s)${skipped > 0 ? `, ${skipped} ignorée(s) (déjà existantes)` : ''}.`
+      );
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur');
+    } finally {
+      setStructureBusy(false);
+    }
+  };
+
+  const toggleGradeSelection = (gradeId: string) => {
+    setSelectedGradeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(gradeId)) next.delete(gradeId);
+      else next.add(gradeId);
+      return next;
+    });
+  };
+
+  const toggleAllGradesInGroup = (group: { label: string; grades: Array<{ id: string; name: string }> }) => {
+    setSelectedGradeIds((prev) => {
+      const next = new Set(prev);
+      const allSelected = group.grades.every((g) => next.has(g.id));
+      if (allSelected) {
+        // Tout est sélectionné → désélectionner tout ce groupe
+        group.grades.forEach((g) => next.delete(g.id));
+      } else {
+        // Sinon → sélectionner tout ce groupe
+        group.grades.forEach((g) => next.add(g.id));
+      }
+      return next;
+    });
   };
 
   const handleArchiveEducationClassroom = async (id: string) => {
@@ -2862,6 +2948,14 @@ export default function SettingsPage() {
                     <div className="flex flex-wrap gap-2 mb-4">
                       <button
                         type="button"
+                        onClick={() => setShowBulkOfficialClasses(!showBulkOfficialClasses)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-blue-300 bg-blue-50 text-blue-700 rounded-md hover:bg-blue-100"
+                      >
+                        <Layers className="w-3.5 h-3.5" />
+                        Sélection multiple
+                      </button>
+                      <button
+                        type="button"
                         onClick={handleDuplicateEducationClassrooms}
                         disabled={structureBusy || academicYears.length < 2}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 disabled:opacity-50"
@@ -2870,8 +2964,102 @@ export default function SettingsPage() {
                         Dupliquer les classes vers l&apos;année suivante
                       </button>
                     </div>
+                    {showBulkOfficialClasses && (
+                      <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-sm font-semibold text-gray-700">
+                            Sélectionnez les classes officielles à créer
+                          </h4>
+                          <span className="text-xs text-gray-500">
+                            {selectedGradeIds.size} sélectionnée(s)
+                          </span>
+                        </div>
+                        <div className="space-y-3 max-h-72 overflow-y-auto bg-white rounded-md p-3 border border-gray-200">
+                          {groupedGradesForSelect.map((grp) => {
+                            const groupAllSelected = grp.grades.every((g) => selectedGradeIds.has(g.id));
+                            const groupSomeSelected = grp.grades.some((g) => selectedGradeIds.has(g.id));
+                            return (
+                              <div key={grp.label}>
+                                <label className="flex items-center gap-2 mb-1.5 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={groupAllSelected}
+                                    ref={(el) => {
+                                      if (el) el.indeterminate = groupSomeSelected && !groupAllSelected;
+                                    }}
+                                    onChange={() => toggleAllGradesInGroup(grp)}
+                                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                  />
+                                  <span className="text-xs font-bold uppercase tracking-wide text-gray-700">
+                                    {grp.label}
+                                  </span>
+                                </label>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-1.5 pl-6">
+                                  {grp.grades.map((g) => (
+                                    <label
+                                      key={g.id}
+                                      className={`flex items-center gap-2 px-2 py-1 rounded text-sm cursor-pointer transition-colors ${
+                                        selectedGradeIds.has(g.id)
+                                          ? 'bg-blue-100 text-blue-800 font-medium'
+                                          : 'text-gray-700 hover:bg-gray-50'
+                                      }`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedGradeIds.has(g.id)}
+                                        onChange={() => toggleGradeSelection(g.id)}
+                                        className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                      />
+                                      {formatGradeLabel(g.name)}
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="flex items-center justify-between mt-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (selectedGradeIds.size === allGradesFromStructure.length) {
+                                setSelectedGradeIds(new Set());
+                              } else {
+                                setSelectedGradeIds(new Set(allGradesFromStructure.map((g) => g.id)));
+                              }
+                            }}
+                            className="text-xs font-semibold text-blue-700 hover:underline"
+                          >
+                            {selectedGradeIds.size === allGradesFromStructure.length
+                              ? 'Tout désélectionner'
+                              : 'Tout sélectionner'}
+                          </button>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowBulkOfficialClasses(false);
+                                setSelectedGradeIds(new Set());
+                              }}
+                              className="px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100"
+                            >
+                              Annuler
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleBulkCreateOfficialClasses}
+                              disabled={structureBusy || selectedGradeIds.size === 0}
+                              className="inline-flex items-center gap-1.5 px-4 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                            >
+                              {structureBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                              Enregistrer ({selectedGradeIds.size})
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     {sortedClassrooms.length === 0 ? (
-                      <p className="text-sm text-gray-500 py-4">Aucune classe officielle pour cette année. Ajoutez-en ci-dessus.</p>
+                      <p className="text-sm text-gray-500 py-4">Aucune classe officielle pour cette année. Ajoutez-en ci-dessus ou utilisez « Sélection multiple ».</p>
                     ) : (
                       <div className="overflow-x-auto">
                         <table className="min-w-full text-sm border border-gray-200 rounded-md overflow-hidden">

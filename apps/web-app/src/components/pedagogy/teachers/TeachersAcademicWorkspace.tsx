@@ -570,6 +570,89 @@ export default function TeachersAcademicWorkspace() {
 
   // --- Availabilities ---
 
+  // Version silencieuse pour la matrice (pas de toast, mise à jour optimiste)
+  const toggleAvailability = async (dayId: number, startTime: string, endTime: string) => {
+    if (!activeProfile || !academicYear?.id) return;
+
+    // Chercher une disponibilité existante pour ce jour + créneau
+    const existing = activeProfile.availabilities.find(
+      (av: any) => av.dayOfWeek === dayId && av.startTime === startTime && av.endTime === endTime
+    );
+
+    if (existing) {
+      // Existant → supprimer (redevient disponible)
+      // Mise à jour optimiste : retirer immédiatement du state
+      const optimisticProfile = {
+        ...activeProfile,
+        availabilities: activeProfile.availabilities.filter((av: any) => av.id !== existing.id),
+      };
+      setActiveProfile(optimisticProfile);
+      setProfiles(prev => prev.map(p => p.id === optimisticProfile.id ? optimisticProfile : p));
+
+      try {
+        await pedagogyFetch(`/api/pedagogy/teacher-profiles/availabilities/${existing.id}`, {
+          method: 'DELETE'
+        });
+        // Pas de toast — c'est un toggle rapide
+      } catch (e: any) {
+        // En cas d'erreur, restaurer l'état précédent
+        setActiveProfile(activeProfile);
+        setProfiles(prev => prev.map(p => p.id === activeProfile.id ? activeProfile : p));
+        toast({
+          title: "Erreur",
+          description: e.message || "Erreur lors de la suppression.",
+          variant: "destructive"
+        });
+      }
+    } else {
+      // Non existant → créer (marquer comme indisponible)
+      // Mise à jour optimiste : ajouter immédiatement au state
+      const tempId = `temp-${Date.now()}`;
+      const optimisticProfile = {
+        ...activeProfile,
+        availabilities: [...activeProfile.availabilities, {
+          id: tempId,
+          dayOfWeek: dayId,
+          startTime,
+          endTime,
+        }],
+      };
+      setActiveProfile(optimisticProfile);
+      setProfiles(prev => prev.map(p => p.id === optimisticProfile.id ? optimisticProfile : p));
+
+      try {
+        const created = await pedagogyFetch<any>(`/api/pedagogy/teacher-profiles/${activeProfile.id}/availabilities`, {
+          method: 'POST',
+          body: {
+            academicYearId: academicYear.id,
+            dayOfWeek: Number(dayId),
+            startTime,
+            endTime
+          }
+        });
+        // Remplacer le tempId par le vrai ID
+        const finalProfile = {
+          ...optimisticProfile,
+          availabilities: optimisticProfile.availabilities.map((av: any) =>
+            av.id === tempId ? { ...created, id: created.id } : av
+          ),
+        };
+        setActiveProfile(finalProfile);
+        setProfiles(prev => prev.map(p => p.id === finalProfile.id ? finalProfile : p));
+        // Pas de toast — c'est un toggle rapide
+      } catch (e: any) {
+        // En cas d'erreur, restaurer l'état précédent
+        setActiveProfile(activeProfile);
+        setProfiles(prev => prev.map(p => p.id === activeProfile.id ? activeProfile : p));
+        toast({
+          title: "Erreur",
+          description: e.message || "Erreur lors de l'ajout.",
+          variant: "destructive"
+        });
+      }
+    }
+  };
+
   const handleAddAvailability = async (data: any) => {
     if (!activeProfile || !academicYear?.id) return;
     try {
@@ -817,6 +900,12 @@ export default function TeachersAcademicWorkspace() {
                             <span className={activeProfile.isActive ? "text-emerald-600" : "text-red-500"}>
                               {activeProfile.isActive ? 'Actif' : 'Inactif'}
                             </span>
+                            {activeProfile.isSemainier && (
+                              <>
+                                <span className="w-1 h-1 rounded-full bg-slate-300" />
+                                <span className="text-amber-600 font-bold">★ Semainier</span>
+                              </>
+                            )}
                           </p>
                         </div>
                       </div>
@@ -841,31 +930,62 @@ export default function TeachersAcademicWorkspace() {
                     {/* Contenu Profil */}
                     <div className="p-4 space-y-4 bg-white">
                       {/* KPI Summary Cards */}
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50/30 flex items-center gap-3">
-                          <Clock className="w-6 h-6" style={{ color: PRIMARY }} />
-                          <div>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Volume Max</p>
-                            <p className="text-sm font-bold text-slate-900">{activeProfile.maxWeeklyHours}h/sem</p>
-                          </div>
-                        </div>
+                      {(() => {
+                        const selectedTeacher = teachers.find(t => t.id === selectedTeacherId);
+                        const teacherLevelName = selectedTeacher?.schoolLevelName || selectedTeacher?.schoolLevel?.name || '';
+                        const teacherLevelCode = (selectedTeacher?.schoolLevel?.code || teacherLevelName || '').toUpperCase();
+                        const isMaternelleOrPrimaire = teacherLevelCode.includes('MATERN') || teacherLevelCode.includes('PRIMA');
 
-                        <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50/30 flex items-center gap-3">
-                          <ShieldCheck className="w-6 h-6 text-emerald-500" />
-                          <div>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Habilitations</p>
-                            <p className="text-sm font-bold text-slate-900">{activeProfile.subjectQualifications.length} matières</p>
-                          </div>
-                        </div>
+                        // Nombre de matières :
+                        // - Maternelle/Primaire : toutes les matières du niveau (polyvalent)
+                        // - Secondaire : le nombre d'habilitations déclarées
+                        const subjectCount = isMaternelleOrPrimaire
+                          ? subjects.filter(s => {
+                              const sCode = (s.schoolLevel?.code || s.schoolLevel?.name || '').toUpperCase();
+                              return sCode === teacherLevelCode || sCode.includes(teacherLevelCode) || teacherLevelCode.includes(sCode);
+                            }).length
+                          : activeProfile.subjectQualifications.length;
 
-                        <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50/30 flex items-center gap-3">
-                          <Calendar className="w-6 h-6" style={{ color: PRIMARY }} />
-                          <div>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Niveaux</p>
-                            <p className="text-sm font-bold text-slate-900">{activeProfile.levelAuthorizations.length} autorisés</p>
+                        // Nombre de niveaux autorisés :
+                        // - Toujours au moins 1 (le niveau d'affectation depuis RH)
+                        // - Plus les levelAuthorizations déclarés manuellement
+                        const levelCount = 1 + activeProfile.levelAuthorizations.length;
+
+                        return (
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50/30 flex items-center gap-3">
+                              <Clock className="w-6 h-6" style={{ color: PRIMARY }} />
+                              <div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Volume Max</p>
+                                <p className="text-sm font-bold text-slate-900">{activeProfile.maxWeeklyHours}h/sem</p>
+                              </div>
+                            </div>
+
+                            <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50/30 flex items-center gap-3">
+                              <ShieldCheck className="w-6 h-6 text-emerald-500" />
+                              <div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Habilitations</p>
+                                <p className="text-sm font-bold text-slate-900">
+                                  {isMaternelleOrPrimaire
+                                    ? `${subjectCount} matières (${teacherLevelName})`
+                                    : `${subjectCount} matière${subjectCount > 1 ? 's' : ''}`}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50/30 flex items-center gap-3">
+                              <Calendar className="w-6 h-6" style={{ color: PRIMARY }} />
+                              <div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Niveaux</p>
+                                <p className="text-sm font-bold text-slate-900">
+                                  {levelCount} niveau{levelCount > 1 ? 'x' : ''}
+                                  {teacherLevelName && <span className="text-slate-400 font-normal"> ({teacherLevelName})</span>}
+                                </p>
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      </div>
+                        );
+                      })()}
 
                       {/* Section : Habilitations Matières */}
                       <div className="space-y-3 pt-3 border-t border-slate-100">
@@ -1069,15 +1189,10 @@ export default function TeachersAcademicWorkspace() {
                           };
 
                           // Basculer le statut d'une cellule (ajouter/supprimer une indisponibilité)
+                          // Utilise toggleAvailability qui fait une mise à jour optimiste (instantanée)
+                          // sans toast ni re-fetch complet du profil.
                           const toggleCell = async (dayId: number, start: string, end: string) => {
-                            const existing = findAvailability(dayId, start, end);
-                            if (existing) {
-                              // Existant → supprimer (redevient disponible)
-                              await handleDeleteAvailability(existing.id);
-                            } else {
-                              // Non existant → créer (marquer comme indisponible)
-                              await handleAddAvailability({ dayOfWeek: dayId, startTime: start, endTime: end });
-                            }
+                            await toggleAvailability(dayId, start, end);
                           };
 
                           return (

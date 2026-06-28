@@ -362,7 +362,7 @@ export default function AssignmentsWorkspace() {
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* ── Panneau gauche : Sections physiques ── */}
-        <div className="lg:col-span-1 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col max-h-[calc(100vh-16rem)]">
+        <div className="lg:col-span-1 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col">
           <div className="p-4 border-b border-slate-200">
             <div className="flex items-center gap-2 mb-3">
               <Users className="w-4 h-4" style={{ color: PRIMARY }} />
@@ -380,7 +380,7 @@ export default function AssignmentsWorkspace() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-2">
+          <div className="flex-1 p-2">
             {loading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
@@ -406,9 +406,10 @@ export default function AssignmentsWorkspace() {
                         className={cn(
                           'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all mb-0.5',
                           isSelected
-                            ? 'bg-slate-800 text-white shadow-sm'
+                            ? 'text-white shadow-sm'
                             : 'text-slate-700 hover:bg-slate-100',
                         )}
+                        style={isSelected ? { backgroundColor: PRIMARY } : undefined}
                       >
                         <span className="flex items-center gap-1.5">
                           <span className={cn(

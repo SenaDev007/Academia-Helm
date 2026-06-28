@@ -80,6 +80,10 @@ interface Teacher {
    * Si null/undefined → le frontend affiche les initiales. */
   photoUrl?: string | null;
   photoUrlHd?: string | null;
+  /** Niveau scolaire rattaché (depuis Teacher.schoolLevelId, inclus par le backend). */
+  schoolLevel?: { id: string; name: string; code?: string } | null;
+  /** Nom du niveau scolaire (raccourci pour l'affichage). */
+  schoolLevelName?: string;
 }
 
 /**
@@ -292,7 +296,12 @@ export default function TeachersAcademicWorkspace() {
         pedagogyService.getTeachers(),
         pedagogyService.getTeacherProfiles(academicYear.id)
       ]);
-      setTeachers(teachersData || []);
+      // Enrichir avec schoolLevelName pour l'affichage dans le header du panneau droit
+      const enrichedTeachers = (teachersData || []).map((t: any) => ({
+        ...t,
+        schoolLevelName: t.schoolLevel?.name || null,
+      }));
+      setTeachers(enrichedTeachers);
       setProfiles(profilesData || []);
     } catch (e) {
       console.error(e);
@@ -358,9 +367,25 @@ export default function TeachersAcademicWorkspace() {
   const handleUpdateProfile = async (data: any) => {
     if (!activeProfile) return;
     try {
-      const updated = await pedagogyService.updateTeacherProfile(activeProfile.id, data);
-      setProfiles(prev => prev.map(p => p.id === updated.id ? updated : p));
-      setActiveProfile(updated);
+      // Utiliser pedagogyFetch (proxy direct) au lieu de pedagogyService.updateTeacherProfile
+      // car ce dernier passe par updateEntityOffline qui cherche l'entité dans SQLite local
+      // et échoue avec "Entity TEACHER_PROFILE with id ... not found" si l'entité n'est pas
+      // en cache local. pedagogyFetch fait un PUT direct au backend NestJS.
+      const updated = await pedagogyFetch<any>(`/api/pedagogy/teacher-profiles/${activeProfile.id}`, {
+        method: 'PUT',
+        body: data,
+      });
+      // Si la réponse n'inclut pas teacher, on fait un re-fetch pour garantir l'inclusion
+      let fullProfile = updated;
+      if (updated?.id && !updated?.teacher) {
+        try {
+          fullProfile = await pedagogyFetch<any>(`/api/pedagogy/teacher-profiles/${updated.id}`);
+        } catch {
+          // fallback sur la réponse PUT
+        }
+      }
+      setProfiles(prev => prev.map(p => p.id === fullProfile.id ? fullProfile : p));
+      setActiveProfile(fullProfile);
       setModal('none');
       toast({
         title: "Succès",
@@ -762,8 +787,11 @@ export default function TeachersAcademicWorkspace() {
                     {/* Header Profil */}
                     <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between">
                       <div className="flex items-center gap-3">
+                        {/* Utiliser l'enseignant enrichi (avec photoUrl) de la liste teachers[],
+                            car activeProfile.teacher n'a pas photoUrl (le backend profileInclude
+                            ne fait pas la jointure StaffPhoto par email). */}
                         <TeacherAvatarWithFallback
-                          teacher={activeProfile?.teacher}
+                          teacher={teachers.find(t => t.id === selectedTeacherId) ?? activeProfile?.teacher}
                           size="lg"
                           bgColor={PRIMARY}
                         />
@@ -773,6 +801,18 @@ export default function TeachersAcademicWorkspace() {
                           </h3>
                           <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-0.5 flex items-center gap-1.5">
                             <span>{activeProfile?.teacher?.matricule ?? '—'}</span>
+                            {(() => {
+                              const t = teachers.find(t => t.id === selectedTeacherId);
+                              if (t?.schoolLevelName) {
+                                return (
+                                  <>
+                                    <span className="w-1 h-1 rounded-full bg-slate-300" />
+                                    <span className="text-slate-500">{t.schoolLevelName}</span>
+                                  </>
+                                );
+                              }
+                              return null;
+                            })()}
                             <span className="w-1 h-1 rounded-full bg-slate-300" />
                             <span className={activeProfile.isActive ? "text-emerald-600" : "text-red-500"}>
                               {activeProfile.isActive ? 'Actif' : 'Inactif'}
@@ -829,49 +869,88 @@ export default function TeachersAcademicWorkspace() {
 
                       {/* Section : Habilitations Matières */}
                       <div className="space-y-3 pt-3 border-t border-slate-100">
-                        <div className="flex items-center justify-between">
-                          <h4 className="font-bold text-slate-800 text-xs flex items-center gap-2">
-                            <BookOpen className="w-4 h-4" style={{ color: PRIMARY }} />
-                            Matières qualifiées (Habilitations)
-                          </h4>
-                          <button 
-                            onClick={() => {
-                              setQualificationForm({
-                                subjectId: subjects[0]?.id || '',
-                                certified: true,
-                              });
-                              setModal('add-qualification');
-                            }}
-                            className="text-xs font-semibold flex items-center gap-1 hover:underline"
-                            style={{ color: PRIMARY }}
-                          >
-                            <Plus className="w-3.5 h-3.5" /> Ajouter
-                          </button>
-                        </div>
-                        {activeProfile.subjectQualifications.length === 0 ? (
-                          <div className="p-4 bg-slate-50 rounded-lg text-center text-xs text-slate-400 italic border border-slate-100">
-                            Aucune matière qualifiée déclarée. L'enseignant ne pourra être affecté dans l'assistant.
-                          </div>
-                        ) : (
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                            {activeProfile.subjectQualifications.map(q => (
-                              <div key={q.id} className="p-3 rounded-lg border border-slate-200 bg-white shadow-sm flex items-center justify-between group">
-                                <div>
-                                  <span className="text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-slate-600 tracking-wider">
-                                    {q.subject.code}
-                                  </span>
-                                  <p className="font-bold text-slate-800 text-xs mt-1">{q.subject.name}</p>
+                        {(() => {
+                          // Détection automatique du niveau de l'enseignant
+                          const selectedTeacher = teachers.find(t => t.id === selectedTeacherId);
+                          const teacherLevelName = selectedTeacher?.schoolLevelName || selectedTeacher?.schoolLevel?.name || '';
+                          const teacherLevelCode = (selectedTeacher?.schoolLevel?.code || teacherLevelName || '').toUpperCase();
+                          // Un enseignant de Maternelle ou Primaire est qualifié pour TOUTES les matières de son niveau
+                          const isMaternelleOrPrimaire = teacherLevelCode.includes('MATERN') || teacherLevelCode.includes('PRIMA');
+
+                          if (isMaternelleOrPrimaire) {
+                            return (
+                              <>
+                                <div className="flex items-center justify-between">
+                                  <h4 className="font-bold text-slate-800 text-xs flex items-center gap-2">
+                                    <BookOpen className="w-4 h-4" style={{ color: PRIMARY }} />
+                                    Matières qualifiées (Habilitations)
+                                  </h4>
                                 </div>
-                                <button 
-                                  onClick={() => handleRemoveQualification(q.subjectId)}
-                                  className="text-slate-300 hover:text-red-500 p-1 rounded transition-all opacity-0 group-hover:opacity-100"
+                                <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200 flex items-center gap-3">
+                                  <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
+                                  <div>
+                                    <p className="text-sm font-bold text-emerald-900">
+                                      Qualifié(e) pour enseigner toutes les matières du niveau {teacherLevelName}
+                                    </p>
+                                    <p className="text-xs text-emerald-700 mt-0.5">
+                                      Les enseignants de {teacherLevelName} sont polyvalents et peuvent enseigner
+                                      toutes les matières de leur niveau. Aucune habilitation individuelle n'est requise.
+                                    </p>
+                                  </div>
+                                </div>
+                              </>
+                            );
+                          }
+
+                          // Pour les autres niveaux (Secondaire), on garde l'interface manuelle
+                          return (
+                            <>
+                              <div className="flex items-center justify-between">
+                                <h4 className="font-bold text-slate-800 text-xs flex items-center gap-2">
+                                  <BookOpen className="w-4 h-4" style={{ color: PRIMARY }} />
+                                  Matières qualifiées (Habilitations)
+                                </h4>
+                                <button
+                                  onClick={() => {
+                                    setQualificationForm({
+                                      subjectId: subjects[0]?.id || '',
+                                      certified: true,
+                                    });
+                                    setModal('add-qualification');
+                                  }}
+                                  className="text-xs font-semibold flex items-center gap-1 hover:underline"
+                                  style={{ color: PRIMARY }}
                                 >
-                                  <X className="w-4 h-4" />
+                                  <Plus className="w-3.5 h-3.5" /> Ajouter
                                 </button>
                               </div>
-                            ))}
-                          </div>
-                        )}
+                              {activeProfile.subjectQualifications.length === 0 ? (
+                                <div className="p-4 bg-slate-50 rounded-lg text-center text-xs text-slate-400 italic border border-slate-100">
+                                  Aucune matière qualifiée déclarée. L'enseignant ne pourra être affecté dans l'assistant.
+                                </div>
+                              ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                  {activeProfile.subjectQualifications.map(q => (
+                                    <div key={q.id} className="p-3 rounded-lg border border-slate-200 bg-white shadow-sm flex items-center justify-between group">
+                                      <div>
+                                        <span className="text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-slate-600 tracking-wider">
+                                          {q.subject.code}
+                                        </span>
+                                        <p className="font-bold text-slate-800 text-xs mt-1">{q.subject.name}</p>
+                                      </div>
+                                      <button
+                                        onClick={() => handleRemoveQualification(q.subjectId)}
+                                        className="text-slate-300 hover:text-red-500 p-1 rounded transition-all opacity-0 group-hover:opacity-100"
+                                      >
+                                        <X className="w-4 h-4" />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
                       </div>
 
                       {/* Section : Niveaux Autorisés */}
@@ -881,7 +960,7 @@ export default function TeachersAcademicWorkspace() {
                             <ShieldCheck className="w-4 h-4" style={{ color: PRIMARY }} />
                             Niveaux Scolaires Autorisés
                           </h4>
-                          <button 
+                          <button
                             onClick={() => {
                               setAuthorizationForm({
                                 levelId: schoolLevels[0]?.id || '',
@@ -894,6 +973,23 @@ export default function TeachersAcademicWorkspace() {
                             <Plus className="w-3.5 h-3.5" /> Ajouter
                           </button>
                         </div>
+                        {/* Niveau scolaire rattaché (auto-détecté depuis Teacher.schoolLevelId) */}
+                        {(() => {
+                          const selectedTeacher = teachers.find(t => t.id === selectedTeacherId);
+                          const teacherLevelName = selectedTeacher?.schoolLevelName || selectedTeacher?.schoolLevel?.name;
+                          if (!teacherLevelName) return null;
+                          return (
+                            <div className="p-3 bg-blue-50 rounded-lg border border-blue-200 flex items-center gap-2">
+                              <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />
+                              <span className="text-xs font-bold text-blue-900">
+                                Niveau d'affectation : {teacherLevelName}
+                              </span>
+                              <span className="text-[10px] text-blue-600 font-normal ml-1">
+                                (récupéré automatiquement depuis l'affectation du staff)
+                              </span>
+                            </div>
+                          );
+                        })()}
                         {activeProfile.levelAuthorizations.length === 0 ? (
                           <div className="p-4 bg-slate-50 rounded-lg text-center text-xs text-slate-400 italic border border-slate-100">
                             Aucun niveau spécifique autorisé. (Par défaut : habilité sur tous les niveaux).
@@ -917,56 +1013,120 @@ export default function TeachersAcademicWorkspace() {
                         )}
                       </div>
 
-                      {/* Section : Disponibilités Hebdomadaires */}
+                      {/* Section : Disponibilités — Matrice professionnelle (jours × créneaux) */}
                       <div className="space-y-3 pt-3 border-t border-slate-100">
                         <div className="flex items-center justify-between">
                           <h4 className="font-bold text-slate-800 text-xs flex items-center gap-2">
                             <Calendar className="w-4 h-4" style={{ color: PRIMARY }} />
                             Disponibilités d'emploi du temps
                           </h4>
-                          <button 
-                            onClick={() => {
-                              setAvailabilityForm({
-                                dayOfWeek: 1,
-                                startTime: '08:00',
-                                endTime: '10:00',
-                              });
-                              setModal('add-availability');
-                            }}
-                            className="text-xs font-semibold flex items-center gap-1 hover:underline"
-                            style={{ color: PRIMARY }}
-                          >
-                            <Plus className="w-3.5 h-3.5" /> Ajouter un créneau
-                          </button>
                         </div>
-                        {activeProfile.availabilities.length === 0 ? (
-                          <div className="p-4 bg-slate-50 rounded-lg text-center text-xs text-slate-400 italic border border-slate-100">
-                            Aucune contrainte horaire déclarée. Enseignant disponible 100% du temps.
-                          </div>
-                        ) : (
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                            {activeProfile.availabilities.map(av => {
-                              const dayLabel = DAYS.find(d => d.id === av.dayOfWeek)?.label || 'Jour';
-                              return (
-                                <div key={av.id} className="p-3 rounded-lg border border-slate-200 bg-white shadow-sm flex items-center justify-between group">
-                                  <div>
-                                    <p className="font-bold text-slate-800 text-xs">{dayLabel}</p>
-                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1 flex items-center gap-1">
-                                      <Clock className="w-3 h-3 text-slate-500" />
-                                      {av.startTime} à {av.endTime}
-                                    </p>
-                                  </div>
-                                  <button 
-                                    onClick={() => handleDeleteAvailability(av.id)}
-                                    className="text-slate-300 hover:text-red-500 p-1 rounded transition-all opacity-0 group-hover:opacity-100"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
+
+                        {/* Légende */}
+                        <div className="flex items-center gap-3 text-[10px] font-bold">
+                          <span className="flex items-center gap-1">
+                            <span className="w-3 h-3 rounded bg-emerald-100 border border-emerald-300" />
+                            <span className="text-emerald-700">Disponible</span>
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <span className="w-3 h-3 rounded bg-red-100 border border-red-300" />
+                            <span className="text-red-700">Indisponible</span>
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <span className="w-3 h-3 rounded bg-slate-100 border border-slate-300" />
+                            <span className="text-slate-500">Non défini</span>
+                          </span>
+                          <span className="text-slate-400 font-normal italic ml-auto">
+                            Cliquez sur une cellule pour basculer le statut
+                          </span>
+                        </div>
+
+                        {/* Matrice */}
+                        {(() => {
+                          // Créneaux horaires standards (08:00 → 18:00 par tranches de 2h)
+                          const TIME_SLOTS = [
+                            { start: '08:00', end: '10:00', label: '08h-10h' },
+                            { start: '10:00', end: '12:00', label: '10h-12h' },
+                            { start: '14:00', end: '16:00', label: '14h-16h' },
+                            { start: '16:00', end: '18:00', label: '16h-18h' },
+                          ];
+                          const MATRIX_DAYS = [
+                            { id: 1, label: 'Lun' },
+                            { id: 2, label: 'Mar' },
+                            { id: 3, label: 'Mer' },
+                            { id: 4, label: 'Jeu' },
+                            { id: 5, label: 'Ven' },
+                            { id: 6, label: 'Sam' },
+                          ];
+
+                          // Chercher une disponibilité existante pour un jour + créneau donné
+                          const findAvailability = (dayId: number, start: string, end: string) => {
+                            return activeProfile.availabilities.find(
+                              (av: any) => av.dayOfWeek === dayId && av.startTime === start && av.endTime === end
+                            );
+                          };
+
+                          // Basculer le statut d'une cellule (ajouter/supprimer une indisponibilité)
+                          const toggleCell = async (dayId: number, start: string, end: string) => {
+                            const existing = findAvailability(dayId, start, end);
+                            if (existing) {
+                              // Existant → supprimer (redevient disponible)
+                              await handleDeleteAvailability(existing.id);
+                            } else {
+                              // Non existant → créer (marquer comme indisponible)
+                              await handleAddAvailability({ dayOfWeek: dayId, startTime: start, endTime: end });
+                            }
+                          };
+
+                          return (
+                            <div className="overflow-x-auto rounded-lg border border-slate-200">
+                              <table className="min-w-full text-xs">
+                                <thead>
+                                  <tr className="bg-slate-50 border-b border-slate-200">
+                                    <th className="px-2 py-2 text-left font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">
+                                      Créneau
+                                    </th>
+                                    {MATRIX_DAYS.map(d => (
+                                      <th key={d.id} className="px-2 py-2 text-center font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">
+                                        {d.label}
+                                      </th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {TIME_SLOTS.map(slot => (
+                                    <tr key={slot.start} className="border-b border-slate-100 last:border-0">
+                                      <td className="px-2 py-1.5 font-bold text-slate-700 whitespace-nowrap">
+                                        {slot.label}
+                                      </td>
+                                      {MATRIX_DAYS.map(day => {
+                                        const av = findAvailability(day.id, slot.start, slot.end);
+                                        const isUnavailable = !!av;
+                                        return (
+                                          <td key={day.id} className="px-1 py-1 text-center">
+                                            <button
+                                              type="button"
+                                              onClick={() => toggleCell(day.id, slot.start, slot.end)}
+                                              className={cn(
+                                                'w-full h-8 rounded-md border text-[10px] font-bold transition-all hover:shadow-sm',
+                                                isUnavailable
+                                                  ? 'bg-red-100 border-red-300 text-red-700 hover:bg-red-200'
+                                                  : 'bg-emerald-100 border-emerald-300 text-emerald-700 hover:bg-emerald-200',
+                                              )}
+                                              title={`${day.label} ${slot.label} — ${isUnavailable ? 'Indisponible' : 'Disponible'}`}
+                                            >
+                                              {isUnavailable ? '✗' : '✓'}
+                                            </button>
+                                          </td>
+                                        );
+                                      })}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>

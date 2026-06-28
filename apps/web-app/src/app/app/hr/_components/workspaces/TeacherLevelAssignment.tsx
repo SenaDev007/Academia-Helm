@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui/toast';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
@@ -129,6 +130,7 @@ export function TeacherLevelAssignment() {
   const { tenant } = useModuleContext();
   const { availableLevels, currentLevel } = useSchoolLevel();
   const { isEnabled: bilingualEnabled } = useBilingual();
+  const confirmDialog = useConfirmDialog();
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -337,6 +339,50 @@ export function TeacherLevelAssignment() {
   // Save all pending assignments
   const handleSave = async () => {
     if (!hasChanges) return;
+
+    // ─── Construire un résumé détaillé des changements pour la confirmation ───
+    const changeSummaries: string[] = [];
+    for (const [staffId, assignment] of Object.entries(pendingAssignments)) {
+      const staff = staffList.find(s => s.id === staffId);
+      if (!staff) continue;
+      const name = `${staff.firstName} ${staff.lastName}`;
+      const parts: string[] = [];
+
+      // Changement de niveau
+      const currentLevelObj = getEffectiveLevel(staff);
+      const newLevelObj = availableLevels?.find(l => l.id === assignment.levelId);
+      if (assignment.levelId && (!currentLevelObj || currentLevelObj.id !== assignment.levelId)) {
+        parts.push(`niveau → ${newLevelObj?.label || newLevelObj?.name || '?'}`);
+      } else if (!assignment.levelId && currentLevelObj) {
+        parts.push(`niveau retiré`);
+      }
+
+      // Changement de langue
+      if (assignment.languages !== undefined) {
+        const oldLangs = staff.assignedLanguages ?? ['FR', 'EN'];
+        const newLangs = assignment.languages;
+        if (JSON.stringify([...oldLangs].sort()) !== JSON.stringify([...newLangs].sort())) {
+          parts.push(`langue → ${newLangs.join(' + ')}`);
+        }
+      }
+
+      if (parts.length > 0) {
+        changeSummaries.push(`• ${name} : ${parts.join(', ')}`);
+      }
+    }
+
+    // ─── Modale de confirmation ───
+    const description = changeSummaries.length > 0
+      ? `Vous êtes sur le point d'enregistrer ${changeSummaries.length} affectation(s) :\n\n${changeSummaries.join('\n')}\n\nCette action mettra à jour le profil pédagogique des enseignants concernés.`
+      : `Vous êtes sur le point d'enregistrer les affectations. Cette action mettra à jour le profil pédagogique des enseignants.`;
+
+    const ok = await confirmDialog.warning({
+      title: 'Confirmer les affectations',
+      description,
+      confirmLabel: 'Enregistrer',
+    });
+    if (!ok) return;
+
     setSaving(true);
 
     try {
@@ -694,8 +740,8 @@ export function TeacherLevelAssignment() {
           )}
         </div>
       )}
+
+      {confirmDialog.dialog}
     </div>
   );
 }
-
-

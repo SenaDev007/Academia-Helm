@@ -130,13 +130,15 @@ export class SubjectsPrismaService {
     }
 
     // Sinon, créer une nouvelle matière
-    // Utilisation de `connect` explicite pour academicYear et schoolLevel
-    // afin d'éviter toute ambiguïté avec Prisma 7.8 (REQUIRED relation).
+    // Utilisation de `connect` explicite pour TOUTES les relations REQUIRED
+    // (Prisma 7.8 strict mode exige la cohérence : si on utilise `connect` pour
+    // une relation, il faut l'utiliser pour toutes les relations REQUIRED).
+    // Subject a 3 relations REQUIRED : tenant, schoolLevel, academicYear (?).
     const { tenantId, academicYearId, schoolLevelId, academicTrackId, language, name, abbreviation, code, coefficient, weeklyHours, description } = data;
     return this.prisma.subject.create({
       data: {
         ...prismaCreateDefaults(),
-        tenantId,
+        tenant: { connect: { id: tenantId } },
         academicYear: { connect: { id: academicYearId } },
         schoolLevel: { connect: { id: data.schoolLevelId } },
         ...(academicTrackId ? { academicTrack: { connect: { id: academicTrackId } } } : {}),

@@ -440,6 +440,12 @@ export default function SubjectsWorkspace() {
       //
       // Ce changement contourne le bug du filtre par classe individuelle
       // (getClassSubjects qui pouvait filtrer par la mauvaise colonne).
+      //
+      // ⚠️ FILTRAGE PAR LANGUE (bilingue) :
+      // En mode bilingue, on filtre les liens côté client par `subject.language`
+      // pour n'afficher que les affectations de la piste courante (FR ou EN).
+      // Les classes sont communes aux deux pistes, mais les matières sont séparées
+      // (catalogue FR vs catalogue EN). Donc les affectations FR et EN sont distinctes.
       const allLinks = await pedagogyFetch<any[]>(`/api/pedagogy/class-subjects?academicYearId=${academicYear.id}`);
 
       const map: Record<string, any[]> = {};
@@ -448,6 +454,14 @@ export default function SubjectsWorkspace() {
           // Un lien peut être rattaché via academicClassId (cas normal) ou classId (rare)
           const key = link.academicClassId || link.classId;
           if (key) {
+            // Filtrer par langue en mode bilingue
+            if (bilingualEnabled) {
+              const linkLang = (link.subject?.language || '').toUpperCase();
+              // Pour la piste FR, on inclut les matières FR + null (rétro-compat)
+              // Pour la piste EN, on inclut uniquement les matières EN
+              if (currentTrack === 'EN' && linkLang !== 'EN') continue;
+              if (currentTrack === 'FR' && linkLang === 'EN') continue;
+            }
             if (!map[key]) map[key] = [];
             map[key].push(link);
           }
@@ -456,13 +470,14 @@ export default function SubjectsWorkspace() {
 
       // Log défensif
       const totalLinks = Array.isArray(allLinks) ? allLinks.length : 0;
-      console.debug(`[loadClassSubjects] Batch fetch → ${totalLinks} lien(s) total, ${Object.keys(map).length} classe(s) avec matières`);
+      const filteredLinks = Object.values(map).reduce((sum, arr) => sum + arr.length, 0);
+      console.debug(`[loadClassSubjects] Batch fetch → ${totalLinks} lien(s) total, ${filteredLinks} après filtre langue (${currentTrack}), ${Object.keys(map).length} classe(s) avec matières`);
 
       // Pour chaque classe, log si elle a des matières ou non
       for (const cls of classes) {
         const count = (map[cls.id] || []).length;
         if (count > 0) {
-          console.debug(`[loadClassSubjects] ${cls.name} (${cls.id}) → ${count} matière(s)`);
+          console.debug(`[loadClassSubjects] ${cls.name} (${cls.id}) → ${count} matière(s) [${currentTrack}]`);
         }
       }
 
@@ -473,7 +488,7 @@ export default function SubjectsWorkspace() {
     } finally {
       setLoadingClassSubjects(false);
     }
-  }, [academicYear?.id, classes]);
+  }, [academicYear?.id, classes, bilingualEnabled, currentTrack]);
 
   useEffect(() => {
     loadSubjects();

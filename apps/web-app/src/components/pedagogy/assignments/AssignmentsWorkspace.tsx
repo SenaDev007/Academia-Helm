@@ -3,54 +3,34 @@
  * ASSIGNMENTS WORKSPACE - MODULE 2 (Affectations & Charges)
  * ============================================================================
  *
- * Gestion des affectations enseignants ↔ classes :
+ * Architecture 3 couches :
+ *   1. Classe officielle (AcademicClass) = CE1, CM2, 6ème…
+ *   2. Classe physique (Class/section) = CE1 A, CE1 B…
+ *   3. Affectation = TeacherClassAssignment lié à une classe physique
  *
  * ► MATERNELLE / PRIMAIRE : Modèle "Titulaire Unique"
- *   - 1 seul enseignant titulaire par classe qui gère TOUTES les matières
- *   - Affecter le titulaire = assigner toutes les classSubjects au même prof
+ *   - 1 titulaire par SECTION PHYSIQUE (ex: CE1 A, CE1 B)
+ *   - Le titulaire gère TOUTES les matières de sa section
  *
- * ► SECONDAIRE (6e→Terminale, toutes séries) : Modèle "Spécialiste"
- *   - 1 enseignant par matière, plusieurs enseignants dans une même classe
- *   - Affectation matière par matière
+ * ► SECONDAIRE : Modèle "Spécialiste"
+ *   - 1 enseignant par matière, par section physique
  */
 
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Users,
-  Search,
-  CheckCircle2,
-  AlertCircle,
-  Clock,
-  Plus,
-  X,
-  BookOpen,
-  Layers,
-  ChevronRight,
-  Filter,
-  BarChart3,
-  UserCheck,
-  UserPlus,
-  Trash2,
-  Star,
-  Info,
-  GraduationCap,
-  Replace,
+  Users, Search, CheckCircle2, AlertCircle, Clock, Plus, X,
+  BookOpen, Layers, ChevronRight, UserCheck, UserPlus, Trash2,
+  Star, Info, GraduationCap, Replace, Loader2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  FormModal,
-  ConfirmModal,
-} from '@/components/modules/blueprint';
+import { FormModal, ConfirmModal } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useBilingual } from '@/contexts/BilingualContext';
 import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
-import { pedagogyService } from '@/services/pedagogy.service';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
-import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
-import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
 
 const PRIMARY = '#1A2BA6';
 const ACCENT = '#F5A623';
@@ -60,16 +40,27 @@ const ACCENT = '#F5A623';
 interface AcademicClass {
   id: string;
   name: string;
+  code: string;
   level?: { id: string; name: string };
   series?: { id: string; name: string };
+  isActive: boolean;
+}
+
+interface PhysicalClass {
+  id: string;
+  name: string;
+  code: string;
+  officialClassId: string;
+  schoolLevelId: string;
+  capacity?: number;
 }
 
 interface ClassSubject {
   id: string;
   weeklyHours: number;
   coefficient: number;
-  subject: { id: string; name: string; code: string };
-  assignments: { id: string; teacher: { id: string; firstName: string; lastName: string } }[];
+  subject: { id: string; name: string; code: string; language?: string };
+  assignments: { id: string; classId: string | null; teacher: { id: string; firstName: string; lastName: string; matricule: string } }[];
 }
 
 interface TeacherProfile {
@@ -79,70 +70,102 @@ interface TeacherProfile {
   teacher: { id: string; firstName: string; lastName: string; matricule: string };
   subjectQualifications: { subjectId: string }[];
   levelAuthorizations: { levelId: string }[];
-  availabilities: any[];
+  assignedLanguages?: string[] | null;
 }
 
-// --- Helpers ---
-
-/**
- * Détermine si le niveau est "Titulaire Unique" (Maternelle ou Primaire).
- * Retourne false pour le Secondaire (mode Spécialiste).
- */
 const isHomeroomLevel = (levelName?: string): boolean => {
   if (!levelName) return false;
   const n = levelName.toUpperCase();
   return n.includes('MATERN') || n.includes('PRIMA') || n.includes('PRIM');
 };
 
+const CANONICAL_CLASS_ORDER = [
+  'maternelle 1', 'maternelle 2',
+  'ci', 'cp', 'ce1', 'ce2', 'cm1', 'cm2',
+  '6eme', '6e', '5eme', '5e', '4eme', '4e', '3eme', '3e',
+  '2nde', '1ere', 'terminale',
+];
+const getClassOrder = (name: string): number => {
+  const lower = (name || '').toLowerCase().trim();
+  const idx = CANONICAL_CLASS_ORDER.indexOf(lower);
+  if (idx >= 0) return idx;
+  for (let i = 0; i < CANONICAL_CLASS_ORDER.length; i++) {
+    if (lower.startsWith(CANONICAL_CLASS_ORDER[i])) return i;
+  }
+  return CANONICAL_CLASS_ORDER.length;
+};
+
 // --- Component ---
 
 export default function AssignmentsWorkspace() {
-  const { academicYear, tenantId } = useModuleContext();
+  const { academicYear } = useModuleContext();
   const { isEnabled: isBilingual, currentTrack, setCurrentTrack } = useBilingual();
-  const syncStatuses = useEntitySyncStatusBatch('CLASS', tenantId ?? undefined);
   const { toast } = useToast();
-  const [loading, setLoading] = useState(false);
 
   // Data
-  const [classes, setClasses] = useState<AcademicClass[]>([]);
-  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
-  const [classSubjects, setClassSubjects] = useState<ClassSubject[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [academicClasses, setAcademicClasses] = useState<AcademicClass[]>([]);
+  const [physicalClasses, setPhysicalClasses] = useState<PhysicalClass[]>([]);
   const [teachers, setTeachers] = useState<TeacherProfile[]>([]);
-  // Physical classes (CI/A, CI/B) linked to the selected official class
-  const [physicalClasses, setPhysicalClasses] = useState<any[]>([]);
-  const [selectedPhysicalClassId, setSelectedPhysicalClassId] = useState<string | null>(null);
-
-  // Selection
-  const [activeSubject, setActiveSubject] = useState<ClassSubject | null>(null);
-  const [search, setSearch] = useState('');
-
-  // Modals
-  const [modal, setModal] = useState<'none' | 'assign-teacher' | 'assign-homeroom' | 'confirm-remove'>('none');
-  const [removingAssignmentId, setRemovingAssignmentId] = useState<string | null>(null);
-
-  // Bulk assignment loading
+  const [classSubjects, setClassSubjects] = useState<ClassSubject[]>([]);
   const [bulkAssigning, setBulkAssigning] = useState(false);
+
+  // Selection — selectedPhysicalClassId is the PRIMARY selection
+  const [selectedPhysicalClassId, setSelectedPhysicalClassId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [modal, setModal] = useState<'none' | 'assign-homeroom' | 'assign-teacher' | 'confirm-remove'>('none');
+  const [removingAssignmentId, setRemovingAssignmentId] = useState<string | null>(null);
+  const [activeSubject, setActiveSubject] = useState<ClassSubject | null>(null);
 
   // --- Loaders ---
 
-  const loadInitialData = useCallback(async () => {
+  const loadData = useCallback(async () => {
     if (!academicYear?.id) return;
     setLoading(true);
     try {
       const [classesData, teachersData] = await Promise.all([
-        pedagogyService.getAcademicClasses(academicYear.id),
-        pedagogyService.getTeacherProfiles(academicYear.id),
+        pedagogyFetch<AcademicClass[]>(`/api/pedagogy/academic-structure/classes?academicYearId=${academicYear.id}`),
+        pedagogyFetch<TeacherProfile[]>(`/api/pedagogy/teacher-profiles?academicYearId=${academicYear.id}`),
       ]);
-      // Filtrer : ne garder que les classes ACTIVES (isActive=true).
-      // Les classes inactives (ex: Secondaire non activé dans Paramètres)
-      // ne doivent pas apparaître dans le panneau de gauche.
-      // Cela inclut aussi les classes dont le niveau (AcademicLevel.isActive)
-      // est désactivé — le backend les marque comme isActive=false lors de la sync.
-      const activeClasses = (classesData || []).filter((c: any) => c.isActive !== false);
-      setClasses(activeClasses);
+
+      // Filtrer : ne garder que les classes officielles ACTIVES
+      const activeClasses = (classesData || []).filter(c => c.isActive !== false);
+
+      // Charger TOUTES les classes physiques pour cette année
+      // On utilise pedagogyFetch (proxy) qui n'a pas le guard x-school-level-id
+      const allPhysicalClasses: PhysicalClass[] = [];
+      for (const ac of activeClasses) {
+        try {
+          const sections = await pedagogyFetch<any[]>(
+            `/api/pedagogy/academic-structure/sections?academicYearId=${academicYear.id}`
+          );
+          if (Array.isArray(sections)) {
+            for (const s of sections) {
+              if (s.officialClass?.id === ac.id) {
+                allPhysicalClasses.push({
+                  id: s.id,
+                  name: s.name,
+                  code: s.code,
+                  officialClassId: ac.id,
+                  schoolLevelId: ac.level?.id || '',
+                  capacity: s.capacity,
+                });
+              }
+            }
+          }
+        } catch {
+          // Si l'endpoint sections échoue, on continue sans sections physiques
+        }
+      }
+
+      setAcademicClasses(activeClasses);
+      setPhysicalClasses(allPhysicalClasses);
       setTeachers(teachersData || []);
-      if (activeClasses.length > 0) setSelectedClassId(activeClasses[0].id);
-      else setSelectedClassId(null);
+
+      // Auto-sélectionner la première section physique
+      if (allPhysicalClasses.length > 0 && !selectedPhysicalClassId) {
+        setSelectedPhysicalClassId(allPhysicalClasses[0].id);
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -150,88 +173,145 @@ export default function AssignmentsWorkspace() {
     }
   }, [academicYear?.id]);
 
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Charger les class_subjects quand la classe officielle de la section sélectionnée change
+  const selectedPhysicalClass = physicalClasses.find(pc => pc.id === selectedPhysicalClassId);
+  const selectedOfficialClass = academicClasses.find(ac => ac.id === selectedPhysicalClass?.officialClassId);
+  const isHomeroom = isHomeroomLevel(selectedOfficialClass?.level?.name);
+
   const loadClassSubjects = useCallback(async () => {
-    if (!selectedClassId || !academicYear?.id) return;
+    if (!selectedOfficialClass?.id || !academicYear?.id) return;
     try {
-      const data = await pedagogyService.getClassSubjects(selectedClassId, academicYear.id);
-      setClassSubjects(data || []);
+      const data = await pedagogyFetch<ClassSubject[]>(
+        `/api/pedagogy/class-subjects/${selectedOfficialClass.id}?academicYearId=${academicYear.id}`
+      );
+      // Filtrer par langue en mode bilingue
+      let filtered = data || [];
+      if (isBilingual) {
+        filtered = filtered.filter(cs => {
+          const lang = (cs.subject?.language || '').toUpperCase();
+          if (currentTrack === 'EN') return lang === 'EN';
+          if (currentTrack === 'FR') return lang !== 'EN';
+          return true;
+        });
+      }
+      setClassSubjects(filtered);
     } catch (e) {
       console.error(e);
+      setClassSubjects([]);
     }
-  }, [selectedClassId, academicYear?.id]);
+  }, [selectedOfficialClass?.id, academicYear?.id, isBilingual, currentTrack]);
 
-  useEffect(() => { loadInitialData(); }, [loadInitialData]);
-  useEffect(() => { loadClassSubjects(); }, [loadClassSubjects]);
-
-  // Load physical classes (CI/A, CI/B) when an official class is selected
   useEffect(() => {
-    if (!selectedClassId || !academicYear?.id) {
-      setPhysicalClasses([]);
-      setSelectedPhysicalClassId(null);
-      return;
-    }
-    (async () => {
-      try {
-        // Fetch physical classes from /api/classes with officialClassId filter
-        const res = await fetch(`/api/classes?academicYearId=${academicYear.id}&officialClassId=${selectedClassId}`, {
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          const list = Array.isArray(data) ? data : (data?.data || []);
-          setPhysicalClasses(list);
-          // Auto-select first physical class if available
-          if (list.length > 0) {
-            setSelectedPhysicalClassId(list[0].id);
-          } else {
-            setSelectedPhysicalClassId(null);
-          }
-        } else {
-          setPhysicalClasses([]);
-          setSelectedPhysicalClassId(null);
-        }
-      } catch {
-        setPhysicalClasses([]);
-        setSelectedPhysicalClassId(null);
-      }
-    })();
-  }, [selectedClassId, academicYear?.id]);
+    loadClassSubjects();
+  }, [loadClassSubjects]);
 
   // --- Derived state ---
 
-  const selectedClass = classes.find(c => c.id === selectedClassId);
-  const isHomeroom = isHomeroomLevel(selectedClass?.level?.name);
-
-  // ── Filtre bilingue : en mode bilingue, on ne montre que les matières
-  //    correspondant à la track courante (FR ou EN). On se base sur le
-  //    `language` du Subject (déduit du code suffixé _EN ou via la colonne
-  //    language retournée par l'API).
-  const visibleClassSubjects = useMemo(() => {
-    if (!isBilingual) return classSubjects;
-    return classSubjects.filter(cs => {
-      const lang =
-        (cs.subject as any)?.language ||
-        ((cs.subject?.code || '').endsWith('_EN') ? 'EN' : 'FR');
-      return lang === currentTrack;
+  // Filtrer les sections physiques par recherche
+  const filteredPhysicalClasses = useMemo(() => {
+    if (!search) return physicalClasses;
+    const s = search.toLowerCase();
+    return physicalClasses.filter(pc => {
+      const officialName = academicClasses.find(ac => ac.id === pc.officialClassId)?.name || '';
+      return pc.name.toLowerCase().includes(s) || officialName.toLowerCase().includes(s);
     });
-  }, [classSubjects, isBilingual, currentTrack]);
+  }, [physicalClasses, search, academicClasses]);
 
-  // Titulaire courant (Maternelle/Primaire) : le prof du premier classSubject assigné
+  // Grouper les sections par classe officielle (avec ordre canonique)
+  const groupedSections = useMemo(() => {
+    const groups: Record<string, { officialClass: AcademicClass; sections: PhysicalClass[] }> = {};
+    for (const pc of filteredPhysicalClasses) {
+      const oc = academicClasses.find(ac => ac.id === pc.officialClassId);
+      if (!oc) continue;
+      if (!groups[oc.id]) groups[oc.id] = { officialClass: oc, sections: [] };
+      groups[oc.id].sections.push(pc);
+    }
+    return Object.values(groups).sort((a, b) => {
+      const ao = getClassOrder(a.officialClass.name);
+      const bo = getClassOrder(b.officialClass.name);
+      return ao - bo;
+    });
+  }, [filteredPhysicalClasses, academicClasses]);
+
+  // Titulaire actuel = l'enseignant assigné à toutes les matières de la section physique
   const currentHomeroom = useMemo(() => {
-    if (!isHomeroom) return null;
-    const assigned = visibleClassSubjects.find(cs => (cs.assignments || []).length > 0);
-    return assigned?.assignments[0]?.teacher || null;
-  }, [isHomeroom, visibleClassSubjects]);
+    if (!isHomeroom || classSubjects.length === 0 || !selectedPhysicalClassId) return null;
+    const assignments = classSubjects
+      .flatMap(cs => (cs.assignments || []))
+      .filter(a => a.classId === selectedPhysicalClassId);
+    if (assignments.length === 0) return null;
+    return assignments[0]?.teacher || null;
+  }, [isHomeroom, classSubjects, selectedPhysicalClassId]);
 
-  const homeroomFullyAssigned = isHomeroom && visibleClassSubjects.length > 0 &&
-    visibleClassSubjects.every(cs => (cs.assignments || []).length > 0);
+  const homeroomFullyAssigned = isHomeroom && classSubjects.length > 0 &&
+    classSubjects.every(cs => (cs.assignments || []).some(a => a.classId === selectedPhysicalClassId));
 
   // --- Actions ---
 
-  /** SECONDAIRE : affecter un enseignant à une matière spécifique */
+  /** MATERNELLE/PRIMAIRE : affecter le titulaire à TOUTES les matières de la section physique */
+  const handleAssignHomeroom = async (teacherId: string) => {
+    if (!academicYear?.id || classSubjects.length === 0 || !selectedPhysicalClassId) return;
+    setBulkAssigning(true);
+    try {
+      // 1. Supprimer les affectations existantes pour cette section physique
+      const removePromises = classSubjects
+        .flatMap(cs => (cs.assignments || []).filter(a => a.classId === selectedPhysicalClassId))
+        .map(a => pedagogyFetch(`/api/pedagogy/teacher-class-assignments/${a.id}`, { method: 'DELETE' }).catch(() => {}));
+      await Promise.all(removePromises);
+
+      // 2. Créer une affectation pour chaque matière, avec classId = section physique
+      const assignPromises = classSubjects.map(cs =>
+        pedagogyFetch(`/api/pedagogy/teacher-class-assignments`, {
+          method: 'POST',
+          body: {
+            academicYearId: academicYear.id,
+            teacherId,
+            classSubjectId: cs.id,
+            classId: selectedPhysicalClassId,
+          },
+        })
+      );
+      await Promise.all(assignPromises);
+      await loadClassSubjects();
+      setModal('none');
+      setSearch('');
+      toast({
+        title: '✅ Titulaire affecté',
+        description: `Le titulaire a été assigné à toutes les ${classSubjects.length} matières de ${selectedPhysicalClass?.name}.`,
+      });
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message || "Impossible d'affecter le titulaire.", variant: 'destructive' });
+    } finally {
+      setBulkAssigning(false);
+    }
+  };
+
+  /** Retirer le titulaire de la section physique */
+  const handleRemoveHomeroom = async () => {
+    if (!academicYear?.id || !selectedPhysicalClassId) return;
+    setBulkAssigning(true);
+    try {
+      const removePromises = classSubjects
+        .flatMap(cs => (cs.assignments || []).filter(a => a.classId === selectedPhysicalClassId))
+        .map(a => pedagogyFetch(`/api/pedagogy/teacher-class-assignments/${a.id}`, { method: 'DELETE' }).catch(() => {}));
+      await Promise.all(removePromises);
+      await loadClassSubjects();
+      setModal('none');
+      toast({ title: 'Titulaire retiré', description: `Le titulaire de ${selectedPhysicalClass?.name} a été retiré.` });
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+    } finally {
+      setBulkAssigning(false);
+    }
+  };
+
+  /** SECONDAIRE : affecter un enseignant à une matière */
   const handleAssignTeacher = async (teacherId: string) => {
-    if (!activeSubject || !academicYear?.id) return;
+    if (!activeSubject || !academicYear?.id || !selectedPhysicalClassId) return;
     try {
       await pedagogyFetch(`/api/pedagogy/teacher-class-assignments`, {
         method: 'POST',
@@ -239,7 +319,7 @@ export default function AssignmentsWorkspace() {
           academicYearId: academicYear.id,
           teacherId,
           classSubjectId: activeSubject.id,
-          ...(selectedPhysicalClassId ? { classId: selectedPhysicalClassId } : {}),
+          classId: selectedPhysicalClassId,
         },
       });
       await loadClassSubjects();
@@ -250,711 +330,442 @@ export default function AssignmentsWorkspace() {
     }
   };
 
-  /** MATERNELLE/PRIMAIRE : affecter le titulaire à TOUTES les matières de la classe physique */
-  const handleAssignHomeroom = async (teacherId: string) => {
-    if (!academicYear?.id || visibleClassSubjects.length === 0) return;
-    setBulkAssigning(true);
-    try {
-      // Supprimer d'abord toutes les affectations existantes (sur les matières visibles)
-      const removePromises = visibleClassSubjects
-        .flatMap(cs => (cs.assignments || []).map(a =>
-          pedagogyFetch(`/api/pedagogy/teacher-class-assignments/${a.id}`, { method: 'DELETE' }).catch(() => {})
-        ));
-      await Promise.all(removePromises);
-
-      // Créer une affectation pour chaque matière visible, avec classId (classe physique)
-      // Le titulaire est rattaché à la CLASSE PHYSIQUE (section réelle : CI/A, CI/B),
-      // pas à la classe officielle. Un titulaire par section physique.
-      const assignPromises = visibleClassSubjects.map(cs =>
-        pedagogyFetch(`/api/pedagogy/teacher-class-assignments`, {
-          method: 'POST',
-          body: {
-            academicYearId: academicYear.id,
-            teacherId,
-            classSubjectId: cs.id,
-            ...(selectedPhysicalClassId ? { classId: selectedPhysicalClassId } : {}),
-          },
-        })
-      );
-      await Promise.all(assignPromises);
-      await loadClassSubjects();
-      setModal('none');
-      setSearch('');
-      toast({
-        title: '✅ Titulaire affecté',
-        description: `Le titulaire a été assigné à toutes les ${visibleClassSubjects.length} matières de la classe physique.`,
-      });
-    } catch (e: any) {
-      toast({ title: 'Erreur', description: e.message || "Impossible d'affecter le titulaire.", variant: 'destructive' });
-    } finally {
-      setBulkAssigning(false);
-    }
-  };
-
-  /** Retirer le titulaire de toutes les matières (Maternelle/Primaire) */
-  const handleRemoveHomeroom = async () => {
-    if (!academicYear?.id) return;
-    setBulkAssigning(true);
-    try {
-      const removePromises = visibleClassSubjects
-        .flatMap(cs => (cs.assignments || []).map(a =>
-          pedagogyFetch(`/api/pedagogy/teacher-class-assignments/${a.id}`, { method: 'DELETE' }).catch(() => {})
-        ));
-      await Promise.all(removePromises);
-      await loadClassSubjects();
-      setModal('none');
-      toast({ title: 'Titulaire retiré', description: 'Toutes les affectations ont été supprimées.' });
-    } catch (e: any) {
-      toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
-    } finally {
-      setBulkAssigning(false);
-    }
-  };
-
-  /** SECONDAIRE : retirer une affectation individuelle */
+  /** Retirer une affectation individuelle */
   const handleRemoveAssignment = async (assignmentId: string) => {
     try {
       await pedagogyFetch(`/api/pedagogy/teacher-class-assignments/${assignmentId}`, { method: 'DELETE' });
       await loadClassSubjects();
-      toast({ title: 'Succès', description: 'Affectation retirée avec succès.' });
+      setModal('none');
+      toast({ title: 'Succès', description: 'Affectation retirée.' });
     } catch (e: any) {
-      toast({ title: 'Erreur', description: e.message || "Impossible de retirer l'affectation.", variant: 'destructive' });
+      toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
     }
   };
 
-  // --- Helpers ---
-
-  const isQualified = (teacher: TeacherProfile, subjectId: string) =>
-    teacher.subjectQualifications.some(q => q.subjectId === subjectId);
-
-  const isAuthorized = (teacher: TeacherProfile, levelId?: string) => {
-    if (!levelId) return true;
-    if (teacher.levelAuthorizations.length === 0) return true;
-    return teacher.levelAuthorizations.some(a => a.levelId === levelId);
-  };
-
-  const filteredTeachers = teachers.filter(t =>
-    `${t.teacher.firstName} ${t.teacher.lastName}`.toLowerCase().includes(search.toLowerCase())
-  );
-
-  // --- Render helpers ---
-
-  const LevelBadge = ({ cls }: { cls: AcademicClass }) => {
-    const homeroom = isHomeroomLevel(cls.level?.name);
-    return (
-      <span className={cn(
-        'text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md tracking-wide',
-        homeroom ? 'bg-amber-100 text-amber-700' : 'bg-violet-100 text-violet-700'
-      )}>
-        {homeroom ? 'Titulaire' : 'Spécialiste'}
-      </span>
-    );
-  };
-
-  // Grouper les classes par niveau pour la sidebar
-  const groupedClasses = useMemo(() => {
-    const groups: Record<string, AcademicClass[]> = {};
-    classes.forEach(cls => {
-      const key = cls.level?.name || 'Autre';
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(cls);
+  // Filtrer les enseignants éligibles (même niveau)
+  const eligibleTeachers = useMemo(() => {
+    return teachers.filter(t => {
+      // En mode bilingue, filtrer par langue de l'enseignant
+      if (isBilingual) {
+        const langs = t.assignedLanguages || [];
+        const teacherLang = langs.length > 0 ? langs[0] : null;
+        if (currentTrack === 'EN' && teacherLang !== 'EN') return false;
+        if (currentTrack === 'FR' && teacherLang === 'EN') return false;
+      }
+      return true;
     });
-    return groups;
-  }, [classes]);
+  }, [teachers, isBilingual, currentTrack]);
+
+  // --- Render ---
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[18rem_1fr] gap-4">
-
-      {/* ── Sidebar : Liste des Classes ── */}
-      <div className="rounded-xl border border-slate-200 bg-slate-50/20 flex flex-col">
-        <div className="p-4 border-b border-slate-200 bg-slate-50/50 rounded-t-xl">
-          <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-            <Layers className="w-4 h-4" style={{ color: PRIMARY }} />
-            Classes officielles
-          </h2>
-          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1">
-            {classes.length} classe{classes.length > 1 ? 's' : ''} configurée{classes.length > 1 ? 's' : ''}
-          </p>
-        </div>
-
-        <div className="p-2 space-y-3 bg-white rounded-b-xl">
-          {Object.entries(groupedClasses).map(([levelName, levelClasses]) => (
-            <div key={levelName}>
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider px-3 py-1">
-                {levelName}
-              </p>
-              <div className="space-y-0.5">
-                {levelClasses.map(c => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => setSelectedClassId(c.id)}
-                    className={cn(
-                      'w-full text-left px-3 py-2.5 rounded-lg transition-all border border-transparent',
-                      selectedClassId === c.id
-                        ? 'bg-slate-50 shadow-sm'
-                        : 'hover:bg-slate-50/80'
-                    )}
-                    style={selectedClassId === c.id ? { borderLeft: `3px solid ${PRIMARY}`, paddingLeft: '9px' } : undefined}
-                  >
-                    <div className="flex items-center justify-between">
-                      <p className={cn(
-                        'font-bold text-xs',
-                        selectedClassId === c.id ? 'text-slate-900' : 'text-slate-800'
-                      )}>
-                        {c.name}
-                      </p>
-                      <EntitySyncIndicator variant="dot" status={syncStatuses[c.id] ?? 'UNKNOWN'} />
-                      {selectedClassId !== c.id && <LevelBadge cls={c} />}
-                    </div>
-                    {selectedClassId === c.id && (
-                      <p className="text-[9px] font-bold uppercase tracking-wider mt-0.5" style={{ color: PRIMARY }}>
-                        {isHomeroomLevel(c.level?.name) ? '📚 Titulaire Unique' : '🎓 Spécialiste / Matière'}
-                      </p>
-                    )}
-                  </button>
-                ))}
-              </div>
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* ── Panneau gauche : Sections physiques ── */}
+        <div className="lg:col-span-1 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col max-h-[calc(100vh-16rem)]">
+          <div className="p-4 border-b border-slate-200">
+            <div className="flex items-center gap-2 mb-3">
+              <Users className="w-4 h-4" style={{ color: PRIMARY }} />
+              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide">Sections physiques</h3>
             </div>
-          ))}
-          {classes.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-12 text-center px-4">
-              <Layers className="w-8 h-8 text-slate-300 mb-3" />
-              <p className="text-xs text-slate-400 font-bold">Aucune classe configurée</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── Zone principale ── */}
-      <div className="flex flex-col gap-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-
-        {/* Bilingual track selector */}
-        {isBilingual && (
-          <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1 mx-4 mt-4 mb-2 self-start">
-            <button
-              type="button"
-              onClick={() => setCurrentTrack('FR')}
-              className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentTrack === 'FR' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
-            >
-              Français
-            </button>
-            <button
-              type="button"
-              onClick={() => setCurrentTrack('EN')}
-              className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentTrack === 'EN' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
-            >
-              English
-            </button>
-          </div>
-        )}
-
-        {/* Header */}
-        <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between">
-          <div className="flex items-center gap-4 flex-wrap">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-blue-100 text-blue-700 border border-blue-200">
-                  <Layers className="w-3 h-3" /> Classe officielle
-                </span>
-                <h3 className="text-base font-bold text-slate-900">
-                  {selectedClass?.name || 'Sélectionnez une classe'}
-                </h3>
-              </div>
-              <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider mt-0.5">
-                {isHomeroom
-                  ? '📚 Mode Titulaire — 1 enseignant pour toutes les matières'
-                  : '🎓 Mode Spécialiste — 1 enseignant par matière'}
-              </p>
-            </div>
-            {/* Physical class selector (CI/A, CI/B) */}
-            {physicalClasses.length > 0 && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-emerald-200 bg-emerald-50">
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-700 border border-emerald-200">
-                  <Users className="w-3 h-3" /> Classe physique
-                </span>
-                <select
-                  value={selectedPhysicalClassId || ''}
-                  onChange={(e) => setSelectedPhysicalClassId(e.target.value || null)}
-                  className="px-2.5 py-1.5 text-xs font-bold rounded-lg border border-emerald-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="">Toutes sections</option>
-                  {physicalClasses.map(pc => (
-                    <option key={pc.id} value={pc.id}>{pc.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-            {physicalClasses.length === 0 && selectedClass && (
-              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-200 bg-amber-50">
-                <AlertCircle className="w-3.5 h-3.5 text-amber-500" />
-                <span className="text-[10px] font-bold text-amber-700">Aucune section physique configurée</span>
-              </div>
-            )}
-          </div>
-
-          {selectedClass && (
-            <div 
-              className="flex items-center gap-3 px-3 py-1.5 rounded-lg border text-xs"
-              style={isHomeroom 
-                ? { backgroundColor: `${ACCENT}15`, borderColor: `${ACCENT}30` }
-                : { backgroundColor: '#f5f3ff', borderColor: '#ddd6fe' }
-              }
-            >
-              {isHomeroom ? (
-                <Star className="w-4 h-4" style={{ color: ACCENT }} />
-              ) : (
-                <GraduationCap className="w-4 h-4 text-violet-600" />
-              )}
-              <div>
-                <p className="font-bold uppercase tracking-wider text-slate-700">
-                  {isHomeroom ? 'Maternelle / Primaire' : 'Secondaire'}
-                </p>
-                <p className="text-[10px] font-medium text-slate-500 mt-0.5">
-                  {visibleClassSubjects.length} matière{visibleClassSubjects.length > 1 ? 's' : ''}
-                  {' '}• {isHomeroom
-                    ? (homeroomFullyAssigned ? '✅ Titulaire affecté' : '⚠️ Sans titulaire')
-                    : `${visibleClassSubjects.filter(cs => (cs.assignments || []).length > 0).length}/${visibleClassSubjects.length} affectées`
-                  }
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Info banner: official vs physical classes */}
-        {selectedClass && (
-          <div className="px-4 py-2 bg-blue-50/50 border-b border-blue-100 flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-1.5 text-[10px] font-bold text-blue-700">
-              <Info className="w-3.5 h-3.5" />
-              <span>
-                <strong>Classe officielle</strong> = niveau académique (ex: CI, 6ème) → les matières y sont affectées.
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-700">
-              <span>
-                <strong>Classe physique</strong> = section réelle (ex: CI/A, CI/B) → les enseignants et élèves y sont affectés.
-              </span>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Rechercher une section..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-200 bg-white focus:outline-none focus:border-slate-400"
+              />
             </div>
           </div>
-        )}
 
-        {/* Content */}
-        <div className="p-4 bg-white">
-          {!selectedClass ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <Layers className="w-12 h-12 text-slate-300 mb-4" />
-              <p className="text-slate-400 text-xs font-bold">Sélectionnez une classe à gauche</p>
-            </div>
-          ) : isHomeroom ? (
-            /* ══════════════════════════════════════════════════
-               MODE TITULAIRE UNIQUE (Maternelle / Primaire)
-               ══════════════════════════════════════════════════ */
-            <div className="max-w-2xl mx-auto space-y-4">
-
-              {/* Bannière d'explication */}
-              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 flex items-start gap-3">
-                <Info className="w-4 h-4 text-slate-500 mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="text-xs font-bold text-slate-800">Modèle Titulaire Unique</p>
-                  <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed font-medium">
-                    En Maternelle et en Primaire, <strong>un seul enseignant titulaire</strong> gère l'ensemble
-                    des matières de sa <strong>classe physique</strong> (section réelle : CI/A, CI/B…).
-                    Définissez-le ici — il sera automatiquement affecté
-                    à toutes les {visibleClassSubjects.length} matières.
-                  </p>
-                </div>
+          <div className="flex-1 overflow-y-auto p-2">
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
               </div>
-
-              {/* Carte Titulaire */}
-              <div className={cn(
-                'rounded-lg border p-5 bg-white shadow-sm transition-all',
-                homeroomFullyAssigned
-                  ? 'border-slate-200'
-                  : 'border-dashed border-slate-300'
-              )}>
-                <div className="flex items-center gap-3 mb-4">
-                  <div 
-                    className="w-10 h-10 rounded-lg flex items-center justify-center"
-                    style={{ backgroundColor: `${PRIMARY}15` }}
-                  >
-                    {homeroomFullyAssigned
-                      ? <UserCheck className="w-5 h-5" style={{ color: PRIMARY }} />
-                      : <UserPlus className="w-5 h-5" style={{ color: PRIMARY }} />
-                    }
+            ) : groupedSections.length === 0 ? (
+              <div className="text-center py-8 text-xs text-slate-400">
+                Aucune section physique trouvée.
+                <br />
+                Créez des sections dans Paramètres > Structure.
+              </div>
+            ) : (
+              groupedSections.map(({ officialClass, sections }) => (
+                <div key={officialClass.id} className="mb-3">
+                  <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    {officialClass.name}
                   </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-900">Enseignant Titulaire</h4>
-                    <p className="text-xs text-slate-500 font-medium">Classe : {selectedClass.name}</p>
-                  </div>
-                </div>
-
-                {homeroomFullyAssigned && currentHomeroom ? (
-                  <div className="space-y-4">
-                    {/* Avatar + Nom */}
-                    <div className="flex items-center gap-4 p-4 bg-slate-50/50 rounded-lg border border-slate-200">
-                      <div 
-                        className="w-10 h-10 rounded-lg flex items-center justify-center text-white text-xs font-bold shadow-md"
-                        style={{ backgroundColor: PRIMARY }}
+                  {sections.map(pc => {
+                    const isSelected = selectedPhysicalClassId === pc.id;
+                    return (
+                      <button
+                        key={pc.id}
+                        onClick={() => setSelectedPhysicalClassId(pc.id)}
+                        className={cn(
+                          'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all mb-0.5',
+                          isSelected
+                            ? 'bg-slate-800 text-white shadow-sm'
+                            : 'text-slate-700 hover:bg-slate-100',
+                        )}
                       >
-                        {currentHomeroom.firstName[0]}{currentHomeroom.lastName[0]}
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-bold text-slate-900">
+                        <span className="flex items-center gap-1.5">
+                          <span className={cn(
+                            'inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-black',
+                            isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500',
+                          )}>
+                            {isHomeroomLevel(officialClass.level?.name) ? '★' : '🎓'}
+                          </span>
+                          {pc.name}
+                        </span>
+                        <ChevronRight className={cn('w-3.5 h-3.5 ml-auto transition-transform', isSelected && 'rotate-90')} />
+                      </button>
+                    );
+                  })}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* ── Panneau droit : Détail de la section sélectionnée ── */}
+        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col">
+          {/* Bilingual switch */}
+          {isBilingual && (
+            <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1 mx-4 mt-4 mb-2 self-start">
+              <button
+                onClick={() => setCurrentTrack('FR')}
+                className={cn('px-4 py-1.5 rounded-lg text-sm font-bold transition-all',
+                  currentTrack === 'FR' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500')}
+              >
+                Français
+              </button>
+              <button
+                onClick={() => setCurrentTrack('EN')}
+                className={cn('px-4 py-1.5 rounded-lg text-sm font-bold transition-all',
+                  currentTrack === 'EN' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500')}
+              >
+                English
+              </button>
+            </div>
+          )}
+
+          {/* Header */}
+          <div className="p-4 border-b border-slate-200 bg-slate-50/50">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-700 border border-emerald-200">
+                    <Users className="w-3 h-3" /> Section physique
+                  </span>
+                  <h3 className="text-base font-bold text-slate-900">
+                    {selectedPhysicalClass?.name || 'Sélectionnez une section'}
+                  </h3>
+                  {selectedOfficialClass && (
+                    <span className="text-[10px] text-slate-400 font-medium">
+                      (classe officielle : {selectedOfficialClass.name})
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider mt-0.5">
+                  {isHomeroom
+                    ? '★ Mode Titulaire — 1 enseignant pour toutes les matières'
+                    : '🎓 Mode Spécialiste — 1 enseignant par matière'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto p-4">
+            {!selectedPhysicalClass ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Users className="w-12 h-12 text-slate-300 mb-4" />
+                <p className="text-slate-400 text-xs font-bold">Sélectionnez une section physique à gauche</p>
+              </div>
+            ) : isHomeroom ? (
+              /* ══ MODE TITULAIRE (Maternelle / Primaire) ══ */
+              <div className="max-w-2xl mx-auto space-y-4">
+                {/* Bannière */}
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 flex items-start gap-3">
+                  <Info className="w-4 h-4 text-slate-500 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-xs font-bold text-slate-800">Modèle Titulaire Unique</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed font-medium">
+                      Un seul enseignant titulaire gère l'ensemble des matières de la section
+                      <strong> {selectedPhysicalClass.name}</strong>.
+                      Définissez-le ici — il sera automatiquement affecté
+                      à toutes les {classSubjects.length} matières.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Carte Titulaire */}
+                <div className={cn(
+                  'rounded-lg border p-5 bg-white shadow-sm transition-all',
+                  homeroomFullyAssigned ? 'border-slate-200' : 'border-dashed border-slate-300',
+                )}>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${PRIMARY}15` }}>
+                      {homeroomFullyAssigned
+                        ? <UserCheck className="w-5 h-5" style={{ color: PRIMARY }} />
+                        : <Star className="w-5 h-5 text-slate-400" />}
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Titulaire</p>
+                      {homeroomFullyAssigned && currentHomeroom ? (
+                        <p className="text-base font-bold text-slate-900">
                           {currentHomeroom.lastName} {currentHomeroom.firstName}
                         </p>
-                        <p className="text-xs text-slate-500 font-semibold mt-0.5">
-                          Titulaire de {selectedClass.name}
-                        </p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-[8px] bg-emerald-50 border border-emerald-100 text-emerald-700 font-bold uppercase px-2 py-0.5 rounded-full">
-                            ✓ Affecté à toutes les matières
-                          </span>
-                        </div>
-                      </div>
-                      <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                    </div>
-
-                    {/* Matières gérées */}
-                    <div>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                        Matières gérées
-                      </p>
-                      <div className="grid grid-cols-2 gap-2">
-                        {visibleClassSubjects.map(cs => (
-                          <div key={cs.id} className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 text-xs bg-white">
-                            <div className="w-7 h-7 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-center font-bold text-[9px] text-slate-600 flex-shrink-0">
-                              {cs.subject.code}
-                            </div>
-                            <div className="min-w-0">
-                              <p className="font-bold text-slate-800 truncate">{cs.subject.name}</p>
-                              <p className="text-[9px] text-slate-400 font-semibold">{cs.weeklyHours}h/sem</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex gap-2 pt-2">
-                      <button
-                        onClick={() => { setSearch(''); setModal('assign-homeroom'); }}
-                        className="flex-1 flex items-center justify-center gap-2 py-2 text-xs font-semibold text-white rounded-lg transition-all shadow-sm hover:opacity-95"
-                        style={{ backgroundColor: PRIMARY }}
-                      >
-                        <Replace className="w-4 h-4" />
-                        Remplacer le titulaire
-                      </button>
-                      <button
-                        onClick={handleRemoveHomeroom}
-                        disabled={bulkAssigning}
-                        className="px-4 py-2 bg-red-50 text-red-600 rounded-lg font-semibold text-xs hover:bg-red-100 transition-all border border-red-200"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      ) : (
+                        <p className="text-base font-bold text-slate-400">Non désigné</p>
+                      )}
                     </div>
                   </div>
-                ) : (
-                  <button
-                    onClick={() => { setSearch(''); setModal('assign-homeroom'); }}
-                    className="w-full py-8 border-2 border-dashed border-slate-300 rounded-lg flex flex-col items-center justify-center gap-2 text-slate-500 hover:border-slate-400 hover:bg-slate-50/50 transition-all bg-white"
-                  >
-                    <UserPlus className="w-8 h-8" style={{ color: PRIMARY }} />
-                    <div className="text-center">
-                      <p className="font-bold text-xs text-slate-800">Désigner le titulaire</p>
-                      <p className="text-[11px] text-slate-400 font-medium">Il sera affecté à toutes les matières</p>
+
+                  <div className="flex gap-2">
+                    {homeroomFullyAssigned ? (
+                      <>
+                        <button
+                          onClick={() => { setSearch(''); setModal('assign-homeroom'); }}
+                          disabled={bulkAssigning}
+                          className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 transition-all"
+                        >
+                          <Replace className="w-3.5 h-3.5" /> Remplacer
+                        </button>
+                        <button
+                          onClick={() => setModal('confirm-remove')}
+                          disabled={bulkAssigning}
+                          className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-all"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" /> Retirer
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => { setSearch(''); setModal('assign-homeroom'); }}
+                        disabled={bulkAssigning || classSubjects.length === 0}
+                        className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg text-white shadow-sm transition hover:opacity-95 disabled:opacity-50"
+                        style={{ backgroundColor: PRIMARY }}
+                      >
+                        {bulkAssigning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />}
+                        Désigner le titulaire
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Liste des matières */}
+                {classSubjects.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                      {classSubjects.length} matière(s) de cette section
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {classSubjects.map(cs => (
+                        <span key={cs.id} className="inline-flex items-center gap-1 px-2 py-1 rounded bg-slate-100 border border-slate-200 text-[10px] font-semibold text-slate-700">
+                          {cs.subject.name}
+                        </span>
+                      ))}
                     </div>
-                  </button>
+                  </div>
                 )}
               </div>
-            </div>
-          ) : (
-            /* ══════════════════════════════════════════════════
-               MODE SPÉCIALISTE (Secondaire)
-               ══════════════════════════════════════════════════ */
-            <div className="space-y-4">
-              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 flex items-center gap-3">
-                <GraduationCap className="w-5 h-5 flex-shrink-0" style={{ color: PRIMARY }} />
-                <p className="text-xs text-slate-700 font-medium">
-                  Niveau secondaire — Affectez <strong>un enseignant spécialisé par matière</strong>.
-                  Chaque enseignant peut intervenir dans plusieurs classes.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {visibleClassSubjects.map(cs => {
-                  const assigned = (cs.assignments || [])[0]?.teacher;
-                  return (
-                    <motion.div
-                      key={cs.id}
-                      layout
-                      className={cn(
-                        'p-4 rounded-lg border transition-all flex flex-col gap-3',
-                        assigned
-                          ? 'bg-white border-slate-200 shadow-sm'
-                          : 'bg-slate-50/50 border-dashed border-slate-300'
-                      )}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-center font-bold text-xs text-slate-600">
-                            {cs.subject.code}
-                          </div>
-                          <div>
-                            <h4 className="font-bold text-slate-900 text-xs">{cs.subject.name}</h4>
-                            <span className="text-[10px] font-semibold text-slate-400 flex items-center gap-1 mt-0.5">
-                              <Clock className="w-3 h-3" /> {cs.weeklyHours}h/sem · Coeff. {cs.coefficient}
-                            </span>
-                          </div>
+            ) : (
+              /* ══ MODE SPÉCIALISTE (Secondaire) ══ */
+              <div className="space-y-3">
+                {classSubjects.length === 0 ? (
+                  <div className="text-center py-8 text-xs text-slate-400 italic">
+                    Aucune matière affectée à cette classe officielle.
+                    Affectez d'abord des matières dans l'onglet « Matière & Programme ».
+                  </div>
+                ) : (
+                  classSubjects.map(cs => {
+                    const assignment = (cs.assignments || []).find(a => a.classId === selectedPhysicalClassId);
+                    return (
+                      <div key={cs.id} className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-white">
+                        <div>
+                          <p className="font-bold text-slate-800 text-sm">{cs.subject.name}</p>
+                          <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+                            Coeff. {cs.coefficient} · {cs.weeklyHours}h/sem
+                          </p>
                         </div>
-                        {assigned && (
-                          <button
-                            onClick={() => handleRemoveAssignment((cs.assignments || [])[0]?.id)}
-                            className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-
-                      <div>
-                        {assigned ? (
-                          <div className="flex items-center gap-3 p-2 bg-slate-50 rounded-lg border border-slate-200">
-                            <div 
-                              className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-[10px] font-bold"
+                        <div className="flex items-center gap-2">
+                          {assignment ? (
+                            <>
+                              <span className="text-xs font-bold text-slate-700">
+                                {assignment.teacher.lastName} {assignment.teacher.firstName}
+                              </span>
+                              <button
+                                onClick={() => { setActiveSubject(cs); setModal('assign-teacher'); }}
+                                className="text-[10px] font-semibold text-blue-600 hover:underline"
+                              >
+                                Remplacer
+                              </button>
+                              <button
+                                onClick={() => { setRemovingAssignmentId(assignment.id); setModal('confirm-remove'); }}
+                                className="text-[10px] font-semibold text-red-600 hover:underline"
+                              >
+                                Retirer
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => { setActiveSubject(cs); setModal('assign-teacher'); }}
+                              className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1.5 rounded-lg text-white"
                               style={{ backgroundColor: PRIMARY }}
                             >
-                              {assigned.firstName[0]}{assigned.lastName[0]}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-bold text-slate-900 truncate">
-                                {assigned.lastName} {assigned.firstName}
-                              </p>
-                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
-                                Enseignant Affecté
-                              </p>
-                            </div>
-                            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => {
-                              setActiveSubject(cs);
-                              setSearch('');
-                              setModal('assign-teacher');
-                            }}
-                            className="w-full py-2 border border-dashed border-slate-350 rounded-lg flex items-center justify-center gap-2 text-slate-400 hover:border-slate-400 hover:text-slate-800 hover:bg-slate-50 transition-all text-xs font-semibold bg-white shadow-sm"
-                          >
-                            <UserPlus className="w-4 h-4" />
-                            Affecter un enseignant
-                          </button>
-                        )}
+                              <UserPlus className="w-3 h-3" /> Affecter
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </motion.div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
-
-              {visibleClassSubjects.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <BookOpen className="w-10 h-10 text-slate-300 mb-4" />
-                  <p className="text-slate-500 text-xs font-bold">Aucune matière configurée</p>
-                  <p className="text-[11px] text-slate-400 mt-1">Ajoutez d'abord des matières dans le Catalogue</p>
-                </div>
-              )}
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
 
-      {/* ── Modal : Affecter titulaire (Maternelle/Primaire) ── */}
+      {/* ══ Modals ══ */}
+
+      {/* Modal: Assign Homeroom (Titulaire) */}
       <FormModal
+        title={`Désigner le titulaire — ${selectedPhysicalClass?.name || ''}`}
         isOpen={modal === 'assign-homeroom'}
-        onClose={() => setModal('none')}
-        title="Désigner le Titulaire de Classe"
-        size="lg"
+        onClose={() => { setModal('none'); setSearch(''); }}
+        onConfirm={() => {}}
+        size="large"
       >
         <div className="space-y-4">
-          {/* Info classe */}
-          <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3 border border-slate-200">
-            <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shadow-sm border border-slate-100">
-              <Star className="w-5 h-5 text-amber-500" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-slate-900">Titulaire de {selectedClass?.name}</p>
-              <p className="text-[11px] text-slate-500 mt-0.5 font-medium">
-                Cet enseignant gérera toutes les{' '}
-                <strong>{visibleClassSubjects.length} matières</strong> de la classe.
-              </p>
-            </div>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start gap-2">
+            <Info className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+            <p className="text-xs text-blue-800">
+              Sélectionnez l'enseignant titulaire pour la section <strong>{selectedPhysicalClass?.name}</strong>.
+              Il sera affecté à toutes les {classSubjects.length} matières de cette section.
+            </p>
           </div>
 
-          {/* Recherche */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Chercher un enseignant..."
-              className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 text-sm font-medium transition-all"
+              placeholder="Rechercher un enseignant..."
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-200 bg-white focus:outline-none focus:border-slate-400"
             />
           </div>
 
-          {/* Liste */}
-          <div className="space-y-1.5 pr-1">
-            {filteredTeachers.map(t => {
-              const isCurrentHomeroom = currentHomeroom?.id === t.teacherId;
-              const authorized = isAuthorized(t, selectedClass?.level?.id);
-              return (
-                <button
-                  key={t.id}
-                  disabled={!authorized || bulkAssigning}
-                  onClick={() => handleAssignHomeroom(t.teacherId)}
-                  className={cn(
-                    'w-full flex items-center justify-between p-3 rounded-lg border transition-all text-left bg-white',
-                    isCurrentHomeroom
-                      ? 'border-slate-350 bg-slate-50 shadow-sm'
-                      : authorized
-                      ? 'border-slate-200 hover:border-slate-400 hover:shadow-sm'
-                      : 'bg-slate-50 border-transparent opacity-40 cursor-not-allowed'
-                  )}
-                  style={isCurrentHomeroom ? { borderLeft: `3px solid ${PRIMARY}`, paddingLeft: '9px' } : undefined}
-                >
-                  <div className="flex items-center gap-3">
-                    <div 
-                      className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold shadow-sm"
-                      style={{ backgroundColor: PRIMARY }}
-                    >
-                      {t.teacher.firstName[0]}{t.teacher.lastName[0]}
+          <div className="max-h-72 overflow-y-auto space-y-1.5">
+            {eligibleTeachers.length === 0 ? (
+              <p className="text-center text-xs text-slate-400 py-6">Aucun enseignant disponible.</p>
+            ) : (
+              eligibleTeachers
+                .filter(t => {
+                  if (!search) return true;
+                  const s = search.toLowerCase();
+                  return `${t.teacher.lastName} ${t.teacher.firstName}`.toLowerCase().includes(s)
+                    || (t.teacher.matricule || '').toLowerCase().includes(s);
+                })
+                .map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => handleAssignHomeroom(t.teacher.id)}
+                    disabled={bulkAssigning}
+                    className="w-full flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:border-slate-400 hover:bg-slate-50 transition-all text-left disabled:opacity-50"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-600">
+                      {t.teacher.firstName?.[0]}{t.teacher.lastName?.[0]}
                     </div>
                     <div>
-                      <p className="font-bold text-slate-900 text-xs">
-                        {t.teacher.lastName} {t.teacher.firstName}
-                      </p>
-                      <div className="flex items-center gap-2 mt-0.5 text-[9px] font-semibold text-slate-400">
-                        <span>
-                          {t.teacher.matricule}
-                        </span>
-                        <span>•</span>
-                        <span style={{ color: PRIMARY }}>
-                          Max {t.maxWeeklyHours}h/sem
-                        </span>
-                        {isCurrentHomeroom && (
-                          <span className="text-[8px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full">
-                            Titulaire actuel
-                          </span>
-                        )}
-                      </div>
+                      <p className="font-bold text-slate-800 text-sm">{t.teacher.lastName} {t.teacher.firstName}</p>
+                      <p className="text-[10px] text-slate-400 font-medium">{t.teacher.matricule} · {t.maxWeeklyHours}h/sem max</p>
                     </div>
-                  </div>
-                  {authorized && !isCurrentHomeroom && (
-                    <UserPlus className="w-4 h-4 text-slate-400" />
-                  )}
-                  {isCurrentHomeroom && (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                  )}
-                </button>
-              );
-            })}
-            {filteredTeachers.length === 0 && (
-              <p className="text-center text-xs text-slate-400 py-8 font-bold">Aucun enseignant trouvé</p>
+                    <UserPlus className="w-4 h-4 ml-auto text-slate-400" />
+                  </button>
+                ))
             )}
           </div>
-
-          {bulkAssigning && (
-            <div className="flex items-center justify-center gap-2 py-2 text-slate-600">
-              <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: PRIMARY, borderTopColor: 'transparent' }} />
-              <p className="text-xs font-bold">Affectation en cours...</p>
-            </div>
-          )}
         </div>
       </FormModal>
 
-      {/* ── Modal : Affecter enseignant spécialiste (Secondaire) ── */}
+      {/* Modal: Assign Teacher (Spécialiste) */}
       <FormModal
+        title={`Affecter un enseignant — ${activeSubject?.subject?.name || ''}`}
         isOpen={modal === 'assign-teacher'}
-        onClose={() => setModal('none')}
-        title="Affecter un Enseignant Spécialiste"
-        size="lg"
+        onClose={() => { setModal('none'); setSearch(''); }}
+        onConfirm={() => {}}
+        size="large"
       >
         <div className="space-y-4">
-          {/* Info matière */}
-          <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3 border border-slate-200">
-            <div className="w-9 h-9 bg-white border border-slate-200 rounded-lg flex items-center justify-center font-bold text-slate-600 shadow-sm text-xs">
-              {activeSubject?.subject.code}
-            </div>
-            <div>
-              <p className="text-xs font-bold text-slate-900">{activeSubject?.subject.name}</p>
-              <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">
-                Charge : {activeSubject?.weeklyHours}h · Coeff. {activeSubject?.coefficient}
-              </p>
-            </div>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <p className="text-xs text-blue-800">
+              Section : <strong>{selectedPhysicalClass?.name}</strong> · Matière : <strong>{activeSubject?.subject?.name}</strong>
+            </p>
           </div>
 
-          {/* Recherche */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Chercher par nom ou habilitation..."
-              className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 text-sm font-medium transition-all"
+              placeholder="Rechercher..."
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-200 bg-white focus:outline-none focus:border-slate-400"
             />
           </div>
 
-          {/* Liste */}
-          <div className="space-y-1.5 pr-1">
-            {filteredTeachers.map(t => {
-              const qualified = isQualified(t, activeSubject?.subject.id || '');
-              const authorized = isAuthorized(t, selectedClass?.level?.id);
-              return (
+          <div className="max-h-72 overflow-y-auto space-y-1.5">
+            {eligibleTeachers
+              .filter(t => {
+                if (!search) return true;
+                const s = search.toLowerCase();
+                return `${t.teacher.lastName} ${t.teacher.firstName}`.toLowerCase().includes(s);
+              })
+              .map(t => (
                 <button
                   key={t.id}
-                  disabled={!qualified || !authorized}
-                  onClick={() => handleAssignTeacher(t.teacherId)}
-                  className={cn(
-                    'w-full flex items-center justify-between p-3 rounded-lg border transition-all text-left bg-white',
-                    qualified && authorized
-                      ? 'border-slate-200 hover:border-slate-400 hover:shadow-sm'
-                      : 'bg-slate-50 border-transparent opacity-50 cursor-not-allowed'
-                  )}
+                  onClick={() => handleAssignTeacher(t.teacher.id)}
+                  className="w-full flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:border-slate-400 hover:bg-slate-50 transition-all text-left"
                 >
-                  <div className="flex items-center gap-3">
-                    <div 
-                      className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs"
-                      style={qualified && authorized ? { backgroundColor: PRIMARY, color: '#fff' } : { backgroundColor: '#f1f5f9', color: '#94a3b8' }}
-                    >
-                      {t.teacher.firstName[0]}{t.teacher.lastName[0]}
-                    </div>
-                    <div>
-                      <p className="font-bold text-slate-900 text-xs">
-                        {t.teacher.lastName} {t.teacher.firstName}
-                      </p>
-                      <div className="flex items-center gap-2 mt-0.5 text-[9px] font-semibold">
-                        <span className={cn(
-                          'font-bold uppercase px-1.5 py-0.5 rounded-full border text-[8px]',
-                          qualified ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-red-50 border-red-100 text-red-700'
-                        )}>
-                          {qualified ? 'Habilité' : 'Non Habilité'}
-                        </span>
-                        <span className="text-slate-400">
-                          Capacité : {t.maxWeeklyHours}h
-                        </span>
-                      </div>
-                    </div>
+                  <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-600">
+                    {t.teacher.firstName?.[0]}{t.teacher.lastName?.[0]}
                   </div>
-                  {qualified && authorized && <UserPlus className="w-4 h-4" style={{ color: PRIMARY }} />}
+                  <div>
+                    <p className="font-bold text-slate-800 text-sm">{t.teacher.lastName} {t.teacher.firstName}</p>
+                    <p className="text-[10px] text-slate-400 font-medium">{t.teacher.matricule}</p>
+                  </div>
+                  <UserPlus className="w-4 h-4 ml-auto text-slate-400" />
                 </button>
-              );
-            })}
-            {filteredTeachers.length === 0 && (
-              <p className="text-center text-xs text-slate-400 py-8 font-bold">Aucun enseignant trouvé</p>
-            )}
+              ))}
           </div>
         </div>
       </FormModal>
+
+      {/* Modal: Confirm Remove */}
+      <ConfirmModal
+        title="Confirmer la suppression"
+        isOpen={modal === 'confirm-remove'}
+        onClose={() => setModal('none')}
+        onConfirm={() => {
+          if (isHomeroom) {
+            handleRemoveHomeroom();
+          } else if (removingAssignmentId) {
+            handleRemoveAssignment(removingAssignmentId);
+            setRemovingAssignmentId(null);
+          }
+        }}
+      >
+        <p className="text-sm text-slate-600">
+          {isHomeroom
+            ? `Voulez-vous vraiment retirer le titulaire de la section ${selectedPhysicalClass?.name} ? Toutes les affectations de matières seront supprimées.`
+            : 'Voulez-vous vraiment retirer cette affectation ?'}
+        </p>
+      </ConfirmModal>
     </div>
   );
 }

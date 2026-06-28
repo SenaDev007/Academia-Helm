@@ -154,7 +154,7 @@ export function ConfirmDialog({
               <DialogTitle className="text-lg font-bold text-slate-900 leading-tight">
                 {state.title || 'Confirmation'}
               </DialogTitle>
-              <DialogDescription className="mt-2 text-sm text-slate-600 leading-relaxed">
+              <DialogDescription className="mt-2 text-sm text-slate-600 leading-relaxed whitespace-pre-line">
                 {state.description}
               </DialogDescription>
               {state.details && (

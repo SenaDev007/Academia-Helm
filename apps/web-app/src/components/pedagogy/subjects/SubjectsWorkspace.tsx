@@ -380,7 +380,7 @@ export default function SubjectsWorkspace() {
   const loadClasses = useCallback(async () => {
     if (!academicYear?.id) return;
     try {
-      const data = await pedagogyFetch<any[]>(`/api/pedagogy/academic-classes?academicYearId=${academicYear.id}`);
+      const data = await pedagogyFetch<any[]>(`/api/pedagogy/academic-structure/classes?academicYearId=${academicYear.id}`);
       setClasses(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error(e);

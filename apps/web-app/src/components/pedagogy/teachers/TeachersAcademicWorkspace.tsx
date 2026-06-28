@@ -1157,7 +1157,7 @@ export default function TeachersAcademicWorkspace() {
                             <span className="text-slate-500">Non défini</span>
                           </span>
                           <span className="text-slate-400 font-normal italic ml-auto">
-                            Cliquez sur une cellule pour basculer le statut
+                            Cliquez sur une cellule, un jour (colonne) ou un créneau (ligne) pour basculer
                           </span>
                         </div>
 
@@ -1195,6 +1195,47 @@ export default function TeachersAcademicWorkspace() {
                             await toggleAvailability(dayId, start, end);
                           };
 
+                          // Basculer toute une colonne (tous les créneaux d'un jour)
+                          // Si toutes les cellules sont déjà indisponibles → tout rendre disponible
+                          // Sinon → tout rendre indisponible
+                          const toggleColumn = async (dayId: number) => {
+                            const allUnavailable = TIME_SLOTS.every(slot =>
+                              findAvailability(dayId, slot.start, slot.end)
+                            );
+                            const targetState = allUnavailable ? 'available' : 'unavailable';
+                            for (const slot of TIME_SLOTS) {
+                              const isCurrentlyUnavailable = !!findAvailability(dayId, slot.start, slot.end);
+                              if (targetState === 'unavailable' && !isCurrentlyUnavailable) {
+                                await toggleAvailability(dayId, slot.start, slot.end);
+                              } else if (targetState === 'available' && isCurrentlyUnavailable) {
+                                await toggleAvailability(dayId, slot.start, slot.end);
+                              }
+                            }
+                          };
+
+                          // Basculer toute une ligne (tous les jours d'un créneau)
+                          const toggleRow = async (start: string, end: string) => {
+                            const allUnavailable = MATRIX_DAYS.every(day =>
+                              findAvailability(day.id, start, end)
+                            );
+                            const targetState = allUnavailable ? 'available' : 'unavailable';
+                            for (const day of MATRIX_DAYS) {
+                              const isCurrentlyUnavailable = !!findAvailability(day.id, start, end);
+                              if (targetState === 'unavailable' && !isCurrentlyUnavailable) {
+                                await toggleAvailability(day.id, start, end);
+                              } else if (targetState === 'available' && isCurrentlyUnavailable) {
+                                await toggleAvailability(day.id, start, end);
+                              }
+                            }
+                          };
+
+                          // Vérifier si toute une colonne est indisponible
+                          const isColumnAllUnavailable = (dayId: number) =>
+                            TIME_SLOTS.every(slot => findAvailability(dayId, slot.start, slot.end));
+                          // Vérifier si toute une ligne est indisponible
+                          const isRowAllUnavailable = (start: string, end: string) =>
+                            MATRIX_DAYS.every(day => findAvailability(day.id, start, end));
+
                           return (
                             <div className="overflow-x-auto rounded-lg border border-slate-200">
                               <table className="min-w-full text-xs">
@@ -1203,42 +1244,72 @@ export default function TeachersAcademicWorkspace() {
                                     <th className="px-2 py-2 text-left font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">
                                       Créneau
                                     </th>
-                                    {MATRIX_DAYS.map(d => (
-                                      <th key={d.id} className="px-2 py-2 text-center font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">
-                                        {d.label}
-                                      </th>
-                                    ))}
+                                    {MATRIX_DAYS.map(d => {
+                                      const allUnavail = isColumnAllUnavailable(d.id);
+                                      return (
+                                        <th key={d.id} className="px-2 py-2 text-center whitespace-nowrap">
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleColumn(d.id)}
+                                            className={cn(
+                                              'px-2 py-1 rounded-md font-semibold uppercase tracking-wide transition-all hover:shadow-sm',
+                                              allUnavail
+                                                ? 'bg-red-100 text-red-700 border border-red-300'
+                                                : 'text-slate-500 hover:bg-slate-200 border border-transparent',
+                                            )}
+                                            title={allUnavail ? `Rendre ${d.label} entièrement disponible` : `Rendre ${d.label} entièrement indisponible`}
+                                          >
+                                            {d.label}
+                                          </button>
+                                        </th>
+                                      );
+                                    })}
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {TIME_SLOTS.map(slot => (
-                                    <tr key={slot.start} className="border-b border-slate-100 last:border-0">
-                                      <td className="px-2 py-1.5 font-bold text-slate-700 whitespace-nowrap">
-                                        {slot.label}
-                                      </td>
-                                      {MATRIX_DAYS.map(day => {
-                                        const av = findAvailability(day.id, slot.start, slot.end);
-                                        const isUnavailable = !!av;
-                                        return (
-                                          <td key={day.id} className="px-1 py-1 text-center">
-                                            <button
-                                              type="button"
-                                              onClick={() => toggleCell(day.id, slot.start, slot.end)}
-                                              className={cn(
-                                                'w-full h-8 rounded-md border text-[10px] font-bold transition-all hover:shadow-sm',
-                                                isUnavailable
-                                                  ? 'bg-red-100 border-red-300 text-red-700 hover:bg-red-200'
-                                                  : 'bg-emerald-100 border-emerald-300 text-emerald-700 hover:bg-emerald-200',
-                                              )}
-                                              title={`${day.label} ${slot.label} — ${isUnavailable ? 'Indisponible' : 'Disponible'}`}
-                                            >
-                                              {isUnavailable ? '✗' : '✓'}
-                                            </button>
-                                          </td>
-                                        );
-                                      })}
-                                    </tr>
-                                  ))}
+                                  {TIME_SLOTS.map(slot => {
+                                    const rowAllUnavail = isRowAllUnavailable(slot.start, slot.end);
+                                    return (
+                                      <tr key={slot.start} className="border-b border-slate-100 last:border-0">
+                                        <td className="px-2 py-1.5 whitespace-nowrap">
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleRow(slot.start, slot.end)}
+                                            className={cn(
+                                              'px-2 py-1 rounded-md font-bold text-slate-700 transition-all hover:shadow-sm',
+                                              rowAllUnavail
+                                                ? 'bg-red-100 text-red-700 border border-red-300'
+                                                : 'hover:bg-slate-200 border border-transparent',
+                                            )}
+                                            title={rowAllUnavail ? `Rendre ${slot.label} entièrement disponible` : `Rendre ${slot.label} entièrement indisponible`}
+                                          >
+                                            {slot.label}
+                                          </button>
+                                        </td>
+                                        {MATRIX_DAYS.map(day => {
+                                          const av = findAvailability(day.id, slot.start, slot.end);
+                                          const isUnavailable = !!av;
+                                          return (
+                                            <td key={day.id} className="px-1 py-1 text-center">
+                                              <button
+                                                type="button"
+                                                onClick={() => toggleCell(day.id, slot.start, slot.end)}
+                                                className={cn(
+                                                  'w-full h-8 rounded-md border text-[10px] font-bold transition-all hover:shadow-sm',
+                                                  isUnavailable
+                                                    ? 'bg-red-100 border-red-300 text-red-700 hover:bg-red-200'
+                                                    : 'bg-emerald-100 border-emerald-300 text-emerald-700 hover:bg-emerald-200',
+                                                )}
+                                                title={`${day.label} ${slot.label} — ${isUnavailable ? 'Indisponible' : 'Disponible'}`}
+                                              >
+                                                {isUnavailable ? '✗' : '✓'}
+                                              </button>
+                                            </td>
+                                          );
+                                        })}
+                                      </tr>
+                                    );
+                                  })}
                                 </tbody>
                               </table>
                             </div>

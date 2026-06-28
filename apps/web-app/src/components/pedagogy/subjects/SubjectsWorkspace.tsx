@@ -398,28 +398,43 @@ export default function SubjectsWorkspace() {
     if (!academicYear?.id || classes.length === 0) return;
     setLoadingClassSubjects(true);
     try {
+      // ─── Batch fetch : récupère TOUS les class_subjects en une seule requête ──
+      // Au lieu de faire N requêtes (une par classe), on fait une seule requête
+      // GET /api/pedagogy/class-subjects?academicYearId=X qui retourne tous les
+      // liens du tenant pour cette année. On les mappe ensuite par academicClassId.
+      //
+      // Ce changement contourne le bug du filtre par classe individuelle
+      // (getClassSubjects qui pouvait filtrer par la mauvaise colonne).
+      const allLinks = await pedagogyFetch<any[]>(`/api/pedagogy/class-subjects?academicYearId=${academicYear.id}`);
+
       const map: Record<string, any[]> = {};
-      await Promise.all(
-        classes.map(async (cls) => {
-          try {
-            const data = await pedagogyFetch<any[]>(`/api/pedagogy/class-subjects?classId=${cls.id}&academicYearId=${academicYear.id}`);
-            // Log défensif pour diagnostiquer le bug "Aucune matière affectée"
-            // Si data est vide alors qu'on s'attend à avoir des liens, on log pour debug
-            if (!Array.isArray(data) || data.length === 0) {
-              console.debug(`[loadClassSubjects] classId=${cls.id} (${cls.name}) → 0 matière reçue du backend`);
-            } else {
-              console.debug(`[loadClassSubjects] classId=${cls.id} (${cls.name}) → ${data.length} matière(s) reçue(s)`);
-            }
-            map[cls.id] = Array.isArray(data) ? data : [];
-          } catch (err) {
-            console.error(`[loadClassSubjects] Failed to load subjects for class ${cls.id} (${cls.name}):`, err);
-            map[cls.id] = [];
+      if (Array.isArray(allLinks)) {
+        for (const link of allLinks) {
+          // Un lien peut être rattaché via academicClassId (cas normal) ou classId (rare)
+          const key = link.academicClassId || link.classId;
+          if (key) {
+            if (!map[key]) map[key] = [];
+            map[key].push(link);
           }
-        })
-      );
+        }
+      }
+
+      // Log défensif
+      const totalLinks = Array.isArray(allLinks) ? allLinks.length : 0;
+      console.debug(`[loadClassSubjects] Batch fetch → ${totalLinks} lien(s) total, ${Object.keys(map).length} classe(s) avec matières`);
+
+      // Pour chaque classe, log si elle a des matières ou non
+      for (const cls of classes) {
+        const count = (map[cls.id] || []).length;
+        if (count > 0) {
+          console.debug(`[loadClassSubjects] ${cls.name} (${cls.id}) → ${count} matière(s)`);
+        }
+      }
+
       setClassSubjectsMap(map);
     } catch (e) {
       console.error('[loadClassSubjects] Global error:', e);
+      setClassSubjectsMap({});
     } finally {
       setLoadingClassSubjects(false);
     }

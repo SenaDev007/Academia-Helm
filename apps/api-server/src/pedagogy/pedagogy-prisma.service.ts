@@ -238,6 +238,31 @@ export class PedagogyPrismaService {
   /**
    * Récupère les affectations d'une classe
    */
+  /**
+   * Récupère TOUS les class_subjects pour un tenant + année, avec subject inclus.
+   * Le frontend les mappe ensuite par academicClassId côté client.
+   * Ce endpoint batch contourne le bug du filtre par classe individuelle.
+   */
+  async getAllClassSubjects(tenantId: string, academicYearId?: string) {
+    const where: any = { tenantId };
+    if (academicYearId) {
+      where.academicYearId = academicYearId;
+    }
+
+    const results = await this.prisma.classSubject.findMany({
+      where,
+      include: {
+        subject: true,
+        academicYear: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    console.log(`[getAllClassSubjects] tenantId=${tenantId} yearId=${academicYearId ?? 'none'} → ${results.length} résultat(s)`);
+
+    return results;
+  }
+
   async getClassSubjects(classId: string, tenantId: string, academicYearId?: string) {
     // ⚠️ IMPORTANT : Le paramètre `classId` reçu du frontend peut être :
     //   - un `AcademicClass.id` (table pedagogy_academic_classes) — cas le plus fréquent

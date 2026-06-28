@@ -82,6 +82,19 @@ export class PedagogyPrismaController {
     });
   }
 
+  // ─── Endpoint batch : GET /class-subjects?academicYearId=X ──
+  // Retourne TOUS les class_subjects pour le tenant + année, avec subject inclus.
+  // Le frontend les mappe ensuite par academicClassId côté client.
+  // Ce endpoint contourne le bug du filtre par classe (getClassSubjects qui filtre
+  // par la mauvaise colonne sur les anciens déploiements Fly.io).
+  @Get('class-subjects')
+  async getAllClassSubjects(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId?: string,
+  ) {
+    return this.pedagogyService.getAllClassSubjects(tenantId, academicYearId);
+  }
+
   @Get('class-subjects/:classId')
   async getClassSubjects(
     @Param('classId') classId: string,

@@ -156,7 +156,7 @@ export function AcademicStructureWorkspace() {
   const { user, tenant } = useAppSession();
   const { academicYear } = useModuleContext();
   const { availableYears } = useAcademicYear();
-  const { isEnabled: bilingualCtxEnabled, currentTrack, setCurrentTrack } = useBilingual();
+  const { isEnabled: bilingualCtxEnabled, currentTrack } = useBilingual();
   const yearId = academicYear?.id ?? '';
 
   /** Aligné Paramètres : PO / admin plateforme peuvent cibler un tenant (URL ?tenant_id=) ; sinon JWT / session. */
@@ -1304,18 +1304,25 @@ export function AcademicStructureWorkspace() {
 
   /**
    * Classes visibles dans l'onglet "Classes".
-   * En mode bilingue, on filtre par `languageTrack` selon le track courant.
-   * Les classes sans piste (`languageTrack` null/undefined) sont rattachées
-   * par défaut à la langue `defaultLanguage` (FR le plus souvent).
+   *
+   * IMPORTANT : Les classes officielles (AcademicClass) sont COMMUNES aux deux
+   * pistes linguistiques (FR/EN). Un CE1 est un CE1, qu'il soit enseigné en
+   * français ou en anglais. Seules les MATIÈRES sont séparées par piste
+   * (catalogue FR vs catalogue EN).
+   *
+   * Le `languageTrack` sur AcademicClass indique la langue principale
+   * d'enseignement (info affichée en sous-titre de la classe), mais ce n'est
+   * PAS un filtre exclusif. Les boutons Vue FR / Vue EN ont été retirés de
+   * ce sous-onglet pour éviter la confusion — ils donnaient l'impression
+   * qu'il existait des classes séparées par langue, ce qui est faux.
+   *
+   * Le filtrage par piste reste utile côté backend (bulletins, notes) pour
+   * savoir dans quelle langue générer les documents, mais l'UI Structure >
+   * Classes affiche TOUTES les classes quelle que soit la piste.
    */
   const visibleClasses = useMemo(() => {
-    if (!bilingualCtxEnabled) return classes;
-    return classes.filter((c) => {
-      const raw = (c.languageTrack ?? '').toUpperCase();
-      const track = raw || (bilingualSettings?.defaultLanguage ?? 'FR').toUpperCase();
-      return track === currentTrack;
-    });
-  }, [classes, bilingualCtxEnabled, currentTrack, bilingualSettings?.defaultLanguage]);
+    return classes;
+  }, [classes]);
 
   const addAction = () => {
     if (tab === 'levels') openCreateLevel();
@@ -1721,43 +1728,10 @@ export function AcademicStructureWorkspace() {
               (niveaux → cycles → grades). Chaque classe officielle peut avoir plusieurs <strong>sections physiques</strong> (CE1 A, CE1 B…). La capacité affichée est la somme des sections. Pour créer/gérer les sections, allez dans{' '}
               <Link href="/app/app/settings?tab=structure" className="font-semibold underline">Paramètres &gt; Structure &gt; Sections par classe</Link>.
             </p>
-            {bilingualCtxEnabled && (
-              <div
-                className="flex items-center gap-1 self-start rounded-xl border border-slate-200 bg-white p-1 sm:self-center"
-                role="group"
-                aria-label="Sélecteur de vue linguistique"
-              >
-                <span className="px-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                  Vue
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setCurrentTrack('FR')}
-                  className={cn(
-                    'px-3 py-1.5 rounded-lg text-xs font-bold transition-all',
-                    currentTrack === 'FR'
-                      ? 'bg-white shadow-sm'
-                      : 'text-slate-500 hover:text-slate-800',
-                  )}
-                  style={currentTrack === 'FR' ? { color: PRIMARY } : undefined}
-                >
-                  Vue FR
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCurrentTrack('EN')}
-                  className={cn(
-                    'px-3 py-1.5 rounded-lg text-xs font-bold transition-all',
-                    currentTrack === 'EN'
-                      ? 'bg-white shadow-sm'
-                      : 'text-slate-500 hover:text-slate-800',
-                  )}
-                  style={currentTrack === 'EN' ? { color: PRIMARY } : undefined}
-                >
-                  Vue EN
-                </button>
-              </div>
-            )}
+            {/* NOTE : Les boutons Vue FR / Vue EN ont été retirés de ce sous-onglet
+                car les classes officielles sont communes aux deux pistes linguistiques.
+                Seules les matières sont séparées par piste (catalogue FR vs EN).
+                Le `languageTrack` reste visible en sous-titre de chaque classe. */}
           </div>
           <table className="min-w-full text-sm">
             <thead>

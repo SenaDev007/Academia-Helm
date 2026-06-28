@@ -600,9 +600,7 @@ export default function TeachersAcademicWorkspace() {
         await pedagogyFetch(`/api/pedagogy/teacher-profiles/availabilities/${existing.id}`, {
           method: 'DELETE'
         });
-        // Pas de toast — c'est un toggle rapide
       } catch (e: any) {
-        // En cas d'erreur, restaurer l'état précédent
         setActiveProfile(activeProfile);
         setProfiles(prev => prev.map(p => p.id === activeProfile.id ? activeProfile : p));
         toast({
@@ -613,8 +611,7 @@ export default function TeachersAcademicWorkspace() {
       }
     } else {
       // Non existant → créer (marquer comme indisponible)
-      // Mise à jour optimiste : ajouter immédiatement au state
-      const tempId = `temp-${Date.now()}`;
+      const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const optimisticProfile = {
         ...activeProfile,
         availabilities: [...activeProfile.availabilities, {
@@ -638,17 +635,18 @@ export default function TeachersAcademicWorkspace() {
           }
         });
         // Remplacer le tempId par le vrai ID
-        const finalProfile = {
-          ...optimisticProfile,
-          availabilities: optimisticProfile.availabilities.map((av: any) =>
-            av.id === tempId ? { ...created, id: created.id } : av
-          ),
-        };
-        setActiveProfile(finalProfile);
-        setProfiles(prev => prev.map(p => p.id === finalProfile.id ? finalProfile : p));
-        // Pas de toast — c'est un toggle rapide
+        setActiveProfile(prev => {
+          if (!prev) return prev;
+          const updated = {
+            ...prev,
+            availabilities: prev.availabilities.map((av: any) =>
+              av.id === tempId ? { ...created, id: created.id } : av
+            ),
+          };
+          setProfiles(prevProfiles => prevProfiles.map(p => p.id === updated.id ? updated : p));
+          return updated;
+        });
       } catch (e: any) {
-        // En cas d'erreur, restaurer l'état précédent
         setActiveProfile(activeProfile);
         setProfiles(prev => prev.map(p => p.id === activeProfile.id ? activeProfile : p));
         toast({
@@ -658,6 +656,85 @@ export default function TeachersAcademicWorkspace() {
         });
       }
     }
+  };
+
+  /**
+   * Bascule un BATCH de cellules (pour les toggles de ligne/colonne).
+   * Met à jour le state UNE SEULE FOIS de façon optimiste, puis fait
+   * tous les appels API en parallèle. Évite le bug de closure périmée
+   * qui survenait quand on appelait toggleAvailability en boucle.
+   */
+  const toggleAvailabilityBatch = async (
+    cells: Array<{ dayId: number; startTime: string; endTime: string }>
+  ) => {
+    if (!activeProfile || !academicYear?.id || cells.length === 0) return;
+
+    const currentAvailabilities = [...activeProfile.availabilities];
+    const toCreate: Array<{ dayId: number; startTime: string; endTime: string; tempId: string }> = [];
+    const toDelete: Array<{ id: string }> = [];
+
+    for (const cell of cells) {
+      const existing = currentAvailabilities.find(
+        (av: any) => av.dayOfWeek === cell.dayId && av.startTime === cell.startTime && av.endTime === cell.endTime
+      );
+      if (existing) {
+        // Supprimer
+        toDelete.push({ id: existing.id });
+        const idx = currentAvailabilities.findIndex((av: any) => av.id === existing.id);
+        if (idx >= 0) currentAvailabilities.splice(idx, 1);
+      } else {
+        // Créer
+        const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        toCreate.push({ ...cell, tempId });
+        currentAvailabilities.push({ id: tempId, dayOfWeek: cell.dayId, startTime: cell.startTime, endTime: cell.endTime });
+      }
+    }
+
+    // Mise à jour optimiste UNE SEULE FOIS
+    const optimisticProfile = { ...activeProfile, availabilities: currentAvailabilities };
+    setActiveProfile(optimisticProfile);
+    setProfiles(prev => prev.map(p => p.id === optimisticProfile.id ? optimisticProfile : p));
+
+    // Appels API en parallèle
+    const promises: Promise<any>[] = [];
+
+    for (const item of toDelete) {
+      promises.push(
+        pedagogyFetch(`/api/pedagogy/teacher-profiles/availabilities/${item.id}`, {
+          method: 'DELETE'
+        }).catch(() => {})
+      );
+    }
+
+    for (const item of toCreate) {
+      promises.push(
+        pedagogyFetch<any>(`/api/pedagogy/teacher-profiles/${activeProfile.id}/availabilities`, {
+          method: 'POST',
+          body: {
+            academicYearId: academicYear.id,
+            dayOfWeek: Number(item.dayId),
+            startTime: item.startTime,
+            endTime: item.endTime
+          }
+        }).then(created => {
+          // Remplacer le tempId par le vrai ID
+          setActiveProfile(prev => {
+            if (!prev) return prev;
+            const updated = {
+              ...prev,
+              availabilities: prev.availabilities.map((av: any) =>
+                av.id === item.tempId ? { ...created, id: created.id } : av
+              ),
+            };
+            setProfiles(prevProfiles => prevProfiles.map(p => p.id === updated.id ? updated : p));
+            return updated;
+          });
+        }).catch(() => {})
+      );
+    }
+
+    // Attendre que tous les appels soient terminés
+    await Promise.all(promises);
   };
 
   const handleAddAvailability = async (data: any) => {
@@ -1205,19 +1282,18 @@ export default function TeachersAcademicWorkspace() {
                           // Basculer toute une colonne (tous les créneaux d'un jour)
                           // Si toutes les cellules sont déjà indisponibles → tout rendre disponible
                           // Sinon → tout rendre indisponible
+                          // Utilise toggleAvailabilityBatch qui met à jour le state UNE SEULE FOIS
+                          // (évite le bug de closure périmée avec les appels séquentiels)
                           const toggleColumn = async (dayId: number) => {
                             const allUnavailable = TIME_SLOTS.every(slot =>
                               findAvailability(dayId, slot.start, slot.end)
                             );
                             const targetState = allUnavailable ? 'available' : 'unavailable';
-                            for (const slot of TIME_SLOTS) {
+                            const cellsToToggle = TIME_SLOTS.filter(slot => {
                               const isCurrentlyUnavailable = !!findAvailability(dayId, slot.start, slot.end);
-                              if (targetState === 'unavailable' && !isCurrentlyUnavailable) {
-                                await toggleAvailability(dayId, slot.start, slot.end);
-                              } else if (targetState === 'available' && isCurrentlyUnavailable) {
-                                await toggleAvailability(dayId, slot.start, slot.end);
-                              }
-                            }
+                              return targetState === 'unavailable' ? !isCurrentlyUnavailable : isCurrentlyUnavailable;
+                            }).map(slot => ({ dayId, startTime: slot.start, endTime: slot.end }));
+                            await toggleAvailabilityBatch(cellsToToggle);
                           };
 
                           // Basculer toute une ligne (tous les jours d'un créneau)
@@ -1226,14 +1302,11 @@ export default function TeachersAcademicWorkspace() {
                               findAvailability(day.id, start, end)
                             );
                             const targetState = allUnavailable ? 'available' : 'unavailable';
-                            for (const day of MATRIX_DAYS) {
+                            const cellsToToggle = MATRIX_DAYS.filter(day => {
                               const isCurrentlyUnavailable = !!findAvailability(day.id, start, end);
-                              if (targetState === 'unavailable' && !isCurrentlyUnavailable) {
-                                await toggleAvailability(day.id, start, end);
-                              } else if (targetState === 'available' && isCurrentlyUnavailable) {
-                                await toggleAvailability(day.id, start, end);
-                              }
-                            }
+                              return targetState === 'unavailable' ? !isCurrentlyUnavailable : isCurrentlyUnavailable;
+                            }).map(day => ({ dayId: day.id, startTime: start, endTime: end }));
+                            await toggleAvailabilityBatch(cellsToToggle);
                           };
 
                           // Vérifier si toute une colonne est indisponible

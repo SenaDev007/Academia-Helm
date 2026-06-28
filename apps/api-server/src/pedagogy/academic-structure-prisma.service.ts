@@ -1007,6 +1007,19 @@ export class AcademicStructurePrismaService {
         room: true,
         series: true,
         mainTeacher: { select: { id: true, firstName: true, lastName: true, matricule: true } },
+        // Sections physiques rattachées (table `classes`, modèle `Class`).
+        // Sert à afficher les chips CE1 A, CE1 B... dans le sous-onglet Classes
+        // et à calculer la capacité totale (somme des sections).
+        physicalClasses: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            capacity: true,
+            isActive: true,
+          },
+          orderBy: { name: 'asc' },
+        },
       },
       orderBy: [{ cycle: { orderIndex: 'asc' } }, { name: 'asc' }],
     });

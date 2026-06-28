@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  AlertCircle,
   BookOpen,
   Building2,
   Copy,
@@ -71,6 +72,15 @@ interface AcademicClassRow {
   level?: { id: string; name: string };
   cycle?: { id: string; name: string };
   room?: { id: string; roomCode: string; roomName: string } | null;
+  // Sections physiques rattachées (table `classes`, modèle `Class`).
+  // Affichées sous forme de chips dans le sous-onglet Classes.
+  physicalClasses?: Array<{
+    id: string;
+    name: string;
+    code: string;
+    capacity?: number | null;
+    isActive: boolean;
+  }>;
 }
 
 interface SeriesSubjectLink {
@@ -1704,11 +1714,12 @@ export function AcademicStructureWorkspace() {
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-slate-600">
-              Les classes pédagogiques correspondent aux <strong>grades</strong> de la{' '}
+              Les classes officielles correspondent aux <strong>grades</strong> de la{' '}
               <Link href={settingsHref} className="font-semibold underline" style={{ color: PRIMARY }}>
                 structure pédagogique
               </Link>{' '}
-              (niveaux → cycles → grades). Libellés, codes, rattachements niveau/cycle et capacité (somme des sections du grade pour cette année en paramètres) sont resynchronisés à chaque chargement de cet onglet.
+              (niveaux → cycles → grades). Chaque classe officielle peut avoir plusieurs <strong>sections physiques</strong> (CE1 A, CE1 B…). La capacité affichée est la somme des sections. Pour créer/gérer les sections, allez dans{' '}
+              <Link href="/app/app/settings?tab=structure" className="font-semibold underline">Paramètres &gt; Structure &gt; Sections par classe</Link>.
             </p>
             {bilingualCtxEnabled && (
               <div
@@ -1751,12 +1762,9 @@ export function AcademicStructureWorkspace() {
           <table className="min-w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-3">Classe</th>
-                <th className="px-4 py-3">Cycle</th>
-                <th className="px-4 py-3">Niveau</th>
-                <th className="px-4 py-3">Piste</th>
+                <th className="px-4 py-3">Classe officielle</th>
+                <th className="px-4 py-3">Sections physiques</th>
                 <th className="px-4 py-3">Capacité</th>
-                <th className="px-4 py-3">Taux</th>
                 <th className="px-4 py-3">Statut</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
@@ -1764,60 +1772,112 @@ export function AcademicStructureWorkspace() {
             <tbody>
               {visibleClasses.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-slate-500">
+                  <td colSpan={5} className="px-4 py-10 text-center text-slate-500">
                     Aucune classe. Définissez les grades dans la structure pédagogique (paramètres) ou ajoutez une classe manuellement.
                   </td>
                 </tr>
               ) : (
-                visibleClasses.map((c) => (
-                  <tr key={c.id} className="border-b border-slate-100 hover:bg-slate-50/80">
-                    <td className="px-4 py-3 font-medium text-slate-900">
-                      {c.name}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">{c.cycle?.name ?? '—'}</td>
-                    <td className="px-4 py-3 text-slate-600">{c.level?.name ?? '—'}</td>
-                    <td className="px-4 py-3">{c.languageTrack ?? '—'}</td>
-                    <td className="px-4 py-3">{c.capacity ?? '—'}</td>
-                    <td className="px-4 py-3">{capacityVisual(c.capacity, 0)}</td>
-                    <td className="px-4 py-3">
-                      {c.isActive ? (
-                        <span className="text-emerald-700">Active</span>
-                      ) : (
-                        <span className="text-slate-500">Inactive</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        className="mr-2 text-sm font-medium hover:underline"
-                        style={{ color: PRIMARY }}
-                        onClick={() => {
-                          setClassForm({
-                            levelId: c.level?.id ?? levels[0]?.id ?? '',
-                            cycleId: c.cycle?.id ?? '',
-                            name: c.name,
-                            code: c.code,
-                            capacity: c.capacity ?? '',
-                            roomId: c.room?.id ?? '',
-                            languageTrack: c.languageTrack ?? '',
-                          });
-                          setClassModal({ mode: 'edit', cls: c });
-                        }}
-                      >
-                        Modifier
-                      </button>
-                      {c.isActive && (
+                visibleClasses.map((c) => {
+                  const sections = c.physicalClasses ?? [];
+                  // Capacité = somme des sections si elles existent, sinon capacité de la classe officielle
+                  const totalCapacity = sections.length > 0
+                    ? sections.reduce((sum, s) => sum + (s.capacity ?? 0), 0)
+                    : c.capacity;
+                  return (
+                    <tr key={c.id} className="border-b border-slate-100 hover:bg-slate-50/80">
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-slate-900">{c.name}</div>
+                        <div className="text-xs text-slate-500 mt-0.5">
+                          {c.code}
+                          {c.level?.name && <span className="ml-2">• {c.level.name}</span>}
+                          {c.cycle?.name && c.cycle.name !== c.name && (
+                            <span className="ml-2">• {c.cycle.name}</span>
+                          )}
+                          {c.languageTrack && <span className="ml-2">• piste {c.languageTrack}</span>}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        {sections.length === 0 ? (
+                          <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                            <AlertCircle className="w-3 h-3" />
+                            Aucune section
+                          </span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1">
+                            {sections.map((s) => (
+                              <span
+                                key={s.id}
+                                className={cn(
+                                  'inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium border',
+                                  s.isActive
+                                    ? 'bg-slate-100 text-slate-800 border-slate-200'
+                                    : 'bg-slate-50 text-slate-400 border-slate-200 line-through',
+                                )}
+                                title={`Code : ${s.code}${s.capacity != null ? ` · Capacité : ${s.capacity}` : ''}`}
+                              >
+                                {s.name}
+                                {s.capacity != null && (
+                                  <span className="text-[10px] text-slate-500">({s.capacity})</span>
+                                )}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700 font-medium">
+                        {totalCapacity != null && totalCapacity > 0 ? totalCapacity : '—'}
+                        {sections.length > 0 && (
+                          <span className="block text-[10px] text-slate-400">
+                            {sections.length} section{sections.length > 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {c.isActive ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-0.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            Active
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 bg-slate-100 border border-slate-200 rounded px-2 py-0.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                            Inactive
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
                         <button
                           type="button"
-                          className="text-sm font-medium text-amber-700 hover:underline"
-                          onClick={() => deactivateClass(c.id)}
+                          className="mr-2 text-sm font-medium hover:underline"
+                          style={{ color: PRIMARY }}
+                          onClick={() => {
+                            setClassForm({
+                              levelId: c.level?.id ?? levels[0]?.id ?? '',
+                              cycleId: c.cycle?.id ?? '',
+                              name: c.name,
+                              code: c.code,
+                              capacity: c.capacity ?? '',
+                              roomId: c.room?.id ?? '',
+                              languageTrack: c.languageTrack ?? '',
+                            });
+                            setClassModal({ mode: 'edit', cls: c });
+                          }}
                         >
-                          Désactiver
+                          Modifier
                         </button>
-                      )}
-                    </td>
-                  </tr>
-                ))
+                        {c.isActive && (
+                          <button
+                            type="button"
+                            className="text-sm font-medium text-amber-700 hover:underline"
+                            onClick={() => deactivateClass(c.id)}
+                          >
+                            Désactiver
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

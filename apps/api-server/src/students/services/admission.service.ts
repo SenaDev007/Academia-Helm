@@ -220,14 +220,22 @@ export class AdmissionService {
   }
 
   /**
-   * Conversion d'une admission ACCEPTED en Dossier Élève.
+   * Conversion d'une admission ACCEPTED en Dossier Élève complet.
    *
-   * ⚠️ Phase 1 : cette méthode appelle encore preRegister() (pas admit()).
-   * Le passage à admit() sera fait en Phase 2 (génération matricule +
-   * StudentAccount + Guardian + convertedStudentId).
+   * ⚠️ Phase 2 : cette méthode fait maintenant le flux COMPLET :
+   *   1. preRegister() → crée Student + StudentEnrollment (PRE_REGISTERED)
+   *   2. admit() → génère matricule, StudentAccount, token QR, StudentAcademicRecord
+   *   3. Crée Guardian + StudentGuardian à partir des infos responsable légal
+   *   4. Marque l'admission comme CONVERTED + link convertedStudentId
    *
-   * Pour l'instant, on persiste au moins le convertedStudentId pour la
-   * traçabilité.
+   * Avant Phase 2 : seul preRegister() était appelé → l'élève n'avait ni
+   * matricule, ni compte financier, ni guardian, ni token de vérification.
+   *
+   * Gestion de la classe :
+   *   - Si admission.requestedClassId est défini → on l'utilise
+   *   - Sinon → on cherche la première classe disponible du niveau scolaire
+   *   - Si aucune classe n'existe → on admet sans classe (classId null),
+   *     l'élève sera affecté manuellement plus tard via l'onglet Affectations
    */
   async convertToStudent(id: string, tenantId: string, userId: string) {
     const admission = await this.findOne(id, tenantId);
@@ -241,7 +249,7 @@ export class AdmissionService {
       throw new BadRequestException('Cette admission a déjà été convertie en dossier élève');
     }
 
-    // Create student directly via the lifecycle service
+    // 1. Pré-inscription (crée Student + StudentEnrollment PRE_REGISTERED)
     const student = await this.lifecycleService.preRegister(tenantId, {
       academicYearId: admission.academicYearId,
       schoolLevelId: admission.schoolLevelId,
@@ -251,9 +259,141 @@ export class AdmissionService {
       gender: admission.gender ?? undefined,
       placeOfBirth: admission.birthPlace ?? undefined,
       nationality: admission.nationality ?? undefined,
+      classId: admission.requestedClassId ?? undefined,
     }, userId);
 
-    // Update the admission status to CONVERTED + link the student
+    // 2. Résoudre le classId pour admit()
+    //    admit() requires a classId (non-null). Si l'admission n'a pas de
+    //    requestedClassId, on cherche la première classe du niveau.
+    let classIdForAdmit = admission.requestedClassId;
+
+    if (!classIdForAdmit) {
+      // Chercher la première classe disponible pour ce tenant + année + niveau
+      const fallbackClass = await this.prisma.class.findFirst({
+        where: {
+          tenantId,
+          academicYearId: admission.academicYearId,
+          schoolLevelId: admission.schoolLevelId,
+        },
+        orderBy: { name: 'asc' },
+        select: { id: true },
+      });
+      classIdForAdmit = fallbackClass?.id;
+
+      if (!classIdForAdmit) {
+        this.logger.warn(
+          `Aucune classe trouvée pour tenant=${tenantId} year=${admission.academicYearId} level=${admission.schoolLevelId}. ` +
+          `L'élève sera admis sans classe — affectation manuelle requise plus tard.`,
+        );
+      }
+    }
+
+    // 3. Admission formelle (génère matricule + StudentAccount + token QR + StudentAcademicRecord)
+    //    ⚠️ Si pas de classe, on ne peut pas appeler admit() qui requires classId.
+    //    Dans ce cas, on garde l'élève en PRE_REGISTERED et l'utilisateur devra
+    //    l'affecter manuellement (ce qui déclenchera admit() via l'onglet Affectations).
+    if (classIdForAdmit) {
+      try {
+        await this.lifecycleService.admit(tenantId, {
+          studentId: student.id,
+          academicYearId: admission.academicYearId,
+          schoolLevelId: admission.schoolLevelId,
+          classId: classIdForAdmit,
+        }, userId);
+
+        this.logger.log(
+          `Admission ${admission.admissionNumber}: student ${student.id} admitted with matricule + account + token`,
+        );
+      } catch (admitErr: any) {
+        // Si admit() échoue, l'élève reste en PRE_REGISTERED — on ne bloque
+        // pas la conversion, on log l'erreur pour debug.
+        this.logger.error(
+          `Admission ${admission.admissionNumber}: admit() failed for student ${student.id}: ${admitErr.message}`,
+          admitErr.stack,
+        );
+      }
+    }
+
+    // 4. Créer le Guardian + StudentGuardian à partir du responsable légal
+    if (admission.mainGuardianName || admission.mainGuardianPhone || admission.mainGuardianEmail) {
+      try {
+        // Parser le nom du guardian (peut être "M. KOFFI Emmanuel" → firstName="Emmanuel", lastName="KOFFI")
+        // On stocke tout dans lastName si on ne peut pas parser, pour ne pas perdre d'info.
+        const guardianName = admission.mainGuardianName || 'Responsable légal';
+        const nameParts = guardianName.trim().split(/\s+/);
+        let guardianFirstName = '';
+        let guardianLastName = guardianName;
+        if (nameParts.length >= 2) {
+          // Si le premier mot est un titre (M., Mme, Mlle, Mr), on le saute
+          const firstWord = nameParts[0].toUpperCase();
+          const isTitle = ['M.', 'M', 'MR', 'MME', 'MLLE', 'MONSIEUR', 'MADAME'].includes(firstWord);
+          const offset = isTitle ? 1 : 0;
+          if (nameParts.length > offset + 1) {
+            guardianFirstName = nameParts.slice(offset, -1).join(' ');
+            guardianLastName = nameParts[nameParts.length - 1];
+          }
+        }
+
+        // Créer ou récupérer le Guardian (par phone ou email pour éviter les doublons)
+        const existingGuardian = await this.prisma.guardian.findFirst({
+          where: {
+            tenantId,
+            OR: [
+              ...(admission.mainGuardianPhone ? [{ phone: admission.mainGuardianPhone }] : []),
+              ...(admission.mainGuardianEmail ? [{ email: admission.mainGuardianEmail }] : []),
+            ],
+          },
+        });
+
+        let guardianId: string;
+        if (existingGuardian) {
+          guardianId = existingGuardian.id;
+        } else {
+          const newGuardian = await this.prisma.guardian.create({
+            data: {
+              tenantId,
+              firstName: guardianFirstName,
+              lastName: guardianLastName,
+              phone: admission.mainGuardianPhone,
+              email: admission.mainGuardianEmail,
+              relationship: 'PARENT',
+              address: admission.address,
+            },
+          });
+          guardianId = newGuardian.id;
+        }
+
+        // Lier le guardian à l'élève (isPrimary = true car c'est le responsable principal)
+        await this.prisma.studentGuardian.upsert({
+          where: {
+            studentId_guardianId: {
+              studentId: student.id,
+              guardianId,
+            },
+          },
+          update: { isPrimary: true },
+          create: {
+            tenantId,
+            studentId: student.id,
+            guardianId,
+            relationship: 'PARENT',
+            isPrimary: true,
+          },
+        });
+
+        this.logger.log(
+          `Admission ${admission.admissionNumber}: Guardian ${guardianId} linked to student ${student.id}`,
+        );
+      } catch (guardianErr: any) {
+        // Ne pas bloquer la conversion si le guardian échoue
+        this.logger.error(
+          `Admission ${admission.admissionNumber}: Guardian creation failed: ${guardianErr.message}`,
+          guardianErr.stack,
+        );
+      }
+    }
+
+    // 5. Marquer l'admission comme CONVERTED + link le student
     await this.prisma.admission.update({
       where: { id },
       data: {
@@ -264,8 +404,18 @@ export class AdmissionService {
       },
     });
 
-    this.logger.log(`Admission ${admission.admissionNumber} converted to student ${student.id}`);
+    this.logger.log(
+      `Admission ${admission.admissionNumber} converted to student ${student.id}`,
+    );
 
-    return student;
+    // Retourner l'élève avec ses relations
+    return this.prisma.student.findUnique({
+      where: { id: student.id },
+      include: {
+        studentEnrollments: { include: { class: true, academicYear: true } },
+        schoolLevel: true,
+        studentGuardians: { include: { guardian: true } },
+      },
+    });
   }
 }

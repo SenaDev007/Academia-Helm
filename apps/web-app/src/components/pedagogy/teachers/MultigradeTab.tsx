@@ -147,7 +147,7 @@ export function MultigradeTab() {
   const handleCreate = async () => {
     if (!academicYearId) return;
     if (!form.teacherId) { toast({ title: 'Erreur', description: 'Sélectionnez un enseignant.', variant: 'destructive' }); return; }
-    if (form.classIds.length !== 2) { toast({ title: 'Erreur', description: 'Sélectionnez exactement 2 classes.', variant: 'destructive' }); return; }
+    if (form.classIds.length < 2) { toast({ title: 'Erreur', description: 'Sélectionnez au moins 2 classes.', variant: 'destructive' }); return; }
 
     try {
       await mgFetch('/api/multigrade', {
@@ -193,9 +193,7 @@ export function MultigradeTab() {
     setForm(prev => {
       const ids = prev.classIds.includes(classId)
         ? prev.classIds.filter(id => id !== classId)
-        : prev.classIds.length < 2
-          ? [...prev.classIds, classId]
-          : prev.classIds; // Max 2
+        : [...prev.classIds, classId]; // Pas de maximum — permet 2, 3, 4+ classes
       return { ...prev, classIds: ids };
     });
   };
@@ -368,7 +366,7 @@ export function MultigradeTab() {
               {/* Classes (max 2) */}
               <div>
                 <label className="text-xs font-bold text-slate-700 uppercase mb-1.5 block">
-                  Classes * ({form.classIds.length}/2 sélectionnées)
+                  Classes * ({form.classIds.length} sélectionnée{form.classIds.length > 1 ? 's' : ''}, min. 2)
                 </label>
                 <div className="space-y-2">
                   {Object.entries(classesByLevel).map(([levelId, levelClasses]) => (
@@ -379,7 +377,7 @@ export function MultigradeTab() {
                       <div className="flex flex-wrap gap-2">
                         {levelClasses.map(c => {
                           const isSelected = form.classIds.includes(c.id);
-                          const isDisabled = !isSelected && form.classIds.length >= 2;
+                          const isDisabled = false; // Pas de limite maximum
                           const displayName = c.name || c.officialClass?.name || 'Section';
                           return (
                             <button

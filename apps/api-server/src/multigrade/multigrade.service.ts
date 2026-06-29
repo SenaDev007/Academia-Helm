@@ -91,8 +91,8 @@ export class MultigradeService {
   /**
    * Crée un nouveau groupe multigrade.
    * Validation :
-   * - Exactement 2 classIds
-   * - Les 2 classes doivent être du même schoolLevelId
+   * - Minimum 2 classIds (pas de maximum — permet 3, 4 classes si besoin)
+   * - Les classes peuvent être de niveaux différents (multigrade inter-niveau autorisé)
    * - Le teacher ne doit pas déjà avoir un groupe multigrade pour cette année
    */
   async create(tenantId: string, data: {
@@ -102,27 +102,27 @@ export class MultigradeService {
     language?: string | null;
     notes?: string;
   }) {
-    // Validation : exactement 2 classes
-    if (!data.classIds || data.classIds.length !== 2) {
-      throw new BadRequestException('Un groupe multigrade doit contenir exactement 2 classes.');
+    // Validation : minimum 2 classes (pas de maximum)
+    if (!data.classIds || data.classIds.length < 2) {
+      throw new BadRequestException('Un groupe multigrade doit contenir au moins 2 classes.');
     }
 
-    // Vérifier que les 2 classes existent et sont du même schoolLevelId
+    // Vérifier que toutes les classes existent
     const classes = await this.prisma.class.findMany({
       where: { id: { in: data.classIds }, tenantId },
       select: { id: true, name: true, schoolLevelId: true },
     });
 
-    if (classes.length !== 2) {
-      throw new BadRequestException('Une ou plusieurs classes introuvables.');
+    if (classes.length !== data.classIds.length) {
+      const found = new Set(classes.map(c => c.id));
+      const missing = data.classIds.filter(id => !found.has(id));
+      throw new BadRequestException(`Une ou plusieurs classes introuvables (IDs manquants: ${missing.length}).`);
     }
 
-    const schoolLevelIds = new Set(classes.map((c) => c.schoolLevelId));
-    if (schoolLevelIds.size !== 1) {
-      throw new BadRequestException(
-        'Les 2 classes doivent être du même niveau scolaire (pas de multigrade inter-niveau).',
-      );
-    }
+    // NOTE : Le multigrade inter-niveau est AUTORISÉ.
+    // Dans certaines écoles, un enseignant peut gérer Maternelle 1 + Maternelle 2
+    // (même niveau) OU CI + CE1 (même niveau) OU même Maternelle 1 + CI (inter-niveau).
+    // On ne valide plus que les classes sont du même schoolLevelId.
 
     // Vérifier que le teacher existe
     const teacher = await this.prisma.teacher.findFirst({

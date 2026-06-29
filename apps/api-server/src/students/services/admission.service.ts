@@ -103,7 +103,6 @@ export class AdmissionService {
         notes: data.notes ?? null,
       },
       include: {
-        schoolLevel: true,
         academicYear: true,
       },
     });
@@ -134,7 +133,6 @@ export class AdmissionService {
         }),
       },
       include: {
-        schoolLevel: true,
         academicYear: true,
       },
       orderBy: { createdAt: 'desc' },
@@ -145,7 +143,6 @@ export class AdmissionService {
     const admission = await this.prisma.admission.findFirst({
       where: { id, tenantId },
       include: {
-        schoolLevel: true,
         academicYear: true,
         tenant: true,
       },
@@ -202,7 +199,6 @@ export class AdmissionService {
       where: { id },
       data: updateData,
       include: {
-        schoolLevel: true,
         academicYear: true,
       },
     });

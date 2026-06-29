@@ -126,9 +126,29 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       .catch((error) => {
         this.logger.error('❌ Prisma connection warmup failed:', error?.message || error);
       });
+
+    // Keepalive : ping la BDD toutes les 5 minutes pour garder la connexion chaude.
+    // Évite les timeouts de connexion après une période d'inactivité entre
+    // Fly.io et Neon PostgreSQL (cold connection = 10-13s, warm = <1s).
+    this.keepaliveInterval = setInterval(async () => {
+      try {
+        await this.$queryRawUnsafe('SELECT 1');
+      } catch {
+        // Connexion perdue — Prisma va automatiquement se reconnecter
+        // au prochain appel. Le keepalive garantit que la reconnexion
+        // se fait en arrière-plan, pas sur une requête utilisateur.
+        this.logger.warn('⚠️ Prisma keepalive: connection lost, will retry on next query');
+      }
+    }, 5 * 60 * 1000); // 5 minutes
   }
 
+  private keepaliveInterval: NodeJS.Timeout | null = null;
+
   async onModuleDestroy() {
+    if (this.keepaliveInterval) {
+      clearInterval(this.keepaliveInterval);
+      this.keepaliveInterval = null;
+    }
     try {
       const pool = (this as any).__pool as Pool | undefined;
       if (pool) {

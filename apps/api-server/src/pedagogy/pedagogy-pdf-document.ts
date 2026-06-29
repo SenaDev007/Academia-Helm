@@ -610,10 +610,14 @@ export class PedagogyPdfDocumentService {
       //   - 'domcontentloaded' se contente du DOM prêt — suffisant pour le PDF
       //     car les styles sont inline (pas de CSS externe) et le logo est
       //     optionnel (s'il ne charge pas, le PDF a juste un placeholder).
-      await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      //
+      // Timeout augmenté à 30s (était 15s) — pour les enseignants avec beaucoup
+      // de matières (ex: 22 matières × détails), le HTML peut être volumineux
+      // et Chromium a besoin de plus de temps pour parser + render.
+      await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
       // Petite attente pour que les polices/images se chargent (best-effort)
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       // ⚠️ IMPORTANT : page.pdf() retourne un Uint8Array dans Puppeteer v13+,
       // PAS un Buffer. Si on ne convertit pas explicitement, le test
@@ -637,12 +641,24 @@ export class PedagogyPdfDocumentService {
           left: '14mm',
           right: '14mm',
         },
+        // Timeout implicite sur page.pdf() — si Chromium met trop longtemps
+        // à générer le PDF (ex: OOM sur contenu volumineux), on échoue vite
+        // plutôt que de bloquer la file d'attente du pool.
+        timeout: 30000,
       });
 
       // Convertir explicitement en Buffer (Puppeteer v25 retourne Uint8Array)
       const pdfBuffer: Buffer = Buffer.isBuffer(pdfResult)
         ? pdfResult
         : Buffer.from(pdfResult);
+
+      // ⚠️ Vérification de sécurité : si le PDF fait 0 bytes, c'est que
+      // Chromium a crashé silencieusement. On jette une erreur explicite
+      // pour que le service de notification log "PDF generation failed"
+      // et envoie l'email sans pièce jointe (déjà géré).
+      if (pdfBuffer.length === 0) {
+        throw new Error('PDF generation returned 0 bytes (Chromium crash?)');
+      }
 
       this.logger.log(
         `  ✅ PDF generated — ${Math.round(pdfBuffer.length / 1024)}KB — type: ${pdfResult.constructor.name} → Buffer(${pdfBuffer.length} bytes)`,

@@ -206,6 +206,11 @@ export class PedagogyNotificationService {
     academicYearLabel: string,
   ): Promise<TeacherProfileSummaryData | null> {
     // 1. Fetch teacher (avec schoolLevel + assignedLanguages)
+    // ⚠️ Inclure schoolLevel.code pour détecter Maternelle/Primaire (polyvalent).
+    // Les enseignants Maternelle/Primaire n'ont PAS de TeacherSubjectQualification
+    // en DB — ils sont automatiquement qualifiés pour TOUTES les matières de
+    // leur niveau + langue. Voir frontend TeachersAcademicWorkspace.tsx
+    // ligne 1314 : isMaternelleOrPrimaire = code.includes('MATERN' | 'PRIMA').
     const teacher = await this.prisma.teacher.findFirst({
       where: { id: teacherId, tenantId },
       select: {
@@ -216,7 +221,7 @@ export class PedagogyNotificationService {
         matricule: true,
         assignedLanguages: true,
         status: true,
-        schoolLevel: { select: { name: true } },
+        schoolLevel: { select: { id: true, name: true, code: true } },
       },
     });
     if (!teacher) return null;
@@ -263,17 +268,101 @@ export class PedagogyNotificationService {
 
     // 6. ─── Construction des objets pour le template ────────────────────────
 
-    // Habilitations
-    const subjectQualifications = (profile?.subjectQualifications || []).map((sq) => ({
-      subjectCode: sq.subject?.code || undefined,
-      subjectName: sq.subject?.name || '—',
-      certified: sq.certified,
-    }));
+    // Détection Maternelle/Primaire (polyvalent) — voir frontend ligne 1314.
+    // Ces enseignants n'ont PAS de TeacherSubjectQualification en DB ;
+    // ils sont qualifiés pour TOUTES les matières de leur niveau + langue.
+    const teacherLevelCode = (teacher.schoolLevel?.code || teacher.schoolLevel?.name || '').toUpperCase();
+    const isMaternelleOrPrimaire = teacherLevelCode.includes('MATERN') || teacherLevelCode.includes('PRIMA');
 
-    // Autorisations de niveau
-    const levelAuthorizations = (profile?.levelAuthorizations || []).map((la) => ({
+    // Récupérer la langue de l'enseignant (FR, EN, ou null)
+    let teacherLang: string | null = null;
+    try {
+      const raw = teacher.assignedLanguages as any;
+      if (Array.isArray(raw) && raw.length > 0) {
+        teacherLang = String(raw[0]).toUpperCase();
+      } else if (typeof raw === 'string') {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          teacherLang = String(parsed[0]).toUpperCase();
+        } else {
+          teacherLang = raw.toUpperCase();
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    // ─── Habilitations par matière ───────────────────────────────────────────
+    // Cas 1 : Maternelle/Primaire → polyvalent → fetch toutes les matières
+    //         du niveau + langue de l'enseignant.
+    // Cas 2 : Secondaire → utiliser les TeacherSubjectQualification de la DB.
+    let subjectQualifications: Array<{ subjectCode?: string; subjectName: string; certified: boolean }>;
+
+    if (isMaternelleOrPrimaire) {
+      // Fetch toutes les matières du niveau du teacher + filtrer par langue
+      const levelSubjects = await this.prisma.subject.findMany({
+        where: {
+          tenantId,
+          schoolLevelId: teacher.schoolLevel!.id,
+          // academicYearId est optionnel sur Subject — on prend tous
+          // (null + année courante) pour ne rien manquer.
+        },
+        select: { id: true, name: true, code: true, language: true },
+      });
+
+      // Filtrer par langue (même logique que le frontend lignes 1335-1344)
+      const filteredSubjects = levelSubjects.filter((s) => {
+        const sLang = (s.language || '').toUpperCase();
+        if (teacherLang === 'EN') {
+          return sLang === 'EN';
+        }
+        if (teacherLang === 'FR') {
+          return sLang !== 'EN'; // FR + null (rétro-compat)
+        }
+        return true; // Pas de langue assignée → toutes les matières du niveau
+      });
+
+      subjectQualifications = filteredSubjects.map((s) => ({
+        subjectCode: s.code || undefined,
+        subjectName: s.name,
+        // Pour Maternelle/Primaire, on marque comme "certifié" car c'est
+        // une habilitation automatique par niveau (polyvalence).
+        certified: true,
+      }));
+
+      // Si aucune matière trouvée (ex: niveau vide), on ajoute une entrée
+      // synthétique "Toutes matières du niveau X" pour que l'email affiche
+      // au moins quelque chose de cohérent avec le frontend.
+      if (subjectQualifications.length === 0) {
+        subjectQualifications = [{
+          subjectCode: undefined,
+          subjectName: `Toutes matières — ${teacher.schoolLevel!.name}${teacherLang ? ` (${teacherLang})` : ''}`,
+          certified: true,
+        }];
+      }
+    } else {
+      // Secondaire : utiliser les TeacherSubjectQualification de la DB
+      subjectQualifications = (profile?.subjectQualifications || []).map((sq) => ({
+        subjectCode: sq.subject?.code || undefined,
+        subjectName: sq.subject?.name || '—',
+        certified: sq.certified,
+      }));
+    }
+
+    // ─── Autorisations par niveau ────────────────────────────────────────────
+    // ⚠️ Le frontend compte TOUJOURS 1 niveau de base (le niveau d'affectation
+    // depuis Teacher.schoolLevel) + les levelAuthorizations déclarés.
+    // Voir frontend ligne 1354 : levelCount = 1 + activeProfile.levelAuthorizations.length
+    //
+    // Mon backend ne retournait que levelAuthorizations → manquait le niveau
+    // principal → "Aucune autorisation de niveau" dans l'email.
+    const primaryLevelAuth = teacher.schoolLevel
+      ? [{ levelName: teacher.schoolLevel.name }]
+      : [];
+    const additionalLevelAuths = (profile?.levelAuthorizations || []).map((la) => ({
       levelName: la.level?.name || '—',
     }));
+    const levelAuthorizations = [...primaryLevelAuth, ...additionalLevelAuths];
 
     // Disponibilités — ⚠️ IMPORTANT : les enregistrements DB dans
     // `profile.availabilities` sont des INDISPONIBILITÉS (créneaux où

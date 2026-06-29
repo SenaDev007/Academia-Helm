@@ -185,10 +185,11 @@ export class MultigradeService {
   }
 
   /**
-   * Met à jour un groupe multigrade (notes, isActive, language).
-   * Les classIds et teacherId ne sont pas modifiables (supprimer + recréer).
+   * Met à jour un groupe multigrade (teacherId, classIds, language, notes, isActive).
    */
   async update(tenantId: string, id: string, data: {
+    teacherId?: string;
+    classIds?: string[];
     language?: string | null;
     notes?: string | null;
     isActive?: boolean;
@@ -198,15 +199,40 @@ export class MultigradeService {
     });
     if (!existing) throw new NotFoundException('Groupe multigrade introuvable.');
 
+    // Si classIds est fourni, valider les classes
+    if (data.classIds !== undefined) {
+      if (data.classIds.length < 2) {
+        throw new BadRequestException('Un groupe multigrade doit contenir au moins 2 classes.');
+      }
+      const classes = await this.prisma.class.findMany({
+        where: { id: { in: data.classIds }, tenantId },
+        select: { id: true },
+      });
+      if (classes.length !== data.classIds.length) {
+        throw new BadRequestException('Une ou plusieurs classes introuvables.');
+      }
+    }
+
+    // Si teacherId est fourni, vérifier qu'il existe
+    if (data.teacherId !== undefined) {
+      const teacher = await this.prisma.teacher.findFirst({
+        where: { id: data.teacherId, tenantId },
+        select: { id: true },
+      });
+      if (!teacher) throw new BadRequestException('Enseignant introuvable.');
+    }
+
     return this.prisma.multigradeAssignment.update({
       where: { id },
       data: {
+        ...(data.teacherId !== undefined ? { teacherId: data.teacherId } : {}),
+        ...(data.classIds !== undefined ? { classIds: data.classIds } : {}),
         ...(data.language !== undefined ? { language: data.language } : {}),
         ...(data.notes !== undefined ? { notes: data.notes } : {}),
         ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
       },
       include: {
-        teacher: { select: { id: true, firstName: true, lastName: true, matricule: true } },
+        teacher: { select: { id: true, firstName: true, lastName: true, matricule: true, assignedLanguages: true } },
       },
     });
   }

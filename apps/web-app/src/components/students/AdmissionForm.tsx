@@ -35,6 +35,7 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
     mainGuardianName: initialData?.mainGuardianName || '',
     mainGuardianPhone: initialData?.mainGuardianPhone || '',
     mainGuardianEmail: initialData?.mainGuardianEmail || '',
+    mainGuardianRelationship: initialData?.mainGuardianRelationship || 'PÈRE',
   });
 
   useEffect(() => {
@@ -42,22 +43,26 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
   }, []);
 
   useEffect(() => {
-    if (formData.requestedLevelId) {
+    if (formData.requestedLevelId && levels.length > 0) {
       loadClasses(formData.requestedLevelId);
       loadSeries(formData.requestedLevelId);
     }
-  }, [formData.requestedLevelId]);
+  }, [formData.requestedLevelId, levels]);
 
   const loadLevels = async () => {
     setIsLoadingLevels(true);
     try {
-      const res = await fetch('/api/settings/school-levels');
+      // ⚠️ IMPORTANT : l'URL correcte est /api/school-levels (pas /api/settings/school-levels).
+      // /api/school-levels récupère les niveaux depuis EducationStructureService
+      // (Paramètres > Structure pédagogique) et les retourne au format
+      // { id, code, label, isActive }.
+      const res = await fetch('/api/school-levels', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
-        setLevels(data);
+        setLevels(Array.isArray(data) ? data : []);
       }
     } catch (e) {
-      console.error(e);
+      console.error('Failed to load school levels:', e);
     } finally {
       setIsLoadingLevels(false);
     }
@@ -66,13 +71,43 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
   const loadClasses = async (levelId: string) => {
     setIsLoadingClasses(true);
     try {
-      const res = await fetch(`/api/classes?schoolLevelId=${levelId}`);
+      // Utiliser l'API pédagogie qui retourne les classes officielles (AcademicClass)
+      // filtrées par année scolaire. On filtre ensuite côté client par niveau.
+      // ⚠️ L'API /api/classes utilise @SchoolLevelId() decorator qui attend un ID
+      // de school_levels (ancien modèle), pas education_levels. Pour éviter ce
+      // mismatch, on utilise /api/pedagogy/academic-structure/classes qui est
+      // plus fiable et retourne les classes avec leur level inclus.
+      const yearId = academicYear?.id || formData.academicYearId;
+      if (!yearId) {
+        setClasses([]);
+        return;
+      }
+      const res = await fetch(
+        `/api/pedagogy/academic-structure/classes?academicYearId=${yearId}`,
+        { credentials: 'include' }
+      );
       if (res.ok) {
         const data = await res.json();
-        setClasses(data);
+        const allClasses = Array.isArray(data) ? data : [];
+        // Filtrer côté client par le niveau sélectionné.
+        // AcademicClass a une relation `level` (AcademicLevel) avec un champ `name`.
+        // On compare par nom (MATERNELLE/PRIMAIRE/SECONDAIRE) car les IDs sont
+        // différents entre EducationLevel et AcademicLevel.
+        const selectedLevel = levels.find(l => l.id === levelId);
+        const levelCode = selectedLevel?.code?.toUpperCase() || '';
+        const filtered = allClasses.filter((c: any) => {
+          if (!c.level) return false;
+          const classLevelName = (c.level.name || '').toUpperCase();
+          // Match par nom : MATERNELLE matche MATERNELLE, PRIMAIRE matche PRIMAIRE, etc.
+          return classLevelName === levelCode ||
+                 classLevelName.includes(levelCode) ||
+                 levelCode.includes(classLevelName);
+        });
+        setClasses(filtered);
       }
     } catch (e) {
-      console.error(e);
+      console.error('Failed to load classes:', e);
+      setClasses([]);
     } finally {
       setIsLoadingClasses(false);
     }
@@ -130,6 +165,7 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
         mainGuardianName: formData.mainGuardianName || undefined,
         mainGuardianPhone: formData.mainGuardianPhone || undefined,
         mainGuardianEmail: formData.mainGuardianEmail || undefined,
+        mainGuardianRelationship: formData.mainGuardianRelationship || undefined,
       };
 
       await onSubmit(payload);
@@ -331,15 +367,35 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
         </div>
 
         <div className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-500 uppercase">Nom complet du responsable</label>
-            <input
-              name="mainGuardianName"
-              value={formData.mainGuardianName}
-              onChange={handleInputChange}
-              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-all"
-              placeholder="Ex: M. KOFFI Emmanuel"
-            />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-1.5 md:col-span-2">
+              <label className="text-xs font-bold text-slate-500 uppercase">Nom complet du responsable</label>
+              <input
+                name="mainGuardianName"
+                value={formData.mainGuardianName}
+                onChange={handleInputChange}
+                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-all"
+                placeholder="Ex: M. KOFFI Emmanuel"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 uppercase">Lien de parenté</label>
+              <select
+                name="mainGuardianRelationship"
+                value={formData.mainGuardianRelationship}
+                onChange={handleInputChange}
+                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-all"
+              >
+                <option value="PÈRE">Père</option>
+                <option value="MÈRE">Mère</option>
+                <option value="TUTEUR">Tuteur légal</option>
+                <option value="ONCLE">Oncle</option>
+                <option value="TANTE">Tante</option>
+                <option value="GRAND-PARENT">Grand-parent</option>
+                <option value="FRÈRE/SŒUR">Frère / Sœur</option>
+                <option value="AUTRE">Autre</option>
+              </select>
+            </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">

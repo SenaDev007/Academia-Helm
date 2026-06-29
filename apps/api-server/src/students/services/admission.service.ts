@@ -91,6 +91,7 @@ export class AdmissionService {
         mainGuardianName: data.mainGuardianName ?? null,
         mainGuardianPhone: data.mainGuardianPhone ?? null,
         mainGuardianEmail: data.mainGuardianEmail ?? null,
+        mainGuardianRelationship: data.mainGuardianRelationship ?? null,
 
         // Traçabilité
         admissionNumber,
@@ -180,6 +181,7 @@ export class AdmissionService {
     if (data.mainGuardianName !== undefined) updateData.mainGuardianName = data.mainGuardianName;
     if (data.mainGuardianPhone !== undefined) updateData.mainGuardianPhone = data.mainGuardianPhone;
     if (data.mainGuardianEmail !== undefined) updateData.mainGuardianEmail = data.mainGuardianEmail;
+    if (data.mainGuardianRelationship !== undefined) updateData.mainGuardianRelationship = data.mainGuardianRelationship;
 
     // Workflow
     if (data.status !== undefined) updateData.status = data.status;
@@ -390,7 +392,7 @@ export class AdmissionService {
               lastName: guardianLastName,
               phone: admission.mainGuardianPhone,
               email: admission.mainGuardianEmail,
-              relationship: 'PARENT',
+              relationship: admission.mainGuardianRelationship || 'PARENT',
               address: admission.address,
             },
           });

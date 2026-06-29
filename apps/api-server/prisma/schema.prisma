@@ -4350,6 +4350,7 @@ model Admission {
   mainGuardianName    String?
   mainGuardianPhone   String?
   mainGuardianEmail   String?
+  mainGuardianRelationship String?
 
   // ─── Traçabilité (Phase 1) ───────────────────────────────────────────────
   admissionNumber     String?      @unique

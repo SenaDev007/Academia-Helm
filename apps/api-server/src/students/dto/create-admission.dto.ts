@@ -63,6 +63,9 @@ export class CreateAdmissionDto {
   @IsOptional() @IsString()
   mainGuardianEmail?: string;
 
+  @IsOptional() @IsString()
+  mainGuardianRelationship?: string;
+
   // ─── Divers ──────────────────────────────────────────────────────────────
   @IsOptional() @IsString()
   notes?: string;

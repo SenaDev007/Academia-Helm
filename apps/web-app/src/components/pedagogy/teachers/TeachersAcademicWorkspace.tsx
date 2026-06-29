@@ -1648,12 +1648,12 @@ export default function TeachersAcademicWorkspace() {
                     <table className="w-full text-left border-collapse text-xs">
                       <thead>
                         <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          <th className="px-3 py-3 font-bold whitespace-nowrap" style={{ width: '10%' }}>Enseignant</th>
+                          <th className="px-3 py-3 font-bold whitespace-nowrap" style={{ width: '14%' }}>Enseignant</th>
                           <th className="px-3 py-3 font-bold whitespace-nowrap" style={{ width: '8%' }}>Niveau affecté</th>
                           <th className="px-3 py-3 font-bold whitespace-nowrap" style={{ width: '8%' }}>Habilitations</th>
                           <th className="px-3 py-3 font-bold whitespace-nowrap" style={{ width: '10%' }}>Charge / Capacité</th>
                           <th className="px-3 py-3 font-bold text-center whitespace-nowrap" style={{ width: '6%' }}>Statut</th>
-                          <th className="px-3 py-3 font-bold text-left whitespace-nowrap" style={{ width: '58%' }}>Détails des cours</th>
+                          <th className="px-3 py-3 font-bold text-left whitespace-nowrap" style={{ width: '54%' }}>Détails des cours</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 bg-white">
@@ -1710,14 +1710,14 @@ export default function TeachersAcademicWorkspace() {
                                   />
                                   <div>
                                     <div className="flex items-center gap-2">
-                                      <p className="font-bold text-slate-900">{t.lastName} {t.firstName}</p>
+                                      <p className="font-bold text-slate-900 whitespace-nowrap">{t.lastName} {t.firstName}</p>
                                       {isHomeroom && (
-                                        <span className="text-[8px] font-bold bg-amber-50 border border-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full uppercase tracking-wide">
+                                        <span className="text-[8px] font-bold bg-amber-50 border border-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full uppercase tracking-wide whitespace-nowrap">
                                           ★ Titulaire
                                         </span>
                                       )}
                                     </div>
-                                    <p className="text-[9px] font-semibold text-slate-400 mt-0.5">{t.matricule}</p>
+                                    <p className="text-[9px] font-semibold text-slate-400 mt-0.5 whitespace-nowrap">{t.matricule}</p>
                                   </div>
                                 </div>
                               </td>

@@ -254,6 +254,16 @@ export class PedagogyPrismaService {
       include: {
         subject: true,
         academicYear: true,
+        // ⚠️ INDISPENSABLE : inclure les assignments + teacher pour que le
+        // frontend puisse calculer la charge horaire globale par enseignant
+        // (voir TeachersAcademicWorkspace > loadGlobalWorkloads).
+        // Sans cet include, le frontend reçoit `assignments: undefined` et
+        // affiche à tort « Aucun cours affecté » dans la colonne Détails des cours.
+        assignments: {
+          include: {
+            teacher: true,
+          },
+        },
       },
       orderBy: { createdAt: 'asc' },
     });

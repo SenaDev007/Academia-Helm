@@ -317,6 +317,8 @@ export default function TeachersAcademicWorkspace() {
   // State tracking pour le spinner + désactivation pendant l'envoi
   const [notifyingTeacherId, setNotifyingTeacherId] = useState<string | null>(null);
   const [batchNotifying, setBatchNotifying] = useState(false);
+  // Modal de confirmation professionnel pour l'envoi groupé (remplace window.confirm)
+  const [showBatchConfirmModal, setShowBatchConfirmModal] = useState(false);
 
   // --- Loaders ---
 
@@ -912,14 +914,16 @@ export default function TeachersAcademicWorkspace() {
       });
       return;
     }
+    // Ouvrir le modal de confirmation professionnel (remplace window.confirm)
+    setShowBatchConfirmModal(true);
+  };
 
-    // Confirmation avant envoi groupé (beaucoup d'emails d'un coup)
-    const confirmSend = window.confirm(
-      `Vous êtes sur le point d'envoyer un email récapitulatif à TOUS les enseignants (${teachers.length}).\n\n` +
-      `Chaque enseignant recevra un email automatique avec l'intégralité de ses informations pédagogiques (profil, disponibilités, multigrade, affectations, charge horaire).\n\n` +
-      `Confirmer l'envoi groupé ?`,
-    );
-    if (!confirmSend) return;
+  /**
+   * Envoi effectif du batch — appelé quand l'utilisateur confirme dans le modal.
+   */
+  const confirmBatchSend = async () => {
+    setShowBatchConfirmModal(false);
+    if (batchNotifying) return;
 
     setBatchNotifying(true);
     try {
@@ -1792,15 +1796,15 @@ export default function TeachersAcademicWorkspace() {
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse text-xs" style={{ tableLayout: 'fixed' }}>
+                    <table className="text-left border-collapse text-xs" style={{ minWidth: '1100px' }}>
                       <thead>
                         <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          <th className="px-3 py-3 font-bold whitespace-nowrap" style={{ width: '14%' }}>Enseignant</th>
-                          <th className="px-3 py-3 font-bold whitespace-nowrap" style={{ width: '8%' }}>Niveau affecté</th>
-                          <th className="px-3 py-3 font-bold whitespace-nowrap" style={{ width: '8%' }}>Habilitations</th>
-                          <th className="px-3 py-3 font-bold whitespace-nowrap" style={{ width: '10%' }}>Charge / Capacité</th>
-                          <th className="px-3 py-3 font-bold text-center whitespace-nowrap" style={{ width: '6%' }}>Statut</th>
-                          <th className="px-3 py-3 font-bold text-left whitespace-nowrap" style={{ width: '54%' }}>Détails des cours</th>
+                          <th className="px-3 py-3 font-bold whitespace-nowrap" style={{ minWidth: '180px', width: '180px' }}>Enseignant</th>
+                          <th className="px-3 py-3 font-bold whitespace-nowrap" style={{ minWidth: '120px', width: '120px' }}>Niveau affecté</th>
+                          <th className="px-3 py-3 font-bold whitespace-nowrap" style={{ minWidth: '140px', width: '140px' }}>Habilitations</th>
+                          <th className="px-3 py-3 font-bold whitespace-nowrap" style={{ minWidth: '140px', width: '140px' }}>Charge / Capacité</th>
+                          <th className="px-3 py-3 font-bold text-center whitespace-nowrap" style={{ minWidth: '120px', width: '120px' }}>Statut</th>
+                          <th className="px-3 py-3 font-bold text-left whitespace-nowrap" style={{ minWidth: '400px' }}>Détails des cours</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 bg-white">
@@ -2357,6 +2361,102 @@ export default function TeachersAcademicWorkspace() {
           </div>
         </div>
       </FormModal>
+
+      {/* Modal de confirmation professionnel — Envoi groupé de notifications email */}
+      {showBatchConfirmModal && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setShowBatchConfirmModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header coloré */}
+            <div
+              className="px-6 py-5 text-white relative"
+              style={{ background: `linear-gradient(160deg, ${PRIMARY} 0%, #0D3B85 100%)` }}
+            >
+              <div className="absolute top-0 left-0 right-0 h-1" style={{ backgroundColor: ACCENT }} />
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: `${ACCENT}30` }}
+                >
+                  <Mail className="w-6 h-6" style={{ color: ACCENT }} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base leading-tight">Notifier tous les enseignants</h3>
+                  <p className="text-[11px] opacity-80 mt-0.5">Confirmation requise avant l'envoi</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-slate-700 leading-relaxed">
+                Vous êtes sur le point d'envoyer un <strong>email récapitulatif</strong> à
+                <strong className="text-slate-900"> {teachers.length} enseignant(s)</strong>.
+              </p>
+
+              <div
+                className="rounded-lg border p-3 space-y-2"
+                style={{ borderColor: `${ACCENT}40`, backgroundColor: `${ACCENT}08` }}
+              >
+                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-600">
+                  Ce que chaque enseignant recevra
+                </p>
+                <ul className="text-xs text-slate-700 space-y-1.5">
+                  <li className="flex items-start gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                    <span>Un email au nom de l'école avec en-tête et logo</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                    <span>Ses informations pédagogiques complètes : profil, habilitations, disponibilités</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                    <span>Ses affectations par classe, multigrade et charge horaire</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                    <span>Un <strong>PDF en pièce jointe</strong> avec la grille matricielle des disponibilités</span>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="text-[11px] text-amber-800">
+                  <p className="font-bold mb-0.5">Bon à savoir</p>
+                  <p>Les enseignants sans email renseigné seront automatiquement ignorés. L'envoi est séquentiel (anti rate-limiting) — prévoir ~1 seconde par enseignant.</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2">
+              <button
+                onClick={() => setShowBatchConfirmModal(false)}
+                disabled={batchNotifying}
+                className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg text-xs font-bold disabled:opacity-50 transition"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={confirmBatchSend}
+                disabled={batchNotifying}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition hover:opacity-95"
+                style={{ backgroundColor: PRIMARY }}
+              >
+                <Mail className="w-3.5 h-3.5" />
+                Confirmer l'envoi à {teachers.length} enseignant(s)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

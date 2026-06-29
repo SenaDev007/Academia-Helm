@@ -39,19 +39,39 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
+import { IsString, IsArray, IsOptional } from 'class-validator';
 import { PedagogyNotificationService } from './pedagogy-notification.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
+/**
+ * ⚠️ IMPORTANT : Le ValidationPipe global a `forbidNonWhitelisted: true`
+ * (CDC §16.3.3). Cela signifie que toute propriété SANS décorateur
+ * class-validator est REJETÉE avec l'erreur "property X should not exist".
+ *
+ * Donc chaque propriété du DTO doit avoir un décorateur :
+ *   - @IsString() pour les string
+ *   - @IsArray() pour les tableaux
+ *   - @IsOptional() pour les champs facultatifs
+ */
 class NotifyIndividualDto {
+  @IsString()
   teacherId!: string;
+
   /** Optionnel — si non fourni, utilise l'année scolaire active du tenant */
+  @IsString()
+  @IsOptional()
   academicYearId?: string;
 }
 
 class NotifyBatchDto {
+  @IsArray()
+  @IsString({ each: true })
   teacherIds!: string[];
+
+  @IsString()
+  @IsOptional()
   academicYearId?: string;
 }
 

@@ -220,6 +220,40 @@ export class AdmissionService {
   }
 
   /**
+   * Change le statut d'une admission vers n'importe quel statut valide.
+   * Permet de gérer les workflow étendus : UNDER_REVIEW, WAITLISTED,
+   * MISSING_DOCUMENTS, INTERVIEW_REQUIRED, TEST_REQUIRED, CANCELLED.
+   *
+   * ⚠️ Ne pas utiliser pour CONVERTED (utiliser convertToStudent() qui
+   * fait le flux complet preRegister + admit + Guardian).
+   */
+  async changeStatus(id: string, tenantId: string, newStatus: string, comment: string, userId: string) {
+    const VALID_STATUSES = [
+      'PENDING', 'SUBMITTED', 'UNDER_REVIEW', 'MISSING_DOCUMENTS',
+      'INTERVIEW_REQUIRED', 'TEST_REQUIRED', 'ACCEPTED', 'REJECTED',
+      'WAITLISTED', 'CANCELLED',
+      // 'CONVERTED' exclus — seulement via convertToStudent()
+    ];
+
+    if (!VALID_STATUSES.includes(newStatus)) {
+      throw new BadRequestException(`Statut invalide: ${newStatus}. Statuts valides: ${VALID_STATUSES.join(', ')}`);
+    }
+
+    // Si le nouveau statut est une décision (ACCEPTED/REJECTED), on enregistre
+    // la date + l'auteur de la décision. Sinon, c'est juste un changement de workflow.
+    const isDecision = ['ACCEPTED', 'REJECTED'].includes(newStatus);
+
+    return this.update(id, tenantId, {
+      status: newStatus,
+      notes: comment || undefined,
+      ...(isDecision && {
+        decisionBy: userId,
+        decisionDate: new Date(),
+      }),
+    });
+  }
+
+  /**
    * Conversion d'une admission ACCEPTED en Dossier Élève complet.
    *
    * ⚠️ Phase 2 : cette méthode fait maintenant le flux COMPLET :

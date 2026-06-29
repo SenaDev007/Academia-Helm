@@ -21,7 +21,7 @@ export default function TimetablesPage() {
       header={{
         title: 'Emploi du Temps (EDT)',
         description: academicYear
-          ? `Smart Timetable Engine V2+ — multi-solutions Pareto, contraintes hard/soft, backtracking — année ${academicYear.label}`
+          ? `Générateur d'emploi du temps — multi-solutions Pareto, contraintes dures/souples, backtracking — année ${academicYear.label}`
           : 'Génération multi-solutions Pareto avec contraintes et backtracking',
         icon: 'calendar',
       }}

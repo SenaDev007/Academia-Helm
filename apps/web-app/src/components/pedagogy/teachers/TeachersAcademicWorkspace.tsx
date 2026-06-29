@@ -40,7 +40,6 @@ import {
   Copy,
   Loader2,
   Mail,
-  Download,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -71,6 +70,46 @@ const isHomeroomLevel = (levelName?: string): boolean => {
 
 const PRIMARY = '#1A2BA6';
 const ACCENT = '#F5A623';
+
+/**
+ * Icône officielle du format PDF (le « P » rouge caractéristique d'Adobe,
+ * avec l'effet de page pliée en haut à droite). SVG inline — pas de
+ * dépendance externe. Affichée en blanc sur le bouton (background bleu).
+ *
+ * @param className — tailwind classes (ex: 'w-3.5 h-3.5')
+ * @param color — couleur du tracé (défaut: blanc puisque le bouton est bleu)
+ */
+function PdfIcon({ className = 'w-3.5 h-3.5', color = '#ffffff' }: { className?: string; color?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      {/* Page background (light) */}
+      <path
+        d="M6 2h8l6 6v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"
+        fill={color}
+        fillOpacity="0.15"
+      />
+      {/* Folded corner */}
+      <path d="M14 2l6 6h-6V2z" fill={color} fillOpacity="0.3" />
+      {/* Big "P" letter — the iconic PDF symbol */}
+      <text
+        x="9.5"
+        y="18"
+        fontFamily="Arial, sans-serif"
+        fontSize="11"
+        fontWeight="900"
+        fill={color}
+      >
+        P
+      </text>
+    </svg>
+  );
+}
 
 // --- Types ---
 
@@ -1384,9 +1423,9 @@ export default function TeachersAcademicWorkspace() {
                               {downloadingPdfTeacherId === selectedTeacherId ? (
                                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                               ) : (
-                                <Download className="w-3.5 h-3.5" />
+                                <PdfIcon className="w-3.5 h-3.5" />
                               )}
-                              {downloadingPdfTeacherId === selectedTeacherId ? 'PDF...' : 'PDF'}
+                              {downloadingPdfTeacherId === selectedTeacherId ? 'Génération...' : ''}
                             </button>
                             <button
                               onClick={() => handleNotifyIndividual(selectedTeacherId)}

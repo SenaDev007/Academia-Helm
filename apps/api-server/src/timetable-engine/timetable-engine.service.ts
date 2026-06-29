@@ -197,8 +197,67 @@ export class TimetableEngineService {
 
   // ═══ CONFIG ═══
 
+  /**
+   * Valide que schoolLevelId et academicYearId existent bien en DB avant
+   * d'écrire dans timetable_configs. Sans cette validation, l'INSERT/UPDATE
+   * jette Prisma P2010 (raw query failed) avec code PostgreSQL 23503
+   * (foreign_key_violation) car la contrainte timetable_configs_schoolLevelId_fkey
+   * (définie dans scripts/migrate-ste-tables.js) reject les IDs orphelins.
+   *
+   * ⚠️ La FK n'est PAS dans le schema Prisma (gérée via raw SQL pour éviter
+   * P1012 sur Prisma 7.8+), donc Prisma ne peut pas la valider automatiquement.
+   *
+   * @throws BadRequestException si schoolLevelId ou academicYearId n'existent pas
+   */
+  private async validateForeignKeys(
+    tenantId: string,
+    schoolLevelId: string,
+    academicYearId: string,
+  ): Promise<void> {
+    // Vérifier schoolLevelId
+    if (schoolLevelId) {
+      const level = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT 1 FROM "school_levels" WHERE "id" = $1 LIMIT 1
+      `, schoolLevelId);
+      if (!level[0]) {
+        throw new BadRequestException(
+          `Niveau scolaire introuvable (id: ${schoolLevelId}). Vérifiez que le niveau existe toujours en base de données.`,
+        );
+      }
+    } else {
+      throw new BadRequestException('schoolLevelId est requis');
+    }
+
+    // Vérifier academicYearId
+    if (academicYearId) {
+      const year = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT 1 FROM "academic_years" WHERE "id" = $1 LIMIT 1
+      `, academicYearId);
+      if (!year[0]) {
+        throw new BadRequestException(
+          `Année scolaire introuvable (id: ${academicYearId}). Vérifiez que l'année existe toujours en base de données.`,
+        );
+      }
+    } else {
+      throw new BadRequestException('academicYearId est requis');
+    }
+  }
+
   async getConfig(tenantId: string, schoolLevelId: string, academicYearId: string) {
     await this.ensureTablesExist();
+
+    // ⚠️ Validation des FK AVANT tout SELECT/INSERT — si l'ID n'existe pas,
+    // on retourne null plutôt que de planter sur l'INSERT bootstrap.
+    // Le frontend pourra alors afficher un message clair.
+    try {
+      await this.validateForeignKeys(tenantId, schoolLevelId, academicYearId);
+    } catch (err: any) {
+      this.logger.warn(
+        `getConfig — FK validation failed: ${err.message} — returning null instead of crashing`,
+      );
+      return null;
+    }
+
     let config = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT * FROM "timetable_configs"
       WHERE "tenantId" = $1 AND "schoolLevelId" = $2 AND "academicYearId" = $3
@@ -221,6 +280,13 @@ export class TimetableEngineService {
 
   async updateConfig(tenantId: string, schoolLevelId: string, academicYearId: string, data: any) {
     await this.ensureTablesExist();
+
+    // ⚠️ Validation des FK AVANT l'UPDATE/INSERT — si schoolLevelId ou
+    // academicYearId n'existent pas, on jette une erreur claire (French)
+    // plutôt que de laisser PostgreSQL jeter P2010/23503 (illisible pour
+    // l'utilisateur final).
+    await this.validateForeignKeys(tenantId, schoolLevelId, academicYearId);
+
     const existing = await this.getConfig(tenantId, schoolLevelId, academicYearId);
     if (existing) {
       const sets: string[] = [];

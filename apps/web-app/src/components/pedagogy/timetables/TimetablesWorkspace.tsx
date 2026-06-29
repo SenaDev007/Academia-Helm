@@ -142,21 +142,21 @@ export default function TimetablesWorkspace() {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/15 backdrop-blur text-[10px] font-bold uppercase tracking-wider">
-                <Zap className="w-3 h-3" /> Smart Engine V2+
+                <Zap className="w-3 h-3" /> Moteur V2+
               </span>
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-100 text-[10px] font-bold uppercase">
                 <CheckCircle className="w-3 h-3" /> Actif
               </span>
             </div>
-            <h1 className="text-2xl font-extrabold tracking-tight">Smart Timetable Engine</h1>
+            <h1 className="text-2xl font-extrabold tracking-tight">Générateur d'Emploi du Temps</h1>
             <p className="text-blue-100 text-sm mt-1">
-              Multi-solutions Pareto · backtracking · contraintes hard/soft · 6 types de règles pédagogiques
+              Multi-solutions Pareto · backtracking · contraintes dures/souples · 6 types de règles pédagogiques
             </p>
           </div>
           <div className="flex gap-3 flex-wrap">
             <div className="bg-white/10 backdrop-blur rounded-xl px-4 py-2.5 text-center min-w-[100px]">
               <div className="text-2xl font-extrabold">{solutions.length}</div>
-              <div className="text-[10px] text-blue-100 uppercase font-bold tracking-wider">Solution(s)</div>
+              <div className="text-[10px] text-blue-100 uppercase font-bold tracking-wider">Solutions</div>
             </div>
             <div className="bg-white/10 backdrop-blur rounded-xl px-4 py-2.5 text-center min-w-[100px]">
               <div className="text-2xl font-extrabold">
@@ -282,22 +282,73 @@ function ConfigTab({ config, loading, schoolLevelId, academicYearId, onSaved }: 
           <button onClick={addBlock} className="text-xs font-semibold text-blue-600 hover:underline">+ Ajouter</button>
         </div>
         <div className="space-y-2">
-          {timeBlocks.map((block, i) => (
-            <div key={i} className="flex items-center gap-2 bg-white rounded-lg p-2 border border-slate-200">
-              <input type="time" value={block.start} onChange={e => updateBlock(i, 'start', e.target.value)} className="px-2 py-1.5 border border-slate-200 rounded text-sm" />
-              <span className="text-slate-400">→</span>
-              <input type="time" value={block.end} onChange={e => updateBlock(i, 'end', e.target.value)} className="px-2 py-1.5 border border-slate-200 rounded text-sm" />
-              <select value={block.type} onChange={e => updateBlock(i, 'type', e.target.value)} className="px-2 py-1.5 border border-slate-200 rounded text-sm bg-white">
-                <option value="BLOCK">Cours</option><option value="BREAK">Pause</option><option value="LUNCH">Déjeuner</option>
-              </select>
-              <span className={cn('px-2 py-1 rounded text-[10px] font-bold uppercase',
-                block.type === 'BLOCK' ? 'bg-blue-50 text-blue-700' : block.type === 'BREAK' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700')}>
-                {block.type === 'BLOCK' ? 'Cours' : block.type === 'BREAK' ? 'Pause' : 'Déjeuner'}
-              </span>
-              <button onClick={() => removeBlock(i)} className="p-1.5 text-red-500 hover:bg-red-50 rounded ml-auto"><Trash2 className="w-3.5 h-3.5" /></button>
-            </div>
-          ))}
+          {timeBlocks.map((block, i) => {
+            // Détermine si le type actuel est un type prédéfini ou personnalisé
+            const isCustomType = !['BLOCK', 'BREAK', 'LUNCH', 'RECESS', 'STUDY', 'ACTIVITY', 'ASSEMBLY'].includes(block.type);
+            return (
+              <div key={i} className="flex items-center gap-2 bg-white rounded-lg p-2 border border-slate-200 flex-wrap">
+                <input type="time" value={block.start} onChange={e => updateBlock(i, 'start', e.target.value)} className="px-2 py-1.5 border border-slate-200 rounded text-sm" />
+                <span className="text-slate-400">→</span>
+                <input type="time" value={block.end} onChange={e => updateBlock(i, 'end', e.target.value)} className="px-2 py-1.5 border border-slate-200 rounded text-sm" />
+                <select
+                  value={isCustomType ? '__CUSTOM__' : block.type}
+                  onChange={e => {
+                    if (e.target.value === '__CUSTOM__') {
+                      // Passer en mode édition libre — on garde l'ancien type comme valeur initiale
+                      // ou on met une chaîne vide si c'était un type prédéfini
+                      updateBlock(i, 'type', isCustomType ? block.type : '');
+                    } else {
+                      updateBlock(i, 'type', e.target.value);
+                    }
+                  }}
+                  className="px-2 py-1.5 border border-slate-200 rounded text-sm bg-white"
+                >
+                  <option value="BLOCK">Cours</option>
+                  <option value="BREAK">Pause</option>
+                  <option value="LUNCH">Déjeuner</option>
+                  <option value="RECESS">Récréation</option>
+                  <option value="STUDY">Étude</option>
+                  <option value="ACTIVITY">Activité</option>
+                  <option value="ASSEMBLY">Assemblée</option>
+                  <option value="__CUSTOM__">Personnalisé…</option>
+                </select>
+                {/* Champ texte libre affiché uniquement si type personnalisé */}
+                {isCustomType && (
+                  <input
+                    type="text"
+                    value={block.type}
+                    onChange={e => updateBlock(i, 'type', e.target.value)}
+                    placeholder="Saisir un type…"
+                    className="px-2 py-1.5 border border-blue-300 rounded text-sm bg-blue-50 w-32"
+                    autoFocus
+                  />
+                )}
+                <span className={cn('px-2 py-1 rounded text-[10px] font-bold uppercase',
+                  block.type === 'BLOCK' ? 'bg-blue-50 text-blue-700' :
+                  block.type === 'BREAK' ? 'bg-amber-50 text-amber-700' :
+                  block.type === 'LUNCH' ? 'bg-emerald-50 text-emerald-700' :
+                  block.type === 'RECESS' ? 'bg-orange-50 text-orange-700' :
+                  block.type === 'STUDY' ? 'bg-violet-50 text-violet-700' :
+                  block.type === 'ACTIVITY' ? 'bg-pink-50 text-pink-700' :
+                  block.type === 'ASSEMBLY' ? 'bg-cyan-50 text-cyan-700' :
+                  'bg-slate-100 text-slate-700')}>
+                  {block.type === 'BLOCK' ? 'Cours' :
+                   block.type === 'BREAK' ? 'Pause' :
+                   block.type === 'LUNCH' ? 'Déjeuner' :
+                   block.type === 'RECESS' ? 'Récréation' :
+                   block.type === 'STUDY' ? 'Étude' :
+                   block.type === 'ACTIVITY' ? 'Activité' :
+                   block.type === 'ASSEMBLY' ? 'Assemblée' :
+                   block.type || '—'}
+                </span>
+                <button onClick={() => removeBlock(i)} className="p-1.5 text-red-500 hover:bg-red-50 rounded ml-auto"><Trash2 className="w-3.5 h-3.5" /></button>
+              </div>
+            );
+          })}
         </div>
+        <p className="text-[11px] text-slate-500 mt-3 italic">
+          💡 Les créneaux de type « Cours » sont planifiés par le moteur. Les autres types (Pause, Déjeuner, Récréation, Étude, Activité, Assemblée, ou personnalisé) sont des pauses non planifiables insérées dans la journée.
+        </p>
       </div>
       <div className="flex justify-end">
         <button onClick={handleSave} disabled={saving}

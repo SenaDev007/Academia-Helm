@@ -1556,16 +1556,16 @@ export default function TeachersAcademicWorkspace() {
                     Aucun dossier enseignant disponible.
                   </div>
                 ) : (
-                  <div className="border border-slate-200 rounded-lg overflow-x-auto">
-                    <table className="w-full text-left border-collapse text-xs min-w-[1000px]">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
                       <thead>
                         <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          <th className="px-4 py-3 font-bold whitespace-nowrap">Enseignant</th>
-                          <th className="px-4 py-3 font-bold whitespace-nowrap">Niveaux Autorisés</th>
-                          <th className="px-4 py-3 font-bold whitespace-nowrap">Habilitations</th>
-                          <th className="px-4 py-3 font-bold whitespace-nowrap">Charge / Capacité</th>
-                          <th className="px-4 py-3 font-bold text-center whitespace-nowrap">Statut</th>
-                          <th className="px-4 py-3 font-bold text-right whitespace-nowrap">Détails des cours</th>
+                          <th className="px-3 py-3 font-bold whitespace-nowrap" style={{ width: '15%' }}>Enseignant</th>
+                          <th className="px-3 py-3 font-bold whitespace-nowrap" style={{ width: '12%' }}>Niveau affecté</th>
+                          <th className="px-3 py-3 font-bold whitespace-nowrap" style={{ width: '12%' }}>Habilitations</th>
+                          <th className="px-3 py-3 font-bold whitespace-nowrap" style={{ width: '13%' }}>Charge / Capacité</th>
+                          <th className="px-3 py-3 font-bold text-center whitespace-nowrap" style={{ width: '8%' }}>Statut</th>
+                          <th className="px-3 py-3 font-bold text-left whitespace-nowrap" style={{ width: '40%' }}>Détails des cours</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 bg-white">
@@ -1574,12 +1574,12 @@ export default function TeachersAcademicWorkspace() {
                           const assigned = globalWorkloads[t.id]?.assigned || 0;
                           const capacity = profile?.maxWeeklyHours || 18;
                           const percent = Math.min(Math.round((assigned / capacity) * 100), 100);
-                          
+
                           let statusLabel = "Optimal";
                           let statusColorClass = "bg-emerald-50 text-emerald-700 border border-emerald-100";
                           let barColorClass = "bg-emerald-500";
                           let icon = <CheckCircle2 className="w-3.5 h-3.5" />;
- 
+
                           if (assigned > capacity) {
                             statusLabel = "Surchargé";
                             statusColorClass = "bg-rose-50 text-rose-700 border border-rose-100";
@@ -1591,9 +1591,7 @@ export default function TeachersAcademicWorkspace() {
                             barColorClass = "bg-indigo-500";
                             icon = <Clock className="w-3.5 h-3.5" />;
                           }
- 
-                          // Déterminer si ce prof est un titulaire (Maternelle/Primaire)
-                          // On se base sur les niveaux autorisés déclarés dans son profil
+
                           const homeroomDetails = globalWorkloads[t.id]?.details || [];
                           const homeroomClasses = homeroomDetails.reduce((acc: Record<string, { totalHours: number; levelName: string }>, d: any) => {
                             const lvlName = d.levelName || '';
@@ -1605,12 +1603,17 @@ export default function TeachersAcademicWorkspace() {
                           }, {});
                           const isHomeroom = Object.keys(homeroomClasses).length > 0 &&
                             homeroomDetails.every((d: any) => isHomeroomLevel(d.levelName || ''));
- 
+
+                          // Niveau affecté = niveau scolaire de l'enseignant (depuis Teacher.schoolLevel)
+                          const teacherLevelName = (t as any).schoolLevelName || (t as any).schoolLevel?.name;
+                          // Pour Maternelle/Primaire → "Toutes matières" (polyvalent)
+                          const isMaternelleOrPrimaire = isHomeroomLevel(teacherLevelName);
+
                           return (
                             <tr key={t.id} className="group hover:bg-slate-50/50 transition-all">
                               {/* Teacher Info */}
-                              <td className="px-4 py-3">
-                                <div className="flex items-center gap-3">
+                              <td className="px-3 py-3">
+                                <div className="flex items-center gap-2">
                                   <TeacherAvatar
                                     teacher={t}
                                     size="sm"
@@ -1630,38 +1633,29 @@ export default function TeachersAcademicWorkspace() {
                                   </div>
                                 </div>
                               </td>
- 
-                              {/* Authorized Levels */}
-                              <td className="px-4 py-3">
-                                <div className="flex flex-wrap gap-1">
-                                  {profile?.levelAuthorizations && profile.levelAuthorizations.length > 0 ? (
-                                    profile.levelAuthorizations.map((la: any) => (
-                                      <span key={la.id} className={cn(
-                                        'text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border',
-                                        isHomeroomLevel(la.level?.name)
-                                          ? 'bg-amber-50 border-amber-100 text-amber-700'
-                                          : 'bg-slate-50 border-slate-200 text-slate-600'
-                                      )}>
-                                        {la.level?.name}
-                                      </span>
-                                    ))
-                                  ) : (
-                                    <span className="text-[10px] text-slate-400 italic font-bold">Tous niveaux</span>
-                                  )}
-                                </div>
+
+                              {/* Niveau affecté (depuis Teacher.schoolLevel) */}
+                              <td className="px-3 py-3">
+                                {teacherLevelName ? (
+                                  <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border bg-slate-50 border-slate-200 text-slate-600 whitespace-nowrap">
+                                    {teacherLevelName}
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-slate-400 italic font-bold">Non défini</span>
+                                )}
                               </td>
- 
-                              {/* Habilitations / Mode */}
-                              <td className="px-4 py-3">
-                                {isHomeroom ? (
-                                  <span className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-lg uppercase tracking-wider">
+
+                              {/* Habilitations */}
+                              <td className="px-3 py-3">
+                                {isMaternelleOrPrimaire ? (
+                                  <span className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-lg uppercase tracking-wider whitespace-nowrap">
                                     Toutes matières
                                   </span>
                                 ) : (
                                   <div className="flex flex-wrap gap-1">
                                     {profile?.subjectQualifications && profile.subjectQualifications.length > 0 ? (
                                       profile.subjectQualifications.map((sq: any) => (
-                                        <span key={sq.id} className="text-[9px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                                        <span key={sq.id} className="text-[9px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 whitespace-nowrap">
                                           {sq.subject?.code}
                                         </span>
                                       ))
@@ -1671,9 +1665,9 @@ export default function TeachersAcademicWorkspace() {
                                   </div>
                                 )}
                               </td>
- 
-                              {/* Workload hours progress */}
-                              <td className="px-4 py-3 min-w-[150px]">
+
+                              {/* Charge / Capacité */}
+                              <td className="px-3 py-3">
                                 <div className="space-y-1">
                                   <div className="flex justify-between items-baseline">
                                     <span className="text-xs font-bold text-slate-900">{assigned}h <span className="text-slate-400 font-normal">/ {capacity}h</span></span>
@@ -1685,37 +1679,35 @@ export default function TeachersAcademicWorkspace() {
                                 </div>
                               </td>
 
-                              {/* Status Badge */}
-                              <td className="py-4 pr-4 text-center">
-                                <span className={cn('inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wide', statusColorClass)}>
+                              {/* Statut */}
+                              <td className="px-3 py-3 text-center">
+                                <span className={cn('inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wide whitespace-nowrap', statusColorClass)}>
                                   {icon}
                                   {statusLabel}
                                 </span>
                               </td>
 
-                              {/* Assigned courses / classes details */}
-                              <td className="py-4 text-right">
-                                <div className="inline-flex flex-col items-end gap-1 text-left">
+                              {/* Détails des cours — colonne élargie, affichage horizontal */}
+                              <td className="px-3 py-3">
+                                <div className="flex flex-wrap gap-1.5">
                                   {isHomeroom ? (
-                                    // Mode Titulaire : afficher les classes prises en charge
                                     Object.keys(homeroomClasses).length > 0 ? (
                                       Object.entries(homeroomClasses).map(([className, info]: [string, any]) => (
-                                        <div key={className} className="text-[10px] font-bold bg-amber-50 border border-amber-100 text-amber-800 rounded-lg px-2 py-1 flex items-center justify-between gap-3 whitespace-nowrap">
+                                        <span key={className} className="text-[10px] font-bold bg-amber-50 border border-amber-100 text-amber-800 rounded-lg px-2 py-1 flex items-center gap-2 whitespace-nowrap">
                                           <span>★ {className}</span>
-                                          <span className="font-black whitespace-nowrap">{info.totalHours}h</span>
-                                        </div>
+                                          <span className="font-black">{info.totalHours}h</span>
+                                        </span>
                                       ))
                                     ) : (
                                       <span className="text-[10px] text-gray-400 italic font-bold">Aucune classe affectée</span>
                                     )
                                   ) : (
-                                    // Mode Spécialiste : afficher les cours par matière
                                     globalWorkloads[t.id]?.details && globalWorkloads[t.id].details.length > 0 ? (
                                       globalWorkloads[t.id].details.map((d: any, idx: number) => (
-                                        <div key={idx} className="text-[10px] font-bold text-gray-600 bg-gray-50 border border-gray-100 rounded-lg px-2 py-1 flex items-center justify-between gap-3 whitespace-nowrap">
+                                        <span key={idx} className="text-[10px] font-bold text-gray-600 bg-gray-50 border border-gray-100 rounded-lg px-2 py-1 flex items-center gap-2 whitespace-nowrap">
                                           <span>{d.className} – {d.subjectCode}</span>
-                                          <span className="font-black text-indigo-600 whitespace-nowrap">{d.hours}h</span>
-                                        </div>
+                                          <span className="font-black text-indigo-600">{d.hours}h</span>
+                                        </span>
                                       ))
                                     ) : (
                                       <span className="text-[10px] text-gray-400 italic font-bold">Aucun cours affecté</span>

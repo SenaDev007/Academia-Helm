@@ -4326,27 +4326,57 @@ model StudentDisciplinarySummary {
 }
 
 model Admission {
-  id              String       @id @default(uuid())
-  tenantId        String
-  academicYearId  String
-  schoolLevelId   String
-  firstName       String
-  lastName        String
-  dateOfBirth     DateTime?
-  gender          String?
-  status          String       @default("PENDING")
-  applicationDate DateTime     @default(now())
-  decisionDate    DateTime?
-  decisionBy      String?
-  notes           String?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id])
-  schoolLevel     SchoolLevel  @relation(fields: [schoolLevelId], references: [id])
-  tenant          Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id                  String       @id @default(uuid())
+  tenantId            String
+  academicYearId      String
+  schoolLevelId       String
+  firstName           String
+  lastName            String
+  dateOfBirth         DateTime?
+  gender              String?
+
+  // ─── Identité élève (Phase 1) ────────────────────────────────────────────
+  birthPlace          String?
+  nationality         String?      @default("Béninoise")
+  address             String?
+
+  // ─── Vœux académiques (Phase 1) ──────────────────────────────────────────
+  requestedClassId    String?
+  requestedSeriesId   String?
+  wantsBilingual      Boolean      @default(false)
+  previousSchool      String?
+
+  // ─── Responsable légal (Phase 1) ─────────────────────────────────────────
+  mainGuardianName    String?
+  mainGuardianPhone   String?
+  mainGuardianEmail   String?
+
+  // ─── Traçabilité (Phase 1) ───────────────────────────────────────────────
+  admissionNumber     String?      @unique
+  convertedStudentId  String?
+  createdByUserId     String?
+
+  // ─── Entretien / Test (Phase 3 — réservé) ────────────────────────────────
+  interviewDate       DateTime?
+  testDate            DateTime?
+  testScore           Float?
+
+  // ─── Workflow existant ───────────────────────────────────────────────────
+  status              String       @default("PENDING")
+  applicationDate     DateTime     @default(now())
+  decisionDate        DateTime?
+  decisionBy          String?
+  notes               String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  academicYear        AcademicYear @relation(fields: [academicYearId], references: [id])
+  schoolLevel         SchoolLevel  @relation(fields: [schoolLevelId], references: [id])
+  tenant              Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, academicYearId, schoolLevelId])
   @@index([status])
+  @@index([convertedStudentId])
   @@map("admissions")
 }
 

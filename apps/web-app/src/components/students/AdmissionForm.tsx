@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { User, MapPin, GraduationCap, Users, Shield, BookOpen, Globe, School } from 'lucide-react';
+import { User, MapPin, GraduationCap, Users, Shield, BookOpen, Globe, School, Save, Loader2 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 
 interface AdmissionFormProps {
@@ -16,6 +16,7 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
   const [series, setSeries] = useState<any[]>([]);
   const [isLoadingLevels, setIsLoadingLevels] = useState(false);
   const [isLoadingClasses, setIsLoadingClasses] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [formData, setFormData] = useState({
     academicYearId: academicYear?.id || '',
@@ -43,6 +44,7 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
   useEffect(() => {
     if (formData.requestedLevelId) {
       loadClasses(formData.requestedLevelId);
+      loadSeries(formData.requestedLevelId);
     }
   }, [formData.requestedLevelId]);
 
@@ -76,6 +78,18 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
     }
   };
 
+  const loadSeries = async (levelId: string) => {
+    try {
+      const res = await fetch(`/api/education-series?levelId=${levelId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSeries(Array.isArray(data) ? data : []);
+      }
+    } catch (e) {
+      // Les séries sont optionnelles (n'existent que pour le Secondaire)
+    }
+  };
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
     setFormData(prev => ({
@@ -84,8 +98,50 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
     }));
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Validation basique
+    if (!formData.firstName.trim() || !formData.lastName.trim()) {
+      return;
+    }
+    if (!formData.requestedLevelId) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      // Construire l'objet à envoyer au backend
+      // schoolLevelId = requestedLevelId (le niveau souhaité EST le niveau scolaire)
+      const payload = {
+        academicYearId: formData.academicYearId,
+        schoolLevelId: formData.requestedLevelId,
+        firstName: formData.firstName.trim(),
+        lastName: formData.lastName.trim(),
+        gender: formData.gender || undefined,
+        dateOfBirth: formData.birthDate || undefined,
+        birthPlace: formData.birthPlace || undefined,
+        nationality: formData.nationality || undefined,
+        address: formData.address || undefined,
+        requestedClassId: formData.requestedClassId || undefined,
+        requestedSeriesId: formData.requestedSeriesId || undefined,
+        wantsBilingual: formData.wantsBilingual,
+        previousSchool: formData.previousSchool || undefined,
+        mainGuardianName: formData.mainGuardianName || undefined,
+        mainGuardianPhone: formData.mainGuardianPhone || undefined,
+        mainGuardianEmail: formData.mainGuardianEmail || undefined,
+      };
+
+      await onSubmit(payload);
+    } catch (e: any) {
+      console.error('AdmissionForm submit error:', e);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
-    <form className="space-y-8 py-2">
+    <form onSubmit={handleSubmit} className="space-y-8 py-2">
       {/* Section 1: Identité */}
       <div className="space-y-4">
         <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
@@ -94,10 +150,10 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
           </div>
           <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Identité du Candidat</h3>
         </div>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-500 uppercase">Nom</label>
+            <label className="text-xs font-bold text-slate-500 uppercase">Nom *</label>
             <input
               name="lastName"
               value={formData.lastName}
@@ -108,7 +164,7 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
             />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-500 uppercase">Prénom(s)</label>
+            <label className="text-xs font-bold text-slate-500 uppercase">Prénom(s) *</label>
             <input
               name="firstName"
               value={formData.firstName}
@@ -155,6 +211,29 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
             />
           </div>
         </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-500 uppercase">Nationalité</label>
+            <input
+              name="nationality"
+              value={formData.nationality}
+              onChange={handleInputChange}
+              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-all"
+              placeholder="Ex: Béninoise"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-500 uppercase">Adresse</label>
+            <input
+              name="address"
+              value={formData.address}
+              onChange={handleInputChange}
+              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-all"
+              placeholder="Ex: Cotonou, Quartier Akpakpa"
+            />
+          </div>
+        </div>
       </div>
 
       {/* Section 2: Voeux Académiques */}
@@ -168,7 +247,7 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-500 uppercase">Niveau Souhaité</label>
+            <label className="text-xs font-bold text-slate-500 uppercase">Niveau Souhaité *</label>
             <select
               name="requestedLevelId"
               value={formData.requestedLevelId}
@@ -196,6 +275,34 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
               ))}
             </select>
           </div>
+        </div>
+
+        {series.length > 0 && (
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-500 uppercase">Série Souhaitée (Optionnel)</label>
+            <select
+              name="requestedSeriesId"
+              value={formData.requestedSeriesId}
+              onChange={handleInputChange}
+              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-all"
+            >
+              <option value="">Aucune préférence</option>
+              {series.map(s => (
+                <option key={s.id} value={s.id}>{s.name || s.code}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-bold text-slate-500 uppercase">Établissement Précédent (Optionnel)</label>
+          <input
+            name="previousSchool"
+            value={formData.previousSchool}
+            onChange={handleInputChange}
+            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-all"
+            placeholder="Ex: École Primaire Publique de Cotonou"
+          />
         </div>
 
         <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-xl border border-slate-200">
@@ -259,13 +366,23 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
           </div>
         </div>
       </div>
-      
+
       {/* Hidden field for academic year */}
       <input type="hidden" name="academicYearId" value={formData.academicYearId} />
 
-      {/* Submit button wrapper - can be handled by FormModal but good to have a backup or trigger */}
-      <div className="hidden">
-        <button type="submit" id="admission-form-submit">Submit</button>
+      {/* Submit button — VISIBLE et fonctionnel */}
+      <div className="flex justify-end pt-2 border-t border-slate-100">
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-sm font-semibold shadow-md transition-all"
+        >
+          {isSubmitting ? (
+            <><Loader2 className="w-4 h-4 animate-spin" /> Enregistrement…</>
+          ) : (
+            <><Save className="w-4 h-4" /> Enregistrer le dossier</>
+          )}
+        </button>
       </div>
     </form>
   );

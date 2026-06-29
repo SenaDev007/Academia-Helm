@@ -196,7 +196,7 @@ export default function TimetablesWorkspace() {
         <div className="p-5">
           <AnimatePresence mode="wait">
             <motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15 }}>
-              {tab === 'config' && <ConfigTab config={config} loading={configLoading} schoolLevelId={schoolLevelId} academicYearId={academicYearId} onSaved={loadConfig} />}
+              {tab === 'config' && <ConfigTab schoolLevelId={schoolLevelId} academicYearId={academicYearId} />}
               {tab === 'availability' && <AvailabilityTab config={config} schoolLevelId={schoolLevelId} />}
               {tab === 'constraints' && <ConstraintsTab schoolLevelId={schoolLevelId} />}
               {tab === 'generate' && <GenerateTab schoolLevelId={schoolLevelId} academicYearId={academicYearId} solutionsCount={solutions.length} onGenerated={() => { loadSolutions(); setTab('timetable'); }} />}
@@ -229,9 +229,34 @@ export default function TimetablesWorkspace() {
 
 // ═══ TAB 1: CONFIG ═══
 
-function ConfigTab({ config, loading, schoolLevelId, academicYearId, onSaved }: any) {
+function ConfigTab({ schoolLevelId: headerLevelId, academicYearId }: any) {
   const { toast } = useToast();
   const { availableLevels } = useSchoolLevel();
+
+  // Niveaux réels (sans l'option virtuelle 'ALL')
+  const realLevels = (availableLevels || []).filter((l: any) => l.id !== 'ALL' && l.isActive !== false);
+
+  // ⚠️ Sélecteur de niveau LOCAL au sous-onglet Configuration.
+  // Indépendant du sélecteur du header (qui sert à switcher le contexte
+  // global de l'app, notamment en mode fusion Maternelle+Primaire).
+  // Au chargement, on pré-sélectionne :
+  //   - le niveau du header s'il est valide (pas 'ALL')
+  //   - sinon le premier niveau réel disponible
+  const [localLevelId, setLocalLevelId] = useState<string | null>(
+    (headerLevelId && headerLevelId !== 'ALL') ? headerLevelId : (realLevels[0]?.id ?? null)
+  );
+
+  // Si le header change ET que localLevelId n'a pas encore été touché par
+  // l'utilisateur, on synchronise. Mais une fois que l'utilisateur a
+  // sélectionné un niveau dans le sous-onglet, on garde son choix.
+  useEffect(() => {
+    if (headerLevelId && headerLevelId !== 'ALL' && !localLevelId) {
+      setLocalLevelId(headerLevelId);
+    }
+  }, [headerLevelId, localLevelId]);
+
+  const [config, setConfig] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
   const [schoolDays, setSchoolDays] = useState<number[]>([1,2,3,4,5]);
   const [timeBlocks, setTimeBlocks] = useState<any[]>(DEFAULT_TIME_BLOCKS);
   const [saving, setSaving] = useState(false);
@@ -241,40 +266,46 @@ function ConfigTab({ config, loading, schoolLevelId, academicYearId, onSaved }: 
   const [duplicateTargetIds, setDuplicateTargetIds] = useState<Set<string>>(new Set());
   const [duplicating, setDuplicating] = useState(false);
 
-  useEffect(() => {
-    if (config) {
-      const days = Array.isArray(config.schoolDays) ? config.schoolDays : safeParse(config.schoolDays);
-      if (Array.isArray(days)) setSchoolDays(days);
-      const blocks = Array.isArray(config.timeBlocks) ? config.timeBlocks : safeParse(config.timeBlocks);
-      if (Array.isArray(blocks) && blocks.length > 0) setTimeBlocks(blocks);
-    }
-  }, [config]);
+  // Charger la config du niveau local
+  const loadConfig = useCallback(async () => {
+    if (!localLevelId || !academicYearId) return;
+    setLoading(true);
+    try {
+      const data = await steFetch<any>(`/api/timetable-engine/config?schoolLevelId=${localLevelId}&academicYearId=${academicYearId}`);
+      setConfig(data);
+      if (data) {
+        const days = Array.isArray(data.schoolDays) ? data.schoolDays : safeParse(data.schoolDays);
+        if (Array.isArray(days)) setSchoolDays(days);
+        const blocks = Array.isArray(data.timeBlocks) ? data.timeBlocks : safeParse(data.timeBlocks);
+        if (Array.isArray(blocks) && blocks.length > 0) setTimeBlocks(blocks);
+        else setTimeBlocks(DEFAULT_TIME_BLOCKS);
+      } else {
+        // Pas de config existante → valeurs par défaut
+        setSchoolDays([1,2,3,4,5]);
+        setTimeBlocks(DEFAULT_TIME_BLOCKS);
+      }
+    } catch { /* first load creates default */ } finally { setLoading(false); }
+  }, [localLevelId, academicYearId]);
+
+  useEffect(() => { loadConfig(); }, [loadConfig]);
 
   const toggleDay = (day: number) => setSchoolDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day].sort((a,b) => a-b));
   const addBlock = () => setTimeBlocks(prev => [...prev, { start: '', end: '', type: 'BLOCK' }]);
   const removeBlock = (i: number) => setTimeBlocks(prev => prev.filter((_, idx) => idx !== i));
   const updateBlock = (i: number, field: string, value: string) => setTimeBlocks(prev => prev.map((b, idx) => idx === i ? { ...b, [field]: value } : b));
 
-  // ⚠️ Détecter si l'utilisateur a sélectionné "Tous les niveaux" (id='ALL')
-  // dans le header. La config EDT est PAR NIVEAU SCOLAIRE — il faut choisir
-  // un niveau spécifique (Maternelle, Primaire, Secondaire) pour configurer.
-  const isAllLevels = !schoolLevelId || schoolLevelId === 'ALL';
-
-  // Niveaux réels (sans l'option virtuelle 'ALL')
-  const realLevels = (availableLevels || []).filter((l: any) => l.id !== 'ALL' && l.isActive !== false);
-
   const handleSave = async () => {
-    if (isAllLevels) {
-      toast({ title: 'Niveau requis', description: 'Sélectionnez un niveau scolaire spécifique dans le header (Maternelle, Primaire ou Secondaire) pour configurer les créneaux.', variant: 'destructive' });
+    if (!localLevelId) {
+      toast({ title: 'Niveau requis', description: 'Sélectionnez un niveau scolaire dans le sélecteur ci-dessus.', variant: 'destructive' });
       return;
     }
     if (timeBlocks.find(b => !b.start || !b.end)) { toast({ title: 'Créneau incomplet', variant: 'destructive' }); return; }
     if (schoolDays.length === 0) { toast({ title: 'Aucun jour sélectionné', variant: 'destructive' }); return; }
     setSaving(true);
     try {
-      await steFetch('/api/timetable-engine/config', { method: 'PUT', body: { schoolDays, timeBlocks, schoolLevelId, academicYearId } });
+      await steFetch('/api/timetable-engine/config', { method: 'PUT', body: { schoolDays, timeBlocks, schoolLevelId: localLevelId, academicYearId } });
       toast({ title: '✅ Configuration enregistrée' });
-      onSaved();
+      loadConfig();
     } catch (e: any) { toast({ title: 'Erreur', description: e?.message, variant: 'destructive' }); } finally { setSaving(false); }
   };
 
@@ -288,7 +319,7 @@ function ConfigTab({ config, loading, schoolLevelId, academicYearId, onSaved }: 
       const result = await steFetch<any>('/api/timetable-engine/config/duplicate', {
         method: 'POST',
         body: {
-          sourceSchoolLevelId: schoolLevelId,
+          sourceSchoolLevelId: localLevelId,
           targetSchoolLevelIds: Array.from(duplicateTargetIds),
           academicYearId,
         },
@@ -308,59 +339,54 @@ function ConfigTab({ config, loading, schoolLevelId, academicYearId, onSaved }: 
 
   if (loading) return <div className="flex items-center justify-center py-16"><Loader2 className="w-5 h-5 animate-spin text-blue-600" /><span className="ml-2 text-sm text-slate-500">Chargement…</span></div>;
 
-  // ─── Cas spécial : "Tous les niveaux" sélectionné dans le header ───────
-  // La config EDT est PAR NIVEAU — on ne peut pas configurer "tous les niveaux"
-  // en même temps. On affiche un message clair + les niveaux disponibles.
-  if (isAllLevels) {
-    return (
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center">
-        <AlertCircle className="w-10 h-10 text-amber-500 mx-auto mb-3" />
-        <h3 className="text-base font-bold text-amber-800 mb-2">Sélectionnez un niveau scolaire</h3>
-        <p className="text-sm text-amber-700 mb-4 max-w-md mx-auto">
-          La configuration des jours et créneaux horaires est <strong>spécifique à chaque niveau scolaire</strong> (Maternelle, Primaire, Secondaire).
-          Sélectionnez un niveau précis dans le sélecteur en haut de la page pour configurer ses créneaux.
-        </p>
-        <div className="flex flex-wrap justify-center gap-2">
-          {realLevels.map((level: any) => (
-            <a
-              key={level.id}
-              href={`/app/pedagogy/timetables?level=${level.id}`}
-              className="px-4 py-2 bg-white border border-amber-300 rounded-lg text-sm font-semibold text-amber-800 hover:bg-amber-100 transition"
-            >
-              {level.label || level.code}
-            </a>
-          ))}
-        </div>
-        <p className="text-[11px] text-amber-600 mt-4 italic">
-          💡 Astuce : configurez un niveau, puis utilisez « Dupliquer vers… » pour copier les créneaux vers les autres niveaux.
-        </p>
-      </div>
-    );
-  }
-
   // Nom du niveau actuellement configuré (pour l'affichage)
-  const currentLevelName = realLevels.find((l: any) => l.id === schoolLevelId)?.label
-    || realLevels.find((l: any) => l.id === schoolLevelId)?.code
-    || schoolLevelId;
+  const currentLevelName = realLevels.find((l: any) => l.id === localLevelId)?.label
+    || realLevels.find((l: any) => l.id === localLevelId)?.code
+    || localLevelId || '—';
 
   // Autres niveaux (cibles potentielles pour la duplication)
-  const otherLevels = realLevels.filter((l: any) => l.id !== schoolLevelId);
+  const otherLevels = realLevels.filter((l: any) => l.id !== localLevelId);
 
   return (
     <div className="space-y-5">
-      {/* Bandeau d'info — niveau en cours de configuration */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center gap-2">
-        <Info className="w-4 h-4 text-blue-600 shrink-0" />
-        <p className="text-xs text-blue-800">
-          Configuration des créneaux pour le niveau : <strong>{currentLevelName}</strong>
+      {/* Sélecteur de niveau LOCAL — indépendant du header */}
+      <div className="bg-white rounded-xl border border-slate-200 p-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-blue-600" />
+            <label className="text-sm font-bold text-slate-800 whitespace-nowrap">Niveau scolaire :</label>
+          </div>
+          <select
+            value={localLevelId || ''}
+            onChange={e => setLocalLevelId(e.target.value)}
+            className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+          >
+            {realLevels.length === 0 && (
+              <option value="">Aucun niveau disponible</option>
+            )}
+            {realLevels.map((level: any) => (
+              <option key={level.id} value={level.id}>
+                {level.label || level.code}
+              </option>
+            ))}
+          </select>
           {otherLevels.length > 0 && (
-            <> · Pour appliquer les mêmes créneaux à d'autres niveaux, cliquez sur « Dupliquer vers… »</>
+            <button
+              onClick={() => { setDuplicateTargetIds(new Set()); setShowDuplicateModal(true); }}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg text-sm font-semibold shadow-sm transition whitespace-nowrap"
+              title="Copier les créneaux de ce niveau vers d'autres niveaux"
+            >
+              <Layers className="w-4 h-4" /> Dupliquer vers…
+            </button>
           )}
+        </div>
+        <p className="text-[11px] text-slate-500 mt-2 italic">
+          💡 La configuration des jours et créneaux est spécifique à chaque niveau scolaire. Sélectionnez le niveau à configurer ci-dessus — ce choix n'affecte que ce sous-onglet, pas le reste de l'application.
         </p>
       </div>
 
       <div className="bg-slate-50 rounded-xl border border-slate-200 p-5">
-        <div className="flex items-center gap-2 mb-3"><Calendar className="w-4 h-4 text-blue-600" /><h3 className="text-sm font-bold text-slate-800">Jours d'école</h3></div>
+        <div className="flex items-center gap-2 mb-3"><Calendar className="w-4 h-4 text-blue-600" /><h3 className="text-sm font-bold text-slate-800">Jours d'école — {currentLevelName}</h3></div>
         <div className="flex flex-wrap gap-2">
           {DAYS.map(d => (
             <button key={d.value} type="button" onClick={() => toggleDay(d.value)}
@@ -373,12 +399,11 @@ function ConfigTab({ config, loading, schoolLevelId, academicYearId, onSaved }: 
       </div>
       <div className="bg-slate-50 rounded-xl border border-slate-200 p-5">
         <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2"><Clock className="w-4 h-4 text-blue-600" /><h3 className="text-sm font-bold text-slate-800">Créneaux horaires</h3></div>
+          <div className="flex items-center gap-2"><Clock className="w-4 h-4 text-blue-600" /><h3 className="text-sm font-bold text-slate-800">Créneaux horaires — {currentLevelName}</h3></div>
           <button onClick={addBlock} className="text-xs font-semibold text-blue-600 hover:underline">+ Ajouter</button>
         </div>
         <div className="space-y-2">
           {timeBlocks.map((block, i) => {
-            // Détermine si le type actuel est un type prédéfini ou personnalisé
             const isCustomType = !['BLOCK', 'BREAK', 'LUNCH', 'RECESS', 'STUDY', 'ACTIVITY', 'ASSEMBLY'].includes(block.type);
             return (
               <div key={i} className="flex items-center gap-2 bg-white rounded-lg p-2 border border-slate-200 flex-wrap">
@@ -442,19 +467,9 @@ function ConfigTab({ config, loading, schoolLevelId, academicYearId, onSaved }: 
           💡 Les créneaux de type « Cours » sont planifiés par le moteur. Les autres types (Pause, Déjeuner, Récréation, Étude, Activité, Assemblée, ou personnalisé) sont des pauses non planifiables insérées dans la journée.
         </p>
       </div>
-      <div className="flex items-center justify-between gap-2">
-        {/* Bouton Dupliquer vers d'autres niveaux — visible seulement si
-            il y a d'autres niveaux à cibler */}
-        {otherLevels.length > 0 && (
-          <button
-            onClick={() => { setDuplicateTargetIds(new Set()); setShowDuplicateModal(true); }}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-600 hover:bg-slate-700 text-white rounded-xl text-sm font-semibold shadow-md transition"
-          >
-            <Layers className="w-4 h-4" /> Dupliquer vers…
-          </button>
-        )}
-        <button onClick={handleSave} disabled={saving}
-          className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-sm font-semibold shadow-md ml-auto">
+      <div className="flex justify-end">
+        <button onClick={handleSave} disabled={saving || !localLevelId}
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-sm font-semibold shadow-md">
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />} Enregistrer
         </button>
       </div>

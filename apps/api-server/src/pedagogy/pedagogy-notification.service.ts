@@ -43,6 +43,7 @@ import {
   ClassAssignmentInfo,
   MultigradeInfo,
 } from './pedagogy-email-templates';
+import { PedagogyPdfDocumentService } from './pedagogy-pdf-document';
 
 export interface NotifyTeacherParams {
   teacherId: string;
@@ -81,6 +82,7 @@ export class PedagogyNotificationService {
     private readonly emailService: EmailService,
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly pdfDocumentService: PedagogyPdfDocumentService,
   ) {}
 
   /**
@@ -437,6 +439,20 @@ export class PedagogyNotificationService {
     // 4. Render email
     const { subject, html } = renderTeacherProfileSummaryEmail(data);
 
+    // 4b. Générer le PDF de récapitulatif (pièce jointe)
+    // ⚠️ Si la génération PDF échoue (ex: Chromium indisponible), on log
+    // l'erreur mais on ENVOIE QUAND MÊME l'email sans pièce jointe — l'email
+    // HTML contient déjà toutes les informations, le PDF est juste un bonus.
+    let pdfBuffer: Buffer | null = null;
+    try {
+      pdfBuffer = await this.pdfDocumentService.generateTeacherProfilePdf(data);
+    } catch (pdfErr: any) {
+      this.logger.error(
+        `📄 PDF generation failed for ${teacherName}: ${pdfErr.message} — sending email without attachment`,
+        pdfErr.stack,
+      );
+    }
+
     // 5. Send via categorized (creates EmailLog for traceability)
     try {
       const result = await this.emailService.sendCategorized({
@@ -458,6 +474,18 @@ export class PedagogyNotificationService {
         triggeredByUserId: params.triggeredByUserId,
         relatedEntityId: teacher.id,
         relatedEntityType: 'Teacher',
+        // ⚠️ Pièce jointe : PDF récapitulatif pédagogique.
+        // Le nom du fichier est formaté avec le nom de l'enseignant pour
+        // qu'il puisse facilement l'identifier dans sa boîte mail.
+        ...(pdfBuffer ? {
+          attachments: [{
+            filename: `Recap-pedagogique-${teacher.lastName}-${teacher.firstName}-${data.academicYearLabel}.pdf`
+              .replace(/\s+/g, '-')
+              .replace(/[^a-zA-Z0-9\-_.]/g, ''),
+            content: pdfBuffer,
+            contentType: 'application/pdf',
+          }],
+        } : {}),
       });
 
       if (result.success) {

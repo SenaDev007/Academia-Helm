@@ -185,7 +185,30 @@ export class EmailService {
 
     const toList = Array.isArray(request.to) ? request.to : [request.to];
 
-    this.logger.log(`📧 Envoi email via Resend: from=${fromField}, to=${toList.join(', ')}, subject="${request.subject}"`);
+    this.logger.log(`📧 Envoi email via Resend: from=${fromField}, to=${toList.join(', ')}, subject="${request.subject}"${request.attachments?.length ? `, attachments=${request.attachments.length}` : ''}`);
+
+    // Resend API expects attachments as base64-encoded strings
+    // (see https://resend.com/docs/api-reference/emails/send-email#body-parameters)
+    const resendAttachments = (request.attachments || [])
+      .map((att) => {
+        // Content can be Buffer or string. If Buffer, convert to base64.
+        // If it's already a string, encode it as base64 too.
+        let base64Content: string | undefined;
+        if (att.content instanceof Buffer) {
+          base64Content = att.content.toString('base64');
+        } else if (typeof att.content === 'string') {
+          // Assume string is already UTF-8 text — encode as base64
+          base64Content = Buffer.from(att.content, 'utf-8').toString('base64');
+        }
+        if (!base64Content && !att.path) return null;
+        return {
+          filename: att.filename,
+          content: base64Content,
+          // path: att.path,  // Resend doesn't support `path` — only `content` (base64)
+          ...(att.contentType ? { content_type: att.contentType } : {}),
+        };
+      })
+      .filter((a): a is NonNullable<typeof a> => a !== null);
 
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -202,6 +225,7 @@ export class EmailService {
         ...(request.replyTo ? { reply_to: request.replyTo } : {}),
         ...(request.cc ? { cc: Array.isArray(request.cc) ? request.cc : [request.cc] } : {}),
         ...(request.bcc ? { bcc: Array.isArray(request.bcc) ? request.bcc : [request.bcc] } : {}),
+        ...(resendAttachments.length > 0 ? { attachments: resendAttachments } : {}),
       }),
     });
 
@@ -512,6 +536,9 @@ L'équipe Academia Helm
         replyTo: replyTo || undefined,
         cc: request.cc,
         bcc: request.bcc,
+        // ⚠️ Pièces jointes (ex: PDF récapitulatif pédagogique enseignant).
+        // Passées telles quelles à Nodemailer.sendMail() → voir sendViaNodemailer.
+        attachments: request.attachments,
       });
 
       // 3a. Marquer comme SENT

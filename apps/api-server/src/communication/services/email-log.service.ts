@@ -112,6 +112,20 @@ export interface CategorizedEmailRequest {
    * n'est PAS utilisé comme adresse reply-to.
    */
   replyToOverride?: string;
+
+  /**
+   * Pièces jointes — tableau d'objets { filename, content (Buffer | string) }
+   * Passé tel quel à EmailService.sendEmail → Nodemailer.attachments.
+   *
+   * Utilisé typiquement pour joindre un PDF généré dynamiquement (ex:
+   * récapitulatif pédagogique enseignant, contrat signé, facture PDF, etc.).
+   */
+  attachments?: Array<{
+    filename: string;
+    content?: Buffer | string;
+    path?: string;
+    contentType?: string;
+  }>;
 }
 
 export interface EmailLogListFilters {

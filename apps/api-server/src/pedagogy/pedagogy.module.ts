@@ -67,6 +67,7 @@ import { IaPrismaController } from './ia-prisma.controller';
 // Module 2 - Notifications email aux enseignants (PEDAGOGIE)
 import { PedagogyNotificationService } from './pedagogy-notification.service';
 import { PedagogyNotificationController } from './pedagogy-notification.controller';
+import { PedagogyPdfDocumentService } from './pedagogy-pdf-document';
 
 
 import { StorageService } from '../common/services/storage.service';
@@ -140,6 +141,7 @@ import { StorageService } from '../common/services/storage.service';
     IaPrismaService,
     // Module 2 - Notifications email aux enseignants
     PedagogyNotificationService,
+    PedagogyPdfDocumentService,
   ],
   exports: [
     StorageService,

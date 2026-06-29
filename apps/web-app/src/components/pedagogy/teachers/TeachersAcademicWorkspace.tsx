@@ -73,40 +73,59 @@ const PRIMARY = '#1A2BA6';
 const ACCENT = '#F5A623';
 
 /**
- * Icône officielle du format PDF (le « P » rouge caractéristique d'Adobe,
- * avec l'effet de page pliée en haut à droite). SVG inline — pas de
- * dépendance externe. Affichée en blanc sur le bouton (background bleu).
+ * Icône officielle du format PDF — badge rouge avec texte blanc « PDF ».
+ * Représentation standard universellement reconnue (Adobe PDF, fichiers .pdf).
+ * SVG inline — pas de dépendance externe.
  *
- * @param className — tailwind classes (ex: 'w-3.5 h-3.5')
- * @param color — couleur du tracé (défaut: blanc puisque le bouton est bleu)
+ * Le design : un rectangle rouge arrondi avec « PDF » en blanc, gras,
+ * centré horizontalement et verticalement. Couleur rouge officielle : #E5142A
+ * (proche du rouge Adobe/Google Drive PDF).
+ *
+ * @param className — tailwind classes (ex: 'w-4 h-4')
  */
-function PdfIcon({ className = 'w-3.5 h-3.5', color = '#ffffff' }: { className?: string; color?: string }) {
+function PdfIcon({ className = 'w-4 h-4' }: { className?: string }) {
   return (
     <svg
       className={className}
-      viewBox="0 0 24 24"
+      viewBox="0 0 40 40"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden="true"
+      role="img"
     >
-      {/* Page background (light) */}
-      <path
-        d="M6 2h8l6 6v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"
-        fill={color}
-        fillOpacity="0.15"
+      {/* Badge rouge arrondi — le fond caractéristique du PDF */}
+      <rect
+        x="2"
+        y="2"
+        width="36"
+        height="36"
+        rx="6"
+        fill="#E5142A"
       />
-      {/* Folded corner */}
-      <path d="M14 2l6 6h-6V2z" fill={color} fillOpacity="0.3" />
-      {/* Big "P" letter — the iconic PDF symbol */}
+      {/* Liseré blanc subtil pour l'effet 3D */}
+      <rect
+        x="2"
+        y="2"
+        width="36"
+        height="36"
+        rx="6"
+        fill="none"
+        stroke="#ffffff"
+        strokeOpacity="0.25"
+        strokeWidth="1"
+      />
+      {/* Texte « PDF » en blanc, gras, centré */}
       <text
-        x="9.5"
-        y="18"
-        fontFamily="Arial, sans-serif"
-        fontSize="11"
+        x="20"
+        y="26"
+        fontFamily="Arial, Helvetica, sans-serif"
+        fontSize="12"
         fontWeight="900"
-        fill={color}
+        fill="#ffffff"
+        textAnchor="middle"
+        letterSpacing="0.5"
       >
-        P
+        PDF
       </text>
     </svg>
   );
@@ -1419,14 +1438,14 @@ export default function TeachersAcademicWorkspace() {
                             <button
                               onClick={() => handleDownloadPdf(selectedTeacherId)}
                               disabled={downloadingPdfTeacherId === selectedTeacherId}
-                              className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-white shadow-sm transition hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                              style={{ backgroundColor: PRIMARY }}
+                              className="inline-flex items-center justify-center w-9 h-8 rounded-lg text-white shadow-sm transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                              style={{ backgroundColor: '#ffffff' }}
                               title="Télécharger le PDF récapitulatif (profil, disponibilités, affectations, charge horaire)"
                             >
                               {downloadingPdfTeacherId === selectedTeacherId ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <Loader2 className="w-4 h-4 animate-spin text-slate-600" />
                               ) : (
-                                <PdfIcon className="w-4 h-4" />
+                                <PdfIcon className="w-6 h-6" />
                               )}
                             </button>
                             <button

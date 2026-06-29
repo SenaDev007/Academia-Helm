@@ -199,29 +199,33 @@ export class TimetableEngineService {
 
   /**
    * Valide que schoolLevelId et academicYearId existent bien en DB avant
-   * d'écrire dans timetable_configs. Sans cette validation, l'INSERT/UPDATE
-   * jette Prisma P2010 (raw query failed) avec code PostgreSQL 23503
-   * (foreign_key_violation) car la contrainte timetable_configs_schoolLevelId_fkey
-   * (définie dans scripts/migrate-ste-tables.js) reject les IDs orphelins.
+   * d'écrire dans timetable_configs.
    *
-   * ⚠️ La FK n'est PAS dans le schema Prisma (gérée via raw SQL pour éviter
-   * P1012 sur Prisma 7.8+), donc Prisma ne peut pas la valider automatiquement.
+   * ⚠️ IMPORTANT : Le frontend envoie des IDs de la table `education_levels`
+   * (modèle EducationLevel) via le sélecteur de niveau du header
+   * (/api/school-levels → /settings/education/structure). Ce ne sont PAS
+   * des IDs de la table `school_levels` (modèle SchoolLevel).
    *
-   * @throws BadRequestException si schoolLevelId ou academicYearId n'existent pas
+   * La FK `timetable_configs_schoolLevelId_fkey` (qui référençait
+   * `school_levels`) a été SUPPRIMÉE par la migration
+   * 20260630100000_drop_timetable_configs_wrong_fk car elle référençait
+   * la mauvaise table.
+   *
+   * On valide maintenant contre `education_levels` (la bonne table).
    */
   private async validateForeignKeys(
     tenantId: string,
     schoolLevelId: string,
     academicYearId: string,
   ): Promise<void> {
-    // Vérifier schoolLevelId
+    // Vérifier schoolLevelId dans education_levels (pas school_levels !)
     if (schoolLevelId) {
       const level = await this.prisma.$queryRawUnsafe<any[]>(`
-        SELECT 1 FROM "school_levels" WHERE "id" = $1 LIMIT 1
+        SELECT 1 FROM "education_levels" WHERE "id" = $1 LIMIT 1
       `, schoolLevelId);
       if (!level[0]) {
         throw new BadRequestException(
-          `Niveau scolaire introuvable (id: ${schoolLevelId}). Vérifiez que le niveau existe toujours en base de données.`,
+          `Niveau scolaire introuvable (id: ${schoolLevelId}). Vérifiez que le niveau existe toujours dans Paramètres > Structure pédagogique.`,
         );
       }
     } else {

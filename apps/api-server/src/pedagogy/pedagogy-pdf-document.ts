@@ -602,12 +602,28 @@ export class PedagogyPdfDocumentService {
 
     const { page } = await this.puppeteerPool.acquirePage();
     try {
-      await page.setContent(html, { waitUntil: 'networkidle0' });
+      // ⚠️ Utiliser 'domcontentloaded' au lieu de 'networkidle0' :
+      //   - 'networkidle0' attend que TOUTES les requêtes réseau soient terminées
+      //     (y compris les <img> du header qui chargent le logo école depuis
+      //     l'API). Si l'API n'est pas joignable depuis l'intérieur du conteneur
+      //     Fly.io (loopback), ça timeout pendant 30s puis jette une erreur.
+      //   - 'domcontentloaded' se contente du DOM prêt — suffisant pour le PDF
+      //     car les styles sont inline (pas de CSS externe) et le logo est
+      //     optionnel (s'il ne charge pas, le PDF a juste un placeholder).
+      await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 15000 });
 
-      // Petite attente pour que les polices/images se chargent
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      // Petite attente pour que les polices/images se chargent (best-effort)
+      await new Promise((resolve) => setTimeout(resolve, 300));
 
-      const pdfBuffer: Buffer = await page.pdf({
+      // ⚠️ IMPORTANT : page.pdf() retourne un Uint8Array dans Puppeteer v13+,
+      // PAS un Buffer. Si on ne convertit pas explicitement, le test
+      // `instanceof Buffer` dans le service Resend échoue → la pièce jointe
+      // est silencieusement filtrée → l'email part sans PDF.
+      //
+      // Solution : convertir explicitement en Buffer via Buffer.from().
+      // Buffer.from(uint8array) crée un vrai Buffer qui partage la mémoire
+      // avec l'Uint8Array (zéro copie, rapide).
+      const pdfResult = await page.pdf({
         format: 'A4',
         printBackground: true,
         displayHeaderFooter: true,
@@ -623,8 +639,13 @@ export class PedagogyPdfDocumentService {
         },
       });
 
+      // Convertir explicitement en Buffer (Puppeteer v25 retourne Uint8Array)
+      const pdfBuffer: Buffer = Buffer.isBuffer(pdfResult)
+        ? pdfResult
+        : Buffer.from(pdfResult);
+
       this.logger.log(
-        `  ✅ PDF generated — ${Math.round(pdfBuffer.length / 1024)}KB`,
+        `  ✅ PDF generated — ${Math.round(pdfBuffer.length / 1024)}KB — type: ${pdfResult.constructor.name} → Buffer(${pdfBuffer.length} bytes)`,
       );
 
       return pdfBuffer;

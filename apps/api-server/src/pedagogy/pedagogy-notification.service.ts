@@ -494,6 +494,9 @@ export class PedagogyNotificationService {
     let pdfBuffer: Buffer | null = null;
     try {
       pdfBuffer = await this.pdfDocumentService.generateTeacherProfilePdf(data);
+      this.logger.log(
+        `  📎 PDF ready for ${teacherName} — ${Math.round(pdfBuffer.length / 1024)}KB — isBuffer=${Buffer.isBuffer(pdfBuffer)}`,
+      );
     } catch (pdfErr: any) {
       this.logger.error(
         `📄 PDF generation failed for ${teacherName}: ${pdfErr.message} — sending email without attachment`,
@@ -503,6 +506,24 @@ export class PedagogyNotificationService {
 
     // 5. Send via categorized (creates EmailLog for traceability)
     try {
+      const attachments = pdfBuffer ? [{
+        filename: `Recap-pedagogique-${teacher.lastName}-${teacher.firstName}-${data.academicYearLabel}.pdf`
+          .replace(/\s+/g, '-')
+          .replace(/[^a-zA-Z0-9\-_.]/g, ''),
+        content: pdfBuffer,
+        contentType: 'application/pdf',
+      }] : undefined;
+
+      if (attachments && attachments.length > 0) {
+        this.logger.log(
+          `  📎 Attaching PDF to email: filename="${attachments[0].filename}", size=${Math.round((attachments[0].content as Buffer).length / 1024)}KB, isBuffer=${Buffer.isBuffer(attachments[0].content)}`,
+        );
+      } else {
+        this.logger.warn(
+          `  ⚠️ No PDF attachment for ${teacherName} — email will be sent without attachment`,
+        );
+      }
+
       const result = await this.emailService.sendCategorized({
         tenantId,
         category: 'PEDAGOGIE',
@@ -523,22 +544,14 @@ export class PedagogyNotificationService {
         relatedEntityId: teacher.id,
         relatedEntityType: 'Teacher',
         // ⚠️ Pièce jointe : PDF récapitulatif pédagogique.
-        // Le nom du fichier est formaté avec le nom de l'enseignant pour
-        // qu'il puisse facilement l'identifier dans sa boîte mail.
-        ...(pdfBuffer ? {
-          attachments: [{
-            filename: `Recap-pedagogique-${teacher.lastName}-${teacher.firstName}-${data.academicYearLabel}.pdf`
-              .replace(/\s+/g, '-')
-              .replace(/[^a-zA-Z0-9\-_.]/g, ''),
-            content: pdfBuffer,
-            contentType: 'application/pdf',
-          }],
-        } : {}),
+        // Utilise la variable `attachments` construite ci-dessus (undefined si
+        // pas de PDF → pas d'attachment dans l'email).
+        ...(attachments ? { attachments } : {}),
       });
 
       if (result.success) {
         this.logger.log(
-          `📧 Récap pédagogie envoyé à ${teacherEmail} (${teacherName}) — logId=${result.logId || 'N/A'}`,
+          `📧 Récap pédagogie envoyé à ${teacherEmail} (${teacherName}) — logId=${result.logId || 'N/A'} — PDF: ${pdfBuffer ? `${Math.round(pdfBuffer.length / 1024)}KB` : 'none'}`,
         );
         return {
           teacherId,

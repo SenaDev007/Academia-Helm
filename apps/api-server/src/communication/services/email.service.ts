@@ -191,11 +191,16 @@ export class EmailService {
     // (see https://resend.com/docs/api-reference/emails/send-email#body-parameters)
     const resendAttachments = (request.attachments || [])
       .map((att) => {
-        // Content can be Buffer or string. If Buffer, convert to base64.
-        // If it's already a string, encode it as base64 too.
+        // Content can be Buffer, Uint8Array, or string.
+        // ⚠️ Puppeteer v13+ page.pdf() returns Uint8Array, not Buffer.
+        // Uint8Array doesn't pass `instanceof Buffer` check, so we must
+        // handle it explicitly — otherwise the attachment is silently dropped.
         let base64Content: string | undefined;
         if (att.content instanceof Buffer) {
           base64Content = att.content.toString('base64');
+        } else if (att.content instanceof Uint8Array) {
+          // Convert Uint8Array → Buffer → base64 (zero-copy if possible)
+          base64Content = Buffer.from(att.content).toString('base64');
         } else if (typeof att.content === 'string') {
           // Assume string is already UTF-8 text — encode as base64
           base64Content = Buffer.from(att.content, 'utf-8').toString('base64');

@@ -446,7 +446,7 @@ export function MultigradeTab() {
               </button>
               <button
                 onClick={handleCreate}
-                disabled={!form.teacherId || form.classIds.length !== 2}
+                disabled={!form.teacherId || form.classIds.length < 2}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold"
               >
                 Créer le groupe

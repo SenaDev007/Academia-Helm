@@ -36,7 +36,9 @@ import {
   TrendingUp,
   ShieldAlert,
   Award,
-  Layers
+  Layers,
+  Copy,
+  Loader2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -306,6 +308,9 @@ export default function TeachersAcademicWorkspace() {
 
   // Modals
   const [modal, setModal] = useState<'none' | 'create-teacher' | 'edit-teacher' | 'edit-profile' | 'add-qualification' | 'add-authorization' | 'add-availability'>('none');
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [duplicateTargetIds, setDuplicateTargetIds] = useState<Set<string>>(new Set());
+  const [duplicating, setDuplicating] = useState(false);
 
   // --- Loaders ---
 
@@ -782,6 +787,67 @@ export default function TeachersAcademicWorkspace() {
 
     // Attendre que tous les appels soient terminés
     await Promise.all(promises);
+  };
+
+  /**
+   * Duplique les disponibilités de l'enseignant actuel vers d'autres enseignants.
+   * Pour chaque enseignant cible :
+   * 1. Supprime toutes ses disponibilités existantes
+   * 2. Crée les mêmes disponibilités que l'enseignant source
+   */
+  const handleDuplicateAvailabilities = async () => {
+    if (!activeProfile || !academicYear?.id || duplicateTargetIds.size === 0) return;
+    setDuplicating(true);
+    try {
+      const sourceAvailabilities = activeProfile.availabilities;
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const targetTeacherId of duplicateTargetIds) {
+        // Trouver le profil de l'enseignant cible
+        const targetProfile = profiles.find(p => p.teacherId === targetTeacherId);
+        if (!targetProfile) { failCount++; continue; }
+
+        try {
+          // 1. Supprimer les disponibilités existantes de la cible
+          for (const av of (targetProfile.availabilities || [])) {
+            await pedagogyFetch(`/api/pedagogy/teacher-profiles/availabilities/${av.id}`, {
+              method: 'DELETE',
+            }).catch(() => {});
+          }
+
+          // 2. Créer les mêmes disponibilités que la source
+          for (const av of sourceAvailabilities) {
+            await pedagogyFetch(`/api/pedagogy/teacher-profiles/${targetProfile.id}/availabilities`, {
+              method: 'POST',
+              body: {
+                academicYearId: academicYear.id,
+                dayOfWeek: av.dayOfWeek,
+                startTime: av.startTime,
+                endTime: av.endTime,
+              },
+            });
+          }
+          successCount++;
+        } catch {
+          failCount++;
+        }
+      }
+
+      // Recharger les profils pour voir les changements
+      await loadData();
+
+      toast({
+        title: successCount > 0 ? '✅ Disponibilités dupliquées' : 'Erreur',
+        description: `${successCount} enseignant(s) mis à jour${failCount > 0 ? `, ${failCount} échec(s)` : ''}.`,
+      });
+      setShowDuplicateModal(false);
+      setDuplicateTargetIds(new Set());
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+    } finally {
+      setDuplicating(false);
+    }
   };
 
   const handleAddAvailability = async (data: any) => {
@@ -1296,6 +1362,15 @@ export default function TeachersAcademicWorkspace() {
                             <Calendar className="w-4 h-4" style={{ color: PRIMARY }} />
                             Disponibilités d'emploi du temps
                           </h4>
+                          {activeProfile.availabilities.length > 0 && (
+                            <button
+                              onClick={() => setShowDuplicateModal(true)}
+                              className="text-xs font-semibold flex items-center gap-1 hover:underline"
+                              style={{ color: PRIMARY }}
+                            >
+                              <Copy className="w-3.5 h-3.5" /> Dupliquer vers…
+                            </button>
+                          )}
                         </div>
 
                         {/* Légende */}
@@ -1759,6 +1834,88 @@ export default function TeachersAcademicWorkspace() {
           </div>
         )}
       </div>
+
+      {/* Modal: Dupliquer les disponibilités */}
+      {showDuplicateModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowDuplicateModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-slate-100 sticky top-0 bg-white">
+              <h3 className="font-bold text-slate-900 text-sm">Dupliquer les disponibilités</h3>
+              <button onClick={() => setShowDuplicateModal(false)} className="text-slate-400 hover:text-slate-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start gap-2">
+                <Info className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+                <p className="text-xs text-blue-800">
+                  Sélectionnez les enseignants vers qui copier la disponibilité de
+                  <strong> {activeProfile?.teacher?.lastName} {activeProfile?.teacher?.firstName}</strong>.
+                  Les disponibilités existantes de ces enseignants seront remplacées.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                {teachers
+                  .filter(t => t.id !== selectedTeacherId)
+                  .map(t => {
+                    const isSelected = duplicateTargetIds.has(t.id);
+                    return (
+                      <button
+                        key={t.id}
+                        onClick={() => {
+                          setDuplicateTargetIds(prev => {
+                            const next = new Set(prev);
+                            if (next.has(t.id)) next.delete(t.id);
+                            else next.add(t.id);
+                            return next;
+                          });
+                        }}
+                        className={cn(
+                          'w-full flex items-center gap-3 p-3 rounded-lg border transition-all text-left',
+                          isSelected
+                            ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-200'
+                            : 'border-slate-200 hover:border-slate-400 hover:bg-slate-50',
+                        )}
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-600">
+                          {t.firstName?.[0]}{t.lastName?.[0]}
+                        </div>
+                        <div>
+                          <p className="font-bold text-slate-800 text-sm">{t.lastName} {t.firstName}</p>
+                          <p className="text-[10px] text-slate-400 font-medium">{t.matricule}</p>
+                        </div>
+                        {isSelected && <CheckCircle2 className="w-4 h-4 ml-auto" style={{ color: PRIMARY }} />}
+                      </button>
+                    );
+                  })}
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-slate-100 flex justify-end gap-2 sticky bottom-0 bg-white">
+              <button
+                onClick={() => { setShowDuplicateModal(false); setDuplicateTargetIds(new Set()); }}
+                disabled={duplicating}
+                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-xs font-bold disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleDuplicateAvailabilities}
+                disabled={duplicating || duplicateTargetIds.size === 0}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                style={{ backgroundColor: duplicating ? '#94a3b8' : PRIMARY }}
+              >
+                {duplicating ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Duplication...</>
+                ) : (
+                  <><Copy className="w-3.5 h-3.5" /> Dupliquer vers {duplicateTargetIds.size} enseignant(s)</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Edit Profile */}
       <FormModal

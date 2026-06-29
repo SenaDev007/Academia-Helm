@@ -108,8 +108,11 @@ export function MultigradeTab() {
     if (!academicYearId) return;
     setLoading(true);
     try {
+      // Ne PAS filtrer par schoolLevelId — afficher TOUS les groupes multigrade
+      // de l'année, quel que soit le niveau sélectionné dans le header.
+      // Un groupe multigrade peut lier 2 classes de niveaux différents (ex: CI + CE1),
+      // donc le filtrer par un seul niveau le rendrait invisible.
       const params = new URLSearchParams({ academicYearId });
-      if (schoolLevelId) params.set('schoolLevelId', schoolLevelId);
       const data = await mgFetch<MultigradeAssignment[]>(`/api/multigrade?${params}`);
       setAssignments(Array.isArray(data) ? data : []);
     } catch (e: any) {
@@ -117,7 +120,7 @@ export function MultigradeTab() {
     } finally {
       setLoading(false);
     }
-  }, [academicYearId, schoolLevelId]);
+  }, [academicYearId]);
 
   const loadData = useCallback(async () => {
     if (!academicYearId) return;

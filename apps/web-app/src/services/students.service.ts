@@ -66,10 +66,11 @@ class StudentsService {
   }
 
   async createAdmission(data: any): Promise<any> {
-    const tenantId = getTenantId();
-    if (tenantId) {
-      return createEntityOffline(tenantId, "STUDENT", { ...data, admissionStatus: 'PENDING' });
-    }
+    // ⚠️ IMPORTANT : les admissions DOIVENT être sauvegardées dans la vraie DB
+    // (pas en mode offline). Avant, le code vérifiait `if (tenantId)` et
+    // redirigeait vers createEntityOffline — mais tenantId est TOUJOURS défini
+    // en production → l'admission n'était jamais envoyée au backend.
+    // Le toast disait "succès" mais la DB était vide.
     return apiFetch(`${BASE_URL}/admissions`, {
       method: "POST",
       body: data,
@@ -77,10 +78,6 @@ class StudentsService {
   }
 
   async updateAdmission(id: string, data: any): Promise<any> {
-    const tenantId = getTenantId();
-    if (tenantId) {
-      return updateEntityOffline(tenantId, "STUDENT", id, data);
-    }
     return apiFetch(`${BASE_URL}/admissions/${encodeURIComponent(id)}`, {
       method: "PATCH",
       body: data,

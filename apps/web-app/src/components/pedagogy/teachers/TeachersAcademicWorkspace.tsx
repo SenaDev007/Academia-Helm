@@ -1821,8 +1821,22 @@ export default function TeachersAcademicWorkspace() {
                     Aucun dossier enseignant disponible.
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse text-xs">
+                  {/* Conteneur scrollable horizontal pour le tableau.
+                      ⚠️ Style inline pour cibler les scrollbars horizontaux
+                      des cellules "Détails des cours" : on veut une scrollbar
+                      fine et discrète qui n'élargit pas visuellement la ligne. */}
+                  <div
+                    className="overflow-x-auto"
+                    style={{
+                      // Les scrollbars fines améliorent l'esthétique et évitent
+                      // que la cellule paraisse "déborder" visuellement.
+                      // scrollbarWidth: 'thin' est supporté par Firefox.
+                      // Pour WebKit (Chrome/Safari/Edge), on utilise ::-webkit-scrollbar
+                      // via une classe CSS dédiée si nécessaire — ici on reste sur
+                      // le comportement par défaut qui reste compact.
+                    }}
+                  >
+                    <table className="w-full text-left border-collapse text-xs" style={{ tableLayout: 'fixed' }}>
                       <thead>
                         <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                           <th className="px-3 py-3 font-bold whitespace-nowrap" style={{ width: '14%' }}>Enseignant</th>
@@ -1952,8 +1966,22 @@ export default function TeachersAcademicWorkspace() {
                                 </span>
                               </td>
 
-                              {/* Détails des cours — max 5 verticalement, colonnes horizontales */}
-                              <td className="px-3 py-3">
+                              {/* Détails des cours — hauteur fixe, défilement horizontal
+                                  ─────────────────────────────────────────────────
+                                  ⚠️ RÈGLE CRITIQUE : la ligne du tableau doit avoir
+                                  une HAUTEUR FIXE pour éviter qu'un enseignant avec
+                                  22 matières (ex: YAROU Elodie) ne crée une ligne
+                                  exponentiellement haute.
+
+                                  Solution :
+                                  - flex-nowrap : les chips ne JAMAIS aller à la ligne
+                                  - overflow-x-auto : défilement horizontal si débordement
+                                  - overflow-y-hidden : PAS de défilement vertical
+                                  - max-h fixe sur la cellule pour contraindre la hauteur
+                                  - Chips compactes (text-[9px], padding réduit)
+                                  - La colonne peut s'étendre sur l'horizontale
+                                    (scroll) mais JAMAIS sur la verticale. */}
+                              <td className="px-3 py-3 align-middle">
                                 {(() => {
                                   const allDetails = isHomeroom
                                     ? Object.entries(homeroomClasses).map(([className, info]: [string, any]) => ({
@@ -1971,30 +1999,44 @@ export default function TeachersAcademicWorkspace() {
                                     return <span className="text-[10px] text-gray-400 italic font-bold">Aucun cours affecté</span>;
                                   }
 
-                                  // Découper en colonnes de 5 éléments maximum
-                                  const MAX_PER_COLUMN = 5;
-                                  const columns: typeof allDetails[] = [];
-                                  for (let i = 0; i < allDetails.length; i += MAX_PER_COLUMN) {
-                                    columns.push(allDetails.slice(i, i + MAX_PER_COLUMN));
-                                  }
-
                                   return (
-                                    <div className="flex gap-3 flex-wrap">
-                                      {columns.map((col, colIdx) => (
-                                        <div key={colIdx} className="flex flex-col gap-1">
-                                          {col.map((d, idx) => (
-                                            <span key={idx} className={cn(
-                                              'text-[10px] font-bold rounded-lg px-2 py-1 flex items-center gap-2 whitespace-nowrap border',
+                                    <div className="flex items-center gap-2">
+                                      {/* Compteur compact — toujours visible, indique le total */}
+                                      <span
+                                        className="shrink-0 inline-flex items-center justify-center min-w-[28px] h-6 px-1.5 rounded-md text-[10px] font-black text-white"
+                                        style={{ backgroundColor: isHomeroom ? '#F5A623' : '#64748b' }}
+                                        title={`${allDetails.length} cours affecté(s)`}
+                                      >
+                                        {allDetails.length}
+                                      </span>
+
+                                      {/* Conteneur scrollable horizontalement — hauteur fixe */}
+                                      <div
+                                        className="flex items-center gap-1.5 overflow-x-auto overflow-y-hidden flex-nowrap"
+                                        style={{
+                                          maxHeight: '32px',
+                                          scrollbarWidth: 'thin',
+                                          // Subtle scrollbar styling (WebKit)
+                                          // Pour indiquer qu'il y a plus de contenu à droite
+                                        }}
+                                      >
+                                        {allDetails.map((d, idx) => (
+                                          <span
+                                            key={idx}
+                                            className={cn(
+                                              'shrink-0 text-[9px] font-bold rounded-md px-1.5 py-1 flex items-center gap-1 whitespace-nowrap border',
                                               d.color === 'amber'
-                                                ? 'bg-amber-50 border-amber-100 text-amber-800'
-                                                : 'bg-gray-50 border-gray-100 text-gray-600',
-                                            )}>
-                                              <span>{d.label}</span>
-                                              <span className={cn('font-black', d.color === 'amber' ? '' : 'text-indigo-600')}>{d.hours}h</span>
+                                                ? 'bg-amber-50 border-amber-200 text-amber-800'
+                                                : 'bg-slate-50 border-slate-200 text-slate-600',
+                                            )}
+                                          >
+                                            <span>{d.label}</span>
+                                            <span className={cn('font-black', d.color === 'amber' ? 'text-amber-700' : 'text-indigo-600')}>
+                                              {d.hours}h
                                             </span>
-                                          ))}
-                                        </div>
-                                      ))}
+                                          </span>
+                                        ))}
+                                      </div>
                                     </div>
                                   );
                                 })()}

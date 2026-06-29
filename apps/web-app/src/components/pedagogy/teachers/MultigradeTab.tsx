@@ -122,12 +122,18 @@ export function MultigradeTab() {
   const loadData = useCallback(async () => {
     if (!academicYearId) return;
     try {
-      const [tchs, cls] = await Promise.all([
+      // Charger les enseignants et les SECTIONS PHYSIQUES (table `classes`).
+      // Le backend multigrade cherche dans prisma.class (classes physiques),
+      // PAS dans prisma.academicClass (classes officielles).
+      // On utilise GET /api/pedagogy/academic-structure/sections pour récupérer
+      // les sections physiques avec leur officialClass pour l'affichage.
+      const [tchs, sections] = await Promise.all([
         pedagogyFetch<any[]>(`/api/teachers${schoolLevelId ? `?schoolLevelId=${schoolLevelId}` : ''}`).catch(() => []),
-        pedagogyFetch<any[]>(`/api/pedagogy/academic-structure/classes?academicYearId=${academicYearId}${schoolLevelId ? `&schoolLevelId=${schoolLevelId}` : ''}`).catch(() => []),
+        pedagogyFetch<any[]>(`/api/pedagogy/academic-structure/sections?academicYearId=${academicYearId}`).catch(() => []),
       ]);
       setTeachers(Array.isArray(tchs) ? tchs : []);
-      setClasses(Array.isArray(cls) ? cls : []);
+      // Les sections sont les classes physiques — c'est ce que le backend multigrade attend
+      setClasses(Array.isArray(sections) ? sections : []);
     } catch { /* silent */ }
   }, [academicYearId, schoolLevelId]);
 
@@ -195,7 +201,9 @@ export function MultigradeTab() {
   const classesByLevel = useMemo(() => {
     const map: Record<string, any[]> = {};
     for (const c of classes) {
-      const levelId = c.schoolLevelId || c.level?.id || 'unknown';
+      // Les sections physiques ont officialClass.level (via l'API sections)
+      // ou schoolLevelId directement
+      const levelId = c.officialClass?.level?.id || c.schoolLevelId || c.level?.id || 'unknown';
       if (!map[levelId]) map[levelId] = [];
       map[levelId].push(c);
     }
@@ -359,16 +367,17 @@ export function MultigradeTab() {
                 <label className="text-xs font-bold text-slate-700 uppercase mb-1.5 block">
                   Classes * ({form.classIds.length}/2 sélectionnées)
                 </label>
-                <div className="space-y-2 max-h-48 overflow-y-auto">
+                <div className="space-y-2">
                   {Object.entries(classesByLevel).map(([levelId, levelClasses]) => (
                     <div key={levelId}>
                       <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">
-                        {levelClasses[0]?.level?.name || levelClasses[0]?.schoolLevel?.name || 'Niveau'}
+                        {levelClasses[0]?.officialClass?.level?.name || levelClasses[0]?.level?.name || levelClasses[0]?.schoolLevel?.name || 'Niveau'}
                       </p>
                       <div className="flex flex-wrap gap-2">
                         {levelClasses.map(c => {
                           const isSelected = form.classIds.includes(c.id);
                           const isDisabled = !isSelected && form.classIds.length >= 2;
+                          const displayName = c.name || c.officialClass?.name || 'Section';
                           return (
                             <button
                               key={c.id}
@@ -385,7 +394,7 @@ export function MultigradeTab() {
                               )}
                             >
                               {isSelected && <CheckCircle className="w-3 h-3 inline mr-1" />}
-                              {c.name}
+                              {displayName}
                             </button>
                           );
                         })}

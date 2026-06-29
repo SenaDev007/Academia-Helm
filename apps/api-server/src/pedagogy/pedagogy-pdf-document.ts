@@ -45,7 +45,7 @@
 
 import { PuppeteerPoolService } from '../common/services/puppeteer-pool.service';
 import { TeacherProfileSummaryData } from './pedagogy-email-templates';
-import { Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 const DAY_LABELS: Record<number, string> = {
   1: 'Lundi',
@@ -579,6 +579,7 @@ function buildPdfFooterHtml(): string {
  * Utilise PuppeteerPoolService (singleton global) pour éviter de lancer
  * un nouveau Chromium à chaque appel.
  */
+@Injectable()
 export class PedagogyPdfDocumentService {
   private readonly logger = new Logger(PedagogyPdfDocumentService.name);
 

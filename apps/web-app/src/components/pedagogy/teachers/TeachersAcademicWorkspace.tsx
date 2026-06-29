@@ -40,6 +40,7 @@ import {
   Copy,
   Loader2,
   Mail,
+  Settings,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -1400,46 +1401,46 @@ export default function TeachersAcademicWorkspace() {
                       <div className="flex items-center gap-2">
                         <button 
                           onClick={() => setModal('edit-teacher')}
-                          className="px-3 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 rounded-lg transition-all shadow-sm"
+                          className="inline-flex items-center justify-center w-8 h-8 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-lg transition-all shadow-sm"
+                          title="Informations personnelles"
                         >
-                          Infos Perso
+                          <Info className="w-4 h-4" />
                         </button>
                         <button 
                           onClick={() => setModal('edit-profile')}
-                          className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white shadow-sm transition hover:opacity-95"
+                          className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-white shadow-sm transition hover:opacity-95"
                           style={{ backgroundColor: PRIMARY }}
+                          title="Paramètres du profil académique"
                         >
-                          Paramètres Profil
+                          <Settings className="w-4 h-4" />
                         </button>
                         {selectedTeacherId && (
                           <>
                             <button
                               onClick={() => handleDownloadPdf(selectedTeacherId)}
                               disabled={downloadingPdfTeacherId === selectedTeacherId}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white shadow-sm transition hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-white shadow-sm transition hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
                               style={{ backgroundColor: PRIMARY }}
                               title="Télécharger le PDF récapitulatif (profil, disponibilités, affectations, charge horaire)"
                             >
                               {downloadingPdfTeacherId === selectedTeacherId ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                <Loader2 className="w-4 h-4 animate-spin" />
                               ) : (
-                                <PdfIcon className="w-3.5 h-3.5" />
+                                <PdfIcon className="w-4 h-4" />
                               )}
-                              {downloadingPdfTeacherId === selectedTeacherId ? 'Génération...' : ''}
                             </button>
                             <button
                               onClick={() => handleNotifyIndividual(selectedTeacherId)}
                               disabled={notifyingTeacherId === selectedTeacherId || batchNotifying}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white shadow-sm transition hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-white shadow-sm transition hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
                               style={{ backgroundColor: ACCENT }}
                               title="Envoyer un email récapitulatif à cet enseignant (profil, disponibilités, affectations, charge horaire)"
                             >
                               {notifyingTeacherId === selectedTeacherId ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                <Loader2 className="w-4 h-4 animate-spin" />
                               ) : (
-                                <Mail className="w-3.5 h-3.5" />
+                                <Mail className="w-4 h-4" />
                               )}
-                              {notifyingTeacherId === selectedTeacherId ? 'Envoi...' : 'Notifier'}
                             </button>
                           </>
                         )}

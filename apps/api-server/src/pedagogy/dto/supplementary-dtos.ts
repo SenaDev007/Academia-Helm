@@ -214,12 +214,17 @@ export class CreateAvailabilityDto {
   @IsInt() @Min(0) @Max(6) @Type(() => Number) dayOfWeek: number;
   @IsString() startTime: string;
   @IsString() endTime: string;
+  /// Statut de disponibilité :
+  ///   'UNAVAILABLE' : enseignant NON disponible (défaut, rétro-compat)
+  ///   'PREFERRED'   : enseignant PEUT enseigner + préfère ce créneau
+  @IsOptional() @IsIn(['UNAVAILABLE', 'PREFERRED']) status?: string;
 }
 
 export class UpdateAvailabilityDto {
   @IsOptional() @IsInt() @Min(0) @Max(6) @Type(() => Number) dayOfWeek?: number;
   @IsOptional() @IsString() startTime?: string;
   @IsOptional() @IsString() endTime?: string;
+  @IsOptional() @IsIn(['UNAVAILABLE', 'PREFERRED']) status?: string;
 }
 
 // ─── Global Library DTOs ────────────────────────────────────────────────────

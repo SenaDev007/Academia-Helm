@@ -486,65 +486,64 @@ export class TimetableEngineService {
   }
 
   /**
-   * Récupère les enseignants avec leurs disponibilités STE (table
-   * teacher_availability). Si l'enseignant n'a AUCUNE disponibilité STE
-   * configurée, on récupère en fallback ses disponibilités depuis la table
-   * pedagogy_teacher_availabilities (configurées dans l'onglet Enseignants &
-   * Affectations) pour pré-remplir la grille.
+   * Récupère les enseignants avec leurs disponibilités.
    *
-   * ⚠️ Les deux tables ont des sémantiques DIFFÉRENTES :
-   *   - pedagogy_teacher_availabilities : un enregistrement = INDISPONIBLE
-   *     (la matrice est binaire : existe = indispo, absent = dispo)
-   *   - teacher_availability (STE) : un enregistrement avec status explicite
-   *     (AVAILABLE | PREFERRED | UNAVAILABLE | FORBIDDEN)
+   * ⚠️ DEPUIS LA FUSION (Option A) : on lit UNIQUEMENT la table
+   * pedagogy_teacher_availabilities (qui a maintenant un champ 'status'
+   * avec 3 états : AVAILABLE / PREFERRED / UNAVAILABLE). La table STE
+   * teacher_availability n'est plus utilisée pour la lecture — elle reste
+   * pour rétro-compat mais on ne l'interroge plus.
    *
-   * Pour le fallback, on convertit : si un créneau est DANS la table pedagogy
-   * → UNAVAILABLE (STE). Sinon → AVAILABLE (par défaut, pas d'enregistrement STE).
+   * Sémantique :
+   *   - pas d'enregistrement → AVAILABLE (enseignant disponible, neutre)
+   *   - status='UNAVAILABLE' → enseignant NON disponible (exclu par STE)
+   *   - status='PREFERRED' → enseignant PEUT + préfère (priorisé par STE)
+   *
+   * Pour le moteur STE, on convertit vers le format STE attendu :
+   *   - AVAILABLE (pas d'enregistrement) → pas de row STE (disponible par défaut)
+   *   - PREFERRED → row STE avec status='PREFERRED'
+   *   - UNAVAILABLE → row STE avec status='UNAVAILABLE'
    */
   async getTeachersWithAvailability(tenantId: string, schoolLevelId?: string) {
     await this.ensureTablesExist();
-    const [teachers, steAvailRows, pedagogyAvailRows] = await Promise.all([
+    const [teachers, pedagogyAvailRows] = await Promise.all([
       this.getTeachers(tenantId, schoolLevelId),
-      this.prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "teacher_availability" WHERE "tenantId" = $1`, tenantId),
-      // Fallback : disponibilités pédagogiques (onglet Enseignants & Affectations)
       this.prisma.teacherAvailability.findMany({
         where: { tenantId },
-        select: { id: true, teacherId: true, dayOfWeek: true, startTime: true, endTime: true, profileId: true },
+        select: {
+          id: true,
+          teacherId: true,
+          dayOfWeek: true,
+          startTime: true,
+          endTime: true,
+          status: true,
+          profileId: true,
+        },
       }).catch(() => []),
     ]);
 
     return teachers.map((t: any) => {
-      // 1. Disponibilités STE (prioritaires si elles existent)
-      const steAvails = steAvailRows.filter((r: any) => r.teacherId === t.id);
-
-      // 2. Si l'enseignant a déjà des dispos STE → on les utilise
-      if (steAvails.length > 0) {
-        return { ...t, availabilities: steAvails };
-      }
-
-      // 3. Fallback : convertir les dispos pédagogiques en format STE
-      //    Un enregistrement pedagogy = INDISPONIBLE → on crée un enregistrement
-      //    STE avec status='UNAVAILABLE'.
+      // Filtrer les dispos pédagogiques de cet enseignant
       const pedagogyAvails = pedagogyAvailRows.filter((r: any) => r.teacherId === t.id);
-      if (pedagogyAvails.length === 0) {
-        return { ...t, availabilities: [] };
-      }
 
-      // Convertir : chaque dispos pédagogique → STE UNAVAILABLE
-      const convertedAvails = pedagogyAvails.map((pa: any) => ({
-        id: `pedagogy-${pa.id}`,  // ID synthétique pour éviter les collisions
-        teacherId: t.id,
-        tenantId,
-        dayOfWeek: pa.dayOfWeek,
-        startTime: pa.startTime,
-        endTime: pa.endTime,
-        status: 'UNAVAILABLE',  // L'enregistrement pedagogy = indisponible
-        reason: 'Importé depuis Profils & Disponibilités',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }));
+      // Convertir vers le format STE (avec status explicite)
+      // On ne crée pas de row pour AVAILABLE (pas d'enregistrement = disponible par défaut)
+      const availabilities = pedagogyAvails
+        .filter((pa: any) => pa.status !== 'AVAILABLE')
+        .map((pa: any) => ({
+          id: pa.id,
+          teacherId: t.id,
+          tenantId,
+          dayOfWeek: pa.dayOfWeek,
+          startTime: pa.startTime,
+          endTime: pa.endTime,
+          status: pa.status || 'UNAVAILABLE',  // fallback pour anciens enregistrements
+          reason: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }));
 
-      return { ...t, availabilities: convertedAvails };
+      return { ...t, availabilities };
     });
   }
 

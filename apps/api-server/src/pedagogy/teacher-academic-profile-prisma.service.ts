@@ -174,11 +174,13 @@ export class TeacherAcademicProfilePrismaService {
     dayOfWeek: number;
     startTime: string;
     endTime: string;
+    status?: string;  // 'UNAVAILABLE' (défaut) | 'PREFERRED'
   }) {
     await this.getProfileOrThrow(data.profileId, data.tenantId);
     if (data.dayOfWeek < 0 || data.dayOfWeek > 6) {
       throw new BadRequestException('dayOfWeek doit être entre 0 (dimanche) et 6 (samedi).');
     }
+    const status = data.status === 'PREFERRED' ? 'PREFERRED' : 'UNAVAILABLE';
     return this.prisma.teacherAvailability.create({
       data: {
         ...prismaCreateDefaults(),
@@ -188,6 +190,7 @@ export class TeacherAcademicProfilePrismaService {
         dayOfWeek: data.dayOfWeek,
         startTime: data.startTime,
         endTime: data.endTime,
+        status,
       },
     });
   }
@@ -195,7 +198,7 @@ export class TeacherAcademicProfilePrismaService {
   async updateAvailability(
     availabilityId: string,
     tenantId: string,
-    data: { dayOfWeek?: number; startTime?: string; endTime?: string }
+    data: { dayOfWeek?: number; startTime?: string; endTime?: string; status?: string }
   ) {
     const av = await this.prisma.teacherAvailability.findFirst({
       where: { id: availabilityId, tenantId },
@@ -204,9 +207,14 @@ export class TeacherAcademicProfilePrismaService {
     if (data.dayOfWeek !== undefined && (data.dayOfWeek < 0 || data.dayOfWeek > 6)) {
       throw new BadRequestException('dayOfWeek doit être entre 0 et 6.');
     }
+    // Valider le statut si fourni
+    const updateData: any = { ...prismaUpdateDefaults(), ...data };
+    if (data.status !== undefined) {
+      updateData.status = data.status === 'PREFERRED' ? 'PREFERRED' : 'UNAVAILABLE';
+    }
     return this.prisma.teacherAvailability.update({
       where: { id: availabilityId },
-      data: { ...prismaUpdateDefaults(), ...data },
+      data: updateData,
     });
   }
 

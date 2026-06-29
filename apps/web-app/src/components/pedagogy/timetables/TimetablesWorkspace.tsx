@@ -47,11 +47,15 @@ const DEFAULT_TIME_BLOCKS = [
   { start: '16:15', end: '18:00', type: 'BLOCK' },
 ];
 
-type TabId = 'config' | 'availability' | 'constraints' | 'generate' | 'timetable';
+type TabId = 'config' | 'constraints' | 'generate' | 'timetable';
 
 const TABS: { id: TabId; label: string; icon: any; description: string }[] = [
   { id: 'config', label: 'Configuration', icon: Settings, description: 'Jours & créneaux' },
-  { id: 'availability', label: 'Disponibilités', icon: Calendar, description: 'Grille enseignants' },
+  // ⚠️ L'onglet 'Disponibilités' a été SUPPRIMÉ de l'EDT (fusion Option A).
+  // La configuration des disponibilités se fait désormais UNIQUEMENT dans
+  // l'onglet « Enseignants & Affectations > Profils & Disponibilités »,
+  // qui supporte maintenant 3 états (Disponible / Préféré / Indisponible).
+  // Le moteur STE lit directement la table pedagogy_teacher_availabilities.
   { id: 'constraints', label: 'Contraintes', icon: Shield, description: 'V2+ : hard/soft' },
   { id: 'generate', label: 'Génération', icon: Zap, description: 'Mono ou multi-Pareto' },
   { id: 'timetable', label: 'Emploi du temps', icon: Calendar, description: 'Solutions + édition' },
@@ -197,7 +201,7 @@ export default function TimetablesWorkspace() {
           <AnimatePresence mode="wait">
             <motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15 }}>
               {tab === 'config' && <ConfigTab schoolLevelId={schoolLevelId} academicYearId={academicYearId} />}
-              {tab === 'availability' && <AvailabilityTab config={config} schoolLevelId={schoolLevelId} />}
+              {/* Onglet 'Disponibilités' supprimé (fusion Option A) — voir Enseignants & Affectations */}
               {tab === 'constraints' && <ConstraintsTab schoolLevelId={schoolLevelId} />}
               {tab === 'generate' && <GenerateTab schoolLevelId={schoolLevelId} academicYearId={academicYearId} solutionsCount={solutions.length} onGenerated={() => { loadSolutions(); setTab('timetable'); }} />}
               {tab === 'timetable' && (

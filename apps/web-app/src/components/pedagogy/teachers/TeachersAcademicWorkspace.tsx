@@ -1821,21 +1821,7 @@ export default function TeachersAcademicWorkspace() {
                     Aucun dossier enseignant disponible.
                   </div>
                 ) : (
-                  {/* Conteneur scrollable horizontal pour le tableau.
-                      ⚠️ Style inline pour cibler les scrollbars horizontaux
-                      des cellules "Détails des cours" : on veut une scrollbar
-                      fine et discrète qui n'élargit pas visuellement la ligne. */}
-                  <div
-                    className="overflow-x-auto"
-                    style={{
-                      // Les scrollbars fines améliorent l'esthétique et évitent
-                      // que la cellule paraisse "déborder" visuellement.
-                      // scrollbarWidth: 'thin' est supporté par Firefox.
-                      // Pour WebKit (Chrome/Safari/Edge), on utilise ::-webkit-scrollbar
-                      // via une classe CSS dédiée si nécessaire — ici on reste sur
-                      // le comportement par défaut qui reste compact.
-                    }}
-                  >
+                  <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse text-xs" style={{ tableLayout: 'fixed' }}>
                       <thead>
                         <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -2016,8 +2002,6 @@ export default function TeachersAcademicWorkspace() {
                                         style={{
                                           maxHeight: '32px',
                                           scrollbarWidth: 'thin',
-                                          // Subtle scrollbar styling (WebKit)
-                                          // Pour indiquer qu'il y a plus de contenu à droite
                                         }}
                                       >
                                         {allDetails.map((d, idx) => (

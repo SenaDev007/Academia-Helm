@@ -39,6 +39,8 @@ import {
   Layers,
   Copy,
   Loader2,
+  Mail,
+  Send,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -311,6 +313,15 @@ export default function TeachersAcademicWorkspace() {
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [duplicateTargetIds, setDuplicateTargetIds] = useState<Set<string>>(new Set());
   const [duplicating, setDuplicating] = useState(false);
+
+  // --- Notification Email ---
+  const [showNotifyModal, setShowNotifyModal] = useState(false);
+  const [notifyMode, setNotifyMode] = useState<'individual' | 'batch'>('individual');
+  const [notifySubject, setNotifySubject] = useState('');
+  const [notifyMessage, setNotifyMessage] = useState('');
+  const [notifyRecipientIds, setNotifyRecipientIds] = useState<Set<string>>(new Set());
+  const [sending, setSending] = useState(false);
+  const [notifyResult, setNotifyResult] = useState<any | null>(null);
 
   // --- Loaders ---
 
@@ -850,6 +861,149 @@ export default function TeachersAcademicWorkspace() {
     }
   };
 
+  // ============================================================
+  // NOTIFICATIONS EMAIL — Handlers
+  // ============================================================
+
+  /**
+   * Ouvre le modal de notification en mode individuel (depuis la fiche enseignant).
+   * Pré-remplit le destinataire avec l'enseignant actuellement sélectionné.
+   */
+  const openNotifyIndividual = (teacherId: string) => {
+    if (!teacherId) return;
+    setNotifyMode('individual');
+    setNotifyRecipientIds(new Set([teacherId]));
+    setNotifySubject('');
+    setNotifyMessage('');
+    setNotifyResult(null);
+    setShowNotifyModal(true);
+  };
+
+  /**
+   * Ouvre le modal de notification en mode groupé (depuis le toolbar).
+   * Tous les enseignants sont présélectionnés — l'utilisateur peut
+   * décocher ceux qu'il ne veut pas notifier.
+   */
+  const openNotifyBatch = () => {
+    if (teachers.length === 0) {
+      toast({
+        title: 'Aucun enseignant',
+        description: "Il n'y a aucun enseignant à notifier.",
+        variant: 'destructive',
+      });
+      return;
+    }
+    setNotifyMode('batch');
+    // Pré-sélectionner tous les enseignants qui ont un email
+    const withEmail = teachers.filter(t => t.email && t.email.trim());
+    setNotifyRecipientIds(new Set(withEmail.map(t => t.id)));
+    setNotifySubject('');
+    setNotifyMessage('');
+    setNotifyResult(null);
+    setShowNotifyModal(true);
+  };
+
+  const toggleNotifyRecipient = (teacherId: string) => {
+    setNotifyRecipientIds(prev => {
+      const next = new Set(prev);
+      if (next.has(teacherId)) {
+        next.delete(teacherId);
+      } else {
+        next.add(teacherId);
+      }
+      return next;
+    });
+  };
+
+  /**
+   * Envoie la notification :
+   *   - mode 'individual' → POST /api/pedagogy/teacher-notifications/individual
+   *   - mode 'batch'      → POST /api/pedagogy/teacher-notifications/batch
+   *
+   * Affiche le récapitulatif détaillé dans le modal (envoyés / échecs / ignorés)
+   * pour que l'utilisateur sache exactement ce qui s'est passé.
+   */
+  const handleSendNotification = async () => {
+    if (!notifySubject.trim() || !notifyMessage.trim()) {
+      toast({
+        title: 'Champs manquants',
+        description: 'Le sujet et le message sont obligatoires.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (notifyRecipientIds.size === 0) {
+      toast({
+        title: 'Aucun destinataire',
+        description: 'Sélectionnez au moins un enseignant à notifier.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSending(true);
+    setNotifyResult(null);
+
+    try {
+      const endpoint = notifyMode === 'individual'
+        ? '/api/pedagogy/teacher-notifications/individual'
+        : '/api/pedagogy/teacher-notifications/batch';
+
+      const body = notifyMode === 'individual'
+        ? {
+            teacherId: Array.from(notifyRecipientIds)[0],
+            subject: notifySubject.trim(),
+            message: notifyMessage.trim(),
+          }
+        : {
+            teacherIds: Array.from(notifyRecipientIds),
+            subject: notifySubject.trim(),
+            message: notifyMessage.trim(),
+          };
+
+      const response = await pedagogyFetch<any>(endpoint, {
+        method: 'POST',
+        body,
+      });
+
+      setNotifyResult(response?.result || response);
+
+      if (response?.success || response?.result?.success) {
+        const r = response?.result;
+        const summary = notifyMode === 'batch' && r
+          ? `${r.sent}/${r.total} envoyé(s)${r.failed ? `, ${r.failed} échec(s)` : ''}${r.skipped ? `, ${r.skipped} ignoré(s)` : ''}`
+          : 'Email envoyé avec succès';
+        toast({
+          title: '✅ Notification envoyée',
+          description: summary,
+        });
+      } else {
+        toast({
+          title: 'Erreur',
+          description: response?.error || response?.result?.error || "Échec de l'envoi",
+          variant: 'destructive',
+        });
+      }
+    } catch (e: any) {
+      toast({
+        title: 'Erreur réseau',
+        description: e.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const closeNotifyModal = () => {
+    if (sending) return; // Ne pas fermer pendant l'envoi
+    setShowNotifyModal(false);
+    setNotifyRecipientIds(new Set());
+    setNotifySubject('');
+    setNotifyMessage('');
+    setNotifyResult(null);
+  };
+
   const handleAddAvailability = async (data: any) => {
     if (!activeProfile || !academicYear?.id) return;
     try {
@@ -931,23 +1085,35 @@ export default function TeachersAcademicWorkspace() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {activeSubTab === 'teachers' && (
-            <button
-              type="button"
-              onClick={() => {
-                setTeacherForm({
-                  firstName: '',
-                  lastName: '',
-                  matricule: '',
-                  email: '',
-                });
-                setModal('create-teacher');
-              }}
-              className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:opacity-95"
-              style={{ backgroundColor: PRIMARY }}
-            >
-              <Plus className="h-4 w-4" />
-              Créer un enseignant
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={openNotifyBatch}
+                className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:opacity-95"
+                style={{ backgroundColor: ACCENT }}
+                title="Envoyer un email à tous les enseignants"
+              >
+                <Mail className="h-4 w-4" />
+                Notifier tous
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTeacherForm({
+                    firstName: '',
+                    lastName: '',
+                    matricule: '',
+                    email: '',
+                  });
+                  setModal('create-teacher');
+                }}
+                className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:opacity-95"
+                style={{ backgroundColor: PRIMARY }}
+              >
+                <Plus className="h-4 w-4" />
+                Créer un enseignant
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -1121,6 +1287,17 @@ export default function TeachersAcademicWorkspace() {
                         >
                           Paramètres Profil
                         </button>
+                        {selectedTeacherId && (
+                          <button
+                            onClick={() => openNotifyIndividual(selectedTeacherId)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white shadow-sm transition hover:opacity-95"
+                            style={{ backgroundColor: ACCENT }}
+                            title="Envoyer un email à cet enseignant"
+                          >
+                            <Mail className="w-3.5 h-3.5" />
+                            Notifier
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -1912,6 +2089,250 @@ export default function TeachersAcademicWorkspace() {
                   <><Copy className="w-3.5 h-3.5" /> Dupliquer vers {duplicateTargetIds.size} enseignant(s)</>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Notifier par email (individuel ou groupé) */}
+      {showNotifyModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={closeNotifyModal}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-slate-100 sticky top-0 bg-white z-10">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${ACCENT}20` }}>
+                  <Mail className="w-5 h-5" style={{ color: ACCENT }} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm">
+                    {notifyMode === 'individual' ? 'Notifier l\'enseignant' : 'Notifier tous les enseignants'}
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    {notifyMode === 'individual'
+                      ? 'Envoi d\'un email individuel'
+                      : `Envoi groupé — ${notifyRecipientIds.size} destinataire(s) sélectionné(s)`}
+                  </p>
+                </div>
+              </div>
+              <button onClick={closeNotifyModal} className="text-slate-400 hover:text-slate-700" disabled={sending}>
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 space-y-4">
+              {/* Mode indicator + warning info */}
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 flex items-start gap-2">
+                <Info className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+                <div className="text-xs text-blue-800 space-y-1">
+                  <p>
+                    {notifyMode === 'individual'
+                      ? 'Un email sera envoyé à cet enseignant depuis l\'adresse noreply@academiahelm.com.'
+                      : 'Un email sera envoyé À CHAQUE enseignant sélectionné, séquentiellement (anti rate-limiting).'}
+                  </p>
+                  <p className="text-blue-600">
+                    💡 Les enseignants sans email renseigné seront automatiquement ignorés.
+                  </p>
+                </div>
+              </div>
+
+              {/* Recipients (batch mode only) */}
+              {notifyMode === 'batch' && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold uppercase tracking-wide text-slate-600">
+                      Destinataires ({notifyRecipientIds.size}/{teachers.length})
+                    </label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setNotifyRecipientIds(new Set(teachers.filter(t => t.email).map(t => t.id)))}
+                        className="text-[10px] font-bold text-blue-600 hover:text-blue-800 uppercase tracking-wide"
+                        disabled={sending}
+                      >
+                        Tout cocher
+                      </button>
+                      <span className="text-slate-300">|</span>
+                      <button
+                        type="button"
+                        onClick={() => setNotifyRecipientIds(new Set())}
+                        className="text-[10px] font-bold text-slate-500 hover:text-slate-700 uppercase tracking-wide"
+                        disabled={sending}
+                      >
+                        Vider
+                      </button>
+                    </div>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100">
+                    {teachers.map(t => {
+                      const hasEmail = !!(t.email && t.email.trim());
+                      const isSelected = notifyRecipientIds.has(t.id);
+                      return (
+                        <label
+                          key={t.id}
+                          className={cn(
+                            'flex items-center gap-3 p-2 cursor-pointer transition',
+                            !hasEmail && 'opacity-40 cursor-not-allowed',
+                            isSelected && 'bg-blue-50',
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            disabled={!hasEmail || sending}
+                            onChange={() => toggleNotifyRecipient(t.id)}
+                            className="w-4 h-4 rounded border-slate-300"
+                            style={{ accentColor: PRIMARY }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-bold text-slate-900 truncate">
+                              {t.lastName} {t.firstName}
+                            </p>
+                            <p className="text-[10px] text-slate-500 truncate">
+                              {hasEmail ? t.email : <span className="text-rose-500 italic">Aucun email</span>}
+                            </p>
+                          </div>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                            {t.matricule}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Subject */}
+              <div className="space-y-1">
+                <label className="block text-xs font-bold uppercase tracking-wide text-slate-600">
+                  Sujet <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={notifySubject}
+                  onChange={e => setNotifySubject(e.target.value)}
+                  placeholder="Ex: Réunion pédagogique de rentrée"
+                  maxLength={120}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white"
+                  disabled={sending}
+                />
+                <p className="text-[10px] text-slate-400 text-right">{notifySubject.length}/120</p>
+              </div>
+
+              {/* Message */}
+              <div className="space-y-1">
+                <label className="block text-xs font-bold uppercase tracking-wide text-slate-600">
+                  Message <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  value={notifyMessage}
+                  onChange={e => setNotifyMessage(e.target.value)}
+                  placeholder="Saisissez votre message ici. Les sauts de ligne seront préservés dans l'email."
+                  rows={6}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white resize-y"
+                  disabled={sending}
+                />
+                <p className="text-[10px] text-slate-400">
+                  💡 Le message sera envoyé tel quel. Les balises HTML seront échappées automatiquement.
+                </p>
+              </div>
+
+              {/* Result panel (after send) */}
+              {notifyResult && (
+                <div className={cn(
+                  'rounded-lg border p-3 space-y-2',
+                  notifyResult.success
+                    ? 'border-emerald-200 bg-emerald-50'
+                    : 'border-rose-200 bg-rose-50',
+                )}>
+                  <div className="flex items-center gap-2">
+                    {notifyResult.success ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-rose-600" />
+                    )}
+                    <p className={cn(
+                      'text-xs font-bold',
+                      notifyResult.success ? 'text-emerald-700' : 'text-rose-700',
+                    )}>
+                      {notifyMode === 'batch'
+                        ? `Résultat: ${notifyResult.sent}/${notifyResult.total} envoyé(s)`
+                        : (notifyResult.success ? 'Email envoyé' : 'Échec de l\'envoi')}
+                    </p>
+                  </div>
+
+                  {notifyMode === 'batch' && (
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div className="rounded bg-white border border-emerald-100 p-2">
+                        <p className="text-lg font-black text-emerald-600">{notifyResult.sent}</p>
+                        <p className="text-[9px] font-bold uppercase text-emerald-700">Envoyés</p>
+                      </div>
+                      <div className="rounded bg-white border border-rose-100 p-2">
+                        <p className="text-lg font-black text-rose-600">{notifyResult.failed}</p>
+                        <p className="text-[9px] font-bold uppercase text-rose-700">Échecs</p>
+                      </div>
+                      <div className="rounded bg-white border border-slate-200 p-2">
+                        <p className="text-lg font-black text-slate-600">{notifyResult.skipped}</p>
+                        <p className="text-[9px] font-bold uppercase text-slate-700">Ignorés</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Detailed results (failures) */}
+                  {notifyResult.results && Array.isArray(notifyResult.results) && notifyResult.results.some((r: any) => !r.success) && (
+                    <div className="mt-2 max-h-32 overflow-y-auto rounded bg-white border border-slate-200 p-2 space-y-1">
+                      {notifyResult.results.filter((r: any) => !r.success).map((r: any, idx: number) => (
+                        <div key={idx} className="text-[11px] flex items-start gap-2">
+                          <span className="text-rose-500 font-bold">✗</span>
+                          <span className="text-slate-700">
+                            <strong>{r.teacherName}</strong>
+                            {r.email && r.email !== '—' && <span className="text-slate-400"> ({r.email})</span>}
+                            <span className="text-rose-600"> — {r.error}</span>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {!notifyResult.success && notifyResult.error && notifyMode === 'individual' && (
+                    <p className="text-[11px] text-rose-700">{notifyResult.error}</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-100 flex items-center justify-between gap-2 sticky bottom-0 bg-white">
+              <p className="text-[10px] text-slate-400">
+                {notifyRecipientIds.size} destinataire(s) • {notifySubject.trim() ? '✓' : '✗'} Sujet • {notifyMessage.trim() ? '✓' : '✗'} Message
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={closeNotifyModal}
+                  disabled={sending}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-xs font-bold disabled:opacity-50"
+                >
+                  {notifyResult ? 'Fermer' : 'Annuler'}
+                </button>
+                <button
+                  onClick={handleSendNotification}
+                  disabled={sending || !notifySubject.trim() || !notifyMessage.trim() || notifyRecipientIds.size === 0}
+                  className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  style={{ backgroundColor: sending ? '#94a3b8' : ACCENT }}
+                >
+                  {sending ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Envoi en cours...</>
+                  ) : (
+                    <>
+                      <Send className="w-3.5 h-3.5" />
+                      {notifyMode === 'individual'
+                        ? 'Envoyer l\'email'
+                        : `Envoyer à ${notifyRecipientIds.size} enseignant(s)`}
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>

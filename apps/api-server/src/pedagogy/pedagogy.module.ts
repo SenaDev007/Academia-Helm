@@ -6,6 +6,7 @@
 
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../database/database.module';
+import { CommunicationModule } from '../communication/communication.module';
 import { SubjectsPrismaService } from './subjects-prisma.service';
 import { SubjectsPrismaController } from './subjects-prisma.controller';
 import { TeachersPrismaService } from './teachers-prisma.service';
@@ -63,13 +64,15 @@ import { GlobalLibraryPrismaController } from './global-library-prisma.controlle
 import { IaPrismaService } from './ia-prisma.service';
 import { IaPrismaController } from './ia-prisma.controller';
 
-
+// Module 2 - Notifications email aux enseignants (PEDAGOGIE)
+import { PedagogyNotificationService } from './pedagogy-notification.service';
+import { PedagogyNotificationController } from './pedagogy-notification.controller';
 
 
 import { StorageService } from '../common/services/storage.service';
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, CommunicationModule],
   controllers: [
     SubjectsPrismaController,
     TeachersPrismaController,
@@ -98,6 +101,8 @@ import { StorageService } from '../common/services/storage.service';
     GlobalLibraryPrismaController,
     // Module 2 - IA Pédagogique (Sara Compose Engine)
     IaPrismaController,
+    // Module 2 - Notifications email aux enseignants
+    PedagogyNotificationController,
   ],
   providers: [
     StorageService,
@@ -133,6 +138,8 @@ import { StorageService } from '../common/services/storage.service';
     GlobalLibraryPrismaService,
     // Module 2 - IA Pédagogique (Sara Compose Engine)
     IaPrismaService,
+    // Module 2 - Notifications email aux enseignants
+    PedagogyNotificationService,
   ],
   exports: [
     StorageService,
@@ -168,6 +175,8 @@ import { StorageService } from '../common/services/storage.service';
     GlobalLibraryPrismaService,
     // Module 2 - IA Pédagogique (Sara Compose Engine)
     IaPrismaService,
+    // Module 2 - Notifications email aux enseignants
+    PedagogyNotificationService,
   ],
 })
 

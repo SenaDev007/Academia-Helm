@@ -1,28 +1,32 @@
 /**
  * ============================================================================
- * PEDAGOGY NOTIFICATION SERVICE — Envoi d'emails aux enseignants
+ * PEDAGOGY NOTIFICATION SERVICE — Récapitulatif profil enseignant par email
  * ============================================================================
  *
- * Service pour l'envoi d'emails de notification aux enseignants depuis le
- * module Pédagogie. Deux modes d'envoi :
+ * Envoi AUTOMATIQUE d'un email récapitulatif à un enseignant, sans aucune
+ * saisie utilisateur. Le service rassemble toutes les données pédagogiques
+ * de l'enseignant pour l'année en cours, puis génère et envoie l'email.
  *
- *   1. notifyTeacher()   → envoi individuel (bouton « Notifier » sur fiche)
- *   2. notifyTeachers()  → envoi groupé (bouton « Notifier tous » toolbar)
+ * Données rassemblées automatiquement :
+ *   1. Identité (Teacher : nom, matricule, email, niveau, langue, statut)
+ *   2. Paramètres académiques (TeacherAcademicProfile : maxWeeklyHours, isSemainier)
+ *   3. Habilitations (TeacherSubjectQualification → Subject)
+ *   4. Autorisations de niveau (TeacherLevelAuthorization → AcademicLevel)
+ *   5. Disponibilités hebdomadaires (TeacherAvailability)
+ *   6. Multigrade (MultigradeAssignment → classIds → Class.name)
+ *   7. Affectations par classe (TeacherClassAssignment → ClassSubject → Subject + AcademicClass)
+ *   8. Charge horaire globale (somme des weeklyHours des affectations)
  *
- * RÈGLES :
- *   - Chaque envoi passe par EmailService.sendCategorized() pour traçabilité
- *     (EmailLog avec category=PEDAGOGIE, subCategory=TEACHER_NOTIFICATION).
- *   - Les envois groupés sont SÉQUENTIELS (for...of + await) — pas de
- *     Promise.all — pour éviter le rate-limiting du provider Resend et
- *     pouvoir tracer chaque envoi individuellement dans les logs.
- *   - Si un envoi échoue (email invalide, provider HS), on log l'erreur et on
- *     continue vers le prochain enseignant — on ne bloque pas tout le batch.
- *   - Retourne un récapitulatif détaillé { sent, failed, skipped, results[] }
- *     que le frontend peut afficher à l'utilisateur.
+ * Deux modes d'envoi :
+ *   - notifyTeacher()  → individuel (1 enseignant)
+ *   - notifyTeachers() → groupé (N enseignants, séquentiel, anti rate-limiting)
+ *
+ * Traçabilité : chaque envoi crée un EmailLog (category=PEDAGOGIE,
+ * subCategory=TEACHER_PROFILE_SUMMARY, recipientType=ENSEIGNANT).
  *
  * DEPENDENCIES :
  *   - EmailService (CommunicationModule) — envoi réel via Resend/SMTP/mock
- *   - PrismaService — fetch Teacher (email, nom, niveau) + Tenant branding
+ *   - PrismaService — fetch Teacher + toutes les relations pédagogiques
  *   - ConfigService — APP_PUBLIC_URL pour le logo du tenant
  * ============================================================================
  */
@@ -32,19 +36,20 @@ import { ConfigService } from '@nestjs/config';
 import { EmailService } from '../communication/services/email.service';
 import { PrismaService } from '../database/prisma.service';
 import { TenantBranding } from '../hr/recruitment-email-templates';
-import { renderPedagogyNotificationEmail } from './pedagogy-email-templates';
+import {
+  renderTeacherProfileSummaryEmail,
+  TeacherProfileSummaryData,
+  AvailabilitySlot,
+  ClassAssignmentInfo,
+  MultigradeInfo,
+} from './pedagogy-email-templates';
 
 export interface NotifyTeacherParams {
   teacherId: string;
   tenantId: string;
-  subject: string;
-  message: string;
-  /** ID utilisateur qui déclenche l'envoi (pour audit) */
+  academicYearId?: string;
+  /** ID utilisateur qui déclenche l'envoi (pour audit EmailLog) */
   triggeredByUserId?: string;
-  /** Nom affiché de l'émetteur (ex: "M. Directeur") */
-  senderName?: string;
-  /** Fonction de l'émetteur (ex: "Directeur pédagogique") */
-  senderFunction?: string;
 }
 
 export interface NotifyBatchParams extends Omit<NotifyTeacherParams, 'teacherId'> {
@@ -80,12 +85,10 @@ export class PedagogyNotificationService {
 
   /**
    * Récupère le branding du tenant (logo + nom + contact) pour personnaliser
-   * l'email. Réutilise la même logique que RecruitmentNotificationService
-   * pour rester cohérent visuellement avec les autres emails de la plateforme.
+   * l'email. Réutilise la même logique que RecruitmentNotificationService.
    */
   async getTenantBranding(tenantId: string): Promise<TenantBranding> {
     try {
-      // 1. Identité école (logo + nom + contact)
       const profile = await this.prisma.tenantIdentityProfile.findFirst({
         where: { tenantId, isActive: true },
         select: {
@@ -97,7 +100,6 @@ export class PedagogyNotificationService {
         },
       });
 
-      // 2. Fallback sur le nom du tenant
       const tenant = !profile?.schoolName
         ? await this.prisma.tenant.findUnique({
             where: { id: tenantId },
@@ -107,9 +109,6 @@ export class PedagogyNotificationService {
 
       const schoolName = profile?.schoolName || tenant?.name || 'Établissement';
 
-      // Logo : utiliser l'URL publique servie par l'API
-      // (GET /api/tenants/:tenantId/logo) plutôt que le base64 — plus léger
-      // pour l'email et évite les blocages Gmail/Outlook sur les base64 >100KB.
       const apiBaseUrl =
         this.configService.get<string>('APP_PUBLIC_URL') ||
         'https://academia-helm-api.fly.dev';
@@ -139,12 +138,60 @@ export class PedagogyNotificationService {
   }
 
   /**
-   * Envoi individuel — utilisé par le bouton « Notifier » sur la fiche enseignant.
+   * Détermine l'année scolaire active pour le tenant. Si l'appelant fournit
+   * un academicYearId, on l'utilise. Sinon, on cherche l'année active.
    */
-  async notifyTeacher(params: NotifyTeacherParams): Promise<NotifyResult> {
-    const { teacherId, tenantId, subject, message } = params;
+  private async resolveAcademicYear(
+    tenantId: string,
+    academicYearId?: string,
+  ): Promise<{ id: string; label: string } | null> {
+    if (academicYearId) {
+      const y = await this.prisma.academicYear.findUnique({
+        where: { id: academicYearId },
+        select: { id: true, name: true, startDate: true, endDate: true },
+      });
+      if (y) {
+        return { id: y.id, label: y.name || this.formatYearLabel(y.startDate, y.endDate) };
+      }
+    }
+    // Fallback : année active du tenant
+    const active = await this.prisma.academicYear.findFirst({
+      where: { tenantId, isActive: true },
+      select: { id: true, name: true, startDate: true, endDate: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (active) {
+      return { id: active.id, label: active.name || this.formatYearLabel(active.startDate, active.endDate) };
+    }
+    return null;
+  }
 
-    // 1. Fetch teacher
+  private formatYearLabel(start: Date, end: Date): string {
+    try {
+      return `${start.getFullYear()}-${end.getFullYear()}`;
+    } catch {
+      return 'Année courante';
+    }
+  }
+
+  /**
+   * Récupère TOUTES les données pédagogiques d'un enseignant pour l'année
+   * donnée, et les met en forme pour le template d'email.
+   *
+   * ⚠️ Plusieurs requêtes Prisma sont nécessaires — c'est intentionnel :
+   *   - on évite les includes trop profonds qui cassent sur les anciennes
+   *     migrations Fly.io (ex: classId NULL sur class_subjects)
+   *   - on garde le contrôle sur chaque champ, et on peut tolérer les
+   *     données partielles (ex: AcademicClass sans name) sans faire crasher
+   *     l'envoi de l'email.
+   */
+  private async buildTeacherProfileData(
+    teacherId: string,
+    tenantId: string,
+    academicYearId: string,
+    academicYearLabel: string,
+  ): Promise<TeacherProfileSummaryData | null> {
+    // 1. Fetch teacher (avec schoolLevel + assignedLanguages)
     const teacher = await this.prisma.teacher.findFirst({
       where: { id: teacherId, tenantId },
       select: {
@@ -153,8 +200,197 @@ export class PedagogyNotificationService {
         lastName: true,
         email: true,
         matricule: true,
+        assignedLanguages: true,
+        status: true,
         schoolLevel: { select: { name: true } },
       },
+    });
+    if (!teacher) return null;
+
+    // 2. Fetch TeacherAcademicProfile (avec qualifications + authorizations + availabilities)
+    const profile = await this.prisma.teacherAcademicProfile.findFirst({
+      where: { teacherId, tenantId, academicYearId },
+      include: {
+        subjectQualifications: {
+          include: { subject: { select: { id: true, name: true, code: true } } },
+        },
+        levelAuthorizations: {
+          include: { level: { select: { id: true, name: true } } },
+        },
+        availabilities: {
+          select: { id: true, dayOfWeek: true, startTime: true, endTime: true },
+          orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
+        },
+      },
+    });
+
+    // 3. Fetch MultigradeAssignment(s)
+    const multigradeAssignments = await this.prisma.multigradeAssignment.findMany({
+      where: { teacherId, tenantId, academicYearId },
+      select: { id: true, classIds: true, language: true, notes: true, isActive: true },
+    });
+
+    // 4. Fetch TeacherClassAssignment(s) — avec ClassSubject + Subject + AcademicClass
+    const classAssignments = await this.prisma.teacherClassAssignment.findMany({
+      where: { teacherId, tenantId, academicYearId },
+      include: {
+        classSubject: {
+          include: {
+            subject: { select: { id: true, name: true, code: true } },
+            academicClass: { select: { id: true, name: true } },
+          },
+        },
+        physicalClass: { select: { id: true, name: true } },
+      },
+    });
+
+    // 5. Fetch branding (pour le template)
+    const branding = await this.getTenantBranding(tenantId);
+
+    // 6. ─── Construction des objets pour le template ────────────────────────
+
+    // Habilitations
+    const subjectQualifications = (profile?.subjectQualifications || []).map((sq) => ({
+      subjectCode: sq.subject?.code || undefined,
+      subjectName: sq.subject?.name || '—',
+      certified: sq.certified,
+    }));
+
+    // Autorisations de niveau
+    const levelAuthorizations = (profile?.levelAuthorizations || []).map((la) => ({
+      levelName: la.level?.name || '—',
+    }));
+
+    // Disponibilités
+    const availabilities: AvailabilitySlot[] = (profile?.availabilities || []).map((a) => ({
+      dayOfWeek: a.dayOfWeek,
+      startTime: a.startTime,
+      endTime: a.endTime,
+    }));
+
+    // Multigrade — résoudre les noms de classes physiques
+    const allClassIds: string[] = [];
+    for (const mg of multigradeAssignments) {
+      try {
+        const ids = (typeof mg.classIds === 'string'
+          ? JSON.parse(mg.classIds)
+          : mg.classIds) as string[];
+        if (Array.isArray(ids)) allClassIds.push(...ids);
+      } catch {
+        // ignore parse errors
+      }
+    }
+    const physicalClasses = allClassIds.length > 0
+      ? await this.prisma.class.findMany({
+          where: { id: { in: allClassIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const classIdToName = new Map(physicalClasses.map((c) => [c.id, c.name]));
+
+    const multigradeInfo: MultigradeInfo[] = multigradeAssignments.map((mg) => {
+      let ids: string[] = [];
+      try {
+        const parsed = typeof mg.classIds === 'string' ? JSON.parse(mg.classIds) : mg.classIds;
+        if (Array.isArray(parsed)) ids = parsed;
+      } catch {
+        // ignore
+      }
+      return {
+        classNames: ids.map((id) => classIdToName.get(id) || '—'),
+        language: mg.language,
+        notes: mg.notes,
+        isActive: mg.isActive,
+      };
+    });
+
+    // Affectations par classe
+    const classAssignmentInfos: ClassAssignmentInfo[] = classAssignments.map((a) => {
+      // Nom de classe : priorité à physicalClass.name, sinon academicClass.name
+      const className =
+        a.physicalClass?.name ||
+        a.classSubject?.academicClass?.name ||
+        '—';
+      return {
+        className,
+        subjectCode: a.classSubject?.subject?.code || '—',
+        subjectName: a.classSubject?.subject?.name || '—',
+        weeklyHours: a.classSubject?.weeklyHours || 0,
+      };
+    });
+
+    // Charge horaire totale = somme des weeklyHours des affectations
+    const totalAssignedHours = classAssignmentInfos.reduce(
+      (sum, a) => sum + (a.weeklyHours || 0),
+      0,
+    );
+
+    // Languages parsing robuste (assignedLanguages peut être array, string JSON, ou null)
+    let assignedLanguages: string[] = [];
+    try {
+      const raw = teacher.assignedLanguages as any;
+      if (Array.isArray(raw)) {
+        assignedLanguages = raw.map((x) => String(x));
+      } else if (typeof raw === 'string') {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) assignedLanguages = parsed.map((x: any) => String(x));
+        else assignedLanguages = [raw];
+      }
+    } catch {
+      // ignore
+    }
+
+    const teacherName = `${teacher.lastName} ${teacher.firstName}`.trim();
+
+    return {
+      branding,
+      academicYearLabel,
+      teacherName,
+      teacherFirstName: teacher.firstName || teacherName,
+      matricule: teacher.matricule || undefined,
+      email: teacher.email || undefined,
+      schoolLevelName: teacher.schoolLevel?.name || undefined,
+      assignedLanguages,
+      isActive: teacher.status === 'active',
+      maxWeeklyHours: profile?.maxWeeklyHours ?? 0,
+      isSemainier: profile?.isSemainier ?? false,
+      subjectQualifications,
+      levelAuthorizations,
+      availabilities,
+      multigradeAssignments: multigradeInfo,
+      classAssignments: classAssignmentInfos,
+      totalAssignedHours,
+    };
+  }
+
+  /**
+   * Envoi individuel — bouton « Notifier » sur fiche enseignant.
+   *
+   * Workflow :
+   *   1. Résoudre l'année scolaire active (ou utiliser celle fournie)
+   *   2. Builder le TeacherProfileSummaryData (fetch toutes les relations)
+   *   3. Renderer le HTML via renderTeacherProfileSummaryEmail
+   *   4. Envoyer via EmailService.sendCategorized (traçabilité EmailLog)
+   */
+  async notifyTeacher(params: NotifyTeacherParams): Promise<NotifyResult> {
+    const { teacherId, tenantId } = params;
+
+    // 1. Résoudre l'année scolaire
+    const academicYear = await this.resolveAcademicYear(tenantId, params.academicYearId);
+    if (!academicYear) {
+      return {
+        teacherId,
+        teacherName: '—',
+        email: '—',
+        success: false,
+        error: 'Aucune année scolaire active trouvée',
+      };
+    }
+
+    // 2. Fetch teacher (pour valider existence + email)
+    const teacher = await this.prisma.teacher.findFirst({
+      where: { id: teacherId, tenantId },
+      select: { id: true, firstName: true, lastName: true, email: true },
     });
 
     if (!teacher) {
@@ -180,28 +416,33 @@ export class PedagogyNotificationService {
       };
     }
 
-    // 2. Fetch branding
-    const branding = await this.getTenantBranding(tenantId);
+    // 3. Builder les données complètes
+    const data = await this.buildTeacherProfileData(
+      teacherId,
+      tenantId,
+      academicYear.id,
+      academicYear.label,
+    );
 
-    // 3. Render email
-    const { subject: emailSubject, html } = renderPedagogyNotificationEmail({
-      branding,
-      teacherName,
-      teacherFirstName: teacher.firstName || teacherName,
-      subject,
-      message,
-      matricule: teacher.matricule || undefined,
-      schoolLevelName: teacher.schoolLevel?.name || undefined,
-      senderName: params.senderName,
-      senderFunction: params.senderFunction,
-    });
+    if (!data) {
+      return {
+        teacherId,
+        teacherName,
+        email: teacherEmail,
+        success: false,
+        error: 'Impossible de charger les données pédagogiques',
+      };
+    }
 
-    // 4. Send via categorized (creates EmailLog for traceability)
+    // 4. Render email
+    const { subject, html } = renderTeacherProfileSummaryEmail(data);
+
+    // 5. Send via categorized (creates EmailLog for traceability)
     try {
       const result = await this.emailService.sendCategorized({
         tenantId,
         category: 'PEDAGOGIE',
-        subCategory: 'TEACHER_NOTIFICATION',
+        subCategory: 'TEACHER_PROFILE_SUMMARY',
         module: 'pedagogy',
         to: teacherEmail,
         toName: teacherName,
@@ -210,12 +451,9 @@ export class PedagogyNotificationService {
         fromEmail:
           this.configService.get<string>('EMAIL_FROM_NOREPLY') ||
           'noreply@academiahelm.com',
-        fromName: `Academia Helm — Pédagogie`,
-        subject: emailSubject,
+        fromName: `${data.branding.schoolName} — Pédagogie`,
+        subject,
         html,
-        // triggeredBy indique QUI a déclenché l'envoi (SYSTEM/STAFF/AUTOMATION).
-        // Pour une notification manuelle déclenchée par un utilisateur admin/direction,
-        // c'est 'STAFF'. L'ID utilisateur est passé via triggeredByUserId pour audit.
         triggeredBy: 'STAFF',
         triggeredByUserId: params.triggeredByUserId,
         relatedEntityId: teacher.id,
@@ -224,7 +462,7 @@ export class PedagogyNotificationService {
 
       if (result.success) {
         this.logger.log(
-          `📧 Email pédagogie envoyé à ${teacherEmail} (${teacherName}) — subject="${subject.substring(0, 60)}" — logId=${result.logId || 'N/A'}`,
+          `📧 Récap pédagogie envoyé à ${teacherEmail} (${teacherName}) — logId=${result.logId || 'N/A'}`,
         );
         return {
           teacherId,
@@ -235,7 +473,7 @@ export class PedagogyNotificationService {
         };
       } else {
         this.logger.error(
-          `📧 Email pédagogie FAILED pour ${teacherEmail} (${teacherName}): ${result.error}`,
+          `📧 Récap pédagogie FAILED pour ${teacherEmail} (${teacherName}): ${result.error}`,
         );
         return {
           teacherId,
@@ -247,7 +485,7 @@ export class PedagogyNotificationService {
       }
     } catch (err: any) {
       this.logger.error(
-        `📧 Email pédagogie threw pour ${teacherEmail} (${teacherName}): ${err.message}`,
+        `📧 Récap pédagogie threw pour ${teacherEmail} (${teacherName}): ${err.message}`,
         err.stack,
       );
       return {
@@ -261,7 +499,7 @@ export class PedagogyNotificationService {
   }
 
   /**
-   * Envoi groupé — utilisé par le bouton « Notifier tous » du toolbar.
+   * Envoi groupé — bouton « Notifier tous » du toolbar.
    *
    * ⚠️ Séquentiel (for...of + await) — PAS de Promise.all :
    *   - Resend rate-limite à ~2 emails/sec sur le plan gratuit
@@ -270,156 +508,76 @@ export class PedagogyNotificationService {
    *   - Et de retourner un récap détaillé au frontend
    */
   async notifyTeachers(params: NotifyBatchParams): Promise<BatchNotifyResult> {
-    const { teacherIds, tenantId, subject, message } = params;
+    const { teacherIds, tenantId } = params;
 
     if (!teacherIds || teacherIds.length === 0) {
-      return {
-        total: 0,
-        sent: 0,
-        failed: 0,
-        skipped: 0,
-        results: [],
-      };
+      return { total: 0, sent: 0, failed: 0, skipped: 0, results: [] };
     }
 
     this.logger.log(
-      `📧 Starting batch teacher notification: ${teacherIds.length} recipient(s), subject="${subject.substring(0, 60)}"`,
+      `📧 Batch teacher profile summary: ${teacherIds.length} recipient(s)`,
     );
 
-    // Fetch branding une seule fois pour tout le batch
-    const branding = await this.getTenantBranding(tenantId);
+    // Résoudre l'année scolaire une fois pour tout le batch
+    const academicYear = await this.resolveAcademicYear(tenantId, params.academicYearId);
+    if (!academicYear) {
+      return {
+        total: teacherIds.length,
+        sent: 0,
+        failed: teacherIds.length,
+        skipped: 0,
+        results: teacherIds.map((id) => ({
+          teacherId: id,
+          teacherName: '—',
+          email: '—',
+          success: false,
+          error: 'Aucune année scolaire active',
+        })),
+      };
+    }
 
-    // Fetch all teachers in one query (évite N+1)
-    const teachers = await this.prisma.teacher.findMany({
-      where: { id: { in: teacherIds }, tenantId },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        matricule: true,
-        schoolLevel: { select: { name: true } },
-      },
-    });
-
-    const teacherMap = new Map(teachers.map((t) => [t.id, t]));
     const results: NotifyResult[] = [];
     let sent = 0;
     let failed = 0;
     let skipped = 0;
 
     // Boucle séquentielle — un envoi à la fois
-    for (const teacherId of teacherIds) {
-      const teacher = teacherMap.get(teacherId);
+    for (let i = 0; i < teacherIds.length; i++) {
+      const teacherId = teacherIds[i];
 
-      if (!teacher) {
-        results.push({
-          teacherId,
-          teacherName: '—',
-          email: '—',
-          success: false,
-          error: 'Enseignant introuvable',
-        });
-        skipped++;
-        continue;
-      }
-
-      const teacherName = `${teacher.lastName} ${teacher.firstName}`.trim();
-      const teacherEmail = teacher.email?.trim();
-
-      if (!teacherEmail) {
-        results.push({
-          teacherId,
-          teacherName,
-          email: '—',
-          success: false,
-          error: 'Email non renseigné',
-        });
-        skipped++;
-        continue;
-      }
-
-      // Render email (chaque enseignant a son propre prénom/niveau)
-      const { subject: emailSubject, html } = renderPedagogyNotificationEmail({
-        branding,
-        teacherName,
-        teacherFirstName: teacher.firstName || teacherName,
-        subject,
-        message,
-        matricule: teacher.matricule || undefined,
-        schoolLevelName: teacher.schoolLevel?.name || undefined,
-        senderName: params.senderName,
-        senderFunction: params.senderFunction,
+      const result = await this.notifyTeacher({
+        teacherId,
+        tenantId,
+        academicYearId: academicYear.id,
+        triggeredByUserId: params.triggeredByUserId,
       });
 
-      try {
-        const result = await this.emailService.sendCategorized({
-          tenantId,
-          category: 'PEDAGOGIE',
-          subCategory: 'TEACHER_NOTIFICATION',
-          module: 'pedagogy',
-          to: teacherEmail,
-          toName: teacherName,
-          recipientType: 'ENSEIGNANT',
-          recipientId: teacher.id,
-          fromEmail:
-            this.configService.get<string>('EMAIL_FROM_NOREPLY') ||
-            'noreply@academiahelm.com',
-          fromName: `Academia Helm — Pédagogie`,
-          subject: emailSubject,
-          html,
-          triggeredBy: 'STAFF',
-          triggeredByUserId: params.triggeredByUserId,
-          relatedEntityId: teacher.id,
-          relatedEntityType: 'Teacher',
-        });
-
-        if (result.success) {
-          sent++;
-          this.logger.log(
-            `  ✅ [${sent}/${teacherIds.length}] ${teacherEmail} (${teacherName}) — logId=${result.logId || 'N/A'}`,
-          );
-          results.push({
-            teacherId,
-            teacherName,
-            email: teacherEmail,
-            success: true,
-            logId: result.logId,
-          });
-        } else {
-          failed++;
-          this.logger.error(
-            `  ❌ [${failed}] ${teacherEmail} (${teacherName}): ${result.error}`,
-          );
-          results.push({
-            teacherId,
-            teacherName,
-            email: teacherEmail,
-            success: false,
-            error: result.error || 'Échec d\'envoi (provider)',
-          });
-        }
-      } catch (err: any) {
+      if (result.success) {
+        sent++;
+        this.logger.log(
+          `  ✅ [${sent}/${teacherIds.length}] ${result.email} (${result.teacherName}) — logId=${result.logId || 'N/A'}`,
+        );
+      } else if (result.error && (result.error.includes('introuvable') || result.error.includes('Email non renseigné'))) {
+        skipped++;
+        this.logger.warn(
+          `  ⏭️ [${i + 1}/${teacherIds.length}] ${result.teacherName}: ${result.error}`,
+        );
+      } else {
         failed++;
         this.logger.error(
-          `  ❌ [${failed}] ${teacherEmail} (${teacherName}) threw: ${err.message}`,
+          `  ❌ [${i + 1}/${teacherIds.length}] ${result.email || result.teacherName}: ${result.error}`,
         );
-        results.push({
-          teacherId,
-          teacherName,
-          email: teacherEmail,
-          success: false,
-          error: err.message,
-        });
       }
+      results.push(result);
 
       // Petit délai (200ms) entre chaque envoi pour rester sous le rate-limit Resend
-      // (~2/sec sur le plan gratuit). Pas critique mais protège contre les 429.
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      if (i < teacherIds.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
     }
 
     this.logger.log(
-      `📧 Batch teacher notification terminé: ${sent}/${teacherIds.length} envoyé(s), ${failed} échec(s), ${skipped} ignoré(s)`,
+      `📧 Batch terminé: ${sent}/${teacherIds.length} envoyé(s), ${failed} échec(s), ${skipped} ignoré(s)`,
     );
 
     return {

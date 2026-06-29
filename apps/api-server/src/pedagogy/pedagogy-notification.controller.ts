@@ -1,28 +1,32 @@
 /**
  * ============================================================================
- * PEDAGOGY NOTIFICATION CONTROLLER — Endpoints d'envoi d'emails aux enseignants
+ * PEDAGOGY NOTIFICATION CONTROLLER — Récapitulatif automatique par email
  * ============================================================================
  *
  * Deux endpoints :
  *
  *   POST /api/pedagogy/teacher-notifications/individual
- *     Body: { teacherId, subject, message, senderName?, senderFunction? }
- *     → Envoie un email à UN enseignant (bouton « Notifier » sur fiche)
+ *     Body: { teacherId, academicYearId? }
+ *     → Envoie AUTOMATIQUEMENT un email récapitulatif à UN enseignant.
+ *       Le système fetch toutes ses données (profil, dispo, multigrade,
+ *       affectations, charge horaire) puis génère et envoie l'email.
  *
  *   POST /api/pedagogy/teacher-notifications/batch
- *     Body: { teacherIds: string[], subject, message, senderName?, senderFunction? }
- *     → Envoie un email à PLUSIEURS enseignants (bouton « Notifier tous »)
- *     → Séquentiel, retourne un récap détaillé { sent, failed, skipped, results[] }
+ *     Body: { teacherIds: string[], academicYearId? }
+ *     → Envoie le même type d'email à PLUSIEURS enseignants (séquentiel).
+ *       Retourne un récap détaillé { sent, failed, skipped, results[] }.
+ *
+ * IMPORTANT : Aucune saisie utilisateur. Pas de subject, pas de message —
+ * tout est généré automatiquement à partir des données DB du teacher.
  *
  * Sécurité :
  *   - JwtAuthGuard — authentification requise
- *   - @TenantId() — extrait le tenant du JWT, isolation multi-tenant
- *   - @CurrentUser() — extrait l'ID utilisateur pour audit EmailLog
+ *   - @TenantId() — isolation multi-tenant
+ *   - @CurrentUser() — ID utilisateur pour audit EmailLog
  *
  * Traçabilité :
- *   - Chaque envoi crée une entrée EmailLog (category=PEDAGOGIE,
- *     subCategory=TEACHER_NOTIFICATION) via EmailService.sendCategorized()
- *   - Le récapitulatif retourné contient le logId de chaque envoi
+ *   - Chaque envoi crée un EmailLog (category=PEDAGOGIE,
+ *     subCategory=TEACHER_PROFILE_SUMMARY, recipientType=ENSEIGNANT)
  * ============================================================================
  */
 
@@ -42,18 +46,13 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 class NotifyIndividualDto {
   teacherId!: string;
-  subject!: string;
-  message!: string;
-  senderName?: string;
-  senderFunction?: string;
+  /** Optionnel — si non fourni, utilise l'année scolaire active du tenant */
+  academicYearId?: string;
 }
 
 class NotifyBatchDto {
   teacherIds!: string[];
-  subject!: string;
-  message!: string;
-  senderName?: string;
-  senderFunction?: string;
+  academicYearId?: string;
 }
 
 @Controller('pedagogy/teacher-notifications')
@@ -67,6 +66,8 @@ export class PedagogyNotificationController {
 
   /**
    * Envoi individuel — bouton « Notifier » sur fiche enseignant.
+   * Le système rassemble TOUTES les données pédagogiques du teacher puis
+   * génère et envoie l'email automatiquement.
    */
   @Post('individual')
   @HttpCode(HttpStatus.OK)
@@ -76,24 +77,21 @@ export class PedagogyNotificationController {
     @Body() dto: NotifyIndividualDto,
   ) {
     this.logger.log(
-      `POST /teacher-notifications/individual — teacherId=${dto.teacherId}, subject="${dto.subject?.substring(0, 60)}", triggeredBy=${user?.id || 'SYSTEM'}`,
+      `POST /teacher-notifications/individual — teacherId=${dto.teacherId}, triggeredBy=${user?.id || 'SYSTEM'}`,
     );
 
-    if (!dto.teacherId || !dto.subject || !dto.message) {
+    if (!dto.teacherId) {
       return {
         success: false,
-        error: 'Paramètres manquants : teacherId, subject, message sont requis',
+        error: 'teacherId est requis',
       };
     }
 
     const result = await this.notificationService.notifyTeacher({
       teacherId: dto.teacherId,
       tenantId,
-      subject: dto.subject,
-      message: dto.message,
+      academicYearId: dto.academicYearId,
       triggeredByUserId: user?.id,
-      senderName: dto.senderName,
-      senderFunction: dto.senderFunction,
     });
 
     return {
@@ -104,9 +102,7 @@ export class PedagogyNotificationController {
 
   /**
    * Envoi groupé — bouton « Notifier tous » du toolbar.
-   *
-   * Retourne un récapitulatif détaillé pour que le frontend puisse afficher
-   * « X envoyés, Y échecs, Z ignorés » avec la liste des erreurs.
+   * Retourne un récapitulatif détaillé pour affichage frontend.
    */
   @Post('batch')
   @HttpCode(HttpStatus.OK)
@@ -116,7 +112,7 @@ export class PedagogyNotificationController {
     @Body() dto: NotifyBatchDto,
   ) {
     this.logger.log(
-      `POST /teacher-notifications/batch — ${dto.teacherIds?.length || 0} recipient(s), subject="${dto.subject?.substring(0, 60)}", triggeredBy=${user?.id || 'SYSTEM'}`,
+      `POST /teacher-notifications/batch — ${dto.teacherIds?.length || 0} recipient(s), triggeredBy=${user?.id || 'SYSTEM'}`,
     );
 
     if (!dto.teacherIds || dto.teacherIds.length === 0) {
@@ -126,21 +122,11 @@ export class PedagogyNotificationController {
       };
     }
 
-    if (!dto.subject || !dto.message) {
-      return {
-        success: false,
-        error: 'Paramètres manquants : subject, message sont requis',
-      };
-    }
-
     const result = await this.notificationService.notifyTeachers({
       teacherIds: dto.teacherIds,
       tenantId,
-      subject: dto.subject,
-      message: dto.message,
+      academicYearId: dto.academicYearId,
       triggeredByUserId: user?.id,
-      senderName: dto.senderName,
-      senderFunction: dto.senderFunction,
     });
 
     return {

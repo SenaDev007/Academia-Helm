@@ -41,6 +41,24 @@ async function forward(request: NextRequest, pathSegments: string[], method: str
 
   try {
     const response = await fetch(url.toString(), options);
+
+    // ⚠️ Si la réponse est un PDF (Content-Type: application/pdf), on retourne
+    // le buffer binaire TEL QUEL — ne PAS faire JSON.parse (ça corromprait
+    // le binaire). Le frontend reçoit un blob téléchargeable.
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/pdf')) {
+      const arrayBuffer = await response.arrayBuffer();
+      return new NextResponse(arrayBuffer, {
+        status: response.status,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': response.headers.get('content-disposition') || 'attachment',
+          'Content-Length': arrayBuffer.byteLength.toString(),
+          'Cache-Control': 'no-store',
+        },
+      });
+    }
+
     const text = await response.text();
 
     if (!text.trim()) {

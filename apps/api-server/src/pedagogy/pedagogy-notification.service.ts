@@ -503,6 +503,78 @@ export class PedagogyNotificationService {
   }
 
   /**
+   * Génère le PDF récapitulatif d'un enseignant pour téléchargement direct.
+   *
+   * Utilisé par le bouton « Télécharger PDF » sur la fiche enseignant.
+   * Contrairement à notifyTeacher(), cette méthode n'envoie PAS d'email —
+   * elle retourne juste le buffer PDF pour que le frontend le propose en
+   * téléchargement.
+   *
+   * Workflow :
+   *   1. Résoudre l'année scolaire (fournie ou active)
+   *   2. Builder le TeacherProfileSummaryData (fetch toutes les relations)
+   *   3. Générer le PDF via PedagogyPdfDocumentService
+   *   4. Retourner le buffer + le nom de fichier suggéré
+   */
+  async generatePdfForDownload(
+    teacherId: string,
+    tenantId: string,
+    academicYearId?: string,
+  ): Promise<{ buffer: Buffer; filename: string } | { error: string }> {
+    // 1. Résoudre l'année scolaire
+    const academicYear = await this.resolveAcademicYear(tenantId, academicYearId);
+    if (!academicYear) {
+      return { error: 'Aucune année scolaire active trouvée' };
+    }
+
+    // 2. Fetch teacher (pour valider existence)
+    const teacher = await this.prisma.teacher.findFirst({
+      where: { id: teacherId, tenantId },
+      select: { id: true, firstName: true, lastName: true, email: true },
+    });
+
+    if (!teacher) {
+      return { error: 'Enseignant introuvable' };
+    }
+
+    const teacherName = `${teacher.lastName} ${teacher.firstName}`.trim();
+
+    // 3. Builder les données complètes
+    const data = await this.buildTeacherProfileData(
+      teacherId,
+      tenantId,
+      academicYear.id,
+      academicYear.label,
+    );
+
+    if (!data) {
+      return { error: 'Impossible de charger les données pédagogiques' };
+    }
+
+    // 4. Générer le PDF
+    try {
+      const buffer = await this.pdfDocumentService.generateTeacherProfilePdf(data);
+
+      // Nom de fichier sanitizé
+      const filename = `Recap-pedagogique-${teacher.lastName}-${teacher.firstName}-${academicYear.label}.pdf`
+        .replace(/\s+/g, '-')
+        .replace(/[^a-zA-Z0-9\-_.]/g, '');
+
+      this.logger.log(
+        `📄 PDF download generated for ${teacherName} — ${Math.round(buffer.length / 1024)}KB — filename: ${filename}`,
+      );
+
+      return { buffer, filename };
+    } catch (err: any) {
+      this.logger.error(
+        `📄 PDF download failed for ${teacherName}: ${err.message}`,
+        err.stack,
+      );
+      return { error: `Échec génération PDF: ${err.message}` };
+    }
+  }
+
+  /**
    * Envoi individuel — bouton « Notifier » sur fiche enseignant.
    *
    * Workflow :

@@ -33,12 +33,17 @@
 import {
   Controller,
   Post,
+  Get,
   Body,
+  Param,
+  Query,
+  Res,
   UseGuards,
   HttpCode,
   HttpStatus,
   Logger,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { IsString, IsArray, IsOptional } from 'class-validator';
 import { PedagogyNotificationService } from './pedagogy-notification.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -153,5 +158,50 @@ export class PedagogyNotificationController {
       success: result.failed === 0,
       result,
     };
+  }
+
+  /**
+   * Téléchargement PDF — bouton « Télécharger PDF » sur fiche enseignant.
+   *
+   * Génère le PDF récapitulatif et le retourne directement en flux binaire
+   * (Content-Type: application/pdf) pour que le navigateur propose le
+   * téléchargement.
+   *
+   * Le frontend n'a qu'à faire un window.open() ou un <a download> vers
+   * cette URL — pas de parsing JSON côté client.
+   */
+  @Get('pdf/:teacherId')
+  async downloadPdf(
+    @TenantId() tenantId: string,
+    @Param('teacherId') teacherId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Res() res: Response,
+  ) {
+    this.logger.log(
+      `GET /teacher-notifications/pdf/${teacherId} — academicYearId=${academicYearId || 'auto'}`,
+    );
+
+    const result = await this.notificationService.generatePdfForDownload(
+      teacherId,
+      tenantId,
+      academicYearId,
+    );
+
+    if ('error' in result) {
+      // Erreur → retourner JSON avec status 400 pour que le frontend puisse
+      // afficher le message d'erreur
+      return res.status(400).json({ error: result.error });
+    }
+
+    // Succès → streamer le buffer PDF avec les bons en-têtes
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${encodeURIComponent(result.filename)}"`,
+    );
+    res.setHeader('Content-Length', result.buffer.length.toString());
+    res.setHeader('Cache-Control', 'no-store');
+
+    return res.send(result.buffer);
   }
 }

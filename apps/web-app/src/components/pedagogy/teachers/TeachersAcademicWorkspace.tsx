@@ -40,6 +40,7 @@ import {
   Copy,
   Loader2,
   Mail,
+  Download,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -319,6 +320,9 @@ export default function TeachersAcademicWorkspace() {
   const [batchNotifying, setBatchNotifying] = useState(false);
   // Modal de confirmation professionnel pour l'envoi groupé (remplace window.confirm)
   const [showBatchConfirmModal, setShowBatchConfirmModal] = useState(false);
+  // PDF download — spinner par teacher (au cas où l'utilisateur clique
+  // plusieurs fois avant que le premier téléchargement ne démarre)
+  const [downloadingPdfTeacherId, setDownloadingPdfTeacherId] = useState<string | null>(null);
 
   // --- Loaders ---
 
@@ -997,6 +1001,89 @@ export default function TeachersAcademicWorkspace() {
     }
   };
 
+  /**
+   * Téléchargement du PDF récapitulatif pour un enseignant.
+   *
+   * Appelle le backend GET /api/pedagogy/teacher-notifications/pdf/:teacherId
+   * qui génère le PDF à la volée et le retourne en binaire (application/pdf).
+   *
+   * On ne peut pas utiliser pedagogyFetch (qui parse en JSON) — on doit fetch
+   * directement et lire le blob pour déclencher le téléchargement.
+   */
+  const handleDownloadPdf = async (teacherId: string) => {
+    if (!teacherId || downloadingPdfTeacherId) return;
+    if (!academicYear?.id) {
+      toast({
+        title: 'Erreur',
+        description: "Aucune année scolaire active.",
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setDownloadingPdfTeacherId(teacherId);
+    try {
+      const url = `/api/pedagogy/teacher-notifications/pdf/${teacherId}?academicYearId=${encodeURIComponent(academicYear.id)}`;
+      const response = await fetch(url, {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        // Tenter de parser l'erreur JSON (le backend retourne {error: "..."} en 400)
+        let errorMsg = `Erreur HTTP ${response.status}`;
+        try {
+          const errData = await response.json();
+          errorMsg = errData.error || errorMsg;
+        } catch {
+          // Pas de JSON — erreur générique
+        }
+        throw new Error(errorMsg);
+      }
+
+      // Lire le blob et déclencher le téléchargement
+      const blob = await response.blob();
+
+      // Extraire le nom de fichier depuis Content-Disposition (si présent)
+      const contentDisposition = response.headers.get('content-disposition') || '';
+      let filename = 'Recap-pedagogique.pdf';
+      const match = /filename="?([^";]+)"?/.exec(contentDisposition);
+      if (match) {
+        try {
+          filename = decodeURIComponent(match[1]);
+        } catch {
+          filename = match[1];
+        }
+      }
+
+      // Créer un URL temporaire et déclencher le download
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      // Libérer la mémoire après un court délai
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+
+      toast({
+        title: '✅ PDF téléchargé',
+        description: `Fichier "${filename}" (${Math.round(blob.size / 1024)}KB) téléchargé avec succès.`,
+      });
+    } catch (e: any) {
+      toast({
+        title: 'Erreur téléchargement PDF',
+        description: e.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setDownloadingPdfTeacherId(null);
+    }
+  };
+
   const handleAddAvailability = async (data: any) => {
     if (!activeProfile || !academicYear?.id) return;
     try {
@@ -1286,20 +1373,36 @@ export default function TeachersAcademicWorkspace() {
                           Paramètres Profil
                         </button>
                         {selectedTeacherId && (
-                          <button
-                            onClick={() => handleNotifyIndividual(selectedTeacherId)}
-                            disabled={notifyingTeacherId === selectedTeacherId || batchNotifying}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white shadow-sm transition hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                            style={{ backgroundColor: ACCENT }}
-                            title="Envoyer un email récapitulatif à cet enseignant (profil, disponibilités, affectations, charge horaire)"
-                          >
-                            {notifyingTeacherId === selectedTeacherId ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <Mail className="w-3.5 h-3.5" />
-                            )}
-                            {notifyingTeacherId === selectedTeacherId ? 'Envoi...' : 'Notifier'}
-                          </button>
+                          <>
+                            <button
+                              onClick={() => handleDownloadPdf(selectedTeacherId)}
+                              disabled={downloadingPdfTeacherId === selectedTeacherId}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white shadow-sm transition hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                              style={{ backgroundColor: PRIMARY }}
+                              title="Télécharger le PDF récapitulatif (profil, disponibilités, affectations, charge horaire)"
+                            >
+                              {downloadingPdfTeacherId === selectedTeacherId ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Download className="w-3.5 h-3.5" />
+                              )}
+                              {downloadingPdfTeacherId === selectedTeacherId ? 'PDF...' : 'PDF'}
+                            </button>
+                            <button
+                              onClick={() => handleNotifyIndividual(selectedTeacherId)}
+                              disabled={notifyingTeacherId === selectedTeacherId || batchNotifying}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white shadow-sm transition hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                              style={{ backgroundColor: ACCENT }}
+                              title="Envoyer un email récapitulatif à cet enseignant (profil, disponibilités, affectations, charge horaire)"
+                            >
+                              {notifyingTeacherId === selectedTeacherId ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Mail className="w-3.5 h-3.5" />
+                              )}
+                              {notifyingTeacherId === selectedTeacherId ? 'Envoi...' : 'Notifier'}
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>

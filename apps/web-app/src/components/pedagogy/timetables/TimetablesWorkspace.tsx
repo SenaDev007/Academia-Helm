@@ -231,9 +231,15 @@ export default function TimetablesWorkspace() {
 
 function ConfigTab({ config, loading, schoolLevelId, academicYearId, onSaved }: any) {
   const { toast } = useToast();
+  const { availableLevels } = useSchoolLevel();
   const [schoolDays, setSchoolDays] = useState<number[]>([1,2,3,4,5]);
   const [timeBlocks, setTimeBlocks] = useState<any[]>(DEFAULT_TIME_BLOCKS);
   const [saving, setSaving] = useState(false);
+
+  // États pour la duplication vers d'autres niveaux
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [duplicateTargetIds, setDuplicateTargetIds] = useState<Set<string>>(new Set());
+  const [duplicating, setDuplicating] = useState(false);
 
   useEffect(() => {
     if (config) {
@@ -249,7 +255,19 @@ function ConfigTab({ config, loading, schoolLevelId, academicYearId, onSaved }: 
   const removeBlock = (i: number) => setTimeBlocks(prev => prev.filter((_, idx) => idx !== i));
   const updateBlock = (i: number, field: string, value: string) => setTimeBlocks(prev => prev.map((b, idx) => idx === i ? { ...b, [field]: value } : b));
 
+  // ⚠️ Détecter si l'utilisateur a sélectionné "Tous les niveaux" (id='ALL')
+  // dans le header. La config EDT est PAR NIVEAU SCOLAIRE — il faut choisir
+  // un niveau spécifique (Maternelle, Primaire, Secondaire) pour configurer.
+  const isAllLevels = !schoolLevelId || schoolLevelId === 'ALL';
+
+  // Niveaux réels (sans l'option virtuelle 'ALL')
+  const realLevels = (availableLevels || []).filter((l: any) => l.id !== 'ALL' && l.isActive !== false);
+
   const handleSave = async () => {
+    if (isAllLevels) {
+      toast({ title: 'Niveau requis', description: 'Sélectionnez un niveau scolaire spécifique dans le header (Maternelle, Primaire ou Secondaire) pour configurer les créneaux.', variant: 'destructive' });
+      return;
+    }
     if (timeBlocks.find(b => !b.start || !b.end)) { toast({ title: 'Créneau incomplet', variant: 'destructive' }); return; }
     if (schoolDays.length === 0) { toast({ title: 'Aucun jour sélectionné', variant: 'destructive' }); return; }
     setSaving(true);
@@ -260,10 +278,87 @@ function ConfigTab({ config, loading, schoolLevelId, academicYearId, onSaved }: 
     } catch (e: any) { toast({ title: 'Erreur', description: e?.message, variant: 'destructive' }); } finally { setSaving(false); }
   };
 
+  const handleDuplicate = async () => {
+    if (duplicateTargetIds.size === 0) {
+      toast({ title: 'Aucune cible', description: 'Sélectionnez au moins un niveau destinataire.', variant: 'destructive' });
+      return;
+    }
+    setDuplicating(true);
+    try {
+      const result = await steFetch<any>('/api/timetable-engine/config/duplicate', {
+        method: 'POST',
+        body: {
+          sourceSchoolLevelId: schoolLevelId,
+          targetSchoolLevelIds: Array.from(duplicateTargetIds),
+          academicYearId,
+        },
+      });
+      toast({
+        title: '✅ Duplication terminée',
+        description: `${result.copied} niveau(x) mis à jour${result.failed ? `, ${result.failed} échec(s)` : ''}.`,
+      });
+      setShowDuplicateModal(false);
+      setDuplicateTargetIds(new Set());
+    } catch (e: any) {
+      toast({ title: 'Erreur duplication', description: e?.message, variant: 'destructive' });
+    } finally {
+      setDuplicating(false);
+    }
+  };
+
   if (loading) return <div className="flex items-center justify-center py-16"><Loader2 className="w-5 h-5 animate-spin text-blue-600" /><span className="ml-2 text-sm text-slate-500">Chargement…</span></div>;
+
+  // ─── Cas spécial : "Tous les niveaux" sélectionné dans le header ───────
+  // La config EDT est PAR NIVEAU — on ne peut pas configurer "tous les niveaux"
+  // en même temps. On affiche un message clair + les niveaux disponibles.
+  if (isAllLevels) {
+    return (
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center">
+        <AlertCircle className="w-10 h-10 text-amber-500 mx-auto mb-3" />
+        <h3 className="text-base font-bold text-amber-800 mb-2">Sélectionnez un niveau scolaire</h3>
+        <p className="text-sm text-amber-700 mb-4 max-w-md mx-auto">
+          La configuration des jours et créneaux horaires est <strong>spécifique à chaque niveau scolaire</strong> (Maternelle, Primaire, Secondaire).
+          Sélectionnez un niveau précis dans le sélecteur en haut de la page pour configurer ses créneaux.
+        </p>
+        <div className="flex flex-wrap justify-center gap-2">
+          {realLevels.map((level: any) => (
+            <a
+              key={level.id}
+              href={`/app/pedagogy/timetables?level=${level.id}`}
+              className="px-4 py-2 bg-white border border-amber-300 rounded-lg text-sm font-semibold text-amber-800 hover:bg-amber-100 transition"
+            >
+              {level.label || level.code}
+            </a>
+          ))}
+        </div>
+        <p className="text-[11px] text-amber-600 mt-4 italic">
+          💡 Astuce : configurez un niveau, puis utilisez « Dupliquer vers… » pour copier les créneaux vers les autres niveaux.
+        </p>
+      </div>
+    );
+  }
+
+  // Nom du niveau actuellement configuré (pour l'affichage)
+  const currentLevelName = realLevels.find((l: any) => l.id === schoolLevelId)?.label
+    || realLevels.find((l: any) => l.id === schoolLevelId)?.code
+    || schoolLevelId;
+
+  // Autres niveaux (cibles potentielles pour la duplication)
+  const otherLevels = realLevels.filter((l: any) => l.id !== schoolLevelId);
 
   return (
     <div className="space-y-5">
+      {/* Bandeau d'info — niveau en cours de configuration */}
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center gap-2">
+        <Info className="w-4 h-4 text-blue-600 shrink-0" />
+        <p className="text-xs text-blue-800">
+          Configuration des créneaux pour le niveau : <strong>{currentLevelName}</strong>
+          {otherLevels.length > 0 && (
+            <> · Pour appliquer les mêmes créneaux à d'autres niveaux, cliquez sur « Dupliquer vers… »</>
+          )}
+        </p>
+      </div>
+
       <div className="bg-slate-50 rounded-xl border border-slate-200 p-5">
         <div className="flex items-center gap-2 mb-3"><Calendar className="w-4 h-4 text-blue-600" /><h3 className="text-sm font-bold text-slate-800">Jours d'école</h3></div>
         <div className="flex flex-wrap gap-2">
@@ -294,8 +389,6 @@ function ConfigTab({ config, loading, schoolLevelId, academicYearId, onSaved }: 
                   value={isCustomType ? '__CUSTOM__' : block.type}
                   onChange={e => {
                     if (e.target.value === '__CUSTOM__') {
-                      // Passer en mode édition libre — on garde l'ancien type comme valeur initiale
-                      // ou on met une chaîne vide si c'était un type prédéfini
                       updateBlock(i, 'type', isCustomType ? block.type : '');
                     } else {
                       updateBlock(i, 'type', e.target.value);
@@ -312,7 +405,6 @@ function ConfigTab({ config, loading, schoolLevelId, academicYearId, onSaved }: 
                   <option value="ASSEMBLY">Assemblée</option>
                   <option value="__CUSTOM__">Personnalisé…</option>
                 </select>
-                {/* Champ texte libre affiché uniquement si type personnalisé */}
                 {isCustomType && (
                   <input
                     type="text"
@@ -350,12 +442,104 @@ function ConfigTab({ config, loading, schoolLevelId, academicYearId, onSaved }: 
           💡 Les créneaux de type « Cours » sont planifiés par le moteur. Les autres types (Pause, Déjeuner, Récréation, Étude, Activité, Assemblée, ou personnalisé) sont des pauses non planifiables insérées dans la journée.
         </p>
       </div>
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between gap-2">
+        {/* Bouton Dupliquer vers d'autres niveaux — visible seulement si
+            il y a d'autres niveaux à cibler */}
+        {otherLevels.length > 0 && (
+          <button
+            onClick={() => { setDuplicateTargetIds(new Set()); setShowDuplicateModal(true); }}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-600 hover:bg-slate-700 text-white rounded-xl text-sm font-semibold shadow-md transition"
+          >
+            <Layers className="w-4 h-4" /> Dupliquer vers…
+          </button>
+        )}
         <button onClick={handleSave} disabled={saving}
-          className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-sm font-semibold shadow-md">
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-sm font-semibold shadow-md ml-auto">
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />} Enregistrer
         </button>
       </div>
+
+      {/* Modal: Dupliquer vers d'autres niveaux */}
+      {showDuplicateModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => !duplicating && setShowDuplicateModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-slate-100 sticky top-0 bg-white">
+              <div className="flex items-center gap-2">
+                <Layers className="w-5 h-5 text-blue-600" />
+                <h3 className="font-bold text-slate-900 text-sm">Dupliquer vers d'autres niveaux</h3>
+              </div>
+              <button onClick={() => !duplicating && setShowDuplicateModal(false)} className="text-slate-400 hover:text-slate-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start gap-2">
+                <Info className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+                <p className="text-xs text-blue-800">
+                  Les créneaux actuellement configurés pour <strong>{currentLevelName}</strong> seront copiés vers les niveaux sélectionnés ci-dessous. Les configurations existantes des niveaux cibles seront <strong>remplacées</strong>.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                {otherLevels.map((level: any) => {
+                  const isSelected = duplicateTargetIds.has(level.id);
+                  return (
+                    <button
+                      key={level.id}
+                      onClick={() => {
+                        setDuplicateTargetIds(prev => {
+                          const next = new Set(prev);
+                          if (next.has(level.id)) next.delete(level.id);
+                          else next.add(level.id);
+                          return next;
+                        });
+                      }}
+                      className={cn(
+                        'w-full flex items-center gap-3 p-3 rounded-lg border transition-all text-left',
+                        isSelected
+                          ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-200'
+                          : 'border-slate-200 hover:border-slate-400 hover:bg-slate-50',
+                      )}
+                    >
+                      <div className={cn(
+                        'w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0',
+                        isSelected ? 'bg-blue-600 border-blue-600' : 'border-slate-300',
+                      )}>
+                        {isSelected && <CheckCircle className="w-4 h-4 text-white" />}
+                      </div>
+                      <div>
+                        <p className="font-bold text-slate-800 text-sm">{level.label || level.code}</p>
+                        {level.code && level.code !== level.label && (
+                          <p className="text-[10px] text-slate-400 font-medium uppercase">{level.code}</p>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="p-4 border-t border-slate-100 flex justify-end gap-2 sticky bottom-0 bg-white">
+              <button
+                onClick={() => { setShowDuplicateModal(false); setDuplicateTargetIds(new Set()); }}
+                disabled={duplicating}
+                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-xs font-bold disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleDuplicate}
+                disabled={duplicating || duplicateTargetIds.size === 0}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition bg-blue-600 hover:bg-blue-700"
+              >
+                {duplicating ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Duplication…</>
+                ) : (
+                  <><Layers className="w-3.5 h-3.5" /> Dupliquer vers {duplicateTargetIds.size} niveau(x)</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

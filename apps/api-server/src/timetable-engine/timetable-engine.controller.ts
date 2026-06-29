@@ -32,6 +32,27 @@ export class TimetableEngineController {
     return this.service.updateConfig(tid, body.schoolLevelId, body.academicYearId, body);
   }
 
+  /**
+   * Duplique la configuration d'un niveau scolaire vers un ou plusieurs
+   * autres niveaux. Permet à l'utilisateur de configurer les créneaux une
+   * fois puis de les copier vers les autres niveaux.
+   *
+   * Body: { sourceSchoolLevelId, targetSchoolLevelIds: string[], academicYearId }
+   */
+  @Post('config/duplicate')
+  async duplicateConfig(@GetTenant() tenant: any, @TenantId() fallback: string, @Body() body: any) {
+    const tid = resolveTid(tenant, fallback);
+    if (!body.sourceSchoolLevelId || !body.targetSchoolLevelIds || !body.academicYearId) {
+      throw new BadRequestException('sourceSchoolLevelId, targetSchoolLevelIds et academicYearId sont requis');
+    }
+    return this.service.duplicateConfig(
+      tid,
+      body.sourceSchoolLevelId,
+      body.targetSchoolLevelIds,
+      body.academicYearId,
+    );
+  }
+
   @Get('teachers')
   async getTeachers(@GetTenant() tenant: any, @TenantId() fallback: string, @Query('schoolLevelId') schoolLevelId?: string) {
     const tid = resolveTid(tenant, fallback);

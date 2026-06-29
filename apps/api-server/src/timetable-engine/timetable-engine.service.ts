@@ -328,6 +328,106 @@ export class TimetableEngineService {
     return this.getConfig(tenantId, schoolLevelId, academicYearId);
   }
 
+  /**
+   * Duplique la configuration d'un niveau scolaire source vers un ou
+   * plusieurs niveaux cibles. Permet à l'utilisateur de configurer les
+   * créneaux une fois pour un niveau (ex: Maternelle) puis de les copier
+   * vers les autres niveaux (Primaire, Secondaire) sans tout ressaisir.
+   *
+   * @param tenantId
+   * @param sourceSchoolLevelId — niveau dont on veut copier la config
+   * @param targetSchoolLevelIds — tableaux des niveaux destinataires
+   * @param academicYearId
+   * @returns récapitulatif { copied, failed, results[] }
+   */
+  async duplicateConfig(
+    tenantId: string,
+    sourceSchoolLevelId: string,
+    targetSchoolLevelIds: string[],
+    academicYearId: string,
+  ): Promise<{ copied: number; failed: number; skipped: number; results: any[] }> {
+    await this.ensureTablesExist();
+
+    // 1. Valider la source
+    await this.validateForeignKeys(tenantId, sourceSchoolLevelId, academicYearId);
+
+    // 2. Récupérer la config source
+    const sourceConfig = await this.getConfig(tenantId, sourceSchoolLevelId, academicYearId);
+    if (!sourceConfig) {
+      throw new BadRequestException(
+        `Aucune configuration trouvée pour le niveau source. Configurez d'abord les créneaux pour ce niveau, puis dupliquez.`,
+      );
+    }
+
+    const results: any[] = [];
+    let copied = 0;
+    let failed = 0;
+    let skipped = 0;
+
+    // 3. Pour chaque cible, valider + écrire (séquentiel pour clarté des logs)
+    for (const targetLevelId of targetSchoolLevelIds) {
+      // Ignorer si la cible == source (pas de sens)
+      if (targetLevelId === sourceSchoolLevelId) {
+        results.push({
+          schoolLevelId: targetLevelId,
+          success: false,
+          error: 'Identique au niveau source (ignoré)',
+        });
+        skipped++;
+        continue;
+      }
+
+      // Valider la cible
+      try {
+        await this.validateForeignKeys(tenantId, targetLevelId, academicYearId);
+      } catch (err: any) {
+        results.push({
+          schoolLevelId: targetLevelId,
+          success: false,
+          error: err.message,
+        });
+        failed++;
+        continue;
+      }
+
+      // Écrire la config sur la cible (updateConfig gère INSERT ou UPDATE)
+      try {
+        await this.updateConfig(tenantId, targetLevelId, academicYearId, {
+          schoolDays: typeof sourceConfig.schoolDays === 'string'
+            ? JSON.parse(sourceConfig.schoolDays)
+            : sourceConfig.schoolDays,
+          timeBlocks: typeof sourceConfig.timeBlocks === 'string'
+            ? JSON.parse(sourceConfig.timeBlocks)
+            : sourceConfig.timeBlocks,
+          dayStartTime: sourceConfig.dayStartTime,
+          dayEndTime: sourceConfig.dayEndTime,
+          defaultSessionDuration: sourceConfig.defaultSessionDuration,
+          lunchBreakStart: sourceConfig.lunchBreakStart,
+          lunchBreakEnd: sourceConfig.lunchBreakEnd,
+          saturdayEnabled: sourceConfig.saturdayEnabled,
+          eveningEnabled: sourceConfig.eveningEnabled,
+          eveningStart: sourceConfig.eveningStart,
+          eveningEnd: sourceConfig.eveningEnd,
+        });
+        results.push({ schoolLevelId: targetLevelId, success: true });
+        copied++;
+      } catch (err: any) {
+        results.push({
+          schoolLevelId: targetLevelId,
+          success: false,
+          error: err.message,
+        });
+        failed++;
+      }
+    }
+
+    this.logger.log(
+      `Config duplicated from ${sourceSchoolLevelId} to ${targetSchoolLevelIds.length} target(s) — ${copied} OK, ${failed} failed, ${skipped} skipped`,
+    );
+
+    return { copied, failed, skipped, results };
+  }
+
   // ═══ AVAILABILITY ═══
 
   async getAvailability(tenantId: string, teacherId?: string) {

@@ -54,6 +54,17 @@ export interface AvailabilitySlot {
   endTime: string;
 }
 
+/**
+ * Représente un créneau DISPONIBLE (calculé par complément des indisponibilités).
+ * Contient le nom du jour pour affichage direct.
+ */
+export interface AvailableSlot {
+  dayOfWeek: number;
+  dayLabel: string;
+  startTime: string;
+  endTime: string;
+}
+
 export interface SubjectQualificationInfo {
   subjectCode?: string;
   subjectName: string;
@@ -106,7 +117,21 @@ export interface TeacherProfileSummaryData {
   levelAuthorizations: LevelAuthorizationInfo[];
 
   // Disponibilités
+  // Disponibilités —⚠️ Les enregistrements DB dans `availabilities` sont
+  // des INDISPONIBILITÉS (créneaux où l'enseignant n'est PAS disponible).
+  // Voir TeachersAcademicWorkspace.tsx ligne 1669 : `const isUnavailable = !!av;`
+  // Le frontend affiche ✓ (vert) pour les cellules SANS enregistrement,
+  // et ✗ (rouge) pour les cellules AVEC enregistrement.
   availabilities: AvailabilitySlot[];
+
+  /**
+   * Créneaux RÉELLEMENT DISPONIBLES, calculés par complément :
+   * pour chaque jour (Lun-Sam, 7h-19h par tranches d'1h), on retire les
+   * créneaux présents dans `availabilities` (indisponibilités).
+   * Ce sont CES créneaux qu'on affiche dans l'email/PDF comme
+   * « Disponibilités hebdomadaires ».
+   */
+  availableSlots: AvailableSlot[];
 
   // Multigrade
   multigradeAssignments: MultigradeInfo[];
@@ -139,28 +164,58 @@ function computeWorkloadStatus(
 }
 
 /**
- * Génère le HTML de la matrice de disponibilités.
- * Regroupe les créneaux par jour (Lundi → Samedi), format compact.
+ * Génère le HTML du tableau des disponibilités hebdomadaires.
+ *
+ * ⚠️ IMPORTANT : `availableSlots` contient les créneaux RÉELLEMENT disponibles
+ * (calculés par complément des indisponibilités DB). On affiche ces créneaux
+ * avec un fond vert pour indiquer « disponible ».
+ *
+ * On regroupe les créneaux contigus par jour pour un affichage compact
+ * (ex: 7h-8h, 8h-9h, 9h-10h → « 7h – 10h » au lieu de 3 chips séparés).
  */
-function renderAvailabilityTable(slots: AvailabilitySlot[]): string {
+function renderAvailabilityTable(slots: AvailableSlot[]): string {
   if (!slots || slots.length === 0) {
     return `
-      <div style="background:#f8fafc;border:1px dashed #cbd5e1;border-radius:8px;padding:14px;text-align:center;">
-        <span style="font-size:12px;color:#64748b;font-style:italic;">Aucune disponibilité déclarée</span>
+      <div style="background:#fef2f2;border:1px dashed #fca5a5;border-radius:8px;padding:14px;text-align:center;">
+        <span style="font-size:12px;color:#b91c1c;font-style:italic;">Aucune disponibilité — l'enseignant a marqué toute la semaine comme indisponible</span>
       </div>`;
   }
 
   // Grouper par jour
-  const byDay = new Map<number, AvailabilitySlot[]>();
+  const byDay = new Map<number, AvailableSlot[]>();
   for (const s of slots) {
     if (!byDay.has(s.dayOfWeek)) byDay.set(s.dayOfWeek, []);
     byDay.get(s.dayOfWeek)!.push(s);
   }
 
-  // Trier les créneaux par heure de début (string comparison works for "HH:mm")
+  // Trier les créneaux par heure de début
   for (const list of byDay.values()) {
     list.sort((a, b) => a.startTime.localeCompare(b.startTime));
   }
+
+  /**
+   * Fusionne les créneaux contigus d'une même journée en blocs plus larges.
+   * Ex: 7h-8h, 8h-9h, 9h-10h → "7h – 10h"
+   * Deux créneaux sont contigus si endTime du premier == startTime du second.
+   */
+  const mergeContiguous = (daySlots: AvailableSlot[]): Array<{ start: string; end: string }> => {
+    if (daySlots.length === 0) return [];
+    const merged: Array<{ start: string; end: string }> = [];
+    let current = { start: daySlots[0].startTime, end: daySlots[0].endTime };
+    for (let i = 1; i < daySlots.length; i++) {
+      const s = daySlots[i];
+      if (s.startTime === current.end) {
+        // Contigu → étendre le bloc courant
+        current.end = s.endTime;
+      } else {
+        // Non contigu → pousser le bloc courant et démarrer un nouveau
+        merged.push(current);
+        current = { start: s.startTime, end: s.endTime };
+      }
+    }
+    merged.push(current);
+    return merged;
+  };
 
   // Trier les jours dans l'ordre Lundi → Samedi
   const dayOrder = [1, 2, 3, 4, 5, 6, 0];
@@ -169,10 +224,11 @@ function renderAvailabilityTable(slots: AvailabilitySlot[]): string {
     .map((day) => {
       const daySlots = byDay.get(day)!;
       const dayName = DAY_LABELS[day] || 'Jour';
-      const slotsHtml = daySlots
+      const merged = mergeContiguous(daySlots);
+      const slotsHtml = merged
         .map(
-          (s) =>
-            `<span style="display:inline-block;background:#eff6ff;border:1px solid #93c5fd;color:#1e40af;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;margin:2px;">${escHtml(formatHour(s.startTime))} – ${escHtml(formatHour(s.endTime))}</span>`,
+          (m) =>
+            `<span style="display:inline-block;background:#ecfdf5;border:1px solid #6ee7b7;color:#047857;padding:4px 12px;border-radius:999px;font-size:11px;font-weight:600;margin:2px;">✓ ${escHtml(formatHour(m.start))} – ${escHtml(formatHour(m.end))}</span>`,
         )
         .join(' ');
       return `
@@ -405,7 +461,7 @@ export function renderTeacherProfileSummaryEmail(
     <!-- 5. Disponibilités hebdomadaires -->
     <div style="margin-bottom:24px;">
       ${sectionTitle('📅', 'Disponibilités hebdomadaires')}
-      ${renderAvailabilityTable(data.availabilities)}
+      ${renderAvailabilityTable(data.availableSlots)}
     </div>
 
     <!-- 6. Multigrade -->

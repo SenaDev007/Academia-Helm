@@ -871,13 +871,29 @@ export default function TeachersAcademicWorkspace() {
 
   const handleNotifyIndividual = async (teacherId: string) => {
     if (!teacherId || notifyingTeacherId || batchNotifying) return;
+    if (!academicYear?.id) {
+      toast({
+        title: 'Erreur',
+        description: "Aucune année scolaire active. Sélectionnez une année avant de notifier.",
+        variant: 'destructive',
+      });
+      return;
+    }
     setNotifyingTeacherId(teacherId);
     try {
       const response = await pedagogyFetch<any>(
         '/api/pedagogy/teacher-notifications/individual',
         {
           method: 'POST',
-          body: { teacherId },
+          body: {
+            teacherId,
+            // ⚠️ INDISPENSABLE : passer l'academicYearId du contexte frontend
+            // pour que le backend charge les bonnes données (habilitations,
+            // autorisations, disponibilités) pour la bonne année.
+            // Sans cela, le backend fallback sur isActive=true qui peut
+            // différer de l'année sélectionnée par l'utilisateur.
+            academicYearId: academicYear.id,
+          },
         },
       );
 
@@ -924,6 +940,14 @@ export default function TeachersAcademicWorkspace() {
   const confirmBatchSend = async () => {
     setShowBatchConfirmModal(false);
     if (batchNotifying) return;
+    if (!academicYear?.id) {
+      toast({
+        title: 'Erreur',
+        description: "Aucune année scolaire active.",
+        variant: 'destructive',
+      });
+      return;
+    }
 
     setBatchNotifying(true);
     try {
@@ -931,7 +955,12 @@ export default function TeachersAcademicWorkspace() {
         '/api/pedagogy/teacher-notifications/batch',
         {
           method: 'POST',
-          body: { teacherIds: teachers.map(t => t.id) },
+          body: {
+            teacherIds: teachers.map(t => t.id),
+            // ⚠️ Même raison que handleNotifyIndividual — utiliser l'année
+            // du contexte frontend, pas le fallback isActive du backend.
+            academicYearId: academicYear.id,
+          },
         },
       );
 

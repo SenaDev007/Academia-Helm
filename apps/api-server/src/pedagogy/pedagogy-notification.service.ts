@@ -40,6 +40,7 @@ import {
   renderTeacherProfileSummaryEmail,
   TeacherProfileSummaryData,
   AvailabilitySlot,
+  AvailableSlot,
   ClassAssignmentInfo,
   MultigradeInfo,
 } from './pedagogy-email-templates';
@@ -73,6 +74,17 @@ export interface BatchNotifyResult {
   skipped: number;
   results: NotifyResult[];
 }
+
+/** Libellés des jours de la semaine (1=Lundi, ..., 6=Samedi, 0=Dimanche). */
+const DAY_LABELS: Record<number, string> = {
+  1: 'Lundi',
+  2: 'Mardi',
+  3: 'Mercredi',
+  4: 'Jeudi',
+  5: 'Vendredi',
+  6: 'Samedi',
+  0: 'Dimanche',
+};
 
 @Injectable()
 export class PedagogyNotificationService {
@@ -263,12 +275,47 @@ export class PedagogyNotificationService {
       levelName: la.level?.name || '—',
     }));
 
-    // Disponibilités
+    // Disponibilités — ⚠️ IMPORTANT : les enregistrements DB dans
+    // `profile.availabilities` sont des INDISPONIBILITÉS (créneaux où
+    // l'enseignant n'est PAS disponible). Voir TeachersAcademicWorkspace.tsx
+    // ligne 1669 : `const isUnavailable = !!av;` — une entrée DB = indisponible.
     const availabilities: AvailabilitySlot[] = (profile?.availabilities || []).map((a) => ({
       dayOfWeek: a.dayOfWeek,
       startTime: a.startTime,
       endTime: a.endTime,
     }));
+
+    /**
+     * Calculer les créneaux RÉELLEMENT DISPONIBLES par complément.
+     *
+     * La matrice du frontend couvre 7h-19h par tranches d'1h, du Lundi au Samedi.
+     * Pour chaque (jour, créneau), si l'enseignant n'a PAS d'enregistrement
+     * d'indisponibilité → il est disponible sur ce créneau.
+     *
+     * On génère donc la liste inverse : tous les créneaux 7h-19h × Lun-Sam
+     * MINUS les créneaux présents dans `availabilities` (indisponibilités).
+     */
+    const MATRIX_DAYS = [1, 2, 3, 4, 5, 6]; // Lun-Sam
+    const availableSlots: AvailableSlot[] = [];
+    const unavailableSet = new Set<string>();
+    for (const av of availabilities) {
+      unavailableSet.add(`${av.dayOfWeek}-${av.startTime}-${av.endTime}`);
+    }
+    for (const day of MATRIX_DAYS) {
+      for (let h = 7; h < 19; h++) {
+        const start = `${String(h).padStart(2, '0')}:00`;
+        const end = `${String(h + 1).padStart(2, '0')}:00`;
+        const key = `${day}-${start}-${end}`;
+        if (!unavailableSet.has(key)) {
+          availableSlots.push({
+            dayOfWeek: day,
+            dayLabel: DAY_LABELS[day] || 'Jour',
+            startTime: start,
+            endTime: end,
+          });
+        }
+      }
+    }
 
     // Multigrade — résoudre les noms de classes physiques
     const allClassIds: string[] = [];
@@ -359,6 +406,7 @@ export class PedagogyNotificationService {
       subjectQualifications,
       levelAuthorizations,
       availabilities,
+      availableSlots,
       multigradeAssignments: multigradeInfo,
       classAssignments: classAssignmentInfos,
       totalAssignedHours,

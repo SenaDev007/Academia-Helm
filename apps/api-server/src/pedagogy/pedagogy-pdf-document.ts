@@ -77,79 +77,93 @@ function escHtml(s: string | number | undefined | null): string {
 /**
  * Génère la grille matricielle des disponibilités (jour × créneaux).
  *
- * Format : un tableau où chaque ligne = un jour, chaque colonne = un créneau.
- * Si l'enseignant est disponible sur ce créneau ce jour → cellule verte cochée.
- * Sinon → cellule grisée.
+ * ⚠️ IMPORTANT : `data.availabilities` contient les INDISPONIBILITÉS (DB brute).
+ * `data.availableSlots` contient les créneaux RÉELLEMENT DISPONIBLES
+ * (calculés par complément).
  *
- * Si l'enseignant n'a AUCUNE disponibilité → message « non déclarée ».
+ * Cette fonction affiche la grille COMPLETE 7h-19h × Lun-Sam avec :
+ *   - cellules vertes ✓ pour les créneaux disponibles
+ *   - cellules rouges ✗ pour les créneaux indisponibles
+ *   - cellules grisées — pour les créneaux hors plage (si la matrice n'est
+ *     pas complète)
+ *
+ * C'est la même représentation visuelle que le frontend, pour que l'enseignant
+ * retrouve ses marques dans le PDF.
  */
 function renderAvailabilityMatrix(data: TeacherProfileSummaryData): string {
-  if (!data.availabilities || data.availabilities.length === 0) {
-    return `
-      <div style="background:#f8fafc;border:1px dashed #cbd5e1;border-radius:8px;padding:14px;text-align:center;margin:8px 0;">
-        <span style="font-size:11px;color:#64748b;font-style:italic;">Aucune disponibilité déclarée</span>
-      </div>`;
+  // Construire la grille complète 7h-19h × Lun-Sam
+  // Créneaux fixes : 7h-8h, 8h-9h, ..., 18h-19h (12 créneaux)
+  const TIME_SLOTS: Array<{ start: string; end: string }> = [];
+  for (let h = 7; h < 19; h++) {
+    TIME_SLOTS.push({
+      start: `${String(h).padStart(2, '0')}:00`,
+      end: `${String(h + 1).padStart(2, '0')}:00`,
+    });
   }
+  const MATRIX_DAYS = [1, 2, 3, 4, 5, 6]; // Lun-Sam
 
-  // Collecter TOUS les créneaux uniques (start-end) pour former les colonnes
-  const slotSet = new Set<string>();
-  for (const av of data.availabilities) {
-    slotSet.add(`${av.startTime}-${av.endTime}`);
+  // Construire un Set des indisponibilités pour lookup rapide
+  // Format clé : `${dayOfWeek}-${startTime}-${endTime}`
+  const unavailableSet = new Set<string>();
+  for (const av of (data.availabilities || [])) {
+    unavailableSet.add(`${av.dayOfWeek}-${av.startTime}-${av.endTime}`);
   }
-  const slots = Array.from(slotSet).sort();
-
-  // Grouper les disponibilités par jour
-  const byDay = new Map<number, Set<string>>();
-  for (const av of data.availabilities) {
-    const key = `${av.startTime}-${av.endTime}`;
-    if (!byDay.has(av.dayOfWeek)) byDay.set(av.dayOfWeek, new Set());
-    byDay.get(av.dayOfWeek)!.add(key);
-  }
-
-  const dayOrder = [1, 2, 3, 4, 5, 6, 0];
-  const activeDays = dayOrder.filter((d) => byDay.has(d));
 
   // Header row avec les créneaux horaires
-  const slotHeaders = slots
-    .map((s) => {
-      const [start, end] = s.split('-');
-      return `<th style="background:#0D1F6E;color:#fff;padding:8px 6px;font-size:10px;font-weight:bold;text-align:center;border:1px solid #1e3a8a;white-space:nowrap;">
-        ${escHtml(formatHour(start))}<br/><span style="font-size:8px;font-weight:400;opacity:0.8;">→ ${escHtml(formatHour(end))}</span>
-      </th>`;
-    })
+  const slotHeaders = TIME_SLOTS
+    .map((s) =>
+      `<th style="background:#0D1F6E;color:#fff;padding:6px 4px;font-size:9px;font-weight:bold;text-align:center;border:1px solid #1e3a8a;white-space:nowrap;">${escHtml(formatHour(s.start))}<br/><span style="font-size:7px;font-weight:400;opacity:0.8;">→${escHtml(formatHour(s.end))}</span></th>`,
+    )
     .join('');
 
   // Lignes par jour
-  const dayRows = activeDays
+  const dayRows = MATRIX_DAYS
     .map((day) => {
       const dayName = DAY_LABELS[day] || 'Jour';
-      const daySlots = byDay.get(day)!;
-      const cells = slots
+      const cells = TIME_SLOTS
         .map((s) => {
-          const isAvailable = daySlots.has(s);
-          return `<td style="background:${isAvailable ? '#ecfdf5' : '#f8fafc'};border:1px solid #e2e8f0;padding:8px;text-align:center;font-size:14px;">
-            ${isAvailable ? '<span style="color:#047857;font-weight:bold;">✓</span>' : '<span style="color:#cbd5e1;">—</span>'}
-          </td>`;
+          const key = `${day}-${s.start}-${s.end}`;
+          const isUnavailable = unavailableSet.has(key);
+          // Si indisponible → rouge ✗ ; si disponible → vert ✓
+          const bg = isUnavailable ? '#fef2f2' : '#ecfdf5';
+          const border = isUnavailable ? '#fca5a5' : '#6ee7b7';
+          const symbol = isUnavailable ? '✗' : '✓';
+          const color = isUnavailable ? '#b91c1c' : '#047857';
+          return `<td style="background:${bg};border:1px solid ${border};padding:6px 2px;text-align:center;font-size:12px;font-weight:bold;color:${color};">${symbol}</td>`;
         })
         .join('');
       return `
         <tr>
-          <td style="background:#f1f5f9;padding:8px 10px;font-size:11px;font-weight:bold;color:#0D1F6E;border:1px solid #e2e8f0;white-space:nowrap;">${escHtml(dayName)}</td>
+          <td style="background:#f1f5f9;padding:6px 8px;font-size:10px;font-weight:bold;color:#0D1F6E;border:1px solid #e2e8f0;white-space:nowrap;">${escHtml(dayName)}</td>
           ${cells}
         </tr>`;
     })
     .join('');
 
+  // Légende
+  const legend = `
+    <div style="display:flex;gap:12px;margin-top:6px;font-size:9px;color:#64748b;">
+      <span style="display:inline-flex;align-items:center;gap:4px;">
+        <span style="display:inline-block;width:12px;height:12px;background:#ecfdf5;border:1px solid #6ee7b7;border-radius:2px;text-align:center;line-height:10px;color:#047857;font-weight:bold;font-size:8px;">✓</span>
+        Disponible
+      </span>
+      <span style="display:inline-flex;align-items:center;gap:4px;">
+        <span style="display:inline-block;width:12px;height:12px;background:#fef2f2;border:1px solid #fca5a5;border-radius:2px;text-align:center;line-height:10px;color:#b91c1c;font-weight:bold;font-size:8px;">✗</span>
+        Indisponible
+      </span>
+    </div>`;
+
   return `
     <table style="width:100%;border-collapse:collapse;margin:8px 0;">
       <thead>
         <tr>
-          <th style="background:#0D1F6E;color:#fff;padding:8px 10px;font-size:10px;font-weight:bold;text-align:left;border:1px solid #1e3a8a;">Jour</th>
+          <th style="background:#0D1F6E;color:#fff;padding:6px 8px;font-size:10px;font-weight:bold;text-align:left;border:1px solid #1e3a8a;">Jour</th>
           ${slotHeaders}
         </tr>
       </thead>
       <tbody>${dayRows}</tbody>
-    </table>`;
+    </table>
+    ${legend}`;
 }
 
 /**
@@ -583,7 +597,7 @@ export class PedagogyPdfDocumentService {
     const footerHtml = buildPdfFooterHtml();
 
     this.logger.log(
-      `📄 Generating PDF for teacher ${data.teacherName} — ${data.classAssignments.length} class assignments, ${data.availabilities.length} availability slots`,
+      `📄 Generating PDF for teacher ${data.teacherName} — ${data.classAssignments.length} class assignments, ${data.availabilities.length} unavailable slots, ${data.availableSlots.length} available slots`,
     );
 
     const { page } = await this.puppeteerPool.acquirePage();

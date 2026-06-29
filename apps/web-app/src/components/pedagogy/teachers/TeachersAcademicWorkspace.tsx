@@ -253,30 +253,43 @@ export default function TeachersAcademicWorkspace() {
     if (!academicYear?.id) return;
     setWorkloadLoading(true);
     try {
-      const classesData = await pedagogyService.getAcademicClasses(academicYear.id);
+      // Récupérer TOUS les class_subjects de l'année en une seule requête (batch)
+      // Cela inclut les assignments avec teacher pour chaque class_subject
+      const allClassSubjects = await pedagogyFetch<any[]>(
+        `/api/pedagogy/class-subjects?academicYearId=${academicYear.id}`
+      );
+
+      // Récupérer aussi les classes officielles pour avoir leurs noms
+      const classesData = await pedagogyFetch<any[]>(
+        `/api/pedagogy/academic-structure/classes?academicYearId=${academicYear.id}`
+      );
+      const classNameMap: Record<string, string> = {};
+      (classesData || []).forEach((c: any) => {
+        classNameMap[c.id] = c.name;
+      });
+
+      // Grouper par enseignant : parcourir TOUS les class_subjects et leurs assignments
       const loads: Record<string, { assigned: number, details: any[] }> = {};
-      
-      const promises = (classesData || []).map(async (cls: any) => {
-        const subjects = await pedagogyService.getClassSubjects(cls.id, academicYear.id);
-        (subjects || []).forEach((cs: any) => {
-          const assignment = cs.assignments?.[0];
-          if (assignment?.teacher) {
-            const tId = assignment.teacher.id;
-            if (!loads[tId]) {
-              loads[tId] = { assigned: 0, details: [] };
-            }
-            loads[tId].assigned += cs.weeklyHours || 0;
-            loads[tId].details.push({
-              className: cls.name,
-              subjectName: cs.subject.name,
-              subjectCode: cs.subject.code,
-              hours: cs.weeklyHours
-            });
+
+      (allClassSubjects || []).forEach((cs: any) => {
+        const className = classNameMap[cs.academicClassId] || '—';
+        const assignments = cs.assignments || [];
+        assignments.forEach((a: any) => {
+          const tId = a.teacher?.id;
+          if (!tId) return;
+          if (!loads[tId]) {
+            loads[tId] = { assigned: 0, details: [] };
           }
+          loads[tId].assigned += cs.weeklyHours || 0;
+          loads[tId].details.push({
+            className,
+            subjectName: cs.subject?.name || '—',
+            subjectCode: cs.subject?.code || '—',
+            hours: cs.weeklyHours || 0,
+          });
         });
       });
-      
-      await Promise.all(promises);
+
       setGlobalWorkloads(loads);
     } catch (e) {
       console.error("Error loading workloads:", e);
@@ -1687,33 +1700,52 @@ export default function TeachersAcademicWorkspace() {
                                 </span>
                               </td>
 
-                              {/* Détails des cours — colonne élargie, affichage horizontal */}
+                              {/* Détails des cours — max 5 verticalement, colonnes horizontales */}
                               <td className="px-3 py-3">
-                                <div className="flex flex-wrap gap-1.5">
-                                  {isHomeroom ? (
-                                    Object.keys(homeroomClasses).length > 0 ? (
-                                      Object.entries(homeroomClasses).map(([className, info]: [string, any]) => (
-                                        <span key={className} className="text-[10px] font-bold bg-amber-50 border border-amber-100 text-amber-800 rounded-lg px-2 py-1 flex items-center gap-2 whitespace-nowrap">
-                                          <span>★ {className}</span>
-                                          <span className="font-black">{info.totalHours}h</span>
-                                        </span>
-                                      ))
-                                    ) : (
-                                      <span className="text-[10px] text-gray-400 italic font-bold">Aucune classe affectée</span>
-                                    )
-                                  ) : (
-                                    globalWorkloads[t.id]?.details && globalWorkloads[t.id].details.length > 0 ? (
-                                      globalWorkloads[t.id].details.map((d: any, idx: number) => (
-                                        <span key={idx} className="text-[10px] font-bold text-gray-600 bg-gray-50 border border-gray-100 rounded-lg px-2 py-1 flex items-center gap-2 whitespace-nowrap">
-                                          <span>{d.className} – {d.subjectCode}</span>
-                                          <span className="font-black text-indigo-600">{d.hours}h</span>
-                                        </span>
-                                      ))
-                                    ) : (
-                                      <span className="text-[10px] text-gray-400 italic font-bold">Aucun cours affecté</span>
-                                    )
-                                  )}
-                                </div>
+                                {(() => {
+                                  const allDetails = isHomeroom
+                                    ? Object.entries(homeroomClasses).map(([className, info]: [string, any]) => ({
+                                        label: `★ ${className}`,
+                                        hours: info.totalHours,
+                                        color: 'amber',
+                                      }))
+                                    : (globalWorkloads[t.id]?.details || []).map((d: any) => ({
+                                        label: `${d.className} – ${d.subjectCode}`,
+                                        hours: d.hours,
+                                        color: 'gray',
+                                      }));
+
+                                  if (allDetails.length === 0) {
+                                    return <span className="text-[10px] text-gray-400 italic font-bold">Aucun cours affecté</span>;
+                                  }
+
+                                  // Découper en colonnes de 5 éléments maximum
+                                  const MAX_PER_COLUMN = 5;
+                                  const columns: typeof allDetails[] = [];
+                                  for (let i = 0; i < allDetails.length; i += MAX_PER_COLUMN) {
+                                    columns.push(allDetails.slice(i, i + MAX_PER_COLUMN));
+                                  }
+
+                                  return (
+                                    <div className="flex gap-3 flex-wrap">
+                                      {columns.map((col, colIdx) => (
+                                        <div key={colIdx} className="flex flex-col gap-1">
+                                          {col.map((d, idx) => (
+                                            <span key={idx} className={cn(
+                                              'text-[10px] font-bold rounded-lg px-2 py-1 flex items-center gap-2 whitespace-nowrap border',
+                                              d.color === 'amber'
+                                                ? 'bg-amber-50 border-amber-100 text-amber-800'
+                                                : 'bg-gray-50 border-gray-100 text-gray-600',
+                                            )}>
+                                              <span>{d.label}</span>
+                                              <span className={cn('font-black', d.color === 'amber' ? '' : 'text-indigo-600')}>{d.hours}h</span>
+                                            </span>
+                                          ))}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  );
+                                })()}
                               </td>
                             </tr>
                           );

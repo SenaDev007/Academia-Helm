@@ -1,5 +1,6 @@
-import { IsString, IsOptional, IsIn, IsDateString, IsBoolean, IsNumber } from 'class-validator';
+import { IsString, IsOptional, IsIn, IsDateString, IsBoolean, IsNumber, Matches } from 'class-validator';
 import { Type } from 'class-transformer';
+import { ValidBeninPhone } from '../../common/validators/phone.validator';
 
 /**
  * DTO pour la création d'une admission.
@@ -57,7 +58,8 @@ export class CreateAdmissionDto {
   @IsOptional() @IsString()
   mainGuardianName?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @ValidBeninPhone()
   mainGuardianPhone?: string;
 
   @IsOptional() @IsString()

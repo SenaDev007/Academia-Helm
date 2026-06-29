@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { User, MapPin, GraduationCap, Users, Shield, BookOpen, Globe, School, Save, Loader2 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import PhoneInput from '@/components/ui/phone-input';
 
 interface AdmissionFormProps {
   initialData?: any;
@@ -400,12 +401,10 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-slate-500 uppercase">Téléphone</label>
-              <input
-                name="mainGuardianPhone"
+              <PhoneInput
                 value={formData.mainGuardianPhone}
-                onChange={handleInputChange}
-                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-all"
-                placeholder="Ex: +229 90000000"
+                onChange={(value) => setFormData(prev => ({ ...prev, mainGuardianPhone: value }))}
+                name="mainGuardianPhone"
               />
             </div>
             <div className="space-y-1.5">

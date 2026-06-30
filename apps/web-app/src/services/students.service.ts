@@ -93,9 +93,10 @@ class StudentsService {
     id: string,
     data: { decision: "ACCEPTED" | "REJECTED"; comment: string },
   ): Promise<any> {
-    // ⚠️ Utiliser fetch direct au lieu de apiFetch pour éviter les problèmes
-    // de sérialisation axios. Le backend attend { decision, comment } en JSON.
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' && window.location.host.includes('academiahelm.com') ? 'https://api.academiahelm.com/api' : '');
+    // ⚠️ Utiliser fetch direct avec getApiBaseUrl() pour construire l'URL
+    // correcte (incluant le /api prefix).
+    const { getApiBaseUrl } = await import('@/lib/utils/urls');
+    const apiUrl = getApiBaseUrl();
     const url = `${apiUrl}/students/admissions/${encodeURIComponent(id)}/decide`;
     const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
     const res = await fetch(url, {

@@ -1,11 +1,29 @@
 /**
- * Génération du matricule élève Academia Helm (identifiant interne par établissement).
- * Trois identifiants distincts : matricule Academia Helm (ici) ; NPI (identification personnelle Bénin) ; numéro Educmaster (plateforme MEMP).
- * Format : [ABREVIATION_ECOLE]-[ANNEE_INSCRIPTION]-[SEQUENCE_6CHIFFRES] ex. AH-2026-000124
- * Jamais exposé côté client en écriture ; génération backend uniquement dans une transaction.
+ * ============================================================================
+ * MATRICULE SERVICE — Matricule local élève (par établissement)
+ * ============================================================================
  *
- * Le code école est dérivé de l'abréviation officielle renseignée par l'école
- * dans le module Paramètres (tenant_identity_profiles.schoolAcronym).
+ * Format UNIFIÉ (aligné sur le standard RH) :
+ *   <CODE_ECOLE>-<YY>-<XXXXX>
+ *   ex: CSPEB-25-00001
+ *
+ * - "CODE_ECOLE" = Abréviation officielle (max 6 chars, depuis tenant_identity_profiles.schoolAcronym)
+ * - "YY" = Année d'inscription (2 digits, ex: 25 pour 2025)
+ * - "XXXXX" = Séquence auto-incrémentée (5 digits, par tenant)
+ *
+ * ⚠️ Ce service génère UNIQUEMENT le matricule LOCAL (par école).
+ * Le matricule GLOBAL (AH-STU-YY-XXXXXX) est généré par
+ * StudentIdentifierService.
+ *
+ * Le format est identique à celui du module RH (StaffMatriculeService) :
+ *   - Staff local :  <CODE>-<YY>-<XXXXX>  (ex: CSPEB-25-00001)
+ *   - Élève local :  <CODE>-<YY>-<XXXXX>  (ex: CSPEB-25-00001)
+ *   - Staff global : AH-STF-<YY>-<XXXXXX> (ex: AH-STF-25-000001)
+ *   - Élève global : AH-STU-<YY>-<XXXXXX> (ex: AH-STU-25-000001)
+ *
+ * Ce même format sera utilisé pour les factures (INV), reçus (REC), etc.
+ * via le MatriculeGeneratorService unifié.
+ * ============================================================================
  */
 
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
@@ -88,8 +106,11 @@ export class MatriculeService {
   }
 
   /**
-   * GÃ©nÃ¨re le prochain matricule dans une transaction (Ã  appeler depuis une tx existante).
-   * IncrÃ©mente la sÃ©quence, retourne le matricule au format <CODE_TENANT>-<ANNEE>-<AUTO_INCREMENT> ex. AH-2025-000124
+   * Génère le prochain matricule LOCAL dans une transaction.
+   * Format UNIFIÉ : <CODE_TENANT>-<YY>-<XXXXX>  ex: CSPEB-25-00001
+   *
+   * ⚠️ Utilise YY (2 digits) au lieu de YYYY (4 digits) pour être
+   * cohérent avec le module RH (StaffMatriculeService).
    */
   async generateInTransaction(
     tx: Omit<Prisma.TransactionClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use'>,
@@ -102,12 +123,13 @@ export class MatriculeService {
       create: { tenantId, current: 1 },
       update: { current: { increment: 1 } },
     });
-    const padded = String(seq.current).padStart(6, '0'); // User example has 6 digits in one place, 4 in another. I'll use 6 as per typical ERP.
-    return `${schoolCode}-${enrollmentYear}-${padded}`;
+    const padded = String(seq.current).padStart(SEQUENCE_PAD, '0');
+    const year2 = enrollmentYear.toString().slice(-2);  // 2 digits (ex: 25 pour 2025)
+    return `${schoolCode}-${year2}-${padded}`;
   }
 
   /**
-   * Génère un matricule pour un nouvel élève (transaction complète).
+   * Génère un matricule LOCAL pour un nouvel élève (transaction complète).
    * À utiliser lors de la création Student (preRegister / admission).
    */
   async generate(
@@ -125,7 +147,9 @@ export class MatriculeService {
   }
 
   /**
-   * Année d'inscription (4 chiffres) à partir de l'année scolaire — utilisable par lifecycle / create.
+   * Année d'inscription (4 chiffres) à partir de l'année scolaire.
+   * Retourne l'année complète (2025) — le formatage en 2 digits (25)
+   * se fait dans generateInTransaction.
    */
   async getEnrollmentYearFromAcademicYear(academicYearId: string): Promise<number> {
     const ay = await this.prisma.academicYear.findUnique({

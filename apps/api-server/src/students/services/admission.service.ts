@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { StudentsLifecycleService } from './students-lifecycle.service';
+import { StudentIdentifierService } from './student-identifier.service';
 
 @Injectable()
 export class AdmissionService {
@@ -9,6 +10,7 @@ export class AdmissionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly lifecycleService: StudentsLifecycleService,
+    private readonly studentIdentifierService: StudentIdentifierService,
   ) {}
 
   /**
@@ -361,6 +363,28 @@ export class AdmissionService {
         this.logger.log(
           `Admission ${admission.admissionNumber}: student ${student.id} admitted with matricule + account + token`,
         );
+
+        // 3b. Générer le matricule GLOBAL (AH-STU-YY-XXXXXX)
+        //     Ce matricule est unique sur toute la plateforme Academia Helm.
+        //     Il est verrouillé (locked) et ne change jamais, même si l'élève
+        //     change d'école. Il est stocké sur Student.globalStudentId +
+        //     StudentIdentifier.
+        try {
+          await this.studentIdentifierService.generateGlobalMatricule(
+            tenantId,
+            student.id,
+            'BJ',
+            userId,
+          );
+          this.logger.log(
+            `Admission ${admission.admissionNumber}: global matricule generated for student ${student.id}`,
+          );
+        } catch (globalMatErr: any) {
+          // Non bloquant — l'élève a déjà son matricule local (généré par admit())
+          this.logger.warn(
+            `Admission ${admission.admissionNumber}: global matricule generation failed (non-blocking): ${globalMatErr.message}`,
+          );
+        }
       } catch (admitErr: any) {
         // Si admit() échoue, l'élève reste en PRE_REGISTERED — on ne bloque
         // pas la conversion, on log l'erreur pour debug.

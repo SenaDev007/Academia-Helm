@@ -20,6 +20,7 @@ import { OpenRouterModule } from './services/openrouter.module';
 import { DatabaseModule } from '../database/database.module';
 import { SecurityModule } from '../security/security.module';
 import { AdminStructureService } from '../admin-structure/admin-structure.service';
+import { MatriculeGeneratorService } from './services/matricule-generator.service';
 
 @Global()
 @Module({
@@ -40,6 +41,7 @@ import { AdminStructureService } from '../admin-structure/admin-structure.servic
     DomainManagementService,
     CredentialEncryptionService,
     AdminStructureService, // Pour LevelScopeGuard
+    MatriculeGeneratorService,
   ],
   exports: [
     CacheService,
@@ -53,6 +55,7 @@ import { AdminStructureService } from '../admin-structure/admin-structure.servic
     CredentialEncryptionService,
     OpenRouterModule,
     AdminStructureService, // Pour LevelScopeGuard dans autres modules
+    MatriculeGeneratorService,
   ],
 })
 export class CommonModule {}

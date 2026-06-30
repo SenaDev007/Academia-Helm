@@ -1,16 +1,34 @@
 /**
  * ============================================================================
- * STUDENT IDENTIFIER SERVICE - MODULE 1
+ * STUDENT IDENTIFIER SERVICE — Matricule GLOBAL élève (plateforme entière)
  * ============================================================================
- * 
- * Service pour génération de matricule global unique
- * Format: AH-BJ-XXXX-YYYY-NNNNN
- * 
+ *
+ * Format UNIFIÉ (aligné sur le standard RH) :
+ *   AH-STU-YY-XXXXXX
+ *   ex: AH-STU-25-000001
+ *
+ * - "AH" = Academia Helm prefix
+ * - "STU" = Student identifier (équivalent de STF pour le staff)
+ * - "YY" = Année d'inscription (2 digits, ex: 25 pour 2025)
+ * - "XXXXXX" = Séquence auto-incrémentée (6 digits, globale)
+ *
+ * ⚠️ Ce service génère UNIQUEMENT le matricule GLOBAL.
+ * Le matricule LOCAL (par école) est généré par MatriculeService.
+ *
+ * Le format est cohérent avec StaffMatriculeService :
+ *   - Staff global : AH-STF-YY-XXXXXX (ex: AH-STF-25-000001)
+ *   - Élève global : AH-STU-YY-XXXXXX (ex: AH-STU-25-000001)
+ *
+ * Le matricule global est VERROUILLÉ (locked=true) dès sa création —
+ * il ne change jamais, même si l'élève change d'école.
  * ============================================================================
  */
 
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+
+const GLOBAL_SEQUENCE_PAD = 6;
+const STUDENT_TYPE_CODE = 'STU';
 
 @Injectable()
 export class StudentIdentifierService {
@@ -19,9 +37,11 @@ export class StudentIdentifierService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Génère un matricule global unique pour un élève
-   * Format: AH-BJ-XXXX-YYYY-NNNNN
-   * Règle : ❌ Génération backend uniquement, jamais manuelle
+   * Génère un matricule global unique pour un élève.
+   * Format: AH-STU-YY-XXXXXX  ex: AH-STU-25-000001
+   *
+   * Le matricule est verrouillé (locked=true) dès sa création.
+   * Il est stocké dans StudentIdentifier + sur Student.globalStudentId.
    */
   async generateGlobalMatricule(
     tenantId: string,
@@ -32,16 +52,14 @@ export class StudentIdentifierService {
     // Vérifier que l'élève existe
     const student = await this.prisma.student.findFirst({
       where: { id: studentId, tenantId },
-      include: {
-        academicYear: true,
-      },
+      include: { academicYear: true },
     });
 
     if (!student) {
       throw new NotFoundException(`Student with ID ${studentId} not found`);
     }
 
-    // Vérifier qu'il n'a pas déjà un matricule
+    // Vérifier qu'il n'a pas déjà un matricule global
     const existing = await this.prisma.studentIdentifier.findUnique({
       where: { studentId },
     });
@@ -52,45 +70,32 @@ export class StudentIdentifierService {
       );
     }
 
-    // Récupérer le tenant pour le code institution
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id: tenantId },
-      include: {
-        country: true,
-      },
+    // Année d'inscription (2 digits)
+    const enrollmentYear = student.academicYear?.startDate
+      ? new Date(student.academicYear.startDate).getFullYear()
+      : new Date().getFullYear();
+    const year2 = enrollmentYear.toString().slice(-2);
+
+    // Générer le numéro séquentiel global (6 digits)
+    // On compte les StudentIdentifier existants pour cette année
+    const prefix = `AH-${STUDENT_TYPE_CODE}-${year2}-`;
+    const existingIds = await this.prisma.studentIdentifier.findMany({
+      where: { globalMatricule: { startsWith: prefix } },
+      select: { globalMatricule: true },
     });
 
-    if (!tenant) {
-      throw new NotFoundException(`Tenant with ID ${tenantId} not found`);
+    let maxSeq = 0;
+    for (const id of existingIds) {
+      const seqStr = id.globalMatricule.replace(prefix, '');
+      const seq = parseInt(seqStr, 10);
+      if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
     }
 
-    // Générer ou récupérer le code institution (4 caractères)
-    // Utiliser slug ou générer depuis ID si pas de code défini
-    let institutionCode = this.extractInstitutionCode(tenant);
-    
-    // Année de première inscription (année scolaire de création)
-    const firstEnrollmentYear = new Date(student.academicYear.startDate).getFullYear();
+    const nextSeq = maxSeq + 1;
+    const paddedSeq = String(nextSeq).padStart(GLOBAL_SEQUENCE_PAD, '0');
+    const globalMatricule = `${prefix}${paddedSeq}`;
 
-    // Générer le numéro séquentiel global
-    // Chercher le dernier numéro pour cette combinaison institution-année
-    const lastIdentifier = await this.prisma.studentIdentifier.findFirst({
-      where: {
-        institutionCode,
-        firstEnrollmentYear,
-        countryCode,
-      },
-      orderBy: { sequenceNumber: 'desc' },
-    });
-
-    const nextSequenceNumber = lastIdentifier ? lastIdentifier.sequenceNumber + 1 : 1;
-
-    // Formater le numéro séquentiel (5 chiffres, zero-padded)
-    const formattedSequence = String(nextSequenceNumber).padStart(5, '0');
-
-    // Construire le matricule global : AH-BJ-XXXX-YYYY-NNNNN
-    const globalMatricule = `AH-${countryCode}-${institutionCode}-${firstEnrollmentYear}-${formattedSequence}`;
-
-    // Vérifier l'unicité globale (contrainte SQL mais vérification supplémentaire)
+    // Vérifier l'unicité globale (double-check)
     const duplicate = await this.prisma.studentIdentifier.findUnique({
       where: { globalMatricule },
     });
@@ -101,6 +106,13 @@ export class StudentIdentifierService {
       );
     }
 
+    // Récupérer le code institution (pour compat avec ancien format)
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+    });
+    if (!tenant) throw new NotFoundException(`Tenant not found`);
+    const institutionCode = this.extractInstitutionCode(tenant);
+
     // Créer l'identifiant
     const identifier = await this.prisma.studentIdentifier.create({
       data: {
@@ -109,8 +121,8 @@ export class StudentIdentifierService {
         globalMatricule,
         countryCode,
         institutionCode,
-        firstEnrollmentYear,
-        sequenceNumber: nextSequenceNumber,
+        firstEnrollmentYear: enrollmentYear,
+        sequenceNumber: nextSeq,
         generatedBy,
         locked: true,
         isOfflineGenerated: false,
@@ -134,6 +146,12 @@ export class StudentIdentifierService {
       },
     });
 
+    // Mettre à jour Student.globalStudentId
+    await this.prisma.student.update({
+      where: { id: studentId },
+      data: { globalStudentId: globalMatricule },
+    });
+
     this.logger.log(`Generated global matricule ${globalMatricule} for student ${studentId}`);
 
     return identifier;
@@ -141,7 +159,6 @@ export class StudentIdentifierService {
 
   /**
    * Génère un matricule temporaire en mode offline
-   * À synchroniser avec le backend pour obtenir le matricule définitif
    */
   async generateTemporaryLocalId(tenantId: string, studentId: string) {
     const student = await this.prisma.student.findFirst({
@@ -152,7 +169,6 @@ export class StudentIdentifierService {
       throw new NotFoundException(`Student with ID ${studentId} not found`);
     }
 
-    // Vérifier qu'il n'a pas déjà un identifiant (même temporaire)
     const existing = await this.prisma.studentIdentifier.findUnique({
       where: { studentId },
     });
@@ -161,21 +177,19 @@ export class StudentIdentifierService {
       if (!existing.isOfflineGenerated) {
         throw new BadRequestException('Student already has a definitive matricule');
       }
-      return existing; // Retourner l'existant
+      return existing;
     }
 
-    // Générer un ID temporaire local : TEMP-{tenantId}-{timestamp}-{random}
     const timestamp = Date.now();
     const random = Math.floor(Math.random() * 10000);
     const temporaryLocalId = `TEMP-${tenantId.substring(0, 8)}-${timestamp}-${random}`;
 
-    // Récupérer le tenant pour le code institution
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
     });
 
     if (!tenant) {
-      throw new NotFoundException(`Tenant with ID ${tenantId} not found`);
+      throw new NotFoundException(`Tenant not found`);
     }
 
     const institutionCode = this.extractInstitutionCode(tenant);
@@ -185,21 +199,20 @@ export class StudentIdentifierService {
       data: {
         tenantId,
         studentId,
-        globalMatricule: temporaryLocalId, // Temporaire, sera remplacé
+        globalMatricule: temporaryLocalId,
         countryCode: 'BJ',
         institutionCode,
         firstEnrollmentYear: currentYear,
-        sequenceNumber: 0, // Sera calculé à la synchronisation
+        sequenceNumber: 0,
         temporaryLocalId,
         isOfflineGenerated: true,
-        locked: false, // Non verrouillé jusqu'à synchronisation
+        locked: false,
       },
     });
   }
 
   /**
    * Synchronise un matricule temporaire avec le matricule définitif
-   * Appelé après reconnexion en mode offline
    */
   async synchronizeTemporaryIdentifier(
     tenantId: string,
@@ -219,28 +232,20 @@ export class StudentIdentifierService {
 
     if (!identifier) {
       throw new NotFoundException(
-        `Temporary identifier with local ID ${temporaryLocalId} not found or already synchronized`,
+        `Temporary identifier not found or already synchronized`,
       );
     }
 
-    // Supprimer l'ancien temporaire
     await this.prisma.studentIdentifier.delete({
       where: { id: identifier.id },
     });
 
-    // Générer le matricule définitif
-    const definitiveIdentifier = await this.generateGlobalMatricule(
+    return this.generateGlobalMatricule(
       tenantId,
       studentId,
       identifier.countryCode,
       generatedBy,
     );
-
-    this.logger.log(
-      `Synchronized temporary ${temporaryLocalId} to definitive ${definitiveIdentifier.globalMatricule}`,
-    );
-
-    return definitiveIdentifier;
   }
 
   /**
@@ -251,11 +256,7 @@ export class StudentIdentifierService {
       where: { studentId, tenantId },
       include: {
         student: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-          },
+          select: { id: true, firstName: true, lastName: true },
         },
       },
     });
@@ -268,13 +269,12 @@ export class StudentIdentifierService {
   }
 
   /**
-   * Vérifie l'unicité d'un matricule (utilitaire)
+   * Vérifie l'unicité d'un matricule
    */
   async verifyMatriculeUniqueness(globalMatricule: string): Promise<boolean> {
     const existing = await this.prisma.studentIdentifier.findUnique({
       where: { globalMatricule },
     });
-
     return !existing;
   }
 
@@ -287,25 +287,9 @@ export class StudentIdentifierService {
       include: {
         student: {
           include: {
-            tenant: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-            academicYear: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-            schoolLevel: {
-              select: {
-                id: true,
-                code: true,
-                label: true,
-              },
-            },
+            tenant: { select: { id: true, name: true } },
+            academicYear: { select: { id: true, name: true } },
+            schoolLevel: { select: { id: true, code: true, label: true } },
             identifier: true,
           },
         },
@@ -320,24 +304,16 @@ export class StudentIdentifierService {
   }
 
   /**
-   * Récupère les statistiques des matricules
+   * Statistiques des matricules
    */
-  async getMatriculeStats(tenantId?: string, academicYearId?: string) {
+  async getMatriculeStats(tenantId?: string) {
     const where: any = {};
-    if (tenantId) {
-      where.tenantId = tenantId;
-    }
+    if (tenantId) where.tenantId = tenantId;
 
     const identifiers = await this.prisma.studentIdentifier.findMany({
       where,
       include: {
-        student: {
-          // On ne peut pas utiliser where dans include, filtrer au niveau du where principal
-          select: {
-            id: true,
-            status: true,
-          },
-        },
+        student: { select: { id: true, status: true } },
       },
     });
 
@@ -346,10 +322,8 @@ export class StudentIdentifierService {
     const synchronized = identifiers.filter((i) => i.isOfflineGenerated && i.synchronizedAt).length;
     const definitive = identifiers.filter((i) => !i.isOfflineGenerated).length;
 
-    // Statistiques par année
     const byYear = identifiers.reduce((acc, id) => {
-      const year = id.firstEnrollmentYear;
-      acc[year] = (acc[year] || 0) + 1;
+      acc[id.firstEnrollmentYear] = (acc[id.firstEnrollmentYear] || 0) + 1;
       return acc;
     }, {} as Record<number, number>);
 
@@ -364,21 +338,15 @@ export class StudentIdentifierService {
   }
 
   /**
-   * Extrait le code institution depuis le tenant
-   * Génère un code depuis slug ou ID si pas de code défini
+   * Extrait le code institution depuis le tenant (compat ancien format)
    */
   private extractInstitutionCode(tenant: any): string {
-    // Si le tenant a un champ code ou institutionCode, l'utiliser
-    // Sinon, générer depuis slug ou ID
     if (tenant.code) {
       return tenant.code.substring(0, 4).padEnd(4, '0').toUpperCase();
     }
     if (tenant.slug) {
-      // Prendre les 4 premiers caractères du slug, uppercase, pad si nécessaire
       return tenant.slug.substring(0, 4).padEnd(4, '0').toUpperCase();
     }
-    // Dernier recours : utiliser les 4 premiers caractères de l'ID
     return tenant.id.substring(0, 4).toUpperCase();
   }
 }
-

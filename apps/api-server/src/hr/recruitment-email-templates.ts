@@ -147,6 +147,7 @@ export interface RecruitmentEmailData {
 
 /**
  * Construit l'en-tête HTML avec logo + nom de l'école.
+ * Logo centré en haut, nom de l'école centré en dessous (layout vertical).
  * Si logoUrl est fourni → image, sinon fallback sur les initiales.
  */
 export function renderHeader(branding: TenantBranding): string {
@@ -156,9 +157,9 @@ export function renderHeader(branding: TenantBranding): string {
   // - Si base64 (data:image) → img directe (le logo est compressé par logo-compressor.ts)
   // - Si null → fallback initiales
   const logoBlock = branding.schoolLogo
-    ? `<img src="${escHtml(branding.schoolLogo)}" alt="${schoolName}" style="max-height:48px;max-width:160px;object-fit:contain;" />`
-    : `<div style="width:48px;height:48px;border:2px solid #F5A623;border-radius:10px;text-align:center;vertical-align:middle;background:rgba(245,166,35,0.12);line-height:44px;">
-         <span style="font-size:18px;font-weight:bold;color:#F2C94C;letter-spacing:1px;">${escHtml((branding.schoolName || 'EC').substring(0, 2).toUpperCase())}</span>
+    ? `<img src="${escHtml(branding.schoolLogo)}" alt="${schoolName}" style="max-height:64px;max-width:180px;object-fit:contain;display:block;margin:0 auto;" />`
+    : `<div style="width:64px;height:64px;border:2px solid #F5A623;border-radius:12px;text-align:center;vertical-align:middle;background:rgba(245,166,35,0.12);line-height:60px;margin:0 auto;">
+         <span style="font-size:24px;font-weight:bold;color:#F2C94C;letter-spacing:1px;">${escHtml((branding.schoolName || 'EC').substring(0, 2).toUpperCase())}</span>
        </div>`;
 
   const contactInfo = [
@@ -174,18 +175,14 @@ export function renderHeader(branding: TenantBranding): string {
     <!-- Header bleu navy Academia Helm + accent doré -->
     <tr>
       <td style="background:linear-gradient(160deg,#0D1F6E 0%,#0D3B85 100%);padding:28px 24px 22px;text-align:center;border-bottom:3px solid #F5A623;">
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 16px;">
-          <tr>
-            <td style="vertical-align:middle;padding-right:14px;text-align:left;">
-              ${logoBlock}
-            </td>
-            <td style="padding-left:14px;text-align:left;vertical-align:middle;">
-              <div style="font-size:22px;font-weight:bold;color:#ffffff;letter-spacing:0.5px;">${schoolName}</div>
-              <div style="font-size:13px;color:#F5A623;margin-top:4px;">Recrutement</div>
-            </td>
-          </tr>
-        </table>
-        <div style="height:2px;width:72px;background:#F5A623;margin:0 auto;border-radius:1px;"></div>
+        <!-- Logo centré en haut -->
+        <div style="margin-bottom:14px;">
+          ${logoBlock}
+        </div>
+        <!-- Nom de l'école centré en dessous -->
+        <div style="font-size:22px;font-weight:bold;color:#ffffff;letter-spacing:0.5px;">${schoolName}</div>
+        <div style="font-size:13px;color:#F5A623;margin-top:4px;">Recrutement</div>
+        <div style="height:2px;width:72px;background:#F5A623;margin:14px auto 0;border-radius:1px;"></div>
         ${contactInfo ? `<div style="margin-top:12px;">${contactInfo}</div>` : ''}
       </td>
     </tr>`;

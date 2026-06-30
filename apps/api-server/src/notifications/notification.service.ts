@@ -253,10 +253,12 @@ export class NotificationService {
 
   /**
    * Résout les userId du staff d'admission d'un tenant.
-   * Rôles ciblés : SUPER_DIRECTOR, DIRECTOR, ADMIN, CENSEUR, SURVEILLANT_GENERAL.
+   * Rôles ciblés : PROMOTER (propriétaire de l'école), SUPER_DIRECTOR, DIRECTOR,
+   * ADMIN, CENSEUR, SURVEILLANT_GENERAL, SECRETARY_GENERAL.
    */
   private async resolveAdmissionStaff(tenantId: string): Promise<string[]> {
     const targetRoles = [
+      'PROMOTER',
       'SUPER_DIRECTOR',
       'DIRECTOR',
       'ADMIN',
@@ -313,7 +315,7 @@ export class NotificationService {
         const users = await this.prisma.user.findMany({
           where: {
             tenantId,
-            role: { in: ['ADMIN', 'DIRECTOR', 'SUPER_DIRECTOR', 'HR_MANAGER'] },
+            role: { in: ['PROMOTER', 'ADMIN', 'DIRECTOR', 'SUPER_DIRECTOR', 'HR_MANAGER'] },
             status: 'active',
           },
           select: { id: true },

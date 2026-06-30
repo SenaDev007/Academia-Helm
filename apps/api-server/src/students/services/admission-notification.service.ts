@@ -122,6 +122,23 @@ export class AdmissionNotificationService {
     }
   }
 
+  /**
+   * Récupère le libellé d'un niveau scolaire (education_levels).
+   * schoolLevelId est un UUID → on récupère le nom (MATERNELLE/PRIMAIRE/SECONDAIRE).
+   */
+  private async getEducationLevelLabel(levelId?: string | null): Promise<string | null> {
+    if (!levelId) return null;
+    try {
+      const level = await this.prisma.educationLevel.findUnique({
+        where: { id: levelId },
+        select: { name: true },
+      });
+      return level?.name || null;
+    } catch {
+      return null;
+    }
+  }
+
   // ─── 1. DEMANDE D'ADMISSION REÇUE ──────────────────────────────────────────
   async notifyAdmissionReceived(params: {
     admissionId: string;
@@ -142,6 +159,7 @@ export class AdmissionNotificationService {
             academicYearId: true,
             requestedClassId: true,
             schoolLevelId: true,
+            notes: true,
             status: true,
           },
         }),
@@ -159,10 +177,25 @@ export class AdmissionNotificationService {
         return;
       }
 
-      const [academicYearLabel, requestedClassLabel] = await Promise.all([
+      const [academicYearLabel, classLabelFromClass, levelLabel] = await Promise.all([
         this.getAcademicYearLabel(admission.academicYearId),
         this.getClassLabel(admission.requestedClassId),
+        this.getEducationLevelLabel(admission.schoolLevelId),
       ]);
+
+      // La classe souhaitée : priorité au libellé de la classe (UUID), sinon
+      // extraire depuis notes (format "Classe souhaitée : Maternelle 1 (M1)"),
+      // sinon utiliser le nom du niveau scolaire (MATERNELLE/PRIMAIRE/SECONDAIRE).
+      let requestedClassLabel = classLabelFromClass;
+      if (requestedClassLabel === 'Non spécifiée' && admission.notes) {
+        const match = admission.notes.match(/Classe souhaitée\s*:\s*(.+)/i);
+        if (match) {
+          requestedClassLabel = match[1].trim();
+        }
+      }
+      if (requestedClassLabel === 'Non spécifiée' && levelLabel) {
+        requestedClassLabel = levelLabel;
+      }
 
       const childName = `${admission.firstName} ${admission.lastName}`;
       const childFirstName = admission.firstName || 'l\'élève';

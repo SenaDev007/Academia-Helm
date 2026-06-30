@@ -1138,20 +1138,26 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
 
   // ── Validation par étape du wizard pré-inscription ──
   // Retourne un message d'erreur si l'étape est invalide, null sinon.
+  // IMPORTANT : l'ordre des étapes est :
+  //   Étape 1 = Type candidat + Responsable légal (parent)
+  //   Étape 2 = Identité de l'enfant + Classe souhaitée (sauf PROSPECT_PARENT qui saute cette étape)
+  //   Étape 3 = Pièces justificatives + Message
   const validatePreEnrollmentStep = (step: 1 | 2 | 3): string | null => {
     if (step === 1) {
+      // Étape 1 : type candidat + champs parent
       if (!preEnrollment.candidateType) return 'Veuillez sélectionner le niveau d\'inscription (Maternelle, Primaire, Secondaire).';
+      if (!preEnrollment.parentFirstName?.trim()) return 'Veuillez saisir votre prénom (parent).';
+      if (!preEnrollment.parentLastName?.trim()) return 'Veuillez saisir votre nom (parent).';
+      if (!preEnrollment.parentPhone?.trim()) return 'Veuillez saisir votre numéro de téléphone.';
+      if (!preEnrollment.parentEmail?.trim()) return 'Veuillez saisir votre adresse email.';
+    }
+    if (step === 2) {
+      // Étape 2 : champs enfant (uniquement si pas PROSPECT_PARENT)
       if (preEnrollment.candidateType !== 'PROSPECT_PARENT') {
         if (!preEnrollment.childFirstName?.trim()) return 'Veuillez saisir le prénom de l\'enfant.';
         if (!preEnrollment.childLastName?.trim()) return 'Veuillez saisir le nom de l\'enfant.';
         if (!preEnrollment.targetLevel) return 'Veuillez sélectionner la classe souhaitée.';
       }
-    }
-    if (step === 2) {
-      if (!preEnrollment.parentFirstName?.trim()) return 'Veuillez saisir votre prénom (parent).';
-      if (!preEnrollment.parentLastName?.trim()) return 'Veuillez saisir votre nom (parent).';
-      if (!preEnrollment.parentPhone?.trim()) return 'Veuillez saisir votre numéro de téléphone.';
-      if (!preEnrollment.parentEmail?.trim()) return 'Veuillez saisir votre adresse email.';
     }
     // Étape 3 : aucun champ obligatoire (documents et message sont optionnels)
     return null;
@@ -2139,13 +2145,13 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                     </div>
                     <div className="text-center mb-3">
                       <p className="text-xs font-bold" style={{ color: NAVY }}>
-                        {preEnrollmentStep === 1 ? 'Étape 1 sur 3 — Identité de l\'élève' :
-                         preEnrollmentStep === 2 ? 'Étape 2 sur 3 — Responsable légal' :
+                        {preEnrollmentStep === 1 ? 'Étape 1 sur 3 — Responsable légal' :
+                         preEnrollmentStep === 2 ? 'Étape 2 sur 3 — Identité de l\'élève' :
                          'Étape 3 sur 3 — Documents & message'}
                       </p>
                     </div>
 
-                    {/* ── ÉTAPE 1 : Type de candidat + Identité élève + Classe souhaitée ── */}
+                    {/* ── ÉTAPE 1 : Type de candidat + Responsable légal (parent) ── */}
                     {preEnrollmentStep === 1 && (
                     <>
                     {/* Type de candidat */}

@@ -108,6 +108,103 @@ class StudentsService {
     );
   }
 
+  async deleteAdmission(id: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/admissions/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+  }
+
+  async acceptAdmission(id: string, comment?: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/admissions/${encodeURIComponent(id)}/accept`, {
+      method: "POST",
+      body: { comment },
+    });
+  }
+
+  async rejectAdmission(id: string, comment?: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/admissions/${encodeURIComponent(id)}/reject`, {
+      method: "POST",
+      body: { comment },
+    });
+  }
+
+  async waitlistAdmission(id: string, comment?: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/admissions/${encodeURIComponent(id)}/waitlist`, {
+      method: "POST",
+      body: { comment },
+    });
+  }
+
+  async cancelAdmission(id: string, comment?: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/admissions/${encodeURIComponent(id)}/cancel`, {
+      method: "POST",
+      body: { comment },
+    });
+  }
+
+  async requestDocuments(id: string, comment?: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/admissions/${encodeURIComponent(id)}/request-documents`, {
+      method: "POST",
+      body: { comment },
+    });
+  }
+
+  // ─── Admission Documents ──────────────────────────────────────────────────
+  async getAdmissionDocuments(admissionId: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/admissions/${encodeURIComponent(admissionId)}/documents`);
+  }
+
+  async createAdmissionDocument(admissionId: string, data: any): Promise<any> {
+    return apiFetch(`${BASE_URL}/admissions/${encodeURIComponent(admissionId)}/documents`, {
+      method: "POST",
+      body: data,
+    });
+  }
+
+  async validateAdmissionDocument(documentId: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/admissions/documents/${encodeURIComponent(documentId)}/validate`, {
+      method: "POST",
+    });
+  }
+
+  async rejectAdmissionDocument(documentId: string, comment?: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/admissions/documents/${encodeURIComponent(documentId)}/reject`, {
+      method: "POST",
+      body: { comment },
+    });
+  }
+
+  async deleteAdmissionDocument(documentId: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/admissions/documents/${encodeURIComponent(documentId)}`, {
+      method: "DELETE",
+    });
+  }
+
+  // ─── Admission Interviews ─────────────────────────────────────────────────
+  async getAdmissionInterviews(admissionId: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/admissions/${encodeURIComponent(admissionId)}/interviews`);
+  }
+
+  async createAdmissionInterview(admissionId: string, data: any): Promise<any> {
+    return apiFetch(`${BASE_URL}/admissions/${encodeURIComponent(admissionId)}/interviews`, {
+      method: "POST",
+      body: data,
+    });
+  }
+
+  async completeAdmissionInterview(interviewId: string, data: any): Promise<any> {
+    return apiFetch(`${BASE_URL}/admissions/interviews/${encodeURIComponent(interviewId)}/complete`, {
+      method: "POST",
+      body: data,
+    });
+  }
+
+  async deleteAdmissionInterview(interviewId: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/admissions/interviews/${encodeURIComponent(interviewId)}`, {
+      method: "DELETE",
+    });
+  }
+
   /**
    * Crée un nouvel étudiant
    */

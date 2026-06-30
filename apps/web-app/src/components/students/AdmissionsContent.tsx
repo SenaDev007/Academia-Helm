@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import {
   Plus, Search, Filter, CheckCircle, XCircle, Clock, FileText,
   UserCheck, Calendar, BadgeCheck, AlertCircle, Loader2, Eye,
-  Send, Pencil, X, Info, Star, AlertTriangle
+  Send, Pencil, X, Info, Star, AlertTriangle, Trash2
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { format } from 'date-fns';
@@ -153,6 +153,46 @@ export default function AdmissionsContent() {
       loadAdmissions();
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message || 'Erreur lors de la décision', variant: 'error' });
+    } finally {
+      setIsActionPending(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Êtes-vous sûr de vouloir supprimer ce dossier d\'admission ? Cette action est irréversible.')) return;
+    setIsActionPending(true);
+    try {
+      await studentsService.deleteAdmission(id);
+      toast({ title: 'Succès', description: 'Dossier supprimé', variant: 'success' });
+      loadAdmissions();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message || 'Erreur lors de la suppression', variant: 'error' });
+    } finally {
+      setIsActionPending(false);
+    }
+  };
+
+  const handleWaitlist = async (id: string) => {
+    setIsActionPending(true);
+    try {
+      await studentsService.waitlistAdmission(id, 'Mis en liste d\'attente');
+      toast({ title: 'Succès', description: 'Dossier mis en liste d\'attente', variant: 'success' });
+      loadAdmissions();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'error' });
+    } finally {
+      setIsActionPending(false);
+    }
+  };
+
+  const handleCancel = async (id: string) => {
+    setIsActionPending(true);
+    try {
+      await studentsService.cancelAdmission(id, 'Dossier annulé');
+      toast({ title: 'Succès', description: 'Dossier annulé', variant: 'success' });
+      loadAdmissions();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'error' });
     } finally {
       setIsActionPending(false);
     }
@@ -453,6 +493,18 @@ export default function AdmissionsContent() {
                                 title="Convertir en élève"
                               >
                                 <UserCheck className="w-4 h-4" />
+                              </button>
+                            )}
+
+                            {/* Delete (only if not CONVERTED) */}
+                            {!admission.convertedStudentId && (
+                              <button
+                                onClick={() => handleDelete(admission.id)}
+                                disabled={isActionPending}
+                                className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-rose-600 transition-all disabled:opacity-50"
+                                title="Supprimer"
+                              >
+                                <Trash2 className="w-4 h-4" />
                               </button>
                             )}
                           </div>

@@ -33,10 +33,14 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
     requestedSeriesId: initialData?.requestedSeriesId || '',
     wantsBilingual: initialData?.wantsBilingual || false,
     previousSchool: initialData?.previousSchool || '',
+    previousLevel: initialData?.previousLevel || '',
+    changeReason: initialData?.changeReason || '',
     mainGuardianName: initialData?.mainGuardianName || '',
     mainGuardianPhone: initialData?.mainGuardianPhone || '',
     mainGuardianEmail: initialData?.mainGuardianEmail || '',
     mainGuardianRelationship: initialData?.mainGuardianRelationship || 'PÈRE',
+    mainGuardianAddress: initialData?.mainGuardianAddress || '',
+    mainGuardianProfession: initialData?.mainGuardianProfession || '',
   });
 
   useEffect(() => {
@@ -163,10 +167,14 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
         requestedSeriesId: formData.requestedSeriesId || undefined,
         wantsBilingual: formData.wantsBilingual,
         previousSchool: formData.previousSchool || undefined,
+        previousLevel: formData.previousLevel || undefined,
+        changeReason: formData.changeReason || undefined,
         mainGuardianName: formData.mainGuardianName || undefined,
         mainGuardianPhone: formData.mainGuardianPhone || undefined,
         mainGuardianEmail: formData.mainGuardianEmail || undefined,
         mainGuardianRelationship: formData.mainGuardianRelationship || undefined,
+        mainGuardianAddress: formData.mainGuardianAddress || undefined,
+        mainGuardianProfession: formData.mainGuardianProfession || undefined,
       };
 
       await onSubmit(payload);
@@ -331,14 +339,37 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
           </div>
         )}
 
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-500 uppercase">Établissement Précédent</label>
+            <input
+              name="previousSchool"
+              value={formData.previousSchool}
+              onChange={handleInputChange}
+              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-all"
+              placeholder="Ex: École Primaire Publique de Cotonou"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-500 uppercase">Dernier Niveau Fréquenté</label>
+            <input
+              name="previousLevel"
+              value={formData.previousLevel}
+              onChange={handleInputChange}
+              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-all"
+              placeholder="Ex: CE1, 5ème, Maternelle 2..."
+            />
+          </div>
+        </div>
+
         <div className="space-y-1.5">
-          <label className="text-xs font-bold text-slate-500 uppercase">Établissement Précédent (Optionnel)</label>
+          <label className="text-xs font-bold text-slate-500 uppercase">Motif de Changement (Optionnel)</label>
           <input
-            name="previousSchool"
-            value={formData.previousSchool}
+            name="changeReason"
+            value={formData.changeReason}
             onChange={handleInputChange}
             className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-all"
-            placeholder="Ex: École Primaire Publique de Cotonou"
+            placeholder="Ex: Déménagement, recherche de meilleure qualité pédagogique..."
           />
         </div>
 
@@ -416,6 +447,28 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
                 onChange={handleInputChange}
                 className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-all"
                 placeholder="Ex: emmanuel.koffi@email.com"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 uppercase">Adresse du Responsable</label>
+              <input
+                name="mainGuardianAddress"
+                value={formData.mainGuardianAddress}
+                onChange={handleInputChange}
+                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-all"
+                placeholder="Ex: Cotonou, Quartier Akpakpa"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 uppercase">Profession</label>
+              <input
+                name="mainGuardianProfession"
+                value={formData.mainGuardianProfession}
+                onChange={handleInputChange}
+                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-all"
+                placeholder="Ex: Comptable, Enseignant, Commerçant..."
               />
             </div>
           </div>

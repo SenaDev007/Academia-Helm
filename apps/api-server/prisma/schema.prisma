@@ -295,6 +295,8 @@ model Tenant {
   products                         Product[]
   publicVerificationTokens         PublicVerificationToken[]
   pushNotifications                PushNotification[]
+  inAppNotifications               InAppNotification[]
+  pushSubscriptions                PushSubscription[]
   qhsAudits                        QhsAudit[]                        @relation("QhsAuditTenant")
   qhsCorrectiveActions             QhsCorrectiveAction[]             @relation("QhsCorrectiveActionTenant")
   qhsDecisionLogs                  QhsDecisionLog[]                  @relation("QhsDecisionLogTenant")

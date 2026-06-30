@@ -14,10 +14,11 @@
  *    - "XXXXXX" = Auto-incremented sequence (6 digits, global)
  *
  * 2. **Tenant Matricule (School-specific)**: Unique within each tenant/school
- *    Format: <ABREVIATION>-YY-XXXXX
- *    Example: AH-26-00001
+ *    Format: <ABREVIATION>-P-YY-XXXXX
+ *    Example: CSPEB-P-25-00001
  *    - "ABREVIATION" = School acronym from tenant_identity_profiles.schoolAcronym
  *      (the abbreviation the school registered in settings), max 6 chars, uppercase
+ *    - "P" = Code type local pour Personnel (différencie du Élève=E, Facture=F, etc.)
  *    - "YY" = Year of registration (2 digits)
  *    - "XXXXX" = Auto-incremented sequence (5 digits, per-tenant)
  *
@@ -133,7 +134,10 @@ export class StaffMatriculeService {
 
   /**
    * Génère le prochain matricule tenant dans une transaction.
-   * Format: <CODE_TENANT>-<YY>-<SEQUENCE_5>
+   * Format: <CODE_TENANT>-P-<YY>-<SEQUENCE_5>
+   *
+   * Le préfixe "P" (Personnel) différencie ce matricule de l'Élève (E),
+   * Facture (F), Reçu (R), etc. au sein de la même école.
    */
   async generateTenantMatriculeInTransaction(
     tx: Omit<Prisma.TransactionClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use'>,
@@ -148,7 +152,7 @@ export class StaffMatriculeService {
     });
     const padded = String(seq.current).padStart(TENANT_SEQUENCE_PAD, '0');
     const year2 = registrationYear.toString().slice(-2);
-    return `${schoolCode}-${year2}-${padded}`;
+    return `${schoolCode}-P-${year2}-${padded}`;
   }
 
   /**

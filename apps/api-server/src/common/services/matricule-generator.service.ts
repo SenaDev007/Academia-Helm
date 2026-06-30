@@ -6,20 +6,29 @@
  * Service réutilisable pour générer TOUS les types de numéros dans Academia
  * Helm, avec un format UNIFIé :
  *
- *   GLOBAL : AH-<TYPE>-<YY>-<XXXXXX>  ex: AH-INV-25-000001
- *   LOCAL  : <CODE>-<YY>-<XXXXX>      ex: CSPEB-25-00001
+ *   GLOBAL : AH-<TYPE>-<YY>-<XXXXXX>  ex: AH-STU-25-000001
+ *   LOCAL  : <CODE>-<LOCAL_TYPE>-<YY>-<XXXXX>  ex: CSPEB-E-25-00001
+ *
+ * Le code LOCAL_TYPE différencie les entités au sein d'une même école :
+ *   E   = Élève (Student)       → CSPEB-E-25-00001
+ *   P   = Personnel (Staff)     → CSPEB-P-25-00001
+ *   F   = Facture (Invoice)     → CSPEB-F-25-00001
+ *   R   = Reçu (Receipt)        → CSPEB-R-25-00001
+ *   A   = Admission             → CSPEB-A-25-00001
+ *   PAY = Paiement (Payment)    → CSPEB-PAY-25-00001
  *
  * Types supportés :
- *   STU = Élève (Student)      — global: AH-STU-25-000001
- *   STF = Staff (Enseignant)   — global: AH-STF-25-000001
- *   INV = Facture (Invoice)    — global: AH-INV-25-000001
- *   REC = Reçu (Receipt)       — global: AH-REC-25-000001
- *   ADM = Admission            — global: AH-ADM-25-000001
+ *   STU = Élève (Student)      — global: AH-STU-25-000001, local: CSPEB-E-25-00001
+ *   STF = Staff (Enseignant)   — global: AH-STF-25-000001, local: CSPEB-P-25-00001
+ *   INV = Facture (Invoice)    — global: AH-INV-25-000001, local: CSPEB-F-25-00001
+ *   REC = Reçu (Receipt)       — global: AH-REC-25-000001, local: CSPEB-R-25-00001
+ *   ADM = Admission            — global: AH-ADM-25-000001, local: CSPEB-A-25-00001
+ *   PAY = Paiement (Payment)   — global: AH-PAY-25-000001, local: CSPEB-PAY-25-00001
  *
  * Usage :
  *   const generator = new MatriculeGeneratorService(prisma);
  *   const invoiceNum = await generator.generate('INV', tenantId, academicYearId);
- *   // → { global: 'AH-INV-25-000001', local: 'CSPEB-25-00001' }
+ *   // → { global: 'AH-INV-25-000001', local: 'CSPEB-F-25-00001' }
  *
  * Le service utilise une table de séquence par (tenantId, type) pour
  * garantir l'unicité du numéro local, et un compteur global basé sur
@@ -35,6 +44,25 @@ const LOCAL_PAD = 5;
 const MAX_SCHOOL_CODE_LENGTH = 6;
 
 export type MatriculeType = 'STU' | 'STF' | 'INV' | 'REC' | 'ADM' | 'PAY';
+
+/**
+ * Mapping type global → code type local.
+ * Le code type local est inséré dans le matricule local pour différencier
+ * les élèves, staff, factures, etc. au sein d'une même école.
+ *
+ * Sans ce code, deux entités différentes auraient le même format local
+ * (ex: CSPEB-25-00001 pour un élève ET un staff → confusion).
+ *
+ * Avec le code : CSPEB-E-25-00001 (élève) ≠ CSPEB-P-25-00001 (staff).
+ */
+const LOCAL_TYPE_CODE: Record<MatriculeType, string> = {
+  STU: 'E',    // Élève
+  STF: 'P',    // Personnel
+  INV: 'F',    // Facture
+  REC: 'R',    // Reçu
+  ADM: 'A',    // Admission
+  PAY: 'PAY',  // Paiement
+};
 
 export interface GeneratedMatricule {
   global: string;  // ex: AH-INV-25-000001
@@ -69,10 +97,10 @@ export class MatriculeGeneratorService {
     const year2 = year.toString().slice(-2);
 
     // 1. Générer le numéro LOCAL (par tenant + type)
-    // On utilise une table de séquence dédiée : MatriculeSequence
-    // (si elle n'existe pas, on fallback sur un count)
+    // Format: <CODE>-<LOCAL_TYPE>-<YY>-<XXXXX>  ex: CSPEB-E-25-00001
+    const localType = LOCAL_TYPE_CODE[type] || type;
     const localSeq = await this.getNextLocalSequence(tenantId, type);
-    const local = `${schoolCode}-${year2}-${String(localSeq).padStart(LOCAL_PAD, '0')}`;
+    const local = `${schoolCode}-${localType}-${year2}-${String(localSeq).padStart(LOCAL_PAD, '0')}`;
 
     // 2. Générer le numéro GLOBAL (plateforme entière, par type + année)
     const globalSeq = await this.getNextGlobalSequence(type, year2);

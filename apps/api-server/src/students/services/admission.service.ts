@@ -14,13 +14,14 @@ export class AdmissionService {
   ) {}
 
   /**
-   * Génère un numéro d'admission unique au format ADM-{YEAR}-{SEQ}.
-   * La séquence est par tenant + année académique.
+   * Génère un numéro d'admission unique.
+   * Format UNIFIÉ : <CODE_ECOLE>-A-<YY>-<XXXX>
+   * ex: CSPEB-A-25-0001
    *
-   * On utilise une approche simple : compter les admissions existantes
-   * pour ce tenant + année, +1, et formater avec padding.
-   * Pas besoin de table de séquence dédiée (contrairement aux matricules
-   * qui doivent être gapless et transactionnels).
+   * Le préfixe "A" (Admission) différencie ce numéro de l'Élève (E),
+   * Personnel (P), Facture (F), etc. au sein de la même école.
+   *
+   * La séquence est par tenant + année académique.
    */
   private async generateAdmissionNumber(tenantId: string, academicYearId: string): Promise<string> {
     // Récupérer l'année scolaire pour extraire l'année civile
@@ -28,9 +29,29 @@ export class AdmissionService {
       where: { id: academicYearId },
       select: { name: true, startDate: true },
     });
-    const year = academicYear?.startDate
-      ? new Date(academicYear.startDate).getFullYear().toString()
-      : new Date().getFullYear().toString();
+    const fullYear = academicYear?.startDate
+      ? new Date(academicYear.startDate).getFullYear()
+      : new Date().getFullYear();
+    const year2 = fullYear.toString().slice(-2);
+
+    // Récupérer le code école (réutilise la même logique que MatriculeService)
+    let schoolCode = 'AH';
+    try {
+      const identity = await this.prisma.tenantIdentityProfile.findFirst({
+        where: { tenantId },
+        select: { schoolAcronym: true },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (identity?.schoolAcronym) {
+        const code = identity.schoolAcronym
+          .toUpperCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^A-Z0-9]/g, '')
+          .slice(0, 6);
+        if (code.length >= 2) schoolCode = code;
+      }
+    } catch { /* fallback to 'AH' */ }
 
     // Compter les admissions existantes pour ce tenant + année
     const count = await this.prisma.admission.count({
@@ -38,7 +59,7 @@ export class AdmissionService {
     });
 
     const seq = String(count + 1).padStart(4, '0');
-    const admissionNumber = `ADM-${year}-${seq}`;
+    const admissionNumber = `${schoolCode}-A-${year2}-${seq}`;
 
     // Vérifier l'unicité (au cas où une admission a été supprimée → count < max seq)
     const existing = await this.prisma.admission.findFirst({
@@ -48,7 +69,7 @@ export class AdmissionService {
     if (existing) {
       // Collision → utiliser un timestamp suffix pour garantir l'unicité
       const suffix = Date.now().toString().slice(-4);
-      return `ADM-${year}-${seq}-${suffix}`;
+      return `${schoolCode}-A-${year2}-${seq}-${suffix}`;
     }
 
     return admissionNumber;

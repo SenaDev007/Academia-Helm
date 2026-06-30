@@ -4,10 +4,11 @@
  * ============================================================================
  *
  * Format UNIFIÉ (aligné sur le standard RH) :
- *   <CODE_ECOLE>-<YY>-<XXXXX>
- *   ex: CSPEB-25-00001
+ *   <CODE_ECOLE>-E-<YY>-<XXXXX>
+ *   ex: CSPEB-E-25-00001
  *
  * - "CODE_ECOLE" = Abréviation officielle (max 6 chars, depuis tenant_identity_profiles.schoolAcronym)
+ * - "E" = Code type local pour Élève (différencie du Personnel=P, Facture=F, etc.)
  * - "YY" = Année d'inscription (2 digits, ex: 25 pour 2025)
  * - "XXXXX" = Séquence auto-incrémentée (5 digits, par tenant)
  *
@@ -107,10 +108,10 @@ export class MatriculeService {
 
   /**
    * Génère le prochain matricule LOCAL dans une transaction.
-   * Format UNIFIÉ : <CODE_TENANT>-<YY>-<XXXXX>  ex: CSPEB-25-00001
+   * Format UNIFIÉ : <CODE_TENANT>-E-<YY>-<XXXXX>  ex: CSPEB-E-25-00001
    *
-   * ⚠️ Utilise YY (2 digits) au lieu de YYYY (4 digits) pour être
-   * cohérent avec le module RH (StaffMatriculeService).
+   * Le préfixe "E" (Élève) différencie ce matricule du Personnel (P),
+   * Facture (F), Reçu (R), etc. au sein de la même école.
    */
   async generateInTransaction(
     tx: Omit<Prisma.TransactionClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use'>,
@@ -125,7 +126,7 @@ export class MatriculeService {
     });
     const padded = String(seq.current).padStart(SEQUENCE_PAD, '0');
     const year2 = enrollmentYear.toString().slice(-2);  // 2 digits (ex: 25 pour 2025)
-    return `${schoolCode}-${year2}-${padded}`;
+    return `${schoolCode}-E-${year2}-${padded}`;
   }
 
   /**

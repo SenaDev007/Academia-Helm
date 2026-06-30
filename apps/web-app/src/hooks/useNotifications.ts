@@ -35,6 +35,11 @@ export function useNotifications() {
   const lastKnownNotifIdRef = useRef<string | null>(null);
   // Évite de déclencher le son au premier chargement (initialisation)
   const isFirstLoadRef = useRef(true);
+  // Tracke si on a déjà chargé la liste au moins une fois (évite l'infinite loop
+  // quand la liste est vide — sinon le useEffect se redéclencherait indéfiniment)
+  const hasLoadedRef = useRef(false);
+  // Tracke si un chargement est en cours (évite les appels simultanés)
+  const isLoadingRef = useRef(false);
 
   // ── Polling : compteur non lues toutes les 30s ──
   const refreshUnreadCount = useCallback(async () => {
@@ -52,29 +57,57 @@ export function useNotifications() {
     return () => clearInterval(interval);
   }, [refreshUnreadCount]);
 
-  // ── Chargement de la liste (au premier clic sur la cloche) ──
+  // ── Chargement de la liste ──
+  // Appelé au premier clic sur la cloche, ou manuellement via loadNotifications().
+  // Utilise hasLoadedRef + isLoadingRef pour éviter les appels en boucle.
   const loadNotifications = useCallback(async () => {
+    // Ne pas recharger si déjà chargé OU si un chargement est en cours
+    if (hasLoadedRef.current || isLoadingRef.current) return;
+    isLoadingRef.current = true;
     setIsLoading(true);
     try {
       const list = await notificationService.list({ limit: LIST_LIMIT });
       setNotifications(list);
+      hasLoadedRef.current = true; // marquer comme chargé (même si liste vide)
       // Mémoriser l'ID le plus récent pour détecter les nouvelles
       if (list.length > 0) {
         lastKnownNotifIdRef.current = list[0].id;
       }
     } catch {
-      // Erreur réseau — ignore
+      // Erreur réseau — ne PAS marquer hasLoadedRef pour permettre une retry au prochain clic
+      // mais on sort quand même d'isLoading pour éviter le spinner infini
     } finally {
+      isLoadingRef.current = false;
       setIsLoading(false);
     }
   }, []);
 
-  // ── Quand l'utilisateur ouvre la cloche, charger la liste ──
+  // ── Forcer le rechargement (ignore le cache hasLoadedRef) ──
+  // Utilisé après markAllAsRead ou quand on veut refresh manuellement.
+  const forceReload = useCallback(async () => {
+    isLoadingRef.current = true;
+    setIsLoading(true);
+    try {
+      const list = await notificationService.list({ limit: LIST_LIMIT });
+      setNotifications(list);
+      hasLoadedRef.current = true;
+      if (list.length > 0) {
+        lastKnownNotifIdRef.current = list[0].id;
+      }
+    } catch {
+      // ignore
+    } finally {
+      isLoadingRef.current = false;
+      setIsLoading(false);
+    }
+  }, []);
+
+  // ── Quand l'utilisateur ouvre la cloche, charger la liste si pas encore fait ──
   useEffect(() => {
-    if (isOpen && notifications.length === 0 && !isLoading) {
+    if (isOpen && !hasLoadedRef.current && !isLoadingRef.current) {
       loadNotifications();
     }
-  }, [isOpen, notifications.length, isLoading, loadNotifications]);
+  }, [isOpen, loadNotifications]);
 
   // ── Détection des nouvelles notifications via polling ──
   // On compare le compteur non lues : s'il augmente, on recharge la liste
@@ -93,6 +126,7 @@ export function useNotifications() {
         .list({ limit: LIST_LIMIT })
         .then((list) => {
           setNotifications(list);
+          hasLoadedRef.current = true;
           // Détection de la nouvelle notif (la plus récente)
           if (list.length > 0) {
             const newest = list[0];
@@ -158,6 +192,7 @@ export function useNotifications() {
     isOpen,
     setIsOpen,
     loadNotifications,
+    forceReload,
     markAsRead,
     markAllAsRead,
     deleteNotification,

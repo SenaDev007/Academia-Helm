@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { PrismaService } from '../../database/prisma.service';
 import { StudentsLifecycleService } from './students-lifecycle.service';
 import { StudentIdentifierService } from './student-identifier.service';
+import { StorageService } from '../../common/services/storage.service';
 
 @Injectable()
 export class AdmissionService {
@@ -11,6 +12,7 @@ export class AdmissionService {
     private readonly prisma: PrismaService,
     private readonly lifecycleService: StudentsLifecycleService,
     private readonly studentIdentifierService: StudentIdentifierService,
+    private readonly storageService: StorageService,
   ) {}
 
   /**
@@ -551,6 +553,164 @@ export class AdmissionService {
         status: 'SUBMITTED',
       },
     });
+  }
+
+  /**
+   * Upload d'un document d'admission via data URL (base64).
+   * Pattern aligné sur le module RH (StaffPrismaService.uploadStaffDocumentDataUrl).
+   *
+   * Stocke le data URL directement dans filePath — pas de dépendance Vercel Blob.
+   * Le téléchargement se fait ensuite via downloadAdmissionDocument() qui
+   * décode le base64 et renvoie le buffer binaire avec Content-Disposition: inline.
+   */
+  async uploadAdmissionDocumentDataUrl(
+    admissionId: string,
+    tenantId: string,
+    body: {
+      documentType: string;
+      fileName: string;
+      fileDataUrl: string;
+      mimeType: string;
+      fileSize: number;
+      comment?: string;
+      expiresAt?: string;
+    },
+  ): Promise<any> {
+    // Vérifier que l'admission existe
+    const admission = await this.prisma.admission.findFirst({
+      where: { id: admissionId, tenantId },
+      select: { id: true, admissionNumber: true },
+    });
+    if (!admission) {
+      throw new NotFoundException(`Demande d'admission introuvable`);
+    }
+
+    // Valider le format data URL
+    const trimmed = (body.fileDataUrl ?? '').trim();
+    const m = /^data:([^;]+);base64,(.+)$/i.exec(trimmed);
+    if (!m) {
+      throw new BadRequestException('Format attendu : data URL base64 (data:...;base64,...).');
+    }
+    const detectedMime = m[1].trim().toLowerCase();
+
+    // Vérifier la taille (max 20 Mo décodés)
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.from(m[2], 'base64');
+    } catch {
+      throw new BadRequestException('Base64 invalide.');
+    }
+    if (buffer.length > 20 * 1024 * 1024) {
+      throw new BadRequestException('Fichier trop volumineux (max 20 Mo décodés).');
+    }
+
+    // Stocker le data URL directement dans filePath (pattern RH)
+    const filePath = trimmed;
+
+    this.logger.log(
+      `Upload document admission ${admission.admissionNumber} — type=${body.documentType} — ${buffer.length} octets`,
+    );
+
+    return this.prisma.admissionDocument.create({
+      data: {
+        tenantId,
+        admissionId,
+        documentType: body.documentType,
+        fileName: body.fileName,
+        filePath,
+        fileSize: body.fileSize || buffer.length,
+        mimeType: body.mimeType || detectedMime,
+        comment: body.comment || null,
+        status: 'SUBMITTED',
+        expiresAt: body.expiresAt ? new Date(body.expiresAt) : null,
+      },
+    });
+  }
+
+  /**
+   * Télécharge le fichier binaire d'un document d'admission.
+   * Gère 3 sources : data URL (base64), URL HTTPS (Vercel Blob), storage service.
+   * Pattern aligné sur StaffPrismaService.downloadStaffDocument.
+   */
+  async downloadAdmissionDocument(
+    documentId: string,
+    admissionId: string,
+    tenantId: string,
+  ): Promise<{ buffer: Buffer; fileName: string; mimeType: string }> {
+    const doc = await this.prisma.admissionDocument.findFirst({
+      where: { id: documentId, admissionId, tenantId },
+    });
+    if (!doc) {
+      throw new NotFoundException(`Document non trouvé`);
+    }
+
+    const filePath = doc.filePath || '';
+
+    // ─── 1. Data URL : décoder directement le base64 ────────────────────
+    if (filePath.startsWith('data:')) {
+      const m = /^data:([^;]+);base64,(.+)$/i.exec(filePath);
+      if (m) {
+        const buffer = Buffer.from(m[2], 'base64');
+        return {
+          buffer,
+          fileName: doc.fileName || `document-${documentId}`,
+          mimeType: doc.mimeType || m[1],
+        };
+      }
+    }
+
+    // ─── 2. URL HTTPS (Vercel Blob ou autre) : fetch direct ────────────
+    if (filePath.startsWith('https://') || filePath.startsWith('http://')) {
+      try {
+        const response = await fetch(filePath);
+        if (response.ok) {
+          const arrayBuf = await response.arrayBuffer();
+          const buffer = Buffer.from(arrayBuf);
+          return {
+            buffer,
+            fileName: doc.fileName || `document-${documentId}`,
+            mimeType: doc.mimeType || 'application/octet-stream',
+          };
+        }
+      } catch {
+        // URL fetch failed — try storage service below
+      }
+    }
+
+    // ─── 3. Storage service (R2/S3/local) ───────────────────────────────
+    if (filePath) {
+      try {
+        const buffer = await this.storageService.downloadFile(filePath);
+        return {
+          buffer,
+          fileName: doc.fileName || `document-${documentId}`,
+          mimeType: doc.mimeType || 'application/octet-stream',
+        };
+      } catch {
+        // storage download failed
+      }
+
+      // ─── 4. Fallback filesystem local ────────────────────────────────
+      try {
+        const fs = await import('fs');
+        const path = await import('path');
+        const absolutePath = path.join(process.cwd(), filePath);
+        if (fs.existsSync(absolutePath)) {
+          const buffer = fs.readFileSync(absolutePath);
+          return {
+            buffer,
+            fileName: doc.fileName || `document-${documentId}`,
+            mimeType: doc.mimeType || 'application/octet-stream',
+          };
+        }
+      } catch {
+        // local filesystem fallback failed
+      }
+    }
+
+    throw new NotFoundException(
+      `Fichier du document introuvable: ${doc.fileName || documentId}`,
+    );
   }
 
   async updateDocument(documentId: string, tenantId: string, data: any) {

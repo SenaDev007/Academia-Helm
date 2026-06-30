@@ -1319,3 +1319,29 @@ Stage Summary:
 - 2 fichiers modifiés : schema.prisma, AdmissionsContent.tsx
 - Nouveaux types de pièces justificatives disponibles : NPI + SCHOOL_CERTIFICATE (remplace TRANSFER_CERT)
 - Pas de régression : les anciens documents déjà stockés avec TRANSFER_CERT afficheront juste le code brut (cas marginal, à vérifier en production)
+
+---
+Task ID: admission-docs-data-url-pattern
+Agent: main
+Task: Aligner les documents d'admission sur le pattern RH (upload data URL + visualisation in-app)
+
+Work Log:
+- Analyse du pattern RH : data URL stocké en DB (pas Vercel Blob), endpoint download décode base64 et streame avec Content-Disposition: inline, bouton "Ouvrir →" dans l'UI
+- État admission avant : proxy FormData → Vercel Blob (si token), pas d'endpoint download, pas de bouton visualisation
+- Backend admission.service.ts : ajout uploadAdmissionDocumentDataUrl() (valide data URL, stocke dans filePath) + downloadAdmissionDocument() (4 sources : data URL, HTTPS, storage service, filesystem local)
+- Backend admission.controller.ts : ajout POST :id/upload-document (validation IMAGE_OR_PDF_DATA_URL_PIPE) + GET :id/documents/:docId/download (Content-Disposition: inline, filename UTF-8 encodé)
+- Backend students.module.ts : ajout StorageService aux providers
+- Frontend route /api/students/admissions/[admissionId]/documents/route.ts : réécrite FormData → JSON body { documentType, fileName, fileDataUrl, mimeType, fileSize }, forward au backend upload-document
+- Frontend route /api/students/admissions/[admissionId]/documents/[docId]/download/route.ts : créée — proxy download binaire avec transmission Content-Type + Content-Disposition
+- Frontend AdmissionsContent.tsx :
+  - handleAddDocument réécrit : FileReader.readAsDataURL → POST JSON (validation client taille 20Mo + MIME)
+  - Bouton "Ouvrir" ajouté sur chaque document (icône ExternalLink), lien vers route proxy download, target="_blank"
+  - File input accept mis à jour : .pdf,.jpg,.jpeg,.png,.webp,.gif,.avif,.doc,.docx
+- Ancien endpoint POST :id/documents (JSON body) conservé pour rétro-compat
+- Anciens documents stockés via Vercel Blob (filePath=https://...) fonctionnent toujours — le download gère les 2 cas
+
+Stage Summary:
+- 5 fichiers modifiés : admission.service.ts, admission.controller.ts, students.module.ts, route.ts (upload), AdmissionsContent.tsx
+- 1 fichier créé : route.ts (download)
+- Pattern désormais aligné sur RH : data URL en DB, pas de dépendance Vercel Blob, visualisation in-app via bouton "Ouvrir"
+- Rétro-compat : anciens endpoints conservés, anciens docs Vercel Blob toujours téléchargeables

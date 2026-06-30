@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import {
   Plus, Search, Filter, CheckCircle, XCircle, Clock, FileText,
   UserCheck, Calendar, BadgeCheck, AlertCircle, Loader2, Eye,
-  Send, Pencil, X, Info, Star, AlertTriangle, Trash2, RotateCcw
+  Send, Pencil, X, Info, Star, AlertTriangle, Trash2, RotateCcw,
+  ExternalLink,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { format } from 'date-fns';
@@ -312,20 +313,56 @@ export default function AdmissionsContent() {
       toast({ title: 'Fichier manquant', description: 'Veuillez sélectionner un fichier à uploader.', variant: 'error' });
       return;
     }
+
+    // Limite 20 Mo (alignée sur IMAGE_OR_PDF_DATA_URL_PIPE côté backend)
+    const MAX_BYTES = 20 * 1024 * 1024;
+    if (newDocFile.size > MAX_BYTES) {
+      toast({
+        title: 'Fichier trop volumineux',
+        description: 'La taille maximale est de 20 Mo.',
+        variant: 'error',
+      });
+      return;
+    }
+
+    // Vérifier le type MIME autorisé (images + PDF + .doc/.docx)
+    const allowedMime = [
+      'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/avif',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+    if (!allowedMime.includes(newDocFile.type)) {
+      toast({
+        title: 'Type de fichier non autorisé',
+        description: 'Formats acceptés : images (JPEG, PNG, WebP, GIF), PDF, Word (.doc, .docx).',
+        variant: 'error',
+      });
+      return;
+    }
+
     setIsUploadingDoc(true);
     try {
-      // 1. Upload du fichier via le proxy Next.js
-      const formData = new FormData();
-      formData.append('file', newDocFile);
-      formData.append('documentType', newDocType);
-      formData.append('fileName', newDocFile.name);
-      formData.append('mimeType', newDocFile.type);
-      formData.append('fileSize', String(newDocFile.size));
+      // 1. Lire le fichier en data URL (base64) — pattern RH
+      const fileDataUrl: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('Lecture du fichier impossible'));
+        reader.readAsDataURL(newDocFile);
+      });
 
+      // 2. POST JSON au proxy Next.js (qui forward au backend upload-document)
       const uploadRes = await fetch(`/api/students/admissions/${selectedAdmission.id}/documents`, {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
+        body: JSON.stringify({
+          documentType: newDocType,
+          fileName: newDocFile.name,
+          fileDataUrl,
+          mimeType: newDocFile.type,
+          fileSize: newDocFile.size,
+        }),
       });
 
       if (!uploadRes.ok) {
@@ -916,7 +953,7 @@ export default function AdmissionsContent() {
                       type="file"
                       onChange={e => setNewDocFile(e.target.files?.[0] || null)}
                       className="flex-1 text-xs file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-700 file:font-semibold hover:file:bg-blue-100"
-                      accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                      accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.avif,.doc,.docx"
                     />
                     <button
                       onClick={handleAddDocument}
@@ -986,6 +1023,19 @@ export default function AdmissionsContent() {
                          doc.status === 'SUBMITTED' ? 'Soumis' : 'En attente'}
                       </span>
                       <div className="flex gap-1 shrink-0">
+                        {/* Bouton "Ouvrir" — prévisualisation dans un nouvel onglet
+                            via la route proxy download (Content-Disposition: inline) */}
+                        {doc.filePath && (
+                          <a
+                            href={`/api/students/admissions/${selectedAdmission.id}/documents/${doc.id}/download`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1 hover:bg-blue-100 rounded text-blue-600 transition inline-flex items-center justify-center"
+                            title="Ouvrir / Prévisualiser"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        )}
                         {doc.status === 'SUBMITTED' && (
                           <>
                             <button onClick={() => handleValidateDoc(doc.id)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600" title="Valider">

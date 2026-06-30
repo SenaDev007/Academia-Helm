@@ -43,6 +43,7 @@ import { MatriculeService } from './services/matricule.service';
 import { StudentTransferController } from './student-transfer.controller';
 import { StudentTransferService } from './student-transfer.service';
 import { FinanceModule } from '../finance/finance.module';
+import { StorageService } from '../common/services/storage.service';
 
 @Module({
   imports: [
@@ -87,6 +88,7 @@ import { FinanceModule } from '../finance/finance.module';
     DisciplinePrismaService,
     DocumentsPrismaService,
     TransfersPrismaService,
+    StorageService,
     // Module 1 - Matricule Global & Cartes Scolaires
     StudentIdentifierService,
     StudentIdCardService,

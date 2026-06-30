@@ -1481,41 +1481,55 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             }}
           >
             {/* ── Colonne gauche : infos école (fond bleu palette Helm) ── */}
-            <div className="flex-1 p-6 sm:p-8 flex flex-col justify-center relative overflow-hidden"
+            {/* Structure harmonisée pour TOUS les portails :
+                1. HEADER (top)    : badge portail (icône + libellé)
+                2. CENTRE (middle) : logo + nom école + slogan + infos clés (centré verticalement)
+                3. FOOTER (bottom) : "Propulsé par Academia Helm" + logo AH */}
+            <div className="flex-1 p-6 sm:p-8 flex flex-col relative overflow-hidden"
               style={{ background: `linear-gradient(155deg, ${NAVY} 0%, ${BLUE} 100%)` }}>
               {/* ── Décor bleu : halos lumineux subtils ── */}
               <div className="pointer-events-none absolute -top-16 -left-10 h-48 w-48 rounded-full opacity-25 blur-3xl" style={{ background: '#ffffff' }} aria-hidden />
               <div className="pointer-events-none absolute -bottom-20 -right-10 h-56 w-56 rounded-full opacity-15 blur-3xl" style={{ background: `${GOLD}` }} aria-hidden />
-          {/* ── Header ── */}
+
+          {/* ════════════════════════════════════════════════════════════════════
+              1. HEADER (top) : Badge portail (icône + libellé)
+              Affiché pour TOUS les portails (sauf portalType === null = sélection)
+              ════════════════════════════════════════════════════════════════════ */}
+          {portalType && portalDef && (
+            <motion.div
+              className="flex justify-center pt-2 pb-4"
+              variants={heroVariants}
+              initial="hidden"
+              animate="show"
+            >
+              <motion.span
+                variants={heroItem}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] uppercase tracking-wider font-bold"
+                style={{
+                  color: '#fff',
+                  background: 'rgba(255,255,255,0.12)',
+                  border: '1px solid rgba(255,255,255,0.25)',
+                  backdropFilter: 'blur(4px)',
+                }}
+              >
+                <portalDef.Icon className="h-3 w-3" />
+                {portalDef.title}
+              </motion.span>
+            </motion.div>
+          )}
+
+          {/* ════════════════════════════════════════════════════════════════════
+              2. CENTRE (middle) : Logo + Nom école + Slogan + Infos clés
+              Centré verticalement (flex-1 + justify-center)
+              ════════════════════════════════════════════════════════════════════ */}
           <motion.div
-            className="mb-4 text-center md:text-left flex flex-col h-full"
+            className="flex-1 flex flex-col items-center justify-center text-center"
             variants={heroVariants}
             initial="hidden"
             animate="show"
           >
-            {/* ── TOP : Badge "Portail Public — Pré-inscription" (au-dessus du logo) ── */}
-            {portalType === 'public' && (
-              <motion.div variants={heroItem} className="flex justify-center mb-3">
-                <span
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] uppercase tracking-wider font-bold"
-                  style={{
-                    color: '#fff',
-                    background: 'rgba(255,255,255,0.12)',
-                    border: '1px solid rgba(255,255,255,0.25)',
-                    backdropFilter: 'blur(4px)',
-                  }}
-                >
-                  <Globe className="h-3 w-3" />
-                  Portail Public — Pré-inscription
-                </span>
-              </motion.div>
-            )}
-
             {/* Logo — cercle parfait + jeu lumineux */}
-            <motion.div
-              variants={heroItem}
-              className="mb-3 flex justify-center"
-            >
+            <motion.div variants={heroItem} className="mb-3 flex justify-center">
               <LogoCircle
                 logoUrl={clientBranding?.logoUrl}
                 alt={clientBranding?.name || BRAND.name}
@@ -1523,90 +1537,54 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
               />
             </motion.div>
 
-            {/* Title */}
-            <motion.div
-              variants={heroItem}
-              className="mb-1.5 flex flex-col items-center justify-center gap-1"
-            >
-              <h1
-                className="text-sm font-semibold tracking-tight sm:text-base text-white"
-              >
-                {/* Pour le portail public : le nom de l'école est mis en avant
-                    (le parent voit immédiatement à quelle école il s'adresse).
-                    Pour les autres portails : on garde portalDef.title. */}
-                {portalType === 'public'
-                  ? (clientBranding?.name || schoolNameFromUrl || portalDef?.title || BRAND.name)
-                  : (portalDef?.title || clientBranding?.name || BRAND.name)}
+            {/* Nom de l'école (ou nom par défaut) */}
+            <motion.div variants={heroItem} className="mb-1.5">
+              <h1 className="text-base sm:text-lg font-bold tracking-tight text-white">
+                {clientBranding?.name || schoolNameFromUrl || portalDef?.title || BRAND.name}
               </h1>
             </motion.div>
 
-            <motion.p variants={heroItem} className="text-sm text-blue-100">
-              {/* Pour le portail public : afficher le slogan de l'école (plus pertinent que "Pré-inscription & acquisition") */}
-              {portalType === 'public'
-                ? (clientBranding?.motto || clientBranding?.slogan || 'Pré-inscription en ligne')
-                : (portalDef?.subtitle || clientBranding?.slogan || BRAND.subtitle)}
+            {/* Sous-titre : subtitle du portail OU slogan école */}
+            <motion.p variants={heroItem} className="text-sm text-blue-100 max-w-xs">
+              {portalDef?.subtitle || clientBranding?.slogan || BRAND.subtitle}
             </motion.p>
 
-            {/* Tenant display — multi-tenant strict */}
-            {/* Affiché pour TOUS les portails (y compris public) pour que le parent
-                voie clairement l'école tenante à laquelle il s'adresse. */}
-            {(clientBranding?.name || tenantSlug || schoolNameFromUrl) && (
-              <motion.div variants={heroItem} className="mt-3">
-                {/* Bandeau principal : nom école + ville — masqué en mode public car
-                    le h1 affiche déjà le nom de l'école (évite la redondance). */}
-                {portalType !== 'public' && (
-                  <div
-                    className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium text-white"
-                    style={{
-                      borderColor: 'rgba(255,255,255,0.25)',
-                      background: 'rgba(255,255,255,0.10)',
-                      backdropFilter: 'blur(4px)',
-                    }}
-                  >
-                    <Building2 className="h-3.5 w-3.5" />
-                    <span>{clientBranding?.name || schoolNameFromUrl || tenantSlug}</span>
-                    {clientBranding?.city && (
-                      <span className="text-blue-200">— {clientBranding.city}</span>
-                    )}
+            {/* Slogan école (si différent du sous-titre et mode non-public) */}
+            {portalType !== 'public' && clientBranding?.slogan && portalDef?.subtitle && clientBranding.slogan !== portalDef.subtitle && (
+              <motion.p variants={heroItem} className="mt-2 text-xs italic text-blue-200/80 max-w-xs">
+                « {clientBranding.slogan} »
+              </motion.p>
+            )}
+
+            {/* ── Infos clés école (si branding résolu) ──
+                Adresse / Téléphone / Website alignés à gauche (plus lisible pour des coordonnées)
+                Le reste reste centré. */}
+            {clientBranding && (clientBranding.address || clientBranding.phone || clientBranding.website) && (
+              <motion.div variants={heroItem} className="mt-4 text-left text-[11px] text-blue-100/90 space-y-1.5">
+                {clientBranding.address && (
+                  <div className="flex items-start gap-1.5">
+                    <MapPin className="h-3 w-3 mt-0.5 shrink-0 text-blue-200/70" />
+                    <span>{clientBranding.address}{clientBranding.city ? `, ${clientBranding.city}` : ''}</span>
                   </div>
                 )}
-
-                {/* Infos clés école (uniquement si branding résolu) — affichées
-                    verticalement sous le bandeau, en petits libellés lisibles.
-                    En mode public : le slogan est masqué ici (déjà affiché en sous-titre). */}
-                {clientBranding && (clientBranding.address || clientBranding.phone) && (
-                  <div className="mt-2 space-y-1 text-[11px] text-blue-100/90">
-                    {portalType !== 'public' && clientBranding.slogan && (
-                      <div className="flex items-start gap-1.5">
-                        <span className="text-blue-200/70 italic">« {clientBranding.slogan} »</span>
-                      </div>
-                    )}
-                    {clientBranding.address && (
-                      <div className="flex items-start gap-1.5">
-                        <MapPin className="h-3 w-3 mt-0.5 shrink-0 text-blue-200/70" />
-                        <span>{clientBranding.address}{clientBranding.city ? `, ${clientBranding.city}` : ''}</span>
-                      </div>
-                    )}
-                    {clientBranding.phone && (
-                      <div className="flex items-start gap-1.5">
-                        <Phone className="h-3 w-3 mt-0.5 shrink-0 text-blue-200/70" />
-                        <span>{clientBranding.phone}</span>
-                      </div>
-                    )}
+                {clientBranding.phone && (
+                  <div className="flex items-start gap-1.5">
+                    <Phone className="h-3 w-3 mt-0.5 shrink-0 text-blue-200/70" />
+                    <span>{clientBranding.phone}</span>
+                  </div>
+                )}
+                {clientBranding.website && (
+                  <div className="flex items-start gap-1.5">
+                    <Globe className="h-3 w-3 mt-0.5 shrink-0 text-blue-200/70" />
+                    <span className="break-all">{clientBranding.website}</span>
                   </div>
                 )}
               </motion.div>
             )}
 
-            {portalType === null && (
-              <motion.p variants={heroItem} className="mt-1 text-xs font-medium text-blue-200">
-                {clientBranding?.slogan || clientBranding?.motto || BRAND.slogan}
-              </motion.p>
-            )}
-
-            {/* ── Portal selection buttons (school subdomain context) ── */}
+            {/* ── Portal selection buttons (school subdomain context, portalType === null) ── */}
             {portalType === null && accessContext === 'school-subdomain' && (
-              <motion.div variants={heroItem} className="mt-4 grid grid-cols-2 gap-2 sm:gap-3">
+              <motion.div variants={heroItem} className="mt-4 grid grid-cols-2 gap-2 sm:gap-3 w-full max-w-xs">
                 {([
                   { type: 'school' as const, label: 'École', Icon: Building2, desc: 'Direction, admin' },
                   { type: 'teacher' as const, label: 'Enseignant', Icon: GraduationCap, desc: 'Pédagogie' },
@@ -1633,26 +1611,27 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             )}
           </motion.div>
 
-          {/* ── FOOTER : "Propulsé par Academia Helm" + logo AH (en bas de la bande navy) ── */}
-          {clientBranding && (
-            <motion.div
-              variants={heroItem}
-              className="mt-auto pt-4 flex items-center justify-center gap-2 text-[10px] text-blue-200"
-              initial="hidden"
-              animate="show"
-            >
-              <span>Propulsé par</span>
-              <Image
-                src="https://www.academiahelm.com/images/logo-Academia%20Hub.png"
-                alt={BRAND.name}
-                width={56}
-                height={20}
-                className="object-contain opacity-90"
-                style={{ filter: 'brightness(1.1)' }}
-              />
-              <span className="font-semibold" style={{ color: GOLD }}>{BRAND.name}</span>
-            </motion.div>
-          )}
+          {/* ════════════════════════════════════════════════════════════════════
+              3. FOOTER (bottom) : "Propulsé par Academia Helm" + logo AH
+              Toujours affiché (même sans branding école, car c'est le footer plateforme)
+              ════════════════════════════════════════════════════════════════════ */}
+          <motion.div
+            className="pt-4 flex items-center justify-center gap-2 text-[10px] text-blue-200"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.4 }}
+          >
+            <span>Propulsé par</span>
+            <Image
+              src="https://www.academiahelm.com/images/logo-Academia%20Hub.png"
+              alt={BRAND.name}
+              width={56}
+              height={20}
+              className="object-contain opacity-90"
+              style={{ filter: 'brightness(1.1)' }}
+            />
+            <span className="font-semibold" style={{ color: GOLD }}>{BRAND.name}</span>
+          </motion.div>
 
           {/* ── Error display ── */}
           <AnimatePresence>

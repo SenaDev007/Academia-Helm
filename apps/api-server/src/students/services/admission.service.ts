@@ -66,8 +66,11 @@ export class AdmissionService {
     // Générer le numéro d'admission
     const admissionNumber = await this.generateAdmissionNumber(tenantId, data.academicYearId);
 
-    return this.prisma.admission.create({
-      data: {
+    try {
+      // ⚠️ Utiliser ONLY les champs qui existent dans le schéma Prisma actuel.
+      // La relation schoolLevel a été supprimée du schéma — ne pas l'inclure.
+      // schoolLevelId est une simple String maintenant (pas de relation).
+      const createData: any = {
         tenantId,
         academicYearId: data.academicYearId,
         schoolLevelId: data.schoolLevelId,
@@ -101,11 +104,23 @@ export class AdmissionService {
         status: 'PENDING',
         applicationDate: new Date(),
         notes: data.notes ?? null,
-      },
-      include: {
-        academicYear: true,
-      },
-    });
+      };
+
+      this.logger.log(`Creating admission: tenantId=${tenantId}, schoolLevelId=${data.schoolLevelId}, academicYearId=${data.academicYearId}, admissionNumber=${admissionNumber}`);
+
+      const result = await this.prisma.admission.create({
+        data: createData,
+      });
+
+      this.logger.log(`Admission created successfully: id=${result.id}, admissionNumber=${result.admissionNumber}`);
+      return result;
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to create admission: ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
   }
 
   /**

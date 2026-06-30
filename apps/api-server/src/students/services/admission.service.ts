@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { StudentsLifecycleService } from './students-lifecycle.service';
 import { StudentIdentifierService } from './student-identifier.service';
 import { StorageService } from '../../common/services/storage.service';
+import { AdmissionNotificationService } from './admission-notification.service';
 
 @Injectable()
 export class AdmissionService {
@@ -13,6 +14,7 @@ export class AdmissionService {
     private readonly lifecycleService: StudentsLifecycleService,
     private readonly studentIdentifierService: StudentIdentifierService,
     private readonly storageService: StorageService,
+    private readonly notificationService: AdmissionNotificationService,
   ) {}
 
   /**
@@ -849,5 +851,232 @@ export class AdmissionService {
       throw new BadRequestException('Impossible de supprimer une admission déjà convertie en élève');
     }
     return this.prisma.admission.delete({ where: { id } });
+  }
+
+  // ═══ PUBLIC PORTAL — Soumission depuis le portail public ═══
+
+  /**
+   * Soumission publique d'une demande d'admission (sans authentification).
+   *
+   * Pattern aligné sur RecruitmentService.applyJob :
+   *   1. Résoudre tenantId depuis body.tenantId (le frontend l'inclut explicitement)
+   *   2. Résoudre academicYearId actif du tenant (si non fourni dans le body)
+   *   3. Vérifier doublon (même email parent + même année + même tenant)
+   *   4. Créer l'Admission en DB (status PENDING, admissionNumber auto-généré)
+   *   5. Créer un AdmissionDocument par fichier uploadé (filePath = data URL)
+   *   6. Fire-and-forget : envoyer email de confirmation au parent
+   *   7. Retourner { admission, documents }
+   *
+   * Sécurité :
+   *   - Pas de JWT (endpoint @Public) — tenantId est trusted depuis le body
+   *   - Les fichiers sont validés via DataUrlValidationPipe côté controller
+   *   - Le statut est forcé à PENDING (jamais ACCEPTED/CONVERTED depuis le portail)
+   */
+  async applyAdmission(body: any, files: any): Promise<{ admission: any; documents: any[] }> {
+    const tenantId = body.tenantId;
+    if (!tenantId) {
+      throw new BadRequestException('tenantId est requis pour soumettre une demande d\'admission');
+    }
+
+    // Valider champs obligatoires
+    if (!body.firstName || !body.lastName) {
+      throw new BadRequestException('Prénom et nom de l\'élève sont requis');
+    }
+
+    // Résoudre l'année académique active du tenant si non fournie
+    let academicYearId = body.academicYearId;
+    if (!academicYearId) {
+      const activeYear = await this.prisma.academicYear.findFirst({
+        where: { tenantId, isActive: true },
+        orderBy: { startDate: 'desc' },
+      });
+      if (!activeYear) {
+        throw new BadRequestException('Aucune année académique active pour cet établissement');
+      }
+      academicYearId = activeYear.id;
+    }
+
+    // Résoudre schoolLevelId — le frontend peut envoyer un code (MATERNELLE/PRIMARY/SECONDARY)
+    // ou un UUID. On accepte les deux.
+    let schoolLevelId = body.schoolLevelId;
+    if (!schoolLevelId) {
+      // Fallback : déduire du candidateType
+      const candidateType = (body.candidateType || '').toUpperCase();
+      const codeMap: Record<string, string> = {
+        MATERNELLE: 'MATERNELLE',
+        PRIMARY: 'PRIMAIRE',
+        SECONDARY: 'SECONDAIRE',
+      };
+      schoolLevelId = codeMap[candidateType] || 'PRIMAIRE';
+    }
+
+    // Vérifier doublon : même email parent + même tenant + même année académique
+    if (body.mainGuardianEmail) {
+      const existing = await this.prisma.admission.findFirst({
+        where: {
+          tenantId,
+          academicYearId,
+          mainGuardianEmail: body.mainGuardianEmail,
+          firstName: body.firstName,
+          lastName: body.lastName,
+          status: { notIn: ['REJECTED', 'CANCELLED'] },
+        },
+        select: { id: true, admissionNumber: true, status: true },
+      });
+      if (existing) {
+        throw new ConflictException(
+          `Une demande d'admission existe déjà pour ${body.firstName} ${body.lastName} ` +
+          `(${existing.admissionNumber || 'sans numéro'}) avec l'email ${body.mainGuardianEmail}. ` +
+          `Statut actuel : ${existing.status}.`,
+        );
+      }
+    }
+
+    // Générer le numéro d'admission
+    const admissionNumber = await this.generateAdmissionNumber(tenantId, academicYearId);
+
+    // Préparer les données d'admission
+    const createData: any = {
+      tenantId,
+      academicYearId,
+      schoolLevelId,
+      firstName: body.firstName,
+      lastName: body.lastName,
+      dateOfBirth: body.dateOfBirth ? new Date(body.dateOfBirth) : null,
+      gender: body.gender ?? null,
+      birthPlace: body.birthPlace ?? null,
+      nationality: body.nationality ?? 'Béninoise',
+      address: body.address ?? null,
+
+      // Vœux académiques
+      requestedClassId: body.requestedClassId || null,
+      requestedSeriesId: body.requestedSeriesId || null,
+      wantsBilingual: body.wantsBilingual ?? false,
+      previousSchool: body.previousSchool ?? null,
+      previousLevel: body.previousLevel ?? null,
+      changeReason: body.changeReason ?? null,
+
+      // Responsable légal
+      mainGuardianName: body.mainGuardianName ?? null,
+      mainGuardianPhone: body.mainGuardianPhone ?? null,
+      mainGuardianEmail: body.mainGuardianEmail ?? null,
+      mainGuardianRelationship: body.mainGuardianRelationship ?? null,
+      mainGuardianAddress: body.mainGuardianAddress ?? null,
+      mainGuardianProfession: body.mainGuardianProfession ?? null,
+
+      // Traçabilité
+      admissionNumber,
+      // createdByUserId = null (pas d'utilisateur authentifié)
+      // metadata : conserver la source pour audit
+      metadata: {
+        source: 'PORTAL_PUBLIC',
+        candidateType: body.candidateType || null,
+        submittedAt: new Date().toISOString(),
+      },
+
+      // Workflow
+      status: 'PENDING',
+      applicationDate: new Date(),
+      notes: body.message || body.notes || null,
+    };
+
+    // Convertir les fichiers en data URLs (pattern recruitment.service.ts:2149)
+    const dataUrlForFile = (f: Express.Multer.File): string | null => {
+      if (!f?.buffer) return null;
+      return `data:${f.mimetype};base64,${f.buffer.toString('base64')}`;
+    };
+
+    // Mapping : clé du body → documentType dans AdmissionDocument
+    const docTypeMap: Record<string, string> = {
+      birthCertificate: 'BIRTH_CERTIFICATE',
+      idPhoto: 'ID_PHOTO',
+      lastReportCard: 'REPORT_CARD',
+      schoolCertificate: 'SCHOOL_CERTIFICATE',
+      parentalAuth: 'PARENTAL_AUTH',
+      npi: 'NPI',
+      idDocument: 'ID_DOCUMENT',
+      other: 'OTHER',
+    };
+
+    // Préparer les documents à créer dans la transaction
+    const documentsToCreate: Array<{
+      documentType: string;
+      fileName: string;
+      filePath: string;
+      mimeType: string;
+      fileSize: number;
+    }> = [];
+
+    for (const [bodyKey, docType] of Object.entries(docTypeMap)) {
+      const fileArr = files[bodyKey];
+      if (Array.isArray(fileArr) && fileArr.length > 0) {
+        const f = fileArr[0];
+        const filePath = dataUrlForFile(f);
+        if (filePath) {
+          documentsToCreate.push({
+            documentType: docType,
+            fileName: f.originalname || `${docType.toLowerCase()}.pdf`,
+            filePath,
+            mimeType: f.mimetype || 'application/octet-stream',
+            fileSize: f.size || 0,
+          });
+        }
+      }
+    }
+
+    // Transaction : créer admission + documents
+    const result = await this.prisma.$transaction(
+      async (tx) => {
+        const admission = await tx.admission.create({ data: createData });
+
+        const documents: any[] = [];
+        for (const doc of documentsToCreate) {
+          const created = await tx.admissionDocument.create({
+            data: {
+              tenantId,
+              admissionId: admission.id,
+              documentType: doc.documentType,
+              fileName: doc.fileName,
+              filePath: doc.filePath,
+              mimeType: doc.mimeType,
+              fileSize: doc.fileSize,
+              status: 'SUBMITTED',
+            },
+          });
+          documents.push(created);
+        }
+
+        return { admission, documents };
+      },
+      { timeout: 30000 },
+    );
+
+    this.logger.log(
+      `Admission publique créée : id=${result.admission.id}, ` +
+      `numéro=${result.admission.admissionNumber}, ` +
+      `élève=${body.firstName} ${body.lastName}, ` +
+      `documents=${result.documents.length}`,
+    );
+
+    // Fire-and-forget : envoyer email de confirmation au parent
+    const documentsSubmitted = result.documents.map((d) => ({
+      type: d.documentType,
+      fileName: d.fileName,
+    }));
+
+    this.notificationService
+      .notifyAdmissionReceived({
+        admissionId: result.admission.id,
+        tenantId,
+        documentsSubmitted,
+      })
+      .catch((err) =>
+        this.logger.error(
+          `notifyAdmissionReceived failed: ${err.message}`,
+          err.stack,
+        ),
+      );
+
+    return result;
   }
 }

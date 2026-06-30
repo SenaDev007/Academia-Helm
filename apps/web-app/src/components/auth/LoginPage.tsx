@@ -105,6 +105,34 @@ interface PreEnrollmentData {
   childLastName: string;
   targetLevel: string;
   message?: string;
+
+  // ── Champs étendus (admission complète) ──
+  // Identité enfant
+  childDateOfBirth?: string;
+  childGender?: string;
+  childBirthPlace?: string;
+  childNationality?: string;
+  childAddress?: string;
+
+  // Vœux académiques
+  previousSchool?: string;
+  previousLevel?: string;
+  changeReason?: string;
+  wantsBilingual?: boolean;
+
+  // Responsable légal (champs supplémentaires)
+  parentRelationship?: string;
+  parentAddress?: string;
+  parentProfession?: string;
+
+  // ── Documents uploadés (data URLs) — optionnels ──
+  // Chaque doc est { fileName, fileDataUrl, mimeType, fileSize } | null
+  birthCertificate?: any | null;
+  idPhoto?: any | null;
+  lastReportCard?: any | null;
+  schoolCertificate?: any | null;
+  parentalAuth?: any | null;
+  npi?: any | null;
 }
 
 /** Info école stockée dans sessionStorage pour affichage sur la page login */
@@ -202,6 +230,89 @@ interface SchoolBranding {
   secondaryColor: string | null;
   slogan: string | null;
   motto: string | null;
+}
+
+/**
+ * Convertit un File en data URL base64 — pattern aligné sur CareersContent.tsx
+ * (module RH). Les images sont compressées (maxEdge=1600, JPEG 0.85), les PDF/DOC
+ * sont lus tels quels.
+ *
+ * Retourne { fileName, fileDataUrl, mimeType, fileSize } prêt à être envoyé
+ * au backend /api/public/admission/submit.
+ */
+async function fileToDataUrl(file: File): Promise<{
+  fileName: string;
+  fileDataUrl: string;
+  mimeType: string;
+  fileSize: number;
+}> {
+  const isImage = file.type.startsWith('image/');
+  let fileDataUrl: string;
+
+  if (isImage) {
+    // Compression : maxEdge=1600, qualité 0.85, format JPEG
+    fileDataUrl = await compressImageFileToDataUrl(file, { maxEdge: 1600, quality: 0.85, mimeType: 'image/jpeg' });
+  } else {
+    // PDF/DOC : lecture brute en base64
+    fileDataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error('Lecture du fichier impossible'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  return {
+    fileName: file.name,
+    fileDataUrl,
+    mimeType: file.type || (isImage ? 'image/jpeg' : 'application/octet-stream'),
+    fileSize: file.size,
+  };
+}
+
+/**
+ * Compression d'image côté navigateur — replica léger de lib/media.compressImageFileToDataUrl.
+ * Évite d'importer le helper qui n'est pas forcément disponible côté page publique.
+ */
+async function compressImageFileToDataUrl(
+  file: File,
+  opts: { maxEdge: number; quality: number; mimeType: string },
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = () => {
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height && width > opts.maxEdge) {
+          height = Math.round((height * opts.maxEdge) / width);
+          width = opts.maxEdge;
+        } else if (height > opts.maxEdge) {
+          width = Math.round((width * opts.maxEdge) / height);
+          height = opts.maxEdge;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Canvas non supporté'));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        try {
+          const dataUrl = canvas.toDataURL(opts.mimeType, opts.quality);
+          resolve(dataUrl);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      img.onerror = () => reject(new Error('Image invalide'));
+      img.src = reader.result as string;
+    };
+    reader.onerror = () => reject(new Error('Lecture du fichier impossible'));
+    reader.readAsDataURL(file);
+  });
 }
 
 interface LoginPageProps {
@@ -340,6 +451,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     message: '',
   });
   const [preEnrollmentSubmitted, setPreEnrollmentSubmitted] = useState(false);
+  const [isUploadingDoc, setIsUploadingDoc] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -932,26 +1044,79 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   };
 
   // ── Public portal: pre-enrollment (aucune authentification requise) ──
+  // Envoie les données au backend /students/admissions-public/upload-apply
+  // qui crée l'Admission + AdmissionDocument(s) et envoie un email au parent.
   const handlePreEnrollmentSubmit = async () => {
     const schoolId = tenantIdForApi || schoolSlugFromUrl;
     if (!schoolId) {
       throw new Error('Veuillez sélectionner un établissement pour la pré-inscription');
     }
 
-    const response = await fetchWithTimeout('/api/public/pre-enrollment', {
+    // Mapper les champs du formulaire (parent*/child*) vers le schéma Admission
+    // (firstName/lastName/mainGuardian*).
+    const payload: any = {
+      tenantId: tenantIdForApi,
+      candidateType: preEnrollment.candidateType,
+
+      // Élève
+      firstName: preEnrollment.childFirstName,
+      lastName: preEnrollment.childLastName,
+      dateOfBirth: preEnrollment.childDateOfBirth || undefined,
+      gender: preEnrollment.childGender || undefined,
+      birthPlace: preEnrollment.childBirthPlace || undefined,
+      nationality: preEnrollment.childNationality || 'Béninoise',
+      address: preEnrollment.childAddress || undefined,
+
+      // schoolLevelId déduit du candidateType (MATERNELLE/PRIMARY/SECONDARY)
+      schoolLevelId:
+        preEnrollment.candidateType === 'MATERNELLE' ? 'MATERNELLE' :
+        preEnrollment.candidateType === 'PRIMARY' ? 'PRIMAIRE' :
+        preEnrollment.candidateType === 'SECONDARY' ? 'SECONDAIRE' :
+        undefined,
+      // requestedClassLabel : on garde targetLevel dans notes car c'est du texte libre
+      // (le schéma attend requestedClassId = UUID, qu'on n'a pas en contexte public)
+      wantsBilingual: preEnrollment.wantsBilingual || false,
+      previousSchool: preEnrollment.previousSchool || undefined,
+      previousLevel: preEnrollment.previousLevel || undefined,
+      changeReason: preEnrollment.changeReason || undefined,
+
+      // Responsable légal
+      mainGuardianName: `${preEnrollment.parentFirstName} ${preEnrollment.parentLastName}`.trim(),
+      mainGuardianPhone: preEnrollment.parentPhone || undefined,
+      mainGuardianEmail: preEnrollment.parentEmail || undefined,
+      mainGuardianRelationship: preEnrollment.parentRelationship || undefined,
+      mainGuardianAddress: preEnrollment.parentAddress || undefined,
+      mainGuardianProfession: preEnrollment.parentProfession || undefined,
+
+      // Message + targetLevel (classe souhaitée libre) → notes
+      message: [
+        preEnrollment.targetLevel ? `Classe souhaitée : ${preEnrollment.targetLevel}` : null,
+        preEnrollment.message,
+      ].filter(Boolean).join('\n\n') || undefined,
+    };
+
+    // Ajouter les documents uploadés (data URLs)
+    const docFields = [
+      'birthCertificate', 'idPhoto', 'lastReportCard',
+      'schoolCertificate', 'parentalAuth', 'npi',
+    ] as const;
+    for (const key of docFields) {
+      const doc = preEnrollment[key];
+      if (doc && doc.fileDataUrl) {
+        payload[key] = doc;
+      }
+    }
+
+    const response = await fetchWithTimeout('/api/public/admission/submit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...preEnrollment,
-        schoolSlug: schoolSlugFromUrl || tenantSlug,
-        tenantId: tenantIdForApi,
-      }),
+      body: JSON.stringify(payload),
     });
 
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
 
-    if (!response.ok || !data.success) {
-      throw new Error(data.message || data.error || 'Erreur lors de la pré-inscription');
+    if (!response.ok) {
+      throw new Error(data.error || data.message || `Erreur lors de la soumission (${response.status})`);
     }
 
     setPreEnrollmentSubmitted(true);
@@ -1427,10 +1592,15 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                     <FileText className="h-6 w-6 text-green-600" />
                   </div>
                   <div>
-                    <p className="text-lg font-bold text-green-800">Pré-inscription envoyée</p>
+                    <p className="text-lg font-bold text-green-800">Demande d'admission envoyée</p>
                     <p className="mt-1 text-sm text-green-700">
-                      Votre demande de pré-inscription a été enregistrée avec succès.
-                      Vous recevrez une confirmation par SMS et email.
+                      Votre demande d'admission a été enregistrée avec succès.
+                      Un email de confirmation vient de vous être envoyé à l'adresse
+                      {preEnrollment.parentEmail ? (
+                        <strong> {preEnrollment.parentEmail}</strong>
+                      ) : null}.
+                      Notre équipe pédagogique examinera votre dossier et reviendra vers vous
+                      pour les prochaines étapes (entretien, test ou confirmation).
                     </p>
                   </div>
                   <Link
@@ -1915,6 +2085,60 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                       </div>
                     </div>
 
+                    {/* Responsable légal — champs étendus (lien, adresse, profession) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold text-slate-900">
+                          Lien de parenté <span className="text-slate-400 font-normal">(optionnel)</span>
+                        </label>
+                        <select
+                          value={preEnrollment.parentRelationship || ''}
+                          onChange={(e) => setPreEnrollment((prev) => ({ ...prev, parentRelationship: e.target.value }))}
+                          className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all focus:ring-2"
+                          style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                        >
+                          <option value="">— Sélectionner —</option>
+                          <option value="PERE">Père</option>
+                          <option value="MERE">Mère</option>
+                          <option value="TUTEUR">Tuteur / Tutrice</option>
+                          <option value="ONCLE">Oncle</option>
+                          <option value="TANTE">Tante</option>
+                          <option value="GRAND_PARENT">Grand-parent</option>
+                          <option value="FRERE">Frère</option>
+                          <option value="SOEUR">Sœur</option>
+                          <option value="AUTRE">Autre</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold text-slate-900">
+                          Profession <span className="text-slate-400 font-normal">(optionnel)</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={preEnrollment.parentProfession || ''}
+                          onChange={(e) => setPreEnrollment((prev) => ({ ...prev, parentProfession: e.target.value }))}
+                          className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                          style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                          placeholder="ex : Commerçant"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Adresse du responsable (optionnel) */}
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-900">
+                        Adresse du responsable <span className="text-slate-400 font-normal">(optionnel)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={preEnrollment.parentAddress || ''}
+                        onChange={(e) => setPreEnrollment((prev) => ({ ...prev, parentAddress: e.target.value }))}
+                        className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                        style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                        placeholder="Quartier, ville"
+                      />
+                    </div>
+
                     {/* Child info (not for PROSPECT_PARENT) */}
                     {preEnrollment.candidateType !== 'PROSPECT_PARENT' && (
                       <>
@@ -1949,10 +2173,71 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                           </div>
                         </div>
 
-                        {/* Target level selection */}
+                        {/* Date de naissance + Sexe */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold text-slate-900">
+                              Date de naissance
+                            </label>
+                            <input
+                              type="date"
+                              value={preEnrollment.childDateOfBirth || ''}
+                              onChange={(e) => setPreEnrollment((prev) => ({ ...prev, childDateOfBirth: e.target.value }))}
+                              className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all focus:ring-2"
+                              style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold text-slate-900">
+                              Sexe
+                            </label>
+                            <select
+                              value={preEnrollment.childGender || ''}
+                              onChange={(e) => setPreEnrollment((prev) => ({ ...prev, childGender: e.target.value }))}
+                              className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all focus:ring-2"
+                              style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                            >
+                              <option value="">— Sélectionner —</option>
+                              <option value="M">Masculin</option>
+                              <option value="F">Féminin</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Lieu de naissance + Nationalité */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold text-slate-900">
+                              Lieu de naissance
+                            </label>
+                            <input
+                              type="text"
+                              value={preEnrollment.childBirthPlace || ''}
+                              onChange={(e) => setPreEnrollment((prev) => ({ ...prev, childBirthPlace: e.target.value }))}
+                              className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                              style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                              placeholder="Cotonou"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold text-slate-900">
+                              Nationalité
+                            </label>
+                            <input
+                              type="text"
+                              value={preEnrollment.childNationality || 'Béninoise'}
+                              onChange={(e) => setPreEnrollment((prev) => ({ ...prev, childNationality: e.target.value }))}
+                              className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                              style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                              placeholder="Béninoise"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Classe souhaitée (ex "Niveau souhaité") */}
                         <div>
                           <label className="mb-1 block text-xs font-semibold text-slate-900">
-                            Niveau souhaité
+                            Classe souhaitée
                           </label>
                           <select
                             required
@@ -1967,7 +2252,131 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                             ))}
                           </select>
                         </div>
+
+                        {/* Établissement précédent + Dernier niveau fréquenté */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold text-slate-900">
+                              Établissement précédent <span className="text-slate-400 font-normal">(optionnel)</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={preEnrollment.previousSchool || ''}
+                              onChange={(e) => setPreEnrollment((prev) => ({ ...prev, previousSchool: e.target.value }))}
+                              className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                              style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                              placeholder="Nom de l'école précédente"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold text-slate-900">
+                              Dernier niveau fréquenté <span className="text-slate-400 font-normal">(optionnel)</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={preEnrollment.previousLevel || ''}
+                              onChange={(e) => setPreEnrollment((prev) => ({ ...prev, previousLevel: e.target.value }))}
+                              className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                              style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                              placeholder="ex : CE1"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Motif de changement (optionnel) */}
+                        <div>
+                          <label className="mb-1 block text-xs font-semibold text-slate-900">
+                            Motif de changement <span className="text-slate-400 font-normal">(optionnel)</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={preEnrollment.changeReason || ''}
+                            onChange={(e) => setPreEnrollment((prev) => ({ ...prev, changeReason: e.target.value }))}
+                            className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                            style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                            placeholder="Déménagement, recherche de meilleure qualité, etc."
+                          />
+                        </div>
                       </>
+                    )}
+
+                    {/* ── Pièces justificatives (upload optionnel) ── */}
+                    {preEnrollment.candidateType !== 'PROSPECT_PARENT' && (
+                      <div className="rounded-xl border-2 border-slate-200 bg-slate-50 p-3">
+                        <div className="mb-2">
+                          <label className="block text-xs font-bold text-slate-900">
+                            Pièces justificatives <span className="text-slate-400 font-normal">(optionnel)</span>
+                          </label>
+                          <p className="text-[10px] text-slate-500 mt-0.5">
+                            Joignez les documents disponibles. Formats : PDF, JPG, PNG, WebP (max 20 Mo / fichier).
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {[
+                            { key: 'birthCertificate', label: 'Acte de naissance', required: false },
+                            { key: 'idPhoto', label: 'Photo d\'identité', required: false },
+                            { key: 'npi', label: 'NPI (élève)', required: false },
+                            { key: 'lastReportCard', label: 'Bulletin précédent', required: false },
+                            { key: 'schoolCertificate', label: 'Certificat de scolarité', required: false },
+                            { key: 'parentalAuth', label: 'Autorisation parentale', required: false },
+                          ].map((docField) => {
+                            const docValue = (preEnrollment as any)[docField.key];
+                            return (
+                              <div key={docField.key} className="bg-white rounded-lg border border-slate-200 p-2">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-[11px] font-semibold text-slate-700 truncate flex-1">
+                                    {docField.label}
+                                  </span>
+                                  {docValue && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setPreEnrollment((prev) => ({ ...prev, [docField.key]: null }))}
+                                      className="text-[10px] text-rose-500 hover:bg-rose-50 px-1.5 py-0.5 rounded transition shrink-0"
+                                      title="Retirer"
+                                    >
+                                      ✕
+                                    </button>
+                                  )}
+                                </div>
+                                {docValue ? (
+                                  <div className="mt-1 text-[10px] text-emerald-700 bg-emerald-50 rounded px-1.5 py-0.5 truncate">
+                                    ✓ {docValue.fileName} ({Math.round(docValue.fileSize / 1024)} Ko)
+                                  </div>
+                                ) : (
+                                  <label
+                                    className="mt-1 flex items-center justify-center cursor-pointer border border-dashed border-slate-300 rounded px-2 py-1.5 text-[10px] text-slate-500 hover:bg-slate-50 transition"
+                                  >
+                                    {isUploadingDoc ? 'Chargement...' : '+ Joindre'}
+                                    <input
+                                      type="file"
+                                      accept=".pdf,.jpg,.jpeg,.png,.webp"
+                                      className="hidden"
+                                      onChange={async (e) => {
+                                        const f = e.target.files?.[0];
+                                        if (!f) return;
+                                        // Limite 20 Mo
+                                        if (f.size > 20 * 1024 * 1024) {
+                                          setError('Fichier trop volumineux (max 20 Mo)');
+                                          return;
+                                        }
+                                        setIsUploadingDoc(true);
+                                        try {
+                                          const dataUrl = await fileToDataUrl(f);
+                                          setPreEnrollment((prev) => ({ ...prev, [docField.key]: dataUrl }));
+                                        } catch (err: any) {
+                                          setError(`Échec lecture fichier : ${err.message}`);
+                                        } finally {
+                                          setIsUploadingDoc(false);
+                                        }
+                                      }}
+                                    />
+                                  </label>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
                     )}
 
                     {/* Message */}

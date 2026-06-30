@@ -1345,3 +1345,39 @@ Stage Summary:
 - 1 fichier créé : route.ts (download)
 - Pattern désormais aligné sur RH : data URL en DB, pas de dépendance Vercel Blob, visualisation in-app via bouton "Ouvrir"
 - Rétro-compat : anciens endpoints conservés, anciens docs Vercel Blob toujours téléchargeables
+
+---
+Task ID: public-admission-portal
+Agent: main
+Task: Portail public d'admission — soumission parent + email + création admission en DB
+
+Work Log:
+- Analyse complète du portail public actuel : page /portal → SchoolSearch → redirect /public/pre-enrollment → /login?portal=public → formulaire dans LoginPage.tsx
+- Constat critique : l'ancien endpoint /api/public/pre-enrollment n'existait PAS côté backend → BFF retournait PENDING_BACKEND_SYNC (faux success, soumissions perdues)
+- Pattern de référence : RH recruitment (recruitment.controller.ts:282 applyJobDataUrl, recruitment.service.ts:2003 applyJob)
+- Backend créé :
+  - admission-email-templates.ts : renderAdmissionReceived (clone recruitment-email-templates, réutilise renderHeader/Footer/Email/Badge)
+  - admission-notification.service.ts : AdmissionNotificationService.notifyAdmissionReceived (clone RecruitmentNotificationService pattern)
+  - public-admission.controller.ts : @Public() POST /students/admissions-public/upload-apply (validation IMAGE_OR_PDF_DATA_URL_PIPE)
+  - admission.service.ts : méthode applyAdmission(body, files) — résout tenantId+academicYearId, vérifie doublon, crée Admission + AdmissionDocument en transaction, fire-and-forget email
+  - students.module.ts : ajout CommunicationModule + AdmissionNotificationService + PublicAdmissionController
+- Frontend BFF créé :
+  - /api/public/admission/submit/route.ts : proxy vers backend /students/admissions-public/upload-apply (propage erreurs, ne avale plus silencieusement)
+- Frontend UI modifié dans LoginPage.tsx :
+  - Interface PreEnrollmentData étendue : childDateOfBirth, childGender, childBirthPlace, childNationality, childAddress, previousSchool, previousLevel, changeReason, wantsBilingual, parentRelationship, parentAddress, parentProfession + 6 champs documents (birthCertificate, idPhoto, npi, lastReportCard, schoolCertificate, parentalAuth)
+  - "Niveau souhaité" → "Classe souhaitée"
+  - Ajout champs enfant : date naissance + sexe + lieu naissance + nationalité
+  - Ajout bloc responsable étendu : lien parenté + profession + adresse
+  - Ajout bloc académique : établissement précédent + dernier niveau + motif changement
+  - Ajout section upload 6 documents (data URL, max 20 Mo, formats PDF/JPG/PNG/WebP)
+  - fileToDataUrl() + compressImageFileToDataUrl() : pattern aligné sur CareersContent.tsx (compression images JPEG 1600px 0.85)
+  - handlePreEnrollmentSubmit : nouveau endpoint /api/public/admission/submit + mapping champs formulaire → schéma Admission
+  - Message succès : mentionne email envoyé au parent
+- Aucune migration DB nécessaire (schéma Admission + AdmissionDocument déjà complet)
+
+Stage Summary:
+- 6 fichiers créés/modifiés backend : admission-email-templates.ts, admission-notification.service.ts, public-admission.controller.ts, admission.service.ts, students.module.ts
+- 1 fichier créé frontend BFF : /api/public/admission/submit/route.ts
+- 1 fichier modifié frontend UI : LoginPage.tsx (formulaire étendu + upload docs + nouvel endpoint)
+- Flow complet : parent soumet → backend crée Admission (PENDING) + AdmissionDocuments → email confirmation envoyé → admission apparaît dans onglet Admission (côté admin)
+- Rétro-compat : ancien endpoint /api/public/pre-enrollment conservé (mais ne devrait plus être appelé)

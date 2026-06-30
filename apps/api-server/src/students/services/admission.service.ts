@@ -916,18 +916,39 @@ export class AdmissionService {
       academicYearId = activeYear.id;
     }
 
-    // Résoudre schoolLevelId — le frontend peut envoyer un code (MATERNELLE/PRIMARY/SECONDARY)
-    // ou un UUID. On accepte les deux.
+    // Résoudre schoolLevelId — le frontend envoie un code (MATERNELLE/PRIMARY/SECONDARY)
+    // mais la FK admissions.schoolLevelId → education_levels.id exige un UUID.
+    // On résout le code vers l'UUID correspondant dans education_levels.
     let schoolLevelId = body.schoolLevelId;
-    if (!schoolLevelId) {
-      // Fallback : déduire du candidateType
+    const isLevelUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(schoolLevelId || '');
+
+    if (!schoolLevelId || !isLevelUuid) {
+      // Déduire le nom du niveau depuis candidateType ou schoolLevelId
       const candidateType = (body.candidateType || '').toUpperCase();
-      const codeMap: Record<string, string> = {
+      const codeToName: Record<string, string> = {
         MATERNELLE: 'MATERNELLE',
         PRIMARY: 'PRIMAIRE',
         SECONDARY: 'SECONDAIRE',
       };
-      schoolLevelId = codeMap[candidateType] || 'PRIMAIRE';
+      const levelName = codeToName[candidateType]
+        || (schoolLevelId ? schoolLevelId.toUpperCase() : '')
+        || 'PRIMAIRE';
+
+      // Résoudre l'UUID depuis education_levels (FK obligatoire)
+      const level = await this.prisma.educationLevel.findFirst({
+        where: {
+          tenantId,
+          name: levelName,
+        },
+        select: { id: true },
+      });
+      if (!level) {
+        throw new BadRequestException(
+          `Niveau scolaire "${levelName}" introuvable pour cet établissement. ` +
+          `Niveaux disponibles : MATERNELLE, PRIMAIRE, SECONDAIRE.`,
+        );
+      }
+      schoolLevelId = level.id;
     }
 
     // Vérifier doublon : même email parent + même tenant + même année académique

@@ -1480,10 +1480,11 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
           <div
             className="flex flex-col md:flex-row"
             style={{
-              // Pour le portail public : hauteur = viewport exact, aucun scroll.
-              // Chaque étape du wizard est compactée pour tenir dans cette hauteur.
-              minHeight: portalType === 'public' ? '560px' : '480px',
-              maxHeight: portalType === 'public' ? '88vh' : 'none',
+              // Pour le portail public : hauteur viewport, scroll interne si nécessaire
+              // (le wizard 3 étapes peut déborder sur petits écrans — on accepte le scroll
+              // interne plutôt que de tronquer le contenu)
+              minHeight: portalType === 'public' ? '600px' : '480px',
+              maxHeight: portalType === 'public' ? '92vh' : 'none',
             }}
           >
             {/* ── Colonne gauche : infos école (fond bleu palette Helm) ── */}
@@ -1550,9 +1551,13 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
               </h1>
             </motion.div>
 
-            {/* Sous-titre : subtitle du portail OU slogan école */}
+            {/* Sous-titre : pour le portail public on n'affiche PAS portalDef.subtitle
+                (redondant avec le badge "Portail Public" en haut). On affiche seulement
+                le slogan de l'école si disponible, sinon rien. */}
             <motion.p variants={heroItem} className="text-sm text-blue-100 max-w-xs">
-              {portalDef?.subtitle || clientBranding?.slogan || BRAND.subtitle}
+              {portalType === 'public'
+                ? (clientBranding?.slogan || clientBranding?.motto || '')
+                : (portalDef?.subtitle || clientBranding?.slogan || BRAND.subtitle)}
             </motion.p>
 
             {/* Slogan école (si différent du sous-titre et mode non-public) */}
@@ -1752,12 +1757,14 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             <div className="md:hidden h-px" style={{ background: `linear-gradient(to right, transparent, ${GOLD}55, transparent)` }} />
 
             {/* ── Colonne droite : formulaire de connexion ── */}
-            {/* Pour le portail public : PAS de scroll — padding réduit pour fit viewport. */}
+            {/* Pour le portail public : scroll interne si le wizard déborde (étape 3
+                avec uploads), pour ne JAMAIS tronquer le contenu. */}
             <div
               className={portalType === 'public'
-                ? 'flex-1 p-4 sm:p-5 flex flex-col justify-center'
+                ? 'flex-1 p-4 sm:p-5 flex flex-col justify-center overflow-y-auto'
                 : 'flex-1 p-6 sm:p-8 flex flex-col justify-center'
               }
+              style={portalType === 'public' ? { maxHeight: '92vh' } : undefined}
             >
 
           {/* ════════════════════════════════════════════════════════════════
@@ -2449,7 +2456,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                           </div>
                           <div>
                             <label className="mb-1 block text-xs font-semibold text-slate-900">
-                              Dernier niveau fréquenté <span className="text-slate-400 font-normal">(optionnel)</span>
+                              Dernière classe fréquentée <span className="text-slate-400 font-normal">(optionnel)</span>
                             </label>
                             <input
                               type="text"

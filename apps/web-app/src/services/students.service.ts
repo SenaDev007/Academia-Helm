@@ -93,10 +93,25 @@ class StudentsService {
     id: string,
     data: { decision: "ACCEPTED" | "REJECTED"; comment: string },
   ): Promise<any> {
-    return apiFetch(`${BASE_URL}/admissions/${encodeURIComponent(id)}/decide`, {
-      method: "POST",
-      body: data,
+    // ⚠️ Utiliser fetch direct au lieu de apiFetch pour éviter les problèmes
+    // de sérialisation axios. Le backend attend { decision, comment } en JSON.
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' && window.location.host.includes('academiahelm.com') ? 'https://api.academiahelm.com/api' : '');
+    const url = `${apiUrl}/students/admissions/${encodeURIComponent(id)}/decide`;
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      credentials: 'include',
+      body: JSON.stringify({ decision: data.decision, comment: data.comment }),
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || `HTTP ${res.status}`);
+    }
+    return res.json();
   }
 
   async convertAdmission(id: string): Promise<any> {

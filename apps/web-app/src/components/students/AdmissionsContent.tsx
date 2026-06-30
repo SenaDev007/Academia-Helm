@@ -195,7 +195,7 @@ export default function AdmissionsContent() {
   const handleDecide = async (id: string, decision: 'ACCEPTED' | 'REJECTED') => {
     setIsActionPending(true);
     try {
-      await studentsService.decideAdmission(id, { decision, comment: 'Dossier revu par l\'administration' });
+      await studentsService.decideAdmission(id, { decision, comment: 'Dossier revu' });
       toast({ title: 'Succès', description: `Dossier ${decision === 'ACCEPTED' ? 'accepté' : 'refusé'}`, variant: 'success' });
       loadAdmissions();
     } catch (e: any) {

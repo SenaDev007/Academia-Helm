@@ -762,8 +762,30 @@ export class OfflineSyncService {
    * Construit les requêtes Prisma pour le pull sync
    */
   private buildPullQueries(tenantId: string, since: Date, limit: number): Promise<any[]>[] {
+    // ⚠️ Certains modèles n'ont PAS de colonne `tenantId` directe — ils ont
+    // une relation vers un parent qui contient tenantId (ex: MeetingDecision
+    // → Meeting.tenantId). Pour ces modèles, on doit filtrer via la relation.
+    const RELATIONAL_TENANT_FILTER: Record<string, string> = {
+      meetingDecision: 'meeting',     // meetingDecision.tenantId → meeting.tenantId
+      meetingMinute: 'meeting',       // meetingMinute.tenantId → meeting.tenantId
+      councilDecision: 'council',     // councilDecision.tenantId → council.tenantId
+    };
+
     return this.getPullEntityTypes().map(([, modelName]) => {
       try {
+        const relationPath = RELATIONAL_TENANT_FILTER[modelName];
+        if (relationPath) {
+          // Modèle avec tenantId indirect → filtrer via la relation
+          return (this.prisma as any)[modelName].findMany({
+            where: {
+              [relationPath]: { tenantId },
+              updatedAt: { gt: since },
+            },
+            take: limit,
+            orderBy: { updatedAt: 'asc' },
+          });
+        }
+        // Modèle avec tenantId direct
         return (this.prisma as any)[modelName].findMany({
           where: { tenantId, updatedAt: { gt: since } },
           take: limit,

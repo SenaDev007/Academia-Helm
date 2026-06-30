@@ -614,6 +614,11 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       let userMessage = rawMessage;
       if (rawMessage.includes('timeout') || rawMessage.includes('ne répond pas') || rawMessage.includes('30 secondes')) {
         userMessage = 'Le serveur est en cours de démarrage. Veuillez réessayer dans quelques secondes.';
+      } else if (rawMessage.toLowerCase().includes('aborted') || rawMessage.toLowerCase().includes('signal is aborted')) {
+        // AbortController déclenché (timeout ou navigation) — surtout pour l'upload de documents
+        userMessage = portalType === 'public'
+          ? 'La soumission a expiré (le serveur met trop de temps à répondre). Veuillez réduire la taille des documents ou réessayer dans quelques instants.'
+          : 'La connexion a expiré. Le serveur est peut-être en cours de démarrage, veuillez réessayer.';
       } else if (rawMessage.includes('Internal server error') || rawMessage.includes('500')) {
         userMessage = 'Erreur serveur temporaire. Veuillez réessayer dans quelques instants.';
       } else if (rawMessage.includes('Unauthorized') || rawMessage.includes('401')) {
@@ -1121,11 +1126,17 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       payload.turnstileToken = turnstileToken;
     }
 
-    const response = await fetchWithTimeout('/api/public/admission/submit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    // Timeout étendu (60s) car l'upload de 6 documents en base64 peut être lent,
+    // surtout si le backend est en cold start sur Fly.io.
+    const response = await fetchWithTimeout(
+      '/api/public/admission/submit',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      },
+      60_000, // 60 secondes
+    );
 
     const data = await response.json().catch(() => ({}));
 

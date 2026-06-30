@@ -40,16 +40,15 @@ class StudentsService {
    */
   async getAdmissions(params?: Record<string, string>): Promise<any> {
     const qs = params ? new URLSearchParams(params).toString() : "";
-    
+
     if (!networkDetectionService.isConnected()) {
       return LocalSearchService.search("students", { tenantId: getTenantId(), filters: { type: 'admission' } });
     }
 
-    try {
-      return await apiFetch(`${BASE_URL}/admissions${qs ? `?${qs}` : ""}`);
-    } catch (error) {
-      return LocalSearchService.search("students", { tenantId: getTenantId(), filters: { type: 'admission' } });
-    }
+    // ⚠️ NE PAS catcher silencieusement — si l'API retourne 500 (migrations
+    // non appliquées, FK violation, etc.), l'utilisateur doit voir l'erreur
+    // au lieu d'avoir une liste vide sans explication.
+    return apiFetch(`${BASE_URL}/admissions${qs ? `?${qs}` : ""}`);
   }
 
   async getAdmissionById(id: string): Promise<any> {

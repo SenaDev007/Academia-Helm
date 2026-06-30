@@ -75,10 +75,11 @@ export default function AdmissionsContent() {
         ...(schoolLevel?.id && schoolLevel.id !== 'ALL' && { schoolLevelId: schoolLevel.id }),
       };
       const data = await studentsService.getAdmissions(params);
-      setAdmissions(data);
+      setAdmissions(Array.isArray(data) ? data : []);
     } catch (e: any) {
       console.error('Failed to load admissions:', e);
-      toast({ title: 'Erreur', description: e.message || 'Erreur lors du chargement des admissions', variant: 'error' });
+      setAdmissions([]);
+      toast({ title: 'Erreur de chargement', description: e?.message || 'Impossible de charger les admissions. Vérifiez que les migrations DB sont appliquées.', variant: 'error' });
     } finally {
       setIsLoading(false);
     }

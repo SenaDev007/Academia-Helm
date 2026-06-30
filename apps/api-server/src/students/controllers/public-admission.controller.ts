@@ -119,12 +119,14 @@ export class PublicAdmissionController {
       throw new BadRequestException('Prénom et nom de l\'élève sont requis');
     }
 
-    // Valider le token Turnstile (anti-spam) si configuré
-    const clientIp =
-      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
-      req.socket?.remoteAddress ||
-      undefined;
-    await this.verifyTurnstileToken(body.turnstileToken, clientIp);
+    // ⚠️ Turnstile DÉSACTIVÉ pour le portail public — le flux doit rester simple.
+    // La validation Turnstile reste active pour les portails authentifiés.
+    // Pour réactiver : décommenter les 3 lignes ci-dessous.
+    // const clientIp =
+    //   (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+    //   req.socket?.remoteAddress ||
+    //   undefined;
+    // await this.verifyTurnstileToken(body.turnstileToken, clientIp);
 
     // Convertir chaque data URL en pseudo Express.Multer.File
     // (même pattern que recruitment.controller.ts:282-313)

@@ -583,14 +583,14 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     e.preventDefault();
     setError(null);
 
-    // ── Turnstile : vérification d'humanité ──
-    // Actif pour tous les portails si NEXT_PUBLIC_TURNSTILE_SITE_KEY est configuré.
-    // Pour le portail public (pré-inscription), le token est également transmis
-    // au backend pour validation serveur (sécurité anti-spam renforcée).
-    if (process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken) {
-      setError('Veuillez compléter la vérification de sécurité avant de continuer.');
-      return;
-    }
+    // ── Turnstile : désactivé pour le portail public (pré-inscription) ──
+    // Le flux public doit rester simple. La validation Turnstile est gardée
+    // pour les portails authentifiés (school, teacher, parent, platform).
+    // Pour réactiver sur le portail public, décommenter le bloc ci-dessous.
+    // if (portalType !== 'public' && process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken) {
+    //   setError('Veuillez compléter la vérification de sécurité avant de continuer.');
+    //   return;
+    // }
 
     setIsLoading(true);
 
@@ -2624,8 +2624,9 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             </AnimatePresence>
 
             {/* ── Cloudflare Turnstile — vérification d'humanité ── */}
-            {/* Actif pour tous les portails (y compris public) si NEXT_PUBLIC_TURNSTILE_SITE_KEY est configuré */}
-            {process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && (
+            {/* Désactivé pour le portail public (pré-inscription) pour simplifier le flux.
+                Actif pour les portails authentifiés si NEXT_PUBLIC_TURNSTILE_SITE_KEY est configuré. */}
+            {portalType !== 'public' && process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && (
               <div className="flex justify-center mt-2">
                 <TurnstileWidget
                   onToken={setTurnstileToken}

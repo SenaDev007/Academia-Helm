@@ -875,9 +875,27 @@ export class AdmissionService {
    *   - Le statut est forcé à PENDING (jamais ACCEPTED/CONVERTED depuis le portail)
    */
   async applyAdmission(body: any, files: any): Promise<{ admission: any; documents: any[] }> {
-    const tenantId = body.tenantId;
+    let tenantId = body.tenantId;
     if (!tenantId) {
       throw new BadRequestException('tenantId est requis pour soumettre une demande d\'admission');
+    }
+
+    // ⚠️ Le frontend peut envoyer un slug (ex: "cspeb") au lieu d'un UUID.
+    // On résout le tenant par slug OU par UUID pour éviter les 400 "année académique introuvable".
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId);
+    if (!isUuid) {
+      // Résoudre l'UUID du tenant depuis le slug ou le subdomain
+      const tenant = await this.prisma.tenant.findFirst({
+        where: {
+          status: { not: 'WITHDRAWN' },
+          OR: [{ subdomain: tenantId }, { slug: tenantId }],
+        },
+        select: { id: true },
+      });
+      if (!tenant) {
+        throw new BadRequestException(`Établissement introuvable pour le slug "${tenantId}"`);
+      }
+      tenantId = tenant.id;
     }
 
     // Valider champs obligatoires

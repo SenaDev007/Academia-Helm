@@ -61,6 +61,16 @@ export default function AdmissionsContent() {
   const [selectedAdmission, setSelectedAdmission] = useState<Admission | null>(null);
   const [isActionPending, setIsActionPending] = useState(false);
 
+  // Documents + Interviews state (for detail modal)
+  const [admissionDocuments, setAdmissionDocuments] = useState<any[]>([]);
+  const [admissionInterviews, setAdmissionInterviews] = useState<any[]>([]);
+  const [isLoadingDocs, setIsLoadingDocs] = useState(false);
+  const [showAddDocForm, setShowAddDocForm] = useState(false);
+  const [showAddInterviewForm, setShowAddInterviewForm] = useState(false);
+  const [newDocType, setNewDocType] = useState('BIRTH_CERTIFICATE');
+  const [newInterviewType, setNewInterviewType] = useState('INTERVIEW');
+  const [newInterviewDate, setNewInterviewDate] = useState('');
+
   useEffect(() => {
     if (academicYear) {
       loadAdmissions();
@@ -195,6 +205,116 @@ export default function AdmissionsContent() {
       toast({ title: 'Erreur', description: e.message, variant: 'error' });
     } finally {
       setIsActionPending(false);
+    }
+  };
+
+  // ─── Documents & Interviews (detail modal) ────────────────────────────────
+
+  const loadDocuments = async (admissionId: string) => {
+    setIsLoadingDocs(true);
+    try {
+      const docs = await studentsService.getAdmissionDocuments(admissionId);
+      setAdmissionDocuments(Array.isArray(docs) ? docs : []);
+      const interviews = await studentsService.getAdmissionInterviews(admissionId);
+      setAdmissionInterviews(Array.isArray(interviews) ? interviews : []);
+    } catch (e) {
+      setAdmissionDocuments([]);
+      setAdmissionInterviews([]);
+    } finally {
+      setIsLoadingDocs(false);
+    }
+  };
+
+  const handleOpenDetail = (admission: Admission) => {
+    setSelectedAdmission(admission);
+    setIsDetailModalOpen(true);
+    loadDocuments(admission.id);
+  };
+
+  const handleAddDocument = async () => {
+    if (!selectedAdmission) return;
+    try {
+      await studentsService.createAdmissionDocument(selectedAdmission.id, {
+        documentType: newDocType,
+      });
+      toast({ title: '✅ Document ajouté', variant: 'success' });
+      setShowAddDocForm(false);
+      loadDocuments(selectedAdmission.id);
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'error' });
+    }
+  };
+
+  const handleValidateDoc = async (docId: string) => {
+    try {
+      await studentsService.validateAdmissionDocument(docId);
+      toast({ title: '✅ Document validé', variant: 'success' });
+      if (selectedAdmission) loadDocuments(selectedAdmission.id);
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'error' });
+    }
+  };
+
+  const handleRejectDoc = async (docId: string) => {
+    try {
+      await studentsService.rejectAdmissionDocument(docId, 'Document refusé');
+      toast({ title: 'Document refusé', variant: 'success' });
+      if (selectedAdmission) loadDocuments(selectedAdmission.id);
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'error' });
+    }
+  };
+
+  const handleDeleteDoc = async (docId: string) => {
+    if (!window.confirm('Supprimer ce document ?')) return;
+    try {
+      await studentsService.deleteAdmissionDocument(docId);
+      toast({ title: 'Document supprimé', variant: 'success' });
+      if (selectedAdmission) loadDocuments(selectedAdmission.id);
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'error' });
+    }
+  };
+
+  const handleAddInterview = async () => {
+    if (!selectedAdmission) return;
+    try {
+      await studentsService.createAdmissionInterview(selectedAdmission.id, {
+        type: newInterviewType,
+        scheduledAt: newInterviewDate || undefined,
+      });
+      toast({ title: '✅ Entretien/test planifié', variant: 'success' });
+      setShowAddInterviewForm(false);
+      setNewInterviewDate('');
+      loadDocuments(selectedAdmission.id);
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'error' });
+    }
+  };
+
+  const handleCompleteInterview = async (interviewId: string) => {
+    const result = window.prompt('Résultat (FAVORABLE / UNFAVORABLE / TO_REVIEW):', 'FAVORABLE');
+    if (!result) return;
+    try {
+      await studentsService.completeAdmissionInterview(interviewId, {
+        result,
+        status: result === 'FAVORABLE' ? 'FAVORABLE' : result === 'UNFAVORABLE' ? 'UNFAVORABLE' : 'TO_REVIEW',
+      });
+      toast({ title: '✅ Entretien terminé', variant: 'success' });
+      if (selectedAdmission) loadDocuments(selectedAdmission.id);
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'error' });
+    }
+  };
+
+  const handleDeleteInterview = async (interviewId: string) => {
+    if (!window.confirm('Supprimer cet entretien ?')) return;
+    try {
+      await studentsService.deleteAdmissionInterview(interviewId);
+      toast({ title: 'Entretien supprimé', variant: 'success' });
+      if (selectedAdmission) loadDocuments(selectedAdmission.id);
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'error' });
     }
   };
 
@@ -429,7 +549,7 @@ export default function AdmissionsContent() {
                           <div className="flex items-center justify-end space-x-1 opacity-60 group-hover:opacity-100 transition-all">
                             {/* Voir détail */}
                             <button
-                              onClick={() => { setSelectedAdmission(admission); setIsDetailModalOpen(true); }}
+                              onClick={() => handleOpenDetail(admission)}
                               className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-blue-600 transition-all"
                               title="Voir le détail"
                             >
@@ -618,6 +738,189 @@ export default function AdmissionsContent() {
                 </div>
               </div>
             )}
+
+            {/* Documents */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-xs font-bold text-slate-500 uppercase">Pièces Justificatives</h4>
+                <button
+                  onClick={() => setShowAddDocForm(!showAddDocForm)}
+                  className="text-xs font-semibold text-blue-600 hover:underline"
+                >
+                  {showAddDocForm ? 'Annuler' : '+ Ajouter'}
+                </button>
+              </div>
+
+              {showAddDocForm && (
+                <div className="flex gap-2 mb-3 p-3 bg-slate-50 rounded-lg">
+                  <select
+                    value={newDocType}
+                    onChange={e => setNewDocType(e.target.value)}
+                    className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"
+                  >
+                    <option value="BIRTH_CERTIFICATE">Acte de naissance</option>
+                    <option value="ID_PHOTO">Photo d'identité</option>
+                    <option value="REPORT_CARD">Bulletin précédent</option>
+                    <option value="TRANSFER_CERT">Certificat de transfert</option>
+                    <option value="ID_DOCUMENT">Pièce d'identité du responsable</option>
+                    <option value="PARENTAL_AUTH">Autorisation parentale</option>
+                    <option value="OTHER">Autre document</option>
+                  </select>
+                  <button
+                    onClick={handleAddDocument}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold"
+                  >
+                    Confirmer
+                  </button>
+                </div>
+              )}
+
+              {isLoadingDocs ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+                </div>
+              ) : admissionDocuments.length === 0 ? (
+                <p className="text-xs text-slate-400 italic py-2">Aucun document déposé</p>
+              ) : (
+                <div className="space-y-2">
+                  {admissionDocuments.map(doc => (
+                    <div key={doc.id} className="flex items-center gap-3 p-2.5 bg-slate-50 rounded-lg border border-slate-100">
+                      <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-slate-700">
+                          {doc.documentType === 'BIRTH_CERTIFICATE' ? 'Acte de naissance' :
+                           doc.documentType === 'ID_PHOTO' ? 'Photo d\'identité' :
+                           doc.documentType === 'REPORT_CARD' ? 'Bulletin précédent' :
+                           doc.documentType === 'TRANSFER_CERT' ? 'Certificat de transfert' :
+                           doc.documentType === 'ID_DOCUMENT' ? 'Pièce d\'identité' :
+                           doc.documentType === 'PARENTAL_AUTH' ? 'Autorisation parentale' :
+                           doc.documentType}
+                        </p>
+                        {doc.fileName && <p className="text-[10px] text-slate-400 truncate">{doc.fileName}</p>}
+                        {doc.comment && <p className="text-[10px] text-slate-400 italic truncate">{doc.comment}</p>}
+                      </div>
+                      <span className={cn(
+                        'px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0',
+                        doc.status === 'VALIDATED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                        doc.status === 'REJECTED' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                        doc.status === 'SUBMITTED' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                        'bg-slate-50 text-slate-600 border-slate-200'
+                      )}>
+                        {doc.status === 'VALIDATED' ? 'Validé' :
+                         doc.status === 'REJECTED' ? 'Refusé' :
+                         doc.status === 'SUBMITTED' ? 'Soumis' : 'En attente'}
+                      </span>
+                      <div className="flex gap-1 shrink-0">
+                        {doc.status === 'SUBMITTED' && (
+                          <>
+                            <button onClick={() => handleValidateDoc(doc.id)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600" title="Valider">
+                              <CheckCircle className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => handleRejectDoc(doc.id)} className="p-1 hover:bg-rose-100 rounded text-rose-600" title="Refuser">
+                              <XCircle className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
+                        <button onClick={() => handleDeleteDoc(doc.id)} className="p-1 hover:bg-rose-100 rounded text-rose-500" title="Supprimer">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Entretiens / Tests */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-xs font-bold text-slate-500 uppercase">Entretiens & Tests</h4>
+                <button
+                  onClick={() => setShowAddInterviewForm(!showAddInterviewForm)}
+                  className="text-xs font-semibold text-blue-600 hover:underline"
+                >
+                  {showAddInterviewForm ? 'Annuler' : '+ Planifier'}
+                </button>
+              </div>
+
+              {showAddInterviewForm && (
+                <div className="flex gap-2 mb-3 p-3 bg-slate-50 rounded-lg flex-wrap">
+                  <select
+                    value={newInterviewType}
+                    onChange={e => setNewInterviewType(e.target.value)}
+                    className="px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"
+                  >
+                    <option value="INTERVIEW">Entretien</option>
+                    <option value="TEST">Test</option>
+                    <option value="OBSERVATION">Observation</option>
+                  </select>
+                  <input
+                    type="datetime-local"
+                    value={newInterviewDate}
+                    onChange={e => setNewInterviewDate(e.target.value)}
+                    className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white min-w-[180px]"
+                  />
+                  <button
+                    onClick={handleAddInterview}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold"
+                  >
+                    Confirmer
+                  </button>
+                </div>
+              )}
+
+              {admissionInterviews.length === 0 ? (
+                <p className="text-xs text-slate-400 italic py-2">Aucun entretien ou test planifié</p>
+              ) : (
+                <div className="space-y-2">
+                  {admissionInterviews.map(interview => (
+                    <div key={interview.id} className="flex items-center gap-3 p-2.5 bg-slate-50 rounded-lg border border-slate-100">
+                      <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-slate-700">
+                          {interview.type === 'INTERVIEW' ? 'Entretien' : interview.type === 'TEST' ? 'Test' : 'Observation'}
+                        </p>
+                        {interview.scheduledAt && (
+                          <p className="text-[10px] text-slate-400">
+                            {format(new Date(interview.scheduledAt), 'dd MMM yyyy à HH:mm', { locale: fr })}
+                          </p>
+                        )}
+                        {interview.result && (
+                          <p className="text-[10px] text-slate-500 font-medium">Résultat : {interview.result}</p>
+                        )}
+                        {interview.comment && (
+                          <p className="text-[10px] text-slate-400 italic truncate">{interview.comment}</p>
+                        )}
+                      </div>
+                      <span className={cn(
+                        'px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0',
+                        interview.status === 'FAVORABLE' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                        interview.status === 'UNFAVORABLE' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                        interview.status === 'DONE' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                        interview.status === 'ABSENT' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                        'bg-slate-50 text-slate-600 border-slate-200'
+                      )}>
+                        {interview.status === 'FAVORABLE' ? 'Favorable' :
+                         interview.status === 'UNFAVORABLE' ? 'Défavorable' :
+                         interview.status === 'DONE' ? 'Terminé' :
+                         interview.status === 'ABSENT' ? 'Absent' :
+                         interview.status === 'TO_REVIEW' ? 'À revoir' : 'Planifié'}
+                      </span>
+                      <div className="flex gap-1 shrink-0">
+                        {interview.status === 'PLANNED' && (
+                          <button onClick={() => handleCompleteInterview(interview.id)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600" title="Terminer">
+                            <CheckCircle className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        <button onClick={() => handleDeleteInterview(interview.id)} className="p-1 hover:bg-rose-100 rounded text-rose-500" title="Supprimer">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* Conversion */}
             {selectedAdmission.convertedStudentId && (

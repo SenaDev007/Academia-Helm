@@ -903,8 +903,9 @@ export default function AdmissionsContent() {
                     >
                       <option value="BIRTH_CERTIFICATE">Acte de naissance</option>
                       <option value="ID_PHOTO">Photo d'identité</option>
+                      <option value="NPI">NPI (Numéro d'Identification Personnelle)</option>
                       <option value="REPORT_CARD">Bulletin précédent</option>
-                      <option value="TRANSFER_CERT">Certificat de transfert</option>
+                      <option value="SCHOOL_CERTIFICATE">Certificat de scolarité</option>
                       <option value="ID_DOCUMENT">Pièce d'identité du responsable</option>
                       <option value="PARENTAL_AUTH">Autorisation parentale</option>
                       <option value="OTHER">Autre document</option>
@@ -963,8 +964,9 @@ export default function AdmissionsContent() {
                         <p className="text-xs font-bold text-slate-700">
                           {doc.documentType === 'BIRTH_CERTIFICATE' ? 'Acte de naissance' :
                            doc.documentType === 'ID_PHOTO' ? 'Photo d\'identité' :
+                           doc.documentType === 'NPI' ? 'NPI (Numéro d\'Identification Personnelle)' :
                            doc.documentType === 'REPORT_CARD' ? 'Bulletin précédent' :
-                           doc.documentType === 'TRANSFER_CERT' ? 'Certificat de transfert' :
+                           doc.documentType === 'SCHOOL_CERTIFICATE' ? 'Certificat de scolarité' :
                            doc.documentType === 'ID_DOCUMENT' ? 'Pièce d\'identité' :
                            doc.documentType === 'PARENTAL_AUTH' ? 'Autorisation parentale' :
                            doc.documentType}

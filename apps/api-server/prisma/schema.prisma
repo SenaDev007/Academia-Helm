@@ -4404,7 +4404,7 @@ model AdmissionDocument {
   tenantId        String
   admissionId     String
 
-  documentType    String   // BIRTH_CERTIFICATE | ID_PHOTO | REPORT_CARD | TRANSFER_CERT | ID_DOCUMENT | PARENTAL_AUTH | OTHER
+  documentType    String   // BIRTH_CERTIFICATE | ID_PHOTO | REPORT_CARD | SCHOOL_CERTIFICATE | ID_DOCUMENT | PARENTAL_AUTH | NPI | OTHER
   fileName        String?
   filePath        String?
   mimeType        String?

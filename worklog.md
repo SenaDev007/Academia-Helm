@@ -1300,3 +1300,22 @@ Stage Summary:
   5. Clic "Appliquer ce thème" → toast de confirmation + site mis à jour
 - Côté public : le site charge le thème automatiquement (appel API non-bloquant), fallback Academia Helm si échec
 
+
+---
+Task ID: admission-docs-npi-school-cert
+Agent: main
+Task: Ajouter NPI (Numéro d'Identification Personnelle) aux pièces justificatives d'admission et remplacer "Certificat de transfert" par "Certificat de scolarité"
+
+Work Log:
+- Recherche des définitions de AdmissionDocument (schema.prisma ligne 4407, AdmissionsContent.tsx)
+- Vérifié que documentType est en TEXT libre (pas d'enum restrictif) côté backend
+- Mis à jour le commentaire du schema.prisma : BIRTH_CERTIFICATE | ID_PHOTO | REPORT_CARD | SCHOOL_CERTIFICATE | ID_DOCUMENT | PARENTAL_AUTH | NPI | OTHER
+- Mis à jour AdmissionsContent.tsx :
+  - Sélecteur de type : ajouté NPI après ID_PHOTO, remplacé TRANSFER_CERT → SCHOOL_CERTIFICATE (Certificat de scolarité)
+  - Logique d'affichage : ajouté label NPI, remplacé TRANSFER_CERT → SCHOOL_CERTIFICATE
+- Aucune migration DB nécessaire (champ TEXT libre)
+
+Stage Summary:
+- 2 fichiers modifiés : schema.prisma, AdmissionsContent.tsx
+- Nouveaux types de pièces justificatives disponibles : NPI + SCHOOL_CERTIFICATE (remplace TRANSFER_CERT)
+- Pas de régression : les anciens documents déjà stockés avec TRANSFER_CERT afficheront juste le code brut (cas marginal, à vérifier en production)

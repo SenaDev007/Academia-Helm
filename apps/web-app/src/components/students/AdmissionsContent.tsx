@@ -81,7 +81,22 @@ export default function AdmissionsContent() {
   const [selectedAdmission, setSelectedAdmission] = useState<Admission | null>(null);
   const [isActionPending, setIsActionPending] = useState(false);
 
-  // Documents + Interviews state (for detail modal)
+  // Modal de confirmation personnalisé (remplace window.confirm)
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmLabel: string;
+    onConfirm: () => void;
+  }>({ isOpen: false, title: '', message: '', confirmLabel: 'Confirmer', onConfirm: () => {} });
+
+  const showConfirm = (title: string, message: string, onConfirm: () => void, confirmLabel = 'Confirmer') => {
+    setConfirmModal({ isOpen: true, title, message, confirmLabel, onConfirm });
+  };
+
+  const closeConfirm = () => {
+    setConfirmModal(prev => ({ ...prev, isOpen: false }));
+  };
   const [admissionDocuments, setAdmissionDocuments] = useState<any[]>([]);
   const [admissionInterviews, setAdmissionInterviews] = useState<any[]>([]);
   const [isLoadingDocs, setIsLoadingDocs] = useState(false);
@@ -191,17 +206,23 @@ export default function AdmissionsContent() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Êtes-vous sûr de vouloir supprimer ce dossier d\'admission ? Cette action est irréversible.')) return;
-    setIsActionPending(true);
-    try {
-      await studentsService.deleteAdmission(id);
-      toast({ title: 'Succès', description: 'Dossier supprimé', variant: 'success' });
-      loadAdmissions();
-    } catch (e: any) {
-      toast({ title: 'Erreur', description: e.message || 'Erreur lors de la suppression', variant: 'error' });
-    } finally {
-      setIsActionPending(false);
-    }
+    showConfirm(
+      'Supprimer le dossier',
+      'Êtes-vous sûr de vouloir supprimer ce dossier d\'admission ? Cette action est irréversible.',
+      async () => {
+        setIsActionPending(true);
+        try {
+          await studentsService.deleteAdmission(id);
+          toast({ title: 'Succès', description: 'Dossier supprimé', variant: 'success' });
+          loadAdmissions();
+        } catch (e: any) {
+          toast({ title: 'Erreur', description: e.message || 'Erreur lors de la suppression', variant: 'error' });
+        } finally {
+          setIsActionPending(false);
+        }
+      },
+      'Supprimer',
+    );
   };
 
   const handleWaitlist = async (id: string) => {
@@ -312,14 +333,20 @@ export default function AdmissionsContent() {
   };
 
   const handleDeleteDoc = async (docId: string) => {
-    if (!window.confirm('Supprimer ce document ?')) return;
-    try {
-      await studentsService.deleteAdmissionDocument(docId);
-      toast({ title: 'Document supprimé', variant: 'success' });
-      if (selectedAdmission) loadDocuments(selectedAdmission.id);
-    } catch (e: any) {
-      toast({ title: 'Erreur', description: e.message, variant: 'error' });
-    }
+    showConfirm(
+      'Supprimer le document',
+      'Voulez-vous vraiment supprimer ce document ? Cette action est irréversible.',
+      async () => {
+        try {
+          await studentsService.deleteAdmissionDocument(docId);
+          toast({ title: 'Document supprimé', variant: 'success' });
+          if (selectedAdmission) loadDocuments(selectedAdmission.id);
+        } catch (e: any) {
+          toast({ title: 'Erreur', description: e.message, variant: 'error' });
+        }
+      },
+      'Supprimer',
+    );
   };
 
   const handleAddInterview = async () => {
@@ -354,14 +381,20 @@ export default function AdmissionsContent() {
   };
 
   const handleDeleteInterview = async (interviewId: string) => {
-    if (!window.confirm('Supprimer cet entretien ?')) return;
-    try {
-      await studentsService.deleteAdmissionInterview(interviewId);
-      toast({ title: 'Entretien supprimé', variant: 'success' });
-      if (selectedAdmission) loadDocuments(selectedAdmission.id);
-    } catch (e: any) {
-      toast({ title: 'Erreur', description: e.message, variant: 'error' });
-    }
+    showConfirm(
+      'Supprimer l\'entretien',
+      'Voulez-vous vraiment supprimer cet entretien/test ?',
+      async () => {
+        try {
+          await studentsService.deleteAdmissionInterview(interviewId);
+          toast({ title: 'Entretien supprimé', variant: 'success' });
+          if (selectedAdmission) loadDocuments(selectedAdmission.id);
+        } catch (e: any) {
+          toast({ title: 'Erreur', description: e.message, variant: 'error' });
+        }
+      },
+      'Supprimer',
+    );
   };
 
   const handleStatusChange = async (id: string, newStatus: string) => {
@@ -1031,6 +1064,56 @@ export default function AdmissionsContent() {
         </div>
         <div>Academia Helm Student Lifecycle Engine v2.0</div>
       </div>
+
+      {/* Modal de confirmation personnalisé (remplace window.confirm) */}
+      {confirmModal.isOpen && (
+        <div
+          className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={closeConfirm}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-6 py-5 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center shrink-0">
+                  <AlertCircle className="w-5 h-5 text-rose-500" />
+                </div>
+                <h3 className="font-bold text-slate-900 text-sm">{confirmModal.title}</h3>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="px-6 py-5">
+              <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">
+                {confirmModal.message}
+              </p>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 bg-slate-50 flex justify-end gap-2">
+              <button
+                onClick={closeConfirm}
+                className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg text-xs font-bold transition"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => {
+                  closeConfirm();
+                  confirmModal.onConfirm();
+                }}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition inline-flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                {confirmModal.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

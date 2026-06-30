@@ -53,6 +53,26 @@ export default function AdmissionsContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('ALL');
 
+  // ⚠️ Niveaux scolaires — chargés depuis /api/school-levels pour faire le
+  // mapping schoolLevelId → label côté client. La relation schoolLevel a été
+  // supprimée du modèle Admission (mismatch FK school_levels vs education_levels).
+  // Sans ça, le tableau affiche "Non défini" pour la colonne Niveau.
+  const [schoolLevels, setSchoolLevels] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch('/api/school-levels', { credentials: 'include' })
+      .then(res => res.ok ? res.json() : [])
+      .then(data => setSchoolLevels(Array.isArray(data) ? data : []))
+      .catch(() => setSchoolLevels([]));
+  }, []);
+
+  // Helper : retourne le label d'un niveau à partir de son ID
+  const getLevelLabel = (levelId: string | null | undefined): string => {
+    if (!levelId) return 'Non défini';
+    const level = schoolLevels.find(l => l.id === levelId);
+    return level?.label || level?.code || 'Non défini';
+  };
+
   // Modals state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -68,6 +88,8 @@ export default function AdmissionsContent() {
   const [showAddDocForm, setShowAddDocForm] = useState(false);
   const [showAddInterviewForm, setShowAddInterviewForm] = useState(false);
   const [newDocType, setNewDocType] = useState('BIRTH_CERTIFICATE');
+  const [newDocFile, setNewDocFile] = useState<File | null>(null);
+  const [isUploadingDoc, setIsUploadingDoc] = useState(false);
   const [newInterviewType, setNewInterviewType] = useState('INTERVIEW');
   const [newInterviewDate, setNewInterviewDate] = useState('');
 
@@ -233,15 +255,39 @@ export default function AdmissionsContent() {
 
   const handleAddDocument = async () => {
     if (!selectedAdmission) return;
+    if (!newDocFile) {
+      toast({ title: 'Fichier manquant', description: 'Veuillez sélectionner un fichier à uploader.', variant: 'error' });
+      return;
+    }
+    setIsUploadingDoc(true);
     try {
-      await studentsService.createAdmissionDocument(selectedAdmission.id, {
-        documentType: newDocType,
+      // 1. Upload du fichier via le proxy Next.js
+      const formData = new FormData();
+      formData.append('file', newDocFile);
+      formData.append('documentType', newDocType);
+      formData.append('fileName', newDocFile.name);
+      formData.append('mimeType', newDocFile.type);
+      formData.append('fileSize', String(newDocFile.size));
+
+      const uploadRes = await fetch(`/api/students/admissions/${selectedAdmission.id}/documents`, {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
       });
-      toast({ title: '✅ Document ajouté', variant: 'success' });
+
+      if (!uploadRes.ok) {
+        const err = await uploadRes.json().catch(() => ({}));
+        throw new Error(err.error || err.message || `Upload failed (${uploadRes.status})`);
+      }
+
+      toast({ title: '✅ Document uploadé', description: newDocFile.name, variant: 'success' });
       setShowAddDocForm(false);
+      setNewDocFile(null);
       loadDocuments(selectedAdmission.id);
     } catch (e: any) {
-      toast({ title: 'Erreur', description: e.message, variant: 'error' });
+      toast({ title: 'Erreur upload', description: e.message, variant: 'error' });
+    } finally {
+      setIsUploadingDoc(false);
     }
   };
 
@@ -525,7 +571,7 @@ export default function AdmissionsContent() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm font-medium text-slate-700">
-                            {admission.schoolLevel?.name || 'Non défini'}
+                            {getLevelLabel(admission.schoolLevelId)}
                           </div>
                           {admission.previousSchool && (
                             <div className="text-xs text-slate-400 truncate max-w-[150px]">
@@ -663,7 +709,16 @@ export default function AdmissionsContent() {
           size="lg"
           actions={null}
         >
-          <AdmissionForm initialData={selectedAdmission} onSubmit={handleEdit} />
+          <AdmissionForm
+            initialData={{
+              ...selectedAdmission,
+              // ⚠️ Mapper schoolLevelId → requestedLevelId pour le formulaire
+              // (le formulaire utilise requestedLevelId, mais l'admission stocke schoolLevelId)
+              requestedLevelId: selectedAdmission.schoolLevelId,
+              birthDate: selectedAdmission.dateOfBirth,
+            }}
+            onSubmit={handleEdit}
+          />
         </FormModal>
       )}
 
@@ -710,7 +765,7 @@ export default function AdmissionsContent() {
             <div>
               <h4 className="text-xs font-bold text-slate-500 uppercase mb-3">Vœux Académiques</h4>
               <div className="grid grid-cols-2 gap-3 text-sm">
-                <div><span className="text-slate-400">Niveau souhaité :</span> <strong>{selectedAdmission.schoolLevel?.name || '—'}</strong></div>
+                <div><span className="text-slate-400">Niveau souhaité :</span> <strong>{getLevelLabel(selectedAdmission.schoolLevelId)}</strong></div>
                 <div><span className="text-slate-400">Cursus bilingue :</span> {selectedAdmission.wantsBilingual ? '✓ Oui' : '✗ Non'}</div>
                 <div className="col-span-2"><span className="text-slate-400">Établissement précédent :</span> {selectedAdmission.previousSchool || '—'}</div>
               </div>
@@ -752,26 +807,46 @@ export default function AdmissionsContent() {
               </div>
 
               {showAddDocForm && (
-                <div className="flex gap-2 mb-3 p-3 bg-slate-50 rounded-lg">
-                  <select
-                    value={newDocType}
-                    onChange={e => setNewDocType(e.target.value)}
-                    className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"
-                  >
-                    <option value="BIRTH_CERTIFICATE">Acte de naissance</option>
-                    <option value="ID_PHOTO">Photo d'identité</option>
-                    <option value="REPORT_CARD">Bulletin précédent</option>
-                    <option value="TRANSFER_CERT">Certificat de transfert</option>
-                    <option value="ID_DOCUMENT">Pièce d'identité du responsable</option>
-                    <option value="PARENTAL_AUTH">Autorisation parentale</option>
-                    <option value="OTHER">Autre document</option>
-                  </select>
-                  <button
-                    onClick={handleAddDocument}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold"
-                  >
-                    Confirmer
-                  </button>
+                <div className="space-y-3 mb-3 p-3 bg-slate-50 rounded-lg">
+                  <div className="flex gap-2">
+                    <select
+                      value={newDocType}
+                      onChange={e => setNewDocType(e.target.value)}
+                      className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"
+                    >
+                      <option value="BIRTH_CERTIFICATE">Acte de naissance</option>
+                      <option value="ID_PHOTO">Photo d'identité</option>
+                      <option value="REPORT_CARD">Bulletin précédent</option>
+                      <option value="TRANSFER_CERT">Certificat de transfert</option>
+                      <option value="ID_DOCUMENT">Pièce d'identité du responsable</option>
+                      <option value="PARENTAL_AUTH">Autorisation parentale</option>
+                      <option value="OTHER">Autre document</option>
+                    </select>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="file"
+                      onChange={e => setNewDocFile(e.target.files?.[0] || null)}
+                      className="flex-1 text-xs file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-700 file:font-semibold hover:file:bg-blue-100"
+                      accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                    />
+                    <button
+                      onClick={handleAddDocument}
+                      disabled={!newDocFile || isUploadingDoc}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+                    >
+                      {isUploadingDoc ? (
+                        <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Upload...</>
+                      ) : (
+                        'Uploader'
+                      )}
+                    </button>
+                  </div>
+                  {newDocFile && (
+                    <p className="text-[10px] text-slate-500">
+                      📎 {newDocFile.name} ({Math.round(newDocFile.size / 1024)}KB)
+                    </p>
+                  )}
                 </div>
               )}
 

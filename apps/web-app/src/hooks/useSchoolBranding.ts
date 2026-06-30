@@ -108,17 +108,77 @@ export function useSchoolBranding(serverBranding?: SchoolBrandingData | null): S
         if (response.ok) {
           const data = await response.json();
           // La BFF retourne déjà les données de branding extraites (flat object)
+
+          // ⚠️ Si le nom retourné est identique au slug, c'est que le tenant
+          // n'a pas de TenantIdentityProfile configuré. On tente un fallback
+          // via /api/public/schools/list qui retourne des données pré-résolues
+          // avec le vrai nom de l'école (depuis School ou TenantIdentityProfile).
+          let resolvedName = data.name || slug;
+          let resolvedLogo = data.logoUrl || null;
+          let resolvedAddress = data.address || null;
+          let resolvedPhone = data.phone || null;
+          let resolvedCity = data.city || null;
+          let resolvedSlogan = data.slogan || null;
+          let resolvedMotto = data.motto || null;
+
+          if (!resolvedLogo || resolvedName === slug) {
+            try {
+              const listResp = await fetch('/api/public/schools/list', {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' },
+                cache: 'no-store',
+              });
+              if (listResp.ok) {
+                const schools = await listResp.json();
+                const match = (Array.isArray(schools) ? schools : []).find(
+                  (s: any) => s.slug === slug || s.subdomain === slug,
+                );
+                if (match) {
+                  // Ne remplacer que les champs manquants
+                  if (resolvedName === slug) {
+                    resolvedName = match.schoolName || match.name || resolvedName;
+                  }
+                  if (!resolvedLogo) {
+                    resolvedLogo = match.logoUrl || null;
+                  }
+                  if (!resolvedAddress) {
+                    resolvedAddress = match.address || null;
+                  }
+                  if (!resolvedPhone) {
+                    resolvedPhone = match.phonePrimary || match.phone || null;
+                  }
+                  if (!resolvedCity) {
+                    resolvedCity = match.city || null;
+                  }
+                  if (!resolvedSlogan) {
+                    resolvedSlogan = match.slogan || null;
+                  }
+                  if (!resolvedMotto) {
+                    resolvedMotto = match.motto || null;
+                  }
+                }
+              }
+            } catch {
+              // Fallback list failed — ignore
+            }
+          }
+
+          // Capitaliser le nom si c'est toujours le slug brut (ex: "cspeb" → "CSPEB")
+          if (resolvedName === slug && slug.length <= 10) {
+            resolvedName = slug.toUpperCase();
+          }
+
           setBranding({
-            name: data.name || slug,
+            name: resolvedName,
             slug: data.slug || slug,
-            logoUrl: data.logoUrl || null,
-            city: data.city || null,
-            phone: data.phone || null,
-            address: data.address || null,
+            logoUrl: resolvedLogo,
+            city: resolvedCity,
+            phone: resolvedPhone,
+            address: resolvedAddress,
             primaryColor: data.primaryColor || null,
             secondaryColor: data.secondaryColor || null,
-            slogan: data.slogan || null,
-            motto: data.motto || null,
+            slogan: resolvedSlogan,
+            motto: resolvedMotto,
           });
         }
       } catch (error) {

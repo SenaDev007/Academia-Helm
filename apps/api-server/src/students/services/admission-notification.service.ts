@@ -27,7 +27,7 @@ import { PrismaService } from '../../database/prisma.service';
 import {
   renderAdmissionReceived,
   TenantBranding,
-} from './admission-email-templates';
+} from '../admission-email-templates';
 
 // Réutilise la fonction getTenantBranding du module RH pour DRY
 // (on ne la ré-exporte pas directement pour éviter la dépendance circulaire,

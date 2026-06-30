@@ -37,7 +37,7 @@
  */
 
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../database/prisma.service';
+import { PrismaService } from '../../database/prisma.service';
 
 const GLOBAL_PAD = 6;
 const LOCAL_PAD = 5;

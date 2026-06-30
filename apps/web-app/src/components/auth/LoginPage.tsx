@@ -1474,10 +1474,10 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
           <div
             className="flex flex-col md:flex-row"
             style={{
-              // Pour le portail public : hauteur fixe pour éviter le scroll vertical
-              // (le wizard multi-étapes garantit que chaque étape tient dans cette hauteur)
-              minHeight: portalType === 'public' ? '640px' : '480px',
-              maxHeight: portalType === 'public' ? '85vh' : 'none',
+              // Pour le portail public : hauteur = viewport exact, aucun scroll.
+              // Chaque étape du wizard est compactée pour tenir dans cette hauteur.
+              minHeight: portalType === 'public' ? '560px' : '480px',
+              maxHeight: portalType === 'public' ? '88vh' : 'none',
             }}
           >
             {/* ── Colonne gauche : infos école (fond bleu palette Helm) ── */}
@@ -1741,10 +1741,12 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             <div className="md:hidden h-px" style={{ background: `linear-gradient(to right, transparent, ${GOLD}55, transparent)` }} />
 
             {/* ── Colonne droite : formulaire de connexion ── */}
-            {/* Pour le portail public : scroll interne si la hauteur fixe est dépassée */}
+            {/* Pour le portail public : PAS de scroll — padding réduit pour fit viewport. */}
             <div
-              className="flex-1 p-6 sm:p-8 flex flex-col justify-center"
-              style={portalType === 'public' ? { overflowY: 'auto', maxHeight: '85vh' } : undefined}
+              className={portalType === 'public'
+                ? 'flex-1 p-4 sm:p-5 flex flex-col justify-center'
+                : 'flex-1 p-6 sm:p-8 flex flex-col justify-center'
+              }
             >
 
           {/* ════════════════════════════════════════════════════════════════
@@ -1752,7 +1754,10 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
               Conformes au document academia-helm-portails.md
               ════════════════════════════════════════════════════════════════ */}
 
-          <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
+          <form
+            onSubmit={handleSubmit}
+            className={portalType === 'public' ? 'space-y-2 sm:space-y-2.5' : 'space-y-3 sm:space-y-4'}
+          >
             <AnimatePresence mode="wait">
               <motion.div
                 key={formBlockKey}
@@ -1760,7 +1765,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 animate={{ opacity: 1, x: 0 }}
                 exit={shouldReduceMotion ? undefined : { opacity: 0, x: -12 }}
                 transition={{ duration: dur, ease: 'easeOut' }}
-                className="space-y-3 sm:space-y-4"
+                className={portalType === 'public' ? 'space-y-2 sm:space-y-2.5' : 'space-y-3 sm:space-y-4'}
               >
                 {/* ── PLATFORM + SCHOOL : Email + Mot de passe ── */}
                 {(isStandardLogin || portalType === 'school' || portalType === 'platform') && (
@@ -2103,9 +2108,9 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
 
                 {/* ── PUBLIC : Pré-inscription (aucune authentification requise) ── */}
                 {portalType === 'public' && !preEnrollmentSubmitted && (
-                  <>
+                  <div className="public-pre-enrollment"> {/* wrapper pour styles compacts (voir globals.css) */}
                     {/* ── En-tête wizard : indicateur d'étapes (3 pastilles) ── */}
-                    <div className="flex items-center justify-center gap-1.5 mb-3">
+                    <div className="flex items-center justify-center gap-1.5 mb-2">
                       {[1, 2, 3].map((s) => (
                         <div key={s} className="flex items-center gap-1.5">
                           <div
@@ -2590,7 +2595,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                         ) : null /* étape 3 : le bouton Submit principal prend le relais ci-dessous */}
                       </div>
                     )}
-                  </>
+                  </div> {/* fin .public-pre-enrollment */}
                 )}
               </motion.div>
             </AnimatePresence>

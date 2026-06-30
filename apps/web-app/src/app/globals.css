@@ -847,3 +847,50 @@ body {
   display: none !important;
   visibility: hidden !important;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * FORMULAIRE PRÉ-INSCRIPTION PUBLIQUE — Styles compacts (no scroll)
+ * ═══════════════════════════════════════════════════════════════════════
+ * Le formulaire public d'admission doit tenir entièrement dans le viewport
+ * sans barre de scroll. On compacte les inputs, labels, gaps et paddings
+ * via ce scope CSS pour ne pas impacter les autres portails.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+.public-pre-enrollment input[type="text"],
+.public-pre-enrollment input[type="email"],
+.public-pre-enrollment input[type="tel"],
+.public-pre-enrollment input[type="date"],
+.public-pre-enrollment select,
+.public-pre-enrollment textarea {
+  min-height: 36px !important;
+  padding-top: 0.375rem !important;
+  padding-bottom: 0.375rem !important;
+  font-size: 0.8125rem !important;
+}
+
+.public-pre-enrollment label {
+  margin-bottom: 0.125rem !important;
+  font-size: 0.6875rem !important;
+}
+
+/* Grilles 2 colonnes — réduire le gap */
+.public-pre-enrollment .grid {
+  gap: 0.5rem !important;
+}
+
+/* Boutons de type candidat (Maternelle/Primaire/Secondaire) plus compacts */
+.public-pre-enrollment button[type="button"] {
+  min-height: 38px !important;
+  padding: 0.5rem !important;
+}
+
+/* Cards d'upload de documents plus compactes */
+.public-pre-enrollment .border-2.border-slate-200.bg-slate-50 {
+  padding: 0.5rem !important;
+}
+
+/* Textarea message plus court */
+.public-pre-enrollment textarea {
+  rows: 2 !important;
+  min-height: 36px !important;
+}

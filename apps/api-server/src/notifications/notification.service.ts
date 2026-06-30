@@ -23,18 +23,25 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { PushService } from './push.service';
 
 @Injectable()
 export class NotificationService {
   private readonly logger = new Logger(NotificationService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pushService: PushService,
+  ) {}
 
   // ═══ CRUD principal ═══
 
   /**
    * Crée une notification in-app pour un utilisateur.
    * Utilisé par tous les helpers métier (admission, RH, etc.).
+   *
+   * Effet de bord : envoie aussi un push Web Push (si l'utilisateur a des
+   * abonnements push enregistrés et que VAPID est configuré). Fire-and-forget.
    */
   async create(data: {
     tenantId: string;
@@ -47,7 +54,7 @@ export class NotificationService {
     relatedEntityType?: string;
     relatedEntityId?: string;
   }) {
-    return this.prisma.inAppNotification.create({
+    const notification = await this.prisma.inAppNotification.create({
       data: {
         tenantId: data.tenantId,
         recipientId: data.recipientId,
@@ -61,6 +68,20 @@ export class NotificationService {
         isRead: false,
       },
     });
+
+    // Fire-and-forget : envoyer un push Web Push au destinataire
+    // (visible même si l'onglet est fermé, sur mobile comme sur desktop)
+    this.pushService
+      .sendToUser(data.recipientId, {
+        title: data.title,
+        body: data.body,
+        data: data.data,
+      })
+      .catch((err) =>
+        this.logger.warn(`Push send failed (in create): ${err.message}`),
+      );
+
+    return notification;
   }
 
   /**

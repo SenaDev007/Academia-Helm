@@ -27,6 +27,7 @@ import { ReviewPromptHost } from '@/components/reviews/ReviewPromptHost';
 import { CrispChat } from '@/components/CrispChat';
 import { SubscriptionBanner } from '@/components/billing/SubscriptionBanner';
 import { TenantThemeProvider } from '@/providers/TenantThemeProvider';
+import { usePushSubscription } from '@/hooks/usePushSubscription';
 
 export interface AppLayoutClientProps {
   children: React.ReactNode;
@@ -48,6 +49,15 @@ export default function AppLayoutClient({
 }: AppLayoutClientProps) {
   const { shouldReduceMotion } = useMotionBudget();
   const fadeMotion = getFadeMotion(shouldReduceMotion);
+
+  // Abonnement Web Push (notifications navigateur, même onglet fermé)
+  // Actif seulement si VAPID configuré côté backend + permission utilisateur granted
+  const { status: pushStatus } = usePushSubscription(true);
+  if (typeof window !== 'undefined' && pushStatus === 'subscribed') {
+    // Console-only log (utile pour debug)
+    console.log('[Push] Abonnement actif');
+  }
+
   return (
     <SessionManagerProvider>
       <motion.div

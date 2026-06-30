@@ -1488,11 +1488,29 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
               <div className="pointer-events-none absolute -bottom-20 -right-10 h-56 w-56 rounded-full opacity-15 blur-3xl" style={{ background: `${GOLD}` }} aria-hidden />
           {/* ── Header ── */}
           <motion.div
-            className="mb-4 text-center md:text-left"
+            className="mb-4 text-center md:text-left flex flex-col h-full"
             variants={heroVariants}
             initial="hidden"
             animate="show"
           >
+            {/* ── TOP : Badge "Portail Public — Pré-inscription" (au-dessus du logo) ── */}
+            {portalType === 'public' && (
+              <motion.div variants={heroItem} className="flex justify-center mb-3">
+                <span
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] uppercase tracking-wider font-bold"
+                  style={{
+                    color: '#fff',
+                    background: 'rgba(255,255,255,0.12)',
+                    border: '1px solid rgba(255,255,255,0.25)',
+                    backdropFilter: 'blur(4px)',
+                  }}
+                >
+                  <Globe className="h-3 w-3" />
+                  Portail Public — Pré-inscription
+                </span>
+              </motion.div>
+            )}
+
             {/* Logo — cercle parfait + jeu lumineux */}
             <motion.div
               variants={heroItem}
@@ -1520,12 +1538,6 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                   ? (clientBranding?.name || schoolNameFromUrl || portalDef?.title || BRAND.name)
                   : (portalDef?.title || clientBranding?.name || BRAND.name)}
               </h1>
-              {/* Pour le portail public : afficher "Portail Public — Pré-inscription" comme sous-titre technique */}
-              {portalType === 'public' && (
-                <span className="text-[10px] uppercase tracking-wider text-blue-200/80 font-semibold">
-                  Portail Public — Pré-inscription
-                </span>
-              )}
             </motion.div>
 
             <motion.p variants={heroItem} className="text-sm text-blue-100">
@@ -1592,13 +1604,6 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
               </motion.p>
             )}
 
-            {/* Propulsé par — sur sous-domaine école */}
-            {clientBranding && (
-              <motion.p variants={heroItem} className="mt-1 text-[10px] text-blue-200">
-                Propulsé par <span className="font-medium" style={{ color: GOLD }}>{BRAND.name}</span>
-              </motion.p>
-            )}
-
             {/* ── Portal selection buttons (school subdomain context) ── */}
             {portalType === null && accessContext === 'school-subdomain' && (
               <motion.div variants={heroItem} className="mt-4 grid grid-cols-2 gap-2 sm:gap-3">
@@ -1627,6 +1632,27 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
               </motion.div>
             )}
           </motion.div>
+
+          {/* ── FOOTER : "Propulsé par Academia Helm" + logo AH (en bas de la bande navy) ── */}
+          {clientBranding && (
+            <motion.div
+              variants={heroItem}
+              className="mt-auto pt-4 flex items-center justify-center gap-2 text-[10px] text-blue-200"
+              initial="hidden"
+              animate="show"
+            >
+              <span>Propulsé par</span>
+              <Image
+                src="https://www.academiahelm.com/images/logo-Academia%20Hub.png"
+                alt={BRAND.name}
+                width={56}
+                height={20}
+                className="object-contain opacity-90"
+                style={{ filter: 'brightness(1.1)' }}
+              />
+              <span className="font-semibold" style={{ color: GOLD }}>{BRAND.name}</span>
+            </motion.div>
+          )}
 
           {/* ── Error display ── */}
           <AnimatePresence>

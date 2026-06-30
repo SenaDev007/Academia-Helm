@@ -1045,78 +1045,97 @@ export class AdmissionService {
     }
 
     // Transaction : créer admission + documents
-    const result = await this.prisma.$transaction(
-      async (tx) => {
-        const admission = await tx.admission.create({ data: createData });
+    try {
+      const result = await this.prisma.$transaction(
+        async (tx) => {
+          const admission = await tx.admission.create({ data: createData });
 
-        const documents: any[] = [];
-        for (const doc of documentsToCreate) {
-          const created = await tx.admissionDocument.create({
-            data: {
-              tenantId,
-              admissionId: admission.id,
-              documentType: doc.documentType,
-              fileName: doc.fileName,
-              filePath: doc.filePath,
-              mimeType: doc.mimeType,
-              fileSize: doc.fileSize,
-              status: 'SUBMITTED',
-            },
-          });
-          documents.push(created);
-        }
+          const documents: any[] = [];
+          for (const doc of documentsToCreate) {
+            const created = await tx.admissionDocument.create({
+              data: {
+                tenantId,
+                admissionId: admission.id,
+                documentType: doc.documentType,
+                fileName: doc.fileName,
+                filePath: doc.filePath,
+                mimeType: doc.mimeType,
+                fileSize: doc.fileSize,
+                status: 'SUBMITTED',
+              },
+            });
+            documents.push(created);
+          }
 
-        return { admission, documents };
-      },
-      { timeout: 30000 },
-    );
-
-    this.logger.log(
-      `Admission publique créée : id=${result.admission.id}, ` +
-      `numéro=${result.admission.admissionNumber}, ` +
-      `élève=${body.firstName} ${body.lastName}, ` +
-      `documents=${result.documents.length}`,
-    );
-
-    // Fire-and-forget : envoyer email de confirmation au parent
-    const documentsSubmitted = result.documents.map((d) => ({
-      type: d.documentType,
-      fileName: d.fileName,
-    }));
-
-    this.notificationService
-      .notifyAdmissionReceived({
-        admissionId: result.admission.id,
-        tenantId,
-        documentsSubmitted,
-      })
-      .catch((err) =>
-        this.logger.error(
-          `notifyAdmissionReceived failed: ${err.message}`,
-          err.stack,
-        ),
-      );
-
-    // Fire-and-forget : créer une notification in-app pour le staff d'admission
-    // (cloche header + future notification push)
-    this.inAppNotificationService
-      .notifyAdmissionStaff({
-        admissionId: result.admission.id,
-        tenantId,
-        admission: {
-          firstName: body.firstName,
-          lastName: body.lastName,
-          admissionNumber: result.admission.admissionNumber,
+          return { admission, documents };
         },
-        requestedClassLabel: body.targetLevel || body.message, // libre, best-effort
-      })
-      .catch((err) =>
-        this.logger.error(
-          `notifyAdmissionStaff failed: ${err.message}`,
-          err.stack,
-        ),
+        { timeout: 30000 },
       );
 
-    return result;
+      this.logger.log(
+        `Admission publique créée : id=${result.admission.id}, ` +
+        `numéro=${result.admission.admissionNumber}, ` +
+        `élève=${body.firstName} ${body.lastName}, ` +
+        `documents=${result.documents.length}`,
+      );
+
+      // Fire-and-forget : envoyer email de confirmation au parent
+      const documentsSubmitted = result.documents.map((d) => ({
+        type: d.documentType,
+        fileName: d.fileName,
+      }));
+
+      this.notificationService
+        .notifyAdmissionReceived({
+          admissionId: result.admission.id,
+          tenantId,
+          documentsSubmitted,
+        })
+        .catch((err) =>
+          this.logger.error(
+            `notifyAdmissionReceived failed: ${err.message}`,
+            err.stack,
+          ),
+        );
+
+      // Fire-and-forget : créer une notification in-app pour le staff d'admission
+      // (cloche header + future notification push)
+      this.inAppNotificationService
+        .notifyAdmissionStaff({
+          admissionId: result.admission.id,
+          tenantId,
+          admission: {
+            firstName: body.firstName,
+            lastName: body.lastName,
+            admissionNumber: result.admission.admissionNumber,
+          },
+          requestedClassLabel: body.targetLevel || body.message, // libre, best-effort
+        })
+        .catch((err) =>
+          this.logger.error(
+            `notifyAdmissionStaff failed: ${err.message}`,
+            err.stack,
+          ),
+        );
+
+      return result;
+    } catch (err: any) {
+      // P2003 = foreign key violation — identifier le champ fautif
+      if (err?.code === 'P2003') {
+        this.logger.error(
+          `P2003 FK violation on admission create — ` +
+          `tenantId=${createData.tenantId}, academicYearId=${createData.academicYearId}, ` +
+          `schoolLevelId=${createData.schoolLevelId}, requestedClassId=${createData.requestedClassId}, ` +
+          `meta: ${err.meta ? JSON.stringify(err.meta) : 'N/A'}`,
+          err.stack,
+        );
+        throw new BadRequestException(
+          `Erreur de référence (P2003) : un identifiant ne correspond à aucun enregistrement. ` +
+          `Détails : ${err.meta ? JSON.stringify(err.meta) : 'inconnu'}. ` +
+          `Vérifiez que l'établissement et l'année académique existent.`,
+        );
+      }
+      throw err;
+    }
   }
 }

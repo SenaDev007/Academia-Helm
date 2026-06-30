@@ -1489,13 +1489,9 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
           }}
         >
           <div
-            className="flex flex-col md:flex-row"
+            className={`flex flex-col md:flex-row ${portalType === 'public' ? 'public-portal-container' : ''}`}
             style={{
-              // Pour le portail public : hauteur viewport, scroll interne si nécessaire
-              // (le wizard 3 étapes peut déborder sur petits écrans — on accepte le scroll
-              // interne plutôt que de tronquer le contenu)
               minHeight: portalType === 'public' ? '600px' : '480px',
-              maxHeight: portalType === 'public' ? '92vh' : 'none',
             }}
           >
             {/* ── Colonne gauche : infos école (fond bleu palette Helm) ── */}
@@ -1768,14 +1764,12 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             <div className="md:hidden h-px" style={{ background: `linear-gradient(to right, transparent, ${GOLD}55, transparent)` }} />
 
             {/* ── Colonne droite : formulaire de connexion ── */}
-            {/* Pour le portail public : scroll interne si le wizard déborde (étape 3
-                avec uploads), pour ne JAMAIS tronquer le contenu. */}
+            {/* Pour le portail public : padding généreux, scroll interne seulement sur desktop */}
             <div
               className={portalType === 'public'
-                ? 'flex-1 p-4 sm:p-5 flex flex-col justify-center overflow-y-auto'
+                ? 'flex-1 p-4 sm:p-5 md:p-6 flex flex-col justify-center md:overflow-y-auto'
                 : 'flex-1 p-6 sm:p-8 flex flex-col justify-center'
               }
-              style={portalType === 'public' ? { maxHeight: '92vh' } : undefined}
             >
 
           {/* ════════════════════════════════════════════════════════════════
@@ -1785,7 +1779,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
 
           <form
             onSubmit={handleSubmit}
-            className={portalType === 'public' ? 'space-y-2 sm:space-y-2.5' : 'space-y-3 sm:space-y-4'}
+            className={portalType === 'public' ? 'space-y-3 sm:space-y-3.5' : 'space-y-3 sm:space-y-4'}
           >
             <AnimatePresence mode="wait">
               <motion.div
@@ -1794,7 +1788,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 animate={{ opacity: 1, x: 0 }}
                 exit={shouldReduceMotion ? undefined : { opacity: 0, x: -12 }}
                 transition={{ duration: dur, ease: 'easeOut' }}
-                className={portalType === 'public' ? 'space-y-2 sm:space-y-2.5' : 'space-y-3 sm:space-y-4'}
+                className={portalType === 'public' ? 'space-y-3 sm:space-y-3.5' : 'space-y-3 sm:space-y-4'}
               >
                 {/* ── PLATFORM + SCHOOL : Email + Mot de passe ── */}
                 {(isStandardLogin || portalType === 'school' || portalType === 'platform') && (

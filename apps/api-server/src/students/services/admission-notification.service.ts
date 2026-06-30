@@ -21,9 +21,9 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { EmailService } from '../communication/services/email.service';
+import { EmailService } from '../../communication/services/email.service';
 import { ConfigService } from '@nestjs/config';
-import { PrismaService } from '../database/prisma.service';
+import { PrismaService } from '../../database/prisma.service';
 import {
   renderAdmissionReceived,
   TenantBranding,

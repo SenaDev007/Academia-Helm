@@ -1381,3 +1381,35 @@ Stage Summary:
 - 1 fichier modifié frontend UI : LoginPage.tsx (formulaire étendu + upload docs + nouvel endpoint)
 - Flow complet : parent soumet → backend crée Admission (PENDING) + AdmissionDocuments → email confirmation envoyé → admission apparaît dans onglet Admission (côté admin)
 - Rétro-compat : ancien endpoint /api/public/pre-enrollment conservé (mais ne devrait plus être appelé)
+
+---
+Task ID: public-admission-turnstile-wizard-schoolinfo
+Agent: main
+Task: Turnstile anti-spam + wizard multi-étapes (hauteur fixe) + infos école bande navy
+
+Work Log:
+- Turnstile côté frontend : activé pour TOUS les portails (y compris public) si NEXT_PUBLIC_TURNSTILE_SITE_KEY configuré. Token transmis au backend dans le payload.
+- Turnstile côté backend : ajouté verifyTurnstileToken() dans PublicAdmissionController — appelle siteverify Cloudflare, fail-open si Cloudflare indisponible, fail-closed si token invalide. Désactivé si TURNSTILE_SECRET_KEY non configuré (mode dev).
+- Wizard multi-étapes pour le portail public (3 étapes) :
+  - Étape 1 : Type de candidat + Responsable légal (prénom, nom, téléphone, email + lien parenté, profession, adresse)
+  - Étape 2 : Identité de l'enfant (prénom, nom, date naissance, sexe, lieu, nationalité, classe souhaitée + établissement précédent, motif)
+  - Étape 3 : Pièces justificatives + Message + Submit
+  - En-tête wizard : 3 pastilles numérotées avec barre de progression + label "Étape N sur 3"
+  - Navigation Précédent/Suivant entre étapes + bouton Submit final (étape 3 uniquement)
+  - Validation par étape (validatePreEnrollmentStep) : champs obligatoires vérifiés avant passage à l'étape suivante
+  - Cas PROSPECT_PARENT : étape 2 skippée (pas d'info enfant à remplir)
+  - Reset du wizard à l'étape 1 quand on change de type de candidat
+- Hauteur fixe pour le portail public : minHeight 640px + maxHeight 85vh + scroll interne sur colonne droite — évite le scroll vertical de la page
+- Bande navy (colonne gauche) enrichie pour le portail public :
+  - Titre h1 : nom de l'école (au lieu de "Portail Public")
+  - Sous-titre : slogan/devise de l'école (au lieu de "Pré-inscription & acquisition")
+  - Badge technique "Portail Public — Pré-inscription" en mini majuscules
+  - Infos clés sous le bandeau : adresse (icône MapPin) + téléphone (icône Phone)
+  - Bandeau Building2 masqué en mode public (évite redondance avec h1)
+  - Pour les autres portails : comportement inchangé
+
+Stage Summary:
+- 2 fichiers modifiés : public-admission.controller.ts (Turnstile serveur), LoginPage.tsx (wizard + Turnstile client + infos école)
+- Turnstile : activation conditionnelle via env vars (NEXT_PUBLIC_TURNSTILE_SITE_KEY côté client, TURNSTILE_SECRET_KEY côté serveur)
+- UX : wizard 3 étapes avec hauteur fixe, plus de scroll vertical, navigation claire
+- Branding : nom + slogan + adresse + téléphone de l'école affichés dans la bande navy pour le portail public

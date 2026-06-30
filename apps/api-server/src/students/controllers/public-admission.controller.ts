@@ -33,18 +33,62 @@
  */
 
 import {
-  Controller, Post, Body, UseGuards, BadRequestException,
+  Controller, Post, Body, UseGuards, BadRequestException, Logger, Req,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AdmissionService } from '../services/admission.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { Public } from '../../auth/decorators/public.decorator';
 import { SkipThrottle } from '@nestjs/throttler';
 import { IMAGE_OR_PDF_DATA_URL_PIPE } from '../../common/pipes/data-url-validation.pipe';
+import type { Request } from 'express';
 
 @Controller('students/admissions-public')
 @UseGuards(JwtAuthGuard)
 export class PublicAdmissionController {
-  constructor(private readonly admissionService: AdmissionService) {}
+  private readonly logger = new Logger(PublicAdmissionController.name);
+
+  constructor(
+    private readonly admissionService: AdmissionService,
+    private readonly configService: ConfigService,
+  ) {}
+
+  /**
+   * Valide un token Cloudflare Turnstile côté serveur (si configuré).
+   * Appelle l'API siteverify de Cloudflare.
+   * Si TURNSTILE_SECRET_KEY n'est pas configuré, la validation est ignorée (mode dev).
+   */
+  private async verifyTurnstileToken(token: string | undefined, ip?: string): Promise<void> {
+    const secret = this.configService.get<string>('TURNSTILE_SECRET_KEY');
+    if (!secret) {
+      // Pas de secret configuré → validation désactivée (mode dev/test)
+      return;
+    }
+    if (!token) {
+      throw new BadRequestException('Vérification de sécurité Turnstile requise');
+    }
+    try {
+      const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          secret,
+          response: token,
+          ...(ip ? { remoteip: ip } : {}),
+        }),
+      });
+      const data = await res.json() as { success: boolean; 'error-codes'?: string[] };
+      if (!data.success) {
+        this.logger.warn(`Turnstile validation failed: ${JSON.stringify(data['error-codes'])}`);
+        throw new BadRequestException('Vérification de sécurité échouée. Veuillez réessayer.');
+      }
+    } catch (err) {
+      if (err instanceof BadRequestException) throw err;
+      this.logger.error(`Turnstile siteverify error: ${err.message}`);
+      // En cas d'erreur réseau Cloudflare, on laisse passer (fail-open) pour ne pas bloquer
+      // l'admission si Cloudflare est temporairement indisponible.
+    }
+  }
 
   /**
    * POST /students/admissions-public/upload-apply
@@ -56,13 +100,20 @@ export class PublicAdmissionController {
   @Public()
   @Post('upload-apply')
   @SkipThrottle()
-  async applyAdmissionDataUrl(@Body() body: any) {
+  async applyAdmissionDataUrl(@Body() body: any, @Req() req: Request) {
     if (!body || !body.tenantId) {
       throw new BadRequestException('tenantId est requis');
     }
     if (!body.firstName || !body.lastName) {
       throw new BadRequestException('Prénom et nom de l\'élève sont requis');
     }
+
+    // Valider le token Turnstile (anti-spam) si configuré
+    const clientIp =
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      req.socket?.remoteAddress ||
+      undefined;
+    await this.verifyTurnstileToken(body.turnstileToken, clientIp);
 
     // Convertir chaque data URL en pseudo Express.Multer.File
     // (même pattern que recruitment.controller.ts:282-313)

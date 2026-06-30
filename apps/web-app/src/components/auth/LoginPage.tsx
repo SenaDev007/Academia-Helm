@@ -35,6 +35,7 @@ import {
   Phone,
   KeyRound,
   Building2,
+  MapPin,
   GraduationCap,
   Users,
   ArrowLeft,
@@ -452,6 +453,12 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   });
   const [preEnrollmentSubmitted, setPreEnrollmentSubmitted] = useState(false);
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+  // ── Wizard multi-étapes pour la pré-inscription publique ──
+  // Étape 1 : Type de candidat + Identité élève + Classe souhaitée
+  // Étape 2 : Responsable légal (contact + champs étendus)
+  // Étape 3 : Pièces justificatives + Message + Submit
+  // Objectif : fixer la hauteur du formulaire, éviter le scroll vertical.
+  const [preEnrollmentStep, setPreEnrollmentStep] = useState<1 | 2 | 3>(1);
 
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -576,12 +583,14 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     e.preventDefault();
     setError(null);
 
-    // ── Turnstile désactivé — pas de vérification d'humanité requise ──
-    // Pour réactiver : décommenter le bloc ci-dessous
-    // if (process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken && portalType !== 'public') {
-    //   setError('Veuillez compléter la vérification de sécurité avant de continuer.');
-    //   return;
-    // }
+    // ── Turnstile : vérification d'humanité ──
+    // Actif pour tous les portails si NEXT_PUBLIC_TURNSTILE_SITE_KEY est configuré.
+    // Pour le portail public (pré-inscription), le token est également transmis
+    // au backend pour validation serveur (sécurité anti-spam renforcée).
+    if (process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken) {
+      setError('Veuillez compléter la vérification de sécurité avant de continuer.');
+      return;
+    }
 
     setIsLoading(true);
 
@@ -1107,6 +1116,11 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       }
     }
 
+    // Token Turnstile (validation serveur anti-spam si configuré)
+    if (turnstileToken) {
+      payload.turnstileToken = turnstileToken;
+    }
+
     const response = await fetchWithTimeout('/api/public/admission/submit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1120,6 +1134,56 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     }
 
     setPreEnrollmentSubmitted(true);
+  };
+
+  // ── Validation par étape du wizard pré-inscription ──
+  // Retourne un message d'erreur si l'étape est invalide, null sinon.
+  const validatePreEnrollmentStep = (step: 1 | 2 | 3): string | null => {
+    if (step === 1) {
+      if (!preEnrollment.candidateType) return 'Veuillez sélectionner le niveau d\'inscription (Maternelle, Primaire, Secondaire).';
+      if (preEnrollment.candidateType !== 'PROSPECT_PARENT') {
+        if (!preEnrollment.childFirstName?.trim()) return 'Veuillez saisir le prénom de l\'enfant.';
+        if (!preEnrollment.childLastName?.trim()) return 'Veuillez saisir le nom de l\'enfant.';
+        if (!preEnrollment.targetLevel) return 'Veuillez sélectionner la classe souhaitée.';
+      }
+    }
+    if (step === 2) {
+      if (!preEnrollment.parentFirstName?.trim()) return 'Veuillez saisir votre prénom (parent).';
+      if (!preEnrollment.parentLastName?.trim()) return 'Veuillez saisir votre nom (parent).';
+      if (!preEnrollment.parentPhone?.trim()) return 'Veuillez saisir votre numéro de téléphone.';
+      if (!preEnrollment.parentEmail?.trim()) return 'Veuillez saisir votre adresse email.';
+    }
+    // Étape 3 : aucun champ obligatoire (documents et message sont optionnels)
+    return null;
+  };
+
+  const handlePreEnrollmentNext = () => {
+    const err = validatePreEnrollmentStep(preEnrollmentStep);
+    if (err) {
+      setError(err);
+      return;
+    }
+    setError(null);
+    if (preEnrollmentStep === 1) {
+      // Si PROSPECT_PARENT, sauter l'étape 2 (pas d'info enfant à remplir) → aller directement à l'étape 3
+      if (preEnrollment.candidateType === 'PROSPECT_PARENT') {
+        setPreEnrollmentStep(3);
+      } else {
+        setPreEnrollmentStep(2);
+      }
+    } else if (preEnrollmentStep === 2) {
+      setPreEnrollmentStep(3);
+    }
+  };
+
+  const handlePreEnrollmentBack = () => {
+    setError(null);
+    if (preEnrollmentStep === 3) {
+      // Si PROSPECT_PARENT, revenir directement à l'étape 1 (étape 2 était skippée)
+      setPreEnrollmentStep(preEnrollment.candidateType === 'PROSPECT_PARENT' ? 1 : 2);
+    } else if (preEnrollmentStep === 2) {
+      setPreEnrollmentStep(1);
+    }
   };
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -1407,7 +1471,15 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             boxShadow: `0 24px 48px -12px ${NAVY}14, 0 0 0 1px ${GOLD}12`,
           }}
         >
-          <div className="flex flex-col md:flex-row min-h-[480px]">
+          <div
+            className="flex flex-col md:flex-row"
+            style={{
+              // Pour le portail public : hauteur fixe pour éviter le scroll vertical
+              // (le wizard multi-étapes garantit que chaque étape tient dans cette hauteur)
+              minHeight: portalType === 'public' ? '640px' : '480px',
+              maxHeight: portalType === 'public' ? '85vh' : 'none',
+            }}
+          >
             {/* ── Colonne gauche : infos école (fond bleu palette Helm) ── */}
             <div className="flex-1 p-6 sm:p-8 flex flex-col justify-center relative overflow-hidden"
               style={{ background: `linear-gradient(155deg, ${NAVY} 0%, ${BLUE} 100%)` }}>
@@ -1441,31 +1513,76 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
               <h1
                 className="text-sm font-semibold tracking-tight sm:text-base text-white"
               >
-                {portalDef?.title || clientBranding?.name || BRAND.name}
+                {/* Pour le portail public : le nom de l'école est mis en avant
+                    (le parent voit immédiatement à quelle école il s'adresse).
+                    Pour les autres portails : on garde portalDef.title. */}
+                {portalType === 'public'
+                  ? (clientBranding?.name || schoolNameFromUrl || portalDef?.title || BRAND.name)
+                  : (portalDef?.title || clientBranding?.name || BRAND.name)}
               </h1>
+              {/* Pour le portail public : afficher "Portail Public — Pré-inscription" comme sous-titre technique */}
+              {portalType === 'public' && (
+                <span className="text-[10px] uppercase tracking-wider text-blue-200/80 font-semibold">
+                  Portail Public — Pré-inscription
+                </span>
+              )}
             </motion.div>
 
             <motion.p variants={heroItem} className="text-sm text-blue-100">
-              {portalDef?.subtitle || clientBranding?.slogan || BRAND.subtitle}
+              {/* Pour le portail public : afficher le slogan de l'école (plus pertinent que "Pré-inscription & acquisition") */}
+              {portalType === 'public'
+                ? (clientBranding?.motto || clientBranding?.slogan || 'Pré-inscription en ligne')
+                : (portalDef?.subtitle || clientBranding?.slogan || BRAND.subtitle)}
             </motion.p>
 
             {/* Tenant display — multi-tenant strict */}
-            {(clientBranding?.name || tenantSlug || schoolNameFromUrl) && portalType !== 'public' && (
+            {/* Affiché pour TOUS les portails (y compris public) pour que le parent
+                voie clairement l'école tenante à laquelle il s'adresse. */}
+            {(clientBranding?.name || tenantSlug || schoolNameFromUrl) && (
               <motion.div variants={heroItem} className="mt-3">
-                <div
-                  className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium text-white"
-                  style={{
-                    borderColor: 'rgba(255,255,255,0.25)',
-                    background: 'rgba(255,255,255,0.10)',
-                    backdropFilter: 'blur(4px)',
-                  }}
-                >
-                  <Building2 className="h-3.5 w-3.5" />
-                  <span>{clientBranding?.name || schoolNameFromUrl || tenantSlug}</span>
-                  {clientBranding?.city && (
-                    <span className="text-blue-200">— {clientBranding.city}</span>
-                  )}
-                </div>
+                {/* Bandeau principal : nom école + ville — masqué en mode public car
+                    le h1 affiche déjà le nom de l'école (évite la redondance). */}
+                {portalType !== 'public' && (
+                  <div
+                    className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium text-white"
+                    style={{
+                      borderColor: 'rgba(255,255,255,0.25)',
+                      background: 'rgba(255,255,255,0.10)',
+                      backdropFilter: 'blur(4px)',
+                    }}
+                  >
+                    <Building2 className="h-3.5 w-3.5" />
+                    <span>{clientBranding?.name || schoolNameFromUrl || tenantSlug}</span>
+                    {clientBranding?.city && (
+                      <span className="text-blue-200">— {clientBranding.city}</span>
+                    )}
+                  </div>
+                )}
+
+                {/* Infos clés école (uniquement si branding résolu) — affichées
+                    verticalement sous le bandeau, en petits libellés lisibles.
+                    En mode public : le slogan est masqué ici (déjà affiché en sous-titre). */}
+                {clientBranding && (clientBranding.address || clientBranding.phone) && (
+                  <div className="mt-2 space-y-1 text-[11px] text-blue-100/90">
+                    {portalType !== 'public' && clientBranding.slogan && (
+                      <div className="flex items-start gap-1.5">
+                        <span className="text-blue-200/70 italic">« {clientBranding.slogan} »</span>
+                      </div>
+                    )}
+                    {clientBranding.address && (
+                      <div className="flex items-start gap-1.5">
+                        <MapPin className="h-3 w-3 mt-0.5 shrink-0 text-blue-200/70" />
+                        <span>{clientBranding.address}{clientBranding.city ? `, ${clientBranding.city}` : ''}</span>
+                      </div>
+                    )}
+                    {clientBranding.phone && (
+                      <div className="flex items-start gap-1.5">
+                        <Phone className="h-3 w-3 mt-0.5 shrink-0 text-blue-200/70" />
+                        <span>{clientBranding.phone}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </motion.div>
             )}
 
@@ -1624,7 +1741,11 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             <div className="md:hidden h-px" style={{ background: `linear-gradient(to right, transparent, ${GOLD}55, transparent)` }} />
 
             {/* ── Colonne droite : formulaire de connexion ── */}
-            <div className="flex-1 p-6 sm:p-8 flex flex-col justify-center">
+            {/* Pour le portail public : scroll interne si la hauteur fixe est dépassée */}
+            <div
+              className="flex-1 p-6 sm:p-8 flex flex-col justify-center"
+              style={portalType === 'public' ? { overflowY: 'auto', maxHeight: '85vh' } : undefined}
+            >
 
           {/* ════════════════════════════════════════════════════════════════
               FORMULAIRES D'AUTHENTIFICATION PAR PORTAIL
@@ -1983,6 +2104,40 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 {/* ── PUBLIC : Pré-inscription (aucune authentification requise) ── */}
                 {portalType === 'public' && !preEnrollmentSubmitted && (
                   <>
+                    {/* ── En-tête wizard : indicateur d'étapes (3 pastilles) ── */}
+                    <div className="flex items-center justify-center gap-1.5 mb-3">
+                      {[1, 2, 3].map((s) => (
+                        <div key={s} className="flex items-center gap-1.5">
+                          <div
+                            className="flex items-center justify-center rounded-full text-[10px] font-bold transition-all"
+                            style={{
+                              width: 22, height: 22,
+                              background: preEnrollmentStep >= s ? NAVY : '#e2e8f0',
+                              color: preEnrollmentStep >= s ? '#fff' : '#94a3b8',
+                            }}
+                          >
+                            {preEnrollmentStep > s ? '✓' : s}
+                          </div>
+                          {s < 3 && (
+                            <div
+                              className="h-0.5 w-6 transition-all"
+                              style={{ background: preEnrollmentStep > s ? NAVY : '#e2e8f0' }}
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="text-center mb-3">
+                      <p className="text-xs font-bold" style={{ color: NAVY }}>
+                        {preEnrollmentStep === 1 ? 'Étape 1 sur 3 — Identité de l\'élève' :
+                         preEnrollmentStep === 2 ? 'Étape 2 sur 3 — Responsable légal' :
+                         'Étape 3 sur 3 — Documents & message'}
+                      </p>
+                    </div>
+
+                    {/* ── ÉTAPE 1 : Type de candidat + Identité élève + Classe souhaitée ── */}
+                    {preEnrollmentStep === 1 && (
+                    <>
                     {/* Type de candidat */}
                     <div>
                       <label className="mb-1.5 block text-sm font-semibold text-slate-900">
@@ -1998,7 +2153,12 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                           <button
                             key={opt.type}
                             type="button"
-                            onClick={() => setPreEnrollment((prev) => ({ ...prev, candidateType: opt.type, targetLevel: '' }))}
+                            onClick={() => {
+                              setPreEnrollment((prev) => ({ ...prev, candidateType: opt.type, targetLevel: '' }));
+                              // Reset du wizard à l'étape 1 quand on change de type de candidat
+                              setPreEnrollmentStep(1);
+                              setError(null);
+                            }}
                             className="flex flex-col items-center gap-1 rounded-xl border-2 p-3 min-h-[44px] text-center transition-all"
                             style={{
                               borderColor: preEnrollment.candidateType === opt.type ? GOLD : `${NAVY}18`,
@@ -2138,9 +2298,12 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                         placeholder="Quartier, ville"
                       />
                     </div>
+                    </>
+                    )}
 
+                    {/* ── ÉTAPE 2 : Identité de l'enfant + Classe souhaitée + Vœux académiques ── */}
                     {/* Child info (not for PROSPECT_PARENT) */}
-                    {preEnrollment.candidateType !== 'PROSPECT_PARENT' && (
+                    {preEnrollment.candidateType !== 'PROSPECT_PARENT' && preEnrollmentStep === 2 && (
                       <>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
@@ -2300,8 +2463,9 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                       </>
                     )}
 
-                    {/* ── Pièces justificatives (upload optionnel) ── */}
-                    {preEnrollment.candidateType !== 'PROSPECT_PARENT' && (
+                    {/* ── ÉTAPE 3 : Pièces justificatives + Message final ── */}
+                    {/* Pièces justificatives (upload optionnel) */}
+                    {preEnrollment.candidateType !== 'PROSPECT_PARENT' && preEnrollmentStep === 3 && (
                       <div className="rounded-xl border-2 border-slate-200 bg-slate-50 p-3">
                         <div className="mb-2">
                           <label className="block text-xs font-bold text-slate-900">
@@ -2379,7 +2543,8 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                       </div>
                     )}
 
-                    {/* Message */}
+                    {/* Message — étape 3 */}
+                    {preEnrollmentStep === 3 && (
                     <div>
                       <label className="mb-1 block text-xs font-semibold text-slate-900">
                         Message (optionnel)
@@ -2393,13 +2558,46 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                         placeholder="Précisez votre demande..."
                       />
                     </div>
+                    )}
+
+                    {/* ── Navigation wizard : Précédent / Suivant / Soumettre ── */}
+                    {portalType === 'public' && !preEnrollmentSubmitted && (
+                      <div className="flex items-center justify-between gap-2 pt-2">
+                        {preEnrollmentStep > 1 ? (
+                          <button
+                            type="button"
+                            onClick={handlePreEnrollmentBack}
+                            className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold border-2 transition-all"
+                            style={{ borderColor: `${NAVY}30`, color: NAVY, background: '#fff' }}
+                          >
+                            <ArrowLeft className="h-4 w-4" />
+                            Précédent
+                          </button>
+                        ) : (
+                          <div /> /* spacer pour garder le bouton suivant à droite */
+                        )}
+
+                        {preEnrollmentStep < 3 ? (
+                          <button
+                            type="button"
+                            onClick={handlePreEnrollmentNext}
+                            className="inline-flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-sm font-bold text-white shadow-md transition-all"
+                            style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
+                          >
+                            Suivant
+                            <ArrowRight className="h-4 w-4" />
+                          </button>
+                        ) : null /* étape 3 : le bouton Submit principal prend le relais ci-dessous */}
+                      </div>
+                    )}
                   </>
                 )}
               </motion.div>
             </AnimatePresence>
 
             {/* ── Cloudflare Turnstile — vérification d'humanité ── */}
-            {!(portalType === 'public') && (
+            {/* Actif pour tous les portails (y compris public) si NEXT_PUBLIC_TURNSTILE_SITE_KEY est configuré */}
+            {process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && (
               <div className="flex justify-center mt-2">
                 <TurnstileWidget
                   onToken={setTurnstileToken}
@@ -2410,7 +2608,8 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             )}
 
             {/* ── Submit button — palette Helm unifiée ── */}
-            {!(portalType === 'public' && preEnrollmentSubmitted) && (
+            {/* Pour le portail public : n'afficher qu'à l'étape 3 (sinon le bouton "Suivant" gère la navigation) */}
+            {!(portalType === 'public' && preEnrollmentSubmitted) && !(portalType === 'public' && preEnrollmentStep < 3) && (
               <motion.button
                 type="submit"
                 disabled={isLoading}

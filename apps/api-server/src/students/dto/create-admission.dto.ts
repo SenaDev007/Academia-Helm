@@ -54,6 +54,12 @@ export class CreateAdmissionDto {
   @IsOptional() @IsString()
   previousSchool?: string;
 
+  @IsOptional() @IsString()
+  previousLevel?: string;
+
+  @IsOptional() @IsString()
+  changeReason?: string;
+
   // ─── Responsable légal ───────────────────────────────────────────────────
   @IsOptional() @IsString()
   mainGuardianName?: string;
@@ -67,6 +73,12 @@ export class CreateAdmissionDto {
 
   @IsOptional() @IsString()
   mainGuardianRelationship?: string;
+
+  @IsOptional() @IsString()
+  mainGuardianAddress?: string;
+
+  @IsOptional() @IsString()
+  mainGuardianProfession?: string;
 
   // ─── Divers ──────────────────────────────────────────────────────────────
   @IsOptional() @IsString()

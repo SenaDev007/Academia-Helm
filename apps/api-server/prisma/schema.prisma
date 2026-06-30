@@ -4345,12 +4345,16 @@ model Admission {
   requestedSeriesId   String?
   wantsBilingual      Boolean      @default(false)
   previousSchool      String?
+  previousLevel       String?
+  changeReason        String?
 
   // ─── Responsable légal (Phase 1) ─────────────────────────────────────────
   mainGuardianName    String?
   mainGuardianPhone   String?
   mainGuardianEmail   String?
   mainGuardianRelationship String?
+  mainGuardianAddress String?
+  mainGuardianProfession String?
 
   // ─── Traçabilité (Phase 1) ───────────────────────────────────────────────
   admissionNumber     String?      @unique
@@ -4368,6 +4372,12 @@ model Admission {
   decisionDate        DateTime?
   decisionBy          String?
   notes               String?
+  reviewComment       String?
+  decisionComment     String?
+  convertedAt         DateTime?
+  metadata            Json?
+  createdById         String?
+  updatedById         String?
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
 
@@ -4377,11 +4387,72 @@ model Admission {
   // Voir migration 20260701110000_drop_admissions_schoollevel_fk.
   // L'ID est validé côté application (validateForeignKeys ou similaire).
   tenant              Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  documents           AdmissionDocument[]
+  interviews          AdmissionInterview[]
 
   @@index([tenantId, academicYearId, schoolLevelId])
   @@index([status])
   @@index([convertedStudentId])
   @@map("admissions")
+}
+
+/// Document joint à une demande d'admission (acte de naissance, photo, bulletin, etc.)
+model AdmissionDocument {
+  id              String   @id @default(uuid())
+  tenantId        String
+  admissionId     String
+
+  documentType    String   // BIRTH_CERTIFICATE | ID_PHOTO | REPORT_CARD | TRANSFER_CERT | ID_DOCUMENT | PARENTAL_AUTH | OTHER
+  fileName        String?
+  filePath        String?
+  mimeType        String?
+  fileSize        Int?
+  status          String   @default("PENDING") // PENDING | SUBMITTED | VALIDATED | REJECTED | EXPIRED
+  expiresAt       DateTime?
+  validatedById   String?
+  validatedAt     DateTime?
+  comment         String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  admission       Admission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([admissionId])
+  @@index([documentType])
+  @@index([status])
+  @@map("admission_documents")
+}
+
+/// Entretien ou test d'admission
+model AdmissionInterview {
+  id              String   @id @default(uuid())
+  tenantId        String
+  admissionId     String
+
+  type            String   // INTERVIEW | TEST | OBSERVATION
+  status          String   @default("PLANNED") // NOT_REQUIRED | PLANNED | DONE | ABSENT | FAVORABLE | UNFAVORABLE | TO_REVIEW
+  scheduledAt     DateTime?
+  conductedAt     DateTime?
+  responsibleId   String?
+  result          String?
+  score           Float?
+  comment         String?
+  recommendation  String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  admission       Admission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([admissionId])
+  @@index([type])
+  @@index([status])
+  @@map("admission_interviews")
 }
 
 model TransferRequest {

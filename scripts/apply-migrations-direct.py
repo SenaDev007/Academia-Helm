@@ -57,6 +57,10 @@ MIGRATIONS = [
         "name": "20260701120000_recreate_fk_to_education_levels",
         "description": "Recreate FKs toward education_levels (correct table) for admissions + timetable_configs",
     },
+    {
+        "name": "20260701130000_admission_full_spec",
+        "description": "Add missing admission fields + create admission_documents + admission_interviews tables",
+    },
 ]
 
 MIGRATIONS_DIR = Path("/home/z/my-project/apps/api-server/prisma/migrations")

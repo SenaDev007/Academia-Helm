@@ -89,12 +89,16 @@ export class AdmissionService {
         requestedSeriesId: data.requestedSeriesId || null,
         wantsBilingual: data.wantsBilingual ?? false,
         previousSchool: data.previousSchool ?? null,
+        previousLevel: data.previousLevel ?? null,
+        changeReason: data.changeReason ?? null,
 
         // Responsable légal
         mainGuardianName: data.mainGuardianName ?? null,
         mainGuardianPhone: data.mainGuardianPhone ?? null,
         mainGuardianEmail: data.mainGuardianEmail ?? null,
         mainGuardianRelationship: data.mainGuardianRelationship ?? null,
+        mainGuardianAddress: data.mainGuardianAddress ?? null,
+        mainGuardianProfession: data.mainGuardianProfession ?? null,
 
         // Traçabilité
         admissionNumber,
@@ -188,16 +192,22 @@ export class AdmissionService {
     if (data.requestedSeriesId !== undefined) updateData.requestedSeriesId = data.requestedSeriesId || null;
     if (data.wantsBilingual !== undefined) updateData.wantsBilingual = data.wantsBilingual;
     if (data.previousSchool !== undefined) updateData.previousSchool = data.previousSchool;
+    if (data.previousLevel !== undefined) updateData.previousLevel = data.previousLevel;
+    if (data.changeReason !== undefined) updateData.changeReason = data.changeReason;
 
     // Responsable légal
     if (data.mainGuardianName !== undefined) updateData.mainGuardianName = data.mainGuardianName;
     if (data.mainGuardianPhone !== undefined) updateData.mainGuardianPhone = data.mainGuardianPhone;
     if (data.mainGuardianEmail !== undefined) updateData.mainGuardianEmail = data.mainGuardianEmail;
     if (data.mainGuardianRelationship !== undefined) updateData.mainGuardianRelationship = data.mainGuardianRelationship;
+    if (data.mainGuardianAddress !== undefined) updateData.mainGuardianAddress = data.mainGuardianAddress;
+    if (data.mainGuardianProfession !== undefined) updateData.mainGuardianProfession = data.mainGuardianProfession;
 
     // Workflow
     if (data.status !== undefined) updateData.status = data.status;
     if (data.notes !== undefined) updateData.notes = data.notes;
+    if (data.reviewComment !== undefined) updateData.reviewComment = data.reviewComment;
+    if (data.decisionComment !== undefined) updateData.decisionComment = data.decisionComment;
     if (data.applicationDate !== undefined) updateData.applicationDate = data.applicationDate;
     if (data.decisionDate !== undefined) updateData.decisionDate = data.decisionDate;
     if (data.decisionBy !== undefined) updateData.decisionBy = data.decisionBy;
@@ -464,5 +474,175 @@ export class AdmissionService {
         studentGuardians: { include: { guardian: true } },
       },
     });
+  }
+
+  // ═══ DOCUMENTS ═══
+
+  async getDocuments(admissionId: string, tenantId: string) {
+    return this.prisma.admissionDocument.findMany({
+      where: { admissionId, tenantId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async createDocument(admissionId: string, tenantId: string, data: {
+    documentType: string;
+    fileName?: string;
+    filePath?: string;
+    mimeType?: string;
+    fileSize?: number;
+    comment?: string;
+  }) {
+    return this.prisma.admissionDocument.create({
+      data: {
+        tenantId,
+        admissionId,
+        documentType: data.documentType,
+        fileName: data.fileName ?? null,
+        filePath: data.filePath ?? null,
+        mimeType: data.mimeType ?? null,
+        fileSize: data.fileSize ?? null,
+        comment: data.comment ?? null,
+        status: 'SUBMITTED',
+      },
+    });
+  }
+
+  async updateDocument(documentId: string, tenantId: string, data: any) {
+    const updateData: any = {};
+    if (data.status !== undefined) updateData.status = data.status;
+    if (data.comment !== undefined) updateData.comment = data.comment;
+    if (data.expiresAt !== undefined) updateData.expiresAt = data.expiresAt ? new Date(data.expiresAt) : null;
+    if (data.validatedById !== undefined) updateData.validatedById = data.validatedById;
+    if (data.validatedAt !== undefined) updateData.validatedAt = data.validatedAt ? new Date(data.validatedAt) : null;
+
+    return this.prisma.admissionDocument.update({
+      where: { id: documentId },
+      data: updateData,
+    });
+  }
+
+  async validateDocument(documentId: string, tenantId: string, userId: string) {
+    return this.prisma.admissionDocument.update({
+      where: { id: documentId },
+      data: {
+        status: 'VALIDATED',
+        validatedById: userId,
+        validatedAt: new Date(),
+      },
+    });
+  }
+
+  async rejectDocument(documentId: string, tenantId: string, userId: string, comment: string) {
+    return this.prisma.admissionDocument.update({
+      where: { id: documentId },
+      data: {
+        status: 'REJECTED',
+        validatedById: userId,
+        validatedAt: new Date(),
+        comment,
+      },
+    });
+  }
+
+  async deleteDocument(documentId: string, tenantId: string) {
+    return this.prisma.admissionDocument.delete({
+      where: { id: documentId },
+    });
+  }
+
+  // ═══ INTERVIEWS ═══
+
+  async getInterviews(admissionId: string, tenantId: string) {
+    return this.prisma.admissionInterview.findMany({
+      where: { admissionId, tenantId },
+      orderBy: { scheduledAt: 'asc' },
+    });
+  }
+
+  async createInterview(admissionId: string, tenantId: string, data: {
+    type: string;
+    scheduledAt?: string;
+    responsibleId?: string;
+    comment?: string;
+  }) {
+    return this.prisma.admissionInterview.create({
+      data: {
+        tenantId,
+        admissionId,
+        type: data.type,
+        status: 'PLANNED',
+        scheduledAt: data.scheduledAt ? new Date(data.scheduledAt) : null,
+        responsibleId: data.responsibleId ?? null,
+        comment: data.comment ?? null,
+      },
+    });
+  }
+
+  async updateInterview(interviewId: string, tenantId: string, data: any) {
+    const updateData: any = {};
+    if (data.status !== undefined) updateData.status = data.status;
+    if (data.scheduledAt !== undefined) updateData.scheduledAt = data.scheduledAt ? new Date(data.scheduledAt) : null;
+    if (data.conductedAt !== undefined) updateData.conductedAt = data.conductedAt ? new Date(data.conductedAt) : null;
+    if (data.responsibleId !== undefined) updateData.responsibleId = data.responsibleId;
+    if (data.result !== undefined) updateData.result = data.result;
+    if (data.score !== undefined) updateData.score = data.score;
+    if (data.comment !== undefined) updateData.comment = data.comment;
+    if (data.recommendation !== undefined) updateData.recommendation = data.recommendation;
+
+    return this.prisma.admissionInterview.update({
+      where: { id: interviewId },
+      data: updateData,
+    });
+  }
+
+  async completeInterview(interviewId: string, tenantId: string, data: {
+    result?: string;
+    score?: number;
+    comment?: string;
+    recommendation?: string;
+    status?: string;
+  }) {
+    return this.prisma.admissionInterview.update({
+      where: { id: interviewId },
+      data: {
+        status: data.status || 'DONE',
+        conductedAt: new Date(),
+        result: data.result ?? null,
+        score: data.score ?? null,
+        comment: data.comment ?? null,
+        recommendation: data.recommendation ?? null,
+      },
+    });
+  }
+
+  // ═══ EXTENDED ENDPOINTS ═══
+
+  async requestDocuments(id: string, tenantId: string, comment: string, userId: string) {
+    return this.changeStatus(id, tenantId, 'MISSING_DOCUMENTS', comment, userId);
+  }
+
+  async waitlist(id: string, tenantId: string, comment: string, userId: string) {
+    return this.changeStatus(id, tenantId, 'WAITLISTED', comment, userId);
+  }
+
+  async cancel(id: string, tenantId: string, comment: string, userId: string) {
+    return this.changeStatus(id, tenantId, 'CANCELLED', comment, userId);
+  }
+
+  async accept(id: string, tenantId: string, comment: string, userId: string) {
+    return this.decide(id, tenantId, 'ACCEPTED', comment, userId);
+  }
+
+  async reject(id: string, tenantId: string, comment: string, userId: string) {
+    return this.decide(id, tenantId, 'REJECTED', comment, userId);
+  }
+
+  async delete(id: string, tenantId: string) {
+    const admission = await this.findOne(id, tenantId);
+    if (admission.convertedStudentId) {
+      throw new BadRequestException('Impossible de supprimer une admission déjà convertie en élève');
+    }
+    return this.prisma.admission.delete({ where: { id } });
   }
 }

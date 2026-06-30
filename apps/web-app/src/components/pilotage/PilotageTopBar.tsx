@@ -27,6 +27,7 @@ import SchoolLevelSelector from './SchoolLevelSelector';
 import AcademicTrackSelector from '../dashboard/AcademicTrackSelector';
 import { useOffline, useSyncStatus } from '@/hooks/useOffline';
 import InAppReviewModal from '@/components/reviews/InAppReviewModal';
+import NotificationDropdown from '@/components/notifications/NotificationDropdown';
 import type { User, Tenant } from '@/types';
 
 interface SchoolIdentity {
@@ -329,6 +330,9 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
                 </div>
               )}
             </div>
+
+            {/* Notifications in-app (cloche avec dropdown) — admissions, candidatures, etc. */}
+            <NotificationDropdown />
 
             {/* Alertes ORION */}
             {orionAlertsCount > 0 && (

@@ -8365,6 +8365,55 @@ model PushNotification {
   @@map("push_notifications")
 }
 
+/// Notification in-app générique (cloche dans le header).
+/// Créée lors d'événements métier : nouvelle admission, nouvelle candidature RH,
+/// etc. Une ligne par destinataire (user-scoped), avec statut isRead.
+model InAppNotification {
+  id                String    @id @default(uuid())
+  tenantId          String
+  recipientId       String    // → User.id (destinataire de la notification)
+  type              String    // ADMISSION_SUBMITTED | CANDIDATURE_SUBMITTED | SYSTEM | ...
+  title             String
+  body              String
+  priority          String    @default("MEDIUM") // LOW | MEDIUM | HIGH
+  data              Json?     // payload libre (url, metadata, ...)
+  relatedEntityType String?   // ex: "Admission", "HrCandidate"
+  relatedEntityId   String?   // ex: UUID de l'admission
+  isRead            Boolean   @default(false)
+  readAt            DateTime?
+  createdAt         DateTime  @default(now())
+
+  tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, recipientId, isRead])
+  @@index([recipientId, isRead])
+  @@index([type])
+  @@index([createdAt])
+  @@map("in_app_notifications")
+}
+
+/// Abonnement Web Push (navigateur/device d'un utilisateur).
+/// Stocke les infos nécessaires pour envoyer des notifications push via
+/// l'API Web Push (VAPID + endpoint Push Service).
+model PushSubscription {
+  id              String     @id @default(uuid())
+  tenantId        String
+  userId          String     // → User.id
+  endpoint        String     @unique  // URL fournie par le Push Service (navigateur)
+  keysP256dh      String     // clé publique P-256 (ECDH)
+  keysAuth        String     // clé d'authentification
+  expirationTime  DateTime?
+  userAgent       String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  tenant          Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+  @@index([userId])
+  @@map("push_subscriptions")
+}
+
 model CommunicationStat {
   id             String        @id @default(uuid())
   tenantId       String

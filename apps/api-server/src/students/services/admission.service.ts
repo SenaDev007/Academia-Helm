@@ -4,6 +4,7 @@ import { StudentsLifecycleService } from './students-lifecycle.service';
 import { StudentIdentifierService } from './student-identifier.service';
 import { StorageService } from '../../common/services/storage.service';
 import { AdmissionNotificationService } from './admission-notification.service';
+import { NotificationService } from '../../notifications/notification.service';
 
 @Injectable()
 export class AdmissionService {
@@ -15,6 +16,7 @@ export class AdmissionService {
     private readonly studentIdentifierService: StudentIdentifierService,
     private readonly storageService: StorageService,
     private readonly notificationService: AdmissionNotificationService,
+    private readonly inAppNotificationService: NotificationService,
   ) {}
 
   /**
@@ -1073,6 +1075,26 @@ export class AdmissionService {
       .catch((err) =>
         this.logger.error(
           `notifyAdmissionReceived failed: ${err.message}`,
+          err.stack,
+        ),
+      );
+
+    // Fire-and-forget : créer une notification in-app pour le staff d'admission
+    // (cloche header + future notification push)
+    this.inAppNotificationService
+      .notifyAdmissionStaff({
+        admissionId: result.admission.id,
+        tenantId,
+        admission: {
+          firstName: body.firstName,
+          lastName: body.lastName,
+          admissionNumber: result.admission.admissionNumber,
+        },
+        requestedClassLabel: body.targetLevel || body.message, // libre, best-effort
+      })
+      .catch((err) =>
+        this.logger.error(
+          `notifyAdmissionStaff failed: ${err.message}`,
           err.stack,
         ),
       );

@@ -5,6 +5,7 @@ import { OpenRouterService } from '../common/services/openrouter.service';
 import { ContractsPrismaService } from './contracts-prisma.service';
 import { StaffMatriculeService } from './staff-matricule.service';
 import { RecruitmentNotificationService } from './recruitment-notification.service';
+import { NotificationService } from '../notifications/notification.service';
 import { ContractSignTokenService } from './services/contract-sign-token.service';
 import { StaffCredentialService } from './services/staff-credential.service';
 import { prismaCreateDefaults, prismaUpdateDefaults, prismaCreateNoCreatedAt, prismaCreateNoUpdatedAt, prismaCreateIdOnly, uuid, now } from '../common/utils/prisma-helpers';
@@ -41,6 +42,7 @@ export class RecruitmentPrismaService {
     private readonly matriculeService: StaffMatriculeService,
     private readonly openRouter: OpenRouterService,
     private readonly notificationService: RecruitmentNotificationService,
+    private readonly inAppNotificationService: NotificationService,
     private readonly contractSignTokenService: ContractSignTokenService,
     private readonly staffCredentialService: StaffCredentialService,
   ) {}
@@ -2391,6 +2393,27 @@ export class RecruitmentPrismaService {
       .catch((err) => {
         this.logger.error(
           `applyJob: failed to send candidature-reçue email to ${body.email}: ${err.message}`,
+        );
+      });
+
+    // Fire-and-forget : créer une notification in-app pour le staff RH
+    // (cloche header + future notification push)
+    this.inAppNotificationService
+      .notifyRecruitmentStaff({
+        candidateId: result.candidate.id,
+        applicationId: result.application.id,
+        tenantId,
+        jobId: body.jobId,
+        candidate: {
+          firstName: body.firstName,
+          lastName: body.lastName,
+          email: body.email,
+        },
+        jobTitle: undefined, // pas de jobTitle résolu ici (à enrichir plus tard)
+      })
+      .catch((err) => {
+        this.logger.error(
+          `applyJob: failed to notify recruitment staff (in-app): ${err.message}`,
         );
       });
 

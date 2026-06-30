@@ -2595,7 +2595,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                         ) : null /* étape 3 : le bouton Submit principal prend le relais ci-dessous */}
                       </div>
                     )}
-                  </div> {/* fin .public-pre-enrollment */}
+                  </div>
                 )}
               </motion.div>
             </AnimatePresence>

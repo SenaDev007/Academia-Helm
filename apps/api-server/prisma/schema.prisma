@@ -39,6 +39,8 @@ model Tenant {
   activityLogs                     ActivityLog[]
   administrativeSeals              AdministrativeSeal[]              @relation("AdministrativeSealTenant")
   admissions                       Admission[]
+  admissionDocuments               AdmissionDocument[]
+  admissionInterviews              AdmissionInterview[]
   announcements                    Announcement[]
   annualTeacherSupplies            AnnualTeacherSupply[]
   atlasConversations               AtlasConversation[]

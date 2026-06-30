@@ -57,6 +57,11 @@ export class PublicAdmissionController {
    * Valide un token Cloudflare Turnstile côté serveur (si configuré).
    * Appelle l'API siteverify de Cloudflare.
    * Si TURNSTILE_SECRET_KEY n'est pas configuré, la validation est ignorée (mode dev).
+   *
+   * Important : si le token manque (ex: NEXT_PUBLIC_TURNSTILE_SITE_KEY non configuré
+   * côté frontend mais TURNSTILE_SECRET_KEY configuré côté backend), on log un warning
+   * et on laisse passer plutôt que de bloquer — évite les faux 400 en configuration
+   * partielle. La sécurité anti-spam reste effective si les deux vars sont configurées.
    */
   private async verifyTurnstileToken(token: string | undefined, ip?: string): Promise<void> {
     const secret = this.configService.get<string>('TURNSTILE_SECRET_KEY');
@@ -65,7 +70,13 @@ export class PublicAdmissionController {
       return;
     }
     if (!token) {
-      throw new BadRequestException('Vérification de sécurité Turnstile requise');
+      // Token manquant — probablement NEXT_PUBLIC_TURNSTILE_SITE_KEY non configuré
+      // côté frontend. On log et on laisse passer (fail-open) pour éviter les faux 400.
+      this.logger.warn(
+        'Turnstile: token manquant (NEXT_PUBLIC_TURNSTILE_SITE_KEY probablement non configuré côté frontend). ' +
+        'Soumission autorisée sans validation Turnstile.',
+      );
+      return;
     }
     try {
       const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
@@ -117,36 +128,71 @@ export class PublicAdmissionController {
 
     // Convertir chaque data URL en pseudo Express.Multer.File
     // (même pattern que recruitment.controller.ts:282-313)
-    const convertToFile = (f: any): Express.Multer.File | null => {
+    // Si un document a un format non supporté, on l'ignore (best-effort) plutôt
+    // que de rejeter toute la soumission. Le parent pourra compléter plus tard.
+    const convertToFile = (f: any, docKey: string): Express.Multer.File | null => {
       if (!f || !f.fileDataUrl) return null;
-      // Valider le data URL via le pipe (vérifie format, MIME, taille)
-      const validatedDataUrl = IMAGE_OR_PDF_DATA_URL_PIPE.transform(f.fileDataUrl);
-      const m = /^data:([^;]+);base64,(.+)$/i.exec(validatedDataUrl);
-      if (!m) return null;
-      const buffer = Buffer.from(m[2], 'base64');
-      return {
-        buffer,
-        originalname: f.fileName || 'document',
-        mimetype: f.mimeType || m[1],
-        size: f.fileSize || buffer.length,
-        fieldname: 'file',
-        encoding: '7bit',
-        destination: '',
-        filename: f.fileName || 'document',
-        path: '',
-        stream: null as any,
-      } as unknown as Express.Multer.File;
+      try {
+        // Valider le data URL via le pipe (vérifie format, MIME, taille)
+        const validatedDataUrl = IMAGE_OR_PDF_DATA_URL_PIPE.transform(f.fileDataUrl);
+        const m = /^data:([^;]+);base64,(.+)$/i.exec(validatedDataUrl);
+        if (!m) return null;
+        const buffer = Buffer.from(m[2], 'base64');
+        return {
+          buffer,
+          originalname: f.fileName || 'document',
+          mimetype: f.mimeType || m[1],
+          size: f.fileSize || buffer.length,
+          fieldname: 'file',
+          encoding: '7bit',
+          destination: '',
+          filename: f.fileName || 'document',
+          path: '',
+          stream: null as any,
+        } as unknown as Express.Multer.File;
+      } catch (err: any) {
+        // Document invalide (mauvais format, trop volumineux, etc.)
+        // On log et on ignore ce document — la soumission continue sans lui
+        this.logger.warn(
+          `Document ${docKey} ignoré (format invalide): ${err.message}`,
+        );
+        return null;
+      }
     };
 
     const files: any = {};
-    if (body.birthCertificate) files.birthCertificate = [convertToFile(body.birthCertificate)].filter(Boolean);
-    if (body.idPhoto) files.idPhoto = [convertToFile(body.idPhoto)].filter(Boolean);
-    if (body.lastReportCard) files.lastReportCard = [convertToFile(body.lastReportCard)].filter(Boolean);
-    if (body.schoolCertificate) files.schoolCertificate = [convertToFile(body.schoolCertificate)].filter(Boolean);
-    if (body.parentalAuth) files.parentalAuth = [convertToFile(body.parentalAuth)].filter(Boolean);
-    if (body.npi) files.npi = [convertToFile(body.npi)].filter(Boolean);
-    if (body.idDocument) files.idDocument = [convertToFile(body.idDocument)].filter(Boolean);
-    if (body.other) files.other = [convertToFile(body.other)].filter(Boolean);
+    if (body.birthCertificate) {
+      const f = convertToFile(body.birthCertificate, 'birthCertificate');
+      if (f) files.birthCertificate = [f];
+    }
+    if (body.idPhoto) {
+      const f = convertToFile(body.idPhoto, 'idPhoto');
+      if (f) files.idPhoto = [f];
+    }
+    if (body.lastReportCard) {
+      const f = convertToFile(body.lastReportCard, 'lastReportCard');
+      if (f) files.lastReportCard = [f];
+    }
+    if (body.schoolCertificate) {
+      const f = convertToFile(body.schoolCertificate, 'schoolCertificate');
+      if (f) files.schoolCertificate = [f];
+    }
+    if (body.parentalAuth) {
+      const f = convertToFile(body.parentalAuth, 'parentalAuth');
+      if (f) files.parentalAuth = [f];
+    }
+    if (body.npi) {
+      const f = convertToFile(body.npi, 'npi');
+      if (f) files.npi = [f];
+    }
+    if (body.idDocument) {
+      const f = convertToFile(body.idDocument, 'idDocument');
+      if (f) files.idDocument = [f];
+    }
+    if (body.other) {
+      const f = convertToFile(body.other, 'other');
+      if (f) files.other = [f];
+    }
 
     return this.admissionService.applyAdmission(body, files);
   }

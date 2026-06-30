@@ -64,12 +64,43 @@ export async function POST(request: NextRequest) {
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      // Propager l'erreur du backend (ConflictException, BadRequestException, etc.)
-      const errorMsg =
-        data.error ||
-        data.message ||
-        (typeof data.message === 'string' ? data.message : null) ||
-        `Échec de la soumission (${response.status})`;
+      // Log détaillé pour diagnostic (visible dans les logs Vercel)
+      console.error('[public/admission/submit] Backend error:', {
+        status: response.status,
+        statusText: response.statusText,
+        data,
+        // Ne pas logger le body complet (peut contenir des data URLs volumineuses)
+        bodyKeys: Object.keys(body || {}),
+        hasDocuments: {
+          birthCertificate: !!body?.birthCertificate,
+          idPhoto: !!body?.idPhoto,
+          lastReportCard: !!body?.lastReportCard,
+          schoolCertificate: !!body?.schoolCertificate,
+          parentalAuth: !!body?.parentalAuth,
+          npi: !!body?.npi,
+        },
+      });
+
+      // Extraire le message d'erreur (NestJS renvoie souvent { message: [...] } ou { message: "..." })
+      let errorMsg = 'Échec de la soumission';
+      if (data?.error) {
+        errorMsg = data.error;
+      } else if (data?.message) {
+        errorMsg = typeof data.message === 'string'
+          ? data.message
+          : Array.isArray(data.message)
+            ? data.message.join(', ')
+            : JSON.stringify(data.message);
+      } else if (response.status === 400) {
+        errorMsg = 'Requête invalide (Bad Request). Vérifiez les formats de documents (PDF, JPG, PNG, WebP — max 20 Mo).';
+      } else if (response.status === 409) {
+        errorMsg = data?.error || 'Une demande d\'admission existe déjà pour cet élève avec cet email.';
+      } else if (response.status === 500) {
+        errorMsg = 'Erreur serveur temporaire. Le backend est peut-être en cours de démarrage, réessayez dans quelques instants.';
+      } else {
+        errorMsg = `Échec de la soumission (${response.status})`;
+      }
+
       return NextResponse.json(
         { error: errorMsg },
         { status: response.status },

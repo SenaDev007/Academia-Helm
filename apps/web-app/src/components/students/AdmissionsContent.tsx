@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import {
   Plus, Search, Filter, CheckCircle, XCircle, Clock, FileText,
   UserCheck, Calendar, BadgeCheck, AlertCircle, Loader2, Eye,
-  Send, Pencil, X, Info, Star, AlertTriangle, Trash2
+  Send, Pencil, X, Info, Star, AlertTriangle, Trash2, RotateCcw
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { format } from 'date-fns';
@@ -193,16 +193,48 @@ export default function AdmissionsContent() {
   };
 
   const handleDecide = async (id: string, decision: 'ACCEPTED' | 'REJECTED') => {
-    setIsActionPending(true);
-    try {
-      await studentsService.decideAdmission(id, { decision, comment: 'Dossier revu' });
-      toast({ title: 'Succès', description: `Dossier ${decision === 'ACCEPTED' ? 'accepté' : 'refusé'}`, variant: 'success' });
-      loadAdmissions();
-    } catch (e: any) {
-      toast({ title: 'Erreur', description: e.message || 'Erreur lors de la décision', variant: 'error' });
-    } finally {
-      setIsActionPending(false);
-    }
+    const label = decision === 'ACCEPTED' ? 'accepter' : 'refuser';
+    showConfirm(
+      `${decision === 'ACCEPTED' ? 'Accepter' : 'Refuser'} le dossier`,
+      `Êtes-vous sûr de vouloir ${label} ce dossier d'admission ?`,
+      async () => {
+        setIsActionPending(true);
+        try {
+          await studentsService.decideAdmission(id, { decision, comment: 'Dossier revu' });
+          toast({ title: 'Succès', description: `Dossier ${decision === 'ACCEPTED' ? 'accepté' : 'refusé'}`, variant: 'success' });
+          loadAdmissions();
+        } catch (e: any) {
+          toast({ title: 'Erreur', description: e.message || 'Erreur lors de la décision', variant: 'error' });
+        } finally {
+          setIsActionPending(false);
+        }
+      },
+      decision === 'ACCEPTED' ? 'Accepter' : 'Refuser',
+    );
+  };
+
+  // Remettre un dossier en arrière (ACCEPTED/REJECTED → UNDER_REVIEW ou SUBMITTED)
+  const handleRollback = async (id: string, targetStatus: 'SUBMITTED' | 'UNDER_REVIEW') => {
+    const label = targetStatus === 'SUBMITTED' ? 'en soumis' : 'en examen';
+    showConfirm(
+      'Reprendre le dossier',
+      `Voulez-vous remettre ce dossier ${label} ? Cela annulera la décision précédente.`,
+      async () => {
+        setIsActionPending(true);
+        try {
+          await studentsService.updateAdmission(id, {
+            status: targetStatus,
+          });
+          toast({ title: 'Succès', description: `Dossier remis ${label}`, variant: 'success' });
+          loadAdmissions();
+        } catch (e: any) {
+          toast({ title: 'Erreur', description: e.message || 'Erreur', variant: 'error' });
+        } finally {
+          setIsActionPending(false);
+        }
+      },
+      'Confirmer',
+    );
   };
 
   const handleDelete = async (id: string) => {
@@ -682,16 +714,38 @@ export default function AdmissionsContent() {
 
                             {/* Convertir (ACCEPTED → CONVERTED) */}
                             {admission.status === 'ACCEPTED' && (
+                              <>
+                                <button
+                                  onClick={() => handleRollback(admission.id, 'UNDER_REVIEW')}
+                                  disabled={isActionPending}
+                                  className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-amber-600 transition-all disabled:opacity-50"
+                                  title="Remettre en examen"
+                                >
+                                  <RotateCcw className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setSelectedAdmission(admission);
+                                    setIsConvertModalOpen(true);
+                                  }}
+                                  disabled={isActionPending}
+                                  className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-indigo-600 transition-all disabled:opacity-50"
+                                  title="Convertir en élève"
+                                >
+                                  <UserCheck className="w-4 h-4" />
+                                </button>
+                              </>
+                            )}
+
+                            {/* Remettre en soumis (REJECTED → SUBMITTED) */}
+                            {admission.status === 'REJECTED' && (
                               <button
-                                onClick={() => {
-                                  setSelectedAdmission(admission);
-                                  setIsConvertModalOpen(true);
-                                }}
+                                onClick={() => handleRollback(admission.id, 'SUBMITTED')}
                                 disabled={isActionPending}
-                                className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-indigo-600 transition-all disabled:opacity-50"
-                                title="Convertir en élève"
+                                className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-amber-600 transition-all disabled:opacity-50"
+                                title="Reprendre le dossier"
                               >
-                                <UserCheck className="w-4 h-4" />
+                                <RotateCcw className="w-4 h-4" />
                               </button>
                             )}
 

@@ -299,10 +299,18 @@ export default function AdmissionsContent() {
     setIsLoadingDocs(true);
     try {
       const docs = await studentsService.getAdmissionDocuments(admissionId);
-      setAdmissionDocuments(Array.isArray(docs) ? docs : []);
+      // L'API peut retourner un array direct ou { documents: [...] } ou { data: [...] }
+      const docsArray = Array.isArray(docs) ? docs :
+                        Array.isArray(docs?.documents) ? docs.documents :
+                        Array.isArray(docs?.data) ? docs.data : [];
+      setAdmissionDocuments(docsArray);
+
       const interviews = await studentsService.getAdmissionInterviews(admissionId);
-      setAdmissionInterviews(Array.isArray(interviews) ? interviews : []);
-    } catch (e) {
+      const interviewsArray = Array.isArray(interviews) ? interviews :
+                              Array.isArray(interviews?.interviews) ? interviews.interviews : [];
+      setAdmissionInterviews(interviewsArray);
+    } catch (e: any) {
+      console.error('loadDocuments error:', e);
       setAdmissionDocuments([]);
       setAdmissionInterviews([]);
     } finally {
@@ -327,8 +335,12 @@ export default function AdmissionsContent() {
     setIsLoadingQuickViewDocs(true);
     try {
       const docs = await studentsService.getAdmissionDocuments(admission.id);
-      setQuickViewDocs(Array.isArray(docs) ? docs : []);
-    } catch (e) {
+      const docsArray = Array.isArray(docs) ? docs :
+                        Array.isArray(docs?.documents) ? docs.documents :
+                        Array.isArray(docs?.data) ? docs.data : [];
+      setQuickViewDocs(docsArray);
+    } catch (e: any) {
+      console.error('handleQuickViewDocs error:', e);
       setQuickViewDocs([]);
     } finally {
       setIsLoadingQuickViewDocs(false);
@@ -401,7 +413,8 @@ export default function AdmissionsContent() {
       toast({ title: '✅ Document uploadé', description: newDocFile.name, variant: 'success' });
       setShowAddDocForm(false);
       setNewDocFile(null);
-      loadDocuments(selectedAdmission.id);
+      // Petit délai pour laisser le backend persister, puis recharger
+      setTimeout(() => loadDocuments(selectedAdmission.id), 500);
     } catch (e: any) {
       toast({ title: 'Erreur upload', description: e.message, variant: 'error' });
     } finally {
@@ -975,14 +988,11 @@ export default function AdmissionsContent() {
                       onChange={e => setNewDocType(e.target.value)}
                       className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"
                     >
-                      <option value="BIRTH_CERTIFICATE">Acte de naissance</option>
+                      <option value="BIRTH_CERTIFICATE">Acte de naissance sécurisé</option>
                       <option value="ID_PHOTO">Photo d'identité</option>
                       <option value="NPI">NPI (Numéro d'Identification Personnelle)</option>
                       <option value="REPORT_CARD">Bulletin précédent</option>
                       <option value="SCHOOL_CERTIFICATE">Certificat de scolarité</option>
-                      <option value="ID_DOCUMENT">Pièce d'identité du responsable</option>
-                      <option value="PARENTAL_AUTH">Autorisation parentale</option>
-                      <option value="OTHER">Autre document</option>
                     </select>
                   </div>
                   <div className="flex gap-2">
@@ -1036,13 +1046,11 @@ export default function AdmissionsContent() {
                       <FileText className="w-4 h-4 text-slate-400 shrink-0" />
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-bold text-slate-700">
-                          {doc.documentType === 'BIRTH_CERTIFICATE' ? 'Acte de naissance' :
+                          {doc.documentType === 'BIRTH_CERTIFICATE' ? 'Acte de naissance sécurisé' :
                            doc.documentType === 'ID_PHOTO' ? 'Photo d\'identité' :
                            doc.documentType === 'NPI' ? 'NPI (Numéro d\'Identification Personnelle)' :
                            doc.documentType === 'REPORT_CARD' ? 'Bulletin précédent' :
                            doc.documentType === 'SCHOOL_CERTIFICATE' ? 'Certificat de scolarité' :
-                           doc.documentType === 'ID_DOCUMENT' ? 'Pièce d\'identité' :
-                           doc.documentType === 'PARENTAL_AUTH' ? 'Autorisation parentale' :
                            doc.documentType}
                         </p>
                         {doc.fileName && <p className="text-[10px] text-slate-400 truncate">{doc.fileName}</p>}
@@ -1252,13 +1260,11 @@ export default function AdmissionsContent() {
                 <div className="space-y-2">
                   {quickViewDocs.map(doc => {
                     const typeLabel =
-                      doc.documentType === 'BIRTH_CERTIFICATE' ? 'Acte de naissance' :
+                      doc.documentType === 'BIRTH_CERTIFICATE' ? 'Acte de naissance sécurisé' :
                       doc.documentType === 'ID_PHOTO' ? 'Photo d\'identité' :
                       doc.documentType === 'NPI' ? 'NPI (Numéro d\'Identification Personnelle)' :
                       doc.documentType === 'REPORT_CARD' ? 'Bulletin précédent' :
                       doc.documentType === 'SCHOOL_CERTIFICATE' ? 'Certificat de scolarité' :
-                      doc.documentType === 'ID_DOCUMENT' ? 'Pièce d\'identité' :
-                      doc.documentType === 'PARENTAL_AUTH' ? 'Autorisation parentale' :
                       doc.documentType || 'Document';
                     return (
                       <div

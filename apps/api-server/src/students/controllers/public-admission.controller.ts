@@ -179,21 +179,9 @@ export class PublicAdmissionController {
       const f = convertToFile(body.schoolCertificate, 'schoolCertificate');
       if (f) files.schoolCertificate = [f];
     }
-    if (body.parentalAuth) {
-      const f = convertToFile(body.parentalAuth, 'parentalAuth');
-      if (f) files.parentalAuth = [f];
-    }
     if (body.npi) {
       const f = convertToFile(body.npi, 'npi');
       if (f) files.npi = [f];
-    }
-    if (body.idDocument) {
-      const f = convertToFile(body.idDocument, 'idDocument');
-      if (f) files.idDocument = [f];
-    }
-    if (body.other) {
-      const f = convertToFile(body.other, 'other');
-      if (f) files.other = [f];
     }
 
     return this.admissionService.applyAdmission(body, files);

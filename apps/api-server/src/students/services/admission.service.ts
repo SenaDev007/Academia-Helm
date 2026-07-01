@@ -1159,10 +1159,7 @@ export class AdmissionService {
       idPhoto: 'ID_PHOTO',
       lastReportCard: 'REPORT_CARD',
       schoolCertificate: 'SCHOOL_CERTIFICATE',
-      parentalAuth: 'PARENTAL_AUTH',
       npi: 'NPI',
-      idDocument: 'ID_DOCUMENT',
-      other: 'OTHER',
     };
 
     // Préparer les documents à créer dans la transaction

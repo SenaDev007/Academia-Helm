@@ -1106,7 +1106,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     // Ajouter les documents uploadés (data URLs)
     const docFields = [
       'birthCertificate', 'idPhoto', 'lastReportCard',
-      'schoolCertificate', 'parentalAuth', 'npi',
+      'schoolCertificate', 'npi',
     ] as const;
     for (const key of docFields) {
       const doc = preEnrollment[key];
@@ -2499,12 +2499,11 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           {[
-                            { key: 'birthCertificate', label: 'Acte de naissance', required: false },
+                            { key: 'birthCertificate', label: 'Acte de naissance sécurisé', required: false },
                             { key: 'idPhoto', label: 'Photo d\'identité', required: false },
                             { key: 'npi', label: 'NPI (élève)', required: false },
                             { key: 'lastReportCard', label: 'Bulletin précédent', required: false },
                             { key: 'schoolCertificate', label: 'Certificat de scolarité', required: false },
-                            { key: 'parentalAuth', label: 'Autorisation parentale', required: false },
                           ].map((docField) => {
                             const docValue = (preEnrollment as any)[docField.key];
                             return (

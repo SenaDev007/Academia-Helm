@@ -324,70 +324,148 @@ export class AdmissionService {
    *     l'élève sera affecté manuellement plus tard via l'onglet Affectations
    */
   async convertToStudent(id: string, tenantId: string, userId: string) {
-    const admission = await this.findOne(id, tenantId);
+    try {
+      const admission = await this.findOne(id, tenantId);
 
-    if (admission.status !== 'ACCEPTED') {
-      throw new BadRequestException('L\'admission doit être ACCEPTÉE pour être convertie');
-    }
+      if (admission.status !== 'ACCEPTED') {
+        throw new BadRequestException('L\'admission doit être ACCEPTÉE pour être convertie');
+      }
 
-    // Vérifier qu'elle n'a pas déjà été convertie
-    if (admission.convertedStudentId) {
-      throw new BadRequestException('Cette admission a déjà été convertie en dossier élève');
-    }
+      // Vérifier qu'elle n'a pas déjà été convertie
+      if (admission.convertedStudentId) {
+        throw new BadRequestException('Cette admission a déjà été convertie en dossier élève');
+      }
 
-    // 1. Pré-inscription (crée Student + StudentEnrollment PRE_REGISTERED)
-    const student = await this.lifecycleService.preRegister(tenantId, {
-      academicYearId: admission.academicYearId,
-      schoolLevelId: admission.schoolLevelId,
-      firstName: admission.firstName,
-      lastName: admission.lastName,
-      dateOfBirth: admission.dateOfBirth ?? undefined,
-      gender: admission.gender ?? undefined,
-      placeOfBirth: admission.birthPlace ?? undefined,
-      nationality: admission.nationality ?? undefined,
-      classId: admission.requestedClassId ?? undefined,
-    }, userId);
+      this.logger.log(
+        `convertToStudent START — admission=${admission.admissionNumber} ` +
+        `tenantId=${tenantId} schoolLevelId=${admission.schoolLevelId} ` +
+        `academicYearId=${admission.academicYearId} requestedClassId=${admission.requestedClassId || 'null'}`,
+      );
+
+      // ⚠️ RÉSOLUTION DU schoolLevelId pour students
+      // admissions.schoolLevelId → education_levels (UUID)
+      // students.schoolLevelId → school_levels (UUID différent !)
+      // Il faut convertir education_levels → school_levels par nom (MATERNELLE/PRIMAIRE/SECONDAIRE).
+      let studentSchoolLevelId = admission.schoolLevelId;
+
+      // Vérifier si schoolLevelId est un UUID de school_levels (pas education_levels)
+      const schoolLevel = await this.prisma.schoolLevel.findUnique({
+        where: { id: admission.schoolLevelId },
+        select: { id: true, name: true, code: true },
+      }).catch(() => null);
+
+      if (!schoolLevel) {
+        // schoolLevelId n'est pas dans school_levels → c'est un education_levels
+        // Résoudre par nom vers school_levels
+        const eduLevel = await this.prisma.educationLevel.findUnique({
+          where: { id: admission.schoolLevelId },
+          select: { name: true },
+        }).catch(() => null);
+
+        if (eduLevel) {
+          // Chercher le school_levels correspondant par nom ou code
+          const levelName = eduLevel.name.toUpperCase();
+          const matchingSchoolLevel = await this.prisma.schoolLevel.findFirst({
+            where: {
+              tenantId,
+              OR: [
+                { name: { equals: eduLevel.name, mode: 'insensitive' } },
+                { code: { equals: levelName, mode: 'insensitive' } },
+              ],
+            },
+            select: { id: true, name: true },
+          });
+
+          if (matchingSchoolLevel) {
+            studentSchoolLevelId = matchingSchoolLevel.id;
+            this.logger.log(
+              `convertToStudent: schoolLevelId converti education_levels(${eduLevel.name}) → school_levels(${matchingSchoolLevel.name})`,
+            );
+          } else {
+            throw new BadRequestException(
+              `Aucun niveau scolaire (school_levels) trouvé pour "${eduLevel.name}". ` +
+              `Vérifiez que les niveaux sont configurés dans l'établissement.`,
+            );
+          }
+        }
+      }
+
+      // ⚠️ Vérifier que requestedClassId existe toujours dans classes
+      // (peut avoir été supprimé après la soumission de l'admission)
+      let validClassId = admission.requestedClassId;
+      if (validClassId) {
+        const classExists = await this.prisma.class.findUnique({
+          where: { id: validClassId },
+          select: { id: true },
+        }).catch(() => null);
+        if (!classExists) {
+          this.logger.warn(
+            `convertToStudent: requestedClassId ${validClassId} n'existe plus dans classes → ignoré`,
+          );
+          validClassId = null;
+        }
+      }
+
+      // 1. Pré-inscription (crée Student + StudentEnrollment PRE_REGISTERED)
+      const student = await this.lifecycleService.preRegister(tenantId, {
+        academicYearId: admission.academicYearId,
+        schoolLevelId: studentSchoolLevelId,  // ← UUID de school_levels (pas education_levels)
+        firstName: admission.firstName,
+        lastName: admission.lastName,
+        dateOfBirth: admission.dateOfBirth ?? undefined,
+        gender: admission.gender ?? undefined,
+        placeOfBirth: admission.birthPlace ?? undefined,
+        nationality: admission.nationality ?? undefined,
+        classId: validClassId ?? undefined,  // ← null si classe supprimée
+      }, userId);
+
+      this.logger.log(`convertToStudent: preRegister OK, student.id=${student.id}`);
 
     // 2. Résoudre le classId pour admit()
-    //    admit() requires a classId (non-null). Si l'admission n'a pas de
-    //    requestedClassId, on cherche la première classe du niveau.
-    let classIdForAdmit = admission.requestedClassId;
-
-    if (!classIdForAdmit) {
-      // Chercher la première classe disponible pour ce tenant + année + niveau
-      const fallbackClass = await this.prisma.class.findFirst({
-        where: {
-          tenantId,
-          academicYearId: admission.academicYearId,
-          schoolLevelId: admission.schoolLevelId,
-        },
-        orderBy: { name: 'asc' },
-        select: { id: true },
-      });
-      classIdForAdmit = fallbackClass?.id;
+      //    admit() requires a classId (non-null). Si l'admission n'a pas de
+      //    requestedClassId (ou classe supprimée), on cherche la première classe du niveau.
+      let classIdForAdmit = validClassId;
 
       if (!classIdForAdmit) {
-        this.logger.warn(
-          `Aucune classe trouvée pour tenant=${tenantId} year=${admission.academicYearId} level=${admission.schoolLevelId}. ` +
-          `L'élève sera admis sans classe — affectation manuelle requise plus tard.`,
-        );
+        // Chercher la première classe disponible pour ce tenant + année + niveau
+        // ⚠️ Utiliser studentSchoolLevelId (school_levels) et non admission.schoolLevelId (education_levels)
+        // car classes.schoolLevelId → school_levels
+        const fallbackClass = await this.prisma.class.findFirst({
+          where: {
+            tenantId,
+            schoolLevelId: studentSchoolLevelId,
+          },
+          orderBy: { name: 'asc' },
+          select: { id: true, name: true },
+        });
+        classIdForAdmit = fallbackClass?.id;
+
+        if (classIdForAdmit) {
+          this.logger.log(
+            `convertToStudent: classe fallback trouvée : ${fallbackClass?.name} (${classIdForAdmit})`,
+          );
+        } else {
+          this.logger.warn(
+            `Aucune classe trouvée pour tenant=${tenantId} level=${studentSchoolLevelId}. ` +
+            `L'élève sera admis sans classe — affectation manuelle requise plus tard.`,
+          );
+        }
       }
-    }
 
-    // 3. Admission formelle (génère matricule + StudentAccount + token QR + StudentAcademicRecord)
-    //    ⚠️ Si pas de classe, on ne peut pas appeler admit() qui requires classId.
-    //    Dans ce cas, on garde l'élève en PRE_REGISTERED et l'utilisateur devra
-    //    l'affecter manuellement (ce qui déclenchera admit() via l'onglet Affectations).
-    if (classIdForAdmit) {
-      try {
-        await this.lifecycleService.admit(tenantId, {
-          studentId: student.id,
-          academicYearId: admission.academicYearId,
-          schoolLevelId: admission.schoolLevelId,
-          classId: classIdForAdmit,
-        }, userId);
+      // 3. Admission formelle (génère matricule + StudentAccount + token QR + StudentAcademicRecord)
+      //    ⚠️ Si pas de classe, on ne peut pas appeler admit() qui requires classId.
+      //    Dans ce cas, on garde l'élève en PRE_REGISTERED et l'utilisateur devra
+      //    l'affecter manuellement (ce qui déclenchera admit() via l'onglet Affectations).
+      if (classIdForAdmit) {
+        try {
+          await this.lifecycleService.admit(tenantId, {
+            studentId: student.id,
+            academicYearId: admission.academicYearId,
+            schoolLevelId: studentSchoolLevelId,  // ← school_levels UUID
+            classId: classIdForAdmit,
+          }, userId);
 
-        this.logger.log(
+          this.logger.log(
           `Admission ${admission.admissionNumber}: student ${student.id} admitted with matricule + account + token`,
         );
 
@@ -502,29 +580,63 @@ export class AdmissionService {
     }
 
     // 5. Marquer l'admission comme CONVERTED + link le student
-    await this.prisma.admission.update({
-      where: { id },
-      data: {
-        status: 'CONVERTED',
-        decisionBy: userId,
-        decisionDate: new Date(),
-        convertedStudentId: student.id,
-      },
-    });
+      await this.prisma.admission.update({
+        where: { id },
+        data: {
+          status: 'CONVERTED',
+          decisionBy: userId,
+          decisionDate: new Date(),
+          convertedStudentId: student.id,
+        },
+      });
 
-    this.logger.log(
-      `Admission ${admission.admissionNumber} converted to student ${student.id}`,
-    );
+      this.logger.log(
+        `Admission ${admission.admissionNumber} converted to student ${student.id}`,
+      );
 
-    // Retourner l'élève avec ses relations
-    return this.prisma.student.findUnique({
-      where: { id: student.id },
-      include: {
-        studentEnrollments: { include: { class: true, academicYear: true } },
-        schoolLevel: true,
-        studentGuardians: { include: { guardian: true } },
-      },
-    });
+      // Retourner l'élève avec ses relations
+      return this.prisma.student.findUnique({
+        where: { id: student.id },
+        include: {
+          studentEnrollments: { include: { class: true, academicYear: true } },
+          schoolLevel: true,
+          studentGuardians: { include: { guardian: true } },
+        },
+      });
+    } catch (err: any) {
+      // Log détaillé pour diagnostic
+      this.logger.error(
+        `convertToStudent FAILED — admissionId=${id} tenantId=${tenantId} ` +
+        `error=${err?.message} code=${err?.code || 'N/A'} ` +
+        `meta=${err?.meta ? JSON.stringify(err.meta) : 'N/A'}`,
+        err.stack,
+      );
+
+      // Prisma errors
+      if (err?.code === 'P2003') {
+        throw new BadRequestException(
+          `Erreur de référence (P2003) lors de la conversion : ${err.meta ? JSON.stringify(err.meta) : 'détails inconnus'}. ` +
+          `Vérifiez que le niveau scolaire et l'année académique existent.`,
+        );
+      }
+      if (err?.code === 'P2002') {
+        throw new BadRequestException(
+          `Conflit d'unicité (P2002) : ${err.meta ? JSON.stringify(err.meta) : 'détails inconnus'}. ` +
+          `Un élève avec ces informations existe peut-être déjà.`,
+        );
+      }
+
+      // NestJS exceptions (BadRequest, Forbidden, etc.) — propager telles quelles
+      if (err?.status === 400 || err?.status === 403 || err?.status === 404) {
+        throw err;
+      }
+
+      // Erreur inconnue — wrap en BadRequest avec message détaillé
+      throw new BadRequestException(
+        `Échec de la conversion : ${err?.message || 'erreur inconnue'}. ` +
+        `Code: ${err?.code || 'N/A'}. Consultez les logs backend pour plus de détails.`,
+      );
+    }
   }
 
   // ═══ DOCUMENTS ═══

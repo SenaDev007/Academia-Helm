@@ -140,6 +140,6 @@ export function renderAdmissionReceived(
     </p>
   `;
 
-  const html = renderEmail(data.branding, bodyContent);
+  const html = renderEmail(data.branding, bodyContent, 'Admission');
   return { subject, html };
 }

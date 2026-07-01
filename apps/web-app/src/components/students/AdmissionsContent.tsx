@@ -13,7 +13,6 @@ import { fr } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FormModal, ConfirmModal, ReadOnlyModal } from '@/components/modules/blueprint';
 import AdmissionForm from './AdmissionForm';
-import DocumentPreview from './DocumentPreview';
 import { toast } from '@/components/ui/toast';
 import { studentsService } from '@/services/students.service';
 import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
@@ -104,8 +103,72 @@ export default function AdmissionsContent() {
   const [isLoadingDocs, setIsLoadingDocs] = useState(false);
   const [showAddDocForm, setShowAddDocForm] = useState(false);
   const [showAddInterviewForm, setShowAddInterviewForm] = useState(false);
-  // ─── Visualisation de document (modal intégré) ──
+  // ─── Visualisation de document (modal intégré — pattern RH) ──
   const [previewDoc, setPreviewDoc] = useState<{ url: string; fileName: string; mimeType: string } | null>(null);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState(false);
+
+  // Charger le PDF quand un document est sélectionné (pattern RH exact)
+  useEffect(() => {
+    if (!previewDoc) {
+      setPdfPreviewUrl(null);
+      setPdfError(false);
+      return;
+    }
+
+    let revoked = false;
+    let blobUrl: string | null = null;
+
+    async function loadPdf() {
+      setPdfLoading(true);
+      setPdfError(false);
+      setPdfPreviewUrl(null);
+
+      try {
+        const { getClientAuthorizationHeader } = await import('@/lib/auth/client-access-token');
+        const response = await fetch(previewDoc!.url, {
+          method: 'GET',
+          headers: { ...getClientAuthorizationHeader() },
+          credentials: 'include',
+          cache: 'no-store',
+        });
+
+        if (!response.ok) {
+          setPdfError(true);
+          return;
+        }
+
+        const blob = await response.blob();
+        if (blob.size === 0) {
+          setPdfError(true);
+          return;
+        }
+
+        blobUrl = URL.createObjectURL(blob);
+        if (!revoked) setPdfPreviewUrl(blobUrl);
+      } catch {
+        setPdfError(true);
+      } finally {
+        setPdfLoading(false);
+      }
+    }
+
+    loadPdf();
+
+    return () => {
+      revoked = true;
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    };
+  }, [previewDoc]);
+
+  const closePreview = () => {
+    if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
+    setPdfPreviewUrl(null);
+    setPdfError(false);
+    setPdfLoading(false);
+    setPreviewDoc(null);
+  };
   const [newDocType, setNewDocType] = useState('BIRTH_CERTIFICATE');
   const [newDocFile, setNewDocFile] = useState<File | null>(null);
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
@@ -1358,11 +1421,11 @@ export default function AdmissionsContent() {
         <div>Academia Helm Student Lifecycle Engine v2.0</div>
       </div>
 
-      {/* ─── MODAL DE VISUALISATION DE DOCUMENT (intégré, pas onglet externe) ─── */}
+      {/* ─── MODAL DE VISUALISATION (pattern RH exact : fetch blob → iframe) ─── */}
       {previewDoc && (
         <div
           className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={() => setPreviewDoc(null)}
+          onClick={closePreview}
         >
           <div
             className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col overflow-hidden"
@@ -1370,16 +1433,16 @@ export default function AdmissionsContent() {
           >
             {/* Header */}
             <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-50 rounded-lg">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="p-2 bg-blue-50 rounded-lg shrink-0">
                   <FileText className="w-5 h-5 text-blue-600" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <h3 className="text-sm font-bold text-slate-800 truncate">{previewDoc.fileName}</h3>
                   <p className="text-[10px] text-slate-400">{previewDoc.mimeType}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 <button
                   onClick={async () => {
                     try {
@@ -1409,7 +1472,7 @@ export default function AdmissionsContent() {
                   Télécharger
                 </button>
                 <button
-                  onClick={() => setPreviewDoc(null)}
+                  onClick={closePreview}
                   className="p-2 hover:bg-slate-200 rounded-lg text-slate-500 transition"
                   title="Fermer"
                 >
@@ -1417,12 +1480,30 @@ export default function AdmissionsContent() {
                 </button>
               </div>
             </div>
-            {/* Body — vérifier si le document est accessible, sinon afficher message */}
+            {/* Body — pattern RH : iframe avec blob URL */}
             <div className="flex-1 overflow-hidden bg-slate-100">
-              <DocumentPreview
-                url={previewDoc.url}
-                mimeType={previewDoc.mimeType}
-              />
+              {pdfLoading ? (
+                <div className="flex flex-col items-center justify-center h-full">
+                  <Loader2 className="w-10 h-10 text-blue-500 animate-spin mb-3" />
+                  <p className="text-sm text-slate-500">Chargement du document...</p>
+                </div>
+              ) : pdfError ? (
+                <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+                  <div className="p-4 bg-rose-50 rounded-full mb-4">
+                    <AlertCircle className="w-12 h-12 text-rose-400" />
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-700 mb-2">Échec de chargement du document</h3>
+                  <p className="text-sm text-slate-500 max-w-md">
+                    Ce document n'a pas pu être chargé. Il a peut-être été enregistré sans fichier joint.
+                  </p>
+                </div>
+              ) : pdfPreviewUrl ? (
+                <iframe
+                  src={pdfPreviewUrl}
+                  className="w-full h-full border-0"
+                  title={previewDoc.fileName}
+                />
+              ) : null}
             </div>
           </div>
         </div>

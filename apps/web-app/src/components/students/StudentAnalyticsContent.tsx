@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Activity, ShieldAlert, BarChart3, TrendingUp, AlertCircle, CheckCircle2, Search, Info, BrainCircuit } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Activity, ShieldAlert, BarChart3, TrendingUp, AlertCircle, CheckCircle2, Search, Info, BrainCircuit, Users, UserCheck, FileWarning } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LoadingState } from '@/components/ui/feedback/LoadingState';
 import { studentsService } from '@/services/students.service';
 import { toast } from '@/components/ui/toast';
+import { cn } from '@/lib/utils';
 
 export default function StudentAnalyticsContent() {
   const { academicYear } = useModuleContext();
@@ -123,6 +124,100 @@ export default function StudentAnalyticsContent() {
             </div>
           </motion.div>
         ))}
+      </div>
+
+      {/* Visualisations CSS (barres horizontales + donut) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Barres horizontales — Répartition par sévérité */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+          <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+            <BarChart3 className="w-4 h-4 text-blue-600" />
+            Répartition des alertes par sévérité
+          </h3>
+          {(() => {
+            const critical = alerts.filter(a => a.severity === 'CRITICAL').length;
+            const warning = alerts.filter(a => a.severity === 'WARNING').length;
+            const info = alerts.filter(a => a.severity === 'INFO' || (!a.severity)).length;
+            const total = alerts.length || 1;
+            const bars = [
+              { label: 'Critique', count: critical, pct: (critical / total) * 100, color: 'bg-rose-500' },
+              { label: 'Avertissement', count: warning, pct: (warning / total) * 100, color: 'bg-amber-500' },
+              { label: 'Info', count: info, pct: (info / total) * 100, color: 'bg-blue-500' },
+            ];
+            return (
+              <div className="space-y-3">
+                {bars.map(bar => (
+                  <div key={bar.label}>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <span className="font-medium text-slate-600">{bar.label}</span>
+                      <span className="font-bold text-slate-900">{bar.count}</span>
+                    </div>
+                    <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${bar.pct}%` }}
+                        transition={{ duration: 0.8, ease: 'easeOut' }}
+                        className={cn('h-full rounded-full', bar.color)}
+                      />
+                    </div>
+                  </div>
+                ))}
+                {alerts.length === 0 && <p className="text-xs text-slate-400 italic text-center py-4">Aucune alerte — tout va bien !</p>}
+              </div>
+            );
+          })()}
+        </div>
+
+        {/* Donut CSS — Taux de conformité */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+          <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            Taux de conformité
+          </h3>
+          {(() => {
+            const idRate = kpis?.identificationRate ?? 0;
+            const cardRate = kpis?.idCardCoverage ?? 0;
+            const items = [
+              { label: 'Matricules assignés', pct: idRate, color: 'text-emerald-600', bg: 'bg-emerald-500', icon: UserCheck },
+              { label: 'Cartes scolaires', pct: cardRate, color: 'text-blue-600', bg: 'bg-blue-500', icon: Activity },
+              { label: 'Dossiers NPI', pct: kpis?.npiCoverage ?? 0, color: 'text-amber-600', bg: 'bg-amber-500', icon: FileWarning },
+            ];
+            return (
+              <div className="space-y-4">
+                {items.map(item => {
+                  const Icon = item.icon;
+                  const remaining = 100 - item.pct;
+                  return (
+                    <div key={item.label} className="flex items-center gap-3">
+                      <div className="relative w-14 h-14 shrink-0">
+                        <svg className="w-14 h-14 -rotate-90" viewBox="0 0 36 36">
+                          <circle cx="18" cy="18" r="16" fill="none" stroke="#e2e8f0" strokeWidth="3" />
+                          <motion.circle
+                            cx="18" cy="18" r="16" fill="none" strokeWidth="3" strokeLinecap="round"
+                            stroke={item.pct > 75 ? '#10b981' : item.pct > 50 ? '#f59e0b' : '#ef4444'}
+                            strokeDasharray={`${item.pct} ${remaining}`}
+                            initial={{ strokeDasharray: '0 100' }}
+                            animate={{ strokeDasharray: `${item.pct} ${remaining}` }}
+                            transition={{ duration: 1, ease: 'easeOut' }}
+                          />
+                        </svg>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="text-xs font-bold text-slate-700">{Math.round(item.pct)}%</span>
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
+                          <Icon className={cn('w-3.5 h-3.5', item.color)} /> {item.label}
+                        </p>
+                        <p className="text-xs text-slate-400">{Math.round(item.pct)}% conforme</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

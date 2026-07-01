@@ -126,10 +126,13 @@ export default function AdmissionsContent() {
       setPdfPreviewUrl(null);
 
       try {
-        const { getClientAuthorizationHeader } = await import('@/lib/auth/client-access-token');
+        // Récupérer le token JWT depuis les cookies ou localStorage
+        // (même source que apiFetch / apiClient)
+        const { getClientToken } = await import('@/lib/auth/session-client');
+        const token = getClientToken();
         const response = await fetch(previewDoc!.url, {
           method: 'GET',
-          headers: { ...getClientAuthorizationHeader() },
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
           credentials: 'include',
           cache: 'no-store',
         });
@@ -1446,10 +1449,11 @@ export default function AdmissionsContent() {
                 <button
                   onClick={async () => {
                     try {
-                      const { getClientAuthorizationHeader } = await import('@/lib/auth/client-access-token');
+                      const { getClientToken } = await import('@/lib/auth/session-client');
+                      const token = getClientToken();
                       const res = await fetch(previewDoc.url, {
                         method: 'GET',
-                        headers: { ...getClientAuthorizationHeader() },
+                        headers: token ? { Authorization: `Bearer ${token}` } : {},
                         credentials: 'include',
                         cache: 'no-store',
                       });

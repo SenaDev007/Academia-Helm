@@ -106,7 +106,6 @@ export default function AdmissionsContent() {
   const [showAddInterviewForm, setShowAddInterviewForm] = useState(false);
   // ─── Visualisation de document (modal intégré) ──
   const [previewDoc, setPreviewDoc] = useState<{ url: string; fileName: string; mimeType: string } | null>(null);
-  const [previewError, setPreviewError] = useState(false);
   const [newDocType, setNewDocType] = useState('BIRTH_CERTIFICATE');
   const [newDocFile, setNewDocFile] = useState<File | null>(null);
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
@@ -1071,11 +1070,11 @@ export default function AdmissionsContent() {
                         {/* Bouton "Visualiser" — ouvre le document dans un modal intégré
                             Affiché même si filePath est null (l'endpoint download gère le cas) */}
                         <button
-                          onClick={() => { setPreviewError(false); setPreviewDoc({
+                          onClick={() => setPreviewDoc({
                             url: `/api/students/admissions/${selectedAdmission.id}/documents/${doc.id}/download`,
                             fileName: doc.fileName || 'document',
                             mimeType: doc.mimeType || 'application/pdf',
-                          }); }}
+                          })}
                           className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition border border-blue-200"
                           title="Visualiser le document"
                         >
@@ -1292,11 +1291,11 @@ export default function AdmissionsContent() {
                            doc.status === 'SUBMITTED' ? 'Soumis' : 'En attente'}
                         </span>
                         <button
-                          onClick={() => { setPreviewError(false); setPreviewDoc({
+                          onClick={() => setPreviewDoc({
                             url: `/api/students/admissions/${quickViewAdmission.id}/documents/${doc.id}/download`,
                             fileName: doc.fileName || 'document',
                             mimeType: doc.mimeType || 'application/pdf',
-                          }); }}
+                          })}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition border border-blue-200 shrink-0"
                           title="Visualiser le document"
                         >
@@ -1363,7 +1362,7 @@ export default function AdmissionsContent() {
       {previewDoc && (
         <div
           className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={() => { setPreviewDoc(null); setPreviewError(false); }}
+          onClick={() => setPreviewDoc(null)}
         >
           <div
             className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col overflow-hidden"
@@ -1404,7 +1403,7 @@ export default function AdmissionsContent() {
                   Télécharger
                 </button>
                 <button
-                  onClick={() => { setPreviewDoc(null); setPreviewError(false); }}
+                  onClick={() => setPreviewDoc(null)}
                   className="p-2 hover:bg-slate-200 rounded-lg text-slate-500 transition"
                   title="Fermer"
                 >
@@ -1417,8 +1416,6 @@ export default function AdmissionsContent() {
               <DocumentPreview
                 url={previewDoc.url}
                 mimeType={previewDoc.mimeType}
-                onError={() => setPreviewError(true)}
-                hasError={previewError}
               />
             </div>
           </div>

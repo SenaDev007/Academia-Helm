@@ -21,7 +21,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   Plus, Search, ChevronDown, ChevronRight, Users, Loader2,
-  FileText, Download, UserCheck, GraduationCap, BookOpen,
+  FileText, Download, UserCheck, GraduationCap, BookOpen, Baby,
 } from 'lucide-react';
 import { FormModal } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -53,18 +53,19 @@ interface SchoolLevel {
   name: string;
   code?: string;
   order?: number;
+  icon?: string; // 'maternelle' | 'primaire' | 'secondaire'
 }
 
 interface ClassInfo {
   id: string;
   name: string;
   schoolLevelId: string;
+  schoolLevel?: { id: string; name: string; code?: string };
 }
 
 export default function EnrollmentsContent() {
   const { academicYear, schoolLevel, tenantId } = useModuleContext();
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
-  const [schoolLevels, setSchoolLevels] = useState<SchoolLevel[]>([]);
   const [classes, setClasses] = useState<ClassInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -73,6 +74,31 @@ export default function EnrollmentsContent() {
   // État d'expansion des niveaux et classes
   const [expandedLevels, setExpandedLevels] = useState<Set<string>>(new Set());
   const [expandedClasses, setExpandedClasses] = useState<Set<string>>(new Set());
+
+  // ─── Icônes et labels par niveau ─────────────────────────────────────────
+  const getLevelIcon = (levelName: string) => {
+    const n = levelName.toUpperCase();
+    if (n.includes('MATERNELLE')) return <Baby className="w-5 h-5 text-pink-600" />;
+    if (n.includes('PRIMAIRE')) return <BookOpen className="w-5 h-5 text-blue-600" />;
+    if (n.includes('SECONDAIRE')) return <GraduationCap className="w-5 h-5 text-purple-600" />;
+    return <BookOpen className="w-5 h-5 text-slate-600" />;
+  };
+
+  const getLevelBgColor = (levelName: string) => {
+    const n = levelName.toUpperCase();
+    if (n.includes('MATERNELLE')) return 'bg-pink-50';
+    if (n.includes('PRIMAIRE')) return 'bg-blue-50';
+    if (n.includes('SECONDAIRE')) return 'bg-purple-50';
+    return 'bg-slate-50';
+  };
+
+  const getLevelDisplayName = (levelName: string) => {
+    const n = levelName.toUpperCase();
+    if (n.includes('MATERNELLE')) return 'Niveau Maternelle';
+    if (n.includes('PRIMAIRE')) return 'Niveau Primaire';
+    if (n.includes('SECONDAIRE')) return 'Niveau Secondaire';
+    return `Niveau ${levelName}`;
+  };
 
   // ─── Chargement des données ──────────────────────────────────────────────
   useEffect(() => {
@@ -83,14 +109,12 @@ export default function EnrollmentsContent() {
     if (!academicYear) return;
     setIsLoading(true);
     try {
-      // Charger en parallèle : niveaux, classes, inscriptions
-      const [levelsRes, classesRes, enrollmentsData] = await Promise.all([
-        fetch('/api/school-levels', { cache: 'no-store' }).then(r => r.json()).catch(() => []),
+      // Charger en parallèle : classes (avec schoolLevel), inscriptions
+      const [classesRes, enrollmentsData] = await Promise.all([
         fetch(`/api/classes?limit=200`, { cache: 'no-store' }).then(r => r.json()).catch(() => []),
         studentsService.getEnrollments({ academicYearId: academicYear.id }),
       ]);
 
-      setSchoolLevels(Array.isArray(levelsRes) ? levelsRes : []);
       setClasses(Array.isArray(classesRes) ? classesRes : []);
       setEnrollments(Array.isArray(enrollmentsData) ? enrollmentsData : []);
     } catch (e: any) {
@@ -101,8 +125,48 @@ export default function EnrollmentsContent() {
     }
   };
 
-  // ─── Groupage : niveau → classes → élèves ───────────────────────────────
+  // ─── Construire l'arbre depuis les classes (qui ont schoolLevelId → school_levels) ─
   const treeData = useMemo(() => {
+    // Extraire les niveaux uniques depuis les classes
+    const levelMap = new Map<string, SchoolLevel>();
+    for (const cls of classes) {
+      // schoolLevelId peut être un UUID de school_levels
+      // Le nom du niveau vient de cls.schoolLevel (si inclus dans la réponse API)
+      // ou on déduit depuis le nom de la classe
+      const levelId = cls.schoolLevelId;
+      if (!levelMap.has(levelId)) {
+        const levelName = cls.schoolLevel?.name || cls.schoolLevel?.code || '';
+        if (levelName) {
+          levelMap.set(levelId, {
+            id: levelId,
+            name: levelName,
+            code: cls.schoolLevel?.code,
+          });
+        }
+      }
+    }
+
+    // Si pas de schoolLevel inclus dans la réponse, déduire le nom depuis les classes
+    // (ex: "Maternelle 1" → niveau "Maternelle")
+    if (levelMap.size === 0) {
+      for (const cls of classes) {
+        const levelId = cls.schoolLevelId;
+        if (!levelMap.has(levelId)) {
+          // Déduire le niveau depuis le nom de la classe
+          const clsName = cls.name.toLowerCase();
+          let levelName = 'Autre';
+          if (clsName.includes('maternelle') || clsName.includes('m1') || clsName.includes('m2')) {
+            levelName = 'Maternelle';
+          } else if (['ci', 'cp', 'ce1', 'ce2', 'cm1', 'cm2'].includes(clsName)) {
+            levelName = 'Primaire';
+          } else if (['6e', '5e', '4e', '3e', '2nde', '1ere', 'terminale'].some(g => clsName.includes(g))) {
+            levelName = 'Secondaire';
+          }
+          levelMap.set(levelId, { id: levelId, name: levelName });
+        }
+      }
+    }
+
     // Grouper les classes par niveau
     const classesByLevel = new Map<string, ClassInfo[]>();
     for (const cls of classes) {
@@ -122,8 +186,8 @@ export default function EnrollmentsContent() {
       enrollmentsByClass.get(classId)!.push(enr);
     }
 
-    // Trier les élèves par nom dans chaque classe
-    for (const [classId, list] of enrollmentsByClass) {
+    // Trier les élèves par nom
+    for (const [, list] of enrollmentsByClass) {
       list.sort((a, b) => {
         const nameA = `${a.student.lastName} ${a.student.firstName}`.toLowerCase();
         const nameB = `${b.student.lastName} ${b.student.firstName}`.toLowerCase();
@@ -131,9 +195,18 @@ export default function EnrollmentsContent() {
       });
     }
 
+    // Ordre des niveaux : Maternelle, Primaire, Secondaire
+    const levelOrder = (name: string) => {
+      const n = name.toUpperCase();
+      if (n.includes('MATERNELLE')) return 0;
+      if (n.includes('PRIMAIRE')) return 1;
+      if (n.includes('SECONDAIRE')) return 2;
+      return 3;
+    };
+
     // Construire l'arbre
-    return schoolLevels
-      .sort((a, b) => (a.order || 0) - (b.order || 0))
+    return Array.from(levelMap.values())
+      .sort((a, b) => levelOrder(a.name) - levelOrder(b.name))
       .map(level => {
         const levelClasses = (classesByLevel.get(level.id) || []).sort((a, b) =>
           a.name.localeCompare(b.name)
@@ -151,7 +224,7 @@ export default function EnrollmentsContent() {
           totalStudents: levelEnrollments.length,
         };
       });
-  }, [schoolLevels, classes, enrollments, searchQuery]);
+  }, [classes, enrollments]);
 
   // ─── Filtrage par recherche ─────────────────────────────────────────────
   const filteredTree = useMemo(() => {
@@ -254,13 +327,14 @@ export default function EnrollmentsContent() {
               {filteredTree.map((node) => {
                 const isExpanded = expandedLevels.has(node.level.id);
                 const hasClasses = node.classes.length > 0;
+                const levelName = node.level.name;
 
                 return (
                   <div key={node.level.id}>
                     {/* ─── NIVEAU ─── */}
                     <button
                       onClick={() => toggleLevel(node.level.id)}
-                      className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50 transition-colors text-left group"
+                      className="w-full flex items-center gap-3 px-5 py-4 hover:bg-slate-50 transition-colors text-left group"
                     >
                       <div className="shrink-0">
                         {isExpanded ? (
@@ -269,16 +343,16 @@ export default function EnrollmentsContent() {
                           <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-blue-600 transition-colors" />
                         )}
                       </div>
-                      <div className="p-2 bg-blue-50 rounded-lg shrink-0">
-                        <BookOpen className="w-5 h-5 text-blue-600" />
+                      <div className={cn('p-2.5 rounded-lg shrink-0', getLevelBgColor(levelName))}>
+                        {getLevelIcon(levelName)}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-slate-800">{node.level.name}</p>
+                        <p className="text-base font-bold text-slate-800">{getLevelDisplayName(levelName)}</p>
                         <p className="text-xs text-slate-500">
                           {node.classes.length} classe{node.classes.length > 1 ? 's' : ''} · {node.totalStudents} élève{node.totalStudents > 1 ? 's' : ''}
                         </p>
                       </div>
-                      <span className="px-2.5 py-1 bg-slate-100 rounded-full text-xs font-bold text-slate-600 shrink-0">
+                      <span className="px-3 py-1 bg-slate-100 rounded-full text-sm font-bold text-slate-600 shrink-0">
                         {node.totalStudents}
                       </span>
                     </button>

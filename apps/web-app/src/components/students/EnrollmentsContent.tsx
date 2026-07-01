@@ -757,20 +757,27 @@ export default function EnrollmentsContent() {
                                         const statusInfo = STATUS_META[enr.status] || { label: enr.status, color: 'bg-slate-50 text-slate-600 border-slate-200' };
                                         const typeInfo = TYPE_META[enr.enrollmentType] || { label: enr.enrollmentType, color: 'bg-slate-50 text-slate-600' };
                                         return (
-                                          <div key={enr.id} className="flex items-center gap-3 py-2 px-3 hover:bg-amber-50/40 rounded-lg transition-colors group">
-                                            <span className="text-[10px] font-mono text-slate-400 w-6 text-right shrink-0">{idx + 1}</span>
+                                          <div key={enr.id} className="flex flex-wrap items-center gap-2 sm:gap-3 py-2.5 px-3 hover:bg-amber-50/40 rounded-lg transition-colors group">
+                                            <span className="text-[10px] font-mono text-slate-400 w-5 sm:w-6 text-right shrink-0">{idx + 1}</span>
                                             <div className="h-8 w-8 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center text-xs font-bold text-amber-600 group-hover:bg-amber-200 group-hover:text-amber-700 transition-colors shrink-0">
                                               {enr.student.lastName[0]}{enr.student.firstName[0]}
                                             </div>
-                                            <div className="flex-1 min-w-0">
-                                              <p className="text-sm font-medium text-slate-800">{enr.student.lastName.toUpperCase()} {enr.student.firstName}</p>
-                                              <p className="text-[10px] font-mono text-slate-400">
-                                                {enr.student.matricule || enr.student.studentCode || '— matricule non généré —'}
-                                              </p>
+                                            <div className="flex-1 min-w-0 order-1 sm:order-none w-full sm:w-auto">
+                                              <p className="text-sm font-medium text-slate-800 truncate">{enr.student.lastName.toUpperCase()} {enr.student.firstName}</p>
+                                              <div className="flex items-center gap-1.5 flex-wrap">
+                                                <p className="text-[10px] font-mono text-slate-400">
+                                                  {enr.student.matricule || enr.student.studentCode || '— matricule non généré —'}
+                                                </p>
+                                                {/* Badges sur mobile : inline sous le nom, sur desktop à droite */}
+                                                <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold sm:hidden', typeInfo.color)}>{typeInfo.label}</span>
+                                                <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-bold border sm:hidden', statusInfo.color)}>{statusInfo.label}</span>
+                                                <span className="text-[9px] text-slate-400 sm:hidden">{new Date(enr.enrollmentDate).toLocaleDateString('fr-FR')}</span>
+                                              </div>
                                             </div>
-                                            <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0', typeInfo.color)}>{typeInfo.label}</span>
-                                            <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-bold border shrink-0', statusInfo.color)}>{statusInfo.label}</span>
-                                            <span className="text-[9px] text-slate-400 shrink-0 hidden sm:inline">{new Date(enr.enrollmentDate).toLocaleDateString('fr-FR')}</span>
+                                            {/* Badges sur desktop seulement */}
+                                            <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0 hidden sm:inline-block', typeInfo.color)}>{typeInfo.label}</span>
+                                            <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-bold border shrink-0 hidden sm:inline-block', statusInfo.color)}>{statusInfo.label}</span>
+                                            <span className="text-[9px] text-slate-400 shrink-0 hidden md:inline">{new Date(enr.enrollmentDate).toLocaleDateString('fr-FR')}</span>
                                             <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition">
                                               {enr.status === 'PENDING' || enr.status === 'PRE_REGISTERED' || enr.status === 'ADMITTED' ? (
                                                 <button onClick={() => handleValidate(enr.student.id)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600" title="Valider"><CheckCircle className="w-3.5 h-3.5" /></button>

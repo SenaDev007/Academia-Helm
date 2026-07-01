@@ -146,21 +146,22 @@ export class StudentIdentifierService {
       },
     });
 
-    // Mettre à jour Student.globalStudentId + matricule + studentCode
-    // ⚠️ Important : matricule et studentCode sont lus par le frontend pour
-    // l'affichage. Sans cette mise à jour, le frontend affiche "matricule non
-    // généré" même si globalStudentId est défini. On garde les 3 champs
-    // synchronisés pour éviter toute incohérence.
+    // Mettre à jour Student.globalStudentId uniquement.
+    // ⚠️ NE PAS écraser matricule ni studentCode — ce sont les matricules LOCAUX
+    // (format <CODE_TENANT>-E-<YY>-<XXXXX> ex: CSPEB-E-26-00001) générés par
+    // admit() via MatriculeService.generateInTransaction().
+    // globalStudentId est le matricule GLOBAL Academia Helm (AH-STU-YY-XXXXXX)
+    // qui est unique sur toute la plateforme et sert d'identifiant inter-écoles.
+    //
+    // Le frontend affiche student.matricule || student.studentCode (le local),
+    // PAS globalStudentId. Si on écrase matricule avec globalMatricule, on perd
+    // le matricule local et l'admin ne voit plus le bon identifiant.
     await this.prisma.student.update({
       where: { id: studentId },
-      data: {
-        globalStudentId: globalMatricule,
-        matricule: globalMatricule,
-        studentCode: globalMatricule,
-      },
+      data: { globalStudentId: globalMatricule },
     });
 
-    this.logger.log(`Generated global matricule ${globalMatricule} for student ${studentId} (matricule + studentCode + globalStudentId updated)`);
+    this.logger.log(`Generated global matricule ${globalMatricule} for student ${studentId} (globalStudentId updated, local matricule preserved)`);
 
     return identifier;
   }

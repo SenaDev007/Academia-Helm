@@ -103,6 +103,8 @@ export default function AdmissionsContent() {
   const [isLoadingDocs, setIsLoadingDocs] = useState(false);
   const [showAddDocForm, setShowAddDocForm] = useState(false);
   const [showAddInterviewForm, setShowAddInterviewForm] = useState(false);
+  // ─── Visualisation de document (modal intégré) ──
+  const [previewDoc, setPreviewDoc] = useState<{ url: string; fileName: string; mimeType: string } | null>(null);
   const [newDocType, setNewDocType] = useState('BIRTH_CERTIFICATE');
   const [newDocFile, setNewDocFile] = useState<File | null>(null);
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
@@ -1056,19 +1058,20 @@ export default function AdmissionsContent() {
                          doc.status === 'SUBMITTED' ? 'Soumis' : 'En attente'}
                       </span>
                       <div className="flex gap-1 shrink-0">
-                        {/* Bouton "Ouvrir" — prévisualisation dans un nouvel onglet
-                            via la route proxy download (Content-Disposition: inline) */}
+                        {/* Bouton "Visualiser" — ouvre le document dans un modal intégré */}
                         {doc.filePath && (
-                          <a
-                            href={`/api/students/admissions/${selectedAdmission.id}/documents/${doc.id}/download`}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            onClick={() => setPreviewDoc({
+                              url: `/api/students/admissions/${selectedAdmission.id}/documents/${doc.id}/download`,
+                              fileName: doc.fileName || 'document',
+                              mimeType: doc.mimeType || 'application/pdf',
+                            })}
                             className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition border border-blue-200"
-                            title="Ouvrir / Prévisualiser le document"
+                            title="Visualiser le document"
                           >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                            Ouvrir
-                          </a>
+                            <Eye className="w-3.5 h-3.5" />
+                            Visualiser
+                          </button>
                         )}
                         {doc.status === 'SUBMITTED' && (
                           <>
@@ -1282,16 +1285,18 @@ export default function AdmissionsContent() {
                            doc.status === 'SUBMITTED' ? 'Soumis' : 'En attente'}
                         </span>
                         {doc.filePath && (
-                          <a
-                            href={`/api/students/admissions/${quickViewAdmission.id}/documents/${doc.id}/download`}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            onClick={() => setPreviewDoc({
+                              url: `/api/students/admissions/${quickViewAdmission.id}/documents/${doc.id}/download`,
+                              fileName: doc.fileName || 'document',
+                              mimeType: doc.mimeType || 'application/pdf',
+                            })}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition border border-blue-200 shrink-0"
-                            title="Ouvrir / Prévisualiser le document"
+                            title="Visualiser le document"
                           >
-                            <ExternalLink className="w-4 h-4" />
-                            Ouvrir
-                          </a>
+                            <Eye className="w-4 h-4" />
+                            Visualiser
+                          </button>
                         )}
                       </div>
                     );
@@ -1348,6 +1353,68 @@ export default function AdmissionsContent() {
         </div>
         <div>Academia Helm Student Lifecycle Engine v2.0</div>
       </div>
+
+      {/* ─── MODAL DE VISUALISATION DE DOCUMENT (intégré, pas onglet externe) ─── */}
+      {previewDoc && (
+        <div
+          className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setPreviewDoc(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-50 rounded-lg">
+                  <FileText className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 truncate">{previewDoc.fileName}</h3>
+                  <p className="text-[10px] text-slate-400">{previewDoc.mimeType}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={previewDoc.url}
+                  download={previewDoc.fileName}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 transition"
+                  title="Télécharger"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  Télécharger
+                </a>
+                <button
+                  onClick={() => setPreviewDoc(null)}
+                  className="p-2 hover:bg-slate-200 rounded-lg text-slate-500 transition"
+                  title="Fermer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            {/* Body — iframe pour PDF / img */}
+            <div className="flex-1 overflow-hidden bg-slate-100">
+              {previewDoc.mimeType.startsWith('image/') ? (
+                <div className="flex items-center justify-center h-full p-4">
+                  <img
+                    src={previewDoc.url}
+                    alt={previewDoc.fileName}
+                    className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
+                  />
+                </div>
+              ) : (
+                <iframe
+                  src={previewDoc.url}
+                  className="w-full h-full border-0"
+                  title={previewDoc.fileName}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de confirmation personnalisé (remplace window.confirm) */}
       {confirmModal.isOpen && (

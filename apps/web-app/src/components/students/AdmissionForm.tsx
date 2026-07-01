@@ -76,35 +76,39 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
   const loadClasses = async (levelId: string) => {
     setIsLoadingClasses(true);
     try {
-      // Utiliser l'API pédagogie qui retourne les classes officielles (AcademicClass)
-      // filtrées par année scolaire. On filtre ensuite côté client par niveau.
-      // ⚠️ L'API /api/classes utilise @SchoolLevelId() decorator qui attend un ID
-      // de school_levels (ancien modèle), pas education_levels. Pour éviter ce
-      // mismatch, on utilise /api/pedagogy/academic-structure/classes qui est
-      // plus fiable et retourne les classes avec leur level inclus.
-      const yearId = academicYear?.id || formData.academicYearId;
-      if (!yearId) {
-        setClasses([]);
-        return;
-      }
+      // ⚠️ On utilise /api/classes avec schoolLevelId=ALL pour récupérer TOUTES
+      // les classes du tenant (table Class, pas AcademicClass qui n'existe pas).
+      // Puis on filtre côté client par schoolLevelId.
+      //
+      // Avant on utilisait /api/pedagogy/academic-structure/classes mais la table
+      // academic_classes n'existe pas en production → l'endpoint retournait []
+      // → le select de classe était vide en édition.
+      //
+      // schoolLevelId=ALL est crucial : sinon l'API filtre par le schoolLevelId
+      // du header x-school-level-id (contexte admin), et les classes d'autres
+      // niveaux ne sont pas retournées.
       const res = await fetch(
-        `/api/pedagogy/academic-structure/classes?academicYearId=${yearId}`,
+        '/api/classes?limit=200&schoolLevelId=ALL',
         { credentials: 'include' }
       );
       if (res.ok) {
         const data = await res.json();
         const allClasses = Array.isArray(data) ? data : [];
-        // Filtrer côté client par le niveau sélectionné.
-        // AcademicClass a une relation `level` (AcademicLevel) avec un champ `name`.
-        // On compare par nom (MATERNELLE/PRIMAIRE/SECONDAIRE) car les IDs sont
-        // différents entre EducationLevel et AcademicLevel.
+        // Filtrer côté client par le schoolLevelId sélectionné.
+        // Les classes retournées ont un champ schoolLevelId (UUID de school_levels).
+        // levelId ici est aussi un UUID de education_levels (le select du formulaire
+        // utilise les education_levels). On doit donc faire un matching par nom.
         const selectedLevel = levels.find(l => l.id === levelId);
         const levelCode = selectedLevel?.code?.toUpperCase() || '';
+        const levelName = selectedLevel?.name?.toUpperCase() || '';
         const filtered = allClasses.filter((c: any) => {
-          if (!c.level) return false;
-          const classLevelName = (c.level.name || '').toUpperCase();
-          // Match par nom : MATERNELLE matche MATERNELLE, PRIMAIRE matche PRIMAIRE, etc.
-          return classLevelName === levelCode ||
+          // c.schoolLevel est inclus (relation), avec un champ name
+          const classLevelName = (c.schoolLevel?.name || '').toUpperCase();
+          const classLevelCode = (c.schoolLevel?.code || '').toUpperCase();
+          // Match par nom ou code : MATERNELLE matche MATERNELLE, etc.
+          if (!levelCode && !levelName) return true; // pas de filtre si pas de niveau sélectionné
+          return classLevelName === levelName ||
+                 classLevelCode === levelCode ||
                  classLevelName.includes(levelCode) ||
                  levelCode.includes(classLevelName);
         });

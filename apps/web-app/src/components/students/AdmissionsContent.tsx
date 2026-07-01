@@ -71,8 +71,13 @@ export default function AdmissionsContent() {
       .then(data => setSchoolLevels(Array.isArray(data) ? data : []))
       .catch(() => setSchoolLevels([]));
 
-    // Charger toutes les classes du tenant (limit=200) pour résoudre requestedClassId
-    fetch('/api/classes?limit=200', { credentials: 'include' })
+    // Charger TOUTES les classes du tenant (limit=200, schoolLevelId=ALL)
+    // ⚠️ schoolLevelId=ALL est crucial : sinon l'API filtre par le schoolLevelId
+    // du contexte de l'admin (header x-school-level-id), et les classes d'autres
+    // niveaux (ex: Maternelle si l'admin est en Primaire) ne sont pas retournées.
+    // Cela causait le bug "Classe 2f2b0dd1 (hors liste)" pour les admissions
+    // dont la classe souhaitée était dans un niveau différent de celui de l'admin.
+    fetch('/api/classes?limit=200&schoolLevelId=ALL', { credentials: 'include' })
       .then(res => res.ok ? res.json() : [])
       .then(data => setSchoolClasses(Array.isArray(data) ? data : []))
       .catch(() => setSchoolClasses([]));

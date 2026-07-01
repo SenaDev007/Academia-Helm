@@ -88,12 +88,13 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
       // du header x-school-level-id (contexte admin), et les classes d'autres
       // niveaux ne sont pas retournées.
       const res = await fetch(
-        '/api/classes?limit=200&schoolLevelId=ALL',
+        '/api/classes?limit=100&schoolLevelId=ALL',
         { credentials: 'include' }
       );
       if (res.ok) {
         const data = await res.json();
         const allClasses = Array.isArray(data) ? data : [];
+        console.log('[AdmissionForm] Loaded classes:', allClasses.length, allClasses.map(c => ({ id: c.id?.substring(0, 8), name: c.name })));
         // Filtrer côté client par le schoolLevelId sélectionné.
         // Les classes retournées ont un champ schoolLevelId (UUID de school_levels).
         // levelId ici est aussi un UUID de education_levels (le select du formulaire

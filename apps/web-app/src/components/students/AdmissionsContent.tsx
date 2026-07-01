@@ -77,10 +77,23 @@ export default function AdmissionsContent() {
     // niveaux (ex: Maternelle si l'admin est en Primaire) ne sont pas retournées.
     // Cela causait le bug "Classe 2f2b0dd1 (hors liste)" pour les admissions
     // dont la classe souhaitée était dans un niveau différent de celui de l'admin.
-    fetch('/api/classes?limit=200&schoolLevelId=ALL', { credentials: 'include' })
-      .then(res => res.ok ? res.json() : [])
-      .then(data => setSchoolClasses(Array.isArray(data) ? data : []))
-      .catch(() => setSchoolClasses([]));
+    fetch('/api/classes?limit=100&schoolLevelId=ALL', { credentials: 'include' })
+      .then(res => {
+        if (!res.ok) {
+          console.warn('[AdmissionsContent] /api/classes returned', res.status, res.statusText);
+          return [];
+        }
+        return res.json();
+      })
+      .then(data => {
+        const classes = Array.isArray(data) ? data : [];
+        console.log('[AdmissionsContent] Loaded classes:', classes.length, classes.map(c => ({ id: c.id?.substring(0, 8), name: c.name })));
+        setSchoolClasses(classes);
+      })
+      .catch((e) => {
+        console.warn('[AdmissionsContent] Failed to load classes:', e?.message);
+        setSchoolClasses([]);
+      });
   }, []);
 
   // Helper : retourne le label d'un niveau à partir de son ID

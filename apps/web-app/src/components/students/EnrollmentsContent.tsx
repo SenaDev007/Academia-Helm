@@ -26,6 +26,7 @@ import {
   Plus, Search, ChevronDown, ChevronRight, Users, Loader2,
   FileText, Download, UserCheck, GraduationCap, BookOpen, Baby,
   RotateCcw, CheckCircle, XCircle, Clock, AlertCircle, Upload,
+  ShieldAlert, Info, BrainCircuit, ChevronUp,
 } from 'lucide-react';
 import { FormModal } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -130,6 +131,15 @@ export default function EnrollmentsContent() {
   const [bulkTargetYear, setBulkTargetYear] = useState<string>('');
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
 
+  // ─── ORION mini-panel ──────────────────────────────────────────────
+  // Alertes ciblées sur les inscriptions : élèves sans matricule, cartes manquantes,
+  // doublons potentiels. Priorité plus faible que l'onglet Analytics (alertes globales),
+  // mais utile pour détecter les anomalies au moment de l'inscription.
+  const [orionAlerts, setOrionAlerts] = useState<any[]>([]);
+  const [orionKpis, setOrionKpis] = useState<any>(null);
+  const [orionCollapsed, setOrionCollapsed] = useState(false);
+  const [orionLoading, setOrionLoading] = useState(false);
+
   // ─── Chargement ─────────────────────────────────────────────────────
   useEffect(() => {
     if (academicYear) loadData();
@@ -138,19 +148,33 @@ export default function EnrollmentsContent() {
   const loadData = async () => {
     if (!academicYear) return;
     setIsLoading(true);
+    setOrionLoading(true);
     try {
-      const [classesRes, enrollmentsData, yearsRes] = await Promise.all([
+      const [classesRes, enrollmentsData, yearsRes, orionKpisData, orionAlertsData] = await Promise.all([
         fetch(`/api/classes?limit=200`, { cache: 'no-store' }).then(r => r.json()).catch(() => []),
         studentsService.getEnrollments({ academicYearId: academicYear.id }),
         fetch('/api/academic-years', { cache: 'no-store' }).then(r => r.json()).catch(() => []),
+        // ORION : on charge en parallèle, mais on n'avale pas les erreurs critiques
+        // (les KPIs/alertes sont optionnels — l'onglet doit fonctionner même si ORION est KO)
+        studentsService.getOrionKpis(academicYear.id).catch((e) => {
+          console.warn('[ORION] KPIs load failed:', e?.message);
+          return null;
+        }),
+        studentsService.getOrionAlerts(academicYear.id).catch((e) => {
+          console.warn('[ORION] Alerts load failed:', e?.message);
+          return [];
+        }),
       ]);
       setClasses(Array.isArray(classesRes) ? classesRes : []);
       setEnrollments(Array.isArray(enrollmentsData) ? enrollmentsData : []);
       setAcademicYears(Array.isArray(yearsRes) ? yearsRes : []);
+      setOrionKpis(orionKpisData);
+      setOrionAlerts(Array.isArray(orionAlertsData) ? orionAlertsData : []);
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message, variant: 'error' });
     } finally {
       setIsLoading(false);
+      setOrionLoading(false);
     }
   };
 
@@ -357,6 +381,152 @@ export default function EnrollmentsContent() {
           </div>
         </div>
 
+        {/* ─── ORION mini-panel ───
+            Alertes ciblées sur les inscriptions : matricules manquants, cartes non générées,
+            incohérences statut/inscription. Cliquable et repliable. L'onglet Analytics a déjà
+            les alertes globales — ici on n'affiche que ce qui concerne l'inscription en cours. */}
+        {(() => {
+          // Filtrer pour ne garder que les alertes "inscription" : MISSING_MATRICULE,
+          // MISSING_ID_CARD_FOR_EXAM, IDENTITY_INCONSISTENCY. On exclut les alertes trop
+          // globales (UNSYNCHRONIZED_MATRICULE, EXPIRED_ID_CARDS, HIGH_REVOCATION_RATE)
+          // qui sont déjà visibles dans l'onglet Analytics.
+          const enrollmentCategories = new Set([
+            'MISSING_MATRICULE',
+            'MISSING_ID_CARD_FOR_EXAM',
+            'IDENTITY_INCONSISTENCY',
+          ]);
+          const enrollmentAlerts = (orionAlerts || []).filter(a => enrollmentCategories.has(a.category));
+          const criticalCount = enrollmentAlerts.filter(a => a.severity === 'CRITICAL').length;
+          const highCount = enrollmentAlerts.filter(a => a.severity === 'HIGH').length;
+          const hasAlerts = enrollmentAlerts.length > 0;
+          const matriculeCoverage = orionKpis?.matricule?.coverageRate;
+          const idCardCoverage = orionKpis?.idCard?.coverageRate;
+
+          // Si pas d'alertes ET pas de KPIs, on masque complètement le panel
+          if (!hasAlerts && matriculeCoverage === undefined && idCardCoverage === undefined && !orionLoading) {
+            return null;
+          }
+
+          const severityMeta = (sev: string) => {
+            if (sev === 'CRITICAL') return { label: 'Critique', color: 'bg-rose-50 text-rose-700 border-rose-200', dot: 'bg-rose-500', icon: AlertCircle };
+            if (sev === 'HIGH') return { label: 'Élevée', color: 'bg-amber-50 text-amber-700 border-amber-200', dot: 'bg-amber-500', icon: AlertCircle };
+            if (sev === 'MEDIUM') return { label: 'Moyenne', color: 'bg-blue-50 text-blue-700 border-blue-200', dot: 'bg-blue-500', icon: Info };
+            return { label: 'Basse', color: 'bg-slate-50 text-slate-600 border-slate-200', dot: 'bg-slate-400', icon: Info };
+          };
+
+          return (
+            <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl border border-slate-700 shadow-lg overflow-hidden">
+              {/* Header — toujours visible */}
+              <button
+                onClick={() => setOrionCollapsed(c => !c)}
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-800/50 transition-colors text-left"
+              >
+                <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-300 shrink-0">
+                  <BrainCircuit className="w-4 h-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-blue-300 uppercase tracking-widest">ORION</span>
+                    <span className="text-[10px] text-slate-500">·</span>
+                    <span className="text-[10px] font-medium text-slate-400 uppercase">Alertes Inscriptions</span>
+                  </div>
+                  <p className="text-xs text-slate-300 mt-0.5 truncate">
+                    {orionLoading
+                      ? 'Analyse des données d\'inscription en cours…'
+                      : hasAlerts
+                        ? `${enrollmentAlerts.length} alerte(s) · ${criticalCount} critique(s) · ${highCount} élevée(s)`
+                        : 'Aucune anomalie critique détectée sur les inscriptions'}
+                  </p>
+                </div>
+                {/* Mini KPIs visibles même replié */}
+                {!orionCollapsed && (
+                  <div className="hidden sm:flex items-center gap-3 shrink-0">
+                    {matriculeCoverage !== undefined && (
+                      <div className="text-right">
+                        <p className="text-[9px] text-slate-400 uppercase font-bold">Matricules</p>
+                        <p className={cn('text-xs font-bold', matriculeCoverage > 75 ? 'text-emerald-400' : matriculeCoverage > 50 ? 'text-amber-400' : 'text-rose-400')}>
+                          {Math.round(matriculeCoverage)}%
+                        </p>
+                      </div>
+                    )}
+                    {idCardCoverage !== undefined && (
+                      <div className="text-right">
+                        <p className="text-[9px] text-slate-400 uppercase font-bold">Cartes</p>
+                        <p className={cn('text-xs font-bold', idCardCoverage > 75 ? 'text-emerald-400' : idCardCoverage > 50 ? 'text-amber-400' : 'text-rose-400')}>
+                          {Math.round(idCardCoverage)}%
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {hasAlerts && !orionCollapsed && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-500/20 text-rose-300 rounded-full text-[10px] font-bold shrink-0">
+                    <ShieldAlert className="w-3 h-3" />
+                    {enrollmentAlerts.length}
+                  </span>
+                )}
+                <ChevronUp className={cn('w-4 h-4 text-slate-400 shrink-0 transition-transform', orionCollapsed && 'rotate-180')} />
+              </button>
+
+              {/* Body — alertes détaillées */}
+              <AnimatePresence>
+                {!orionCollapsed && hasAlerts && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="overflow-hidden border-t border-slate-700/50"
+                  >
+                    <div className="bg-slate-950/30 divide-y divide-slate-800">
+                      {enrollmentAlerts.map((alert, i) => {
+                        const meta = severityMeta(alert.severity);
+                        const Icon = meta.icon;
+                        return (
+                          <div key={i} className="px-4 py-3 flex items-start gap-3 hover:bg-slate-800/30 transition-colors">
+                            <div className={cn('p-1.5 rounded-lg shrink-0', meta.color)}>
+                              <Icon className="w-3.5 h-3.5" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="text-xs font-bold text-slate-100">{alert.title}</p>
+                                <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold border', meta.color)}>{meta.label}</span>
+                                {typeof alert.count === 'number' && (
+                                  <span className="text-[10px] text-slate-400 font-mono">{alert.count} élève(s)</span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">{alert.description}</p>
+                              {alert.recommendation && (
+                                <p className="text-[10px] text-slate-500 mt-1 italic">
+                                  <span className="font-semibold text-slate-400">→ </span>{alert.recommendation}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="px-4 py-2 bg-slate-950/40 border-t border-slate-800 flex items-center justify-between">
+                      <p className="text-[10px] text-slate-500 italic">
+                        Voir l'onglet <span className="font-semibold text-slate-400">Analytics</span> pour toutes les alertes ORION.
+                      </p>
+                      <button
+                        onClick={() => {
+                          // Recharger manuellement les données ORION
+                          if (academicYear) loadData();
+                        }}
+                        className="text-[10px] font-bold text-blue-300 hover:text-blue-200 transition"
+                      >
+                        Re-calculer
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          );
+        })()}
+
         {/* Toolbar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
           <div className="relative flex-1 max-w-md">
@@ -378,7 +548,7 @@ export default function EnrollmentsContent() {
               <Download className="w-4 h-4" /> Export
             </button>
             <button
-              onClick={() => setBulkReEnEnrollOpen(true)}
+              onClick={() => setBulkReEnrollOpen(true)}
               className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-200 transition"
               title="Réinscription massive"
             >
@@ -443,32 +613,35 @@ export default function EnrollmentsContent() {
                                   : students;
                                 return (
                                   <div key={classInfo.id}>
-                                    <button
-                                      onClick={() => toggleClass(classInfo.id)}
-                                      className="w-full flex items-center gap-3 px-5 py-2.5 hover:bg-blue-50/30 transition-colors text-left group"
-                                    >
-                                      <div className="shrink-0 pl-6">
-                                        {isClassExpanded ? <ChevronDown className="w-4 h-4 text-slate-400 group-hover:text-blue-600" /> : <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-blue-600" />}
-                                      </div>
-                                      <div className="p-1.5 bg-slate-100 rounded-lg shrink-0"><Users className="w-4 h-4 text-slate-500" /></div>
-                                      <span className="flex-1 text-sm font-semibold text-slate-700">{classInfo.name}</span>
-                                      <span className="px-2 py-0.5 bg-blue-50 rounded-full text-[10px] font-bold text-blue-700 shrink-0">{filteredStudents.length} élève{filteredStudents.length > 1 ? 's' : ''}</span>
+                                    <div className="w-full flex items-center gap-3 px-5 py-2.5 hover:bg-blue-50/30 transition-colors text-left group">
                                       <button
-                                        onClick={(e) => { e.stopPropagation(); toast({ title: 'Liste de classe', description: `${classInfo.name} — ${filteredStudents.length} élèves`, variant: 'info' }); }}
-                                        className="p-1.5 hover:bg-blue-100 rounded-lg text-slate-400 hover:text-blue-600 transition"
+                                        onClick={() => toggleClass(classInfo.id)}
+                                        className="flex items-center gap-3 flex-1 min-w-0 text-left"
+                                        aria-label={`Basculer la classe ${classInfo.name}`}
+                                      >
+                                        <div className="shrink-0 pl-6">
+                                          {isClassExpanded ? <ChevronDown className="w-4 h-4 text-slate-400 group-hover:text-blue-600" /> : <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-blue-600" />}
+                                        </div>
+                                        <div className="p-1.5 bg-slate-100 rounded-lg shrink-0"><Users className="w-4 h-4 text-slate-500" /></div>
+                                        <span className="flex-1 text-sm font-semibold text-slate-700 truncate">{classInfo.name}</span>
+                                        <span className="px-2 py-0.5 bg-blue-50 rounded-full text-[10px] font-bold text-blue-700 shrink-0">{filteredStudents.length} élève{filteredStudents.length > 1 ? 's' : ''}</span>
+                                      </button>
+                                      <button
+                                        onClick={() => toast({ title: 'Liste de classe', description: `${classInfo.name} — ${filteredStudents.length} élèves`, variant: 'info' })}
+                                        className="p-1.5 hover:bg-blue-100 rounded-lg text-slate-400 hover:text-blue-600 transition shrink-0"
                                         title="Visualiser la liste"
                                       ><FileText className="w-3.5 h-3.5" /></button>
                                       <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
+                                        onClick={() => {
                                           if (!academicYear) return;
                                           studentsService.generateClassListPdf(classInfo.id, academicYear.id)
                                             .then(() => toast({ title: '✅ PDF généré', description: classInfo.name, variant: 'success' }))
                                             .catch(err => toast({ title: 'Erreur PDF', description: err.message, variant: 'error' }));
                                         }}
-                                        className="p-1.5 hover:bg-emerald-100 rounded-lg text-slate-400 hover:text-emerald-600 transition"
+                                        className="p-1.5 hover:bg-emerald-100 rounded-lg text-slate-400 hover:text-emerald-600 transition shrink-0"
                                         title="Générer PDF liste de classe"
                                       ><Download className="w-3.5 h-3.5" /></button>
+                                    </div>
 
                                     {/* ÉLÈVES */}
                                     <AnimatePresence>

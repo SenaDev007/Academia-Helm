@@ -1413,3 +1413,37 @@ Stage Summary:
 - Turnstile : activation conditionnelle via env vars (NEXT_PUBLIC_TURNSTILE_SITE_KEY côté client, TURNSTILE_SECRET_KEY côté serveur)
 - UX : wizard 3 étapes avec hauteur fixe, plus de scroll vertical, navigation claire
 - Branding : nom + slogan + adresse + téléphone de l'école affichés dans la bande navy pour le portail public
+
+---
+Task ID: orion-mini-panel-enrollments + pdf-liste-classe
+Agent: main
+Task: Alertes ORION intégrées dans l'onglet Inscriptions (priorité plus faible) + finalisation génération PDF liste de classe avec en-têtes spécifiques (Maternelle/Primaire vs Secondaire)
+
+Work Log:
+- Constat initial : la génération PDF liste de classe était déjà implémentée (class-list-pdf.service.ts + endpoint GET /students/class-list/:classId/pdf + bouton frontend dans EnrollmentsContent.tsx) avec en-têtes officiels corrects :
+  - Maternelle/Primaire → "Ministère des Enseignements Maternel et Primaire"
+  - Secondaire → "Ministère de l'Enseignement Secondaire, de la Formation Technique et Professionnelle, de la Reconversion et de l'Insertion des Jeunes"
+- Fix bug typo critique : setBulkReEnEnrollOpen → setBulkReEnrollOpen (bouton "Réinscription lot" cassait silencieusement)
+- Fix bug HTML invalide : la ligne de classe était un <button> contenant 2 <button> enfants (Visualiser + PDF) + la fermeture </button> manquait avant l'AnimatePresence des élèves → restructurée en <div> wrapper + <button> toggle (flex-1) + 2 <button> actions séparés. La balise </button> manquante faisait que les clics sur les actions éleves (Valider/Réinscrire) déclenchaient aussi toggleClass() — bug UX subtil.
+- Backend class-list-pdf.service.ts : signature modifiée generateClassListPdf() retourne désormais { buffer, className, schoolName, studentsCount } au lieu de juste Buffer. Le controller peut ainsi poser un Content-Disposition avec le vrai nom de la classe.
+- Backend students-lifecycle.controller.ts : nouvelle logique de nom de fichier PDF : sanitize className (NFD → ASCII, regex [^a-zA-Z0-9_-] → _), inline; filename="liste_<className>.pdf". Documentation JSDoc du endpoint enrichie avec les 2 en-têtes officiels.
+- Frontend students.service.ts generateClassListPdf() : extraction du filename depuis Content-Disposition (fallback liste_classe.pdf), append/remove du <a> au document.body pour compatibilité Safari/Firefox.
+- Frontend EnrollmentsContent.tsx — mini-panel ORION ajouté :
+  - State : orionAlerts, orionKpis, orionCollapsed, orionLoading
+  - loadData() étendu : Promise.all fetch en parallèle getOrionKpis + getOrionAlerts (avec catch silencieux — ORION KO ne casse pas l'onglet)
+  - Filtrage : seules 3 catégories d'alertes liées à l'inscription sont affichées (MISSING_MATRICULE, MISSING_ID_CARD_FOR_EXAM, IDENTITY_INCONSISTENCY). Les autres (UNSYNCHRONIZED_MATRICULE, EXPIRED_ID_CARDS, HIGH_REVOCATION_RATE) restent visibles dans l'onglet Analytics global — évite la redondance.
+  - UI : bandeau slate-900 repliable (ChevronUp rotate-180), header avec badge "ORION · Alertes Inscriptions", mini-KPIs Matricules %/Cartes % visibles même replié (couleur selon seuil 75/50), badge ShieldAlert + count si alertes présentes, body animé (framer-motion) listant chaque alerte avec icône + sévérité + count + description + recommendation, footer "Voir onglet Analytics pour toutes les alertes" + bouton "Re-calculer".
+  - Masquage conditionnel : si pas d'alertes ET pas de KPIs ET pas en cours de chargement → panel complètement masqué (pas de bruit visuel quand tout va bien).
+  - Note dans header du composant : "Alertes ORION intégrées (priorité plus faible — l'onglet Analytics a déjà les alertes globales)".
+- Imports lucide-react étendus : ShieldAlert, Info, BrainCircuit, ChevronUp (pour le mini-panel ORION).
+- Validation syntaxique : @babel/parser confirm OK sur les 4 fichiers modifiés (EnrollmentsContent.tsx, students.service.ts, class-list-pdf.service.ts, students-lifecycle.controller.ts).
+
+Stage Summary:
+- 4 fichiers modifiés :
+  1. apps/web-app/src/components/students/EnrollmentsContent.tsx — fix typo setBulkReEnEnrollOpen + restructure class row (HTML valide) + mini-panel ORION
+  2. apps/web-app/src/services/students.service.ts — extraction filename depuis Content-Disposition
+  3. apps/api-server/src/students/services/class-list-pdf.service.ts — retourne { buffer, className, schoolName, studentsCount }
+  4. apps/api-server/src/students/controllers/students-lifecycle.controller.ts — Content-Disposition dynamique + JSDoc en-têtes officiels
+- Aucune nouvelle migration DB nécessaire (schéma ORION + alertes déjà en place)
+- Aucun redéploiement DB nécessaire — juste redéploy backend (Fly.io) + frontend (Vercel)
+- Mini-panel ORION est non-intrusif : masqué quand tout va bien, repliable, ne bloque pas l'onglet si backend ORION KO

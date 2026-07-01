@@ -197,6 +197,12 @@ export class StudentsLifecycleController {
   /**
    * GET /students/class-list/:classId/pdf
    * Génère le PDF de la liste des élèves d'une classe.
+   *
+   * En-tête officiel adapté au niveau :
+   *   - Maternelle/Primaire → "Ministère des Enseignements Maternel et Primaire"
+   *   - Secondaire → "Ministère de l'Enseignement Secondaire, de la Formation
+   *     Technique et Professionnelle, de la Reconversion et de l'Insertion des Jeunes"
+   *
    * Query: academicYearId (requis)
    */
   @Get('class-list/:classId/pdf')
@@ -209,16 +215,22 @@ export class StudentsLifecycleController {
     if (!academicYearId) {
       throw new BadRequestException('academicYearId est requis');
     }
-    const pdfBuffer = await this.classListPdf.generateClassListPdf(
+    const { buffer: pdfBuffer, className } = await this.classListPdf.generateClassListPdf(
       classId,
       tenantId,
       academicYearId,
     );
 
-    const className = 'classe';
+    // Nettoyer le nom de la classe pour le nom de fichier (ASCII-safe)
+    const safeName = (className || 'classe')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9_-]/g, '_')
+      .substring(0, 60);
+
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename="liste_${className}.pdf"`,
+      'Content-Disposition': `inline; filename="liste_${safeName}.pdf"`,
       'Content-Length': pdfBuffer.length,
     });
 

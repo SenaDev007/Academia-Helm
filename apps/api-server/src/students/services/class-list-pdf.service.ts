@@ -33,13 +33,13 @@ export class ClassListPdfService {
    * @param classId - ID de la classe
    * @param tenantId - ID du tenant
    * @param academicYearId - ID de l'année académique
-   * @returns Buffer du PDF
+   * @returns Objet contenant le buffer PDF et les métadonnées (className, schoolName, studentsCount)
    */
   async generateClassListPdf(
     classId: string,
     tenantId: string,
     academicYearId: string,
-  ): Promise<Buffer> {
+  ): Promise<{ buffer: Buffer; className: string; schoolName: string; studentsCount: number }> {
     // 1. Récupérer les données
     const cls = await this.prisma.class.findFirst({
       where: { id: classId, tenantId },
@@ -113,7 +113,12 @@ export class ClassListPdfService {
       `Class list PDF generated: class=${cls.name}, ${enrollments.length} students, ${pdfBuffer.length} bytes`,
     );
 
-    return pdfBuffer;
+    return {
+      buffer: pdfBuffer,
+      className: cls.name,
+      schoolName: branding.schoolName,
+      studentsCount: enrollments.length,
+    };
   }
 
   /**

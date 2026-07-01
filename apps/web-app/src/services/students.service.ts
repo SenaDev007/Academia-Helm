@@ -444,7 +444,11 @@ class StudentsService {
 
   /**
    * Génère le PDF de la liste d'élèves d'une classe.
+   *
    * Backend : GET /students/class-list/:classId/pdf?academicYearId=...
+   *
+   * En-tête adapté au niveau (Maternelle/Primaire vs Secondaire).
+   * Le nom de fichier est récupéré depuis Content-Disposition si présent.
    */
   async generateClassListPdf(classId: string, academicYearId: string): Promise<void> {
     const token = typeof window !== 'undefined'
@@ -456,11 +460,22 @@ class StudentsService {
     });
     if (!res.ok) throw new Error('Génération PDF échouée');
     const blob = await res.blob();
+
+    // Récupérer le nom de fichier depuis Content-Disposition (fallback: liste_classe.pdf)
+    let filename = 'liste_classe.pdf';
+    const cd = res.headers.get('Content-Disposition');
+    if (cd) {
+      const match = cd.match(/filename="?([^";]+)"?/);
+      if (match) filename = decodeURIComponent(match[1]);
+    }
+
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `liste_classe.pdf`;
+    a.download = filename;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }
 

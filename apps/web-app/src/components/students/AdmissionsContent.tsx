@@ -60,11 +60,22 @@ export default function AdmissionsContent() {
   // Sans ça, le tableau affiche "Non défini" pour la colonne Niveau.
   const [schoolLevels, setSchoolLevels] = useState<any[]>([]);
 
+  // ⚠️ Classes — chargées depuis /api/classes pour faire le mapping
+  // requestedClassId → label côté client. Permet d'afficher la classe souhaitée
+  // par le parent dans la liste + le détail + l'édition.
+  const [schoolClasses, setSchoolClasses] = useState<any[]>([]);
+
   useEffect(() => {
     fetch('/api/school-levels', { credentials: 'include' })
       .then(res => res.ok ? res.json() : [])
       .then(data => setSchoolLevels(Array.isArray(data) ? data : []))
       .catch(() => setSchoolLevels([]));
+
+    // Charger toutes les classes du tenant (limit=200) pour résoudre requestedClassId
+    fetch('/api/classes?limit=200', { credentials: 'include' })
+      .then(res => res.ok ? res.json() : [])
+      .then(data => setSchoolClasses(Array.isArray(data) ? data : []))
+      .catch(() => setSchoolClasses([]));
   }, []);
 
   // Helper : retourne le label d'un niveau à partir de son ID
@@ -72,6 +83,13 @@ export default function AdmissionsContent() {
     if (!levelId) return 'Non défini';
     const level = schoolLevels.find(l => l.id === levelId);
     return level?.label || level?.code || 'Non défini';
+  };
+
+  // Helper : retourne le label d'une classe à partir de son UUID (requestedClassId)
+  const getClassLabel = (classId: string | null | undefined): string => {
+    if (!classId) return '—';
+    const cls = schoolClasses.find(c => c.id === classId);
+    return cls?.name || cls?.code || `Classe ${classId.substring(0, 8)}…`;
   };
 
   // Modals state
@@ -665,6 +683,7 @@ export default function AdmissionsContent() {
                 <tr className="bg-slate-50/50">
                   <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Candidat</th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Niveau</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Classe</th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Date</th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Statut</th>
                   <th className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
@@ -721,6 +740,11 @@ export default function AdmissionsContent() {
                               Prov: {admission.previousSchool}
                             </div>
                           )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-slate-700">
+                            {getClassLabel(admission.requestedClassId)}
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm text-slate-700 flex items-center gap-1.5">
@@ -940,6 +964,7 @@ export default function AdmissionsContent() {
               <h4 className="text-xs font-bold text-slate-500 uppercase mb-3">Vœux Académiques</h4>
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div><span className="text-slate-400">Niveau souhaité :</span> <strong>{getLevelLabel(selectedAdmission.schoolLevelId)}</strong></div>
+                <div><span className="text-slate-400">Classe souhaitée :</span> <strong>{getClassLabel(selectedAdmission.requestedClassId)}</strong></div>
                 <div><span className="text-slate-400">Cursus bilingue :</span> {selectedAdmission.wantsBilingual ? '✓ Oui' : '✗ Non'}</div>
                 <div className="col-span-2"><span className="text-slate-400">Établissement précédent :</span> {selectedAdmission.previousSchool || '—'}</div>
               </div>

@@ -1736,3 +1736,47 @@ Stage Summary:
 - Code source corrigé : database-triggers-bootstrap.service.ts
 - L'admission CSPEBE-A-26-0001 (status ACCEPTED) est prête pour conversion
 - L'utilisateur peut maintenant re-cliquer sur "Convertir" — ça devrait marcher
+
+---
+Task ID: fix-affichage-classe-souhaitee-admission
+Agent: main
+Task: Afficher la classe souhaitée par le parent dans l'onglet Admission (liste + détail + édition)
+
+Work Log:
+- Diagnostic DB : l'admission CSPEBE-A-26-0001 a requestedClassId = 78591c9d-...
+  Mais cet UUID n'existe PAS dans la table classes (les 8 classes ont des UUIDs différents)
+  → l'admission a été soumise avec un targetClass qui ne matche aucune classe réelle
+  → probablement un UUID phantom généré par le frontend avant le fix des cartes dynamiques
+
+- Constat UI : AdmissionsContent.tsx n'affichait PAS la classe souhaitée
+  - Liste : colonne "Niveau" uniquement, pas de colonne "Classe"
+  - Détail modal : champ "Niveau souhaité" + "Cursus bilingue", mais pas "Classe souhaitée"
+  - Édition (AdmissionForm) : le select requestedClassId existait mais ne pré-sélectionnait pas
+    la classe si elle n'était pas dans la liste chargée (level filter mismatch)
+
+- Fix #1 : AdmissionsContent.tsx — afficher la classe souhaitée
+  - Nouveau state schoolClasses + fetch /api/classes?limit=200 au mount
+  - Nouveau helper getClassLabel(classId) : résout UUID → name/code, fallback "Classe {UUID tronqué}…"
+  - Liste : nouvelle colonne "Classe" entre "Niveau" et "Date" dans le header + le body
+  - Détail modal : nouveau champ "Classe souhaitée" dans la section Vœux Académiques
+  - Édition : initialData passe déjà requestedClassId via spread ...selectedAdmission
+
+- Fix #2 : AdmissionForm.tsx — fallback pour classe hors liste
+  - Si requestedClassId (depuis initialData) n'est pas dans la liste chargée
+    (ex: classe supprimée, ou level filter mismatch), on ajoute manuellement une option
+    "Classe {UUID tronqué}… (hors liste)" pour qu'elle soit visible dans le select
+  - Évite le bug "select vide" en édition quand la classe n'est plus disponible
+
+- Note sur l'admission existante :
+  - requestedClassId = 78591c9d-... n'existe pas dans classes
+  - Le frontend affichera "Classe 78591c9d…" (fallback) dans la liste + détail
+  - En édition, le select montrera "Classe 78591c9d… (hors liste)"
+  - Pour les nouvelles admissions (après le fix des cartes dynamiques), targetClass sera
+    un vrai UUID de classe → affichage correct du nom (CI, CP, 6ème, etc.)
+
+Stage Summary:
+- 2 fichiers modifiés :
+  1. apps/web-app/src/components/students/AdmissionsContent.tsx — colonne Classe + helper getClassLabel
+  2. apps/web-app/src/components/students/AdmissionForm.tsx — fallback option pour classe hors liste
+- Aucune migration DB nécessaire
+- L'admission existante affichera un UUID tronqué (données anciennes), mais les nouvelles admissions afficheront le vrai nom de classe

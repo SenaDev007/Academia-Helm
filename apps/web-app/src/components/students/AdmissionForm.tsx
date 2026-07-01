@@ -318,6 +318,15 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
               {classes.map(c => (
                 <option key={c.id} value={c.id}>{c.name || c.code}</option>
               ))}
+              {/* Fallback : si requestedClassId (depuis initialData) n'est pas dans
+                  la liste chargée (ex: classe supprimée, ou level filter mismatch),
+                  on l'ajoute manuellement pour qu'il soit visible dans le select. */}
+              {formData.requestedClassId &&
+                !classes.some(c => c.id === formData.requestedClassId) && (
+                <option value={formData.requestedClassId}>
+                  Classe {formData.requestedClassId.substring(0, 8)}… ( hors liste)
+                </option>
+              )}
             </select>
           </div>
         </div>

@@ -849,102 +849,99 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
- * FORMULAIRE PRÉ-INSCRIPTION PUBLIQUE — Styles aérés + responsive
+ * FORMULAIRE PRÉ-INSCRIPTION PUBLIQUE — Styles optimisés (no scroll desktop)
  * ═══════════════════════════════════════════════════════════════════════
- * Le formulaire public d'admission doit être lisible sur tous les écrans
- * (mobile, tablette, desktop). On aère les inputs, labels, gaps et paddings
- * via ce scope CSS pour ne pas impacter les autres portails.
- *
- * Principes :
- *   - Mobile first : 1 colonne, padding généreux, font-size lisible (16px sur mobile)
- *   - Desktop (sm+) : 2 colonnes si pertinent, spacing légèrement réduit
- *   - Pas de !important agressif — on garde la priorité CSS normale
+ * Objectifs :
+ *   - Pas de barre de scroll sur desktop (tout visible dans le viewport)
+ *   - Placeholders ne se superposent pas aux icônes (préserver pl-9)
+ *   - Responsive mobile (1 colonne, font 16px, taille tactile)
  * ═══════════════════════════════════════════════════════════════════════ */
 
-/* Inputs, selects, textarea — hauteur confortable + font lisible */
+/* Inputs, selects, textarea — hauteur + font adaptées
+ * ⚠️ NE PAS écraser padding-left/pl-9 (les inputs avec icône ont pl-9) */
 .public-pre-enrollment input[type="text"],
 .public-pre-enrollment input[type="email"],
 .public-pre-enrollment input[type="tel"],
 .public-pre-enrollment input[type="date"],
 .public-pre-enrollment select,
 .public-pre-enrollment textarea {
-  min-height: 44px;          /* taille tactile minimale (Apple HIG) */
-  padding-top: 0.5rem;
-  padding-bottom: 0.5rem;
-  padding-left: 0.75rem;
-  padding-right: 0.75rem;
-  font-size: 16px;           /* 16px = évite le zoom auto iOS sur focus */
-  border-radius: 0.625rem;
-  line-height: 1.4;
+  min-height: 38px;
+  padding-top: 0.375rem;
+  padding-bottom: 0.375rem;
+  font-size: 14px;
+  border-radius: 0.5rem;
+  line-height: 1.3;
 }
 
-/* Sur desktop (sm+), légèrement plus compact */
-@media (min-width: 640px) {
+/* Mobile : font 16px pour éviter le zoom iOS */
+@media (max-width: 639px) {
   .public-pre-enrollment input[type="text"],
   .public-pre-enrollment input[type="email"],
   .public-pre-enrollment input[type="tel"],
   .public-pre-enrollment input[type="date"],
   .public-pre-enrollment select,
   .public-pre-enrollment textarea {
-    font-size: 0.875rem;     /* 14px sur desktop */
-    min-height: 40px;
+    font-size: 16px;
+    min-height: 42px;
   }
 }
 
-/* Labels — espacés des inputs, font lisible */
+/* Labels — compacts mais lisibles */
 .public-pre-enrollment label {
-  margin-bottom: 0.375rem;   /* 6px entre label et input */
-  font-size: 0.8125rem;      /* 13px — lisible */
+  margin-bottom: 0.25rem;
+  font-size: 12px;
   font-weight: 600;
-  line-height: 1.3;
+  line-height: 1.2;
   display: block;
 }
 
-/* Grilles — gap généreux pour aérer */
+/* Grilles — gap compact pour fit viewport */
 .public-pre-enrollment .grid {
-  gap: 0.875rem;             /* 14px entre champs */
+  gap: 0.5rem;
 }
 
-/* Sur desktop, gap légèrement plus serré */
 @media (min-width: 640px) {
   .public-pre-enrollment .grid {
-    gap: 0.75rem;            /* 12px */
+    gap: 0.625rem;
   }
 }
 
-/* Boutons de type candidat (Maternelle/Primaire/Secondaire) — taille tactile */
+/* Boutons de type candidat — compacts */
 .public-pre-enrollment button[type="button"] {
-  min-height: 48px;          /* taille tactile minimale */
-  padding: 0.625rem;
-  font-size: 0.8125rem;
+  min-height: 42px;
+  padding: 0.5rem;
+  font-size: 12px;
 }
 
-/* Cards d'upload de documents — padding aéré */
+/* Cards d'upload — compactes */
 .public-pre-enrollment .border-2.border-slate-200.bg-slate-50 {
-  padding: 0.875rem;
+  padding: 0.625rem;
 }
 
-/* Textarea message — hauteur raisonnable */
+/* Textarea — compact */
 .public-pre-enrollment textarea {
-  min-height: 72px;          /* 3-4 lignes visibles */
+  min-height: 56px;
   resize: vertical;
 }
 
-/* Container wizard — s'assurer que le contenu respire sur mobile */
 .public-pre-enrollment {
   width: 100%;
 }
 
 /* Container principal du portail public :
-   - Mobile : pas de hauteur max (le contenu s'étire naturellement)
-   - Desktop (md+) : hauteur max 92vh avec scroll interne si nécessaire */
+ * Desktop (md+) : PAS de scroll — tout doit tenir dans le viewport.
+ * On utilise flexbox avec flex-1 sur le centre pour absorber l'espace. */
 .public-portal-container {
-  /* Mobile first : pas de contrainte de hauteur */
+  /* Mobile : pas de contrainte */
 }
 
 @media (min-width: 768px) {
   .public-portal-container {
-    max-height: 92vh;
+    max-height: 88vh;
+  }
+  /* La colonne droite (formulaire) : cacher le scroll mais permettre le débordement masqué */
+  .public-portal-container > div:last-child {
+    overflow: hidden;
   }
 }
 

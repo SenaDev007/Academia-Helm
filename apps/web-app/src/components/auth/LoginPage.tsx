@@ -186,37 +186,31 @@ const PORTAL_LOGIN_DEFS: Record<string, {
   title: string;
   subtitle: string;
   Icon: React.ComponentType<{ className?: string }>;
-  authMethod: string;
 }> = {
   platform: {
     title: 'Portail Plateforme',
     subtitle: 'Administration SaaS globale',
     Icon: Shield,
-    authMethod: 'Email & mot de passe',
   },
   school: {
     title: 'Portail École',
     subtitle: 'Gestion de l\'établissement',
     Icon: Building2,
-    authMethod: 'Email & mot de passe',
   },
   teacher: {
     title: 'Portail Enseignant',
     subtitle: 'Pédagogie & suivi',
     Icon: GraduationCap,
-    authMethod: 'Matricule & mot de passe',
   },
   parent: {
     title: 'Portail Parent / Élève',
     subtitle: 'Suivi & communication',
     Icon: Users,
-    authMethod: 'Téléphone & OTP',
   },
   public: {
     title: 'Portail Public',
-    subtitle: 'Pré-inscription & acquisition',
+    subtitle: 'Pré-inscription en ligne',
     Icon: Globe,
-    authMethod: 'Aucune authentification requise',
   },
 };
 
@@ -1767,7 +1761,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             {/* Pour le portail public : padding généreux, scroll interne seulement sur desktop */}
             <div
               className={portalType === 'public'
-                ? 'flex-1 p-4 sm:p-5 md:p-6 flex flex-col justify-center md:overflow-y-auto'
+                ? 'flex-1 p-4 sm:p-4 md:p-5 flex flex-col justify-center md:overflow-hidden'
                 : 'flex-1 p-6 sm:p-8 flex flex-col justify-center'
               }
             >
@@ -1779,7 +1773,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
 
           <form
             onSubmit={handleSubmit}
-            className={portalType === 'public' ? 'space-y-3 sm:space-y-3.5' : 'space-y-3 sm:space-y-4'}
+            className={portalType === 'public' ? 'space-y-2.5 sm:space-y-2.5' : 'space-y-3 sm:space-y-4'}
           >
             <AnimatePresence mode="wait">
               <motion.div
@@ -1788,7 +1782,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 animate={{ opacity: 1, x: 0 }}
                 exit={shouldReduceMotion ? undefined : { opacity: 0, x: -12 }}
                 transition={{ duration: dur, ease: 'easeOut' }}
-                className={portalType === 'public' ? 'space-y-3 sm:space-y-3.5' : 'space-y-3 sm:space-y-4'}
+                className={portalType === 'public' ? 'space-y-2.5 sm:space-y-2.5' : 'space-y-3 sm:space-y-4'}
               >
                 {/* ── PLATFORM + SCHOOL : Email + Mot de passe ── */}
                 {(isStandardLogin || portalType === 'school' || portalType === 'platform') && (

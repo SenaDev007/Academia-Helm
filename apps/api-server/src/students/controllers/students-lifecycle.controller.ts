@@ -2,7 +2,7 @@
  * Module 1 — API cycle de vie élève : pre-register, admit, re-enroll, transfer, change-class, history, export EDUCMASTER.
  */
 
-import { BadRequestException, Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Post, Body, Param, Query, UseGuards, Res } from '@nestjs/common';
 import { StreamableFile } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
@@ -10,6 +10,8 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { StudentsLifecycleService } from '../services/students-lifecycle.service';
 import { StudentIdCardService } from '../services/student-id-card.service';
 import { EducmasterExcelExportService } from '../services/educmaster-excel-export.service';
+import { ClassListPdfService } from '../services/class-list-pdf.service';
+import type { Response } from 'express';
 
 @Controller('students')
 @UseGuards(JwtAuthGuard)
@@ -18,6 +20,7 @@ export class StudentsLifecycleController {
     private readonly lifecycle: StudentsLifecycleService,
     private readonly idCard: StudentIdCardService,
     private readonly educmasterExcel: EducmasterExcelExportService,
+    private readonly classListPdf: ClassListPdfService,
   ) {}
 
   @Get('enrollments')
@@ -189,5 +192,36 @@ export class StudentsLifecycleController {
   @Post(':id/export-educmaster')
   async exportEducmaster(@TenantId() tenantId: string, @Param('id') id: string) {
     return this.lifecycle.exportEducmaster(tenantId, id);
+  }
+
+  /**
+   * GET /students/class-list/:classId/pdf
+   * Génère le PDF de la liste des élèves d'une classe.
+   * Query: academicYearId (requis)
+   */
+  @Get('class-list/:classId/pdf')
+  async generateClassListPdf(
+    @TenantId() tenantId: string,
+    @Param('classId') classId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    if (!academicYearId) {
+      throw new BadRequestException('academicYearId est requis');
+    }
+    const pdfBuffer = await this.classListPdf.generateClassListPdf(
+      classId,
+      tenantId,
+      academicYearId,
+    );
+
+    const className = 'classe';
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="liste_${className}.pdf"`,
+      'Content-Length': pdfBuffer.length,
+    });
+
+    return pdfBuffer;
   }
 }

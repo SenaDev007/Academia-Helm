@@ -41,6 +41,7 @@ import { AdmissionService } from './services/admission.service';
 import { AdmissionNotificationService } from './services/admission-notification.service';
 import { StudentsLifecycleController } from './controllers/students-lifecycle.controller';
 import { EducmasterExcelExportService } from './services/educmaster-excel-export.service';
+import { ClassListPdfService } from './services/class-list-pdf.service';
 import { MatriculeService } from './services/matricule.service';
 import { StudentTransferController } from './student-transfer.controller';
 import { StudentTransferService } from './student-transfer.service';
@@ -105,6 +106,7 @@ import { CommunicationModule } from '../communication/communication.module';
     AdmissionNotificationService,
     StudentsLifecycleService,
     EducmasterExcelExportService,
+    ClassListPdfService,
     MatriculeService,
     StudentTransferService,
   ],
@@ -126,6 +128,7 @@ import { CommunicationModule } from '../communication/communication.module';
     AdmissionService,
     StudentsLifecycleService,
     EducmasterExcelExportService,
+    ClassListPdfService,
     MatriculeService,
     StudentTransferService,
   ],

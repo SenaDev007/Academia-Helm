@@ -443,6 +443,28 @@ class StudentsService {
   }
 
   /**
+   * Génère le PDF de la liste d'élèves d'une classe.
+   * Backend : GET /students/class-list/:classId/pdf?academicYearId=...
+   */
+  async generateClassListPdf(classId: string, academicYearId: string): Promise<void> {
+    const token = typeof window !== 'undefined'
+      ? (document.cookie.split('; ').find(r => r.startsWith('academia_token='))?.split('=')[1] || '')
+      : '';
+    const res = await fetch(`${BASE_URL}/class-list/${encodeURIComponent(classId)}/pdf?academicYearId=${encodeURIComponent(academicYearId)}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'include',
+    });
+    if (!res.ok) throw new Error('Génération PDF échouée');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `liste_classe.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  /**
    * Statistiques des cartes d'identité
    */
   async getIdCardStats(academicYearId: string): Promise<any> {

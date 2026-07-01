@@ -459,11 +459,16 @@ export default function EnrollmentsContent() {
                                         title="Visualiser la liste"
                                       ><FileText className="w-3.5 h-3.5" /></button>
                                       <button
-                                        onClick={(e) => { e.stopPropagation(); toast({ title: 'Génération PDF', description: `Liste de ${classInfo.name} — à implémenter`, variant: 'info' }); }}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (!academicYear) return;
+                                          studentsService.generateClassListPdf(classInfo.id, academicYear.id)
+                                            .then(() => toast({ title: '✅ PDF généré', description: classInfo.name, variant: 'success' }))
+                                            .catch(err => toast({ title: 'Erreur PDF', description: err.message, variant: 'error' }));
+                                        }}
                                         className="p-1.5 hover:bg-emerald-100 rounded-lg text-slate-400 hover:text-emerald-600 transition"
-                                        title="Générer PDF"
+                                        title="Générer PDF liste de classe"
                                       ><Download className="w-3.5 h-3.5" /></button>
-                                    </button>
 
                                     {/* ÉLÈVES */}
                                     <AnimatePresence>

@@ -1063,10 +1063,11 @@ export default function AdmissionsContent() {
                             href={`/api/students/admissions/${selectedAdmission.id}/documents/${doc.id}/download`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="p-1 hover:bg-blue-100 rounded text-blue-600 transition inline-flex items-center justify-center"
-                            title="Ouvrir / Prévisualiser"
+                            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition border border-blue-200"
+                            title="Ouvrir / Prévisualiser le document"
                           >
                             <ExternalLink className="w-3.5 h-3.5" />
+                            Ouvrir
                           </a>
                         )}
                         {doc.status === 'SUBMITTED' && (
@@ -1285,10 +1286,11 @@ export default function AdmissionsContent() {
                             href={`/api/students/admissions/${quickViewAdmission.id}/documents/${doc.id}/download`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="p-1.5 hover:bg-blue-100 rounded text-blue-600 transition inline-flex items-center justify-center shrink-0"
-                            title="Ouvrir / Prévisualiser"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition border border-blue-200 shrink-0"
+                            title="Ouvrir / Prévisualiser le document"
                           >
                             <ExternalLink className="w-4 h-4" />
+                            Ouvrir
                           </a>
                         )}
                       </div>

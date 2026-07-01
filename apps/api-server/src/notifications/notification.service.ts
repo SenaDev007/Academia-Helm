@@ -176,7 +176,7 @@ export class NotificationService {
             title,
             body,
             priority: 'HIGH',
-            data: { url: '/app/students/admissions' },
+            data: { url: '/app/students?tab=admissions' },
             relatedEntityType: 'Admission',
             relatedEntityId: params.admissionId,
           }).catch((e) => {

@@ -142,8 +142,17 @@ export default function StudentsModulePage() {
     hasArrears: '',
   });
   const [classesList, setClassesList] = useState<{ id: string; name: string }[]>([]);
-  /** Onglet actif (Dashboard par défaut à l'ouverture du module) */
-  const [activeSubModuleId, setActiveSubModuleId] = useState<string>('dashboard');
+  /** Onglet actif (Dashboard par défaut à l'ouverture du module).
+   *  Si l'URL contient ?tab=admissions (ex: depuis une notification), on active
+   *  automatiquement l'onglet correspondant. */
+  const [activeSubModuleId, setActiveSubModuleId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get('tab');
+      if (tab) return tab;
+    }
+    return 'dashboard';
+  });
   const studentFormRef = useRef<HTMLFormElement>(null);
   const statsUnauthorizedRef = useRef(false);
   const isStatsLoadingRef = useRef(false);

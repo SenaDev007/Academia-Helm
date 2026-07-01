@@ -445,20 +445,23 @@ class StudentsService {
   /**
    * Génère le PDF de la liste d'élèves d'une classe.
    *
-   * Backend : GET /students/class-list/:classId/pdf?academicYearId=...
+   * BFF : GET /api/students/class-list/:classId/pdf?academicYearId=...
+   * (proxy vers backend NestJS)
    *
    * En-tête adapté au niveau (Maternelle/Primaire vs Secondaire).
    * Le nom de fichier est récupéré depuis Content-Disposition si présent.
    */
   async generateClassListPdf(classId: string, academicYearId: string): Promise<void> {
-    const token = typeof window !== 'undefined'
-      ? (document.cookie.split('; ').find(r => r.startsWith('academia_token='))?.split('=')[1] || '')
-      : '';
-    const res = await fetch(`${BASE_URL}/class-list/${encodeURIComponent(classId)}/pdf?academicYearId=${encodeURIComponent(academicYearId)}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    // ⚠️ Utiliser /api/students/class-list (route BFF) et non ${BASE_URL}/class-list
+    // car BASE_URL = "/students" (relatif) → l'URL devient /students/class-list/...
+    // qui est interceptée par Next.js comme une page (200 HTML) au lieu du backend.
+    const res = await fetch(`/api/students/class-list/${encodeURIComponent(classId)}/pdf?academicYearId=${encodeURIComponent(academicYearId)}`, {
       credentials: 'include',
     });
-    if (!res.ok) throw new Error('Génération PDF échouée');
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`Génération PDF échouée (${res.status}): ${errText}`);
+    }
     const blob = await res.blob();
 
     // Récupérer le nom de fichier depuis Content-Disposition (fallback: liste_classe.pdf)

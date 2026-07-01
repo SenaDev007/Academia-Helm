@@ -1381,15 +1381,28 @@ export default function AdmissionsContent() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <a
-                  href={previewDoc.url}
-                  download={previewDoc.fileName}
+                <button
+                  onClick={async () => {
+                    try {
+                      const res = await fetch(previewDoc.url, { credentials: 'include' });
+                      if (!res.ok) throw new Error('Téléchargement échoué');
+                      const blob = await res.blob();
+                      const objUrl = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = objUrl;
+                      a.download = previewDoc.fileName;
+                      a.click();
+                      URL.revokeObjectURL(objUrl);
+                    } catch {
+                      toast({ title: 'Erreur', description: 'Téléchargement échoué', variant: 'error' });
+                    }
+                  }}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 transition"
                   title="Télécharger"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
                   Télécharger
-                </a>
+                </button>
                 <button
                   onClick={() => { setPreviewDoc(null); setPreviewError(false); }}
                   className="p-2 hover:bg-slate-200 rounded-lg text-slate-500 transition"

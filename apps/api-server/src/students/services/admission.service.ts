@@ -594,6 +594,20 @@ export class AdmissionService {
         `Admission ${admission.admissionNumber} converted to student ${student.id}`,
       );
 
+      // 6. Fire-and-forget : envoyer email de confirmation d'inscription au parent
+      this.notificationService
+        .notifyAdmissionConverted({
+          admissionId: id,
+          tenantId,
+          studentId: student.id,
+        })
+        .catch((err) =>
+          this.logger.error(
+            `notifyAdmissionConverted failed: ${err.message}`,
+            err.stack,
+          ),
+        );
+
       // Retourner l'élève avec ses relations
       return this.prisma.student.findUnique({
         where: { id: student.id },

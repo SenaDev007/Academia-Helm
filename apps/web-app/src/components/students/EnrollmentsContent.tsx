@@ -6,7 +6,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
 import { Plus, Search, CheckCircle, XCircle, Clock, Users, Loader2, Filter, MoreHorizontal } from 'lucide-react';
 import { FormModal } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -138,14 +137,7 @@ export default function EnrollmentsContent() {
           </div>
 
           <div className="flex items-center space-x-2">
-            <Link
-              href="/app/students/classes"
-              className="inline-flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700 text-sm font-semibold transition-all"
-            >
-              <Users className="w-4 h-4" />
-              Classes
-            </Link>
-            <button 
+            <button
               onClick={() => setIsCreateModalOpen(true)}
               className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-semibold shadow-md shadow-blue-200 transition-all active:scale-95"
             >

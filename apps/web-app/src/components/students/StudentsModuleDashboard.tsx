@@ -22,6 +22,8 @@ import {
   DollarSign,
   Share2,
   Plus,
+  FileText,
+  Clock,
   Upload,
   Download,
   ChevronRight,
@@ -67,7 +69,14 @@ export default function StudentsModuleDashboard({
   const [statistics, setStatistics] = useState<{
     total?: number;
     active?: number;
+    preRegistered?: number;
+    admitted?: number;
+    pending?: number;
     archived?: number;
+    withdrawn?: number;
+    admissionsPending?: number;
+    admissionsAccepted?: number;
+    admissionsRejected?: number;
     byGender?: Array<{ gender: string | null; _count: number }>;
     byStatus?: Array<{ status: string; _count: number }>;
   } | null>(null);
@@ -114,44 +123,79 @@ export default function StudentsModuleDashboard({
         </div>
       </div>
 
-      {/* KPI */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 hover:shadow-md transition-shadow">
+      {/* KPI — 5 cartes séparées par statut */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+        {/* Élèves actifs (officiellement inscrits) */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-500">Total élèves</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
-                {loading ? '—' : (statistics?.total ?? 0).toLocaleString('fr-FR')}
-              </p>
-            </div>
-            <div className="p-3 bg-blue-50 rounded-lg">
-              <Users className="w-6 h-6 text-blue-600" />
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-500">Actifs</p>
-              <p className="text-2xl font-bold text-emerald-600 mt-1">
+              <p className="text-xs sm:text-sm font-medium text-gray-500">Élèves inscrits</p>
+              <p className="text-xl sm:text-2xl font-bold text-emerald-600 mt-1">
                 {loading ? '—' : (statistics?.active ?? 0).toLocaleString('fr-FR')}
               </p>
             </div>
-            <div className="p-3 bg-emerald-50 rounded-lg">
-              <UserCheck className="w-6 h-6 text-emerald-600" />
+            <div className="p-2 sm:p-3 bg-emerald-50 rounded-lg">
+              <UserCheck className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-600" />
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 hover:shadow-md transition-shadow">
+
+        {/* Pré-inscrits */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-500">Archivés</p>
-              <p className="text-2xl font-bold text-gray-600 mt-1">
+              <p className="text-xs sm:text-sm font-medium text-gray-500">Pré-inscrits</p>
+              <p className="text-xl sm:text-2xl font-bold text-blue-600 mt-1">
+                {loading ? '—' : (statistics?.preRegistered ?? 0).toLocaleString('fr-FR')}
+              </p>
+            </div>
+            <div className="p-2 sm:p-3 bg-blue-50 rounded-lg">
+              <Users className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" />
+            </div>
+          </div>
+        </div>
+
+        {/* Admissions acceptées (non converties) */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs sm:text-sm font-medium text-gray-500">Adm. acceptées</p>
+              <p className="text-xl sm:text-2xl font-bold text-amber-600 mt-1">
+                {loading ? '—' : (statistics?.admissionsAccepted ?? 0).toLocaleString('fr-FR')}
+              </p>
+            </div>
+            <div className="p-2 sm:p-3 bg-amber-50 rounded-lg">
+              <FileText className="w-5 h-5 sm:w-6 sm:h-6 text-amber-600" />
+            </div>
+          </div>
+        </div>
+
+        {/* Admissions en attente */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs sm:text-sm font-medium text-gray-500">Adm. en attente</p>
+              <p className="text-xl sm:text-2xl font-bold text-orange-600 mt-1">
+                {loading ? '—' : (statistics?.admissionsPending ?? 0).toLocaleString('fr-FR')}
+              </p>
+            </div>
+            <div className="p-2 sm:p-3 bg-orange-50 rounded-lg">
+              <Clock className="w-5 h-5 sm:w-6 sm:h-6 text-orange-600" />
+            </div>
+          </div>
+        </div>
+
+        {/* Archivés */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs sm:text-sm font-medium text-gray-500">Archivés</p>
+              <p className="text-xl sm:text-2xl font-bold text-gray-600 mt-1">
                 {loading ? '—' : (statistics?.archived ?? 0).toLocaleString('fr-FR')}
               </p>
             </div>
-            <div className="p-3 bg-gray-100 rounded-lg">
-              <Archive className="w-6 h-6 text-gray-600" />
+            <div className="p-2 sm:p-3 bg-gray-100 rounded-lg">
+              <Archive className="w-5 h-5 sm:w-6 sm:h-6 text-gray-600" />
             </div>
           </div>
         </div>

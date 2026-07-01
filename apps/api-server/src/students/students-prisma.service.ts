@@ -378,6 +378,8 @@ export class StudentsPrismaService {
 
   /**
    * Récupère les statistiques des élèves
+   * Les comptes sont séparés par statut pour éviter de mélanger
+   * les élèves actifs avec les pré-inscrits/acceptés/archivés.
    */
   async getStudentStatistics(tenantId: string, academicYearId: string, schoolLevelId?: string) {
     const where: any = {
@@ -389,10 +391,14 @@ export class StudentsPrismaService {
       where.schoolLevelId = schoolLevelId;
     }
 
-    const [total, active, archived, byGender, byStatus] = await Promise.all([
-      this.prisma.student.count({ where }),
-      this.prisma.student.count({ where: { ...where, status: 'ACTIVE' } }),
+    // Comptes séparés par statut
+    const [active, preRegistered, admitted, pending, archived, withdrawn, byGender, byStatus] = await Promise.all([
+      this.prisma.student.count({ where: { ...where, status: 'ACTIVE', isActive: true } }),
+      this.prisma.student.count({ where: { ...where, status: 'PRE_REGISTERED' } }),
+      this.prisma.student.count({ where: { ...where, status: 'ADMITTED' } }),
+      this.prisma.student.count({ where: { ...where, status: 'PENDING' } }),
       this.prisma.student.count({ where: { ...where, status: 'ARCHIVED' } }),
+      this.prisma.student.count({ where: { ...where, status: 'WITHDRAWN' } }),
       this.prisma.student.groupBy({
         by: ['gender'],
         where,
@@ -405,10 +411,33 @@ export class StudentsPrismaService {
       }),
     ]);
 
+    // Total = élèves actifs uniquement (officiellement inscrits)
+    const total = active;
+
+    // Compter aussi les admissions (depuis la table admissions)
+    const [admissionsPending, admissionsAccepted, admissionsRejected] = await Promise.all([
+      this.prisma.admission.count({
+        where: { tenantId, academicYearId, status: { in: ['PENDING', 'SUBMITTED', 'UNDER_REVIEW'] } },
+      }),
+      this.prisma.admission.count({
+        where: { tenantId, academicYearId, status: 'ACCEPTED' },
+      }),
+      this.prisma.admission.count({
+        where: { tenantId, academicYearId, status: 'REJECTED' },
+      }),
+    ]);
+
     return {
-      total,
-      active,
-      archived,
+      total,           // élèves officiellement inscrits (ACTIVE uniquement)
+      active,          // = total (alias pour clarté)
+      preRegistered,   // élèves pré-inscrits (pas encore admis)
+      admitted,        // élèves admis mais pas encore actifs
+      pending,         // élèves en attente
+      archived,        // élèves archivés
+      withdrawn,       // élèves retirés
+      admissionsPending,   // demandes d'admission en attente
+      admissionsAccepted,  // demandes d'admission acceptées (non converties)
+      admissionsRejected,  // demandes d'admission refusées
       byGender,
       byStatus,
     };

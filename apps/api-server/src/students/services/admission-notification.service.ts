@@ -230,6 +230,112 @@ export class AdmissionNotificationService {
     }
   }
 
+  // ─── 2. ADMISSION CONVERTIE — inscription confirmée ──────────────────────
+  async notifyAdmissionConverted(params: {
+    admissionId: string;
+    tenantId: string;
+    studentId: string;
+  }): Promise<void> {
+    try {
+      const [branding, admission, student] = await Promise.all([
+        this.getTenantBranding(params.tenantId),
+        this.prisma.admission.findUnique({
+          where: { id: params.admissionId },
+          select: {
+            firstName: true,
+            lastName: true,
+            mainGuardianName: true,
+            mainGuardianEmail: true,
+            admissionNumber: true,
+            academicYearId: true,
+            schoolLevelId: true,
+          },
+        }),
+        this.prisma.student.findUnique({
+          where: { id: params.studentId },
+          select: {
+            tenantMatricule: true,
+            globalMatricule: true,
+            studentEnrollments: {
+              take: 1,
+              orderBy: { enrollmentDate: 'desc' },
+              include: { class: { select: { name: true } } },
+            },
+          },
+        }),
+      ]);
+
+      if (!admission || !student) return;
+      if (!admission.mainGuardianEmail) return;
+
+      const [academicYearLabel, levelLabel] = await Promise.all([
+        this.getAcademicYearLabel(admission.academicYearId),
+        this.getEducationLevelLabel(admission.schoolLevelId),
+      ]);
+
+      const childName = `${admission.firstName} ${admission.lastName}`;
+      const className = student.studentEnrollments?.[0]?.class?.name || levelLabel || 'Non spécifiée';
+      const matricule = student.tenantMatricule || student.globalMatricule || 'Non attribué';
+
+      // Email simple HTML (pas de template externe pour rester autonome)
+      const subject = `🎉 Inscription confirmée — ${childName} chez ${branding.schoolName}`;
+      const html = `
+        <div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;">
+          <div style="background:linear-gradient(160deg,#0D1F6E 0%,#0D3B85 100%);padding:28px 24px;text-align:center;border-bottom:3px solid #F5A623;">
+            ${branding.schoolLogo ? `<img src="${branding.schoolLogo}" alt="${branding.schoolName}" style="max-height:64px;max-width:180px;object-fit:contain;display:block;margin:0 auto 14px;" />` : ''}
+            <div style="font-size:22px;font-weight:bold;color:#ffffff;">${branding.schoolName}</div>
+            <div style="font-size:13px;color:#F5A623;margin-top:4px;">Admission</div>
+          </div>
+          <div style="padding:32px 28px;background:#f8fafc;">
+            <div style="background:#ecfdf5;border:1px solid #6ee7b7;border-radius:999px;padding:8px 14px;display:inline-block;color:#047857;font-size:13px;font-weight:bold;margin-bottom:20px;">🎉 Inscription confirmée</div>
+            <p style="font-size:15px;color:#0f172a;line-height:1.6;">Bonjour <strong>${admission.mainGuardianName || 'Responsable'}</strong>,</p>
+            <p style="font-size:14px;color:#334155;line-height:1.6;">
+              Nous avons le plaisir de vous confirmer que l'inscription de
+              <strong>${childName}</strong> est désormais officiellement validée
+              pour l'année scolaire <strong>${academicYearLabel}</strong>.
+            </p>
+            <table style="width:100%;background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;margin:20px 0;padding:16px;">
+              <tr><td style="padding:4px 0;font-size:13px;color:#64748b;">Élève :</td><td style="font-size:13px;font-weight:600;color:#0f172a;">${childName}</td></tr>
+              <tr><td style="padding:4px 0;font-size:13px;color:#64748b;">Classe :</td><td style="font-size:13px;font-weight:600;color:#0f172a;">${className}</td></tr>
+              <tr><td style="padding:4px 0;font-size:13px;color:#64748b;">Matricule :</td><td style="font-size:13px;font-weight:600;color:#1e40af;font-family:monospace;">${matricule}</td></tr>
+              <tr><td style="padding:4px 0;font-size:13px;color:#64748b;">Année scolaire :</td><td style="font-size:13px;font-weight:600;color:#0f172a;">${academicYearLabel}</td></tr>
+              <tr><td style="padding:4px 0;font-size:13px;color:#64748b;">Établissement :</td><td style="font-size:13px;font-weight:600;color:#0f172a;">${branding.schoolName}</td></tr>
+            </table>
+            <p style="font-size:13px;color:#475569;line-height:1.6;">
+              Le matricule de l'élève est <strong style="color:#1e40af;">${matricule}</strong>.
+              Conservez-le précieusement, il vous sera demandé pour toute communication
+              avec l'établissement. Votre enfant fait désormais partie officiellement
+              de notre communauté éducative.
+            </p>
+            <p style="font-size:13px;color:#475569;line-height:1.6;margin-top:16px;">
+              Cordialement,<br/><strong>Service des Admissions</strong><br/><em>${branding.schoolName}</em>
+            </p>
+          </div>
+          <div style="background:#0D1F6E;padding:24px 28px;text-align:center;">
+            <div style="font-size:15px;font-weight:bold;color:#ffffff;">Academia Helm</div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:4px;">Plateforme de pilotage éducatif</div>
+          </div>
+        </div>
+      `;
+
+      await this.sendEmail(admission.mainGuardianEmail, subject, html, {
+        fromName: branding.schoolName,
+        category: 'ADMINISTRATIF',
+        subCategory: 'inscription_confirmee',
+        tenantId: params.tenantId,
+        recipientName: admission.mainGuardianName || undefined,
+        recipientType: 'PARENT',
+        relatedEntityId: params.studentId,
+        relatedEntityType: 'Student',
+      });
+    } catch (err: any) {
+      this.logger.error(
+        `notifyAdmissionConverted failed: ${err.message}`,
+        err.stack,
+      );
+    }
+  }
+
   /**
    * Envoi d'email avec tracing (voie categorisée) + fallback simple.
    * Pattern aligné sur RecruitmentNotificationService.sendEmail.

@@ -103,75 +103,10 @@ export default function AdmissionsContent() {
   const [isLoadingDocs, setIsLoadingDocs] = useState(false);
   const [showAddDocForm, setShowAddDocForm] = useState(false);
   const [showAddInterviewForm, setShowAddInterviewForm] = useState(false);
-  // ─── Visualisation de document (modal intégré — pattern RH) ──
-  const [previewDoc, setPreviewDoc] = useState<{ url: string; fileName: string; mimeType: string } | null>(null);
-  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
-  const [pdfLoading, setPdfLoading] = useState(false);
-  const [pdfError, setPdfError] = useState(false);
-
-  // Charger le PDF quand un document est sélectionné (pattern RH exact)
-  useEffect(() => {
-    if (!previewDoc) {
-      setPdfPreviewUrl(null);
-      setPdfError(false);
-      return;
-    }
-
-    let revoked = false;
-    let blobUrl: string | null = null;
-
-    async function loadPdf() {
-      setPdfLoading(true);
-      setPdfError(false);
-      setPdfPreviewUrl(null);
-
-      try {
-        // Récupérer le token JWT depuis les cookies ou localStorage
-        // (même source que apiFetch / apiClient)
-        const { getClientToken } = await import('@/lib/auth/session-client');
-        const token = getClientToken();
-        const response = await fetch(previewDoc!.url, {
-          method: 'GET',
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          credentials: 'include',
-          cache: 'no-store',
-        });
-
-        if (!response.ok) {
-          setPdfError(true);
-          return;
-        }
-
-        const blob = await response.blob();
-        if (blob.size === 0) {
-          setPdfError(true);
-          return;
-        }
-
-        blobUrl = URL.createObjectURL(blob);
-        if (!revoked) setPdfPreviewUrl(blobUrl);
-      } catch {
-        setPdfError(true);
-      } finally {
-        setPdfLoading(false);
-      }
-    }
-
-    loadPdf();
-
-    return () => {
-      revoked = true;
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
-    };
-  }, [previewDoc]);
-
-  const closePreview = () => {
-    if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
-    setPdfPreviewUrl(null);
-    setPdfError(false);
-    setPdfLoading(false);
-    setPreviewDoc(null);
-  };
+  // ─── Visualisation de document (modal intégré) ──
+  // Le filePath est un data URL (base64) déjà chargé avec les documents.
+  // Pas besoin de fetch le backend — utiliser directement comme src d'iframe.
+  const [previewDoc, setPreviewDoc] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
   const [newDocType, setNewDocType] = useState('BIRTH_CERTIFICATE');
   const [newDocFile, setNewDocFile] = useState<File | null>(null);
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
@@ -1137,12 +1072,13 @@ export default function AdmissionsContent() {
                             Affiché même si filePath est null (l'endpoint download gère le cas) */}
                         <button
                           onClick={() => setPreviewDoc({
-                            url: `/api/students/admissions/${selectedAdmission.id}/documents/${doc.id}/download`,
+                            filePath: doc.filePath,
                             fileName: doc.fileName || 'document',
                             mimeType: doc.mimeType || 'application/pdf',
                           })}
-                          className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition border border-blue-200"
-                          title="Visualiser le document"
+                          disabled={!doc.filePath}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition border border-blue-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                          title={doc.filePath ? "Visualiser le document" : "Aucun fichier joint"}
                         >
                           <Eye className="w-3.5 h-3.5" />
                           Visualiser
@@ -1358,12 +1294,13 @@ export default function AdmissionsContent() {
                         </span>
                         <button
                           onClick={() => setPreviewDoc({
-                            url: `/api/students/admissions/${quickViewAdmission.id}/documents/${doc.id}/download`,
+                            filePath: doc.filePath,
                             fileName: doc.fileName || 'document',
                             mimeType: doc.mimeType || 'application/pdf',
                           })}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition border border-blue-200 shrink-0"
-                          title="Visualiser le document"
+                          disabled={!doc.filePath}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition border border-blue-200 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                          title={doc.filePath ? "Visualiser le document" : "Aucun fichier joint"}
                         >
                           <Eye className="w-4 h-4" />
                           Visualiser
@@ -1424,11 +1361,11 @@ export default function AdmissionsContent() {
         <div>Academia Helm Student Lifecycle Engine v2.0</div>
       </div>
 
-      {/* ─── MODAL DE VISUALISATION (pattern RH exact : fetch blob → iframe) ─── */}
+      {/* ─── MODAL DE VISUALISATION (data URL directe — pas de fetch nécessaire) ─── */}
       {previewDoc && (
         <div
           className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={closePreview}
+          onClick={() => setPreviewDoc(null)}
         >
           <div
             className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col overflow-hidden"
@@ -1446,37 +1383,18 @@ export default function AdmissionsContent() {
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <button
-                  onClick={async () => {
-                    try {
-                      const { getClientToken } = await import('@/lib/auth/session-client');
-                      const token = getClientToken();
-                      const res = await fetch(previewDoc.url, {
-                        method: 'GET',
-                        headers: token ? { Authorization: `Bearer ${token}` } : {},
-                        credentials: 'include',
-                        cache: 'no-store',
-                      });
-                      if (!res.ok) throw new Error('Téléchargement échoué');
-                      const blob = await res.blob();
-                      const objUrl = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = objUrl;
-                      a.download = previewDoc.fileName;
-                      a.click();
-                      URL.revokeObjectURL(objUrl);
-                    } catch {
-                      toast({ title: 'Erreur', description: 'Téléchargement échoué', variant: 'error' });
-                    }
-                  }}
+                {/* Télécharger : créer un <a> avec le data URL directement */}
+                <a
+                  href={previewDoc.filePath}
+                  download={previewDoc.fileName}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 transition"
                   title="Télécharger"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
                   Télécharger
-                </button>
+                </a>
                 <button
-                  onClick={closePreview}
+                  onClick={() => setPreviewDoc(null)}
                   className="p-2 hover:bg-slate-200 rounded-lg text-slate-500 transition"
                   title="Fermer"
                 >
@@ -1484,30 +1402,23 @@ export default function AdmissionsContent() {
                 </button>
               </div>
             </div>
-            {/* Body — pattern RH : iframe avec blob URL */}
+            {/* Body — iframe avec data URL directement (pas de fetch, pas d'auth) */}
             <div className="flex-1 overflow-hidden bg-slate-100">
-              {pdfLoading ? (
-                <div className="flex flex-col items-center justify-center h-full">
-                  <Loader2 className="w-10 h-10 text-blue-500 animate-spin mb-3" />
-                  <p className="text-sm text-slate-500">Chargement du document...</p>
+              {previewDoc.mimeType.startsWith('image/') ? (
+                <div className="flex items-center justify-center h-full p-4">
+                  <img
+                    src={previewDoc.filePath}
+                    alt={previewDoc.fileName}
+                    className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
+                  />
                 </div>
-              ) : pdfError ? (
-                <div className="flex flex-col items-center justify-center h-full p-8 text-center">
-                  <div className="p-4 bg-rose-50 rounded-full mb-4">
-                    <AlertCircle className="w-12 h-12 text-rose-400" />
-                  </div>
-                  <h3 className="text-lg font-bold text-slate-700 mb-2">Échec de chargement du document</h3>
-                  <p className="text-sm text-slate-500 max-w-md">
-                    Ce document n'a pas pu être chargé. Il a peut-être été enregistré sans fichier joint.
-                  </p>
-                </div>
-              ) : pdfPreviewUrl ? (
+              ) : (
                 <iframe
-                  src={pdfPreviewUrl}
+                  src={previewDoc.filePath}
                   className="w-full h-full border-0"
                   title={previewDoc.fileName}
                 />
-              ) : null}
+              )}
             </div>
           </div>
         </div>

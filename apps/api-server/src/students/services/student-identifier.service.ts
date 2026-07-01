@@ -146,13 +146,21 @@ export class StudentIdentifierService {
       },
     });
 
-    // Mettre à jour Student.globalStudentId
+    // Mettre à jour Student.globalStudentId + matricule + studentCode
+    // ⚠️ Important : matricule et studentCode sont lus par le frontend pour
+    // l'affichage. Sans cette mise à jour, le frontend affiche "matricule non
+    // généré" même si globalStudentId est défini. On garde les 3 champs
+    // synchronisés pour éviter toute incohérence.
     await this.prisma.student.update({
       where: { id: studentId },
-      data: { globalStudentId: globalMatricule },
+      data: {
+        globalStudentId: globalMatricule,
+        matricule: globalMatricule,
+        studentCode: globalMatricule,
+      },
     });
 
-    this.logger.log(`Generated global matricule ${globalMatricule} for student ${studentId}`);
+    this.logger.log(`Generated global matricule ${globalMatricule} for student ${studentId} (matricule + studentCode + globalStudentId updated)`);
 
     return identifier;
   }

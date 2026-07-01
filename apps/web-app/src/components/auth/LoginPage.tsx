@@ -1146,7 +1146,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       // dynamique alimenté par /api/public/school-info). Le backend l'utilise
       // directement comme requestedClassId — pas de matching à faire.
       targetClass: preEnrollment.targetClass || undefined,
-      wantsBilingual: preEnrollment.wantsBilingual || false,
+      wantsBilingual: false, // Supprimé du formulaire — l'école est déjà bilingue ou non
       previousSchool: preEnrollment.previousSchool || undefined,
       previousLevel: preEnrollment.previousLevel || undefined,
       changeReason: preEnrollment.changeReason || undefined,

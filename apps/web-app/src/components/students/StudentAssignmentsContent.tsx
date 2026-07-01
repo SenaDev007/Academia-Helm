@@ -73,7 +73,7 @@ export default function StudentAssignmentsContent() {
     try {
       const [studentsData, classesRes, enrollmentsData] = await Promise.all([
         studentsService.getAll({ academicYearId: academicYear.id }),
-        fetch(`/api/classes?limit=200`, { cache: 'no-store' }).then(r => r.json()).catch(() => []),
+        fetch(`/api/all-classes`, { cache: 'no-store' }).then(r => r.ok ? r.json() : []).catch(() => []),
         studentsService.getEnrollments({ academicYearId: academicYear.id }),
       ]);
 

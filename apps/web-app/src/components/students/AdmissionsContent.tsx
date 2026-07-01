@@ -738,12 +738,6 @@ export default function AdmissionsContent() {
                                     <span>{admission.gender === 'M' ? 'Garçon' : 'Fille'}</span>
                                   </>
                                 )}
-                                {admission.wantsBilingual && (
-                                  <>
-                                    <span>•</span>
-                                    <span className="text-blue-500">Bilingue</span>
-                                  </>
-                                )}
                               </div>
                             </div>
                           </div>
@@ -982,7 +976,6 @@ export default function AdmissionsContent() {
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div><span className="text-slate-400">Niveau souhaité :</span> <strong>{getLevelLabel(selectedAdmission.schoolLevelId)}</strong></div>
                 <div><span className="text-slate-400">Classe souhaitée :</span> <strong>{getClassLabel(selectedAdmission.requestedClassId)}</strong></div>
-                <div><span className="text-slate-400">Cursus bilingue :</span> {selectedAdmission.wantsBilingual ? '✓ Oui' : '✗ Non'}</div>
                 <div className="col-span-2"><span className="text-slate-400">Établissement précédent :</span> {selectedAdmission.previousSchool || '—'}</div>
               </div>
             </div>

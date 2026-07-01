@@ -151,7 +151,11 @@ export default function EnrollmentsContent() {
     setOrionLoading(true);
     try {
       const [classesRes, enrollmentsData, yearsRes, orionKpisData, orionAlertsData] = await Promise.all([
-        fetch(`/api/classes?limit=200`, { cache: 'no-store' }).then(r => r.json()).catch(() => []),
+        // ⚠️ Utiliser /api/all-classes (route BFF dédiée) au lieu de /api/classes
+        // car /api/classes exige schoolLevelId et échoue en 400 si l'admin est en
+        // "Tous les niveaux" (schoolLevelId=ALL). /api/all-classes force le header
+        // x-school-level-id=ALL et retourne toutes les classes du tenant.
+        fetch(`/api/all-classes`, { cache: 'no-store' }).then(r => r.ok ? r.json() : []).catch(() => []),
         // ⚠️ getEnrollments doit être résilient : si l'API échoue (403, 404, réseau),
         // on retourne un tableau vide plutôt que de faire crasher tout l'onglet.
         // Le toast "Erreur de connexion" qui apparaissait venait d'ici.

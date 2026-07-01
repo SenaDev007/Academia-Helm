@@ -76,19 +76,14 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
   const loadClasses = async (levelId: string) => {
     setIsLoadingClasses(true);
     try {
-      // ⚠️ On utilise /api/classes avec schoolLevelId=ALL pour récupérer TOUTES
-      // les classes du tenant (table Class, pas AcademicClass qui n'existe pas).
-      // Puis on filtre côté client par schoolLevelId.
-      //
-      // Avant on utilisait /api/pedagogy/academic-structure/classes mais la table
-      // academic_classes n'existe pas en production → l'endpoint retournait []
-      // → le select de classe était vide en édition.
-      //
-      // schoolLevelId=ALL est crucial : sinon l'API filtre par le schoolLevelId
-      // du header x-school-level-id (contexte admin), et les classes d'autres
-      // niveaux ne sont pas retournées.
+      // ⚠️ On utilise /api/all-classes (route BFF dédiée) pour récupérer TOUTES
+      // les classes du tenant sans filtrage par schoolLevelId du contexte admin.
+      // La route /api/classes?schoolLevelId=ALL ne fonctionne pas car le
+      // PaginationDto du backend a forbidNonWhitelisted: true → rejette le param
+      // schoolLevelId (400 Bad Request silencieux).
+      // /api/all-classes contourne en forçant le header x-school-level-id=ALL.
       const res = await fetch(
-        '/api/classes?limit=100&schoolLevelId=ALL',
+        '/api/all-classes',
         { credentials: 'include' }
       );
       if (res.ok) {

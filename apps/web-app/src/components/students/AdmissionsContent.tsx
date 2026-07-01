@@ -71,16 +71,15 @@ export default function AdmissionsContent() {
       .then(data => setSchoolLevels(Array.isArray(data) ? data : []))
       .catch(() => setSchoolLevels([]));
 
-    // Charger TOUTES les classes du tenant (limit=200, schoolLevelId=ALL)
-    // ⚠️ schoolLevelId=ALL est crucial : sinon l'API filtre par le schoolLevelId
-    // du contexte de l'admin (header x-school-level-id), et les classes d'autres
-    // niveaux (ex: Maternelle si l'admin est en Primaire) ne sont pas retournées.
-    // Cela causait le bug "Classe 2f2b0dd1 (hors liste)" pour les admissions
-    // dont la classe souhaitée était dans un niveau différent de celui de l'admin.
-    fetch('/api/classes?limit=100&schoolLevelId=ALL', { credentials: 'include' })
+    // Charger TOUTES les classes du tenant via la route BFF dédiée /api/all-classes
+    // ⚠️ On n'utilise PAS /api/classes?schoolLevelId=ALL car le PaginationDto du backend
+    // a forbidNonWhitelisted: true → rejette le param schoolLevelId (400 Bad Request).
+    // La route /api/all-classes contourne ce problème en forçant le header
+    // x-school-level-id=ALL côté BFF.
+    fetch('/api/all-classes', { credentials: 'include' })
       .then(res => {
         if (!res.ok) {
-          console.warn('[AdmissionsContent] /api/classes returned', res.status, res.statusText);
+          console.warn('[AdmissionsContent] /api/all-classes returned', res.status, res.statusText);
           return [];
         }
         return res.json();

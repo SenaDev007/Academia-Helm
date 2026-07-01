@@ -453,20 +453,27 @@ export class AdmissionService {
       }
 
       // 3. Admission formelle (génère matricule + StudentAccount + token QR + StudentAcademicRecord)
-      //    ⚠️ Si pas de classe, on ne peut pas appeler admit() qui requires classId.
-      //    Dans ce cas, on garde l'élève en PRE_REGISTERED et l'utilisateur devra
-      //    l'affecter manuellement (ce qui déclenchera admit() via l'onglet Affectations).
-      if (classIdForAdmit) {
-        try {
-          await this.lifecycleService.admit(tenantId, {
-            studentId: student.id,
-            academicYearId: admission.academicYearId,
-            schoolLevelId: studentSchoolLevelId,  // ← school_levels UUID
-            classId: classIdForAdmit,
-          }, userId);
+      //
+      //    ⚠️ Fix 2026-07-01 : admit() accepte désormais classId optionnel.
+      //    On appelle TOUJOURS admit() — même sans classe — pour générer le
+      //    matricule local (Student.matricule) et le matricule global
+      //    (StudentIdentifier). Sans cela, l'élève reste "actif sans matricule"
+      //    et ORION génère une alerte critique.
+      //
+      //    Si classIdForAdmit est null, l'élève sera admis sans classe et
+      //    l'admin devra l'affecter via l'onglet Affectations (changeClass).
+      try {
+        await this.lifecycleService.admit(tenantId, {
+          studentId: student.id,
+          academicYearId: admission.academicYearId,
+          schoolLevelId: studentSchoolLevelId,  // ← school_levels UUID
+          classId: classIdForAdmit,  // ← peut être null (admit() le gère)
+        }, userId);
 
-          this.logger.log(
-          `Admission ${admission.admissionNumber}: student ${student.id} admitted with matricule + account + token`,
+        this.logger.log(
+          `Admission ${admission.admissionNumber}: student ${student.id} admitted` +
+          `${classIdForAdmit ? ' with class ' + classIdForAdmit : ' WITHOUT class (affectation manuelle requise)'}` +
+          ` — matricule generated`,
         );
 
         // 3b. Générer le matricule GLOBAL (AH-STU-YY-XXXXXX)
@@ -498,7 +505,6 @@ export class AdmissionService {
           admitErr.stack,
         );
       }
-    }
 
     // 4. Créer le Guardian + StudentGuardian à partir du responsable légal
     if (admission.mainGuardianName || admission.mainGuardianPhone || admission.mainGuardianEmail) {

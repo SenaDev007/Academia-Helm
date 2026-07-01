@@ -1447,3 +1447,48 @@ Stage Summary:
 - Aucune nouvelle migration DB nécessaire (schéma ORION + alertes déjà en place)
 - Aucun redéploiement DB nécessaire — juste redéploy backend (Fly.io) + frontend (Vercel)
 - Mini-panel ORION est non-intrusif : masqué quand tout va bien, repliable, ne bloque pas l'onglet si backend ORION KO
+
+---
+Task ID: fix-inscriptions-orphelins-matricule
+Agent: main
+Task: Fix onglet Inscriptions : élèves orphelins invisibles + matricule non généré lors conversion + enrichissement alerte ORION
+
+Work Log:
+- Diagnostic : 3 problèmes liés identifiés
+  1. "Aucune classe configurée" affiché même quand des enrollments existent → le treeData ne se construit qu'à partir des classes chargées, les enrollments sans classe (ou classe non visible) sont orphelins et invisibles
+  2. ORION alerte "1 élève actif sans matricule" mais n'affiche pas l'élève concerné → backend renvoie seulement count, pas de liste
+  3. Matricule non généré lors conversion admission → élève → admit() était SKIPPÉ si aucune classe disponible (if (classIdForAdmit) { admit() }). Or admit() est la méthode qui génère le matricule local (Student.matricule) ET le global (StudentIdentifier). Le portail public d'admission n'envoie jamais requestedClassId (pas d'UUID de classe en contexte public), donc validClassId est toujours null, et si aucune classe fallback n'existe pour le niveau → admit() skipped → pas de matricule.
+
+- Fix #1 (Frontend EnrollmentsContent.tsx) : ajout section "Élèves non affectés"
+  - Nouveau memo unassignedEnrollments : filtre enrollments où classId est null OU classId non dans classes chargées
+  - Section amber repliable affichée en HAUTEUR de l'arborescence (avant les niveaux) pour visibilité maximale
+  - Auto-expand au premier chargement si orphelins détectés (useRef hasAutoExpandedRef pour éviter re-expand)
+  - Chaque élève orphelin affiche : nom, matricule (ou "— matricule non généré —"), type, statut, date, actions (Valider/Réinscrire/Générer matricule)
+  - Bouton "Générer le matricule" ajouté si student.matricule ET student.studentCode sont tous deux null → appelle studentsService.generateMatricule (POST /identifiers/:studentId/generate)
+  - Message "Aucune classe configurée" affiché seulement si PAS d'orphelins ET PAS de classes
+  - Hint ajouté : "Créez des classes dans le module Paramétrage, ou vérifiez que votre niveau scolaire correspond à celui des élèves"
+
+- Fix #2 (Backend admission.service.ts + students-lifecycle.service.ts) : matricule généré même sans classe
+  - admit() signature modifiée : classId devient optionnel (string → string | null | undefined)
+  - admit() internal : si classId absent, on skip l'update classId mais on génère quand même le matricule + le dossier académique (StudentAcademicRecord peut avoir classId null)
+  - logHistory() signature modifiée : classId accepte string | null | undefined
+  - convertToStudent() : suppression du `if (classIdForAdmit) { admit() }` → admit() est TOUJOURS appelé. Si classIdForAdmit est null, l'élève est admis sans classe et l'admin devra l'affecter via onglet Affectations.
+  - Commentaires JSDoc enrichis pour expliquer le nouveau comportement
+
+- Fix #3 (Backend students-orion.service.ts + Frontend EnrollmentsContent.tsx) : enrichissement alerte ORION
+  - Type alerte étendu : ajout champ optionnel sampleStudents: Array<{id, name, matricule}>
+  - Alerte MISSING_MATRICULE enrichie : échantillon limité à 5 élèves (orderBy createdAt desc, take 5) avec id/firstName/lastName/studentCode/matricule
+  - Frontend mini-panel ORION : si alert.sampleStudents est présent, affiche la liste (avatar initiale + nom + matricule ou "— pas de matricule —"). Si count > sampleStudents.length, affiche "+ N autre(s) élève(s)…"
+
+- Imports frontend : ajout useRef (pour hasAutoExpandedRef)
+- Validation syntaxique : @babel/parser confirm OK sur 6 fichiers modifiés
+
+Stage Summary:
+- 4 fichiers modifiés :
+  1. apps/web-app/src/components/students/EnrollmentsContent.tsx — section orphelins + auto-expand + bouton générer matricule + affichage sampleStudents ORION
+  2. apps/api-server/src/students/services/admission.service.ts — admit() toujours appelé (même sans classe)
+  3. apps/api-server/src/students/services/students-lifecycle.service.ts — admit() classId optionnel + logHistory() classId nullable
+  4. apps/api-server/src/students/services/students-orion.service.ts — alerte MISSING_MATRICULE enrichie avec sampleStudents
+- Aucune migration DB nécessaire (schéma Student/StudentEnrollment/StudentAcademicRecord déjà accepte classId null)
+- Rétro-compat : les anciens appels à admit() avec classId string fonctionnent toujours (le type accepte string | null | undefined)
+- Pour l'élève existant déjà converti sans matricule : l'admin peut cliquer sur l'icône FileText dans la section "Élèves non affectés" pour générer le matricule manuellement

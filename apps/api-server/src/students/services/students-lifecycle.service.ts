@@ -89,7 +89,7 @@ export class StudentsLifecycleService {
     tenantId: string,
     studentId: string,
     academicYearId: string,
-    classId: string,
+    classId: string | null | undefined,
     action: string,
     comment?: string,
     performedBy?: string,
@@ -104,7 +104,7 @@ export class StudentsLifecycleService {
           beforeData: null,
           afterData: {
             academicYearId,
-            classId,
+            classId: classId ?? null,
             comment,
           },
         },
@@ -218,12 +218,17 @@ export class StudentsLifecycleService {
     studentId: string;
     academicYearId: string;
     schoolLevelId: string;
-    classId: string;
+    classId?: string | null;  // ← optionnel : si null, on génère quand même le matricule
     validateDocuments?: boolean;
   }, userId?: string) {
     // Note : pas de assertCanEnroll ici car l'élève a déjà été pré-inscrit
     // (donc déjà compté dans le nombre d'élèves). L'admission ne fait que
     // valider son dossier et générer son matricule.
+    //
+    // ⚠️ Depuis le fix du 2026-07-01, classId est optionnel. Si l'élève n'a pas
+    // encore de classe (ex: admission convertie sans classe disponible), on
+    // génère quand même le matricule + le dossier académique. L'affectation
+    // à une classe se fera plus tard via l'onglet Affectations (changeClass).
 
     const student = await this.prisma.student.findFirst({
       where: { id: data.studentId, tenantId },
@@ -259,12 +264,15 @@ export class StudentsLifecycleService {
       await tx.studentEnrollment.update({
         where: { id: enrollment.id },
         data: {
-          classId: data.classId,
+          // Si classId est null/undefined, on garde l'enrollment sans classe
+          // (l'élève sera affecté plus tard via changeClass). Sinon on assigne.
+          ...(data.classId && { classId: data.classId }),
           status: ENROLLMENT_STATUS.ADMITTED,
         },
       });
 
       // CrÃ©ation du dossier acadÃ©mique initial (Sous-module C)
+      // classId est optionnel — le dossier peut exister sans classe assignée
       await tx.studentAcademicRecord.upsert({
         where: {
           studentId_academicYearId: {
@@ -273,7 +281,7 @@ export class StudentsLifecycleService {
           },
         },
         update: {
-          classId: data.classId,
+          ...(data.classId && { classId: data.classId }),
           schoolLevelId: data.schoolLevelId,
           enrollmentStatus: 'ADMITTED',
         },
@@ -281,7 +289,7 @@ export class StudentsLifecycleService {
           tenantId,
           studentId: data.studentId,
           academicYearId: data.academicYearId,
-          classId: data.classId,
+          ...(data.classId && { classId: data.classId }),
           schoolLevelId: data.schoolLevelId,
           enrollmentStatus: 'ADMITTED',
         },

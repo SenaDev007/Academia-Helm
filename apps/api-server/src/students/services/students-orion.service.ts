@@ -87,6 +87,7 @@ export class StudentsOrionService {
       description: string;
       recommendation?: string;
       count?: number;
+      sampleStudents?: Array<{ id: string; name: string; matricule: string | null }>;
     }> = [];
 
     const where: any = { tenantId };
@@ -109,7 +110,7 @@ export class StudentsOrionService {
 
     const studentsWithActiveCards = new Set(activeCards.map((c) => c.studentId));
 
-    // 1. Élèves actifs sans matricule (CRITICAL) — FIX OOM: use count
+    // 1. Élèves actifs sans matricule (CRITICAL) — FIX OOM: use count + limited sample
     const studentsWithoutMatriculeCount = await this.prisma.student.count({
       where: {
         ...where,
@@ -119,6 +120,24 @@ export class StudentsOrionService {
     });
 
     if (studentsWithoutMatriculeCount > 0) {
+      // Échantillon limité à 5 élèves pour l'affichage (évite OOM)
+      const sampleStudents = await this.prisma.student.findMany({
+        where: {
+          ...where,
+          status: 'ACTIVE',
+          identifier: null,
+        },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          studentCode: true,
+          matricule: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+      });
+
       alerts.push({
         severity: 'CRITICAL',
         category: 'MISSING_MATRICULE',
@@ -127,6 +146,11 @@ export class StudentsOrionService {
         recommendation:
           'Générer les matricules pour tous les élèves actifs. Le matricule est obligatoire pour les examens et la conformité institutionnelle.',
         count: studentsWithoutMatriculeCount,
+        sampleStudents: sampleStudents.map(s => ({
+          id: s.id,
+          name: `${s.lastName.toUpperCase()} ${s.firstName}`,
+          matricule: s.matricule || s.studentCode || null,
+        })),
       });
     }
 

@@ -21,7 +21,7 @@
  * ============================================================================
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Plus, Search, ChevronDown, ChevronRight, Users, Loader2,
   FileText, Download, UserCheck, GraduationCap, BookOpen, Baby,
@@ -145,6 +145,17 @@ export default function EnrollmentsContent() {
     if (academicYear) loadData();
   }, [academicYear, schoolLevel]);
 
+  // Auto-expand la section "Élèves non affectés" si des orphelins sont détectés
+  // au premier chargement — pour que l'admin les voie immédiatement sans clic.
+  const hasAutoExpandedRef = useRef(false);
+  useEffect(() => {
+    if (hasAutoExpandedRef.current) return;
+    if (!isLoading && unassignedEnrollments.length > 0) {
+      hasAutoExpandedRef.current = true;
+      setExpandedLevels(prev => prev.has('__unassigned__') ? prev : new Set(prev).add('__unassigned__'));
+    }
+  }, [isLoading, unassignedEnrollments.length]);
+
   const loadData = async () => {
     if (!academicYear) return;
     setIsLoading(true);
@@ -260,6 +271,28 @@ export default function EnrollmentsContent() {
       })),
     }));
   }, [treeData, searchQuery]);
+
+  // ─── Élèves orphelins (sans classe ou classe non chargée) ──────────
+  // Ces élèves ont un enrollment mais :
+  //   - classId est null (admission convertie sans classe, ou preRegister sans classId)
+  //   - OU classId pointe vers une classe qui n'est pas dans `classes` (classe supprimée,
+  //     ou classe d'un autre schoolLevelId non visible par l'utilisateur courant)
+  //
+  // Sans cette section, ces élèves sont INVISIBLES dans l'arbre (qui ne groupe que par
+  // classe chargée), alors qu'ils sont comptés dans les stats → confusion pour l'admin.
+  const unassignedEnrollments = useMemo(() => {
+    const loadedClassIds = new Set(classes.map(c => c.id));
+    const orphans = enrollments.filter(e => {
+      const classId = e.class?.id;
+      return !classId || !loadedClassIds.has(classId);
+    });
+    if (!searchQuery.trim()) return orphans;
+    const q = searchQuery.toLowerCase();
+    return orphans.filter(s =>
+      `${s.student.lastName} ${s.student.firstName}`.toLowerCase().includes(q) ||
+      (s.student.matricule || '').toLowerCase().includes(q)
+    );
+  }, [enrollments, classes, searchQuery]);
 
   // ─── Stats ──────────────────────────────────────────────────────────
   const stats = useMemo(() => {
@@ -501,6 +534,28 @@ export default function EnrollmentsContent() {
                                   <span className="font-semibold text-slate-400">→ </span>{alert.recommendation}
                                 </p>
                               )}
+                              {/* Liste des élèves concernés (échantillon max 5 du backend) */}
+                              {Array.isArray(alert.sampleStudents) && alert.sampleStudents.length > 0 && (
+                                <div className="mt-2 space-y-1">
+                                  <p className="text-[9px] text-slate-500 uppercase font-bold tracking-wide">Élèves concernés (échantillon) :</p>
+                                  {alert.sampleStudents.map((s: any) => (
+                                    <div key={s.id} className="flex items-center gap-2 text-[10px] pl-2 py-0.5 hover:bg-slate-800/40 rounded">
+                                      <div className="h-4 w-4 rounded-full bg-slate-700 flex items-center justify-center text-[8px] font-bold text-slate-300 shrink-0">
+                                        {(s.name || '?').charAt(0)}
+                                      </div>
+                                      <span className="text-slate-200 font-medium truncate flex-1">{s.name}</span>
+                                      <span className="text-slate-500 font-mono shrink-0">
+                                        {s.matricule || '— pas de matricule —'}
+                                      </span>
+                                    </div>
+                                  ))}
+                                  {typeof alert.count === 'number' && alert.count > alert.sampleStudents.length && (
+                                    <p className="text-[9px] text-slate-500 italic pl-2">
+                                      + {alert.count - alert.sampleStudents.length} autre(s) élève(s)…
+                                    </p>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </div>
                         );
@@ -563,20 +618,95 @@ export default function EnrollmentsContent() {
           </div>
         </div>
 
-        {/* Arborescence */}
+        {/* Arborescence + section orphelins */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center h-64 space-y-4">
               <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
               <p className="text-slate-500 font-medium">Chargement...</p>
             </div>
-          ) : filteredTree.length === 0 ? (
+          ) : (filteredTree.length === 0 && unassignedEnrollments.length === 0) ? (
             <div className="flex flex-col items-center justify-center h-64 space-y-4">
               <div className="p-4 bg-slate-50 rounded-full text-slate-300"><GraduationCap className="w-8 h-8" /></div>
               <p className="text-slate-500 font-medium">Aucune classe configurée</p>
+              <p className="text-xs text-slate-400 max-w-sm text-center">Créez des classes dans le module Paramétrage, ou vérifiez que votre niveau scolaire correspond à celui des élèves.</p>
             </div>
           ) : (
             <div className="divide-y divide-slate-100">
+              {/* ─── SECTION : Élèves non affectés (orphelins) ───
+                  Affichée en premier pour que l'admin voie immédiatement les élèves
+                  qui ont besoin d'une affectation manuelle. Toujours visible par défaut. */}
+              {unassignedEnrollments.length > 0 && (
+                <div>
+                  <button
+                    onClick={() => toggleLevel('__unassigned__')}
+                    className="w-full flex items-center gap-3 px-5 py-4 hover:bg-amber-50/50 transition-colors text-left group"
+                  >
+                    <div className="shrink-0">
+                      {expandedLevels.has('__unassigned__') ? <ChevronDown className="w-5 h-5 text-amber-500 group-hover:text-amber-600" /> : <ChevronRight className="w-5 h-5 text-amber-500 group-hover:text-amber-600" />}
+                    </div>
+                    <div className="p-2.5 rounded-lg shrink-0 bg-amber-50"><AlertCircle className="w-5 h-5 text-amber-600" /></div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-base font-bold text-amber-800">Élèves non affectés</p>
+                      <p className="text-xs text-amber-600">Élèves sans classe ou classe non visible — à affecter via l'onglet Affectations</p>
+                    </div>
+                    <span className="px-3 py-1 bg-amber-100 rounded-full text-sm font-bold text-amber-700 shrink-0">{unassignedEnrollments.length}</span>
+                  </button>
+                  <AnimatePresence>
+                    {expandedLevels.has('__unassigned__') && (
+                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
+                        <div className="pl-14 pr-5 py-1">
+                          {unassignedEnrollments.map((enr, idx) => {
+                            const statusInfo = STATUS_META[enr.status] || { label: enr.status, color: 'bg-slate-50 text-slate-600 border-slate-200' };
+                            const typeInfo = TYPE_META[enr.enrollmentType] || { label: enr.enrollmentType, color: 'bg-slate-50 text-slate-600' };
+                            return (
+                              <div key={enr.id} className="flex items-center gap-3 py-2 px-3 hover:bg-amber-50/40 rounded-lg transition-colors group">
+                                <span className="text-[10px] font-mono text-slate-400 w-6 text-right shrink-0">{idx + 1}</span>
+                                <div className="h-8 w-8 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center text-xs font-bold text-amber-600 group-hover:bg-amber-200 group-hover:text-amber-700 transition-colors shrink-0">
+                                  {enr.student.lastName[0]}{enr.student.firstName[0]}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium text-slate-800">{enr.student.lastName.toUpperCase()} {enr.student.firstName}</p>
+                                  <p className="text-[10px] font-mono text-slate-400">
+                                    {enr.student.matricule || enr.student.studentCode || '— matricule non généré —'}
+                                  </p>
+                                </div>
+                                <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0', typeInfo.color)}>{typeInfo.label}</span>
+                                <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-bold border shrink-0', statusInfo.color)}>{statusInfo.label}</span>
+                                <span className="text-[9px] text-slate-400 shrink-0 hidden sm:inline">{new Date(enr.enrollmentDate).toLocaleDateString('fr-FR')}</span>
+                                <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition">
+                                  {enr.status === 'PENDING' || enr.status === 'PRE_REGISTERED' || enr.status === 'ADMITTED' ? (
+                                    <button onClick={() => handleValidate(enr.student.id)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600" title="Valider"><CheckCircle className="w-3.5 h-3.5" /></button>
+                                  ) : null}
+                                  {/* Générer le matricule si manquant (élève converti sans classe avant le fix) */}
+                                  {(!enr.student.matricule && !enr.student.studentCode) && (
+                                    <button
+                                      onClick={async () => {
+                                        try {
+                                          await studentsService.generateMatricule(enr.student.id);
+                                          toast({ title: '✅ Matricule généré', variant: 'success' });
+                                          loadData();
+                                        } catch (e: any) {
+                                          toast({ title: 'Erreur génération matricule', description: e.message, variant: 'error' });
+                                        }
+                                      }}
+                                      className="p-1 hover:bg-blue-100 rounded text-blue-600"
+                                      title="Générer le matricule"
+                                    ><FileText className="w-3.5 h-3.5" /></button>
+                                  )}
+                                  <button onClick={() => handleReEnroll(enr)} className="p-1 hover:bg-indigo-100 rounded text-indigo-600" title="Réinscrire"><RotateCcw className="w-3.5 h-3.5" /></button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
+
+              {/* ─── ARBORESCENCE NIVEAU → CLASSE → ÉLÈVES ─── */}
               {filteredTree.map((node) => {
                 const isExpanded = expandedLevels.has(node.level.id);
                 const levelName = node.level.name;

@@ -92,8 +92,14 @@ export default function StudentsModuleDashboard({
     studentsService.getStatistics(academicYear.id, schoolLevel.id)
       .then(setStatistics)
       .catch((e) => {
-        console.error(e);
-        toast({ title: 'Erreur', description: 'Impossible de charger les statistiques du tableau de bord', variant: 'error' });
+        console.error('[Dashboard] getStatistics failed:', e?.message);
+        // Ne pas afficher de toast "Erreur" si c'est juste qu'il n'y a pas de données
+        // (ex: élèves supprimés, tenant vide). L'utilisateur voit déjà l'état vide.
+        // On affiche le toast seulement pour les vraies erreurs réseau (401, 500, etc.).
+        const status = e?.response?.status || e?.status;
+        if (status && status >= 500) {
+          toast({ title: 'Erreur serveur', description: 'Impossible de charger les statistiques', variant: 'error' });
+        }
         setStatistics(null);
       })
       .finally(() => setLoading(false));

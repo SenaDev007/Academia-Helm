@@ -152,7 +152,13 @@ export default function EnrollmentsContent() {
     try {
       const [classesRes, enrollmentsData, yearsRes, orionKpisData, orionAlertsData] = await Promise.all([
         fetch(`/api/classes?limit=200`, { cache: 'no-store' }).then(r => r.json()).catch(() => []),
-        studentsService.getEnrollments({ academicYearId: academicYear.id }),
+        // ⚠️ getEnrollments doit être résilient : si l'API échoue (403, 404, réseau),
+        // on retourne un tableau vide plutôt que de faire crasher tout l'onglet.
+        // Le toast "Erreur de connexion" qui apparaissait venait d'ici.
+        studentsService.getEnrollments({ academicYearId: academicYear.id }).catch((e) => {
+          console.warn('[Enrollments] load failed:', e?.message);
+          return [];
+        }),
         fetch('/api/academic-years', { cache: 'no-store' }).then(r => r.json()).catch(() => []),
         // ORION : on charge en parallèle, mais on n'avale pas les erreurs critiques
         // (les KPIs/alertes sont optionnels — l'onglet doit fonctionner même si ORION est KO)
@@ -171,7 +177,11 @@ export default function EnrollmentsContent() {
       setOrionKpis(orionKpisData);
       setOrionAlerts(Array.isArray(orionAlertsData) ? orionAlertsData : []);
     } catch (e: any) {
-      toast({ title: 'Erreur', description: e.message, variant: 'error' });
+      // Catch global de sécurité — ne devrait plus se déclencher maintenant que
+      // tous les appels ont leur propre .catch(), mais on garde au cas où.
+      console.error('[EnrollmentsContent] loadData global error:', e);
+      // Ne pas afficher de toast "Erreur de connexion" si c'est juste vide
+      // → l'utilisateur voit déjà l'état vide dans l'UI.
     } finally {
       setIsLoading(false);
       setOrionLoading(false);

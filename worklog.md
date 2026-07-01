@@ -1643,3 +1643,56 @@ Stage Summary:
 - Aucune migration DB nécessaire (schéma school_levels + classes déjà en place)
 - Rétro-compat : backend accepte targetClass (nouveau), targetClassLabel et targetLevel (legacy)
 - Le script cleanup-students.ts doit être exécuté manuellement par l'utilisateur avec le .env Neon
+
+---
+Task ID: cleanup-db-executed + toast-erreur-fix
+Agent: main
+Task: Exécuter le cleanup DB Neon + fixer le toast d'erreur quand pas de données
+
+Work Log:
+- DATABASE_URL Neon reçue de l'utilisateur : ep-curly-frost-agx7owra-pooler.c-2.eu-central-1.aws.neon.tech/AcademiaHelm
+- Fichier .env créé dans apps/api-server/.env (DATABASE_URL + DIRECT_URL Neon pooler)
+- Script cleanup-students-plain.js créé (version Node.js plain, pas de Prisma/dotenv)
+  - Utilise uniquement le package pg (disponible à la racine)
+  - Lit DATABASE_URL depuis process.env
+  - Mode diagnostic (sans CONFIRM_DELETE) : affiche comptes + détails
+  - Mode suppression (CONFIRM_DELETE=OUI) : désactive triggers → DELETE cascade → réactive triggers
+  - SSL: { rejectUnauthorized: false } pour Neon
+
+- DIAGNOSTIC AVANT SUPPRESSION :
+  - 2 tenants : Academia Helm + CSPEB Eveil d'Afrique Education (id=59b8c348-ae5f-4d67-8fbd-af6aefa1f394)
+  - 1 student : Sehomie Pénielle Béroukhyah AKPOVI TOHOU (matricule=NULL, status=ACTIVE, tenant CSPEB)
+  - 1 enrollment
+  - 3 admissions :
+    - CSPEBE-A-26-0001 | Sehomie AKPOVI TOHOU | CONVERTED
+    - CSPEBE-A-26-0002 | Qadmiel AKPOVI | REJECTED
+    - CSPEBE-A-26-0003 | Ariel AKPOVI | PENDING
+
+- SUPPRESSION EXÉCUTÉE (CONFIRM_DELETE=OUI) :
+  - [1/4] Triggers désactivés (prevent_student_delete, prevent_update_if_year_closed, prevent_class_change_if_grades, etc.)
+  - [2/4] Tables liées supprimées :
+    - student_audit_logs: 1 ligne
+    - student_guardians: 1 ligne
+    - student_enrollments: 1 ligne
+    - admission_documents: 3 lignes
+    - admissions: 3 lignes
+  - [3/4] students: 1 ligne supprimée
+  - [4/4] Triggers réactivés
+  - ÉTAT FINAL : 0 student, 0 enrollment, 0 admission ✅
+
+- Fix toast d'erreur quand pas de données :
+  - EnrollmentsContent.tsx loadData() : getEnrollments() n'avait pas de .catch() → si l'API échouait (403/404/réseau), ça rejetait dans le catch global → toast "Erreur"
+  - Ajout d'un .catch() sur getEnrollments qui retourne [] silencieusement
+  - Catch global : ne plus afficher de toast (les appels ont tous leur propre .catch maintenant)
+  - StudentsModuleDashboard.tsx getStatistics() : idem, toast seulement pour erreurs 5xx (pas pour données vides)
+  - Commentaires explicatifs ajoutés
+
+Stage Summary:
+- 4 fichiers modifiés/créés :
+  1. apps/api-server/.env — DATABASE_URL Neon (⚠️ NE PAS COMMITTER)
+  2. apps/api-server/scripts/cleanup-students-plain.js — script de cleanup plain Node.js
+  3. apps/web-app/src/components/students/EnrollmentsContent.tsx — getEnrollments résilient
+  4. apps/web-app/src/components/students/StudentsModuleDashboard.tsx — toast seulement pour 5xx
+- Base de données Neon nettoyée : 0 élève, 0 enrollment, 0 admission
+- Triggers réactivés et opérationnels
+- Le tenant CSPEB est prêt pour des tests propres

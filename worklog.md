@@ -1300,3 +1300,116 @@ Stage Summary:
   5. Clic "Appliquer ce thème" → toast de confirmation + site mis à jour
 - Côté public : le site charge le thème automatiquement (appel API non-bloquant), fallback Academia Helm si échec
 
+
+---
+Task ID: admission-docs-npi-school-cert
+Agent: main
+Task: Ajouter NPI (Numéro d'Identification Personnelle) aux pièces justificatives d'admission et remplacer "Certificat de transfert" par "Certificat de scolarité"
+
+Work Log:
+- Recherche des définitions de AdmissionDocument (schema.prisma ligne 4407, AdmissionsContent.tsx)
+- Vérifié que documentType est en TEXT libre (pas d'enum restrictif) côté backend
+- Mis à jour le commentaire du schema.prisma : BIRTH_CERTIFICATE | ID_PHOTO | REPORT_CARD | SCHOOL_CERTIFICATE | ID_DOCUMENT | PARENTAL_AUTH | NPI | OTHER
+- Mis à jour AdmissionsContent.tsx :
+  - Sélecteur de type : ajouté NPI après ID_PHOTO, remplacé TRANSFER_CERT → SCHOOL_CERTIFICATE (Certificat de scolarité)
+  - Logique d'affichage : ajouté label NPI, remplacé TRANSFER_CERT → SCHOOL_CERTIFICATE
+- Aucune migration DB nécessaire (champ TEXT libre)
+
+Stage Summary:
+- 2 fichiers modifiés : schema.prisma, AdmissionsContent.tsx
+- Nouveaux types de pièces justificatives disponibles : NPI + SCHOOL_CERTIFICATE (remplace TRANSFER_CERT)
+- Pas de régression : les anciens documents déjà stockés avec TRANSFER_CERT afficheront juste le code brut (cas marginal, à vérifier en production)
+
+---
+Task ID: admission-docs-data-url-pattern
+Agent: main
+Task: Aligner les documents d'admission sur le pattern RH (upload data URL + visualisation in-app)
+
+Work Log:
+- Analyse du pattern RH : data URL stocké en DB (pas Vercel Blob), endpoint download décode base64 et streame avec Content-Disposition: inline, bouton "Ouvrir →" dans l'UI
+- État admission avant : proxy FormData → Vercel Blob (si token), pas d'endpoint download, pas de bouton visualisation
+- Backend admission.service.ts : ajout uploadAdmissionDocumentDataUrl() (valide data URL, stocke dans filePath) + downloadAdmissionDocument() (4 sources : data URL, HTTPS, storage service, filesystem local)
+- Backend admission.controller.ts : ajout POST :id/upload-document (validation IMAGE_OR_PDF_DATA_URL_PIPE) + GET :id/documents/:docId/download (Content-Disposition: inline, filename UTF-8 encodé)
+- Backend students.module.ts : ajout StorageService aux providers
+- Frontend route /api/students/admissions/[admissionId]/documents/route.ts : réécrite FormData → JSON body { documentType, fileName, fileDataUrl, mimeType, fileSize }, forward au backend upload-document
+- Frontend route /api/students/admissions/[admissionId]/documents/[docId]/download/route.ts : créée — proxy download binaire avec transmission Content-Type + Content-Disposition
+- Frontend AdmissionsContent.tsx :
+  - handleAddDocument réécrit : FileReader.readAsDataURL → POST JSON (validation client taille 20Mo + MIME)
+  - Bouton "Ouvrir" ajouté sur chaque document (icône ExternalLink), lien vers route proxy download, target="_blank"
+  - File input accept mis à jour : .pdf,.jpg,.jpeg,.png,.webp,.gif,.avif,.doc,.docx
+- Ancien endpoint POST :id/documents (JSON body) conservé pour rétro-compat
+- Anciens documents stockés via Vercel Blob (filePath=https://...) fonctionnent toujours — le download gère les 2 cas
+
+Stage Summary:
+- 5 fichiers modifiés : admission.service.ts, admission.controller.ts, students.module.ts, route.ts (upload), AdmissionsContent.tsx
+- 1 fichier créé : route.ts (download)
+- Pattern désormais aligné sur RH : data URL en DB, pas de dépendance Vercel Blob, visualisation in-app via bouton "Ouvrir"
+- Rétro-compat : anciens endpoints conservés, anciens docs Vercel Blob toujours téléchargeables
+
+---
+Task ID: public-admission-portal
+Agent: main
+Task: Portail public d'admission — soumission parent + email + création admission en DB
+
+Work Log:
+- Analyse complète du portail public actuel : page /portal → SchoolSearch → redirect /public/pre-enrollment → /login?portal=public → formulaire dans LoginPage.tsx
+- Constat critique : l'ancien endpoint /api/public/pre-enrollment n'existait PAS côté backend → BFF retournait PENDING_BACKEND_SYNC (faux success, soumissions perdues)
+- Pattern de référence : RH recruitment (recruitment.controller.ts:282 applyJobDataUrl, recruitment.service.ts:2003 applyJob)
+- Backend créé :
+  - admission-email-templates.ts : renderAdmissionReceived (clone recruitment-email-templates, réutilise renderHeader/Footer/Email/Badge)
+  - admission-notification.service.ts : AdmissionNotificationService.notifyAdmissionReceived (clone RecruitmentNotificationService pattern)
+  - public-admission.controller.ts : @Public() POST /students/admissions-public/upload-apply (validation IMAGE_OR_PDF_DATA_URL_PIPE)
+  - admission.service.ts : méthode applyAdmission(body, files) — résout tenantId+academicYearId, vérifie doublon, crée Admission + AdmissionDocument en transaction, fire-and-forget email
+  - students.module.ts : ajout CommunicationModule + AdmissionNotificationService + PublicAdmissionController
+- Frontend BFF créé :
+  - /api/public/admission/submit/route.ts : proxy vers backend /students/admissions-public/upload-apply (propage erreurs, ne avale plus silencieusement)
+- Frontend UI modifié dans LoginPage.tsx :
+  - Interface PreEnrollmentData étendue : childDateOfBirth, childGender, childBirthPlace, childNationality, childAddress, previousSchool, previousLevel, changeReason, wantsBilingual, parentRelationship, parentAddress, parentProfession + 6 champs documents (birthCertificate, idPhoto, npi, lastReportCard, schoolCertificate, parentalAuth)
+  - "Niveau souhaité" → "Classe souhaitée"
+  - Ajout champs enfant : date naissance + sexe + lieu naissance + nationalité
+  - Ajout bloc responsable étendu : lien parenté + profession + adresse
+  - Ajout bloc académique : établissement précédent + dernier niveau + motif changement
+  - Ajout section upload 6 documents (data URL, max 20 Mo, formats PDF/JPG/PNG/WebP)
+  - fileToDataUrl() + compressImageFileToDataUrl() : pattern aligné sur CareersContent.tsx (compression images JPEG 1600px 0.85)
+  - handlePreEnrollmentSubmit : nouveau endpoint /api/public/admission/submit + mapping champs formulaire → schéma Admission
+  - Message succès : mentionne email envoyé au parent
+- Aucune migration DB nécessaire (schéma Admission + AdmissionDocument déjà complet)
+
+Stage Summary:
+- 6 fichiers créés/modifiés backend : admission-email-templates.ts, admission-notification.service.ts, public-admission.controller.ts, admission.service.ts, students.module.ts
+- 1 fichier créé frontend BFF : /api/public/admission/submit/route.ts
+- 1 fichier modifié frontend UI : LoginPage.tsx (formulaire étendu + upload docs + nouvel endpoint)
+- Flow complet : parent soumet → backend crée Admission (PENDING) + AdmissionDocuments → email confirmation envoyé → admission apparaît dans onglet Admission (côté admin)
+- Rétro-compat : ancien endpoint /api/public/pre-enrollment conservé (mais ne devrait plus être appelé)
+
+---
+Task ID: public-admission-turnstile-wizard-schoolinfo
+Agent: main
+Task: Turnstile anti-spam + wizard multi-étapes (hauteur fixe) + infos école bande navy
+
+Work Log:
+- Turnstile côté frontend : activé pour TOUS les portails (y compris public) si NEXT_PUBLIC_TURNSTILE_SITE_KEY configuré. Token transmis au backend dans le payload.
+- Turnstile côté backend : ajouté verifyTurnstileToken() dans PublicAdmissionController — appelle siteverify Cloudflare, fail-open si Cloudflare indisponible, fail-closed si token invalide. Désactivé si TURNSTILE_SECRET_KEY non configuré (mode dev).
+- Wizard multi-étapes pour le portail public (3 étapes) :
+  - Étape 1 : Type de candidat + Responsable légal (prénom, nom, téléphone, email + lien parenté, profession, adresse)
+  - Étape 2 : Identité de l'enfant (prénom, nom, date naissance, sexe, lieu, nationalité, classe souhaitée + établissement précédent, motif)
+  - Étape 3 : Pièces justificatives + Message + Submit
+  - En-tête wizard : 3 pastilles numérotées avec barre de progression + label "Étape N sur 3"
+  - Navigation Précédent/Suivant entre étapes + bouton Submit final (étape 3 uniquement)
+  - Validation par étape (validatePreEnrollmentStep) : champs obligatoires vérifiés avant passage à l'étape suivante
+  - Cas PROSPECT_PARENT : étape 2 skippée (pas d'info enfant à remplir)
+  - Reset du wizard à l'étape 1 quand on change de type de candidat
+- Hauteur fixe pour le portail public : minHeight 640px + maxHeight 85vh + scroll interne sur colonne droite — évite le scroll vertical de la page
+- Bande navy (colonne gauche) enrichie pour le portail public :
+  - Titre h1 : nom de l'école (au lieu de "Portail Public")
+  - Sous-titre : slogan/devise de l'école (au lieu de "Pré-inscription & acquisition")
+  - Badge technique "Portail Public — Pré-inscription" en mini majuscules
+  - Infos clés sous le bandeau : adresse (icône MapPin) + téléphone (icône Phone)
+  - Bandeau Building2 masqué en mode public (évite redondance avec h1)
+  - Pour les autres portails : comportement inchangé
+
+Stage Summary:
+- 2 fichiers modifiés : public-admission.controller.ts (Turnstile serveur), LoginPage.tsx (wizard + Turnstile client + infos école)
+- Turnstile : activation conditionnelle via env vars (NEXT_PUBLIC_TURNSTILE_SITE_KEY côté client, TURNSTILE_SECRET_KEY côté serveur)
+- UX : wizard 3 étapes avec hauteur fixe, plus de scroll vertical, navigation claire
+- Branding : nom + slogan + adresse + téléphone de l'école affichés dans la bande navy pour le portail public

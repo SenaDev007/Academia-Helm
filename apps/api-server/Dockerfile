@@ -22,7 +22,9 @@ RUN test -f prisma/schema.prisma
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 
 # --ignore-scripts : évite postinstall (prisma generate) avant que prisma soit copié si l'ordre des layers diverge
-RUN npm ci --ignore-scripts --include=dev
+# Note : npm install (au lieu de npm ci) pour permettre l'ajout de nouvelles deps (ex: web-push)
+# sans avoir à régénérer le package-lock.json localement avant le push.
+RUN npm install --ignore-scripts --include=dev
 
 RUN npx prisma generate
 

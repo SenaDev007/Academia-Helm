@@ -35,8 +35,14 @@ export function ServiceWorkerCleanup() {
         const registrations = await navigator.serviceWorker.getRegistrations();
         for (const registration of registrations) {
           const swUrl = registration.active?.scriptURL || '';
-          // Only unregister Workbox-based service workers (old PWA)
-          // Our new sw.js is self-unregistering, so it will clean itself
+          // Unregister Workbox-based SWs (old PWA) and stale sw.js registrations
+          // — mais PAS notre nouveau /sw.js de Web Push (qui gère push + notificationclick)
+          // On vérifie que ce n'est pas le sw.js à la racine du domaine (notre SW push)
+          const isOurPushSW = /\/sw\.js(\?.*)?$/.test(swUrl) && !swUrl.includes('/workbox');
+          if (isOurPushSW) {
+            // Notre SW push — ne pas supprimer
+            continue;
+          }
           if (swUrl.includes('workbox') || swUrl.includes('sw.js')) {
             console.log('[SW-Cleanup] Unregistering stale SW:', swUrl);
             await registration.unregister();

@@ -1,7 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { StudentsLifecycleService } from './students-lifecycle.service';
 import { StudentIdentifierService } from './student-identifier.service';
+import { StorageService } from '../../common/services/storage.service';
+import { AdmissionNotificationService } from './admission-notification.service';
+import { NotificationService } from '../../notifications/notification.service';
 
 @Injectable()
 export class AdmissionService {
@@ -11,6 +14,9 @@ export class AdmissionService {
     private readonly prisma: PrismaService,
     private readonly lifecycleService: StudentsLifecycleService,
     private readonly studentIdentifierService: StudentIdentifierService,
+    private readonly storageService: StorageService,
+    private readonly notificationService: AdmissionNotificationService,
+    private readonly inAppNotificationService: NotificationService,
   ) {}
 
   /**
@@ -318,70 +324,148 @@ export class AdmissionService {
    *     l'élève sera affecté manuellement plus tard via l'onglet Affectations
    */
   async convertToStudent(id: string, tenantId: string, userId: string) {
-    const admission = await this.findOne(id, tenantId);
+    try {
+      const admission = await this.findOne(id, tenantId);
 
-    if (admission.status !== 'ACCEPTED') {
-      throw new BadRequestException('L\'admission doit être ACCEPTÉE pour être convertie');
-    }
+      if (admission.status !== 'ACCEPTED') {
+        throw new BadRequestException('L\'admission doit être ACCEPTÉE pour être convertie');
+      }
 
-    // Vérifier qu'elle n'a pas déjà été convertie
-    if (admission.convertedStudentId) {
-      throw new BadRequestException('Cette admission a déjà été convertie en dossier élève');
-    }
+      // Vérifier qu'elle n'a pas déjà été convertie
+      if (admission.convertedStudentId) {
+        throw new BadRequestException('Cette admission a déjà été convertie en dossier élève');
+      }
 
-    // 1. Pré-inscription (crée Student + StudentEnrollment PRE_REGISTERED)
-    const student = await this.lifecycleService.preRegister(tenantId, {
-      academicYearId: admission.academicYearId,
-      schoolLevelId: admission.schoolLevelId,
-      firstName: admission.firstName,
-      lastName: admission.lastName,
-      dateOfBirth: admission.dateOfBirth ?? undefined,
-      gender: admission.gender ?? undefined,
-      placeOfBirth: admission.birthPlace ?? undefined,
-      nationality: admission.nationality ?? undefined,
-      classId: admission.requestedClassId ?? undefined,
-    }, userId);
+      this.logger.log(
+        `convertToStudent START — admission=${admission.admissionNumber} ` +
+        `tenantId=${tenantId} schoolLevelId=${admission.schoolLevelId} ` +
+        `academicYearId=${admission.academicYearId} requestedClassId=${admission.requestedClassId || 'null'}`,
+      );
+
+      // ⚠️ RÉSOLUTION DU schoolLevelId pour students
+      // admissions.schoolLevelId → education_levels (UUID)
+      // students.schoolLevelId → school_levels (UUID différent !)
+      // Il faut convertir education_levels → school_levels par nom (MATERNELLE/PRIMAIRE/SECONDAIRE).
+      let studentSchoolLevelId = admission.schoolLevelId;
+
+      // Vérifier si schoolLevelId est un UUID de school_levels (pas education_levels)
+      const schoolLevel = await this.prisma.schoolLevel.findUnique({
+        where: { id: admission.schoolLevelId },
+        select: { id: true, name: true, code: true },
+      }).catch(() => null);
+
+      if (!schoolLevel) {
+        // schoolLevelId n'est pas dans school_levels → c'est un education_levels
+        // Résoudre par nom vers school_levels
+        const eduLevel = await this.prisma.educationLevel.findUnique({
+          where: { id: admission.schoolLevelId },
+          select: { name: true },
+        }).catch(() => null);
+
+        if (eduLevel) {
+          // Chercher le school_levels correspondant par nom ou code
+          const levelName = eduLevel.name.toUpperCase();
+          const matchingSchoolLevel = await this.prisma.schoolLevel.findFirst({
+            where: {
+              tenantId,
+              OR: [
+                { name: { equals: eduLevel.name, mode: 'insensitive' } },
+                { code: { equals: levelName, mode: 'insensitive' } },
+              ],
+            },
+            select: { id: true, name: true },
+          });
+
+          if (matchingSchoolLevel) {
+            studentSchoolLevelId = matchingSchoolLevel.id;
+            this.logger.log(
+              `convertToStudent: schoolLevelId converti education_levels(${eduLevel.name}) → school_levels(${matchingSchoolLevel.name})`,
+            );
+          } else {
+            throw new BadRequestException(
+              `Aucun niveau scolaire (school_levels) trouvé pour "${eduLevel.name}". ` +
+              `Vérifiez que les niveaux sont configurés dans l'établissement.`,
+            );
+          }
+        }
+      }
+
+      // ⚠️ Vérifier que requestedClassId existe toujours dans classes
+      // (peut avoir été supprimé après la soumission de l'admission)
+      let validClassId = admission.requestedClassId;
+      if (validClassId) {
+        const classExists = await this.prisma.class.findUnique({
+          where: { id: validClassId },
+          select: { id: true },
+        }).catch(() => null);
+        if (!classExists) {
+          this.logger.warn(
+            `convertToStudent: requestedClassId ${validClassId} n'existe plus dans classes → ignoré`,
+          );
+          validClassId = null;
+        }
+      }
+
+      // 1. Pré-inscription (crée Student + StudentEnrollment PRE_REGISTERED)
+      const student = await this.lifecycleService.preRegister(tenantId, {
+        academicYearId: admission.academicYearId,
+        schoolLevelId: studentSchoolLevelId,  // ← UUID de school_levels (pas education_levels)
+        firstName: admission.firstName,
+        lastName: admission.lastName,
+        dateOfBirth: admission.dateOfBirth ?? undefined,
+        gender: admission.gender ?? undefined,
+        placeOfBirth: admission.birthPlace ?? undefined,
+        nationality: admission.nationality ?? undefined,
+        classId: validClassId ?? undefined,  // ← null si classe supprimée
+      }, userId);
+
+      this.logger.log(`convertToStudent: preRegister OK, student.id=${student.id}`);
 
     // 2. Résoudre le classId pour admit()
-    //    admit() requires a classId (non-null). Si l'admission n'a pas de
-    //    requestedClassId, on cherche la première classe du niveau.
-    let classIdForAdmit = admission.requestedClassId;
-
-    if (!classIdForAdmit) {
-      // Chercher la première classe disponible pour ce tenant + année + niveau
-      const fallbackClass = await this.prisma.class.findFirst({
-        where: {
-          tenantId,
-          academicYearId: admission.academicYearId,
-          schoolLevelId: admission.schoolLevelId,
-        },
-        orderBy: { name: 'asc' },
-        select: { id: true },
-      });
-      classIdForAdmit = fallbackClass?.id;
+      //    admit() requires a classId (non-null). Si l'admission n'a pas de
+      //    requestedClassId (ou classe supprimée), on cherche la première classe du niveau.
+      let classIdForAdmit = validClassId;
 
       if (!classIdForAdmit) {
-        this.logger.warn(
-          `Aucune classe trouvée pour tenant=${tenantId} year=${admission.academicYearId} level=${admission.schoolLevelId}. ` +
-          `L'élève sera admis sans classe — affectation manuelle requise plus tard.`,
-        );
+        // Chercher la première classe disponible pour ce tenant + année + niveau
+        // ⚠️ Utiliser studentSchoolLevelId (school_levels) et non admission.schoolLevelId (education_levels)
+        // car classes.schoolLevelId → school_levels
+        const fallbackClass = await this.prisma.class.findFirst({
+          where: {
+            tenantId,
+            schoolLevelId: studentSchoolLevelId,
+          },
+          orderBy: { name: 'asc' },
+          select: { id: true, name: true },
+        });
+        classIdForAdmit = fallbackClass?.id;
+
+        if (classIdForAdmit) {
+          this.logger.log(
+            `convertToStudent: classe fallback trouvée : ${fallbackClass?.name} (${classIdForAdmit})`,
+          );
+        } else {
+          this.logger.warn(
+            `Aucune classe trouvée pour tenant=${tenantId} level=${studentSchoolLevelId}. ` +
+            `L'élève sera admis sans classe — affectation manuelle requise plus tard.`,
+          );
+        }
       }
-    }
 
-    // 3. Admission formelle (génère matricule + StudentAccount + token QR + StudentAcademicRecord)
-    //    ⚠️ Si pas de classe, on ne peut pas appeler admit() qui requires classId.
-    //    Dans ce cas, on garde l'élève en PRE_REGISTERED et l'utilisateur devra
-    //    l'affecter manuellement (ce qui déclenchera admit() via l'onglet Affectations).
-    if (classIdForAdmit) {
-      try {
-        await this.lifecycleService.admit(tenantId, {
-          studentId: student.id,
-          academicYearId: admission.academicYearId,
-          schoolLevelId: admission.schoolLevelId,
-          classId: classIdForAdmit,
-        }, userId);
+      // 3. Admission formelle (génère matricule + StudentAccount + token QR + StudentAcademicRecord)
+      //    ⚠️ Si pas de classe, on ne peut pas appeler admit() qui requires classId.
+      //    Dans ce cas, on garde l'élève en PRE_REGISTERED et l'utilisateur devra
+      //    l'affecter manuellement (ce qui déclenchera admit() via l'onglet Affectations).
+      if (classIdForAdmit) {
+        try {
+          await this.lifecycleService.admit(tenantId, {
+            studentId: student.id,
+            academicYearId: admission.academicYearId,
+            schoolLevelId: studentSchoolLevelId,  // ← school_levels UUID
+            classId: classIdForAdmit,
+          }, userId);
 
-        this.logger.log(
+          this.logger.log(
           `Admission ${admission.admissionNumber}: student ${student.id} admitted with matricule + account + token`,
         );
 
@@ -496,29 +580,63 @@ export class AdmissionService {
     }
 
     // 5. Marquer l'admission comme CONVERTED + link le student
-    await this.prisma.admission.update({
-      where: { id },
-      data: {
-        status: 'CONVERTED',
-        decisionBy: userId,
-        decisionDate: new Date(),
-        convertedStudentId: student.id,
-      },
-    });
+      await this.prisma.admission.update({
+        where: { id },
+        data: {
+          status: 'CONVERTED',
+          decisionBy: userId,
+          decisionDate: new Date(),
+          convertedStudentId: student.id,
+        },
+      });
 
-    this.logger.log(
-      `Admission ${admission.admissionNumber} converted to student ${student.id}`,
-    );
+      this.logger.log(
+        `Admission ${admission.admissionNumber} converted to student ${student.id}`,
+      );
 
-    // Retourner l'élève avec ses relations
-    return this.prisma.student.findUnique({
-      where: { id: student.id },
-      include: {
-        studentEnrollments: { include: { class: true, academicYear: true } },
-        schoolLevel: true,
-        studentGuardians: { include: { guardian: true } },
-      },
-    });
+      // Retourner l'élève avec ses relations
+      return this.prisma.student.findUnique({
+        where: { id: student.id },
+        include: {
+          studentEnrollments: { include: { class: true, academicYear: true } },
+          schoolLevel: true,
+          studentGuardians: { include: { guardian: true } },
+        },
+      });
+    } catch (err: any) {
+      // Log détaillé pour diagnostic
+      this.logger.error(
+        `convertToStudent FAILED — admissionId=${id} tenantId=${tenantId} ` +
+        `error=${err?.message} code=${err?.code || 'N/A'} ` +
+        `meta=${err?.meta ? JSON.stringify(err.meta) : 'N/A'}`,
+        err.stack,
+      );
+
+      // Prisma errors
+      if (err?.code === 'P2003') {
+        throw new BadRequestException(
+          `Erreur de référence (P2003) lors de la conversion : ${err.meta ? JSON.stringify(err.meta) : 'détails inconnus'}. ` +
+          `Vérifiez que le niveau scolaire et l'année académique existent.`,
+        );
+      }
+      if (err?.code === 'P2002') {
+        throw new BadRequestException(
+          `Conflit d'unicité (P2002) : ${err.meta ? JSON.stringify(err.meta) : 'détails inconnus'}. ` +
+          `Un élève avec ces informations existe peut-être déjà.`,
+        );
+      }
+
+      // NestJS exceptions (BadRequest, Forbidden, etc.) — propager telles quelles
+      if (err?.status === 400 || err?.status === 403 || err?.status === 404) {
+        throw err;
+      }
+
+      // Erreur inconnue — wrap en BadRequest avec message détaillé
+      throw new BadRequestException(
+        `Échec de la conversion : ${err?.message || 'erreur inconnue'}. ` +
+        `Code: ${err?.code || 'N/A'}. Consultez les logs backend pour plus de détails.`,
+      );
+    }
   }
 
   // ═══ DOCUMENTS ═══
@@ -551,6 +669,164 @@ export class AdmissionService {
         status: 'SUBMITTED',
       },
     });
+  }
+
+  /**
+   * Upload d'un document d'admission via data URL (base64).
+   * Pattern aligné sur le module RH (StaffPrismaService.uploadStaffDocumentDataUrl).
+   *
+   * Stocke le data URL directement dans filePath — pas de dépendance Vercel Blob.
+   * Le téléchargement se fait ensuite via downloadAdmissionDocument() qui
+   * décode le base64 et renvoie le buffer binaire avec Content-Disposition: inline.
+   */
+  async uploadAdmissionDocumentDataUrl(
+    admissionId: string,
+    tenantId: string,
+    body: {
+      documentType: string;
+      fileName: string;
+      fileDataUrl: string;
+      mimeType: string;
+      fileSize: number;
+      comment?: string;
+      expiresAt?: string;
+    },
+  ): Promise<any> {
+    // Vérifier que l'admission existe
+    const admission = await this.prisma.admission.findFirst({
+      where: { id: admissionId, tenantId },
+      select: { id: true, admissionNumber: true },
+    });
+    if (!admission) {
+      throw new NotFoundException(`Demande d'admission introuvable`);
+    }
+
+    // Valider le format data URL
+    const trimmed = (body.fileDataUrl ?? '').trim();
+    const m = /^data:([^;]+);base64,(.+)$/i.exec(trimmed);
+    if (!m) {
+      throw new BadRequestException('Format attendu : data URL base64 (data:...;base64,...).');
+    }
+    const detectedMime = m[1].trim().toLowerCase();
+
+    // Vérifier la taille (max 20 Mo décodés)
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.from(m[2], 'base64');
+    } catch {
+      throw new BadRequestException('Base64 invalide.');
+    }
+    if (buffer.length > 20 * 1024 * 1024) {
+      throw new BadRequestException('Fichier trop volumineux (max 20 Mo décodés).');
+    }
+
+    // Stocker le data URL directement dans filePath (pattern RH)
+    const filePath = trimmed;
+
+    this.logger.log(
+      `Upload document admission ${admission.admissionNumber} — type=${body.documentType} — ${buffer.length} octets`,
+    );
+
+    return this.prisma.admissionDocument.create({
+      data: {
+        tenantId,
+        admissionId,
+        documentType: body.documentType,
+        fileName: body.fileName,
+        filePath,
+        fileSize: body.fileSize || buffer.length,
+        mimeType: body.mimeType || detectedMime,
+        comment: body.comment || null,
+        status: 'SUBMITTED',
+        expiresAt: body.expiresAt ? new Date(body.expiresAt) : null,
+      },
+    });
+  }
+
+  /**
+   * Télécharge le fichier binaire d'un document d'admission.
+   * Gère 3 sources : data URL (base64), URL HTTPS (Vercel Blob), storage service.
+   * Pattern aligné sur StaffPrismaService.downloadStaffDocument.
+   */
+  async downloadAdmissionDocument(
+    documentId: string,
+    admissionId: string,
+    tenantId: string,
+  ): Promise<{ buffer: Buffer; fileName: string; mimeType: string }> {
+    const doc = await this.prisma.admissionDocument.findFirst({
+      where: { id: documentId, admissionId, tenantId },
+    });
+    if (!doc) {
+      throw new NotFoundException(`Document non trouvé`);
+    }
+
+    const filePath = doc.filePath || '';
+
+    // ─── 1. Data URL : décoder directement le base64 ────────────────────
+    if (filePath.startsWith('data:')) {
+      const m = /^data:([^;]+);base64,(.+)$/i.exec(filePath);
+      if (m) {
+        const buffer = Buffer.from(m[2], 'base64');
+        return {
+          buffer,
+          fileName: doc.fileName || `document-${documentId}`,
+          mimeType: doc.mimeType || m[1],
+        };
+      }
+    }
+
+    // ─── 2. URL HTTPS (Vercel Blob ou autre) : fetch direct ────────────
+    if (filePath.startsWith('https://') || filePath.startsWith('http://')) {
+      try {
+        const response = await fetch(filePath);
+        if (response.ok) {
+          const arrayBuf = await response.arrayBuffer();
+          const buffer = Buffer.from(arrayBuf);
+          return {
+            buffer,
+            fileName: doc.fileName || `document-${documentId}`,
+            mimeType: doc.mimeType || 'application/octet-stream',
+          };
+        }
+      } catch {
+        // URL fetch failed — try storage service below
+      }
+    }
+
+    // ─── 3. Storage service (R2/S3/local) ───────────────────────────────
+    if (filePath) {
+      try {
+        const buffer = await this.storageService.downloadFile(filePath);
+        return {
+          buffer,
+          fileName: doc.fileName || `document-${documentId}`,
+          mimeType: doc.mimeType || 'application/octet-stream',
+        };
+      } catch {
+        // storage download failed
+      }
+
+      // ─── 4. Fallback filesystem local ────────────────────────────────
+      try {
+        const fs = await import('fs');
+        const path = await import('path');
+        const absolutePath = path.join(process.cwd(), filePath);
+        if (fs.existsSync(absolutePath)) {
+          const buffer = fs.readFileSync(absolutePath);
+          return {
+            buffer,
+            fileName: doc.fileName || `document-${documentId}`,
+            mimeType: doc.mimeType || 'application/octet-stream',
+          };
+        }
+      } catch {
+        // local filesystem fallback failed
+      }
+    }
+
+    throw new NotFoundException(
+      `Fichier du document introuvable: ${doc.fileName || documentId}`,
+    );
   }
 
   async updateDocument(documentId: string, tenantId: string, data: any) {
@@ -689,5 +965,310 @@ export class AdmissionService {
       throw new BadRequestException('Impossible de supprimer une admission déjà convertie en élève');
     }
     return this.prisma.admission.delete({ where: { id } });
+  }
+
+  // ═══ PUBLIC PORTAL — Soumission depuis le portail public ═══
+
+  /**
+   * Soumission publique d'une demande d'admission (sans authentification).
+   *
+   * Pattern aligné sur RecruitmentService.applyJob :
+   *   1. Résoudre tenantId depuis body.tenantId (le frontend l'inclut explicitement)
+   *   2. Résoudre academicYearId actif du tenant (si non fourni dans le body)
+   *   3. Vérifier doublon (même email parent + même année + même tenant)
+   *   4. Créer l'Admission en DB (status PENDING, admissionNumber auto-généré)
+   *   5. Créer un AdmissionDocument par fichier uploadé (filePath = data URL)
+   *   6. Fire-and-forget : envoyer email de confirmation au parent
+   *   7. Retourner { admission, documents }
+   *
+   * Sécurité :
+   *   - Pas de JWT (endpoint @Public) — tenantId est trusted depuis le body
+   *   - Les fichiers sont validés via DataUrlValidationPipe côté controller
+   *   - Le statut est forcé à PENDING (jamais ACCEPTED/CONVERTED depuis le portail)
+   */
+  async applyAdmission(body: any, files: any): Promise<{ admission: any; documents: any[] }> {
+    let tenantId = body.tenantId;
+    if (!tenantId) {
+      throw new BadRequestException('tenantId est requis pour soumettre une demande d\'admission');
+    }
+
+    // ⚠️ Le frontend peut envoyer un slug (ex: "cspeb") au lieu d'un UUID.
+    // On résout le tenant par slug OU par UUID pour éviter les 400 "année académique introuvable".
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId);
+    if (!isUuid) {
+      // Résoudre l'UUID du tenant depuis le slug ou le subdomain
+      const tenant = await this.prisma.tenant.findFirst({
+        where: {
+          status: { not: 'WITHDRAWN' },
+          OR: [{ subdomain: tenantId }, { slug: tenantId }],
+        },
+        select: { id: true },
+      });
+      if (!tenant) {
+        throw new BadRequestException(`Établissement introuvable pour le slug "${tenantId}"`);
+      }
+      tenantId = tenant.id;
+    }
+
+    // Valider champs obligatoires
+    if (!body.firstName || !body.lastName) {
+      throw new BadRequestException('Prénom et nom de l\'élève sont requis');
+    }
+
+    // Résoudre l'année académique active du tenant si non fournie
+    let academicYearId = body.academicYearId;
+    if (!academicYearId) {
+      const activeYear = await this.prisma.academicYear.findFirst({
+        where: { tenantId, isActive: true },
+        orderBy: { startDate: 'desc' },
+      });
+      if (!activeYear) {
+        throw new BadRequestException('Aucune année académique active pour cet établissement');
+      }
+      academicYearId = activeYear.id;
+    }
+
+    // Résoudre schoolLevelId — le frontend envoie un code (MATERNELLE/PRIMARY/SECONDARY)
+    // mais la FK admissions.schoolLevelId → education_levels.id exige un UUID.
+    // On résout le code vers l'UUID correspondant dans education_levels.
+    let schoolLevelId = body.schoolLevelId;
+    const isLevelUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(schoolLevelId || '');
+
+    if (!schoolLevelId || !isLevelUuid) {
+      // Déduire le nom du niveau depuis candidateType ou schoolLevelId
+      const candidateType = (body.candidateType || '').toUpperCase();
+      const codeToName: Record<string, string> = {
+        MATERNELLE: 'MATERNELLE',
+        PRIMARY: 'PRIMAIRE',
+        SECONDARY: 'SECONDAIRE',
+      };
+      const levelName = codeToName[candidateType]
+        || (schoolLevelId ? schoolLevelId.toUpperCase() : '')
+        || 'PRIMAIRE';
+
+      // Résoudre l'UUID depuis education_levels (FK obligatoire)
+      const level = await this.prisma.educationLevel.findFirst({
+        where: {
+          tenantId,
+          name: levelName,
+        },
+        select: { id: true },
+      });
+      if (!level) {
+        throw new BadRequestException(
+          `Niveau scolaire "${levelName}" introuvable pour cet établissement. ` +
+          `Niveaux disponibles : MATERNELLE, PRIMAIRE, SECONDAIRE.`,
+        );
+      }
+      schoolLevelId = level.id;
+    }
+
+    // Vérifier doublon : même email parent + même tenant + même année académique
+    if (body.mainGuardianEmail) {
+      const existing = await this.prisma.admission.findFirst({
+        where: {
+          tenantId,
+          academicYearId,
+          mainGuardianEmail: body.mainGuardianEmail,
+          firstName: body.firstName,
+          lastName: body.lastName,
+          status: { notIn: ['REJECTED', 'CANCELLED'] },
+        },
+        select: { id: true, admissionNumber: true, status: true },
+      });
+      if (existing) {
+        throw new ConflictException(
+          `Une demande d'admission existe déjà pour ${body.firstName} ${body.lastName} ` +
+          `(${existing.admissionNumber || 'sans numéro'}) avec l'email ${body.mainGuardianEmail}. ` +
+          `Statut actuel : ${existing.status}.`,
+        );
+      }
+    }
+
+    // Générer le numéro d'admission
+    const admissionNumber = await this.generateAdmissionNumber(tenantId, academicYearId);
+
+    // Préparer les données d'admission
+    const createData: any = {
+      tenantId,
+      academicYearId,
+      schoolLevelId,
+      firstName: body.firstName,
+      lastName: body.lastName,
+      dateOfBirth: body.dateOfBirth ? new Date(body.dateOfBirth) : null,
+      gender: body.gender ?? null,
+      birthPlace: body.birthPlace ?? null,
+      nationality: body.nationality ?? 'Béninoise',
+      address: body.address ?? null,
+
+      // Vœux académiques
+      requestedClassId: body.requestedClassId || null,
+      requestedSeriesId: body.requestedSeriesId || null,
+      wantsBilingual: body.wantsBilingual ?? false,
+      previousSchool: body.previousSchool ?? null,
+      previousLevel: body.previousLevel ?? null,
+      changeReason: body.changeReason ?? null,
+
+      // Responsable légal
+      mainGuardianName: body.mainGuardianName ?? null,
+      mainGuardianPhone: body.mainGuardianPhone ?? null,
+      mainGuardianEmail: body.mainGuardianEmail ?? null,
+      mainGuardianRelationship: body.mainGuardianRelationship ?? null,
+      mainGuardianAddress: body.mainGuardianAddress ?? null,
+      mainGuardianProfession: body.mainGuardianProfession ?? null,
+
+      // Traçabilité
+      admissionNumber,
+      // createdByUserId = null (pas d'utilisateur authentifié)
+      // metadata : conserver la source pour audit
+      metadata: {
+        source: 'PORTAL_PUBLIC',
+        candidateType: body.candidateType || null,
+        submittedAt: new Date().toISOString(),
+      },
+
+      // Workflow
+      status: 'PENDING',
+      applicationDate: new Date(),
+      notes: body.message || body.notes || null,
+    };
+
+    // Convertir les fichiers en data URLs (pattern recruitment.service.ts:2149)
+    const dataUrlForFile = (f: Express.Multer.File): string | null => {
+      if (!f?.buffer) return null;
+      return `data:${f.mimetype};base64,${f.buffer.toString('base64')}`;
+    };
+
+    // Mapping : clé du body → documentType dans AdmissionDocument
+    const docTypeMap: Record<string, string> = {
+      birthCertificate: 'BIRTH_CERTIFICATE',
+      idPhoto: 'ID_PHOTO',
+      lastReportCard: 'REPORT_CARD',
+      schoolCertificate: 'SCHOOL_CERTIFICATE',
+      parentalAuth: 'PARENTAL_AUTH',
+      npi: 'NPI',
+      idDocument: 'ID_DOCUMENT',
+      other: 'OTHER',
+    };
+
+    // Préparer les documents à créer dans la transaction
+    const documentsToCreate: Array<{
+      documentType: string;
+      fileName: string;
+      filePath: string;
+      mimeType: string;
+      fileSize: number;
+    }> = [];
+
+    for (const [bodyKey, docType] of Object.entries(docTypeMap)) {
+      const fileArr = files[bodyKey];
+      if (Array.isArray(fileArr) && fileArr.length > 0) {
+        const f = fileArr[0];
+        const filePath = dataUrlForFile(f);
+        if (filePath) {
+          documentsToCreate.push({
+            documentType: docType,
+            fileName: f.originalname || `${docType.toLowerCase()}.pdf`,
+            filePath,
+            mimeType: f.mimetype || 'application/octet-stream',
+            fileSize: f.size || 0,
+          });
+        }
+      }
+    }
+
+    // Transaction : créer admission + documents
+    try {
+      const result = await this.prisma.$transaction(
+        async (tx) => {
+          const admission = await tx.admission.create({ data: createData });
+
+          const documents: any[] = [];
+          for (const doc of documentsToCreate) {
+            const created = await tx.admissionDocument.create({
+              data: {
+                tenantId,
+                admissionId: admission.id,
+                documentType: doc.documentType,
+                fileName: doc.fileName,
+                filePath: doc.filePath,
+                mimeType: doc.mimeType,
+                fileSize: doc.fileSize,
+                status: 'SUBMITTED',
+              },
+            });
+            documents.push(created);
+          }
+
+          return { admission, documents };
+        },
+        { timeout: 30000 },
+      );
+
+      this.logger.log(
+        `Admission publique créée : id=${result.admission.id}, ` +
+        `numéro=${result.admission.admissionNumber}, ` +
+        `élève=${body.firstName} ${body.lastName}, ` +
+        `documents=${result.documents.length}`,
+      );
+
+      // Fire-and-forget : envoyer email de confirmation au parent
+      const documentsSubmitted = result.documents.map((d) => ({
+        type: d.documentType,
+        fileName: d.fileName,
+      }));
+
+      this.notificationService
+        .notifyAdmissionReceived({
+          admissionId: result.admission.id,
+          tenantId,
+          documentsSubmitted,
+        })
+        .catch((err) =>
+          this.logger.error(
+            `notifyAdmissionReceived failed: ${err.message}`,
+            err.stack,
+          ),
+        );
+
+      // Fire-and-forget : créer une notification in-app pour le staff d'admission
+      // (cloche header + future notification push)
+      this.inAppNotificationService
+        .notifyAdmissionStaff({
+          admissionId: result.admission.id,
+          tenantId,
+          admission: {
+            firstName: body.firstName,
+            lastName: body.lastName,
+            admissionNumber: result.admission.admissionNumber,
+          },
+          requestedClassLabel: body.targetLevel || body.message, // libre, best-effort
+        })
+        .catch((err) =>
+          this.logger.error(
+            `notifyAdmissionStaff failed: ${err.message}`,
+            err.stack,
+          ),
+        );
+
+      return result;
+    } catch (err: any) {
+      // P2003 = foreign key violation — identifier le champ fautif
+      if (err?.code === 'P2003') {
+        this.logger.error(
+          `P2003 FK violation on admission create — ` +
+          `tenantId=${createData.tenantId}, academicYearId=${createData.academicYearId}, ` +
+          `schoolLevelId=${createData.schoolLevelId}, requestedClassId=${createData.requestedClassId}, ` +
+          `meta: ${err.meta ? JSON.stringify(err.meta) : 'N/A'}`,
+          err.stack,
+        );
+        throw new BadRequestException(
+          `Erreur de référence (P2003) : un identifiant ne correspond à aucun enregistrement. ` +
+          `Détails : ${err.meta ? JSON.stringify(err.meta) : 'inconnu'}. ` +
+          `Vérifiez que l'établissement et l'année académique existent.`,
+        );
+      }
+      throw err;
+    }
   }
 }

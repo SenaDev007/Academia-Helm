@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import {
   Plus, Search, Filter, CheckCircle, XCircle, Clock, FileText,
   UserCheck, Calendar, BadgeCheck, AlertCircle, Loader2, Eye,
-  Send, Pencil, X, Info, Star, AlertTriangle, Trash2
+  Send, Pencil, X, Info, Star, AlertTriangle, Trash2, RotateCcw,
+  ExternalLink,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { format } from 'date-fns';
@@ -108,6 +109,11 @@ export default function AdmissionsContent() {
   const [newInterviewType, setNewInterviewType] = useState('INTERVIEW');
   const [newInterviewDate, setNewInterviewDate] = useState('');
 
+  // ─── Quick view "Voir les pièces" (depuis la liste, sans ouvrir le détail) ──
+  const [quickViewAdmission, setQuickViewAdmission] = useState<Admission | null>(null);
+  const [quickViewDocs, setQuickViewDocs] = useState<any[]>([]);
+  const [isLoadingQuickViewDocs, setIsLoadingQuickViewDocs] = useState(false);
+
   useEffect(() => {
     if (academicYear) {
       loadAdmissions();
@@ -193,16 +199,48 @@ export default function AdmissionsContent() {
   };
 
   const handleDecide = async (id: string, decision: 'ACCEPTED' | 'REJECTED') => {
-    setIsActionPending(true);
-    try {
-      await studentsService.decideAdmission(id, { decision, comment: 'Dossier revu par l\'administration' });
-      toast({ title: 'Succès', description: `Dossier ${decision === 'ACCEPTED' ? 'accepté' : 'refusé'}`, variant: 'success' });
-      loadAdmissions();
-    } catch (e: any) {
-      toast({ title: 'Erreur', description: e.message || 'Erreur lors de la décision', variant: 'error' });
-    } finally {
-      setIsActionPending(false);
-    }
+    const label = decision === 'ACCEPTED' ? 'accepter' : 'refuser';
+    showConfirm(
+      `${decision === 'ACCEPTED' ? 'Accepter' : 'Refuser'} le dossier`,
+      `Êtes-vous sûr de vouloir ${label} ce dossier d'admission ?`,
+      async () => {
+        setIsActionPending(true);
+        try {
+          await studentsService.decideAdmission(id, { decision, comment: 'Dossier revu' });
+          toast({ title: 'Succès', description: `Dossier ${decision === 'ACCEPTED' ? 'accepté' : 'refusé'}`, variant: 'success' });
+          loadAdmissions();
+        } catch (e: any) {
+          toast({ title: 'Erreur', description: e.message || 'Erreur lors de la décision', variant: 'error' });
+        } finally {
+          setIsActionPending(false);
+        }
+      },
+      decision === 'ACCEPTED' ? 'Accepter' : 'Refuser',
+    );
+  };
+
+  // Remettre un dossier en arrière (ACCEPTED/REJECTED → UNDER_REVIEW ou SUBMITTED)
+  const handleRollback = async (id: string, targetStatus: 'SUBMITTED' | 'UNDER_REVIEW') => {
+    const label = targetStatus === 'SUBMITTED' ? 'en soumis' : 'en examen';
+    showConfirm(
+      'Reprendre le dossier',
+      `Voulez-vous remettre ce dossier ${label} ? Cela annulera la décision précédente.`,
+      async () => {
+        setIsActionPending(true);
+        try {
+          await studentsService.updateAdmission(id, {
+            status: targetStatus,
+          });
+          toast({ title: 'Succès', description: `Dossier remis ${label}`, variant: 'success' });
+          loadAdmissions();
+        } catch (e: any) {
+          toast({ title: 'Erreur', description: e.message || 'Erreur', variant: 'error' });
+        } finally {
+          setIsActionPending(false);
+        }
+      },
+      'Confirmer',
+    );
   };
 
   const handleDelete = async (id: string) => {
@@ -274,26 +312,81 @@ export default function AdmissionsContent() {
     loadDocuments(admission.id);
   };
 
+  /**
+   * Quick view "Voir les pièces" — ouvre un petit modal listant les documents
+   * de l'admission, avec bouton "Ouvrir" pour prévisualiser chacun.
+   * Évite d'avoir à ouvrir le détail complet pour vérifier les pièces jointes.
+   */
+  const handleQuickViewDocs = async (admission: Admission) => {
+    setQuickViewAdmission(admission);
+    setQuickViewDocs([]);
+    setIsLoadingQuickViewDocs(true);
+    try {
+      const docs = await studentsService.getAdmissionDocuments(admission.id);
+      setQuickViewDocs(Array.isArray(docs) ? docs : []);
+    } catch (e) {
+      setQuickViewDocs([]);
+    } finally {
+      setIsLoadingQuickViewDocs(false);
+    }
+  };
+
   const handleAddDocument = async () => {
     if (!selectedAdmission) return;
     if (!newDocFile) {
       toast({ title: 'Fichier manquant', description: 'Veuillez sélectionner un fichier à uploader.', variant: 'error' });
       return;
     }
+
+    // Limite 20 Mo (alignée sur IMAGE_OR_PDF_DATA_URL_PIPE côté backend)
+    const MAX_BYTES = 20 * 1024 * 1024;
+    if (newDocFile.size > MAX_BYTES) {
+      toast({
+        title: 'Fichier trop volumineux',
+        description: 'La taille maximale est de 20 Mo.',
+        variant: 'error',
+      });
+      return;
+    }
+
+    // Vérifier le type MIME autorisé (images + PDF + .doc/.docx)
+    const allowedMime = [
+      'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/avif',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+    if (!allowedMime.includes(newDocFile.type)) {
+      toast({
+        title: 'Type de fichier non autorisé',
+        description: 'Formats acceptés : images (JPEG, PNG, WebP, GIF), PDF, Word (.doc, .docx).',
+        variant: 'error',
+      });
+      return;
+    }
+
     setIsUploadingDoc(true);
     try {
-      // 1. Upload du fichier via le proxy Next.js
-      const formData = new FormData();
-      formData.append('file', newDocFile);
-      formData.append('documentType', newDocType);
-      formData.append('fileName', newDocFile.name);
-      formData.append('mimeType', newDocFile.type);
-      formData.append('fileSize', String(newDocFile.size));
+      // 1. Lire le fichier en data URL (base64) — pattern RH
+      const fileDataUrl: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('Lecture du fichier impossible'));
+        reader.readAsDataURL(newDocFile);
+      });
 
+      // 2. POST JSON au proxy Next.js (qui forward au backend upload-document)
       const uploadRes = await fetch(`/api/students/admissions/${selectedAdmission.id}/documents`, {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
+        body: JSON.stringify({
+          documentType: newDocType,
+          fileName: newDocFile.name,
+          fileDataUrl,
+          mimeType: newDocFile.type,
+          fileSize: newDocFile.size,
+        }),
       });
 
       if (!uploadRes.ok) {
@@ -635,6 +728,15 @@ export default function AdmissionsContent() {
                               <Eye className="w-4 h-4" />
                             </button>
 
+                            {/* Voir les pièces — quick view sans ouvrir le détail */}
+                            <button
+                              onClick={() => handleQuickViewDocs(admission)}
+                              className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-violet-600 transition-all"
+                              title="Voir les pièces justificatives"
+                            >
+                              <FileText className="w-4 h-4" />
+                            </button>
+
                             {/* Éditer (si non CONVERTED/REJECTED) */}
                             {canEdit && (
                               <button
@@ -682,16 +784,38 @@ export default function AdmissionsContent() {
 
                             {/* Convertir (ACCEPTED → CONVERTED) */}
                             {admission.status === 'ACCEPTED' && (
+                              <>
+                                <button
+                                  onClick={() => handleRollback(admission.id, 'UNDER_REVIEW')}
+                                  disabled={isActionPending}
+                                  className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-amber-600 transition-all disabled:opacity-50"
+                                  title="Remettre en examen"
+                                >
+                                  <RotateCcw className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setSelectedAdmission(admission);
+                                    setIsConvertModalOpen(true);
+                                  }}
+                                  disabled={isActionPending}
+                                  className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-indigo-600 transition-all disabled:opacity-50"
+                                  title="Convertir en élève"
+                                >
+                                  <UserCheck className="w-4 h-4" />
+                                </button>
+                              </>
+                            )}
+
+                            {/* Remettre en soumis (REJECTED → SUBMITTED) */}
+                            {admission.status === 'REJECTED' && (
                               <button
-                                onClick={() => {
-                                  setSelectedAdmission(admission);
-                                  setIsConvertModalOpen(true);
-                                }}
+                                onClick={() => handleRollback(admission.id, 'SUBMITTED')}
                                 disabled={isActionPending}
-                                className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-indigo-600 transition-all disabled:opacity-50"
-                                title="Convertir en élève"
+                                className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-amber-600 transition-all disabled:opacity-50"
+                                title="Reprendre le dossier"
                               >
-                                <UserCheck className="w-4 h-4" />
+                                <RotateCcw className="w-4 h-4" />
                               </button>
                             )}
 
@@ -849,8 +973,9 @@ export default function AdmissionsContent() {
                     >
                       <option value="BIRTH_CERTIFICATE">Acte de naissance</option>
                       <option value="ID_PHOTO">Photo d'identité</option>
+                      <option value="NPI">NPI (Numéro d'Identification Personnelle)</option>
                       <option value="REPORT_CARD">Bulletin précédent</option>
-                      <option value="TRANSFER_CERT">Certificat de transfert</option>
+                      <option value="SCHOOL_CERTIFICATE">Certificat de scolarité</option>
                       <option value="ID_DOCUMENT">Pièce d'identité du responsable</option>
                       <option value="PARENTAL_AUTH">Autorisation parentale</option>
                       <option value="OTHER">Autre document</option>
@@ -861,7 +986,7 @@ export default function AdmissionsContent() {
                       type="file"
                       onChange={e => setNewDocFile(e.target.files?.[0] || null)}
                       className="flex-1 text-xs file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-700 file:font-semibold hover:file:bg-blue-100"
-                      accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                      accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.avif,.doc,.docx"
                     />
                     <button
                       onClick={handleAddDocument}
@@ -909,8 +1034,9 @@ export default function AdmissionsContent() {
                         <p className="text-xs font-bold text-slate-700">
                           {doc.documentType === 'BIRTH_CERTIFICATE' ? 'Acte de naissance' :
                            doc.documentType === 'ID_PHOTO' ? 'Photo d\'identité' :
+                           doc.documentType === 'NPI' ? 'NPI (Numéro d\'Identification Personnelle)' :
                            doc.documentType === 'REPORT_CARD' ? 'Bulletin précédent' :
-                           doc.documentType === 'TRANSFER_CERT' ? 'Certificat de transfert' :
+                           doc.documentType === 'SCHOOL_CERTIFICATE' ? 'Certificat de scolarité' :
                            doc.documentType === 'ID_DOCUMENT' ? 'Pièce d\'identité' :
                            doc.documentType === 'PARENTAL_AUTH' ? 'Autorisation parentale' :
                            doc.documentType}
@@ -930,6 +1056,19 @@ export default function AdmissionsContent() {
                          doc.status === 'SUBMITTED' ? 'Soumis' : 'En attente'}
                       </span>
                       <div className="flex gap-1 shrink-0">
+                        {/* Bouton "Ouvrir" — prévisualisation dans un nouvel onglet
+                            via la route proxy download (Content-Disposition: inline) */}
+                        {doc.filePath && (
+                          <a
+                            href={`/api/students/admissions/${selectedAdmission.id}/documents/${doc.id}/download`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1 hover:bg-blue-100 rounded text-blue-600 transition inline-flex items-center justify-center"
+                            title="Ouvrir / Prévisualiser"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        )}
                         {doc.status === 'SUBMITTED' && (
                           <>
                             <button onClick={() => handleValidateDoc(doc.id)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600" title="Valider">
@@ -1053,6 +1192,138 @@ export default function AdmissionsContent() {
             )}
           </div>
         </ReadOnlyModal>
+      )}
+
+      {/* Modal "Voir les pièces" — quick view depuis la liste */}
+      {quickViewAdmission && (
+        <div
+          className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setQuickViewAdmission(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-violet-50 flex items-center justify-center shrink-0">
+                  <FileText className="w-5 h-5 text-violet-600" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-800">Pièces justificatives</h3>
+                  <p className="text-xs text-slate-500">
+                    {quickViewAdmission.firstName} {quickViewAdmission.lastName}
+                    {quickViewAdmission.admissionNumber && (
+                      <span className="ml-2 text-slate-400">· {quickViewAdmission.admissionNumber}</span>
+                    )}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setQuickViewAdmission(null)}
+                className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition"
+                title="Fermer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body — liste des documents */}
+            <div className="px-6 py-4 max-h-[60vh] overflow-y-auto">
+              {isLoadingQuickViewDocs ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-5 h-5 text-violet-500 animate-spin" />
+                </div>
+              ) : quickViewDocs.length === 0 ? (
+                <div className="text-center py-8">
+                  <FileText className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                  <p className="text-sm text-slate-500 font-medium">Aucun document déposé</p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Ce dossier n'a pas encore de pièces jointes.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {quickViewDocs.map(doc => {
+                    const typeLabel =
+                      doc.documentType === 'BIRTH_CERTIFICATE' ? 'Acte de naissance' :
+                      doc.documentType === 'ID_PHOTO' ? 'Photo d\'identité' :
+                      doc.documentType === 'NPI' ? 'NPI (Numéro d\'Identification Personnelle)' :
+                      doc.documentType === 'REPORT_CARD' ? 'Bulletin précédent' :
+                      doc.documentType === 'SCHOOL_CERTIFICATE' ? 'Certificat de scolarité' :
+                      doc.documentType === 'ID_DOCUMENT' ? 'Pièce d\'identité' :
+                      doc.documentType === 'PARENTAL_AUTH' ? 'Autorisation parentale' :
+                      doc.documentType || 'Document';
+                    return (
+                      <div
+                        key={doc.id}
+                        className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100"
+                      >
+                        <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-slate-700 truncate">{typeLabel}</p>
+                          {doc.fileName && (
+                            <p className="text-[11px] text-slate-400 truncate">{doc.fileName}</p>
+                          )}
+                        </div>
+                        <span
+                          className={cn(
+                            'px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0',
+                            doc.status === 'VALIDATED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                            doc.status === 'REJECTED' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                            doc.status === 'SUBMITTED' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                            'bg-slate-50 text-slate-600 border-slate-200'
+                          )}
+                        >
+                          {doc.status === 'VALIDATED' ? 'Validé' :
+                           doc.status === 'REJECTED' ? 'Refusé' :
+                           doc.status === 'SUBMITTED' ? 'Soumis' : 'En attente'}
+                        </span>
+                        {doc.filePath && (
+                          <a
+                            href={`/api/students/admissions/${quickViewAdmission.id}/documents/${doc.id}/download`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 hover:bg-blue-100 rounded text-blue-600 transition inline-flex items-center justify-center shrink-0"
+                            title="Ouvrir / Prévisualiser"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                          </a>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+              <span className="text-[11px] text-slate-500">
+                {quickViewDocs.length} document{quickViewDocs.length > 1 ? 's' : ''}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    const adm = quickViewAdmission;
+                    setQuickViewAdmission(null);
+                    handleOpenDetail(adm);
+                  }}
+                  className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-lg transition"
+                >
+                  Ouvrir le détail
+                </button>
+                <button
+                  onClick={() => setQuickViewAdmission(null)}
+                  className="px-4 py-1.5 text-xs font-bold bg-slate-800 hover:bg-slate-900 text-white rounded-lg transition"
+                >
+                  Fermer
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Convert confirmation */}

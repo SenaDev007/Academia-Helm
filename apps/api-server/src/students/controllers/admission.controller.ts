@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, BadRequestException, Res } from '@nestjs/common';
 import { AdmissionService } from '../services/admission.service';
 import { CreateAdmissionDto } from '../dto/create-admission.dto';
 import { UpdateAdmissionDto } from '../dto/update-admission.dto';
@@ -6,7 +6,9 @@ import { DecideAdmissionDto } from '../dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { IMAGE_OR_PDF_DATA_URL_PIPE } from '../../common/pipes/data-url-validation.pipe';
 import { PrismaService } from '../../database/prisma.service';
+import type { Response } from 'express';
 
 @Controller('students/admissions')
 @UseGuards(JwtAuthGuard)
@@ -134,6 +136,73 @@ export class AdmissionController {
     @Body() body: any,
   ) {
     return this.admissionService.createDocument(id, tenantId, body);
+  }
+
+  /**
+   * Upload d'un document d'admission via data URL (base64).
+   * Body: { documentType, fileName, fileDataUrl, mimeType, fileSize, comment?, expiresAt? }
+   *
+   * Pattern aligné sur POST /hr/staff/:id/upload-document.
+   * Supporte les images (JPEG, PNG, WebP) ET les PDF (max 20 Mo).
+   */
+  @Post(':id/upload-document')
+  async uploadDocumentDataUrl(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: {
+      documentType: string;
+      fileName: string;
+      fileDataUrl: string;
+      mimeType: string;
+      fileSize: number;
+      comment?: string;
+      expiresAt?: string;
+    },
+  ) {
+    if (!body?.documentType || !body?.fileName) {
+      throw new BadRequestException('documentType et fileName requis');
+    }
+    // Valider le data URL via le pipe (vérifie format, MIME type, taille)
+    const validatedDataUrl = IMAGE_OR_PDF_DATA_URL_PIPE.transform(body.fileDataUrl);
+    const expiresAt = body.expiresAt && body.expiresAt.trim() !== '' ? body.expiresAt : undefined;
+    return this.admissionService.uploadAdmissionDocumentDataUrl(id, tenantId, {
+      documentType: body.documentType,
+      fileName: body.fileName,
+      fileDataUrl: validatedDataUrl,
+      mimeType: body.mimeType,
+      fileSize: body.fileSize,
+      comment: body.comment,
+      expiresAt,
+    });
+  }
+
+  /**
+   * GET /students/admissions/:id/documents/:docId/download
+   * Télécharge un document d'admission. Le fichier est renvoyé en binaire
+   * avec Content-Disposition: inline pour permettre la prévisualisation
+   * navigateur (PDF/image) en plus du téléchargement.
+   *
+   * Pattern aligné sur GET /hr/staff/:id/documents/:docId/download.
+   */
+  @Get(':id/documents/:docId/download')
+  async downloadDocument(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Param('docId') docId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { buffer, fileName, mimeType } = await this.admissionService.downloadAdmissionDocument(docId, id, tenantId);
+
+    // Encoder le filename pour gérer les caractères speciaux et unicode
+    const encodedFileName = encodeURIComponent(fileName).replace(/'/g, '%27').replace(/\(/g, '%28').replace(/\)/g, '%29');
+
+    res.set({
+      'Content-Type': mimeType || 'application/octet-stream',
+      'Content-Disposition': `inline; filename="${encodedFileName}"; filename*=UTF-8''${encodedFileName}`,
+      'Content-Length': buffer.length,
+    });
+
+    return buffer;
   }
 
   @Patch('documents/:documentId')

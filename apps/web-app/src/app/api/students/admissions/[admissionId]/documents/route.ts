@@ -1,22 +1,24 @@
 /**
  * ============================================================================
- * API ROUTE — Admission Documents Upload (proxy)
+ * API ROUTE — Admission Documents Upload (proxy, pattern data URL)
  * ============================================================================
  *
- * Reçoit un FormData (fichier + métadonnées) depuis le frontend,
- * upload le fichier vers Vercel Blob (ou storage local), puis crée
- * l'enregistrement AdmissionDocument via l'API NestJS.
+ * Reçoit un JSON body { documentType, fileName, fileDataUrl, mimeType, fileSize }
+ * depuis le frontend (pattern aligné sur le module RH — plus de FormData),
+ * forward au backend NestJS POST /students/admissions/:id/upload-document.
  *
- * Le backend NestJS ne gère pas le multipart directement — ce proxy
- * fait la conversion FormData → JSON + upload fichier.
+ * Le backend valide le data URL via IMAGE_OR_PDF_DATA_URL_PIPE (images + PDF,
+ * max 20 Mo) et stocke le data URL directement dans AdmissionDocument.filePath.
  *
  * POST /api/students/admissions/[admissionId]/documents
- * Body: FormData {
- *   file: File,
+ * Body: JSON {
  *   documentType: string,
  *   fileName: string,
+ *   fileDataUrl: string,  // data:image/...;base64,... ou data:application/pdf;base64,...
  *   mimeType: string,
- *   fileSize: string,
+ *   fileSize: number,
+ *   comment?: string,
+ *   expiresAt?: string,
  * }
  */
 
@@ -27,7 +29,7 @@ import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 const API_URL = getApiBaseUrlForRoutes();
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60; // Allow up to 60s for file upload
+export const maxDuration = 60; // Allow up to 60s for large file uploads
 
 export async function POST(
   request: NextRequest,
@@ -36,47 +38,34 @@ export async function POST(
   const { admissionId } = await params;
 
   try {
-    const formData = await request.formData();
-    const file = formData.get('file') as File | null;
-    const documentType = formData.get('documentType') as string;
-    const fileName = formData.get('fileName') as string;
-    const mimeType = formData.get('mimeType') as string;
-    const fileSize = formData.get('fileSize') as string;
-
-    if (!file) {
+    const body = await request.json().catch(() => null);
+    if (!body) {
       return NextResponse.json(
-        { error: 'Aucun fichier fourni' },
+        { error: 'Body JSON requis' },
+        { status: 400 }
+      );
+    }
+    const { documentType, fileName, fileDataUrl, mimeType, fileSize, comment, expiresAt } = body as {
+      documentType?: string;
+      fileName?: string;
+      fileDataUrl?: string;
+      mimeType?: string;
+      fileSize?: number;
+      comment?: string;
+      expiresAt?: string;
+    };
+
+    if (!documentType || !fileName || !fileDataUrl) {
+      return NextResponse.json(
+        { error: 'documentType, fileName et fileDataUrl sont requis' },
         { status: 400 }
       );
     }
 
-    // 1. Upload du fichier vers Vercel Blob (si configuré) ou stockage local
-    let filePath: string | null = null;
-
-    // Vercel Blob upload
-    if (process.env.BLOB_READ_WRITE_TOKEN) {
-      try {
-        const { put } = await import('@vercel/blob');
-        const blob = await put(
-          `admission-docs/${admissionId}/${Date.now()}-${fileName}`,
-          file,
-          {
-            access: 'public',
-            contentType: mimeType || 'application/octet-stream',
-            token: process.env.BLOB_READ_WRITE_TOKEN,
-          }
-        );
-        filePath = blob.url;
-      } catch (uploadErr: any) {
-        console.error('Vercel Blob upload failed:', uploadErr);
-        // Continue sans filePath — le document sera créé sans fichier attaché
-      }
-    }
-
-    // 2. Créer l'enregistrement AdmissionDocument via l'API NestJS
+    // Forward au backend NestJS — endpoint upload-document (pattern RH)
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(
-      normalizeApiUrl(`${API_URL}/students/admissions/${admissionId}/documents`),
+      normalizeApiUrl(`${API_URL}/students/admissions/${admissionId}/upload-document`),
       {
         method: 'POST',
         headers: {
@@ -86,9 +75,11 @@ export async function POST(
         body: JSON.stringify({
           documentType,
           fileName,
-          filePath,
-          mimeType,
-          fileSize: parseInt(fileSize, 10) || undefined,
+          fileDataUrl,
+          mimeType: mimeType || 'application/octet-stream',
+          fileSize: fileSize || 0,
+          comment,
+          expiresAt,
         }),
       }
     );

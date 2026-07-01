@@ -35,6 +35,7 @@ import {
   Phone,
   KeyRound,
   Building2,
+  MapPin,
   GraduationCap,
   Users,
   ArrowLeft,
@@ -105,6 +106,34 @@ interface PreEnrollmentData {
   childLastName: string;
   targetLevel: string;
   message?: string;
+
+  // ── Champs étendus (admission complète) ──
+  // Identité enfant
+  childDateOfBirth?: string;
+  childGender?: string;
+  childBirthPlace?: string;
+  childNationality?: string;
+  childAddress?: string;
+
+  // Vœux académiques
+  previousSchool?: string;
+  previousLevel?: string;
+  changeReason?: string;
+  wantsBilingual?: boolean;
+
+  // Responsable légal (champs supplémentaires)
+  parentRelationship?: string;
+  parentAddress?: string;
+  parentProfession?: string;
+
+  // ── Documents uploadés (data URLs) — optionnels ──
+  // Chaque doc est { fileName, fileDataUrl, mimeType, fileSize } | null
+  birthCertificate?: any | null;
+  idPhoto?: any | null;
+  lastReportCard?: any | null;
+  schoolCertificate?: any | null;
+  parentalAuth?: any | null;
+  npi?: any | null;
 }
 
 /** Info école stockée dans sessionStorage pour affichage sur la page login */
@@ -202,6 +231,89 @@ interface SchoolBranding {
   secondaryColor: string | null;
   slogan: string | null;
   motto: string | null;
+}
+
+/**
+ * Convertit un File en data URL base64 — pattern aligné sur CareersContent.tsx
+ * (module RH). Les images sont compressées (maxEdge=1600, JPEG 0.85), les PDF/DOC
+ * sont lus tels quels.
+ *
+ * Retourne { fileName, fileDataUrl, mimeType, fileSize } prêt à être envoyé
+ * au backend /api/public/admission/submit.
+ */
+async function fileToDataUrl(file: File): Promise<{
+  fileName: string;
+  fileDataUrl: string;
+  mimeType: string;
+  fileSize: number;
+}> {
+  const isImage = file.type.startsWith('image/');
+  let fileDataUrl: string;
+
+  if (isImage) {
+    // Compression : maxEdge=1600, qualité 0.85, format JPEG
+    fileDataUrl = await compressImageFileToDataUrl(file, { maxEdge: 1600, quality: 0.85, mimeType: 'image/jpeg' });
+  } else {
+    // PDF/DOC : lecture brute en base64
+    fileDataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error('Lecture du fichier impossible'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  return {
+    fileName: file.name,
+    fileDataUrl,
+    mimeType: file.type || (isImage ? 'image/jpeg' : 'application/octet-stream'),
+    fileSize: file.size,
+  };
+}
+
+/**
+ * Compression d'image côté navigateur — replica léger de lib/media.compressImageFileToDataUrl.
+ * Évite d'importer le helper qui n'est pas forcément disponible côté page publique.
+ */
+async function compressImageFileToDataUrl(
+  file: File,
+  opts: { maxEdge: number; quality: number; mimeType: string },
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = () => {
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height && width > opts.maxEdge) {
+          height = Math.round((height * opts.maxEdge) / width);
+          width = opts.maxEdge;
+        } else if (height > opts.maxEdge) {
+          width = Math.round((width * opts.maxEdge) / height);
+          height = opts.maxEdge;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Canvas non supporté'));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        try {
+          const dataUrl = canvas.toDataURL(opts.mimeType, opts.quality);
+          resolve(dataUrl);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      img.onerror = () => reject(new Error('Image invalide'));
+      img.src = reader.result as string;
+    };
+    reader.onerror = () => reject(new Error('Lecture du fichier impossible'));
+    reader.readAsDataURL(file);
+  });
 }
 
 interface LoginPageProps {
@@ -340,6 +452,13 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     message: '',
   });
   const [preEnrollmentSubmitted, setPreEnrollmentSubmitted] = useState(false);
+  const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+  // ── Wizard multi-étapes pour la pré-inscription publique ──
+  // Étape 1 : Type de candidat + Identité élève + Classe souhaitée
+  // Étape 2 : Responsable légal (contact + champs étendus)
+  // Étape 3 : Pièces justificatives + Message + Submit
+  // Objectif : fixer la hauteur du formulaire, éviter le scroll vertical.
+  const [preEnrollmentStep, setPreEnrollmentStep] = useState<1 | 2 | 3>(1);
 
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -464,9 +583,11 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     e.preventDefault();
     setError(null);
 
-    // ── Turnstile désactivé — pas de vérification d'humanité requise ──
-    // Pour réactiver : décommenter le bloc ci-dessous
-    // if (process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken && portalType !== 'public') {
+    // ── Turnstile : désactivé pour le portail public (pré-inscription) ──
+    // Le flux public doit rester simple. La validation Turnstile est gardée
+    // pour les portails authentifiés (school, teacher, parent, platform).
+    // Pour réactiver sur le portail public, décommenter le bloc ci-dessous.
+    // if (portalType !== 'public' && process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken) {
     //   setError('Veuillez compléter la vérification de sécurité avant de continuer.');
     //   return;
     // }
@@ -493,6 +614,11 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       let userMessage = rawMessage;
       if (rawMessage.includes('timeout') || rawMessage.includes('ne répond pas') || rawMessage.includes('30 secondes')) {
         userMessage = 'Le serveur est en cours de démarrage. Veuillez réessayer dans quelques secondes.';
+      } else if (rawMessage.toLowerCase().includes('aborted') || rawMessage.toLowerCase().includes('signal is aborted')) {
+        // AbortController déclenché (timeout ou navigation) — surtout pour l'upload de documents
+        userMessage = portalType === 'public'
+          ? 'La soumission a expiré (le serveur met trop de temps à répondre). Veuillez réduire la taille des documents ou réessayer dans quelques instants.'
+          : 'La connexion a expiré. Le serveur est peut-être en cours de démarrage, veuillez réessayer.';
       } else if (rawMessage.includes('Internal server error') || rawMessage.includes('500')) {
         userMessage = 'Erreur serveur temporaire. Veuillez réessayer dans quelques instants.';
       } else if (rawMessage.includes('Unauthorized') || rawMessage.includes('401')) {
@@ -932,29 +1058,149 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   };
 
   // ── Public portal: pre-enrollment (aucune authentification requise) ──
+  // Envoie les données au backend /students/admissions-public/upload-apply
+  // qui crée l'Admission + AdmissionDocument(s) et envoie un email au parent.
   const handlePreEnrollmentSubmit = async () => {
     const schoolId = tenantIdForApi || schoolSlugFromUrl;
     if (!schoolId) {
       throw new Error('Veuillez sélectionner un établissement pour la pré-inscription');
     }
 
-    const response = await fetchWithTimeout('/api/public/pre-enrollment', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...preEnrollment,
-        schoolSlug: schoolSlugFromUrl || tenantSlug,
-        tenantId: tenantIdForApi,
-      }),
-    });
+    // Mapper les champs du formulaire (parent*/child*) vers le schéma Admission
+    // (firstName/lastName/mainGuardian*).
+    const payload: any = {
+      tenantId: tenantIdForApi,
+      candidateType: preEnrollment.candidateType,
 
-    const data = await response.json();
+      // Élève
+      firstName: preEnrollment.childFirstName,
+      lastName: preEnrollment.childLastName,
+      dateOfBirth: preEnrollment.childDateOfBirth || undefined,
+      gender: preEnrollment.childGender || undefined,
+      birthPlace: preEnrollment.childBirthPlace || undefined,
+      nationality: preEnrollment.childNationality || 'Béninoise',
+      address: preEnrollment.childAddress || undefined,
 
-    if (!response.ok || !data.success) {
-      throw new Error(data.message || data.error || 'Erreur lors de la pré-inscription');
+      // schoolLevelId déduit du candidateType (MATERNELLE/PRIMARY/SECONDARY)
+      schoolLevelId:
+        preEnrollment.candidateType === 'MATERNELLE' ? 'MATERNELLE' :
+        preEnrollment.candidateType === 'PRIMARY' ? 'PRIMAIRE' :
+        preEnrollment.candidateType === 'SECONDARY' ? 'SECONDAIRE' :
+        undefined,
+      // requestedClassLabel : on garde targetLevel dans notes car c'est du texte libre
+      // (le schéma attend requestedClassId = UUID, qu'on n'a pas en contexte public)
+      wantsBilingual: preEnrollment.wantsBilingual || false,
+      previousSchool: preEnrollment.previousSchool || undefined,
+      previousLevel: preEnrollment.previousLevel || undefined,
+      changeReason: preEnrollment.changeReason || undefined,
+
+      // Responsable légal
+      mainGuardianName: `${preEnrollment.parentFirstName} ${preEnrollment.parentLastName}`.trim(),
+      mainGuardianPhone: preEnrollment.parentPhone || undefined,
+      mainGuardianEmail: preEnrollment.parentEmail || undefined,
+      mainGuardianRelationship: preEnrollment.parentRelationship || undefined,
+      mainGuardianAddress: preEnrollment.parentAddress || undefined,
+      mainGuardianProfession: preEnrollment.parentProfession || undefined,
+
+      // Message + targetLevel (classe souhaitée libre) → notes
+      message: [
+        preEnrollment.targetLevel ? `Classe souhaitée : ${preEnrollment.targetLevel}` : null,
+        preEnrollment.message,
+      ].filter(Boolean).join('\n\n') || undefined,
+    };
+
+    // Ajouter les documents uploadés (data URLs)
+    const docFields = [
+      'birthCertificate', 'idPhoto', 'lastReportCard',
+      'schoolCertificate', 'parentalAuth', 'npi',
+    ] as const;
+    for (const key of docFields) {
+      const doc = preEnrollment[key];
+      if (doc && doc.fileDataUrl) {
+        payload[key] = doc;
+      }
+    }
+
+    // Token Turnstile (validation serveur anti-spam si configuré)
+    if (turnstileToken) {
+      payload.turnstileToken = turnstileToken;
+    }
+
+    // Timeout étendu (60s) car l'upload de 6 documents en base64 peut être lent,
+    // surtout si le backend est en cold start sur Fly.io.
+    const response = await fetchWithTimeout(
+      '/api/public/admission/submit',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      },
+      60_000, // 60 secondes
+    );
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data.error || data.message || `Erreur lors de la soumission (${response.status})`);
     }
 
     setPreEnrollmentSubmitted(true);
+  };
+
+  // ── Validation par étape du wizard pré-inscription ──
+  // Retourne un message d'erreur si l'étape est invalide, null sinon.
+  // IMPORTANT : l'ordre des étapes est :
+  //   Étape 1 = Type candidat + Responsable légal (parent)
+  //   Étape 2 = Identité de l'enfant + Classe souhaitée (sauf PROSPECT_PARENT qui saute cette étape)
+  //   Étape 3 = Pièces justificatives + Message
+  const validatePreEnrollmentStep = (step: 1 | 2 | 3): string | null => {
+    if (step === 1) {
+      // Étape 1 : type candidat + champs parent
+      if (!preEnrollment.candidateType) return 'Veuillez sélectionner le niveau d\'inscription (Maternelle, Primaire, Secondaire).';
+      if (!preEnrollment.parentFirstName?.trim()) return 'Veuillez saisir votre prénom (parent).';
+      if (!preEnrollment.parentLastName?.trim()) return 'Veuillez saisir votre nom (parent).';
+      if (!preEnrollment.parentPhone?.trim()) return 'Veuillez saisir votre numéro de téléphone.';
+      if (!preEnrollment.parentEmail?.trim()) return 'Veuillez saisir votre adresse email.';
+    }
+    if (step === 2) {
+      // Étape 2 : champs enfant (uniquement si pas PROSPECT_PARENT)
+      if (preEnrollment.candidateType !== 'PROSPECT_PARENT') {
+        if (!preEnrollment.childFirstName?.trim()) return 'Veuillez saisir le prénom de l\'enfant.';
+        if (!preEnrollment.childLastName?.trim()) return 'Veuillez saisir le nom de l\'enfant.';
+        if (!preEnrollment.targetLevel) return 'Veuillez sélectionner la classe souhaitée.';
+      }
+    }
+    // Étape 3 : aucun champ obligatoire (documents et message sont optionnels)
+    return null;
+  };
+
+  const handlePreEnrollmentNext = () => {
+    const err = validatePreEnrollmentStep(preEnrollmentStep);
+    if (err) {
+      setError(err);
+      return;
+    }
+    setError(null);
+    if (preEnrollmentStep === 1) {
+      // Si PROSPECT_PARENT, sauter l'étape 2 (pas d'info enfant à remplir) → aller directement à l'étape 3
+      if (preEnrollment.candidateType === 'PROSPECT_PARENT') {
+        setPreEnrollmentStep(3);
+      } else {
+        setPreEnrollmentStep(2);
+      }
+    } else if (preEnrollmentStep === 2) {
+      setPreEnrollmentStep(3);
+    }
+  };
+
+  const handlePreEnrollmentBack = () => {
+    setError(null);
+    if (preEnrollmentStep === 3) {
+      // Si PROSPECT_PARENT, revenir directement à l'étape 1 (étape 2 était skippée)
+      setPreEnrollmentStep(preEnrollment.candidateType === 'PROSPECT_PARENT' ? 1 : 2);
+    } else if (preEnrollmentStep === 2) {
+      setPreEnrollmentStep(1);
+    }
   };
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -1242,25 +1488,62 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             boxShadow: `0 24px 48px -12px ${NAVY}14, 0 0 0 1px ${GOLD}12`,
           }}
         >
-          <div className="flex flex-col md:flex-row min-h-[480px]">
+          <div
+            className={`flex flex-col md:flex-row ${portalType === 'public' ? 'public-portal-container' : ''}`}
+            style={{
+              minHeight: portalType === 'public' ? '600px' : '480px',
+            }}
+          >
             {/* ── Colonne gauche : infos école (fond bleu palette Helm) ── */}
-            <div className="flex-1 p-6 sm:p-8 flex flex-col justify-center relative overflow-hidden"
+            {/* Structure harmonisée pour TOUS les portails :
+                1. HEADER (top)    : badge portail (icône + libellé)
+                2. CENTRE (middle) : logo + nom école + slogan + infos clés (centré verticalement)
+                3. FOOTER (bottom) : "Propulsé par Academia Helm" + logo AH */}
+            <div className="flex-1 p-6 sm:p-8 flex flex-col relative overflow-hidden"
               style={{ background: `linear-gradient(155deg, ${NAVY} 0%, ${BLUE} 100%)` }}>
               {/* ── Décor bleu : halos lumineux subtils ── */}
               <div className="pointer-events-none absolute -top-16 -left-10 h-48 w-48 rounded-full opacity-25 blur-3xl" style={{ background: '#ffffff' }} aria-hidden />
               <div className="pointer-events-none absolute -bottom-20 -right-10 h-56 w-56 rounded-full opacity-15 blur-3xl" style={{ background: `${GOLD}` }} aria-hidden />
-          {/* ── Header ── */}
+
+          {/* ════════════════════════════════════════════════════════════════════
+              1. HEADER (top) : Badge portail (icône + libellé)
+              Affiché pour TOUS les portails (sauf portalType === null = sélection)
+              ════════════════════════════════════════════════════════════════════ */}
+          {portalType && portalDef && (
+            <motion.div
+              className="flex justify-center pt-2 pb-4"
+              variants={heroVariants}
+              initial="hidden"
+              animate="show"
+            >
+              <motion.span
+                variants={heroItem}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] uppercase tracking-wider font-bold"
+                style={{
+                  color: '#fff',
+                  background: 'rgba(255,255,255,0.12)',
+                  border: '1px solid rgba(255,255,255,0.25)',
+                  backdropFilter: 'blur(4px)',
+                }}
+              >
+                <portalDef.Icon className="h-3 w-3" />
+                {portalDef.title}
+              </motion.span>
+            </motion.div>
+          )}
+
+          {/* ════════════════════════════════════════════════════════════════════
+              2. CENTRE (middle) : Logo + Nom école + Slogan + Infos clés
+              Centré verticalement (flex-1 + justify-center)
+              ════════════════════════════════════════════════════════════════════ */}
           <motion.div
-            className="mb-4 text-center md:text-left"
+            className="flex-1 flex flex-col items-center justify-center text-center"
             variants={heroVariants}
             initial="hidden"
             animate="show"
           >
             {/* Logo — cercle parfait + jeu lumineux */}
-            <motion.div
-              variants={heroItem}
-              className="mb-3 flex justify-center"
-            >
+            <motion.div variants={heroItem} className="mb-3 flex justify-center">
               <LogoCircle
                 logoUrl={clientBranding?.logoUrl}
                 alt={clientBranding?.name || BRAND.name}
@@ -1268,58 +1551,58 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
               />
             </motion.div>
 
-            {/* Title */}
-            <motion.div
-              variants={heroItem}
-              className="mb-1.5 flex flex-col items-center justify-center gap-1"
-            >
-              <h1
-                className="text-sm font-semibold tracking-tight sm:text-base text-white"
-              >
-                {portalDef?.title || clientBranding?.name || BRAND.name}
+            {/* Nom de l'école (ou nom par défaut) */}
+            <motion.div variants={heroItem} className="mb-1.5">
+              <h1 className="text-base sm:text-lg font-bold tracking-tight text-white">
+                {clientBranding?.name || schoolNameFromUrl || portalDef?.title || BRAND.name}
               </h1>
             </motion.div>
 
-            <motion.p variants={heroItem} className="text-sm text-blue-100">
-              {portalDef?.subtitle || clientBranding?.slogan || BRAND.subtitle}
+            {/* Sous-titre : pour le portail public on n'affiche PAS portalDef.subtitle
+                (redondant avec le badge "Portail Public" en haut). On affiche seulement
+                le slogan de l'école si disponible, sinon rien. */}
+            <motion.p variants={heroItem} className="text-sm text-blue-100 max-w-xs">
+              {portalType === 'public'
+                ? (clientBranding?.slogan || clientBranding?.motto || '')
+                : (portalDef?.subtitle || clientBranding?.slogan || BRAND.subtitle)}
             </motion.p>
 
-            {/* Tenant display — multi-tenant strict */}
-            {(clientBranding?.name || tenantSlug || schoolNameFromUrl) && portalType !== 'public' && (
-              <motion.div variants={heroItem} className="mt-3">
-                <div
-                  className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium text-white"
-                  style={{
-                    borderColor: 'rgba(255,255,255,0.25)',
-                    background: 'rgba(255,255,255,0.10)',
-                    backdropFilter: 'blur(4px)',
-                  }}
-                >
-                  <Building2 className="h-3.5 w-3.5" />
-                  <span>{clientBranding?.name || schoolNameFromUrl || tenantSlug}</span>
-                  {clientBranding?.city && (
-                    <span className="text-blue-200">— {clientBranding.city}</span>
-                  )}
-                </div>
+            {/* Slogan école (si différent du sous-titre et mode non-public) */}
+            {portalType !== 'public' && clientBranding?.slogan && portalDef?.subtitle && clientBranding.slogan !== portalDef.subtitle && (
+              <motion.p variants={heroItem} className="mt-2 text-xs italic text-blue-200/80 max-w-xs">
+                « {clientBranding.slogan} »
+              </motion.p>
+            )}
+
+            {/* ── Infos clés école (si branding résolu) ──
+                Adresse / Téléphone / Website alignés à gauche (plus lisible pour des coordonnées)
+                Le reste reste centré. */}
+            {clientBranding && (clientBranding.address || clientBranding.phone || clientBranding.website) && (
+              <motion.div variants={heroItem} className="mt-4 text-left text-[11px] text-blue-100/90 space-y-1.5">
+                {clientBranding.address && (
+                  <div className="flex items-start gap-1.5">
+                    <MapPin className="h-3 w-3 mt-0.5 shrink-0 text-blue-200/70" />
+                    <span>{clientBranding.address}{clientBranding.city ? `, ${clientBranding.city}` : ''}</span>
+                  </div>
+                )}
+                {clientBranding.phone && (
+                  <div className="flex items-start gap-1.5">
+                    <Phone className="h-3 w-3 mt-0.5 shrink-0 text-blue-200/70" />
+                    <span>{clientBranding.phone}</span>
+                  </div>
+                )}
+                {clientBranding.website && (
+                  <div className="flex items-start gap-1.5">
+                    <Globe className="h-3 w-3 mt-0.5 shrink-0 text-blue-200/70" />
+                    <span className="break-all">{clientBranding.website}</span>
+                  </div>
+                )}
               </motion.div>
             )}
 
-            {portalType === null && (
-              <motion.p variants={heroItem} className="mt-1 text-xs font-medium text-blue-200">
-                {clientBranding?.slogan || clientBranding?.motto || BRAND.slogan}
-              </motion.p>
-            )}
-
-            {/* Propulsé par — sur sous-domaine école */}
-            {clientBranding && (
-              <motion.p variants={heroItem} className="mt-1 text-[10px] text-blue-200">
-                Propulsé par <span className="font-medium" style={{ color: GOLD }}>{BRAND.name}</span>
-              </motion.p>
-            )}
-
-            {/* ── Portal selection buttons (school subdomain context) ── */}
+            {/* ── Portal selection buttons (school subdomain context, portalType === null) ── */}
             {portalType === null && accessContext === 'school-subdomain' && (
-              <motion.div variants={heroItem} className="mt-4 grid grid-cols-2 gap-2 sm:gap-3">
+              <motion.div variants={heroItem} className="mt-4 grid grid-cols-2 gap-2 sm:gap-3 w-full max-w-xs">
                 {([
                   { type: 'school' as const, label: 'École', Icon: Building2, desc: 'Direction, admin' },
                   { type: 'teacher' as const, label: 'Enseignant', Icon: GraduationCap, desc: 'Pédagogie' },
@@ -1344,6 +1627,28 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 ))}
               </motion.div>
             )}
+          </motion.div>
+
+          {/* ════════════════════════════════════════════════════════════════════
+              3. FOOTER (bottom) : "Propulsé par Academia Helm" + logo AH
+              Toujours affiché (même sans branding école, car c'est le footer plateforme)
+              ════════════════════════════════════════════════════════════════════ */}
+          <motion.div
+            className="pt-4 flex items-center justify-center gap-2 text-[10px] text-blue-200"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.4 }}
+          >
+            <span>Propulsé par</span>
+            <Image
+              src="https://www.academiahelm.com/images/logo-Academia%20Hub.png"
+              alt={BRAND.name}
+              width={56}
+              height={20}
+              className="object-contain opacity-90"
+              style={{ filter: 'brightness(1.1)' }}
+            />
+            <span className="font-semibold" style={{ color: GOLD }}>{BRAND.name}</span>
           </motion.div>
 
           {/* ── Error display ── */}
@@ -1427,10 +1732,15 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                     <FileText className="h-6 w-6 text-green-600" />
                   </div>
                   <div>
-                    <p className="text-lg font-bold text-green-800">Pré-inscription envoyée</p>
+                    <p className="text-lg font-bold text-green-800">Demande d'admission envoyée</p>
                     <p className="mt-1 text-sm text-green-700">
-                      Votre demande de pré-inscription a été enregistrée avec succès.
-                      Vous recevrez une confirmation par SMS et email.
+                      Votre demande d'admission a été enregistrée avec succès.
+                      Un email de confirmation vient de vous être envoyé à l'adresse
+                      {preEnrollment.parentEmail ? (
+                        <strong> {preEnrollment.parentEmail}</strong>
+                      ) : null}.
+                      Notre équipe pédagogique examinera votre dossier et reviendra vers vous
+                      pour les prochaines étapes (entretien, test ou confirmation).
                     </p>
                   </div>
                   <Link
@@ -1454,14 +1764,23 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             <div className="md:hidden h-px" style={{ background: `linear-gradient(to right, transparent, ${GOLD}55, transparent)` }} />
 
             {/* ── Colonne droite : formulaire de connexion ── */}
-            <div className="flex-1 p-6 sm:p-8 flex flex-col justify-center">
+            {/* Pour le portail public : padding généreux, scroll interne seulement sur desktop */}
+            <div
+              className={portalType === 'public'
+                ? 'flex-1 p-4 sm:p-5 md:p-6 flex flex-col justify-center md:overflow-y-auto'
+                : 'flex-1 p-6 sm:p-8 flex flex-col justify-center'
+              }
+            >
 
           {/* ════════════════════════════════════════════════════════════════
               FORMULAIRES D'AUTHENTIFICATION PAR PORTAIL
               Conformes au document academia-helm-portails.md
               ════════════════════════════════════════════════════════════════ */}
 
-          <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
+          <form
+            onSubmit={handleSubmit}
+            className={portalType === 'public' ? 'space-y-3 sm:space-y-3.5' : 'space-y-3 sm:space-y-4'}
+          >
             <AnimatePresence mode="wait">
               <motion.div
                 key={formBlockKey}
@@ -1469,7 +1788,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 animate={{ opacity: 1, x: 0 }}
                 exit={shouldReduceMotion ? undefined : { opacity: 0, x: -12 }}
                 transition={{ duration: dur, ease: 'easeOut' }}
-                className="space-y-3 sm:space-y-4"
+                className={portalType === 'public' ? 'space-y-3 sm:space-y-3.5' : 'space-y-3 sm:space-y-4'}
               >
                 {/* ── PLATFORM + SCHOOL : Email + Mot de passe ── */}
                 {(isStandardLogin || portalType === 'school' || portalType === 'platform') && (
@@ -1812,7 +2131,41 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
 
                 {/* ── PUBLIC : Pré-inscription (aucune authentification requise) ── */}
                 {portalType === 'public' && !preEnrollmentSubmitted && (
-                  <>
+                  <div className="public-pre-enrollment"> {/* wrapper pour styles compacts (voir globals.css) */}
+                    {/* ── En-tête wizard : indicateur d'étapes (3 pastilles) ── */}
+                    <div className="flex items-center justify-center gap-1.5 mb-2">
+                      {[1, 2, 3].map((s) => (
+                        <div key={s} className="flex items-center gap-1.5">
+                          <div
+                            className="flex items-center justify-center rounded-full text-[10px] font-bold transition-all"
+                            style={{
+                              width: 22, height: 22,
+                              background: preEnrollmentStep >= s ? NAVY : '#e2e8f0',
+                              color: preEnrollmentStep >= s ? '#fff' : '#94a3b8',
+                            }}
+                          >
+                            {preEnrollmentStep > s ? '✓' : s}
+                          </div>
+                          {s < 3 && (
+                            <div
+                              className="h-0.5 w-6 transition-all"
+                              style={{ background: preEnrollmentStep > s ? NAVY : '#e2e8f0' }}
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="text-center mb-3">
+                      <p className="text-xs font-bold" style={{ color: NAVY }}>
+                        {preEnrollmentStep === 1 ? 'Étape 1 sur 3 — Responsable légal' :
+                         preEnrollmentStep === 2 ? 'Étape 2 sur 3 — Identité de l\'élève' :
+                         'Étape 3 sur 3 — Documents & message'}
+                      </p>
+                    </div>
+
+                    {/* ── ÉTAPE 1 : Type de candidat + Responsable légal (parent) ── */}
+                    {preEnrollmentStep === 1 && (
+                    <>
                     {/* Type de candidat */}
                     <div>
                       <label className="mb-1.5 block text-sm font-semibold text-slate-900">
@@ -1828,7 +2181,12 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                           <button
                             key={opt.type}
                             type="button"
-                            onClick={() => setPreEnrollment((prev) => ({ ...prev, candidateType: opt.type, targetLevel: '' }))}
+                            onClick={() => {
+                              setPreEnrollment((prev) => ({ ...prev, candidateType: opt.type, targetLevel: '' }));
+                              // Reset du wizard à l'étape 1 quand on change de type de candidat
+                              setPreEnrollmentStep(1);
+                              setError(null);
+                            }}
                             className="flex flex-col items-center gap-1 rounded-xl border-2 p-3 min-h-[44px] text-center transition-all"
                             style={{
                               borderColor: preEnrollment.candidateType === opt.type ? GOLD : `${NAVY}18`,
@@ -1915,8 +2273,65 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                       </div>
                     </div>
 
+                    {/* Responsable légal — champs étendus (lien, adresse, profession) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold text-slate-900">
+                          Lien de parenté <span className="text-slate-400 font-normal">(optionnel)</span>
+                        </label>
+                        <select
+                          value={preEnrollment.parentRelationship || ''}
+                          onChange={(e) => setPreEnrollment((prev) => ({ ...prev, parentRelationship: e.target.value }))}
+                          className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all focus:ring-2"
+                          style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                        >
+                          <option value="">— Sélectionner —</option>
+                          <option value="PERE">Père</option>
+                          <option value="MERE">Mère</option>
+                          <option value="TUTEUR">Tuteur / Tutrice</option>
+                          <option value="ONCLE">Oncle</option>
+                          <option value="TANTE">Tante</option>
+                          <option value="GRAND_PARENT">Grand-parent</option>
+                          <option value="FRERE">Frère</option>
+                          <option value="SOEUR">Sœur</option>
+                          <option value="AUTRE">Autre</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold text-slate-900">
+                          Profession <span className="text-slate-400 font-normal">(optionnel)</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={preEnrollment.parentProfession || ''}
+                          onChange={(e) => setPreEnrollment((prev) => ({ ...prev, parentProfession: e.target.value }))}
+                          className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                          style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                          placeholder="ex : Commerçant"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Adresse du responsable (optionnel) */}
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-900">
+                        Adresse du responsable <span className="text-slate-400 font-normal">(optionnel)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={preEnrollment.parentAddress || ''}
+                        onChange={(e) => setPreEnrollment((prev) => ({ ...prev, parentAddress: e.target.value }))}
+                        className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                        style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                        placeholder="Quartier, ville"
+                      />
+                    </div>
+                    </>
+                    )}
+
+                    {/* ── ÉTAPE 2 : Identité de l'enfant + Classe souhaitée + Vœux académiques ── */}
                     {/* Child info (not for PROSPECT_PARENT) */}
-                    {preEnrollment.candidateType !== 'PROSPECT_PARENT' && (
+                    {preEnrollment.candidateType !== 'PROSPECT_PARENT' && preEnrollmentStep === 2 && (
                       <>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
@@ -1949,10 +2364,71 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                           </div>
                         </div>
 
-                        {/* Target level selection */}
+                        {/* Date de naissance + Sexe */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold text-slate-900">
+                              Date de naissance
+                            </label>
+                            <input
+                              type="date"
+                              value={preEnrollment.childDateOfBirth || ''}
+                              onChange={(e) => setPreEnrollment((prev) => ({ ...prev, childDateOfBirth: e.target.value }))}
+                              className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all focus:ring-2"
+                              style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold text-slate-900">
+                              Sexe
+                            </label>
+                            <select
+                              value={preEnrollment.childGender || ''}
+                              onChange={(e) => setPreEnrollment((prev) => ({ ...prev, childGender: e.target.value }))}
+                              className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all focus:ring-2"
+                              style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                            >
+                              <option value="">— Sélectionner —</option>
+                              <option value="M">Masculin</option>
+                              <option value="F">Féminin</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Lieu de naissance + Nationalité */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold text-slate-900">
+                              Lieu de naissance
+                            </label>
+                            <input
+                              type="text"
+                              value={preEnrollment.childBirthPlace || ''}
+                              onChange={(e) => setPreEnrollment((prev) => ({ ...prev, childBirthPlace: e.target.value }))}
+                              className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                              style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                              placeholder="Cotonou"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold text-slate-900">
+                              Nationalité
+                            </label>
+                            <input
+                              type="text"
+                              value={preEnrollment.childNationality || 'Béninoise'}
+                              onChange={(e) => setPreEnrollment((prev) => ({ ...prev, childNationality: e.target.value }))}
+                              className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                              style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                              placeholder="Béninoise"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Classe souhaitée (ex "Niveau souhaité") */}
                         <div>
                           <label className="mb-1 block text-xs font-semibold text-slate-900">
-                            Niveau souhaité
+                            Classe souhaitée
                           </label>
                           <select
                             required
@@ -1967,10 +2443,136 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                             ))}
                           </select>
                         </div>
+
+                        {/* Établissement précédent + Dernier niveau fréquenté */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold text-slate-900">
+                              Établissement précédent <span className="text-slate-400 font-normal">(optionnel)</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={preEnrollment.previousSchool || ''}
+                              onChange={(e) => setPreEnrollment((prev) => ({ ...prev, previousSchool: e.target.value }))}
+                              className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                              style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                              placeholder="Nom de l'école précédente"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold text-slate-900">
+                              Dernière classe fréquentée <span className="text-slate-400 font-normal">(optionnel)</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={preEnrollment.previousLevel || ''}
+                              onChange={(e) => setPreEnrollment((prev) => ({ ...prev, previousLevel: e.target.value }))}
+                              className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                              style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                              placeholder="ex : CE1"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Motif de changement (optionnel) */}
+                        <div>
+                          <label className="mb-1 block text-xs font-semibold text-slate-900">
+                            Motif de changement <span className="text-slate-400 font-normal">(optionnel)</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={preEnrollment.changeReason || ''}
+                            onChange={(e) => setPreEnrollment((prev) => ({ ...prev, changeReason: e.target.value }))}
+                            className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all placeholder:text-slate-400 focus:ring-2"
+                            style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                            placeholder="Déménagement, recherche de meilleure qualité, etc."
+                          />
+                        </div>
                       </>
                     )}
 
-                    {/* Message */}
+                    {/* ── ÉTAPE 3 : Pièces justificatives + Message final ── */}
+                    {/* Pièces justificatives (upload optionnel) */}
+                    {preEnrollment.candidateType !== 'PROSPECT_PARENT' && preEnrollmentStep === 3 && (
+                      <div className="rounded-xl border-2 border-slate-200 bg-slate-50 p-3">
+                        <div className="mb-2">
+                          <label className="block text-xs font-bold text-slate-900">
+                            Pièces justificatives <span className="text-slate-400 font-normal">(optionnel)</span>
+                          </label>
+                          <p className="text-[10px] text-slate-500 mt-0.5">
+                            Joignez les documents disponibles. Formats : PDF, JPG, PNG, WebP (max 20 Mo / fichier).
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {[
+                            { key: 'birthCertificate', label: 'Acte de naissance', required: false },
+                            { key: 'idPhoto', label: 'Photo d\'identité', required: false },
+                            { key: 'npi', label: 'NPI (élève)', required: false },
+                            { key: 'lastReportCard', label: 'Bulletin précédent', required: false },
+                            { key: 'schoolCertificate', label: 'Certificat de scolarité', required: false },
+                            { key: 'parentalAuth', label: 'Autorisation parentale', required: false },
+                          ].map((docField) => {
+                            const docValue = (preEnrollment as any)[docField.key];
+                            return (
+                              <div key={docField.key} className="bg-white rounded-lg border border-slate-200 p-2">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-[11px] font-semibold text-slate-700 truncate flex-1">
+                                    {docField.label}
+                                  </span>
+                                  {docValue && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setPreEnrollment((prev) => ({ ...prev, [docField.key]: null }))}
+                                      className="text-[10px] text-rose-500 hover:bg-rose-50 px-1.5 py-0.5 rounded transition shrink-0"
+                                      title="Retirer"
+                                    >
+                                      ✕
+                                    </button>
+                                  )}
+                                </div>
+                                {docValue ? (
+                                  <div className="mt-1 text-[10px] text-emerald-700 bg-emerald-50 rounded px-1.5 py-0.5 truncate">
+                                    ✓ {docValue.fileName} ({Math.round(docValue.fileSize / 1024)} Ko)
+                                  </div>
+                                ) : (
+                                  <label
+                                    className="mt-1 flex items-center justify-center cursor-pointer border border-dashed border-slate-300 rounded px-2 py-1.5 text-[10px] text-slate-500 hover:bg-slate-50 transition"
+                                  >
+                                    {isUploadingDoc ? 'Chargement...' : '+ Joindre'}
+                                    <input
+                                      type="file"
+                                      accept=".pdf,.jpg,.jpeg,.png,.webp"
+                                      className="hidden"
+                                      onChange={async (e) => {
+                                        const f = e.target.files?.[0];
+                                        if (!f) return;
+                                        // Limite 20 Mo
+                                        if (f.size > 20 * 1024 * 1024) {
+                                          setError('Fichier trop volumineux (max 20 Mo)');
+                                          return;
+                                        }
+                                        setIsUploadingDoc(true);
+                                        try {
+                                          const dataUrl = await fileToDataUrl(f);
+                                          setPreEnrollment((prev) => ({ ...prev, [docField.key]: dataUrl }));
+                                        } catch (err: any) {
+                                          setError(`Échec lecture fichier : ${err.message}`);
+                                        } finally {
+                                          setIsUploadingDoc(false);
+                                        }
+                                      }}
+                                    />
+                                  </label>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Message — étape 3 */}
+                    {preEnrollmentStep === 3 && (
                     <div>
                       <label className="mb-1 block text-xs font-semibold text-slate-900">
                         Message (optionnel)
@@ -1984,13 +2586,47 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                         placeholder="Précisez votre demande..."
                       />
                     </div>
-                  </>
+                    )}
+
+                    {/* ── Navigation wizard : Précédent / Suivant / Soumettre ── */}
+                    {portalType === 'public' && !preEnrollmentSubmitted && (
+                      <div className="flex items-center justify-between gap-2 pt-2">
+                        {preEnrollmentStep > 1 ? (
+                          <button
+                            type="button"
+                            onClick={handlePreEnrollmentBack}
+                            className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold border-2 transition-all"
+                            style={{ borderColor: `${NAVY}30`, color: NAVY, background: '#fff' }}
+                          >
+                            <ArrowLeft className="h-4 w-4" />
+                            Précédent
+                          </button>
+                        ) : (
+                          <div /> /* spacer pour garder le bouton suivant à droite */
+                        )}
+
+                        {preEnrollmentStep < 3 ? (
+                          <button
+                            type="button"
+                            onClick={handlePreEnrollmentNext}
+                            className="inline-flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-sm font-bold text-white shadow-md transition-all"
+                            style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
+                          >
+                            Suivant
+                            <ArrowRight className="h-4 w-4" />
+                          </button>
+                        ) : null /* étape 3 : le bouton Submit principal prend le relais ci-dessous */}
+                      </div>
+                    )}
+                  </div>
                 )}
               </motion.div>
             </AnimatePresence>
 
             {/* ── Cloudflare Turnstile — vérification d'humanité ── */}
-            {!(portalType === 'public') && (
+            {/* Désactivé pour le portail public (pré-inscription) pour simplifier le flux.
+                Actif pour les portails authentifiés si NEXT_PUBLIC_TURNSTILE_SITE_KEY est configuré. */}
+            {portalType !== 'public' && process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && (
               <div className="flex justify-center mt-2">
                 <TurnstileWidget
                   onToken={setTurnstileToken}
@@ -2001,7 +2637,8 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             )}
 
             {/* ── Submit button — palette Helm unifiée ── */}
-            {!(portalType === 'public' && preEnrollmentSubmitted) && (
+            {/* Pour le portail public : n'afficher qu'à l'étape 3 (sinon le bouton "Suivant" gère la navigation) */}
+            {!(portalType === 'public' && preEnrollmentSubmitted) && !(portalType === 'public' && preEnrollmentStep < 3) && (
               <motion.button
                 type="submit"
                 disabled={isLoading}

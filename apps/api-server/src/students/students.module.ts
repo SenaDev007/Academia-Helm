@@ -34,15 +34,19 @@ import { StudentDossierService } from './services/student-dossier.service';
 import { PublicVerificationController } from './controllers/public-verification.controller';
 import { StudentDossierController } from './controllers/student-dossier.controller';
 import { AdmissionController } from './controllers/admission.controller';
+import { PublicAdmissionController } from './controllers/public-admission.controller';
 // Module 1 - Cycle de vie (pre-register, admit, re-enroll, transfer, change-class, history, export EDUCMASTER)
 import { StudentsLifecycleService } from './services/students-lifecycle.service';
 import { AdmissionService } from './services/admission.service';
+import { AdmissionNotificationService } from './services/admission-notification.service';
 import { StudentsLifecycleController } from './controllers/students-lifecycle.controller';
 import { EducmasterExcelExportService } from './services/educmaster-excel-export.service';
 import { MatriculeService } from './services/matricule.service';
 import { StudentTransferController } from './student-transfer.controller';
 import { StudentTransferService } from './student-transfer.service';
 import { FinanceModule } from '../finance/finance.module';
+import { StorageService } from '../common/services/storage.service';
+import { CommunicationModule } from '../communication/communication.module';
 
 @Module({
   imports: [
@@ -54,6 +58,7 @@ import { FinanceModule } from '../finance/finance.module';
     OrionModule, // Pour intégration ORION sur le cycle de vie élèves
     FinanceModule, // Comptes élèves : création auto StudentAccount à l'admission/réinscription
     BillingModule, // ✅ Pour StudentCountVerifierService (vérification nb élèves vs plan)
+    CommunicationModule, // ✅ Pour AdmissionNotificationService (envoi emails aux parents)
   ],
   controllers: [
     // Specific route controllers MUST be registered BEFORE StudentsPrismaController
@@ -63,6 +68,7 @@ import { FinanceModule } from '../finance/finance.module';
     StudentsController,
     StudentsLifecycleController,
     AdmissionController,
+    PublicAdmissionController,
     StudentTransferController,
     StudentIdentifierController,
     StudentIdCardController,
@@ -87,6 +93,7 @@ import { FinanceModule } from '../finance/finance.module';
     DisciplinePrismaService,
     DocumentsPrismaService,
     TransfersPrismaService,
+    StorageService,
     // Module 1 - Matricule Global & Cartes Scolaires
     StudentIdentifierService,
     StudentIdCardService,
@@ -95,6 +102,7 @@ import { FinanceModule } from '../finance/finance.module';
     PublicVerificationService,
     StudentDossierService,
     AdmissionService,
+    AdmissionNotificationService,
     StudentsLifecycleService,
     EducmasterExcelExportService,
     MatriculeService,

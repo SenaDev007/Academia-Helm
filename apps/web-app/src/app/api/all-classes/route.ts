@@ -32,13 +32,18 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const url = new URL(`${API_URL}/classes`);
-    // On utilise limit=100 (max accepté par PaginationDto) et on force schoolLevelId=ALL
+    // ⚠️ NE PAS mettre schoolLevelId dans les query params !
+    // Le PaginationDto du backend a forbidNonWhitelisted: true → 400 Bad Request.
+    // On passe schoolLevelId=ALL uniquement via le header x-school-level-id
+    // (priorité 3 dans le SchoolLevelId decorator).
     url.searchParams.append('limit', '100');
-    url.searchParams.append('schoolLevelId', 'ALL');
 
     const headers = await getProxyAuthHeaders(request);
     // ⚠️ Forcer le header x-school-level-id=ALL pour que le SchoolLevelId decorator
-    // (priorité 1 = header) retourne ALL au lieu du schoolLevelId du contexte admin.
+    // retourne ALL au lieu du schoolLevelId du contexte admin.
+    // Le header prend la priorité 3 (après context et request.schoolLevelId),
+    // mais comme ClassesController n'a pas @RequireTenant(), le ContextInterceptor
+    // ne résout pas le contexte → priorités 1 et 2 sont vides → priorité 3 (header) gagne.
     headers['x-school-level-id'] = 'ALL';
 
     const response = await fetch(normalizeApiUrl(url.toString()), { headers });

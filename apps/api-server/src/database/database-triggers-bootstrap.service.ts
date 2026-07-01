@@ -71,9 +71,9 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  SELECT COALESCE(ac."is_locked", ay."isClosed") INTO locked
+  SELECT COALESCE(ac."isLocked", ay."isClosed") INTO locked
   FROM "academic_years" ay
-  LEFT JOIN "academic_year_closures" ac ON ac."academic_year_id" = ay."id"
+  LEFT JOIN "academic_year_closures" ac ON ac."academicYearId" = ay."id"
   WHERE ay."id" = NEW."academicYearId";
 
   IF locked THEN

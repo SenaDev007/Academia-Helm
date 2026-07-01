@@ -1696,3 +1696,43 @@ Stage Summary:
 - Base de données Neon nettoyée : 0 élève, 0 enrollment, 0 admission
 - Triggers réactivés et opérationnels
 - Le tenant CSPEB est prêt pour des tests propres
+
+---
+Task ID: fix-trigger-camelcase-conversion-400
+Agent: main
+Task: Fix erreur 400 lors conversion admission → élève (trigger prevent_update_if_year_closed)
+
+Work Log:
+- Diagnostic : 2 étudiants orphelins créés dans la DB, admission toujours en ACCEPTED (pas CONVERTED)
+  → preRegister() réussissait (créait le student) mais studentEnrollment.create() échouait
+  → l'exception remontait jusqu'au frontend → 400
+
+- Cause racine : trigger PostgreSQL prevent_update_if_year_closed() avait un bug de casing
+  - La fonction référençait ac."academic_year_id" et ac."is_locked" (snake_case)
+  - Mais les colonnes réelles de academic_year_closures sont "academicYearId" et "isLocked" (camelCase)
+  - Le trigger se déclenche sur BEFORE INSERT OR UPDATE de student_enrollments
+  - À chaque INSERT, la fonction essayait de JOIN sur une colonne inexistante → erreur SQL
+  → l'INSERT était rejeté → preRegister créait le student mais pas l'enrollment → 400
+
+- Fix appliqué directement sur la DB Neon de production :
+  - CREATE OR REPLACE FUNCTION prevent_update_if_year_closed() avec les bons noms de colonnes
+  - Vérification : la nouvelle fonction utilise ac."academicYearId" et ac."isLocked"
+  - 2 étudiants orphelins supprimés (désactivation trigger → DELETE → réactivation)
+  - État final : 0 student, 0 enrollment, 1 admission (ACCEPTED, prête pour conversion)
+
+- Fix appliqué dans le code source (persistance lors des redéploiements) :
+  - apps/api-server/src/database/database-triggers-bootstrap.service.ts ligne 74-76
+  - ac."is_locked" → ac."isLocked"
+  - ac."academic_year_id" → ac."academicYearId"
+
+- Note : ce bug existait depuis le début mais n'avait jamais été détecté car :
+  1. Les précédents tests utilisaient peut-être une DB sans le trigger
+  2. Ou le trigger avait été corrigé manuellement puis écrasé par un redéploiement
+  3. Le message d'erreur SQL (column does not exist) était masqué par Prisma qui le transformait en 400 générique
+
+Stage Summary:
+- DB Neon corrigée : trigger function mise à jour avec camelCase
+- 2 étudiants orphelins nettoyés
+- Code source corrigé : database-triggers-bootstrap.service.ts
+- L'admission CSPEBE-A-26-0001 (status ACCEPTED) est prête pour conversion
+- L'utilisateur peut maintenant re-cliquer sur "Convertir" — ça devrait marcher

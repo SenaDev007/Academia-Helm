@@ -145,17 +145,6 @@ export default function EnrollmentsContent() {
     if (academicYear) loadData();
   }, [academicYear, schoolLevel]);
 
-  // Auto-expand la section "Élèves non affectés" si des orphelins sont détectés
-  // au premier chargement — pour que l'admin les voie immédiatement sans clic.
-  const hasAutoExpandedRef = useRef(false);
-  useEffect(() => {
-    if (hasAutoExpandedRef.current) return;
-    if (!isLoading && unassignedEnrollments.length > 0) {
-      hasAutoExpandedRef.current = true;
-      setExpandedLevels(prev => prev.has('__unassigned__') ? prev : new Set(prev).add('__unassigned__'));
-    }
-  }, [isLoading, unassignedEnrollments.length]);
-
   const loadData = async () => {
     if (!academicYear) return;
     setIsLoading(true);
@@ -293,6 +282,19 @@ export default function EnrollmentsContent() {
       (s.student.matricule || '').toLowerCase().includes(q)
     );
   }, [enrollments, classes, searchQuery]);
+
+  // Auto-expand la section "Élèves non affectés" si des orphelins sont détectés
+  // au premier chargement — pour que l'admin les voie immédiatement sans clic.
+  // ⚠️ Cet effect DOIT être placé après la déclaration de `unassignedEnrollments`
+  // car le dependency array est évalué pendant le render (TDZ sinon).
+  const hasAutoExpandedRef = useRef(false);
+  useEffect(() => {
+    if (hasAutoExpandedRef.current) return;
+    if (!isLoading && unassignedEnrollments.length > 0) {
+      hasAutoExpandedRef.current = true;
+      setExpandedLevels(prev => prev.has('__unassigned__') ? prev : new Set(prev).add('__unassigned__'));
+    }
+  }, [isLoading, unassignedEnrollments.length]);
 
   // ─── Stats ──────────────────────────────────────────────────────────
   const stats = useMemo(() => {

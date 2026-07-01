@@ -1779,44 +1779,10 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             ) : null}
           </AnimatePresence>
 
-          {/* ── Pre-enrollment success message (PUBLIC portal) ── */}
-          <AnimatePresence>
-            {preEnrollmentSubmitted && portalType === 'public' ? (
-              <motion.div
-                key="pre-enrollment-success"
-                initial={shouldReduceMotion ? false : { opacity: 0, y: -6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: dur }}
-                className="mb-3"
-              >
-                <div className="flex flex-col items-center gap-3 rounded-xl border bg-green-50/95 p-4 text-center" style={{ borderColor: '#22c55e50' }}>
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
-                    <FileText className="h-6 w-6 text-green-600" />
-                  </div>
-                  <div>
-                    <p className="text-lg font-bold text-green-800">Demande d'admission envoyée</p>
-                    <p className="mt-1 text-sm text-green-700">
-                      Votre demande d'admission a été enregistrée avec succès.
-                      Un email de confirmation vient de vous être envoyé à l'adresse
-                      {preEnrollment.parentEmail ? (
-                        <strong> {preEnrollment.parentEmail}</strong>
-                      ) : null}.
-                      Notre équipe pédagogique examinera votre dossier et reviendra vers vous
-                      pour les prochaines étapes (entretien, test ou confirmation).
-                    </p>
-                  </div>
-                  <Link
-                    href={backToPortalHref}
-                    className="mt-2 inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold shadow-md"
-                    style={{ background: '#ffffff', color: NAVY }}
-                  >
-                    <ArrowLeft className="h-4 w-4" />
-                    Retour aux portails
-                  </Link>
-                </div>
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
+          {/* ── Pre-enrollment success message (PUBLIC portal) ──
+              Maintenant affiché comme un MODAL overlay (voir plus bas dans le JSX),
+              pas inline dans la colonne navy. */}
+
             </div>{/* ── Fin colonne gauche ── */}
 
             {/* ── Séparateur vertical (fondu bleu → blanc) ── */}
@@ -1826,13 +1792,17 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             <div className="md:hidden h-px" style={{ background: `linear-gradient(to right, transparent, ${GOLD}55, transparent)` }} />
 
             {/* ── Colonne droite : formulaire de connexion ── */}
-            {/* Pour le portail public : padding généreux, scroll interne seulement sur desktop */}
+            {/* Pour le portail public : contenu centré avec max-width, padding généreux, aération */}
             <div
               className={portalType === 'public'
-                ? 'md:flex-[3] p-6 sm:p-8 lg:p-10 flex flex-col justify-start overflow-y-auto'
+                ? 'md:flex-[3] p-6 sm:p-8 lg:p-12 flex flex-col items-center justify-start overflow-y-auto'
                 : 'flex-1 p-6 sm:p-8 flex flex-col justify-center'
               }
             >
+            {/* Conteneur centré pour le portail public — évite les champs trop larges */}
+            {/* On utilise un wrapper div avec className conditionnelle au lieu d'un conditionnel && */}
+            {/* car le contenu (form + footer) doit être à l'intérieur du wrapper */}
+            <div className={portalType === 'public' ? 'w-full max-w-xl mx-auto py-4' : 'contents'}>
 
           {/* ════════════════════════════════════════════════════════════════
               FORMULAIRES D'AUTHENTIFICATION PAR PORTAIL
@@ -1841,7 +1811,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
 
           <form
             onSubmit={handleSubmit}
-            className={portalType === 'public' ? 'space-y-2.5 sm:space-y-2.5' : 'space-y-3 sm:space-y-4'}
+            className={portalType === 'public' ? 'space-y-5' : 'space-y-3 sm:space-y-4'}
           >
             <AnimatePresence mode="wait">
               <motion.div
@@ -1850,7 +1820,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 animate={{ opacity: 1, x: 0 }}
                 exit={shouldReduceMotion ? undefined : { opacity: 0, x: -12 }}
                 transition={{ duration: dur, ease: 'easeOut' }}
-                className={portalType === 'public' ? 'space-y-2.5 sm:space-y-2.5' : 'space-y-3 sm:space-y-4'}
+                className={portalType === 'public' ? 'space-y-5' : 'space-y-3 sm:space-y-4'}
               >
                 {/* ── PLATFORM + SCHOOL : Email + Mot de passe ── */}
                 {(isStandardLogin || portalType === 'school' || portalType === 'platform') && (
@@ -2855,6 +2825,8 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
               </p>
             )}
           </motion.div>
+            {/* Fin du conteneur centré pour le portail public */}
+            </div>
             </div>{/* ── Fin colonne droite ── */}
           </div>{/* ── Fin flex-row ── */}
         </motion.div>
@@ -2972,6 +2944,129 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
               <p className="text-center text-xs text-slate-400">
                 Le code est valide 10 minutes. Vérifiez vos spams si vous ne le recevez pas.
               </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ════════════════════════════════════════════════════════════════
+          MODAL DE SUCCÈS — Pré-inscription publique (overlay plein écran)
+          Affiché après soumission réussie avec animation de confirmation.
+          ════════════════════════════════════════════════════════════════ */}
+      <AnimatePresence>
+        {preEnrollmentSubmitted && portalType === 'public' && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(8px)' }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+              className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden"
+            >
+              {/* Décor : halo vert en haut */}
+              <div className="absolute top-0 left-0 right-0 h-32 pointer-events-none" style={{ background: 'linear-gradient(180deg, #dcfce7 0%, transparent 100%)' }} />
+
+              {/* Icône de succès animée */}
+              <div className="relative flex justify-center pt-8 pb-4">
+                <motion.div
+                  initial={{ scale: 0, rotate: -180 }}
+                  animate={{ scale: 1, rotate: 0 }}
+                  transition={{ delay: 0.2, duration: 0.6, type: 'spring', stiffness: 200 }}
+                  className="flex h-20 w-20 items-center justify-center rounded-full bg-green-500 shadow-lg"
+                  style={{ boxShadow: '0 10px 30px -5px rgba(34, 197, 94, 0.5)' }}
+                >
+                  <svg className="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <motion.path
+                      initial={{ pathLength: 0 }}
+                      animate={{ pathLength: 1 }}
+                      transition={{ delay: 0.5, duration: 0.5 }}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M5 13l4 4L19 7"
+                    />
+                  </svg>
+                </motion.div>
+              </div>
+
+              {/* Contenu textuel */}
+              <div className="relative px-8 pb-8 text-center">
+                <motion.h2
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.4 }}
+                  className="text-xl font-bold text-slate-900 mb-2"
+                >
+                  Demande envoyée avec succès !
+                </motion.h2>
+                <motion.p
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.5 }}
+                  className="text-sm text-slate-600 leading-relaxed mb-4"
+                >
+                  Votre demande d'admission a été enregistrée. Un email de confirmation vient
+                  {preEnrollment.parentEmail ? (
+                    <> de vous être envoyé à <strong className="text-slate-800">{preEnrollment.parentEmail}</strong>.</>
+                  ) : (
+                    <> de vous être envoyé.</>
+                  )}
+                </motion.p>
+                <motion.p
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.6 }}
+                  className="text-xs text-slate-500 leading-relaxed mb-6"
+                >
+                  Notre équipe pédagogique examinera votre dossier et reviendra vers vous
+                  pour les prochaines étapes (entretien, test ou confirmation).
+                </motion.p>
+
+                {/* Boutons d'action */}
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.7 }}
+                  className="flex flex-col gap-2"
+                >
+                  <Link
+                    href={backToPortalHref}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-md transition-all hover:shadow-lg"
+                    style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    Retour aux portails
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPreEnrollmentSubmitted(false);
+                      setPreEnrollmentStep(1);
+                      setPreEnrollment({
+                        ...preEnrollment,
+                        candidateType: 'PROSPECT_PARENT',
+                        parentFirstName: '',
+                        parentLastName: '',
+                        parentPhone: '',
+                        parentEmail: '',
+                        childFirstName: '',
+                        childLastName: '',
+                        targetClass: '',
+                        message: '',
+                      });
+                    }}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-xs font-medium text-slate-500 hover:text-slate-700 transition-colors"
+                  >
+                    Soumettre une nouvelle demande
+                  </button>
+                </motion.div>
+              </div>
             </motion.div>
           </motion.div>
         )}

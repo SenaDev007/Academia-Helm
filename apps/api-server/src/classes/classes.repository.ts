@@ -22,8 +22,15 @@ export class ClassesRepository {
     pagination: { skip: number; take: number },
     academicYearId?: string,
   ): Promise<any[]> {
-    const where: any = { tenantId, schoolLevelId };
-    const include: any = {};
+    const where: any = { tenantId };
+    const include: any = {
+      schoolLevel: true,  // ← toujours inclure le niveau scolaire
+    };
+
+    // 'ALL' ou absent → ne pas filtrer par niveau (retourner toutes les classes)
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
+      where.schoolLevelId = schoolLevelId;
+    }
 
     if (academicYearId) {
       where.academicYearId = academicYearId;
@@ -32,7 +39,7 @@ export class ClassesRepository {
 
     return this.prisma.class.findMany({
       where,
-      include: Object.keys(include).length > 0 ? include : undefined,
+      include,
       orderBy: { name: 'asc' },
       skip: pagination.skip,
       take: pagination.take,
@@ -44,7 +51,10 @@ export class ClassesRepository {
     schoolLevelId: string,
     academicYearId?: string,
   ): Promise<number> {
-    const where: any = { tenantId, schoolLevelId };
+    const where: any = { tenantId };
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
+      where.schoolLevelId = schoolLevelId;
+    }
     if (academicYearId) {
       where.academicYearId = academicYearId;
     }

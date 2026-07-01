@@ -27,6 +27,22 @@ import { GetTenant } from '../../common/decorators/tenant.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { StudentIdentifierService } from '../services/student-identifier.service';
 
+/**
+ * Rôles autorisés à gérer les matricules.
+ * Inclut tous les rôles de direction d'établissement (PROMOTER, SUPER_DIRECTOR,
+ * SCHOOL_OWNER, DIRECTEUR_*, etc.) — pas seulement ADMIN/DIRECTOR.
+ * Sinon les PROMOTER (rôle le plus courant sur le tenant CSPEB) sont bloqués (403).
+ */
+const MATRICULE_MANAGER_ROLES = [
+  'ADMIN', 'DIRECTOR', 'DIRECTEUR',
+  'SUPER_DIRECTOR', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'SCHOOL_DIRECTOR',
+  'DIRECTOR_GENERAL', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE',
+  'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI',
+  'PROMOTER', 'PROMOTEUR',
+  'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN',
+  'admin',
+];
+
 @Controller('students/identifiers')
 @UseGuards(JwtAuthGuard, TenantGuard)
 export class StudentIdentifierController {
@@ -38,7 +54,7 @@ export class StudentIdentifierController {
    */
   @Post(':studentId/generate')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'DIRECTOR')
+  @Roles(...MATRICULE_MANAGER_ROLES)
   async generateMatricule(
     @GetTenant() tenant: any,
     @Param('studentId') studentId: string,
@@ -69,7 +85,7 @@ export class StudentIdentifierController {
    */
   @Post(':studentId/synchronize')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'DIRECTOR')
+  @Roles(...MATRICULE_MANAGER_ROLES)
   async synchronizeTemporaryMatricule(
     @GetTenant() tenant: any,
     @Param('studentId') studentId: string,
@@ -101,7 +117,7 @@ export class StudentIdentifierController {
    */
   @Get('search/:matricule')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'DIRECTOR')
+  @Roles(...MATRICULE_MANAGER_ROLES)
   async findStudentByMatricule(@Param('matricule') matricule: string) {
     return this.identifierService.findStudentByMatricule(matricule);
   }
@@ -111,7 +127,7 @@ export class StudentIdentifierController {
    */
   @Get('verify/:matricule')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'DIRECTOR')
+  @Roles(...MATRICULE_MANAGER_ROLES)
   async verifyMatricule(@Param('matricule') matricule: string) {
     const isUnique = await this.identifierService.verifyMatriculeUniqueness(matricule);
     return { matricule, isUnique, available: isUnique };
@@ -122,7 +138,7 @@ export class StudentIdentifierController {
    */
   @Get('stats')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'DIRECTOR')
+  @Roles(...MATRICULE_MANAGER_ROLES)
   async getMatriculeStats(
     @GetTenant() tenant: any,
     @Query('academicYearId') academicYearId?: string,
@@ -135,7 +151,7 @@ export class StudentIdentifierController {
    */
   @Post('generate-bulk')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'DIRECTOR')
+  @Roles(...MATRICULE_MANAGER_ROLES)
   async generateBulkMatricules(
     @GetTenant() tenant: any,
     @Body() data: {

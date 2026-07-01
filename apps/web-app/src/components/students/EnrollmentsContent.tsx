@@ -283,18 +283,72 @@ export default function EnrollmentsContent() {
     );
   }, [enrollments, classes, searchQuery]);
 
-  // Auto-expand la section "Élèves non affectés" si des orphelins sont détectés
-  // au premier chargement — pour que l'admin les voie immédiatement sans clic.
-  // ⚠️ Cet effect DOIT être placé après la déclaration de `unassignedEnrollments`
+  // ─── Orphelins groupés par niveau scolaire ──────────────────────────
+  // L'élève a un schoolLevelId sur Student (résolu depuis l'admission). On groupe
+  // les orphelins par ce niveau pour que l'admin voie immédiatement combien d'élèves
+  // de chaque niveau sont en attente d'affectation.
+  //
+  // ⚠️ Student.schoolLevelId → school_levels (UUID). On n'a pas toujours le nom du
+  // niveau côté frontend, donc on fait un best-effort :
+  //   1. Si classes chargées contiennent une classe avec ce schoolLevelId → on prend son nom
+  //   2. Sinon, on déduit le nom depuis l'UUID en cherchant dans schoolLevels (non disponible
+  //      côté frontend) → on affiche "Niveau inconnu" avec l'UUID tronqué
+  //   3. Fallback : on regroupe sous "Non spécifié"
+  const unassignedByLevel = useMemo(() => {
+    // Construire un map schoolLevelId → nom depuis les classes chargées
+    const levelNameMap = new Map<string, string>();
+    for (const cls of classes) {
+      if (cls.schoolLevel?.name && !levelNameMap.has(cls.schoolLevelId)) {
+        levelNameMap.set(cls.schoolLevelId, cls.schoolLevel.name);
+      }
+    }
+
+    // Grouper les orphelins
+    const groups = new Map<string, { levelId: string; levelName: string; students: Enrollment[] }>();
+    for (const enr of unassignedEnrollments) {
+      // Student.schoolLevelId — peut être undefined pour les anciens élèves
+      const studentLevelId = (enr.student as any).schoolLevelId as string | undefined;
+      const levelName = studentLevelId
+        ? (levelNameMap.get(studentLevelId) || `Niveau ${studentLevelId.substring(0, 8)}…`)
+        : 'Non spécifié';
+      const key = studentLevelId || '__unspecified__';
+      if (!groups.has(key)) {
+        groups.set(key, { levelId: key, levelName, students: [] });
+      }
+      groups.get(key)!.students.push(enr);
+    }
+
+    // Trier par ordre de niveau (Maternelle < Primaire < Secondaire < Autre)
+    const levelOrder = (name: string) => {
+      const n = name.toUpperCase();
+      if (n.includes('MATERNELLE')) return 0;
+      if (n.includes('PRIMAIRE')) return 1;
+      if (n.includes('SECONDAIRE')) return 2;
+      return 3;
+    };
+    return Array.from(groups.values()).sort((a, b) => levelOrder(a.levelName) - levelOrder(b.levelName));
+  }, [unassignedEnrollments, classes]);
+
+  // Auto-expand la section "Élèves non affectés" + le premier sous-groupe de niveau
+  // si des orphelins sont détectés au premier chargement — pour que l'admin les voie
+  // immédiatement sans clic.
+  // ⚠️ Cet effect DOIT être placé après la déclaration de `unassignedByLevel`
   // car le dependency array est évalué pendant le render (TDZ sinon).
   const hasAutoExpandedRef = useRef(false);
   useEffect(() => {
     if (hasAutoExpandedRef.current) return;
-    if (!isLoading && unassignedEnrollments.length > 0) {
+    if (!isLoading && unassignedEnrollments.length > 0 && unassignedByLevel.length > 0) {
       hasAutoExpandedRef.current = true;
-      setExpandedLevels(prev => prev.has('__unassigned__') ? prev : new Set(prev).add('__unassigned__'));
+      setExpandedLevels(prev => {
+        const next = new Set(prev);
+        next.add('__unassigned__');
+        // Auto-expand le premier sous-groupe de niveau (le plus urgent)
+        const firstGroup = unassignedByLevel[0];
+        if (firstGroup) next.add(`__unassigned__${firstGroup.levelId}`);
+        return next;
+      });
     }
-  }, [isLoading, unassignedEnrollments.length]);
+  }, [isLoading, unassignedEnrollments.length, unassignedByLevel.length]);
 
   // ─── Stats ──────────────────────────────────────────────────────────
   const stats = useMemo(() => {
@@ -635,9 +689,10 @@ export default function EnrollmentsContent() {
             </div>
           ) : (
             <div className="divide-y divide-slate-100">
-              {/* ─── SECTION : Élèves non affectés (orphelins) ───
+              {/* ─── SECTION : Élèves non affectés (orphelins) groupés par niveau ───
                   Affichée en premier pour que l'admin voie immédiatement les élèves
-                  qui ont besoin d'une affectation manuelle. Toujours visible par défaut. */}
+                  qui ont besoin d'une affectation manuelle. Groupés par niveau scolaire
+                  (Maternelle / Primaire / Secondaire) pour faciliter l'affectation. */}
               {unassignedEnrollments.length > 0 && (
                 <div>
                   <button
@@ -650,58 +705,90 @@ export default function EnrollmentsContent() {
                     <div className="p-2.5 rounded-lg shrink-0 bg-amber-50"><AlertCircle className="w-5 h-5 text-amber-600" /></div>
                     <div className="flex-1 min-w-0">
                       <p className="text-base font-bold text-amber-800">Élèves non affectés</p>
-                      <p className="text-xs text-amber-600">Élèves sans classe ou classe non visible — à affecter via l'onglet Affectations</p>
+                      <p className="text-xs text-amber-600">
+                        {unassignedEnrollments.length} élève(s) sans classe — groupés par niveau scolaire · à affecter via l'onglet Affectations
+                      </p>
                     </div>
                     <span className="px-3 py-1 bg-amber-100 rounded-full text-sm font-bold text-amber-700 shrink-0">{unassignedEnrollments.length}</span>
                   </button>
                   <AnimatePresence>
                     {expandedLevels.has('__unassigned__') && (
                       <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
-                        <div className="pl-14 pr-5 py-1">
-                          {unassignedEnrollments.map((enr, idx) => {
-                            const statusInfo = STATUS_META[enr.status] || { label: enr.status, color: 'bg-slate-50 text-slate-600 border-slate-200' };
-                            const typeInfo = TYPE_META[enr.enrollmentType] || { label: enr.enrollmentType, color: 'bg-slate-50 text-slate-600' };
-                            return (
-                              <div key={enr.id} className="flex items-center gap-3 py-2 px-3 hover:bg-amber-50/40 rounded-lg transition-colors group">
-                                <span className="text-[10px] font-mono text-slate-400 w-6 text-right shrink-0">{idx + 1}</span>
-                                <div className="h-8 w-8 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center text-xs font-bold text-amber-600 group-hover:bg-amber-200 group-hover:text-amber-700 transition-colors shrink-0">
-                                  {enr.student.lastName[0]}{enr.student.firstName[0]}
+                        {/* Sous-groupes par niveau scolaire */}
+                        {unassignedByLevel.map((group) => {
+                          const groupKey = `__unassigned__${group.levelId}`;
+                          const isGroupExpanded = expandedLevels.has(groupKey);
+                          return (
+                            <div key={group.levelId} className="border-t border-amber-100/50 first:border-t-0">
+                              <button
+                                onClick={() => toggleLevel(groupKey)}
+                                className="w-full flex items-center gap-3 px-5 py-2.5 hover:bg-amber-50/30 transition-colors text-left group"
+                              >
+                                <div className="shrink-0 pl-6">
+                                  {isGroupExpanded ? <ChevronDown className="w-4 h-4 text-amber-500" /> : <ChevronRight className="w-4 h-4 text-amber-500" />}
                                 </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-medium text-slate-800">{enr.student.lastName.toUpperCase()} {enr.student.firstName}</p>
-                                  <p className="text-[10px] font-mono text-slate-400">
-                                    {enr.student.matricule || enr.student.studentCode || '— matricule non généré —'}
-                                  </p>
+                                <div className={cn('p-1.5 rounded-lg shrink-0', getLevelBgColor(group.levelName))}>
+                                  {getLevelIcon(group.levelName)}
                                 </div>
-                                <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0', typeInfo.color)}>{typeInfo.label}</span>
-                                <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-bold border shrink-0', statusInfo.color)}>{statusInfo.label}</span>
-                                <span className="text-[9px] text-slate-400 shrink-0 hidden sm:inline">{new Date(enr.enrollmentDate).toLocaleDateString('fr-FR')}</span>
-                                <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition">
-                                  {enr.status === 'PENDING' || enr.status === 'PRE_REGISTERED' || enr.status === 'ADMITTED' ? (
-                                    <button onClick={() => handleValidate(enr.student.id)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600" title="Valider"><CheckCircle className="w-3.5 h-3.5" /></button>
-                                  ) : null}
-                                  {/* Générer le matricule si manquant (élève converti sans classe avant le fix) */}
-                                  {(!enr.student.matricule && !enr.student.studentCode) && (
-                                    <button
-                                      onClick={async () => {
-                                        try {
-                                          await studentsService.generateMatricule(enr.student.id);
-                                          toast({ title: '✅ Matricule généré', variant: 'success' });
-                                          loadData();
-                                        } catch (e: any) {
-                                          toast({ title: 'Erreur génération matricule', description: e.message, variant: 'error' });
-                                        }
-                                      }}
-                                      className="p-1 hover:bg-blue-100 rounded text-blue-600"
-                                      title="Générer le matricule"
-                                    ><FileText className="w-3.5 h-3.5" /></button>
-                                  )}
-                                  <button onClick={() => handleReEnroll(enr)} className="p-1 hover:bg-indigo-100 rounded text-indigo-600" title="Réinscrire"><RotateCcw className="w-3.5 h-3.5" /></button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
+                                <span className="flex-1 text-sm font-semibold text-amber-800">{getLevelDisplayName(group.levelName)}</span>
+                                <span className="px-2 py-0.5 bg-amber-100 rounded-full text-[10px] font-bold text-amber-700 shrink-0">
+                                  {group.students.length} élève{group.students.length > 1 ? 's' : ''}
+                                </span>
+                              </button>
+                              <AnimatePresence>
+                                {isGroupExpanded && (
+                                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.15 }} className="overflow-hidden">
+                                    <div className="pl-14 pr-5 py-1">
+                                      {group.students.map((enr, idx) => {
+                                        const statusInfo = STATUS_META[enr.status] || { label: enr.status, color: 'bg-slate-50 text-slate-600 border-slate-200' };
+                                        const typeInfo = TYPE_META[enr.enrollmentType] || { label: enr.enrollmentType, color: 'bg-slate-50 text-slate-600' };
+                                        return (
+                                          <div key={enr.id} className="flex items-center gap-3 py-2 px-3 hover:bg-amber-50/40 rounded-lg transition-colors group">
+                                            <span className="text-[10px] font-mono text-slate-400 w-6 text-right shrink-0">{idx + 1}</span>
+                                            <div className="h-8 w-8 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center text-xs font-bold text-amber-600 group-hover:bg-amber-200 group-hover:text-amber-700 transition-colors shrink-0">
+                                              {enr.student.lastName[0]}{enr.student.firstName[0]}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                              <p className="text-sm font-medium text-slate-800">{enr.student.lastName.toUpperCase()} {enr.student.firstName}</p>
+                                              <p className="text-[10px] font-mono text-slate-400">
+                                                {enr.student.matricule || enr.student.studentCode || '— matricule non généré —'}
+                                              </p>
+                                            </div>
+                                            <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0', typeInfo.color)}>{typeInfo.label}</span>
+                                            <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-bold border shrink-0', statusInfo.color)}>{statusInfo.label}</span>
+                                            <span className="text-[9px] text-slate-400 shrink-0 hidden sm:inline">{new Date(enr.enrollmentDate).toLocaleDateString('fr-FR')}</span>
+                                            <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition">
+                                              {enr.status === 'PENDING' || enr.status === 'PRE_REGISTERED' || enr.status === 'ADMITTED' ? (
+                                                <button onClick={() => handleValidate(enr.student.id)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600" title="Valider"><CheckCircle className="w-3.5 h-3.5" /></button>
+                                              ) : null}
+                                              {/* Générer le matricule si manquant (élève converti sans classe avant le fix) */}
+                                              {(!enr.student.matricule && !enr.student.studentCode) && (
+                                                <button
+                                                  onClick={async () => {
+                                                    try {
+                                                      await studentsService.generateMatricule(enr.student.id);
+                                                      toast({ title: '✅ Matricule généré', variant: 'success' });
+                                                      loadData();
+                                                    } catch (e: any) {
+                                                      toast({ title: 'Erreur génération matricule', description: e.message, variant: 'error' });
+                                                    }
+                                                  }}
+                                                  className="p-1 hover:bg-blue-100 rounded text-blue-600"
+                                                  title="Générer le matricule"
+                                                ><FileText className="w-3.5 h-3.5" /></button>
+                                              )}
+                                              <button onClick={() => handleReEnroll(enr)} className="p-1 hover:bg-indigo-100 rounded text-indigo-600" title="Réinscrire"><RotateCcw className="w-3.5 h-3.5" /></button>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+                          );
+                        })}
                       </motion.div>
                     )}
                   </AnimatePresence>

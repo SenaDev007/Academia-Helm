@@ -1081,8 +1081,11 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
         preEnrollment.candidateType === 'PRIMARY' ? 'PRIMAIRE' :
         preEnrollment.candidateType === 'SECONDARY' ? 'SECONDAIRE' :
         undefined,
-      // requestedClassLabel : on garde targetLevel dans notes car c'est du texte libre
-      // (le schéma attend requestedClassId = UUID, qu'on n'a pas en contexte public)
+      // targetLevel = label de classe choisi par le parent (ex: "CI", "6ème", "M1")
+      // Le backend applyAdmission() le résout vers un UUID de classe (requestedClassId)
+      // via un matching souple (exact, code, startsWith, includes).
+      // Si la résolution échoue, l'élève sera orphelin et affectation manuelle requise.
+      targetLevel: preEnrollment.targetLevel || undefined,
       wantsBilingual: preEnrollment.wantsBilingual || false,
       previousSchool: preEnrollment.previousSchool || undefined,
       previousLevel: preEnrollment.previousLevel || undefined,

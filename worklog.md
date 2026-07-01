@@ -1492,3 +1492,73 @@ Stage Summary:
 - Aucune migration DB nécessaire (schéma Student/StudentEnrollment/StudentAcademicRecord déjà accepte classId null)
 - Rétro-compat : les anciens appels à admit() avec classId string fonctionnent toujours (le type accepte string | null | undefined)
 - Pour l'élève existant déjà converti sans matricule : l'admin peut cliquer sur l'icône FileText dans la section "Élèves non affectés" pour générer le matricule manuellement
+
+---
+Task ID: fix-403-matricule + orphelins-par-niveau + classe-parent-resolue
+Agent: main
+Task: Fix erreur 403 sur génération matricule + grouper orphelins par niveau scolaire + résoudre classe renseignée par le parent
+
+Work Log:
+- Diagnostic 403 sur POST /students/identifiers/:studentId/generate :
+  - Controller avait @Roles('ADMIN', 'DIRECTOR') au niveau méthode → vérifié par RolesGuard
+  - Le tenant CSPEB a des utilisateurs avec rôle PROMOTER (et autres rôles de direction)
+  - PROMOTER n'est pas dans la liste → 403 Forbidden
+  - Note : le @Roles au niveau classe (StudentsOrionController) était silencieusement ignoré car RolesGuard utilise reflector.get('roles', context.getHandler()) qui ne lit que method-level metadata. C'est pourquoi ORION fonctionnait mais pas identifiers.
+
+- Fix #1 (Backend student-identifier.controller.ts) : élargissement des rôles
+  - Création d'une constante MATRICULE_MANAGER_ROLES avec tous les rôles de direction :
+    ADMIN, DIRECTOR, DIRECTEUR, SUPER_DIRECTOR, SCHOOL_OWNER, SCHOOL_ADMIN, SCHOOL_DIRECTOR,
+    DIRECTOR_GENERAL, DIRECTEUR_MATERNELLE, DIRECTEUR_PRIMAIRE, DIRECTEUR_SECONDAIRE,
+    DIRECTEUR_MAT_PRI, PROMOTER, PROMOTEUR, PLATFORM_OWNER, PLATFORM_SUPER_ADMIN, admin
+  - Appliqué à tous les endpoints du controller (generate, synchronize, search, verify, stats, generate-bulk)
+
+- Fix #1b (Backend students-orion.controller.ts) : même fix pour cohérence
+  - Suppression du @Roles au niveau classe (ignoré par RolesGuard)
+  - Ajout du @Roles au niveau méthode avec ORION_VIEWER_ROLES (inclut TEACHER et SECRETARY en lecture)
+
+- Diagnostic "classe renseignée par le parent non prise en compte" :
+  - Portail public : select "Classe souhaitée" envoie targetLevel = label (ex: "CI", "6ème", "M1")
+  - Frontend LoginPage.tsx : targetLevel était juste ajouté dans `message` (texte libre)
+  - Backend applyAdmission() : ne recevait pas targetLevel, ne résolvait pas requestedClassId
+  - Résultat : admission créée avec requestedClassId = null → convertToStudent() sans classe → élève orphelin
+
+- Fix #2 (Backend admission.service.ts applyAdmission) : résolution targetLevel → requestedClassId
+  - Nouveau bloc de résolution avant createData
+  - Stratégie de matching (par ordre de priorité) :
+    1. Match exact (case-insensitive) sur classes.name
+    2. Match exact sur classes.code
+    3. Match "starts with" sur classes.name (ex: "6ème A" commence par "6ème")
+    4. Match inverse — name contient le label (ex: "Maternelle 1 (M1)" contient "m1") — uniquement si label ≤ 4 chars
+  - Filtre par schoolLevelId (school_levels UUID résolu depuis candidateType MATERNELLE/PRIMARY/SECONDARY)
+  - Si match → requestedClassId = classe.id (log info)
+  - Si pas de match → requestedClassId reste null + log warn (élève orphelin, affectation manuelle)
+
+- Fix #2b (Frontend LoginPage.tsx) : envoyer targetLevel dans le payload
+  - Ajout de `targetLevel: preEnrollment.targetLevel || undefined` dans le payload envoyé à /api/public/admission/submit
+  - Commentaire mis à jour pour expliquer la résolution backend
+
+- Fix #3 (Frontend EnrollmentsContent.tsx) : orphelins groupés par niveau scolaire
+  - Nouveau memo `unassignedByLevel` : groupe les orphelins par Student.schoolLevelId
+  - Construction d'un map schoolLevelId → nom depuis les classes chargées (best-effort)
+  - Fallback "Non spécifié" si Student.schoolLevelId est undefined
+  - Fallback "Niveau {UUID tronqué}…" si le nom n'est pas résolvable
+  - Tri par ordre de niveau (Maternelle < Primaire < Secondaire < Autre)
+  - Restructuration de la section orphelins :
+    - Header ambre repliable (toggle '__unassigned__') — inchangé
+    - Body : sous-groupes par niveau (toggle '__unassigned__{levelId}')
+    - Chaque sous-groupe a son propre header (icône niveau + nom + count) + body repliable
+    - Auto-expand au premier chargement : section principale + premier sous-groupe
+  - Script Python /home/z/my-project/scripts/refactor_orphans_block.py utilisé pour le remplacement (bloc trop gros pour Edit)
+
+- Validation syntaxique : @babel/parser confirm OK sur 6 fichiers modifiés
+
+Stage Summary:
+- 5 fichiers modifiés :
+  1. apps/api-server/src/students/controllers/student-identifier.controller.ts — rôles élargis (PROMOTER etc.)
+  2. apps/api-server/src/students/controllers/students-orion.controller.ts — @Roles method-level + rôles élargis
+  3. apps/api-server/src/students/services/admission.service.ts — résolution targetLevel → requestedClassId
+  4. apps/web-app/src/components/auth/LoginPage.tsx — envoi de targetLevel dans le payload
+  5. apps/web-app/src/components/students/EnrollmentsContent.tsx — orphelins groupés par niveau scolaire
+- Aucune migration DB nécessaire
+- Pour les admissions existantes déjà converties sans classe : l'admin peut les affecter manuellement via l'onglet Affectations
+- Pour les nouvelles admissions : la classe sera automatiquement assignée si le label targetLevel matche une classe existante

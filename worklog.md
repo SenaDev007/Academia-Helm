@@ -1562,3 +1562,84 @@ Stage Summary:
 - Aucune migration DB nécessaire
 - Pour les admissions existantes déjà converties sans classe : l'admin peut les affecter manuellement via l'onglet Affectations
 - Pour les nouvelles admissions : la classe sera automatiquement assignée si le label targetLevel matche une classe existante
+
+---
+Task ID: dynamic-public-form + targetClass rename + cleanup script
+Agent: main
+Task: Formulaire public dynamique (cartes + select depuis DB) + renommer targetLevel → targetClass + script cleanup élèves
+
+Work Log:
+- Diagnostic : 3 problèmes sur le portail public d'admission
+  1. Cartes MATERNELLE/PRIMARY/SECONDARY hardcoded — ne s'adaptent pas aux niveaux réellement configurés
+  2. getLevelsForCandidateType() retournait des labels hardcoded (CI/CP/6ème…), pas les classes officielles de la DB
+  3. Champ targetLevel sémantiquement faux — c'est une CLASSE (CP, 6ème), pas un niveau (Maternelle/Primaire/Secondaire)
+
+- Fix #1 : Nouvel endpoint public backend GET /students/admissions-public/school-info/:tenantIdentifier
+  - Fichier créé : apps/api-server/src/students/controllers/public-school-info.controller.ts
+  - @Public() — pas d'auth requis
+  - Résout tenantIdentifier (UUID / slug / subdomain) vers tenantId
+  - Retourne { schoolLevels: [{id, name, code}], classes: [{id, name, code, schoolLevelId}] }
+  - Tri des niveaux (Maternelle < Primaire < Secondaire)
+  - Endpoint secondaire GET /school-info/:tenantIdentifier/classes?schoolLevelId=xxx pour filtrer par niveau
+  - Enregistré dans students.module.ts
+
+- Fix #1b : Route BFF frontend créée /api/public/school-info/[tenantIdentifier]/route.ts
+  - Proxy vers backend, cache: no-store
+
+- Fix #2 : Frontend LoginPage.tsx — cartes + select dynamiques
+  - Nouveaux types SchoolLevelInfo et ClassInfo
+  - Nouveaux states : schoolLevels, schoolClasses, schoolInfoLoading
+  - useEffect au mount : fetch /api/public/school-info/:tenantId → alimente schoolLevels + schoolClasses
+  - Cartes candidats : remplacées par mapping dynamique de schoolLevels
+    - Icône choisie par best-effort selon le nom (Baby/BookOpen/GradCap)
+    - Description = nombre de classes disponibles pour ce niveau
+    - Carte "Juste info" (PROSPECT_PARENT) toujours présente
+    - État loading + état vide ("Aucun niveau scolaire configuré")
+  - Select "Classe souhaitée" : remplacé getLevelsForCandidateType() par getClassesForCandidateType()
+    - Options = classes filtrées par schoolLevelId sélectionné
+    - value = classe.id (UUID), pas un label
+    - Disabled si PROSPECT_PARENT
+    - Message "Aucune classe configurée" si vide
+  - schoolLevelId dans le payload : désormais = schoolLevel.id (UUID) directement (pas de mapping hardcodé)
+
+- Fix #3 : Renommage targetLevel → targetClass (cohérence sémantique)
+  - Frontend LoginPage.tsx :
+    - Interface PreEnrollmentData : targetLevel → targetClass
+    - State initial : targetLevel: '' → targetClass: ''
+    - Cartes onClick : reset targetClass (pas targetLevel)
+    - Select value/onChange : targetClass
+    - Payload envoyé au backend : targetClass
+    - Message composition : utilise targetClassName résolu depuis schoolClasses
+    - Validation : targetClass requis (sauf PROSPECT_PARENT)
+  - Backend admission.service.ts applyAdmission() :
+    - Accepte targetClass (UUID) en priorité, targetClassLabel et targetLevel (legacy) en fallback
+    - Si targetClass est un UUID → vérifie existence dans classes du tenant → requestedClassId direct
+    - Si label texte → matching souple (4 stratégies : exact name, exact code, startsWith, includes)
+    - schoolLevelId : gère maintenant les 3 cas (UUID school_levels, UUID education_levels, code MATERNELLE/PRIMARY/SECONDARY)
+      - Si UUID → vérifie si education_levels (FK directe) ou school_levels (résolution par nom)
+      - Si code → résolution par nom dans education_levels (ancien format)
+  - Le champ targetLevel reste supporté côté backend pour rétro-compat (soumissions en cours)
+
+- Fix #4 : Script cleanup-students.ts créé
+  - Fichier : apps/api-server/scripts/cleanup-students.ts
+  - Désactive les triggers de sécurité (prevent_student_delete, prevent_update_if_year_closed, etc.)
+  - Supprime en cascade : audit_logs, academic_records, id_cards, identifiers, photos, guardians, attendance, discipline, grades, fee_arrears, enrollments, transfers, admissions, fee_profiles, accounts, students
+  - Réactive les triggers
+  - Confirmation interactive (OUI) ou env var CONFIRM_DELETE=OUI en mode non-interactif
+  - Filtre par tenantId optionnel (sinon tous les tenants)
+  - ⚠️ L'utilisateur doit l'exécuter manuellement avec DATABASE_URL Neon dans apps/api-server/.env
+
+- Validation syntaxique : @babel/parser confirm OK sur 6 fichiers modifiés
+
+Stage Summary:
+- 7 fichiers créés/modifiés :
+  1. apps/api-server/src/students/controllers/public-school-info.controller.ts — NOUVEAU endpoint public
+  2. apps/api-server/src/students/students.module.ts — enregistrement du controller
+  3. apps/api-server/src/students/services/admission.service.ts — targetClass + résolution schoolLevelId UUID
+  4. apps/web-app/src/app/api/public/school-info/[tenantIdentifier]/route.ts — NOUVELLE route BFF
+  5. apps/web-app/src/components/auth/LoginPage.tsx — cartes dynamiques + select dynamique + rename targetClass
+  6. apps/api-server/scripts/cleanup-students.ts — NOUVEAU script de cleanup
+  7. worklog.md
+- Aucune migration DB nécessaire (schéma school_levels + classes déjà en place)
+- Rétro-compat : backend accepte targetClass (nouveau), targetClassLabel et targetLevel (legacy)
+- Le script cleanup-students.ts doit être exécuté manuellement par l'utilisateur avec le .env Neon

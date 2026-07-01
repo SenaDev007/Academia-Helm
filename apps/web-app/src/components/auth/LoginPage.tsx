@@ -79,7 +79,25 @@ const BLUE = '#1d4fa5';
 const GOLD = '#f5b335';
 
 /** Types de candidats pour le portail Public — conforme au document */
-type PublicCandidateType = 'MATERNELLE' | 'PRIMARY' | 'SECONDARY' | 'PROSPECT_PARENT';
+// Type de candidat = ID du schoolLevel (depuis backend) OU 'PROSPECT_PARENT' (cas spécial)
+// On ne hardcode plus MATERNELLE/PRIMARY/SECONDARY — les niveaux sont fetchés depuis
+// /api/public/school-info/:tenantIdentifier et deviennent dynamiquement des PublicCandidateType.
+type PublicCandidateType = string | 'PROSPECT_PARENT';
+
+/** Niveau scolaire exposé par le backend (school_levels) */
+interface SchoolLevelInfo {
+  id: string;
+  name: string;
+  code?: string | null;
+}
+
+/** Classe exposée par le backend (classes) */
+interface ClassInfo {
+  id: string;
+  name: string;
+  code?: string | null;
+  schoolLevelId: string;
+}
 
 interface SchoolCredentials {
   email: string;
@@ -104,7 +122,10 @@ interface PreEnrollmentData {
   parentEmail: string;
   childFirstName: string;
   childLastName: string;
-  targetLevel: string;
+  // targetClass = UUID de la classe choisie par le parent (depuis select dynamique)
+  // Anciennement appelé targetLevel, mais c'était sémantiquement faux : c'est une CLASSE
+  // (CP, 6ème, M1…), pas un niveau (Maternelle/Primaire/Secondaire).
+  targetClass: string;
   message?: string;
 
   // ── Champs étendus (admission complète) ──
@@ -342,6 +363,29 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   const tenantIdForApi = tenantIdFromUrl || tenantSlug;
   const redirectPath = searchParams?.get('redirect') || '/app';
 
+  // ── Fetch dynamique des niveaux + classes du tenant ──────────────────
+  // Permet au formulaire public de s'adapter à ce que l'établissement a configuré
+  // dans le module Paramètres. Aucun hardcoding : si le tenant n'a que Maternelle
+  // et Primaire, seules ces deux cartes s'affichent (+ la carte "Juste info").
+  useEffect(() => {
+    if (!tenantIdForApi) return;
+    let cancelled = false;
+    setSchoolInfoLoading(true);
+    fetch(`/api/public/school-info/${encodeURIComponent(tenantIdForApi)}`)
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then(data => {
+        if (cancelled) return;
+        if (Array.isArray(data?.schoolLevels)) setSchoolLevels(data.schoolLevels);
+        if (Array.isArray(data?.classes)) setSchoolClasses(data.classes);
+      })
+      .catch((e) => {
+        // Non bloquant : le formulaire affichera juste "Aucun niveau configuré"
+        console.warn('[public-admission] Failed to fetch school-info:', e?.message);
+      })
+      .finally(() => { if (!cancelled) setSchoolInfoLoading(false); });
+    return () => { cancelled = true; };
+  }, [tenantIdForApi]);
+
   // ── Mode "admin subdomain" : l'utilisateur vient d'être redirigé depuis ──
   // admin.academiahelm.com (cf. middleware). Après une connexion réussie en tant
   // que PLATFORM_OWNER, on le renvoie vers admin.academiahelm.com${redirectPath}
@@ -442,9 +486,16 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     parentEmail: '',
     childFirstName: '',
     childLastName: '',
-    targetLevel: '',
+    targetClass: '',
     message: '',
   });
+  // ── School levels + classes fetchés dynamiquement depuis le backend ──
+  // Remplace le hardcoding des cartes MATERNELLE/PRIMARY/SECONDARY et du select
+  // getLevelsForCandidateType(). Désormais, le formulaire s'adapte à ce que
+  // l'établissement a réellement configuré dans le module Paramètres.
+  const [schoolLevels, setSchoolLevels] = useState<SchoolLevelInfo[]>([]);
+  const [schoolClasses, setSchoolClasses] = useState<ClassInfo[]>([]);
+  const [schoolInfoLoading, setSchoolInfoLoading] = useState(false);
   const [preEnrollmentSubmitted, setPreEnrollmentSubmitted] = useState(false);
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
   // ── Wizard multi-étapes pour la pré-inscription publique ──
@@ -1062,6 +1113,20 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
 
     // Mapper les champs du formulaire (parent*/child*) vers le schéma Admission
     // (firstName/lastName/mainGuardian*).
+
+    // ⚠️ schoolLevelId : désormais c'est directement le schoolLevel.id (UUID)
+    // sélectionné par le parent via les cartes dynamiques. Plus de mapping
+    // hardcodé MATERNELLE/PRIMARY/SECONDARY → le frontend ne connaît pas
+    // les UUIDs, il les reçoit du backend.
+    // Le backend applyAdmission() résout schoolLevelId (qui peut être un UUID
+    // de school_levels OU de education_levels) correctement.
+    const selectedSchoolLevelId = preEnrollment.candidateType !== 'PROSPECT_PARENT'
+      ? preEnrollment.candidateType  // = schoolLevel.id (UUID)
+      : undefined;
+
+    // Récupérer le nom lisible de la classe pour le message
+    const targetClassName = schoolClasses.find(c => c.id === preEnrollment.targetClass)?.name;
+
     const payload: any = {
       tenantId: tenantIdForApi,
       candidateType: preEnrollment.candidateType,
@@ -1075,17 +1140,12 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       nationality: preEnrollment.childNationality || 'Béninoise',
       address: preEnrollment.childAddress || undefined,
 
-      // schoolLevelId déduit du candidateType (MATERNELLE/PRIMARY/SECONDARY)
-      schoolLevelId:
-        preEnrollment.candidateType === 'MATERNELLE' ? 'MATERNELLE' :
-        preEnrollment.candidateType === 'PRIMARY' ? 'PRIMAIRE' :
-        preEnrollment.candidateType === 'SECONDARY' ? 'SECONDAIRE' :
-        undefined,
-      // targetLevel = label de classe choisi par le parent (ex: "CI", "6ème", "M1")
-      // Le backend applyAdmission() le résout vers un UUID de classe (requestedClassId)
-      // via un matching souple (exact, code, startsWith, includes).
-      // Si la résolution échoue, l'élève sera orphelin et affectation manuelle requise.
-      targetLevel: preEnrollment.targetLevel || undefined,
+      // schoolLevelId = UUID du schoolLevel sélectionné (cartes dynamiques)
+      schoolLevelId: selectedSchoolLevelId,
+      // targetClass = UUID de la classe choisie par le parent (depuis le select
+      // dynamique alimenté par /api/public/school-info). Le backend l'utilise
+      // directement comme requestedClassId — pas de matching à faire.
+      targetClass: preEnrollment.targetClass || undefined,
       wantsBilingual: preEnrollment.wantsBilingual || false,
       previousSchool: preEnrollment.previousSchool || undefined,
       previousLevel: preEnrollment.previousLevel || undefined,
@@ -1099,9 +1159,9 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       mainGuardianAddress: preEnrollment.parentAddress || undefined,
       mainGuardianProfession: preEnrollment.parentProfession || undefined,
 
-      // Message + targetLevel (classe souhaitée libre) → notes
+      // Message + nom de la classe choisie → notes (pour référence humaine)
       message: [
-        preEnrollment.targetLevel ? `Classe souhaitée : ${preEnrollment.targetLevel}` : null,
+        targetClassName ? `Classe souhaitée : ${targetClassName}` : null,
         preEnrollment.message,
       ].filter(Boolean).join('\n\n') || undefined,
     };
@@ -1164,7 +1224,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       if (preEnrollment.candidateType !== 'PROSPECT_PARENT') {
         if (!preEnrollment.childFirstName?.trim()) return 'Veuillez saisir le prénom de l\'enfant.';
         if (!preEnrollment.childLastName?.trim()) return 'Veuillez saisir le nom de l\'enfant.';
-        if (!preEnrollment.targetLevel) return 'Veuillez sélectionner la classe souhaitée.';
+        if (!preEnrollment.targetClass && preEnrollment.candidateType !== 'PROSPECT_PARENT') return 'Veuillez sélectionner la classe souhaitée.';
       }
     }
     // Étape 3 : aucun champ obligatoire (documents et message sont optionnels)
@@ -1402,17 +1462,12 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   const formBlockKey = portalType || 'standard';
 
   // ── Niveaux disponibles selon le type de candidat (conforme au document) ──
-  const getLevelsForCandidateType = (type: PublicCandidateType): string[] => {
-    switch (type) {
-      case 'MATERNELLE':
-        return ['Maternelle 1 (M1)', 'Maternelle 2 (M2)'];
-      case 'PRIMARY':
-        return ['CI', 'CP', 'CE1', 'CE2', 'CM1', 'CM2'];
-      case 'SECONDARY':
-        return ['6ème', '5ème', '4ème', '3ème', '2nde', '1ère', 'Terminale'];
-      default:
-        return [];
-    }
+  // Renvoie les classes disponibles pour un type de candidat (= schoolLevelId).
+  // Plus de hardcoding : les classes sont fetchées depuis le backend au mount
+  // du composant et filtrées par schoolLevelId ici.
+  const getClassesForCandidateType = (type: PublicCandidateType): ClassInfo[] => {
+    if (type === 'PROSPECT_PARENT') return [];
+    return schoolClasses.filter(c => c.schoolLevelId === type);
   };
 
   return (
@@ -2169,32 +2224,70 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                         Vous souhaitez inscrire un enfant en
                       </label>
                       <div className="grid grid-cols-2 gap-2">
-                        {([
-                          { type: 'MATERNELLE' as const, label: 'Maternelle', Icon: Baby, desc: 'M1 – M2' },
-                          { type: 'PRIMARY' as const, label: 'Primaire', Icon: BookOpen, desc: 'CI – CM2' },
-                          { type: 'SECONDARY' as const, label: 'Secondaire', Icon: GradCap, desc: '6ème – Tle' },
-                          { type: 'PROSPECT_PARENT' as const, label: 'Juste info', Icon: Users, desc: 'Parent prospect' },
-                        ]).map((opt) => (
-                          <button
-                            key={opt.type}
-                            type="button"
-                            onClick={() => {
-                              setPreEnrollment((prev) => ({ ...prev, candidateType: opt.type, targetLevel: '' }));
-                              // Reset du wizard à l'étape 1 quand on change de type de candidat
-                              setPreEnrollmentStep(1);
-                              setError(null);
-                            }}
-                            className="flex flex-col items-center gap-1 rounded-xl border-2 p-3 min-h-[44px] text-center transition-all"
-                            style={{
-                              borderColor: preEnrollment.candidateType === opt.type ? GOLD : `${NAVY}18`,
-                              background: preEnrollment.candidateType === opt.type ? `${GOLD}12` : `${NAVY}04`,
-                            }}
-                          >
-                            <opt.Icon className="h-5 w-5" style={{ color: NAVY }} />
-                            <span className="text-xs font-bold" style={{ color: NAVY }}>{opt.label}</span>
-                            <span className="text-[10px] text-slate-500">{opt.desc}</span>
-                          </button>
-                        ))}
+                        {schoolInfoLoading ? (
+                          <div className="col-span-2 text-center py-3 text-xs text-slate-400">
+                            Chargement des niveaux...
+                          </div>
+                        ) : schoolLevels.length === 0 ? (
+                          <div className="col-span-2 text-center py-3 text-xs text-amber-600 bg-amber-50 rounded-lg">
+                            Aucun niveau scolaire configuré pour cet établissement.
+                            Contactez l'administration.
+                          </div>
+                        ) : (
+                          <>
+                            {schoolLevels.map((level) => {
+                              // Icône selon le nom du niveau (best-effort)
+                              const levelName = (level.name || '').toUpperCase();
+                              const Icon = levelName.includes('MATERNELLE') ? Baby
+                                : levelName.includes('PRIMAIRE') ? BookOpen
+                                : levelName.includes('SECONDAIRE') ? GradCap
+                                : BookOpen;
+                              // Description : nombre de classes disponibles pour ce niveau
+                              const classCount = schoolClasses.filter(c => c.schoolLevelId === level.id).length;
+                              const desc = classCount > 0
+                                ? `${classCount} classe${classCount > 1 ? 's' : ''}`
+                                : 'Aucune classe';
+                              return (
+                                <button
+                                  key={level.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setPreEnrollment((prev) => ({ ...prev, candidateType: level.id, targetClass: '' }));
+                                    setPreEnrollmentStep(1);
+                                    setError(null);
+                                  }}
+                                  className="flex flex-col items-center gap-1 rounded-xl border-2 p-3 min-h-[44px] text-center transition-all"
+                                  style={{
+                                    borderColor: preEnrollment.candidateType === level.id ? GOLD : `${NAVY}18`,
+                                    background: preEnrollment.candidateType === level.id ? `${GOLD}12` : `${NAVY}04`,
+                                  }}
+                                >
+                                  <Icon className="h-5 w-5" style={{ color: NAVY }} />
+                                  <span className="text-xs font-bold" style={{ color: NAVY }}>{level.name}</span>
+                                  <span className="text-[10px] text-slate-500">{desc}</span>
+                                </button>
+                              );
+                            })}
+                            {/* Carte "Juste info" — toujours présente (parent prospect) */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPreEnrollment((prev) => ({ ...prev, candidateType: 'PROSPECT_PARENT', targetClass: '' }));
+                                setPreEnrollmentStep(1);
+                                setError(null);
+                              }}
+                              className="flex flex-col items-center gap-1 rounded-xl border-2 p-3 min-h-[44px] text-center transition-all"
+                              style={{
+                                borderColor: preEnrollment.candidateType === 'PROSPECT_PARENT' ? GOLD : `${NAVY}18`,
+                                background: preEnrollment.candidateType === 'PROSPECT_PARENT' ? `${GOLD}12` : `${NAVY}04`,
+                              }}
+                            >
+                              <Users className="h-5 w-5" style={{ color: NAVY }} />
+                              <span className="text-xs font-bold" style={{ color: NAVY }}>Juste info</span>
+                              <span className="text-[10px] text-slate-500">Parent prospect</span>
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
 
@@ -2422,23 +2515,31 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                           </div>
                         </div>
 
-                        {/* Classe souhaitée (ex "Niveau souhaité") */}
+                        {/* Classe souhaitée — select dynamique alimenté par les classes
+                            configurées dans le module Paramètres pour le niveau sélectionné. */}
                         <div>
                           <label className="mb-1 block text-xs font-semibold text-slate-900">
                             Classe souhaitée
                           </label>
                           <select
                             required
-                            value={preEnrollment.targetLevel}
-                            onChange={(e) => setPreEnrollment((prev) => ({ ...prev, targetLevel: e.target.value }))}
-                            className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all focus:ring-2"
+                            value={preEnrollment.targetClass}
+                            onChange={(e) => setPreEnrollment((prev) => ({ ...prev, targetClass: e.target.value }))}
+                            disabled={preEnrollment.candidateType === 'PROSPECT_PARENT'}
+                            className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all focus:ring-2 disabled:bg-slate-100 disabled:text-slate-400"
                             style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                           >
                             <option value="">— Sélectionner —</option>
-                            {getLevelsForCandidateType(preEnrollment.candidateType).map((level) => (
-                              <option key={level} value={level}>{level}</option>
+                            {getClassesForCandidateType(preEnrollment.candidateType).map((cls) => (
+                              <option key={cls.id} value={cls.id}>{cls.name}</option>
                             ))}
                           </select>
+                          {preEnrollment.candidateType !== 'PROSPECT_PARENT'
+                            && getClassesForCandidateType(preEnrollment.candidateType).length === 0 && (
+                            <p className="mt-1 text-[10px] text-amber-600">
+                              Aucune classe configurée pour ce niveau. Contactez l'administration.
+                            </p>
+                          )}
                         </div>
 
                         {/* Établissement précédent + Dernier niveau fréquenté */}

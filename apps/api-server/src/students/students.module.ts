@@ -35,6 +35,7 @@ import { PublicVerificationController } from './controllers/public-verification.
 import { StudentDossierController } from './controllers/student-dossier.controller';
 import { AdmissionController } from './controllers/admission.controller';
 import { PublicAdmissionController } from './controllers/public-admission.controller';
+import { PublicSchoolInfoController } from './controllers/public-school-info.controller';
 // Module 1 - Cycle de vie (pre-register, admit, re-enroll, transfer, change-class, history, export EDUCMASTER)
 import { StudentsLifecycleService } from './services/students-lifecycle.service';
 import { AdmissionService } from './services/admission.service';
@@ -70,6 +71,7 @@ import { CommunicationModule } from '../communication/communication.module';
     StudentsLifecycleController,
     AdmissionController,
     PublicAdmissionController,
+    PublicSchoolInfoController,
     StudentTransferController,
     StudentIdentifierController,
     StudentIdCardController,

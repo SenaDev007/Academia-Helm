@@ -1048,14 +1048,70 @@ export class AdmissionService {
       academicYearId = activeYear.id;
     }
 
-    // Résoudre schoolLevelId — le frontend envoie un code (MATERNELLE/PRIMARY/SECONDARY)
-    // mais la FK admissions.schoolLevelId → education_levels.id exige un UUID.
-    // On résout le code vers l'UUID correspondant dans education_levels.
+    // Résoudre schoolLevelId — la FK admissions.schoolLevelId → education_levels.id
+    // exige un UUID de education_levels.
+    //
+    // ⚠️ Le frontend peut envoyer :
+    //   - Un UUID de school_levels (cas nominal depuis les cartes dynamiques) → il faut
+    //     résoudre vers education_levels par nom (MATERNELLE/PRIMAIRE/SECONDAIRE)
+    //   - Un code (MATERNELLE/PRIMARY/SECONDARY) — ancien format, toujours supporté
+    //   - Un UUID de education_levels directement — rare mais possible
     let schoolLevelId = body.schoolLevelId;
     const isLevelUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(schoolLevelId || '');
 
-    if (!schoolLevelId || !isLevelUuid) {
-      // Déduire le nom du niveau depuis candidateType ou schoolLevelId
+    if (isLevelUuid) {
+      // C'est un UUID — vérifier si c'est dans education_levels (FK directe) ou
+      // dans school_levels (besoin de résolution)
+      const eduLevel = await this.prisma.educationLevel.findUnique({
+        where: { id: schoolLevelId },
+        select: { id: true, name: true },
+      }).catch(() => null);
+
+      if (eduLevel) {
+        // Déjà un UUID de education_levels → OK, on garde tel quel
+      } else {
+        // C'est probablement un UUID de school_levels → résoudre par nom
+        const sl = await this.prisma.schoolLevel.findUnique({
+          where: { id: schoolLevelId },
+          select: { name: true },
+        }).catch(() => null);
+
+        if (sl) {
+          const levelName = sl.name.toUpperCase();
+          const eduLevelByName = await this.prisma.educationLevel.findFirst({
+            where: { tenantId, name: { equals: sl.name, mode: 'insensitive' } },
+            select: { id: true },
+          });
+          if (eduLevelByName) {
+            schoolLevelId = eduLevelByName.id;
+            this.logger.log(
+              `applyAdmission: schoolLevelId (school_levels UUID) résolu → education_levels UUID`,
+            );
+          } else {
+            // Fallback : si education_levels n'a pas ce nom, créer un mapping par défaut
+            const codeToName: Record<string, string> = {
+              MATERNELLE: 'MATERNELLE',
+              PRIMAIRE: 'PRIMAIRE',
+              SECONDAIRE: 'SECONDAIRE',
+            };
+            const fallbackName = codeToName[levelName];
+            if (fallbackName) {
+              const fallbackLevel = await this.prisma.educationLevel.findFirst({
+                where: { tenantId, name: fallbackName },
+                select: { id: true },
+              });
+              if (fallbackLevel) {
+                schoolLevelId = fallbackLevel.id;
+                this.logger.log(
+                  `applyAdmission: schoolLevelId résolu via fallback ${levelName} → ${fallbackName}`,
+                );
+              }
+            }
+          }
+        }
+      }
+    } else if (!schoolLevelId || !isLevelUuid) {
+      // C'est un code (MATERNELLE/PRIMARY/SECONDARY) — ancien format
       const candidateType = (body.candidateType || '').toUpperCase();
       const codeToName: Record<string, string> = {
         MATERNELLE: 'MATERNELLE',
@@ -1108,94 +1164,113 @@ export class AdmissionService {
     // Générer le numéro d'admission
     const admissionNumber = await this.generateAdmissionNumber(tenantId, academicYearId);
 
-    // ⚠️ Résolution requestedClassId depuis le label de classe (targetLevel)
-    // Le portail public envoie targetLevel = "CI", "CP", "6ème", "Maternelle 1 (M1)"…
-    // (des labels lisibles par le parent, pas des UUIDs). On résout ce label vers
-    // l'UUID de la classe correspondante dans la table classes pour que la conversion
-    // admission → élève puisse affecter automatiquement l'élève à sa classe demandée.
+    // ⚠️ Résolution requestedClassId depuis la classe demandée par le parent.
     //
-    // Stratégie de matching (par ordre de priorité) :
-    //   1. Match exact (case-insensitive) sur classes.name
-    //   2. Match sur classes.code si défini
-    //   3. Match "starts with" sur classes.name (ex: "6ème A" commence par "6ème")
-    // On prend la première classe qui matche. Si aucune ne matche, requestedClassId
-    // reste null et l'élève sera orphelin (affectation manuelle requise).
+    // Le portail public envoie targetClass = UUID de la classe (depuis le select
+    // dynamique alimenté par /school-info). C'est le cas nominal désormais.
+    //
+    // Pour rétro-compatibilité, on accepte aussi :
+    //   - targetClassLabel = label texte (ex: "CI", "6ème") si le frontend legacy l'envoie
+    //   - targetLevel = ancien nom de champ (avant le renommage targetClass) — label texte
+    //
+    // Si targetClass est un UUID → on l'utilise directement comme requestedClassId
+    // Sinon, on essaie de résoudre le label vers un UUID via matching souple.
     let requestedClassId = body.requestedClassId || null;
-    if (!requestedClassId && body.targetLevel) {
-      const targetLabel = String(body.targetLevel).trim();
-      const targetLower = targetLabel.toLowerCase();
 
-      // D'abord chercher toutes les classes du tenant pour ce niveau + année active
-      // (on filtre par schoolLevelId résolu depuis education_levels → school_levels
-      //  car classes.schoolLevelId → school_levels, pas education_levels)
-      const levelNameForSchoolLevel = ((): string => {
-        const candidateType = (body.candidateType || '').toUpperCase();
-        if (candidateType === 'MATERNELLE') return 'MATERNELLE';
-        if (candidateType === 'PRIMARY') return 'PRIMAIRE';
-        if (candidateType === 'SECONDARY') return 'SECONDAIRE';
-        return '';
-      })();
+    // 1. Si targetClass est fourni et est un UUID → utiliser directement
+    const targetClassRaw = body.targetClass || body.targetClassLabel || body.targetLevel;
+    if (!requestedClassId && targetClassRaw) {
+      const targetStr = String(targetClassRaw).trim();
+      const isTargetUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetStr);
 
-      let schoolLevelUuidForClasses: string | undefined;
-      if (levelNameForSchoolLevel) {
-        const sl = await this.prisma.schoolLevel.findFirst({
+      if (isTargetUuid) {
+        // C'est un UUID → vérifier qu'il existe dans les classes du tenant
+        const classExists = await this.prisma.class.findFirst({
+          where: { id: targetStr, tenantId },
+          select: { id: true, name: true },
+        });
+        if (classExists) {
+          requestedClassId = classExists.id;
+          this.logger.log(
+            `applyAdmission: targetClass (UUID) résolu → classe "${classExists.name}" (${classExists.id})`,
+          );
+        } else {
+          this.logger.warn(
+            `applyAdmission: targetClass UUID "${targetStr}" n'existe pas pour ce tenant — orphelin`,
+          );
+        }
+      } else {
+        // C'est un label texte → matching souple
+        const targetLower = targetStr.toLowerCase();
+
+        // Récupérer les classes du tenant pour ce niveau
+        const levelNameForSchoolLevel = ((): string => {
+          const candidateType = (body.candidateType || '').toUpperCase();
+          if (candidateType === 'MATERNELLE') return 'MATERNELLE';
+          if (candidateType === 'PRIMARY') return 'PRIMAIRE';
+          if (candidateType === 'SECONDARY') return 'SECONDAIRE';
+          return '';
+        })();
+
+        let schoolLevelUuidForClasses: string | undefined;
+        if (levelNameForSchoolLevel) {
+          const sl = await this.prisma.schoolLevel.findFirst({
+            where: {
+              tenantId,
+              OR: [
+                { name: { equals: levelNameForSchoolLevel, mode: 'insensitive' } },
+                { code: { equals: levelNameForSchoolLevel, mode: 'insensitive' } },
+              ],
+            },
+            select: { id: true },
+          }).catch(() => null);
+          schoolLevelUuidForClasses = sl?.id;
+        }
+
+        const candidateClasses = await this.prisma.class.findMany({
           where: {
             tenantId,
-            OR: [
-              { name: { equals: levelNameForSchoolLevel, mode: 'insensitive' } },
-              { code: { equals: levelNameForSchoolLevel, mode: 'insensitive' } },
-            ],
+            ...(schoolLevelUuidForClasses && { schoolLevelId: schoolLevelUuidForClasses }),
           },
-          select: { id: true },
-        }).catch(() => null);
-        schoolLevelUuidForClasses = sl?.id;
-      }
+          select: { id: true, name: true, code: true },
+          orderBy: { name: 'asc' },
+        });
 
-      const candidateClasses = await this.prisma.class.findMany({
-        where: {
-          tenantId,
-          ...(schoolLevelUuidForClasses && { schoolLevelId: schoolLevelUuidForClasses }),
-        },
-        select: { id: true, name: true, code: true },
-        orderBy: { name: 'asc' },
-      });
+        // 1. Match exact (case-insensitive) sur name
+        let matched = candidateClasses.find(c =>
+          c.name.trim().toLowerCase() === targetLower
+        );
+        // 2. Match exact sur code
+        if (!matched) {
+          matched = candidateClasses.find(c =>
+            c.code && c.code.trim().toLowerCase() === targetLower
+          );
+        }
+        // 3. Match "starts with" sur name (ex: "6ème A" commence par "6ème")
+        if (!matched && targetLower.length >= 2) {
+          matched = candidateClasses.find(c =>
+            c.name.trim().toLowerCase().startsWith(targetLower)
+          );
+        }
+        // 4. Match inverse — name contient le label (ex: "Maternelle 1 (M1)" contient "m1")
+        if (!matched && targetLower.length <= 4) {
+          matched = candidateClasses.find(c =>
+            c.name.trim().toLowerCase().includes(targetLower)
+          );
+        }
 
-      // 1. Match exact (case-insensitive) sur name
-      let matched = candidateClasses.find(c =>
-        c.name.trim().toLowerCase() === targetLower
-      );
-      // 2. Match exact sur code
-      if (!matched) {
-        matched = candidateClasses.find(c =>
-          c.code && c.code.trim().toLowerCase() === targetLower
-        );
-      }
-      // 3. Match "starts with" sur name (ex: "6ème A" commence par "6ème")
-      //    Mais uniquement si le label a au moins 2 caractères pour éviter les faux positifs
-      if (!matched && targetLower.length >= 2) {
-        matched = candidateClasses.find(c =>
-          c.name.trim().toLowerCase().startsWith(targetLower)
-        );
-      }
-      // 4. Match inverse — name contient le label (ex: "Maternelle 1 (M1)" contient "m1")
-      //    Uniquement si targetLower est court (≤4 chars) pour éviter faux positifs
-      if (!matched && targetLower.length <= 4) {
-        matched = candidateClasses.find(c =>
-          c.name.trim().toLowerCase().includes(targetLower)
-        );
-      }
-
-      if (matched) {
-        requestedClassId = matched.id;
-        this.logger.log(
-          `applyAdmission: targetLevel "${targetLabel}" résolu → classe "${matched.name}" (${matched.id})`,
-        );
-      } else {
-        this.logger.warn(
-          `applyAdmission: targetLevel "${targetLabel}" non résolu vers une classe. ` +
-          `${candidateClasses.length} classe(s) candidate(s) vérifiée(s). ` +
-          `L'élève sera orphelin — affectation manuelle requise.`,
-        );
+        if (matched) {
+          requestedClassId = matched.id;
+          this.logger.log(
+            `applyAdmission: targetClass "${targetStr}" résolu → classe "${matched.name}" (${matched.id})`,
+          );
+        } else {
+          this.logger.warn(
+            `applyAdmission: targetClass "${targetStr}" non résolu vers une classe. ` +
+            `${candidateClasses.length} classe(s) candidate(s) vérifiée(s). ` +
+            `L'élève sera orphelin — affectation manuelle requise.`,
+          );
+        }
       }
     }
 

@@ -1071,11 +1071,11 @@ export default function AdmissionsContent() {
                         {/* Bouton "Visualiser" — ouvre le document dans un modal intégré
                             Affiché même si filePath est null (l'endpoint download gère le cas) */}
                         <button
-                          onClick={() => setPreviewDoc({
+                          onClick={() => { setPreviewError(false); setPreviewDoc({
                             url: `/api/students/admissions/${selectedAdmission.id}/documents/${doc.id}/download`,
                             fileName: doc.fileName || 'document',
                             mimeType: doc.mimeType || 'application/pdf',
-                          })}
+                          }); }}
                           className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition border border-blue-200"
                           title="Visualiser le document"
                         >
@@ -1292,11 +1292,11 @@ export default function AdmissionsContent() {
                            doc.status === 'SUBMITTED' ? 'Soumis' : 'En attente'}
                         </span>
                         <button
-                          onClick={() => setPreviewDoc({
+                          onClick={() => { setPreviewError(false); setPreviewDoc({
                             url: `/api/students/admissions/${quickViewAdmission.id}/documents/${doc.id}/download`,
                             fileName: doc.fileName || 'document',
                             mimeType: doc.mimeType || 'application/pdf',
-                          })}
+                          }); }}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition border border-blue-200 shrink-0"
                           title="Visualiser le document"
                         >

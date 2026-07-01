@@ -1471,7 +1471,9 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   };
 
   return (
-    <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden px-2 py-6 sm:px-4 sm:py-10 lg:px-6"
+    <div className={portalType === 'public'
+        ? 'relative min-h-screen w-full overflow-hidden'
+        : 'relative flex min-h-screen w-full items-center justify-center overflow-hidden px-2 py-6 sm:px-4 sm:py-10 lg:px-6'}
       style={{ background: 'linear-gradient(135deg, #f0f4ff 0%, #e8edf7 50%, #f5f0ff 100%)' }}>
 
       {/* ── Particules académiques animées (mixed = visibles sur fond blanc ET navy) ── */}
@@ -1528,21 +1530,27 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
         </Link>
       </motion.nav>
 
-      {/* ── Main login card — layout paysage ── */}
-      <div className="relative z-10 w-full max-w-4xl px-0 sm:px-0">
+      {/* ── Main login card — layout paysage (ou plein écran pour le portail public) ── */}
+      <div className={portalType === 'public'
+          ? 'relative z-10 w-full h-full min-h-screen'
+          : 'relative z-10 w-full max-w-4xl px-0 sm:px-0'}>
         <motion.div
           initial={shouldReduceMotion ? false : { opacity: 0, y: 20, scale: 0.99 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: dur, ease: 'easeOut' }}
-          className="rounded-2xl border bg-white/95 shadow-2xl backdrop-blur-md overflow-hidden"
-          style={{
+          className={portalType === 'public'
+            ? 'bg-white/95 overflow-hidden h-full min-h-screen'
+            : 'rounded-2xl border bg-white/95 shadow-2xl backdrop-blur-md overflow-hidden'}
+          style={portalType === 'public' ? undefined : {
             borderColor: `${NAVY}18`,
             boxShadow: `0 24px 48px -12px ${NAVY}14, 0 0 0 1px ${GOLD}12`,
           }}
         >
           <div
-            className={`flex flex-col md:flex-row ${portalType === 'public' ? 'public-portal-container' : ''}`}
-            style={{
+            className={portalType === 'public'
+              ? 'flex flex-col md:flex-row min-h-screen'
+              : `flex flex-col md:flex-row ${portalType === 'public' ? 'public-portal-container' : ''}`}
+            style={portalType === 'public' ? undefined : {
               minHeight: portalType === 'public' ? '600px' : '480px',
             }}
           >
@@ -1551,7 +1559,9 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 1. HEADER (top)    : badge portail (icône + libellé)
                 2. CENTRE (middle) : logo + nom école + slogan + infos clés (centré verticalement)
                 3. FOOTER (bottom) : "Propulsé par Academia Helm" + logo AH */}
-            <div className="flex-1 p-6 sm:p-8 flex flex-col relative overflow-hidden"
+            <div className={portalType === 'public'
+              ? 'md:w-1/4 p-6 sm:p-8 flex flex-col relative overflow-hidden'
+              : 'flex-1 p-6 sm:p-8 flex flex-col relative overflow-hidden'}
               style={{ background: `linear-gradient(155deg, ${NAVY} 0%, ${BLUE} 100%)` }}>
               {/* ── Décor bleu : halos lumineux subtils ── */}
               <div className="pointer-events-none absolute -top-16 -left-10 h-48 w-48 rounded-full opacity-25 blur-3xl" style={{ background: '#ffffff' }} aria-hidden />
@@ -1819,7 +1829,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             {/* Pour le portail public : padding généreux, scroll interne seulement sur desktop */}
             <div
               className={portalType === 'public'
-                ? 'flex-1 p-4 sm:p-4 md:p-5 flex flex-col justify-center md:overflow-hidden'
+                ? 'md:flex-[3] p-6 sm:p-8 lg:p-10 flex flex-col justify-start overflow-y-auto'
                 : 'flex-1 p-6 sm:p-8 flex flex-col justify-center'
               }
             >

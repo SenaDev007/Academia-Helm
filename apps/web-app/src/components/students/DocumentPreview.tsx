@@ -3,23 +3,25 @@
 /**
  * Composant de prévisualisation de document.
  *
- * Fetch le document avec credentials (cookies httpOnly), crée un blob URL
- * temporaire, puis l'affiche dans une iframe (PDF) ou img (image).
+ * Pattern exact du module RH (contracts/[id]/page.tsx) :
+ *   1. fetch avec credentials: 'include' + Authorization header explicite
+ *   2. response.blob()
+ *   3. URL.createObjectURL(blob)
+ *   4. <iframe src={blobUrl}>
  */
 
 import { useState, useEffect } from 'react';
-import { AlertCircle, Loader2, FileText } from 'lucide-react';
+import { AlertCircle, Loader2 } from 'lucide-react';
+import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 
 interface DocumentPreviewProps {
   url: string;
   mimeType: string;
-  onError?: () => void;
-  hasError?: boolean;
 }
 
-export default function DocumentPreview({ url, mimeType, onError, hasError }: DocumentPreviewProps) {
-  const [status, setStatus] = useState<'loading' | 'ok' | 'error'>('loading');
+export default function DocumentPreview({ url, mimeType }: DocumentPreviewProps) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [status, setStatus] = useState<'loading' | 'ok' | 'error'>('loading');
   const [errorMsg, setErrorMsg] = useState<string>('');
 
   useEffect(() => {
@@ -27,14 +29,20 @@ export default function DocumentPreview({ url, mimeType, onError, hasError }: Do
     setBlobUrl(null);
     setErrorMsg('');
 
-    let revokeUrl: string | null = null;
+    let currentBlobUrl: string | null = null;
 
-    fetch(url, { credentials: 'include' })
-      .then(async res => {
-        if (!res.ok) {
-          // Essayer de lire le message d'erreur
-          const text = await res.text().catch(() => '');
-          let msg = `Erreur ${res.status}`;
+    async function loadDoc() {
+      try {
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: { ...getClientAuthorizationHeader() },
+          credentials: 'include',
+          cache: 'no-store',
+        });
+
+        if (!response.ok) {
+          const text = await response.text().catch(() => '');
+          let msg = `Erreur ${response.status}`;
           try {
             const parsed = JSON.parse(text);
             msg = parsed.error || parsed.message || msg;
@@ -43,52 +51,42 @@ export default function DocumentPreview({ url, mimeType, onError, hasError }: Do
           }
           setErrorMsg(msg);
           setStatus('error');
-          onError?.();
           return;
         }
 
-        const blob = await res.blob();
-
-        // Vérifier que le blob n'est pas vide
+        const blob = await response.blob();
         if (blob.size === 0) {
           setErrorMsg('Le document est vide (0 octet)');
           setStatus('error');
-          onError?.();
           return;
         }
 
-        // Créer un object URL avec le bon type MIME
-        const correctMime = blob.type || mimeType || 'application/pdf';
-        const typedBlob = new Blob([blob], { type: correctMime });
-        const objUrl = URL.createObjectURL(typedBlob);
-        revokeUrl = objUrl;
-        setBlobUrl(objUrl);
+        currentBlobUrl = URL.createObjectURL(blob);
+        setBlobUrl(currentBlobUrl);
         setStatus('ok');
-      })
-      .catch(err => {
+      } catch (err: any) {
         setErrorMsg(err?.message || 'Échec de connexion');
         setStatus('error');
-        onError?.();
-      });
+      }
+    }
+
+    loadDoc();
 
     return () => {
-      if (revokeUrl) URL.revokeObjectURL(revokeUrl);
+      if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
     };
   }, [url]);
 
-  if (hasError || status === 'error') {
+  if (status === 'error') {
     return (
       <div className="flex flex-col items-center justify-center h-full p-8 text-center">
         <div className="p-4 bg-rose-50 rounded-full mb-4">
           <AlertCircle className="w-12 h-12 text-rose-400" />
         </div>
         <h3 className="text-lg font-bold text-slate-700 mb-2">Échec de chargement du document</h3>
-        <p className="text-sm text-slate-500 max-w-md mb-2">
-          {errorMsg || 'Ce document a été enregistré sans fichier joint.'}
-        </p>
+        <p className="text-sm text-slate-500 max-w-md mb-2">{errorMsg}</p>
         <p className="text-xs text-slate-400 max-w-md">
-          Si le problème persiste, essayez d'ouvrir le document dans un nouvel onglet
-          via le bouton &quot;Télécharger&quot;.
+          Si le problème persiste, essayez le bouton &quot;Télécharger&quot;.
         </p>
       </div>
     );
@@ -103,10 +101,8 @@ export default function DocumentPreview({ url, mimeType, onError, hasError }: Do
     );
   }
 
-  // status === 'ok'
-  const effectiveMime = mimeType.startsWith('image/') ? mimeType : 'application/pdf';
-
-  if (effectiveMime.startsWith('image/')) {
+  // status === 'ok' — afficher avec le blob URL
+  if (mimeType.startsWith('image/')) {
     return (
       <div className="flex items-center justify-center h-full p-4">
         <img src={blobUrl} alt="Document" className="max-w-full max-h-full object-contain rounded-lg shadow-lg" />
@@ -114,7 +110,12 @@ export default function DocumentPreview({ url, mimeType, onError, hasError }: Do
     );
   }
 
+  // PDF → iframe avec blob URL (pattern RH)
   return (
-    <iframe src={blobUrl} className="w-full h-full border-0" title="Document" />
+    <iframe
+      src={blobUrl}
+      className="w-full h-full border-0"
+      title="Document"
+    />
   );
 }

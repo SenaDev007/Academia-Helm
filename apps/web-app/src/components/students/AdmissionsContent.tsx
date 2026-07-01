@@ -1383,7 +1383,13 @@ export default function AdmissionsContent() {
                 <button
                   onClick={async () => {
                     try {
-                      const res = await fetch(previewDoc.url, { credentials: 'include' });
+                      const { getClientAuthorizationHeader } = await import('@/lib/auth/client-access-token');
+                      const res = await fetch(previewDoc.url, {
+                        method: 'GET',
+                        headers: { ...getClientAuthorizationHeader() },
+                        credentials: 'include',
+                        cache: 'no-store',
+                      });
                       if (!res.ok) throw new Error('Téléchargement échoué');
                       const blob = await res.blob();
                       const objUrl = URL.createObjectURL(blob);

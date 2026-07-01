@@ -319,6 +319,130 @@ class StudentsService {
   }
 
   /**
+   * Réinscription d'un élève existant pour une nouvelle année scolaire.
+   * Backend : POST /students/re-enroll
+   */
+  async reEnroll(data: {
+    studentId: string;
+    academicYearId: string;
+    schoolLevelId: string;
+    classId: string;
+    previousArrears?: number;
+  }): Promise<any> {
+    return apiFetch(`${BASE_URL}/re-enroll`, {
+      method: "POST",
+      body: data,
+    });
+  }
+
+  /**
+   * Promotion manuelle d'un élève vers l'année suivante.
+   * Backend : POST /students/promote
+   */
+  async promoteStudent(data: {
+    studentId: string;
+    fromAcademicYearId: string;
+    toAcademicYearId: string;
+    schoolLevelId: string;
+    toClassId?: string;
+    previousArrears?: number;
+  }): Promise<any> {
+    return apiFetch(`${BASE_URL}/promote`, {
+      method: "POST",
+      body: data,
+    });
+  }
+
+  /**
+   * Redoublement d'un élève.
+   * Backend : POST /students/repeat
+   */
+  async repeatStudent(data: {
+    studentId: string;
+    fromAcademicYearId: string;
+    toAcademicYearId: string;
+    schoolLevelId: string;
+    classId: string;
+    previousArrears?: number;
+  }): Promise<any> {
+    return apiFetch(`${BASE_URL}/repeat`, {
+      method: "POST",
+      body: data,
+    });
+  }
+
+  /**
+   * Promotion en lot (réinscription massive).
+   * Backend : POST /students/batch-promote
+   */
+  async batchPromote(data: {
+    studentIds: string[];
+    fromAcademicYearId: string;
+    toAcademicYearId: string;
+    schoolLevelId: string;
+    toClassId?: string;
+  }): Promise<any> {
+    return apiFetch(`${BASE_URL}/batch-promote`, {
+      method: "POST",
+      body: data,
+    });
+  }
+
+  /**
+   * Mise à jour de statut en lot.
+   * Backend : POST /students/batch-update-status
+   */
+  async batchUpdateStatus(data: {
+    studentIds: string[];
+    status: string;
+  }): Promise<any> {
+    return apiFetch(`${BASE_URL}/batch-update-status`, {
+      method: "POST",
+      body: data,
+    });
+  }
+
+  /**
+   * Transfert / sortie d'un élève.
+   * Backend : POST /students/transfer
+   */
+  async transferStudent(data: {
+    studentId: string;
+    academicYearId: string;
+    exitReason?: string;
+  }): Promise<any> {
+    return apiFetch(`${BASE_URL}/transfer`, {
+      method: "POST",
+      body: data,
+    });
+  }
+
+  /**
+   * Export des inscriptions en CSV.
+   */
+  async exportEnrollmentsCSV(params: {
+    academicYearId: string;
+    schoolLevelId?: string;
+  }): Promise<void> {
+    const qs = new URLSearchParams(params as any).toString();
+    const token = typeof window !== 'undefined'
+      ? (document.cookie.split('; ').find(r => r.startsWith('academia_token='))?.split('=')[1] || '')
+      : '';
+    const res = await fetch(`${BASE_URL}/enrollments?${qs}&format=csv`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'include',
+    });
+    if (!res.ok) throw new Error('Export échoué');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `inscriptions_${params.academicYearId}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  /**
    * Statistiques des cartes d'identité
    */
   async getIdCardStats(academicYearId: string): Promise<any> {

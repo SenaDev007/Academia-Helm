@@ -26,7 +26,7 @@ import {
   Plus, Search, ChevronDown, ChevronRight, Users, Loader2,
   FileText, Download, UserCheck, GraduationCap, BookOpen, Baby,
   RotateCcw, CheckCircle, XCircle, Clock, AlertCircle, Upload,
-  ShieldAlert, Info, BrainCircuit, ChevronUp, EyeOff, Eye,
+  ShieldAlert, Info, BrainCircuit, ChevronUp, EyeOff, Eye, FileDown,
 } from 'lucide-react';
 import { FormModal } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -133,6 +133,8 @@ export default function EnrollmentsContent() {
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
   // Tracking de la génération PDF par classe (pour afficher un spinner par bouton)
   const [pdfGeneratingClassId, setPdfGeneratingClassId] = useState<string | null>(null);
+  // Classes qui ont déjà un PDF généré en DB (pour afficher le check ✅)
+  const [pdfExistsClasses, setPdfExistsClasses] = useState<Set<string>>(new Set());
   // PDF liste de classe en cours de visualisation (blob URL + fileName)
   const [previewClassPdf, setPreviewClassPdf] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
 
@@ -149,6 +151,24 @@ export default function EnrollmentsContent() {
   useEffect(() => {
     if (academicYear) loadData();
   }, [academicYear, schoolLevel]);
+
+  // ─── Vérifier quels PDFs existent déjà en DB ─────────────────────────
+  // Permet d'afficher un check ✅ sur les classes qui ont déjà un PDF généré
+  useEffect(() => {
+    if (!academicYear || classes.length === 0) return;
+    const checkAll = async () => {
+      const results = await Promise.all(
+        classes.map(async (cls) => {
+          try {
+            const res = await studentsService.checkClassListPdfExists(cls.id, academicYear.id);
+            return res.exists ? cls.id : null;
+          } catch { return null; }
+        }),
+      );
+      setPdfExistsClasses(new Set(results.filter(Boolean) as string[]));
+    };
+    checkAll();
+  }, [academicYear, classes]);
 
   const loadData = async () => {
     if (!academicYear) return;
@@ -903,14 +923,12 @@ export default function EnrollmentsContent() {
                                         onClick={() => {
                                           if (!academicYear) return;
                                           setPdfGeneratingClassId(classInfo.id);
-                                          studentsService.generateClassListPdf(classInfo.id, academicYear.id)
-                                            .then(({ url, fileName }) => {
-                                              // Ouvrir le DocumentPreviewModal avec la blob URL
-                                              setPreviewClassPdf({
-                                                filePath: url,
-                                                fileName,
-                                                mimeType: 'application/pdf',
-                                              });
+                                          // Générer + stocker en DB (pattern RH contrats)
+                                          studentsService.generateAndStoreClassListPdf(classInfo.id, academicYear.id)
+                                            .then(() => {
+                                              // Marquer la classe comme ayant un PDF
+                                              setPdfExistsClasses(prev => new Set(prev).add(classInfo.id));
+                                              toast({ title: '✅ PDF généré et enregistré', description: classInfo.name, variant: 'success' });
                                             })
                                             .catch(err => toast({ title: 'Erreur PDF', description: err.message, variant: 'error' }))
                                             .finally(() => setPdfGeneratingClassId(null));
@@ -922,7 +940,36 @@ export default function EnrollmentsContent() {
                                             ? 'bg-blue-100 text-blue-600 cursor-wait'
                                             : 'text-slate-400 hover:bg-blue-100 hover:text-blue-600',
                                         )}
-                                        title="Visualiser la liste de classe (PDF)"
+                                        title="Générer la liste de classe (PDF)"
+                                      >
+                                        {pdfGeneratingClassId === classInfo.id
+                                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                          : pdfExistsClasses.has(classInfo.id)
+                                            ? <FileDown className="w-3.5 h-3.5 text-emerald-500" />
+                                            : <FileDown className="w-3.5 h-3.5" />}
+                                      </button>
+                                      {/* Bouton Visualiser — récupère le PDF stocké en DB (instantané) */}
+                                      <button
+                                        onClick={async () => {
+                                          if (!academicYear) return;
+                                          setPdfGeneratingClassId(classInfo.id);
+                                          try {
+                                            const { url, fileName } = await studentsService.getStoredClassListPdf(classInfo.id, academicYear.id);
+                                            setPreviewClassPdf({ filePath: url, fileName, mimeType: 'application/pdf' });
+                                          } catch (err: any) {
+                                            toast({ title: '⚠️ Aucun PDF', description: 'Générez d\'abord le document', variant: 'info' });
+                                          } finally {
+                                            setPdfGeneratingClassId(null);
+                                          }
+                                        }}
+                                        disabled={pdfGeneratingClassId === classInfo.id || !pdfExistsClasses.has(classInfo.id)}
+                                        className={cn(
+                                          'p-1.5 rounded-lg transition shrink-0',
+                                          pdfExistsClasses.has(classInfo.id)
+                                            ? 'text-slate-400 hover:bg-blue-100 hover:text-blue-600'
+                                            : 'text-slate-300 cursor-not-allowed',
+                                        )}
+                                        title={pdfExistsClasses.has(classInfo.id) ? 'Visualiser la liste de classe' : 'Générez d\'abord le PDF'}
                                       >
                                         {pdfGeneratingClassId === classInfo.id
                                           ? <Loader2 className="w-3.5 h-3.5 animate-spin" />

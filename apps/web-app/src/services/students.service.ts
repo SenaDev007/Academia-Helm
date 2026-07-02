@@ -469,7 +469,6 @@ class StudentsService {
     }
     const blob = await res.blob();
 
-    // Récupérer le nom de fichier depuis Content-Disposition (fallback: liste_classe.pdf)
     let filename = 'liste_classe.pdf';
     const cd = res.headers.get('Content-Disposition');
     if (cd) {
@@ -477,10 +476,80 @@ class StudentsService {
       if (match) filename = decodeURIComponent(match[1]);
     }
 
-    // Créer une blob URL pour l'affichage dans le DocumentPreviewModal
-    // (les blob URLs fonctionnent sur mobile contrairement aux data URLs)
     const url = URL.createObjectURL(blob);
     return { url, fileName: filename };
+  }
+
+  /**
+   * Génère le PDF et le STOCKE en DB (GeneratedDocument).
+   * Pattern Generate + Visualiser (comme RH contrats) : générer une fois,
+   * visualiser ensuite instantanément sans regénérer.
+   *
+   * BFF : POST /api/students/class-list/:classId/pdf/generate
+   */
+  async generateAndStoreClassListPdf(
+    classId: string,
+    academicYearId: string,
+  ): Promise<{ success: boolean; documentId: string; fileName: string; fileSize: number; generatedAt: string }> {
+    const res = await fetch(
+      `/api/students/class-list/${encodeURIComponent(classId)}/pdf/generate`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ academicYearId }),
+        credentials: 'include',
+      },
+    );
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`Génération PDF échouée (${res.status}): ${errText}`);
+    }
+    return res.json();
+  }
+
+  /**
+   * Récupère le PDF stocké en DB (sans regénérer). Retourne une blob URL.
+   * Lance une erreur si aucun PDF n'a été généré.
+   *
+   * BFF : GET /api/students/class-list/:classId/pdf/stored
+   */
+  async getStoredClassListPdf(
+    classId: string,
+    academicYearId: string,
+  ): Promise<{ url: string; fileName: string }> {
+    const res = await fetch(
+      `/api/students/class-list/${encodeURIComponent(classId)}/pdf/stored?academicYearId=${encodeURIComponent(academicYearId)}`,
+      { credentials: 'include' },
+    );
+    if (!res.ok) {
+      throw new Error('Aucun PDF généré pour cette classe. Générez d\'abord le document.');
+    }
+    const blob = await res.blob();
+    let filename = 'liste_classe.pdf';
+    const cd = res.headers.get('Content-Disposition');
+    if (cd) {
+      const match = cd.match(/filename="?([^";]+)"?/);
+      if (match) filename = decodeURIComponent(match[1]);
+    }
+    const url = URL.createObjectURL(blob);
+    return { url, fileName: filename };
+  }
+
+  /**
+   * Vérifie si un PDF a déjà été généré pour cette classe.
+   *
+   * BFF : GET /api/students/class-list/:classId/pdf/exists
+   */
+  async checkClassListPdfExists(
+    classId: string,
+    academicYearId: string,
+  ): Promise<{ exists: boolean; documentId?: string; generatedAt?: string; fileName?: string }> {
+    const res = await fetch(
+      `/api/students/class-list/${encodeURIComponent(classId)}/pdf/exists?academicYearId=${encodeURIComponent(academicYearId)}`,
+      { credentials: 'include' },
+    );
+    if (!res.ok) return { exists: false };
+    return res.json();
   }
 
   /**

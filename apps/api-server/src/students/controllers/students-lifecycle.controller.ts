@@ -2,7 +2,7 @@
  * Module 1 — API cycle de vie élève : pre-register, admit, re-enroll, transfer, change-class, history, export EDUCMASTER.
  */
 
-import { BadRequestException, Controller, Get, Post, Body, Param, Query, UseGuards, Res } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Post, Body, Param, Query, UseGuards, Res, NotFoundException } from '@nestjs/common';
 import { StreamableFile } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
@@ -11,6 +11,7 @@ import { StudentsLifecycleService } from '../services/students-lifecycle.service
 import { StudentIdCardService } from '../services/student-id-card.service';
 import { EducmasterExcelExportService } from '../services/educmaster-excel-export.service';
 import { ClassListPdfService } from '../services/class-list-pdf.service';
+import { PrismaService } from '../../database/prisma.service';
 import type { Response } from 'express';
 
 @Controller('students')
@@ -21,6 +22,7 @@ export class StudentsLifecycleController {
     private readonly idCard: StudentIdCardService,
     private readonly educmasterExcel: EducmasterExcelExportService,
     private readonly classListPdf: ClassListPdfService,
+    private readonly prisma: PrismaService,
   ) {}
 
   @Get('enrollments')
@@ -239,5 +241,158 @@ export class StudentsLifecycleController {
       'Cache-Control': 'no-store, no-cache, must-revalidate',
     });
     res.send(pdfBuffer);
+  }
+
+  /**
+   * POST /students/class-list/:classId/pdf/generate
+   * Génère le PDF de la liste de classe et le STOCKE en DB (GeneratedDocument).
+   * Pattern identique au module RH (contrats) : générer une fois, visualiser ensuite.
+   *
+   * Body: { academicYearId }
+   * Returns: { success: true, documentId, fileName, fileSize, generatedAt }
+   */
+  @Post('class-list/:classId/pdf/generate')
+  async generateAndStoreClassListPdf(
+    @TenantId() tenantId: string,
+    @Param('classId') classId: string,
+    @Body() body: { academicYearId: string },
+    @CurrentUser() user: any,
+  ) {
+    if (!body?.academicYearId) {
+      throw new BadRequestException('academicYearId est requis');
+    }
+
+    // Générer le PDF
+    const { buffer: pdfBuffer, className, schoolName } = await this.classListPdf.generateClassListPdf(
+      classId,
+      tenantId,
+      body.academicYearId,
+    );
+
+    // Convertir en data URL base64 pour stockage (pattern data URL comme admission documents)
+    const base64Data = pdfBuffer.toString('base64');
+    const dataUrl = `data:application/pdf;base64,${base64Data}`;
+
+    const safeName = (className || 'classe')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9_-]/g, '_')
+      .substring(0, 60);
+    const fileName = `liste_${safeName}.pdf`;
+
+    // Supprimer l'ancien document stocké s'il existe (même classId + academicYearId)
+    await this.prisma.generatedDocument.deleteMany({
+      where: {
+        tenantId,
+        documentType: 'CLASS_LIST_PDF',
+        metadata: {
+          path: ['classId'],
+          equals: classId,
+        },
+      },
+    }).catch(() => {});
+
+    // Stocker le nouveau PDF
+    const doc = await this.prisma.generatedDocument.create({
+      data: {
+        tenantId,
+        academicYearId: body.academicYearId,
+        documentType: 'CLASS_LIST_PDF',
+        fileName,
+        filePath: dataUrl,
+        fileSize: pdfBuffer.length,
+        mimeType: 'application/pdf',
+        generatedBy: user?.id || null,
+        metadata: { classId, className, schoolName } as any,
+      },
+    });
+
+    return {
+      success: true,
+      documentId: doc.id,
+      fileName,
+      fileSize: pdfBuffer.length,
+      generatedAt: doc.createdAt,
+    };
+  }
+
+  /**
+   * GET /students/class-list/:classId/pdf/stored?academicYearId=xxx
+   * Récupère le PDF stocké en DB (sans regénérer). Retourne 404 si non généré.
+   *
+   * Pattern : l'appelant vérifie d'abord /exists, puis appelle /stored si le doc existe.
+   */
+  @Get('class-list/:classId/pdf/stored')
+  async getStoredClassListPdf(
+    @TenantId() tenantId: string,
+    @Param('classId') classId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Res() res: Response,
+  ) {
+    if (!academicYearId) {
+      throw new BadRequestException('academicYearId est requis');
+    }
+
+    const doc = await this.prisma.generatedDocument.findFirst({
+      where: {
+        tenantId,
+        documentType: 'CLASS_LIST_PDF',
+        academicYearId,
+        metadata: { path: ['classId'], equals: classId } as any,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!doc || !doc.filePath) {
+      throw new NotFoundException('Aucun PDF généré pour cette classe. Générez d\'abord le document.');
+    }
+
+    // Le filePath est un data URL — extraire le base64 et envoyer en binaire
+    const match = doc.filePath.match(/^data:application\/pdf;base64,(.+)$/);
+    if (match) {
+      const buffer = Buffer.from(match[1], 'base64');
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `inline; filename="${doc.fileName}"`,
+        'Content-Length': buffer.length,
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+      });
+      res.send(buffer);
+    } else {
+      throw new NotFoundException('Document corrompu. Régénérez le document.');
+    }
+  }
+
+  /**
+   * GET /students/class-list/:classId/pdf/exists?academicYearId=xxx
+   * Vérifie si un PDF a déjà été généré pour cette classe.
+   * Retourne { exists: boolean, documentId?, generatedAt? }
+   */
+  @Get('class-list/:classId/pdf/exists')
+  async checkClassListPdfExists(
+    @TenantId() tenantId: string,
+    @Param('classId') classId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!academicYearId) {
+      throw new BadRequestException('academicYearId est requis');
+    }
+
+    const doc = await this.prisma.generatedDocument.findFirst({
+      where: {
+        tenantId,
+        documentType: 'CLASS_LIST_PDF',
+        academicYearId,
+        metadata: { path: ['classId'], equals: classId } as any,
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, createdAt: true, fileName: true, fileSize: true },
+    });
+
+    return {
+      exists: !!doc,
+      documentId: doc?.id || null,
+      generatedAt: doc?.createdAt || null,
+      fileName: doc?.fileName || null,
+      fileSize: doc?.fileSize || null,
+    };
   }
 }

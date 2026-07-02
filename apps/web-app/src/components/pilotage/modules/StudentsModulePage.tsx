@@ -435,32 +435,7 @@ export default function StudentsModulePage() {
                 },
               ]
             : [],
-          actions: (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleCreate}
-                disabled={schoolLevel?.id === 'ALL'}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Créer un nouvel élève</span>
-              </button>
-              <button
-                onClick={() => setIsImportModalOpen(true)}
-                className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
-              >
-                <Upload className="w-4 h-4" />
-                <span>Import</span>
-              </button>
-              <button
-                onClick={() => window.alert('Export EDUCMASTER : utilisez l\'action "Exporter" sur une ligne élève')}
-                className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
-              >
-                <Download className="w-4 h-4" />
-                <span>Export EDUCMASTER</span>
-              </button>
-            </div>
-          ),
+          actions: null,
         }}
         subModules={{
           activeModuleId: activeSubModuleId,

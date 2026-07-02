@@ -560,6 +560,17 @@ export default function StudentEnrollmentForm({
           documents: {},
         });
         saved = true;
+
+        // ── Sauvegarder la photo dès l'étape 2 (upload OU capture) ──
+        // On appelle l'endpoint dédié upload-photo au passage de l'étape 2,
+        // sans attendre le bouton "Enregistrer" final.
+        if (step === 2 && formData.photoUrl && formData.photoUrl.startsWith('data:')) {
+          try {
+            await studentsService.uploadPhoto(autoSavedStudentId, formData.photoUrl);
+          } catch (photoErr: any) {
+            console.warn('[AutoSave] Upload photo échec:', photoErr?.message);
+          }
+        }
       }
     } catch (e) {
       console.warn('[AutoSave] Étape', step, 'échec:', e);

@@ -55,9 +55,15 @@ export default function StudentMovementsContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
   const [actionStudent, setActionStudent] = useState<Student | null>(null);
-  const [actionType, setActionType] = useState<'archive' | 'withdraw' | 'reactivate' | null>(null);
+  const [actionType, setActionType] = useState<'archive' | 'withdraw' | 'reactivate' | 'transfer' | null>(null);
   const [actionReason, setActionReason] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  // Transfert inter-écoles
+  const [transferSearchQuery, setTransferSearchQuery] = useState('');
+  const [transferSearchResults, setTransferSearchResults] = useState<any[]>([]);
+  const [transferSelectedSchool, setTransferSelectedSchool] = useState<any | null>(null);
+  const [transferExternalSchoolName, setTransferExternalSchoolName] = useState('');
+  const [isSearchingSchools, setIsSearchingSchools] = useState(false);
 
   useEffect(() => {
     if (academicYear) loadData();
@@ -108,23 +114,53 @@ export default function StudentMovementsContent() {
         await apiFetch(`/students/${actionStudent.id}/archive`, { method: 'POST' });
         toast({ title: '✅ Élève archivé', description: `${actionStudent.firstName} ${actionStudent.lastName}`, variant: 'success' });
       } else if (actionType === 'withdraw') {
-        // Withdraw = set status to WITHDRAWN (désactivation)
         await apiFetch(`/students/${actionStudent.id}/archive`, {
           method: 'POST',
           body: JSON.stringify({ reason: actionReason || 'Retrait', status: 'WITHDRAWN' }),
         });
         toast({ title: '✅ Élève retiré', description: `${actionStudent.firstName} ${actionStudent.lastName}`, variant: 'success' });
       } else if (actionType === 'reactivate') {
-        // Réactiver
         await apiFetch(`/students/${actionStudent.id}`, {
           method: 'PATCH',
           body: JSON.stringify({ status: 'ACTIVE', isActive: true }),
         });
         toast({ title: '✅ Élève réintégré', description: `${actionStudent.firstName} ${actionStudent.lastName}`, variant: 'success' });
+      } else if (actionType === 'transfer') {
+        // Transfert inter-écoles
+        if (transferSelectedSchool) {
+          // École sur Academia Helm → transfert réel
+          await apiFetch(`/students/${actionStudent.id}/transfer`, {
+            method: 'POST',
+            body: JSON.stringify({
+              academicYearId: academicYear?.id,
+              exitReason: actionReason || 'Transfert inter-écoles',
+              destinationTenantId: transferSelectedSchool.id,
+              destinationTenantName: transferSelectedSchool.name,
+            }),
+          });
+          toast({ title: '✅ Élève transféré', description: `Vers ${transferSelectedSchool.name}`, variant: 'success' });
+        } else if (transferExternalSchoolName.trim()) {
+          // École externe (pas sur Academia Helm) → paperasse seulement
+          await apiFetch(`/students/${actionStudent.id}/archive`, {
+            method: 'POST',
+            body: JSON.stringify({
+              reason: `Transfert vers ${transferExternalSchoolName}`,
+              status: 'TRANSFERRED',
+            }),
+          });
+          toast({ title: '✅ Transfert enregistré', description: `Vers ${transferExternalSchoolName}`, variant: 'success' });
+        } else {
+          toast({ title: 'Erreur', description: 'Sélectionnez une école ou saisissez le nom', variant: 'error' });
+          setIsProcessing(false);
+          return;
+        }
       }
       setActionStudent(null);
       setActionType(null);
       setActionReason('');
+      setTransferSelectedSchool(null);
+      setTransferExternalSchoolName('');
+      setTransferSearchResults([]);
       loadData();
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message || 'Action échouée', variant: 'error' });
@@ -133,10 +169,34 @@ export default function StudentMovementsContent() {
     }
   };
 
-  const openAction = (student: Student, type: 'archive' | 'withdraw' | 'reactivate') => {
+  const openAction = (student: Student, type: 'archive' | 'withdraw' | 'reactivate' | 'transfer') => {
     setActionStudent(student);
     setActionType(type);
     setActionReason('');
+    setTransferSelectedSchool(null);
+    setTransferExternalSchoolName('');
+    setTransferSearchResults([]);
+  };
+
+  // Rechercher des écoles sur Academia Helm
+  const searchSchools = async (query: string) => {
+    setTransferSearchQuery(query);
+    if (!query.trim() || query.trim().length < 2) {
+      setTransferSearchResults([]);
+      return;
+    }
+    setIsSearchingSchools(true);
+    try {
+      const res = await fetch(`/api/public/schools?search=${encodeURIComponent(query)}`, { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setTransferSearchResults(Array.isArray(data) ? data : (data?.schools || []));
+      }
+    } catch {
+      setTransferSearchResults([]);
+    } finally {
+      setIsSearchingSchools(false);
+    }
   };
 
   return (
@@ -239,6 +299,13 @@ export default function StudentMovementsContent() {
                                 <LogOut className="w-3.5 h-3.5" /> Retirer
                               </button>
                               <button
+                                onClick={() => openAction(student, 'transfer')}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition"
+                                title="Transférer vers une autre école"
+                              >
+                                <ArrowRightLeft className="w-3.5 h-3.5" /> Transférer
+                              </button>
+                              <button
                                 onClick={() => openAction(student, 'archive')}
                                 className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 transition"
                                 title="Archiver (fin d'année)"
@@ -276,6 +343,7 @@ export default function StudentMovementsContent() {
                 {actionType === 'archive' && 'Archiver l\'élève'}
                 {actionType === 'withdraw' && 'Retirer l\'élève'}
                 {actionType === 'reactivate' && 'Réintégrer l\'élève'}
+                {actionType === 'transfer' && 'Transférer l\'élève'}
               </h3>
               <p className="text-sm text-slate-500 mt-1">
                 {actionStudent.firstName} {actionStudent.lastName}
@@ -297,6 +365,89 @@ export default function StudentMovementsContent() {
                   />
                 </div>
               )}
+
+              {actionType === 'transfer' && (
+                <div className="space-y-4">
+                  {/* Recherche d'école sur Academia Helm */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Rechercher une école sur Academia Helm
+                    </label>
+                    <input
+                      type="text"
+                      value={transferSearchQuery}
+                      onChange={(e) => searchSchools(e.target.value)}
+                      placeholder="Nom de l'école de destination..."
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    {isSearchingSchools && <p className="text-xs text-slate-400 mt-1">Recherche...</p>}
+                    {transferSearchResults.length > 0 && (
+                      <div className="mt-2 border border-slate-200 rounded-lg max-h-40 overflow-y-auto">
+                        {transferSearchResults.map(school => (
+                          <button
+                            key={school.id}
+                            onClick={() => {
+                              setTransferSelectedSchool(school);
+                              setTransferExternalSchoolName('');
+                              setTransferSearchResults([]);
+                              setTransferSearchQuery(school.name);
+                            }}
+                            className={cn(
+                              'w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition',
+                              transferSelectedSchool?.id === school.id && 'bg-blue-50 font-semibold text-blue-700',
+                            )}
+                          >
+                            {school.name}
+                            {school.subdomain && <span className="text-xs text-slate-400 ml-2">{school.subdomain}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {transferSelectedSchool && (
+                      <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                        <p className="text-xs text-blue-700">
+                          ✅ École sélectionnée : <strong>{transferSelectedSchool.name}</strong>
+                        </p>
+                        <p className="text-[10px] text-blue-600 mt-1">
+                          L'élève gardera son matricule global et recevra un nouveau matricule local dans cette école.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* OU école externe */}
+                  {!transferSelectedSchool && (
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                        Ou nom de l'école (si non sur Academia Helm)
+                      </label>
+                      <input
+                        type="text"
+                        value={transferExternalSchoolName}
+                        onChange={(e) => setTransferExternalSchoolName(e.target.value)}
+                        placeholder="Ex : École Saint-Joseph de Parakou"
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Si l'école n'est pas sur Academia Helm, seul un enregistrement administratif sera effectué.
+                      </p>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Motif du transfert (optionnel)
+                    </label>
+                    <textarea
+                      value={actionReason}
+                      onChange={(e) => setActionReason(e.target.value)}
+                      rows={2}
+                      placeholder="Ex : Déménagement, meilleur environnement..."
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    />
+                  </div>
+                </div>
+              )}
               {actionType === 'reactivate' && (
                 <p className="text-sm text-slate-600">
                   L'élève sera réintégré avec le statut <strong>ACTIF</strong>. Il retrouvera l'accès à tous les services.
@@ -312,13 +463,15 @@ export default function StudentMovementsContent() {
               </button>
               <button
                 onClick={handleAction}
-                disabled={isProcessing}
+                disabled={isProcessing || (actionType === 'transfer' && !transferSelectedSchool && !transferExternalSchoolName.trim())}
                 className={cn(
                   'px-4 py-2 text-sm font-bold text-white rounded-lg transition disabled:opacity-50',
-                  actionType === 'reactivate' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'
+                  actionType === 'reactivate' ? 'bg-emerald-600 hover:bg-emerald-700'
+                  : actionType === 'transfer' ? 'bg-blue-600 hover:bg-blue-700'
+                  : 'bg-rose-600 hover:bg-rose-700'
                 )}
               >
-                {isProcessing ? 'Traitement...' : 'Confirmer'}
+                {isProcessing ? 'Traitement...' : actionType === 'transfer' ? 'Transférer' : 'Confirmer'}
               </button>
             </div>
           </div>

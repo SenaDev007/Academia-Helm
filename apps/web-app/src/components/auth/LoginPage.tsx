@@ -1212,15 +1212,16 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   //   Étape 3 = Pièces justificatives + Message
   const validatePreEnrollmentStep = (step: 1 | 2 | 3): string | null => {
     if (step === 1) {
-      // Étape 1 : type candidat + champs parent
+      // Étape 1 : type candidat obligatoire, champs parent OPTIONNELS
+      // (un parent peut envoyer quelqu'un d'autre faire l'inscription,
+      //  ou faire l'inscription depuis mobile sans toutes les infos)
       if (!preEnrollment.candidateType) return 'Veuillez sélectionner le niveau d\'inscription (Maternelle, Primaire, Secondaire).';
-      if (!preEnrollment.parentFirstName?.trim()) return 'Veuillez saisir votre prénom (parent).';
-      if (!preEnrollment.parentLastName?.trim()) return 'Veuillez saisir votre nom (parent).';
-      if (!preEnrollment.parentPhone?.trim()) return 'Veuillez saisir votre numéro de téléphone.';
-      if (!preEnrollment.parentEmail?.trim()) return 'Veuillez saisir votre adresse email.';
+      // Les champs parent (prénom, nom, téléphone, email) ne sont PAS obligatoires
+      // à cette étape — ils pourront être complétés ultérieurement.
     }
     if (step === 2) {
       // Étape 2 : champs enfant (uniquement si pas PROSPECT_PARENT)
+      // SEULS les champs de l'enfant sont obligatoires
       if (preEnrollment.candidateType !== 'PROSPECT_PARENT') {
         if (!preEnrollment.childFirstName?.trim()) return 'Veuillez saisir le prénom de l\'enfant.';
         if (!preEnrollment.childLastName?.trim()) return 'Veuillez saisir le nom de l\'enfant.';
@@ -2275,11 +2276,10 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="mb-1 block text-xs font-semibold text-slate-900">
-                          Prénom (parent)
+                          Prénom (parent) <span class="text-slate-400 font-normal">(optionnel)</span>
                         </label>
                         <input
                           type="text"
-                          required
                           value={preEnrollment.parentFirstName}
                           onChange={(e) => setPreEnrollment((prev) => ({ ...prev, parentFirstName: e.target.value }))}
                           className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all placeholder:text-slate-400 focus:ring-2"
@@ -2289,11 +2289,10 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                       </div>
                       <div>
                         <label className="mb-1 block text-xs font-semibold text-slate-900">
-                          Nom (parent)
+                          Nom (parent) <span class="text-slate-400 font-normal">(optionnel)</span>
                         </label>
                         <input
                           type="text"
-                          required
                           value={preEnrollment.parentLastName}
                           onChange={(e) => setPreEnrollment((prev) => ({ ...prev, parentLastName: e.target.value }))}
                           className="w-full rounded-xl border-2 border-slate-200 py-2.5 px-3 min-h-[44px] text-sm transition-all placeholder:text-slate-400 focus:ring-2"
@@ -2306,7 +2305,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="mb-1 block text-xs font-semibold text-slate-900">
-                          Téléphone
+                          Téléphone <span class="text-slate-400 font-normal">(optionnel)</span>
                         </label>
                         <div className="relative">
                           <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
@@ -2314,7 +2313,6 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                           </div>
                           <input
                             type="tel"
-                            required
                             value={preEnrollment.parentPhone}
                             onChange={(e) => setPreEnrollment((prev) => ({ ...prev, parentPhone: e.target.value }))}
                             className="w-full rounded-xl border-2 border-slate-200 py-2.5 pl-9 pr-3 min-h-[44px] text-sm transition-all placeholder:text-slate-400 focus:ring-2"
@@ -2325,7 +2323,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                       </div>
                       <div>
                         <label className="mb-1 block text-xs font-semibold text-slate-900">
-                          Email
+                          Email <span class="text-slate-400 font-normal">(optionnel)</span>
                         </label>
                         <div className="relative">
                           <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">

@@ -1070,8 +1070,9 @@ export default function StudentEnrollmentForm({
                 Documents officiels
               </p>
               <p className="text-sm text-blue-700">
-                Téléchargez les documents obligatoires. Ils seront stockés dans le dossier de l&apos;élève
+                Téléchargez les documents nécessaires. Ils seront stockés dans le dossier de l&apos;élève
                 et accessibles depuis l&apos;onglet <strong>Dossiers Élèves</strong>.
+                Les documents peuvent être ajoutés ultérieurement si non disponibles maintenant.
               </p>
             </div>
           </div>
@@ -1083,6 +1084,7 @@ export default function StudentEnrollmentForm({
             accept=".pdf,.jpg,.jpeg,.png,.webp"
             onFileSelect={(file) => handleDocumentUpload('birthCertificate', file)}
             uploadedFile={uploadedDocs.birthCertificate}
+            optional
           />
 
           {/* Upload Carte NPI */}
@@ -1092,6 +1094,7 @@ export default function StudentEnrollmentForm({
             accept=".pdf,.jpg,.jpeg,.png,.webp"
             onFileSelect={(file) => handleDocumentUpload('npi', file)}
             uploadedFile={uploadedDocs.npi}
+            optional
           />
 
           {/* Upload Bulletin (optionnel) */}

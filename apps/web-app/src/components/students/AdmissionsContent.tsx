@@ -12,6 +12,7 @@ import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FormModal, ConfirmModal, ReadOnlyModal } from '@/components/modules/blueprint';
+import { Button } from '@/components/ui/button';
 import AdmissionForm from './AdmissionForm';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import { toast } from '@/components/ui/toast';
@@ -55,6 +56,9 @@ export default function AdmissionsContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('ALL');
 
+  // Nettoyer la sélection quand on change de filtre
+  useEffect(() => { setSelectedIds(new Set()); }, [activeFilter]);
+
   // ⚠️ Niveaux scolaires — chargés depuis /api/school-levels pour faire le
   // mapping schoolLevelId → label côté client. La relation schoolLevel a été
   // supprimée du modèle Admission (mismatch FK school_levels vs education_levels).
@@ -65,6 +69,10 @@ export default function AdmissionsContent() {
   // requestedClassId → label côté client. Permet d'afficher la classe souhaitée
   // par le parent dans la liste + le détail + l'édition.
   const [schoolClasses, setSchoolClasses] = useState<any[]>([]);
+
+  // Multi-sélection pour actions en lot
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchActionPending, setBatchActionPending] = useState(false);
 
   useEffect(() => {
     fetch('/api/school-levels', { credentials: 'include' })
@@ -326,6 +334,108 @@ export default function AdmissionsContent() {
       toast({ title: 'Erreur', description: e.message, variant: 'error' });
     } finally {
       setIsActionPending(false);
+    }
+  };
+
+  // ─── Batch / Multi-sélection ─────────────────────────────────────────────
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = (ids: string[]) => {
+    setSelectedIds(prev => {
+      // Si tous sont déjà sélectionnés → désélectionner tout
+      if (ids.every(id => prev.has(id))) return new Set();
+      // Sinon → sélectionner tous
+      return new Set(ids);
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const handleBatchSubmit = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    const ok = await setConfirmModal({
+      title: 'Soumettre en lot',
+      message: `Soumettre ${ids.length} candidature(s) ?`,
+      confirmText: 'Soumettre',
+    });
+    if (!ok) return;
+    setBatchActionPending(true);
+    try {
+      const result = await studentsService.batchSubmitAdmissions(ids);
+      toast({
+        title: '✅ Soumission en lot terminée',
+        description: `${result.succeeded} réussie(s), ${result.failed} échouée(s)`,
+      });
+      clearSelection();
+      loadAdmissions();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
+    } finally {
+      setBatchActionPending(false);
+      setConfirmModal(null);
+    }
+  };
+
+  const handleBatchAccept = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    const ok = await setConfirmModal({
+      title: 'Accepter en lot',
+      message: `Accepter ${ids.length} candidature(s) ?`,
+      confirmText: 'Accepter',
+    });
+    if (!ok) return;
+    setBatchActionPending(true);
+    try {
+      const result = await studentsService.batchAcceptAdmissions(ids);
+      toast({
+        title: '✅ Acceptation en lot terminée',
+        description: `${result.succeeded} réussie(s), ${result.failed} échouée(s)`,
+      });
+      clearSelection();
+      loadAdmissions();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
+    } finally {
+      setBatchActionPending(false);
+      setConfirmModal(null);
+    }
+  };
+
+  const handleBatchConvert = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    const ok = await setConfirmModal({
+      title: 'Convertir en lot',
+      message: `Convertir ${ids.length} candidature(s) en élèves ? Cette action générera matricules, comptes financiers, dossiers académiques, tokens QR et responsables légaux.`,
+      confirmText: 'Convertir',
+    });
+    if (!ok) return;
+    setBatchActionPending(true);
+    try {
+      const result = await studentsService.batchConvertAdmissions(ids);
+      const succeeded = result.results.filter((r: any) => r.success);
+      const matricules = succeeded.map((r: any) => r.matricule).filter(Boolean).join(', ');
+      toast({
+        title: '✅ Conversion en lot terminée',
+        description: `${result.succeeded} élève(s) créé(s)${matricules ? ` — Matricules: ${matricules}` : ''}${result.failed > 0 ? ` — ${result.failed} échouée(s)` : ''}`,
+      });
+      clearSelection();
+      loadAdmissions();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
+    } finally {
+      setBatchActionPending(false);
+      setConfirmModal(null);
     }
   };
 
@@ -677,6 +787,59 @@ export default function AdmissionsContent() {
         ))}
       </div>
 
+      {/* Barre d'actions batch (multi-sélection) */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-semibold text-blue-900">
+              {selectedIds.size} sélectionnée(s)
+            </span>
+            <button onClick={clearSelection} className="text-xs text-blue-600 hover:text-blue-800 underline">
+              Tout désélectionner
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            {/* Submit batch — visible si au moins une PENDING */}
+            {filteredAdmissions.some(a => selectedIds.has(a.id) && a.status === 'PENDING') && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleBatchSubmit}
+                disabled={batchActionPending}
+                className="border-blue-300 text-blue-700 hover:bg-blue-100"
+              >
+                <Send className="w-3.5 h-3.5 mr-1.5" />
+                Soumettre en lot
+              </Button>
+            )}
+            {/* Accept batch — visible si au moins une SUBMITTED ou UNDER_REVIEW */}
+            {filteredAdmissions.some(a => selectedIds.has(a.id) && (a.status === 'SUBMITTED' || a.status === 'UNDER_REVIEW')) && (
+              <Button
+                size="sm"
+                onClick={handleBatchAccept}
+                disabled={batchActionPending}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                <CheckCircle className="w-3.5 h-3.5 mr-1.5" />
+                Accepter en lot
+              </Button>
+            )}
+            {/* Convert batch — visible si au moins une ACCEPTED */}
+            {filteredAdmissions.some(a => selectedIds.has(a.id) && a.status === 'ACCEPTED') && (
+              <Button
+                size="sm"
+                onClick={handleBatchConvert}
+                disabled={batchActionPending}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white"
+              >
+                <UserCheck className="w-3.5 h-3.5 mr-1.5" />
+                Convertir en lot
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Main Table Content */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1">
         {isLoading ? (
@@ -699,6 +862,14 @@ export default function AdmissionsContent() {
             <table className="min-w-full divide-y divide-slate-200">
               <thead>
                 <tr className="bg-slate-50/50">
+                  <th className="px-4 py-4 text-left">
+                    <input
+                      type="checkbox"
+                      checked={filteredAdmissions.length > 0 && filteredAdmissions.every(a => selectedIds.has(a.id))}
+                      onChange={() => toggleSelectAll(filteredAdmissions.map(a => a.id))}
+                      className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                  </th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Candidat</th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Niveau</th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Classe</th>
@@ -718,8 +889,16 @@ export default function AdmissionsContent() {
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: idx * 0.05 }}
-                        className="group hover:bg-slate-50/80 transition-colors"
+                        className={`group hover:bg-slate-50/80 transition-colors ${selectedIds.has(admission.id) ? 'bg-blue-50/50' : ''}`}
                       >
+                        <td className="px-4 py-4 whitespace-nowrap">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(admission.id)}
+                            onChange={() => toggleSelect(admission.id)}
+                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                          />
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
                             <div className="h-10 w-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500 font-bold group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors">

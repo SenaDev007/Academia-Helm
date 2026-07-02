@@ -124,6 +124,29 @@ class StudentsService {
     );
   }
 
+  // ─── Batch / Bulk admission operations ───
+
+  async batchSubmitAdmissions(admissionIds: string[]): Promise<any> {
+    return apiFetch(`${BASE_URL}/admissions/batch/submit`, {
+      method: "POST",
+      body: { admissionIds },
+    });
+  }
+
+  async batchAcceptAdmissions(admissionIds: string[], comment?: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/admissions/batch/accept`, {
+      method: "POST",
+      body: { admissionIds, comment },
+    });
+  }
+
+  async batchConvertAdmissions(admissionIds: string[]): Promise<any> {
+    return apiFetch(`${BASE_URL}/admissions/batch/convert`, {
+      method: "POST",
+      body: { admissionIds },
+    });
+  }
+
   async deleteAdmission(id: string): Promise<any> {
     return apiFetch(`${BASE_URL}/admissions/${encodeURIComponent(id)}`, {
       method: "DELETE",

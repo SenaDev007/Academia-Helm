@@ -178,7 +178,7 @@ export class ClassListPdfService {
         <tr>
           <td style="text-align:center;padding:8px 10px;border:1px solid #ddd;">${s.num}</td>
           <td style="padding:8px 10px;border:1px solid #ddd;font-weight:600;">${s.name}</td>
-          <td style="text-align:center;padding:8px 10px;border:1px solid #ddd;">${s.matricule}</td>
+          <td style="text-align:center;padding:8px 6px;border:1px solid #ddd;font-size:10px;white-space:nowrap;">${s.matricule}</td>
           <td style="text-align:center;padding:8px 10px;border:1px solid #ddd;">${s.gender}</td>
           <td style="text-align:center;padding:8px 10px;border:1px solid #ddd;">${s.dateOfBirth}</td>
         </tr>
@@ -238,9 +238,12 @@ export class ClassListPdfService {
     display: flex; justify-content: space-between; align-items: center;
     font-size: 13px; margin-bottom: 20px; padding: 0 5px;
   }
-  .class-info-left { text-align: left; font-weight: 600; text-decoration: underline; }
-  .class-info-center { text-align: center; font-weight: 600; text-decoration: underline; }
-  .class-info-right { text-align: right; font-weight: 600; text-decoration: underline; }
+  .class-info-left { text-align: left; font-weight: 600; }
+  .class-info-center { text-align: center; font-weight: 600; }
+  .class-info-right { text-align: right; font-weight: 600; }
+  .label-underlined {
+    text-decoration: underline; text-underline-offset: 3px; font-weight: 700;
+  }
 
   /* ── Tableau ── */
   table.students { width: 100%; border-collapse: collapse; margin-top: 5px; }
@@ -286,9 +289,9 @@ export class ClassListPdfService {
 
   <!-- INFOS CLASSE — 3 colonnes alignées -->
   <div class="class-info">
-    <span class="class-info-left">Classe : ${data.className}</span>
-    <span class="class-info-center">Effectif : ${data.students.length} élève(s)</span>
-    <span class="class-info-right">Année scolaire : ${data.academicYearName}</span>
+    <span class="class-info-left"><span class="label-underlined">Classe</span> : ${data.className}</span>
+    <span class="class-info-center"><span class="label-underlined">Effectif</span> : ${data.students.length} élève(s)</span>
+    <span class="class-info-right"><span class="label-underlined">Année scolaire</span> : ${data.academicYearName}</span>
   </div>
 
   <!-- TABLEAU DES ÉLÈVES -->

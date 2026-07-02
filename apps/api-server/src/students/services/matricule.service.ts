@@ -4,23 +4,23 @@
  * ============================================================================
  *
  * Format UNIFIÉ (aligné sur le standard RH) :
- *   <CODE_ECOLE>-E-<YY>-<XXXXX>
- *   ex: CSPEB-E-25-00001
+ *   <CODE_ECOLE>-E-<YY>-<XXX>
+ *   ex: CSPEB-E-25-001
  *
  * - "CODE_ECOLE" = Abréviation officielle (max 6 chars, depuis tenant_identity_profiles.schoolAcronym)
  * - "E" = Code type local pour Élève (différencie du Personnel=P, Facture=F, etc.)
  * - "YY" = Année d'inscription (2 digits, ex: 25 pour 2025)
- * - "XXXXX" = Séquence auto-incrémentée (5 digits, par tenant)
+ * - "XXX" = Séquence auto-incrémentée (5 digits, par tenant)
  *
  * ⚠️ Ce service génère UNIQUEMENT le matricule LOCAL (par école).
- * Le matricule GLOBAL (AH-STU-YY-XXXXXX) est généré par
+ * Le matricule GLOBAL (AH-STU-YY-XXX) est généré par
  * StudentIdentifierService.
  *
  * Le format est identique à celui du module RH (StaffMatriculeService) :
- *   - Staff local :  <CODE>-<YY>-<XXXXX>  (ex: CSPEB-25-00001)
- *   - Élève local :  <CODE>-<YY>-<XXXXX>  (ex: CSPEB-25-00001)
- *   - Staff global : AH-STF-<YY>-<XXXXXX> (ex: AH-STF-25-000001)
- *   - Élève global : AH-STU-<YY>-<XXXXXX> (ex: AH-STU-25-000001)
+ *   - Staff local :  <CODE>-<YY>-<XXX>  (ex: CSPEB-25-001)
+ *   - Élève local :  <CODE>-<YY>-<XXX>  (ex: CSPEB-25-001)
+ *   - Staff global : AH-STF-<YY>-<XXX> (ex: AH-STF-25-0001)
+ *   - Élève global : AH-STU-<YY>-<XXX> (ex: AH-STU-25-0001)
  *
  * Ce même format sera utilisé pour les factures (INV), reçus (REC), etc.
  * via le MatriculeGeneratorService unifié.
@@ -31,7 +31,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { Prisma } from '@prisma/client';
 
-const SEQUENCE_PAD = 5;
+const SEQUENCE_PAD = 3;
 const MAX_SCHOOL_CODE_LENGTH = 6;
 
 @Injectable()
@@ -108,7 +108,7 @@ export class MatriculeService {
 
   /**
    * Génère le prochain matricule LOCAL dans une transaction.
-   * Format UNIFIÉ : <CODE_TENANT>-E-<YY>-<XXXXX>  ex: CSPEB-E-25-00001
+   * Format UNIFIÉ : <CODE_TENANT>-E-<YY>-<XXX>  ex: CSPEB-E-25-001
    *
    * Le préfixe "E" (Élève) différencie ce matricule du Personnel (P),
    * Facture (F), Reçu (R), etc. au sein de la même école.

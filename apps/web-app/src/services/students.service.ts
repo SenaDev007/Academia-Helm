@@ -443,21 +443,26 @@ class StudentsService {
   }
 
   /**
-   * Génère le PDF de la liste d'élèves d'une classe.
+   * Génère le PDF de la liste d'élèves d'une classe et retourne une blob URL
+   * + le nom du fichier pour affichage dans un DocumentPreviewModal.
    *
    * BFF : GET /api/students/class-list/:classId/pdf?academicYearId=...
    * (proxy vers backend NestJS)
    *
    * En-tête adapté au niveau (Maternelle/Primaire vs Secondaire).
-   * Le nom de fichier est récupéré depuis Content-Disposition si présent.
+   *
+   * @returns { url: string; fileName: string } — blob URL à passer à l'iframe/img
+   *          + nom du fichier pour le bouton Télécharger du modal
+   *          ⚠️ L'appelant DOIT faire URL.revokeObjectURL(url) à la fermeture du modal
    */
-  async generateClassListPdf(classId: string, academicYearId: string): Promise<void> {
-    // ⚠️ Utiliser /api/students/class-list (route BFF) et non ${BASE_URL}/class-list
-    // car BASE_URL = "/students" (relatif) → l'URL devient /students/class-list/...
-    // qui est interceptée par Next.js comme une page (200 HTML) au lieu du backend.
-    const res = await fetch(`/api/students/class-list/${encodeURIComponent(classId)}/pdf?academicYearId=${encodeURIComponent(academicYearId)}`, {
-      credentials: 'include',
-    });
+  async generateClassListPdf(
+    classId: string,
+    academicYearId: string,
+  ): Promise<{ url: string; fileName: string }> {
+    const res = await fetch(
+      `/api/students/class-list/${encodeURIComponent(classId)}/pdf?academicYearId=${encodeURIComponent(academicYearId)}`,
+      { credentials: 'include' },
+    );
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
       throw new Error(`Génération PDF échouée (${res.status}): ${errText}`);
@@ -472,14 +477,10 @@ class StudentsService {
       if (match) filename = decodeURIComponent(match[1]);
     }
 
+    // Créer une blob URL pour l'affichage dans le DocumentPreviewModal
+    // (les blob URLs fonctionnent sur mobile contrairement aux data URLs)
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    return { url, fileName: filename };
   }
 
   /**

@@ -23,7 +23,7 @@ import { FileText, ExternalLink, X, Download } from 'lucide-react';
 
 interface DocumentPreviewModalProps {
   doc: {
-    filePath: string; // data URL (base64) ou URL HTTPS
+    filePath: string; // data URL (base64), URL HTTPS, ou blob URL
     fileName: string;
     mimeType: string;
   };
@@ -33,7 +33,7 @@ interface DocumentPreviewModalProps {
 /**
  * Convertit un data URL base64 en Blob URL.
  * Les Blob URLs sont mieux supportées par les navigateurs mobiles pour les iframes.
- * Si filePath est déjà une URL HTTPS, on la retourne telle quelle.
+ * Si filePath est déjà une URL HTTPS ou blob URL, on la retourne telle quelle.
  */
 function useBlobUrl(filePath: string): { url: string; revoke: () => void } {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
@@ -41,8 +41,15 @@ function useBlobUrl(filePath: string): { url: string; revoke: () => void } {
   useEffect(() => {
     if (!filePath) return;
 
-    // Si c'est déjà une URL HTTPS, l'utiliser directement
+    // Si c'est déjà une URL HTTPS, l'utiliser directement (pas de revoke)
     if (filePath.startsWith('http')) {
+      setBlobUrl(filePath);
+      return;
+    }
+
+    // Si c'est déjà une blob URL, l'utiliser directement MAIS il faudra revoke
+    // (l'appelant a créé la blob URL, on la réutilise)
+    if (filePath.startsWith('blob:')) {
       setBlobUrl(filePath);
       return;
     }

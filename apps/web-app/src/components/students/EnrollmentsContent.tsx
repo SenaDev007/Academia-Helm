@@ -26,11 +26,12 @@ import {
   Plus, Search, ChevronDown, ChevronRight, Users, Loader2,
   FileText, Download, UserCheck, GraduationCap, BookOpen, Baby,
   RotateCcw, CheckCircle, XCircle, Clock, AlertCircle, Upload,
-  ShieldAlert, Info, BrainCircuit, ChevronUp, EyeOff,
+  ShieldAlert, Info, BrainCircuit, ChevronUp, EyeOff, Eye,
 } from 'lucide-react';
 import { FormModal } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { motion, AnimatePresence } from 'framer-motion';
+import DocumentPreviewModal from './DocumentPreviewModal';
 import StudentEnrollmentForm from '@/components/students/StudentEnrollmentForm';
 import { studentsService } from '@/services/students.service';
 import { financeService } from '@/services/finance.service';
@@ -132,6 +133,8 @@ export default function EnrollmentsContent() {
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
   // Tracking de la génération PDF par classe (pour afficher un spinner par bouton)
   const [pdfGeneratingClassId, setPdfGeneratingClassId] = useState<string | null>(null);
+  // PDF liste de classe en cours de visualisation (blob URL + fileName)
+  const [previewClassPdf, setPreviewClassPdf] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
 
   // ─── ORION mini-panel ──────────────────────────────────────────────
   // Alertes ciblées sur les inscriptions : élèves sans matricule, cartes manquantes,
@@ -901,7 +904,14 @@ export default function EnrollmentsContent() {
                                           if (!academicYear) return;
                                           setPdfGeneratingClassId(classInfo.id);
                                           studentsService.generateClassListPdf(classInfo.id, academicYear.id)
-                                            .then(() => toast({ title: '✅ PDF généré', description: classInfo.name, variant: 'success' }))
+                                            .then(({ url, fileName }) => {
+                                              // Ouvrir le DocumentPreviewModal avec la blob URL
+                                              setPreviewClassPdf({
+                                                filePath: url,
+                                                fileName,
+                                                mimeType: 'application/pdf',
+                                              });
+                                            })
                                             .catch(err => toast({ title: 'Erreur PDF', description: err.message, variant: 'error' }))
                                             .finally(() => setPdfGeneratingClassId(null));
                                         }}
@@ -909,14 +919,14 @@ export default function EnrollmentsContent() {
                                         className={cn(
                                           'p-1.5 rounded-lg transition shrink-0',
                                           pdfGeneratingClassId === classInfo.id
-                                            ? 'bg-emerald-100 text-emerald-600 cursor-wait'
-                                            : 'text-slate-400 hover:bg-emerald-100 hover:text-emerald-600',
+                                            ? 'bg-blue-100 text-blue-600 cursor-wait'
+                                            : 'text-slate-400 hover:bg-blue-100 hover:text-blue-600',
                                         )}
-                                        title="Générer PDF liste de classe"
+                                        title="Visualiser la liste de classe (PDF)"
                                       >
                                         {pdfGeneratingClassId === classInfo.id
                                           ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                          : <Download className="w-3.5 h-3.5" />}
+                                          : <Eye className="w-3.5 h-3.5" />}
                                       </button>
                                     </div>
 
@@ -1084,6 +1094,17 @@ export default function EnrollmentsContent() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ─── MODAL : Visualisation PDF liste de classe ───
+          Réutilise le même DocumentPreviewModal que l'onglet Admission.
+          Le PDF est généré côté backend, retourné comme blob URL, et affiché
+          dans une iframe. Les boutons Télécharger + Ouvrir sont intégrés au modal. */}
+      {previewClassPdf && (
+        <DocumentPreviewModal
+          doc={previewClassPdf}
+          onClose={() => setPreviewClassPdf(null)}
+        />
       )}
     </>
   );

@@ -160,10 +160,12 @@ export default function FeeStructureModal({
             <div>
               <Label>Niveau</Label>
               <Select value={levelId} onValueChange={setLevelId}>
-                <SelectTrigger><SelectValue placeholder="Sélectionner" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Sélectionner un niveau" /></SelectTrigger>
                 <SelectContent>
                   {levels.map((l) => (
-                    <SelectItem key={l.id} value={l.id}>{l.label ?? l.code}</SelectItem>
+                    <SelectItem key={l.id} value={l.id}>
+                      {l.label ?? l.code ?? l.name ?? 'Niveau'}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -173,10 +175,10 @@ export default function FeeStructureModal({
             <div>
               <Label>Classe</Label>
               <Select value={classId} onValueChange={setClassId}>
-                <SelectTrigger><SelectValue placeholder="Sélectionner" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Sélectionner une classe" /></SelectTrigger>
                 <SelectContent>
                   {classes.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    <SelectItem key={c.id} value={c.id}>{c.name ?? 'Classe'}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

@@ -1,13 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Plus, Copy, UserCog, Pencil, Trash2 } from 'lucide-react';
-import {
-  ModuleContentArea,
-} from '@/components/modules/blueprint';
+import { Plus, Copy, UserCog, Pencil } from 'lucide-react';
+import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
@@ -20,6 +19,7 @@ import FeeOverrideModal from './FeeOverrideModal';
 import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
 import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
 import { formatCurrency } from '@/lib/utils';
+import { filterAndSortClasses } from '@/lib/finance/class-sort';
 
 const FEE_TYPES = [
   { value: 'INSCRIPTION', label: 'Inscription' },
@@ -81,6 +81,33 @@ export default function FeeStructuresContent() {
       .catch(() => setAcademicYears([]));
   }, []);
 
+  // Filtrer et trier les classes par niveau sélectionné + ordre pédagogique
+  const filteredSortedClasses = useMemo(
+    () => filterAndSortClasses(classes, filterLevelId || undefined),
+    [classes, filterLevelId],
+  );
+
+  // Réinitialiser filterClassId si la classe sélectionnée n'est plus dans la liste filtrée
+  useEffect(() => {
+    if (filterClassId && !filteredSortedClasses.find((c) => c.id === filterClassId)) {
+      setFilterClassId('');
+    }
+  }, [filteredSortedClasses, filterClassId]);
+
+  // Obtenir le libellé d'un niveau depuis son ID
+  const levelLabel = (levelId?: string | null) => {
+    if (!levelId) return '—';
+    const level = levels.find((l) => l.id === levelId);
+    return level ? (level.label ?? level.code ?? level.name) : '—';
+  };
+
+  // Obtenir le libellé d'une classe depuis son ID
+  const classLabel = (classId?: string | null) => {
+    if (!classId) return '—';
+    const cls = classes.find((c) => c.id === classId);
+    return cls ? cls.name : '—';
+  };
+
   const handleCreate = async (body: any) => {
     if (!academicYear?.id) return;
     try {
@@ -99,18 +126,6 @@ export default function FeeStructuresContent() {
       await financeService.updateFeeStructure(editingFee.id, body);
       setEditingFee(null);
       toast({ title: 'Succès', description: 'Frais mis à jour avec succès.' });
-      loadStructures();
-    } catch (error: any) {
-      toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    const ok = await confirmDialog.danger('Ce frais sera définitivement supprimé. Cette action est irréversible.', 'Supprimer le frais');
-    if (!ok) return;
-    try {
-      await financeService.deleteFeeStructure(id);
-      toast({ title: 'Succès', description: 'Frais supprimé avec succès.' });
       loadStructures();
     } catch (error: any) {
       toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
@@ -140,7 +155,7 @@ export default function FeeStructuresContent() {
       <ModuleContentArea
         layout="custom"
         toolbar={
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-3">
             <p className="text-sm text-slate-600">
               Définissez les frais par niveau et classe. Priorité : Classe {'>'} Niveau {'>'} Override élève.
             </p>
@@ -161,38 +176,61 @@ export default function FeeStructuresContent() {
           </div>
         }
       >
-        <div className="mb-4 flex flex-wrap gap-4 items-center">
-          <span className="text-sm text-gray-600">Année scolaire : {academicYear?.label ?? '—'}</span>
-          <Select value={filterLevelId || 'ALL'} onValueChange={(v) => setFilterLevelId(v === 'ALL' ? '' : v)}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Filtre Niveau" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">Tous niveaux</SelectItem>
-              {levels.map((l) => (
-                <SelectItem key={l.id} value={l.id}>{l.label ?? l.code}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={filterClassId || 'ALL'} onValueChange={(v) => setFilterClassId(v === 'ALL' ? '' : v)}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Filtre Classe" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">Toutes classes</SelectItem>
-              {classes.map((c) => (
-                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        {/* Filtres */}
+        <div className="mb-4 flex flex-wrap gap-4 items-end">
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Niveau</Label>
+            <Select
+              value={filterLevelId || 'ALL'}
+              onValueChange={(v) => {
+                setFilterLevelId(v === 'ALL' ? '' : v);
+                setFilterClassId(''); // Reset classe quand niveau change
+              }}
+            >
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder="Tous les niveaux" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Tous les niveaux</SelectItem>
+                {levels.map((l) => (
+                  <SelectItem key={l.id} value={l.id}>
+                    {l.label ?? l.code ?? l.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Classe</Label>
+            <Select
+              value={filterClassId || 'ALL'}
+              onValueChange={(v) => setFilterClassId(v === 'ALL' ? '' : v)}
+              disabled={filteredSortedClasses.length === 0}
+            >
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder="Toutes les classes" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Toutes les classes</SelectItem>
+                {filteredSortedClasses.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
+        {/* Tableau des frais */}
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Nom du frais</TableHead>
               <TableHead>Type</TableHead>
-              <TableHead>Montant</TableHead>
+              <TableHead>Appliqué à</TableHead>
+              <TableHead className="text-right">Montant</TableHead>
               <TableHead>Tranches</TableHead>
               <TableHead>Oblig.</TableHead>
               <TableHead>Statut</TableHead>
@@ -202,27 +240,64 @@ export default function FeeStructuresContent() {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={7} className="text-center text-gray-500">Chargement...</TableCell></TableRow>
+              <TableRow>
+                <TableCell colSpan={9} className="text-center text-gray-500 py-8">
+                  Chargement...
+                </TableCell>
+              </TableRow>
             ) : structures.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center text-gray-500">Aucun frais configuré.</TableCell></TableRow>
+              <TableRow>
+                <TableCell colSpan={9} className="text-center text-gray-500 py-12">
+                  <div className="flex flex-col items-center gap-3">
+                    <Plus className="w-10 h-10 text-slate-300" />
+                    <p>Aucun frais configuré pour cette année scolaire.</p>
+                    <Button onClick={() => setModalNewFee(true)} size="sm">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Configurer un frais
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
             ) : (
               structures.map((s) => (
-                <TableRow key={s.id}>
+                <TableRow key={s.id} className="hover:bg-slate-50">
                   <TableCell className="font-medium">{s.name}</TableCell>
-                  <TableCell>{feeTypeLabel(s.feeType)}</TableCell>
-                  <TableCell>{formatCurrency(s.totalAmount)}</TableCell>
-                  <TableCell>{s.isInstallment ? 'Oui' : 'Non'}</TableCell>
-                  <TableCell><Badge variant={s.isMandatory ? 'default' : 'outline'}>{s.isMandatory ? 'Oui' : 'Non'}</Badge></TableCell>
-                  <TableCell><Badge variant={s.isActive ? 'default' : 'secondary'}>{s.isActive ? 'Actif' : 'Inactif'}</Badge></TableCell>
+                  <TableCell>
+                    <Badge variant="outline">{feeTypeLabel(s.feeType)}</Badge>
+                  </TableCell>
+                  <TableCell className="text-sm text-slate-600">
+                    {s.classId ? (
+                      <span>Classe : <strong>{classLabel(s.classId)}</strong></span>
+                    ) : s.levelId ? (
+                      <span>Niveau : <strong>{levelLabel(s.levelId)}</strong></span>
+                    ) : (
+                      <span className="text-slate-400">Global (tous niveaux)</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right font-semibold">{formatCurrency(s.totalAmount)}</TableCell>
+                  <TableCell>
+                    {s.isInstallment ? (
+                      <Badge className="bg-blue-50 text-blue-700">{s.structureInstallments?.length || 0} tranches</Badge>
+                    ) : (
+                      <span className="text-slate-400 text-sm">Non</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={s.isMandatory ? 'default' : 'outline'}>
+                      {s.isMandatory ? 'Obligatoire' : 'Facultatif'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={s.isActive ? 'default' : 'secondary'}>
+                      {s.isActive ? 'Actif' : 'Inactif'}
+                    </Badge>
+                  </TableCell>
                   <TableCell className="text-center">
                     <EntitySyncIndicator variant="dot" status={syncStatuses[s.id] ?? 'UNKNOWN'} />
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="icon" onClick={() => setEditingFee(s)}>
+                    <Button variant="ghost" size="icon" onClick={() => setEditingFee(s)} title="Modifier">
                       <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => handleDelete(s.id)}>
-                      <Trash2 className="h-4 w-4 text-red-500" />
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -236,7 +311,7 @@ export default function FeeStructuresContent() {
         <FeeStructureModal
           academicYearId={academicYear?.id ?? ''}
           levels={levels}
-          classes={classes}
+          classes={filterAndSortClasses(classes)}
           onClose={() => setModalNewFee(false)}
           onSubmit={handleCreate}
         />
@@ -245,7 +320,7 @@ export default function FeeStructuresContent() {
         <FeeStructureModal
           academicYearId={academicYear?.id ?? ''}
           levels={levels}
-          classes={classes}
+          classes={filterAndSortClasses(classes)}
           feeId={editingFee.id}
           initialData={editingFee}
           onClose={() => setEditingFee(null)}

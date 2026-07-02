@@ -875,8 +875,12 @@ export default function EnrollmentsContent() {
                                         return (
                                           <div key={enr.id} className="flex items-center gap-3 py-2 px-3 hover:bg-amber-50/40 rounded-lg transition-colors group whitespace-nowrap min-w-max">
                                             <span className="w-8 text-center text-sm font-bold text-slate-500 shrink-0">{idx + 1}</span>
-                                            <div className="w-8 h-8 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center text-xs font-bold text-amber-600 group-hover:bg-amber-200 group-hover:text-amber-700 transition-colors shrink-0">
-                                              {enr.student.lastName[0]}{enr.student.firstName[0]}
+                                            <div className="w-8 h-8 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center text-xs font-bold text-amber-600 group-hover:bg-amber-200 group-hover:text-amber-700 transition-colors shrink-0 overflow-hidden">
+                                              {enr.student.photoUrl ? (
+                                                <img src={enr.student.photoUrl} alt="" className="w-full h-full object-cover rounded-full" />
+                                              ) : (
+                                                <>{enr.student.lastName[0]}{enr.student.firstName[0]}</>
+                                              )}
                                             </div>
                                             <div className="w-56 shrink-0">
                                               <p className="text-sm font-medium text-slate-800 truncate">{enr.student.lastName.toUpperCase()} {enr.student.firstName}</p>
@@ -1058,8 +1062,12 @@ export default function EnrollmentsContent() {
                                                 return (
                                                   <div key={enr.id} className="flex items-center gap-3 py-2 px-3 hover:bg-slate-50 rounded-lg transition-colors group whitespace-nowrap min-w-max">
                                                     <span className="w-8 text-center text-sm font-bold text-slate-500 shrink-0">{idx + 1}</span>
-                                                    <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-xs font-bold text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors shrink-0">
-                                                      {enr.student.lastName[0]}{enr.student.firstName[0]}
+                                                    <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-xs font-bold text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors shrink-0 overflow-hidden">
+                                                      {enr.student.photoUrl ? (
+                                                        <img src={enr.student.photoUrl} alt="" className="w-full h-full object-cover rounded-full" />
+                                                      ) : (
+                                                        <>{enr.student.lastName[0]}{enr.student.firstName[0]}</>
+                                                      )}
                                                     </div>
                                                     <div className="w-56 shrink-0">
                                                       <p className="text-sm font-medium text-slate-800 truncate">{enr.student.lastName.toUpperCase()} {enr.student.firstName}</p>
@@ -1251,12 +1259,17 @@ export default function EnrollmentsContent() {
             }}
             onSubmit={async (data) => {
               try {
-                // Mettre à jour l'élève avec les données du formulaire
+                // Mettre à jour l'élève avec les données du formulaire (sans photoUrl)
+                const { photoUrl: _photoUrl, ...studentData } = data.student;
                 await studentsService.update(editEnrollment.student.id, {
-                  ...data.student,
+                  ...studentData,
                   academicYearId: academicYear.id,
                   schoolLevelId: schoolLevel.id,
                 });
+                // Upload photo via endpoint dédié (pattern RH) si une photo a été capturée
+                if (data.student.photoUrl && data.student.photoUrl.startsWith('data:')) {
+                  await studentsService.uploadPhoto(editEnrollment.student.id, data.student.photoUrl);
+                }
                 // Mettre à jour la classe si elle a changé
                 if (data.classId && data.classId !== editEnrollment.class?.id) {
                   await studentsService.changeClass(editEnrollment.student.id, academicYear.id, data.classId);

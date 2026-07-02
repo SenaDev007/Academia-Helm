@@ -443,5 +443,78 @@ export class StudentsPrismaService {
       byStatus,
     };
   }
+
+  /**
+   * Upload photo d'élève depuis un data URL (base64) — pattern identique au RH (staff).
+   *
+   * Le frontend compresse l'image côté navigateur (compressImageFileToDataUrl)
+   * et envoie le résultat comme JSON string. On stocke directement le data URL
+   * dans StudentPhoto (originalUrl, hdUrl, thumbnailUrl).
+   */
+  async uploadStudentPhotoDataUrl(
+    studentId: string,
+    tenantId: string,
+    photoDataUrl: string,
+  ): Promise<any> {
+    // Vérifier que l'élève existe
+    await this.findStudentById(studentId, tenantId);
+
+    // Valider le format data URL
+    const trimmed = (photoDataUrl ?? '').trim();
+    const m = /^data:([^;]+);base64,(.+)$/i.exec(trimmed);
+    if (!m) {
+      throw new BadRequestException('Format attendu : data URL base64 (data:image/...;base64,...).');
+    }
+    const mimeType = m[1].trim().toLowerCase();
+    if (!mimeType.startsWith('image/')) {
+      throw new BadRequestException('Le fichier doit être une image.');
+    }
+
+    // Vérifier la taille (max 5 Mo décodés)
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.from(m[2], 'base64');
+    } catch {
+      throw new BadRequestException('Base64 invalide.');
+    }
+    if (buffer.length > 5 * 1024 * 1024) {
+      throw new BadRequestException('Image trop volumineuse (max 5 Mo décodés).');
+    }
+
+    // Stocker le data URL directement (même pattern que StaffPhoto)
+    const originalUrl = trimmed;
+    const hdUrl = trimmed;
+    const thumbnailUrl = trimmed;
+
+    // Upsert photo (one per student)
+    const photo = await this.prisma.studentPhoto.upsert({
+      where: { studentId },
+      create: {
+        tenantId,
+        studentId,
+        originalUrl,
+        hdUrl,
+        thumbnailUrl,
+      },
+      update: {
+        originalUrl,
+        hdUrl,
+        thumbnailUrl,
+      },
+    });
+
+    // Mettre aussi à jour student.photoUrl pour compatibilité
+    await this.prisma.student.update({
+      where: { id: studentId },
+      data: { photoUrl: thumbnailUrl },
+    });
+
+    return {
+      ...photo,
+      originalUrl,
+      hdUrl,
+      thumbnailUrl,
+    };
+  }
 }
 

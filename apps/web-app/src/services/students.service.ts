@@ -243,12 +243,21 @@ class StudentsService {
    */
   async update(id: string, data: any): Promise<any> {
     // ⚠️ Utiliser directement l'API (pas le mode offline) pour les mises à jour d'élèves.
-    // Le mode offline échoue si l'élève n'est pas dans la DB locale IndexedDB
-    // (ex: élève créé via l'admission, pas via le mode offline).
-    // L'API PATCH transmet directement au backend qui met à jour en DB PostgreSQL.
     return apiFetch(`${BASE_URL}/${encodeURIComponent(id)}`, {
       method: "PATCH",
       body: data,
+    });
+  }
+
+  /**
+   * Upload photo d'élève via data URL (base64) — pattern identique au RH.
+   * Backend : POST /students/:id/upload-photo
+   * Body: { photoDataUrl: string }
+   */
+  async uploadPhoto(studentId: string, photoDataUrl: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/${encodeURIComponent(studentId)}/upload-photo`, {
+      method: "POST",
+      body: { photoDataUrl },
     });
   }
 

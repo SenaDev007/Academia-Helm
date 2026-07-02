@@ -114,7 +114,7 @@ export default function StudentEnrollmentForm({
   const [isLoadingRegimes, setIsLoadingRegimes] = useState(false);
 
   // Classes (chargées depuis la BDD, filtrées par niveau scolaire)
-  const [classesList, setClassesList] = useState<{ id: string; name: string }[]>([]);
+  const [classesList, setClassesList] = useState<{ id: string; name: string; schoolLevelId?: string; schoolLevel?: { id: string; name: string; code?: string } }[]>([]);
   const [isLoadingClasses, setIsLoadingClasses] = useState(false);
 
   // Charger les régimes tarifaires
@@ -122,19 +122,24 @@ export default function StudentEnrollmentForm({
     loadRegimes();
   }, [academicYearId, schoolLevelId]);
 
-  // Charger les classes depuis le backend (config Paramètres), filtrées par niveau
+  // Charger les classes depuis le backend (route BFF /api/all-classes qui contourne
+  // le filtre schoolLevelId du contexte admin). On inclut schoolLevel pour le groupage.
   useEffect(() => {
     if (!academicYearId) {
       setClassesList([]);
       return;
     }
     setIsLoadingClasses(true);
-    const params = new URLSearchParams({ academicYearId });
-    if (schoolLevelId && schoolLevelId !== 'ALL') params.set('schoolLevelId', schoolLevelId);
-    classesService.getAll(Object.fromEntries(params.entries()))
+    fetch('/api/all-classes', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
       .then((data: any) => {
-        const list = Array.isArray(data) ? data : data?.data ?? data?.classes ?? [];
-        setClassesList(list.map((c: any) => ({ id: c.id, name: c.name || c.code || c.id })));
+        const list = Array.isArray(data) ? data : [];
+        setClassesList(list.map((c: any) => ({
+          id: c.id,
+          name: c.name || c.code || c.id,
+          schoolLevelId: c.schoolLevelId,
+          schoolLevel: c.schoolLevel,
+        })));
       })
       .catch(() => setClassesList([]))
       .finally(() => setIsLoadingClasses(false));
@@ -274,21 +279,44 @@ export default function StudentEnrollmentForm({
   const startCamera = async () => {
     try {
       setCameraError(null);
+
+      // Vérifier que le navigateur supporte getUserMedia
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setCameraError('Votre navigateur ne supporte pas l\'accès à la caméra. Utilisez "Importer depuis galerie" à la place.');
+        return;
+      }
+
+      // Demander l'accès à la caméra (caméra frontale par défaut)
+      // ⚠️ facingMode: 'user' = caméra frontale (webcam du PC)
+      // Sur desktop, Chrome peut proposer de scanner un QR code pour utiliser
+      // la caméra du téléphone — c'est un comportement navigateur, pas du code.
+      // L'utilisateur peut choisir "Autoriser" pour utiliser la webcam du PC.
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user' },
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+        audio: false,
       });
       const video = videoRef.current;
       if (video) {
         video.srcObject = stream;
-        await video.play();
+        // play() peut échouer si le navigateur bloque l'autoplay
+        try {
+          await video.play();
+        } catch (playErr) {
+          // Retry : attendre 100ms et réessayer
+          await new Promise(r => setTimeout(r, 100));
+          try { await video.play(); } catch {}
+        }
         setIsCameraActive(true);
       } else {
         stream.getTracks().forEach((t) => t.stop());
       }
     } catch (err: any) {
-      setCameraError(
-        err?.message || 'Impossible d’accéder à la caméra. Vérifiez les permissions du navigateur.',
-      );
+      const msg = err?.name === 'NotAllowedError'
+        ? 'Accès à la caméra refusé. Autorisez la caméra dans les paramètres du navigateur, ou utilisez "Importer depuis galerie".'
+        : err?.name === 'NotFoundError'
+        ? 'Aucune caméra trouvée. Utilisez "Importer depuis galerie" à la place.'
+        : err?.message || 'Impossible d\'accéder à la caméra. Vérifiez les permissions du navigateur.';
+      setCameraError(msg);
       setIsCameraActive(false);
     }
   };
@@ -938,11 +966,61 @@ export default function StudentEnrollmentForm({
               {isLoadingClasses ? (
                 <option value="" disabled>Chargement des classes...</option>
               ) : (
-                classesList.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {formatGradeLabel(c.name) || c.name}
-                  </option>
-                ))
+                // Groupage par niveau scolaire (Maternelle, Primaire, Secondaire)
+                // avec tri pédagogique à l'intérieur de chaque groupe
+                (() => {
+                  // Fonction de tri pédagogique
+                  const classOrder = (name: string): number => {
+                    const n = (name || '').trim().toUpperCase();
+                    if (n === 'MATERNELLE 1' || n === 'M1' || n === 'MAT1') return 0;
+                    if (n === 'MATERNELLE 2' || n === 'M2' || n === 'MAT2') return 1;
+                    if (n === 'CI') return 10;
+                    if (n === 'CP') return 11;
+                    if (n === 'CE1') return 12;
+                    if (n === 'CE2') return 13;
+                    if (n === 'CM1') return 14;
+                    if (n === 'CM2') return 15;
+                    if (n.startsWith('6E') || n.startsWith('6ÈME')) return 20;
+                    if (n.startsWith('5E') || n.startsWith('5ÈME')) return 21;
+                    if (n.startsWith('4E') || n.startsWith('4ÈME')) return 22;
+                    if (n.startsWith('3E') || n.startsWith('3ÈME')) return 23;
+                    if (n.startsWith('2NDE')) return 24;
+                    if (n.startsWith('1ERE') || n.startsWith('1ÈRE')) return 25;
+                    if (n.startsWith('TERMINALE') || n.startsWith('TLE')) return 26;
+                    return 100 + name.charCodeAt(0);
+                  };
+
+                  // Grouper par niveau
+                  const levelOrder = (name: string) => {
+                    const n = (name || '').toUpperCase();
+                    if (n.includes('MATERNELLE')) return 0;
+                    if (n.includes('PRIMAIRE')) return 1;
+                    if (n.includes('SECONDAIRE')) return 2;
+                    return 3;
+                  };
+
+                  const groups = new Map<string, { levelName: string; classes: typeof classesList }>();
+                  for (const c of classesList) {
+                    const levelName = c.schoolLevel?.name || 'Autre';
+                    const key = c.schoolLevelId || 'autre';
+                    if (!groups.has(key)) groups.set(key, { levelName, classes: [] });
+                    groups.get(key)!.classes.push(c);
+                  }
+
+                  return Array.from(groups.values())
+                    .sort((a, b) => levelOrder(a.levelName) - levelOrder(b.levelName))
+                    .map((g) => (
+                      <optgroup key={g.levelName} label={g.levelName}>
+                        {g.classes
+                          .sort((a, b) => classOrder(a.name) - classOrder(b.name))
+                          .map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {formatGradeLabel(c.name) || c.name}
+                            </option>
+                          ))}
+                      </optgroup>
+                    ));
+                })()
               )}
             </select>
             <p className="mt-1 text-xs text-gray-500">

@@ -263,7 +263,42 @@ export default function StudentAssignmentsContent() {
               </div>
             ) : (
               <div className="divide-y divide-slate-100">
-                {classes.map(cls => {
+                {/* Tri pédagogique : Maternelle < Primaire < Secondaire, puis CI < CP < ... < CM2 */}
+                {[...classes].sort((a, b) => {
+                  // Tri par niveau
+                  const levelOrder = (name: string) => {
+                    const n = (name || '').toUpperCase();
+                    if (n.includes('MATERNELLE')) return 0;
+                    if (n.includes('PRIMAIRE')) return 1;
+                    if (n.includes('SECONDAIRE')) return 2;
+                    return 3;
+                  };
+                  const aLevel = levelOrder(a.schoolLevel?.name || '');
+                  const bLevel = levelOrder(b.schoolLevel?.name || '');
+                  if (aLevel !== bLevel) return aLevel - bLevel;
+
+                  // Tri par classe dans le niveau
+                  const classOrder = (name: string): number => {
+                    const n = (name || '').trim().toUpperCase();
+                    if (n === 'MATERNELLE 1' || n === 'M1' || n === 'MAT1') return 0;
+                    if (n === 'MATERNELLE 2' || n === 'M2' || n === 'MAT2') return 1;
+                    if (n === 'CI') return 10;
+                    if (n === 'CP') return 11;
+                    if (n === 'CE1') return 12;
+                    if (n === 'CE2') return 13;
+                    if (n === 'CM1') return 14;
+                    if (n === 'CM2') return 15;
+                    if (n.startsWith('6')) return 20;
+                    if (n.startsWith('5')) return 21;
+                    if (n.startsWith('4')) return 22;
+                    if (n.startsWith('3')) return 23;
+                    if (n.startsWith('2NDE')) return 24;
+                    if (n.startsWith('1ER')) return 25;
+                    if (n.startsWith('TERM') || n.startsWith('TLE')) return 26;
+                    return 100 + name.charCodeAt(0);
+                  };
+                  return classOrder(a.name) - classOrder(b.name);
+                }).map(cls => {
                   const studentsInClass = assignedByClass.get(cls.id) || [];
                   const isExpanded = expandedClasses.has(cls.id);
                   return (

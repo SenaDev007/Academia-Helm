@@ -536,13 +536,12 @@ export default function StudentEnrollmentForm({
       return;
     }
 
-    // ── Sauvegarde automatique à chaque étape (mode édition) ─────────
-    // En cas de panne technique, les données sont déjà en DB.
+    // ── Bouton "Valider & Suivant" : sauvegarder avant de passer ──────
     let saved = false;
+    setIsSubmitting(true);
     try {
       if (autoSavedStudentId) {
-        // Édition : mettre à jour à chaque étape
-        // ⚠️ Pas de _isFinalSubmit → le parent ne fermera pas le modal
+        // Édition : mettre à jour à chaque étape (avec photoUrl inclus)
         await onSubmit({
           operation,
           student: {
@@ -562,21 +561,17 @@ export default function StudentEnrollmentForm({
         });
         saved = true;
 
-        // ── Sauvegarder la photo dès l'étape 2 (upload OU capture) ──
+        // Upload photo via endpoint dédié (non bloquant)
         if (step === 2 && formData.photoUrl && formData.photoUrl.startsWith('data:')) {
-          try {
-            await studentsService.uploadPhoto(autoSavedStudentId, formData.photoUrl);
-          } catch (photoErr: any) {
-            console.warn('[AutoSave] Upload photo échec:', photoErr?.message);
-          }
+          await studentsService.uploadPhoto(autoSavedStudentId, formData.photoUrl)
+            .catch((e: any) => console.warn('[AutoSave] Upload photo:', e?.message));
         }
       }
     } catch (e: any) {
-      // La sauvegarde a échoué — afficher l'erreur et ne pas passer à l'étape suivante
       console.warn('[AutoSave] Étape', step, 'échec:', e?.message);
       setStepSavedMessage(null);
-      // Ne pas bloquer le passage à l'étape suivante — l'erreur est non critique
-      // (l'utilisateur pourra corriger plus tard)
+    } finally {
+      setIsSubmitting(false);
     }
 
     // Message visuel de confirmation
@@ -1478,9 +1473,10 @@ export default function StudentEnrollmentForm({
               disabled={isSubmitting}
               whileHover={{ y: -1 }}
               whileTap={{ scale: 0.99 }}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
+              className="px-4 py-2 text-sm font-bold text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1.5"
             >
-              Suivant
+              {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {isSubmitting ? 'Sauvegarde...' : 'Valider & Suivant'}
             </motion.button>
           ) : (
             <motion.button

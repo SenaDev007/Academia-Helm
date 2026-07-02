@@ -1261,17 +1261,16 @@ export default function EnrollmentsContent() {
             onSubmit={async (data) => {
               const isFinalSubmit = (data as any)._isFinalSubmit === true;
               // ⚠️ Le update de base est le seul appel critique — les autres sont non bloquants
-              const { photoUrl: _photoUrl, ...studentData } = data.student;
+              // On inclut photoUrl dans le update() directement (contournement endpoint upload-photo)
               await studentsService.update(editEnrollment.student.id, {
-                ...studentData,
+                ...data.student,
                 academicYearId: academicYear.id,
                 schoolLevelId: schoolLevel.id,
               });
-              // Les opérations suivantes sont non bloquantes (catch individuel)
-              // Upload photo
+              // Upload photo via endpoint dédié (pattern RH) — non bloquant
               if (data.student.photoUrl && data.student.photoUrl.startsWith('data:')) {
                 await studentsService.uploadPhoto(editEnrollment.student.id, data.student.photoUrl)
-                  .catch((e: any) => console.warn('Upload photo:', e?.message));
+                  .catch((e: any) => console.warn('Upload photo endpoint:', e?.message));
               }
               // Changement de classe
               if (data.classId && data.classId !== editEnrollment.class?.id) {

@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Plus, Smartphone } from 'lucide-react';
-import { ModuleHeader, SubModuleNavigation, ModuleContentArea } from '@/components/modules/blueprint';
-import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
+import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -56,8 +55,6 @@ export default function TransactionsContent() {
       .catch(() => setAccounts([]));
   }, [academicYear?.id]);
 
-  const subModuleTabs = FINANCE_SUBMODULE_TABS.map((t) => ({ id: t.id, label: t.label, path: t.path, icon: <t.icon className="w-4 h-4" /> }));
-
   const handleSuccess = () => {
     setModalOpen(false);
     loadTransactions();
@@ -78,26 +75,27 @@ export default function TransactionsContent() {
     }));
 
   return (
-    <div className="space-y-6">
-      <ModuleHeader
-        title="Encaissements"
-        description="Paiements avec reçu AH-YYYY-NNNNNN et imputation prioritaire."
-        icon="finance"
-        actions={
-          <div className="flex gap-2">
-            <Button onClick={() => setModalOpen(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              Nouveau paiement
-            </Button>
-            <Button variant="outline" onClick={() => setOnlineModalOpen(true)}>
-              <Smartphone className="w-4 h-4 mr-2" />
-              Encaisser en ligne
-            </Button>
+    <div className="space-y-4">
+      <ModuleContentArea
+        layout="custom"
+        toolbar={
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-slate-600">
+              Paiements avec reçu AH-YYYY-NNNNNN et imputation prioritaire.
+            </p>
+            <div className="flex gap-2">
+              <Button onClick={() => setModalOpen(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Nouveau paiement
+              </Button>
+              <Button variant="outline" onClick={() => setOnlineModalOpen(true)}>
+                <Smartphone className="w-4 h-4 mr-2" />
+                Encaisser en ligne
+              </Button>
+            </div>
           </div>
         }
-      />
-      <SubModuleNavigation tabs={subModuleTabs} currentPath="/app/finance/payments" />
-      <ModuleContentArea layout="custom">
+      >
         <Table>
           <TableHeader>
             <TableRow>

@@ -4,11 +4,8 @@ import { useState, useEffect } from 'react';
 import { Send, Play } from 'lucide-react';
 import { motion } from 'framer-motion';
 import {
-  ModuleHeader,
-  SubModuleNavigation,
   ModuleContentArea,
 } from '@/components/modules/blueprint';
-import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -81,35 +78,33 @@ export default function RecoveryRemindersContent() {
     }
   };
 
-  const subModuleTabs = FINANCE_SUBMODULE_TABS.map((t) => ({ id: t.id, label: t.label, path: t.path, icon: <t.icon className="w-4 h-4" /> }));
   const levelBadge = (level: string) => {
     const v = level === 'FINAL_NOTICE' ? 'destructive' : level === 'URGENT' ? 'default' : 'secondary';
     return <Badge variant={v}>{level}</Badge>;
   };
 
-  // Fix: missing Table import inline - use basic table markup
   return (
-    <div className="space-y-6">
-      <ModuleHeader
-        title="Recouvrement"
-        description="Relances automatiques (WARNING J+3, URGENT J+7, FINAL_NOTICE J+15) et blocage selon seuil."
-        icon="finance"
-        actions={
-          <>
-            <Button variant="outline" onClick={() => setManualModal(true)}>
-              <Send className="w-4 h-4 mr-2" />
-              Envoyer rappel manuel
-            </Button>
-            <Button variant="outline" onClick={handleRunNightly} disabled={runNightlyLoading}>
-              <Play className="w-4 h-4 mr-2" />
-              {runNightlyLoading ? 'Traitement...' : 'Lancer détection'}
-            </Button>
-          </>
+    <div className="space-y-4">
+      <ModuleContentArea
+        layout="custom"
+        toolbar={
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-slate-600">
+              Relances automatiques (WARNING J+3, URGENT J+7, FINAL_NOTICE J+15) et blocage selon seuil.
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setManualModal(true)}>
+                <Send className="w-4 h-4 mr-2" />
+                Envoyer rappel manuel
+              </Button>
+              <Button variant="outline" onClick={handleRunNightly} disabled={runNightlyLoading}>
+                <Play className="w-4 h-4 mr-2" />
+                {runNightlyLoading ? 'Traitement...' : 'Lancer détection'}
+              </Button>
+            </div>
+          </div>
         }
-      />
-      <SubModuleNavigation tabs={subModuleTabs} currentPath="/app/finance/collection" />
-
-      <ModuleContentArea layout="custom">
+      >
         <div className="mb-4 flex flex-wrap gap-4 items-center">
           <span className="text-sm text-gray-600">Année : {academicYear?.label ?? '—'}</span>
         </div>

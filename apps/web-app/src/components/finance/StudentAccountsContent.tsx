@@ -3,8 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Eye, Unlock } from 'lucide-react';
-import { ModuleHeader, SubModuleNavigation, ModuleContentArea } from '@/components/modules/blueprint';
-import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
+import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -88,18 +87,16 @@ export default function StudentAccountsContent() {
     }
   };
 
-  const subModuleTabs = FINANCE_SUBMODULE_TABS.map((t) => ({
-    id: t.id,
-    label: t.label,
-    path: t.path,
-    icon: <t.icon className="w-4 h-4" />,
-  }));
-
   return (
-    <div className="space-y-6">
-      <ModuleHeader title="Comptes élèves" description="Solde, total dû, payé et statut par élève et par année." icon="finance" />
-      <SubModuleNavigation tabs={subModuleTabs} currentPath="/app/finance/accounts" />
-      <ModuleContentArea layout="custom">
+    <div className="space-y-4">
+      <ModuleContentArea
+        layout="custom"
+        toolbar={
+          <p className="text-sm text-slate-600">
+            Solde, total dû, payé et statut par élève et par année.
+          </p>
+        }
+      >
         <div className="mb-4 flex flex-wrap gap-4 items-center">
           <span className="text-sm text-gray-600">Année : {academicYear?.label ?? '—'}</span>
           <Select value={filterClassId || 'ALL'} onValueChange={(v) => setFilterClassId(v === 'ALL' ? '' : v)}>

@@ -6,7 +6,7 @@
  */
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import {
   TrendingUp,
   AlertCircle,
@@ -24,7 +24,6 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { SubModuleNavigation } from '@/components/modules/blueprint';
 import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
@@ -184,14 +183,6 @@ export default function FinanceDashboard() {
     load();
   }, [academicYear?.id, schoolLevel?.id]);
 
-  const tabsForNav = useMemo(() => 
-    FINANCE_SUBMODULE_TABS.map((t) => ({
-      id: t.id,
-      label: t.label,
-      path: t.path,
-      icon: <t.icon className="w-4 h-4" />,
-    })), []);
-
   const containerVariants = {
     hidden: { opacity: 0 },
     visible: {
@@ -207,8 +198,6 @@ export default function FinanceDashboard() {
 
   return (
     <div className="space-y-8 pb-12">
-      <SubModuleNavigation tabs={tabsForNav} currentPath="/app/finance" />
-
       {/* KPI Section */}
       <motion.div 
         variants={containerVariants}

@@ -3,8 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Wallet, Plus, Lock, Unlock, Archive, Edit, Trash2, BarChart3, X } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { ModuleHeader, SubModuleNavigation, ModuleContentArea } from '@/components/modules/blueprint';
-import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
+import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -175,18 +174,19 @@ export default function CashRegistersContent() {
 
   return (
     <>
-      <ModuleHeader
-        title="Multi-caisses"
-        subtitle="Gestion des caisses de l'établissement"
-        actions={
-          <Button onClick={() => setCreateModal(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Nouvelle caisse
-          </Button>
+      <ModuleContentArea
+        toolbar={
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-slate-600">
+              Gestion des caisses de l'établissement — ouverture/fermeture, suivi des soldes, rapprochement.
+            </p>
+            <Button onClick={() => setCreateModal(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Nouvelle caisse
+            </Button>
+          </div>
         }
-      />
-      <SubModuleNavigation tabs={FINANCE_SUBMODULE_TABS} currentPath="/app/finance/cash-registers" />
-      <ModuleContentArea>
+      >
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />

@@ -4,11 +4,8 @@ import { useState, useEffect } from 'react';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Plus, Copy, UserCog, Pencil, Trash2 } from 'lucide-react';
 import {
-  ModuleHeader,
-  SubModuleNavigation,
   ModuleContentArea,
 } from '@/components/modules/blueprint';
-import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -134,43 +131,36 @@ export default function FeeStructuresContent() {
     }
   };
 
-  const subModuleTabs = FINANCE_SUBMODULE_TABS.map((t) => ({
-    id: t.id,
-    label: t.label,
-    path: t.path,
-    icon: <t.icon className="w-4 h-4" />,
-  }));
-
   const feeTypeLabel = (t: string) => FEE_TYPES.find((f) => f.value === t)?.label ?? t;
 
   return (
     <>
     {confirmDialog.dialog}
-    <div className="space-y-6">
-      <ModuleHeader
-        title="Configuration des frais"
-        description="Définissez les frais par niveau et classe. Priorité : Classe > Niveau > Override élève."
-        icon="finance"
-        actions={
-          <>
-            <Button onClick={() => setModalNewFee(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              Nouveau frais
-            </Button>
-            <Button variant="outline" onClick={() => setCopyYearModal(true)}>
-              <Copy className="w-4 h-4 mr-2" />
-              Copier année précédente
-            </Button>
-            <Button variant="outline" onClick={() => setModalOverride(true)}>
-              <UserCog className="w-4 h-4 mr-2" />
-              Personnalisation élève
-            </Button>
-          </>
+    <div className="space-y-4">
+      <ModuleContentArea
+        layout="custom"
+        toolbar={
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-slate-600">
+              Définissez les frais par niveau et classe. Priorité : Classe {'>'} Niveau {'>'} Override élève.
+            </p>
+            <div className="flex gap-2">
+              <Button onClick={() => setModalNewFee(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Nouveau frais
+              </Button>
+              <Button variant="outline" onClick={() => setCopyYearModal(true)}>
+                <Copy className="w-4 h-4 mr-2" />
+                Copier année
+              </Button>
+              <Button variant="outline" onClick={() => setModalOverride(true)}>
+                <UserCog className="w-4 h-4 mr-2" />
+                Personnalisation
+              </Button>
+            </div>
+          </div>
         }
-      />
-      <SubModuleNavigation tabs={subModuleTabs} currentPath="/app/finance/fees" />
-
-      <ModuleContentArea layout="custom">
+      >
         <div className="mb-4 flex flex-wrap gap-4 items-center">
           <span className="text-sm text-gray-600">Année scolaire : {academicYear?.label ?? '—'}</span>
           <Select value={filterLevelId || 'ALL'} onValueChange={(v) => setFilterLevelId(v === 'ALL' ? '' : v)}>

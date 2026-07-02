@@ -11,7 +11,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Camera, Upload, X, CheckCircle, AlertCircle, Info, Calendar, Link2, Trash2, Users, FileText, BookOpen } from 'lucide-react';
+import { Camera, Upload, X, CheckCircle, AlertCircle, Info, Calendar, Link2, Trash2, Users, FileText, BookOpen, Loader2 } from 'lucide-react';
 import { studentsService } from '@/services/students.service';
 import { financeService } from '@/services/finance.service';
 import { classesService } from '@/services/classes.service';

@@ -600,19 +600,6 @@ export default function StudentEnrollmentForm({
                 placeholder="Ex: Béninoise"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Langue principale
-              </label>
-              <select
-                value={formData.primaryLanguage}
-                onChange={(e) => handleInputChange('primaryLanguage', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="FR">Français</option>
-                <option value="EN">Anglais</option>
-              </select>
-            </div>
           </div>
 
           <div>

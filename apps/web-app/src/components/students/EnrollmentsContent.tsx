@@ -26,7 +26,7 @@ import {
   Plus, Search, ChevronDown, ChevronRight, Users, Loader2,
   FileText, Download, UserCheck, GraduationCap, BookOpen, Baby,
   RotateCcw, CheckCircle, XCircle, Clock, AlertCircle, Upload,
-  ShieldAlert, Info, BrainCircuit, ChevronUp, EyeOff, Eye, FileDown,
+  ShieldAlert, Info, BrainCircuit, ChevronUp, EyeOff, Eye, FileDown, Pencil,
 } from 'lucide-react';
 import { FormModal } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -157,6 +157,7 @@ export default function EnrollmentsContent() {
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [editEnrollment, setEditEnrollment] = useState<Enrollment | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedLevels, setExpandedLevels] = useState<Set<string>>(new Set());
   const [expandedClasses, setExpandedClasses] = useState<Set<string>>(new Set());
@@ -867,10 +868,11 @@ export default function EnrollmentsContent() {
                                             <div className="w-20 shrink-0 flex justify-center"><span className={cn('px-1.5 py-0.5 rounded text-[10px] font-bold inline-block', typeInfo.color)}>{typeInfo.label}</span></div>
                                             <div className="w-24 shrink-0 flex justify-center"><span className={cn('px-2 py-0.5 rounded-full text-[10px] font-bold border inline-block', statusInfo.color)}>{statusInfo.label}</span></div>
                                             <span className="w-24 text-xs text-slate-500 shrink-0">{new Date(enr.enrollmentDate).toLocaleDateString('fr-FR')}</span>
-                                            <div className="flex gap-1 w-20 shrink-0">
+                                            <div className="flex gap-1 w-28 shrink-0">
                                               {enr.status === 'PENDING' || enr.status === 'PRE_REGISTERED' || enr.status === 'ADMITTED' ? (
                                                 <button onClick={() => handleValidate(enr.student.id)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600" title="Valider"><CheckCircle className="w-4 h-4" /></button>
                                               ) : null}
+                                              <button onClick={() => setEditEnrollment(enr)} className="p-1 hover:bg-amber-100 rounded text-amber-600" title="Éditer / Compléter"><Pencil className="w-4 h-4" /></button>
                                               {/* Générer le matricule si manquant (élève converti sans classe avant le fix) */}
                                               {(!enr.student.matricule && !enr.student.studentCode) && (
                                                 <button
@@ -1047,10 +1049,11 @@ export default function EnrollmentsContent() {
                                                     <div className="w-20 shrink-0 flex justify-center"><span className={cn('px-1.5 py-0.5 rounded text-[10px] font-bold inline-block', typeInfo.color)}>{typeInfo.label}</span></div>
                                                     <div className="w-24 shrink-0 flex justify-center"><span className={cn('px-2 py-0.5 rounded-full text-[10px] font-bold border inline-block', statusInfo.color)}>{statusInfo.label}</span></div>
                                                     <span className="w-24 text-xs text-slate-500 shrink-0">{new Date(enr.enrollmentDate).toLocaleDateString('fr-FR')}</span>
-                                                    <div className="flex gap-1 w-20 shrink-0">
+                                                    <div className="flex gap-1 w-28 shrink-0">
                                                       {enr.status === 'PENDING' || enr.status === 'PRE_REGISTERED' || enr.status === 'ADMITTED' ? (
                                                         <button onClick={() => handleValidate(enr.student.id)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600" title="Valider"><CheckCircle className="w-4 h-4" /></button>
                                                       ) : null}
+                                                      <button onClick={() => setEditEnrollment(enr)} className="p-1 hover:bg-amber-100 rounded text-amber-600" title="Éditer / Compléter"><Pencil className="w-4 h-4" /></button>
                                                       <button onClick={() => handleReEnroll(enr)} className="p-1 hover:bg-indigo-100 rounded text-indigo-600" title="Réinscrire"><RotateCcw className="w-4 h-4" /></button>
                                                     </div>
                                                   </div>
@@ -1188,6 +1191,69 @@ export default function EnrollmentsContent() {
           doc={previewClassPdf}
           onClose={() => setPreviewClassPdf(null)}
         />
+      )}
+
+      {/* ─── MODAL : Éditer / Compléter une inscription ───
+          Ouvre le StudentEnrollmentForm pré-rempli avec les données de l'élève.
+          Permet de compléter les informations manquantes (guardians, finances, etc.). */}
+      {editEnrollment && academicYear && schoolLevel && (
+        <FormModal
+          title="Éditer / Compléter l'inscription"
+          isOpen={!!editEnrollment}
+          onClose={() => setEditEnrollment(null)}
+          size="xl"
+          actions={null}
+        >
+          <StudentEnrollmentForm
+            academicYearId={academicYear.id}
+            schoolLevelId={schoolLevel.id}
+            initialData={{
+              student: {
+                firstName: editEnrollment.student.firstName,
+                lastName: editEnrollment.student.lastName,
+                matricule: editEnrollment.student.matricule || undefined,
+                studentCode: editEnrollment.student.studentCode,
+                gender: editEnrollment.student.gender as any,
+                dateOfBirth: undefined,
+                nationality: undefined,
+                placeOfBirth: undefined,
+                photoUrl: undefined,
+              },
+              classId: editEnrollment.class?.id,
+              operation: 'PRE_REGISTER' as const,
+              feeProfile: { feeRegimeId: undefined, justification: undefined },
+              guardians: [],
+            }}
+            onSubmit={async (data) => {
+              try {
+                // Mettre à jour l'élève avec les données du formulaire
+                await studentsService.update(editEnrollment.student.id, {
+                  ...data.student,
+                  academicYearId: academicYear.id,
+                  schoolLevelId: schoolLevel.id,
+                });
+                if (data.guardians?.length) {
+                  for (const g of data.guardians) {
+                    if (!g.firstName?.trim() && !g.lastName?.trim()) continue;
+                    await studentsService.addGuardians(editEnrollment.student.id, {
+                      guardians: [{
+                        firstName: g.firstName, lastName: g.lastName,
+                        relationship: g.relationship || 'GUARDIAN',
+                        phone: g.phone, email: g.email, isPrimary: g.isPrimary ?? false,
+                      }],
+                    }).catch(() => undefined);
+                  }
+                }
+                toast({ title: '✅ Inscription mise à jour', variant: 'success' });
+                setEditEnrollment(null);
+                loadData();
+              } catch (e: any) {
+                toast({ title: 'Erreur', description: e.message, variant: 'error' });
+              }
+            }}
+            onCancel={() => setEditEnrollment(null)}
+          />
+        </FormModal>
       )}
     </>
   );

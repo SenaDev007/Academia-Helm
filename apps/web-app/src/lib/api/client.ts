@@ -37,11 +37,27 @@ apiClient.interceptors.request.use(
     // Ajouter le tenant ID depuis les headers Next.js
     // (sera géré par le middleware)
     if (typeof window !== 'undefined') {
-      const tenantId = document.cookie
+      // Source 1 : cookie x-tenant-id
+      let tenantId = document.cookie
         .split('; ')
         .find(row => row.startsWith('x-tenant-id='))
         ?.split('=')[1];
-      
+
+      // Source 2 (fallback) : localStorage session (quand le cookie n'est pas posé
+      // car le login n'a pas envoyé tenant_id, le tenantId peut être stocké
+      // dans localStorage par persistClientSession)
+      if (!tenantId) {
+        try {
+          const sessionStr = localStorage.getItem('session');
+          if (sessionStr) {
+            const session = JSON.parse(sessionStr);
+            if (session.tenantId && typeof session.tenantId === 'string') {
+              tenantId = session.tenantId;
+            }
+          }
+        } catch { /* ignore */ }
+      }
+
       if (tenantId && config.headers) {
         config.headers['X-Tenant-ID'] = tenantId;
       }

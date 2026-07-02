@@ -860,7 +860,10 @@ export default function EnrollmentsContent() {
                                         <span className="px-2 py-0.5 bg-blue-50 rounded-full text-[10px] font-bold text-blue-700 shrink-0">{filteredStudents.length} élève{filteredStudents.length > 1 ? 's' : ''}</span>
                                       </button>
                                       <button
-                                        onClick={() => toast({ title: 'Liste de classe', description: `${classInfo.name} — ${filteredStudents.length} élèves`, variant: 'info' })}
+                                        onClick={() => {
+                                          // Ouvrir/déplier la classe pour visualiser la liste des élèves
+                                          if (!isClassExpanded) toggleClass(classInfo.id);
+                                        }}
                                         className="p-1.5 hover:bg-blue-100 rounded-lg text-slate-400 hover:text-blue-600 transition shrink-0"
                                         title="Visualiser la liste"
                                       ><FileText className="w-3.5 h-3.5" /></button>

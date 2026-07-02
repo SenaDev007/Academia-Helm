@@ -525,6 +525,8 @@ export default function StudentEnrollmentForm({
 
   // ID de l'élève créé/mis à jour lors de la sauvegarde automatique
   const [autoSavedStudentId, setAutoSavedStudentId] = useState<string | null>(initialData?.studentId || null);
+  // Message de confirmation visuel après chaque étape
+  const [stepSavedMessage, setStepSavedMessage] = useState<string | null>(null);
 
   const handleNext = async () => {
     if (step === 1 && !validateStep1()) {
@@ -534,39 +536,46 @@ export default function StudentEnrollmentForm({
       return;
     }
 
-    // ── Sauvegarde automatique à chaque étape ──────────────────────────
-    // On crée l'élève au passage de l'étape 1 → étape 2 (si nouvelle inscription)
-    // puis on met à jour à chaque étape suivante.
+    // ── Sauvegarde automatique à chaque étape (mode édition) ─────────
     // En cas de panne technique, les données sont déjà en DB.
+    let saved = false;
     try {
-      if (step === 1) {
-        // Étape 1 → créer ou mettre à jour l'élève de base
-        if (autoSavedStudentId) {
-          // Édition : mettre à jour
-          await onSubmit({
-            operation,
-            student: {
-              firstName: formData.firstName,
-              lastName: formData.lastName,
-              dateOfBirth: formData.dateOfBirth || undefined,
-              gender: formData.gender || undefined,
-              nationality: formData.nationality || undefined,
-              placeOfBirth: formData.placeOfBirth || undefined,
-              npi: formData.npi || undefined,
-            },
-            feeProfile: { feeRegimeId: '', justification: undefined },
-            guardians: [],
-            classId: formData.classId || undefined,
-            documents: {},
-          }).catch(() => {}); // Non bloquant — on continue même si la sauvegarde échoue
-        }
-        // Pour une nouvelle inscription, on ne crée pas l'élève ici
-        // (on le fera au submit final). La sauvegarde automatique s'applique
-        // surtout en mode édition.
+      if (autoSavedStudentId) {
+        // Édition : mettre à jour à chaque étape
+        await onSubmit({
+          operation,
+          student: {
+            firstName: formData.firstName,
+            lastName: formData.lastName,
+            dateOfBirth: formData.dateOfBirth || undefined,
+            gender: formData.gender || undefined,
+            nationality: formData.nationality || undefined,
+            placeOfBirth: formData.placeOfBirth || undefined,
+            npi: formData.npi || undefined,
+            photoUrl: formData.photoUrl || undefined,
+          },
+          feeProfile: { feeRegimeId: '', justification: undefined },
+          guardians: [],
+          classId: formData.classId || undefined,
+          documents: {},
+        });
+        saved = true;
       }
     } catch (e) {
-      // Non bloquant — on continue même si la sauvegarde échoue
       console.warn('[AutoSave] Étape', step, 'échec:', e);
+    }
+
+    // Message visuel de confirmation
+    const stepLabels: Record<number, string> = {
+      1: 'Identité',
+      2: 'Photo',
+      3: 'Parents',
+      4: 'Documents',
+      5: 'Classe & Régime',
+    };
+    if (saved) {
+      setStepSavedMessage(`✅ Étape "${stepLabels[step]}" sauvegardée`);
+      setTimeout(() => setStepSavedMessage(null), 3000);
     }
 
     setStep((prev) => Math.min(6, prev + 1));
@@ -1434,6 +1443,11 @@ export default function StudentEnrollmentForm({
           )}
         </div>
         <div className="flex items-center space-x-3">
+          {stepSavedMessage && (
+            <span className="text-xs font-medium text-emerald-600 animate-in fade-in duration-300">
+              {stepSavedMessage}
+            </span>
+          )}
           <button
             type="button"
             onClick={onCancel}

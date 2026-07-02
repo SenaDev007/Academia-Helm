@@ -1268,7 +1268,13 @@ export default function EnrollmentsContent() {
                 });
                 // Upload photo via endpoint dédié (pattern RH) si une photo a été capturée
                 if (data.student.photoUrl && data.student.photoUrl.startsWith('data:')) {
-                  await studentsService.uploadPhoto(editEnrollment.student.id, data.student.photoUrl);
+                  try {
+                    await studentsService.uploadPhoto(editEnrollment.student.id, data.student.photoUrl);
+                  } catch (photoErr: any) {
+                    console.warn('Upload photo failed:', photoErr?.message);
+                    // Ne pas bloquer la sauvegarde si l'upload photo échoue
+                    // (le backend doit être déployé avec le nouvel endpoint)
+                  }
                 }
                 // Mettre à jour la classe si elle a changé
                 if (data.classId && data.classId !== editEnrollment.class?.id) {

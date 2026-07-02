@@ -210,7 +210,7 @@ export class StudentsLifecycleController {
     @TenantId() tenantId: string,
     @Param('classId') classId: string,
     @Query('academicYearId') academicYearId: string,
-    @Res({ passthrough: true }) res: Response,
+    @Res() res: Response,
   ) {
     if (!academicYearId) {
       throw new BadRequestException('academicYearId est requis');
@@ -228,12 +228,16 @@ export class StudentsLifecycleController {
       .replace(/[^a-zA-Z0-9_-]/g, '_')
       .substring(0, 60);
 
+    // ⚠️ Utiliser res.send() et NON return pdfBuffer
+    // Avec @Res({ passthrough: true }) + return, NestJS sérialise le Buffer en
+    // JSON {type:"Buffer", data:[...]} au lieu d'envoyer le binaire brut.
+    // Avec @Res() (sans passthrough) + res.send(), le Buffer est envoyé tel quel.
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `inline; filename="liste_${safeName}.pdf"`,
       'Content-Length': pdfBuffer.length,
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
     });
-
-    return pdfBuffer;
+    res.send(pdfBuffer);
   }
 }

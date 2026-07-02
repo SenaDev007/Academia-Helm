@@ -16,6 +16,8 @@ import { EmailLogService } from './services/email-log.service';
 import { InboundEmailService } from './services/inbound-email.service';
 import { EmailTrackingService } from './services/email-tracking.service';
 import { WhatsAppService } from './services/whatsapp.service';
+import { WhatsAppLogService } from './services/whatsapp-log.service';
+import { WhatsAppTemplateRegistry } from './services/whatsapp-template.registry';
 import { SmsService } from './services/sms.service';
 import { VoiceService } from './services/voice.service';
 import { CommunicationDashboardService } from './services/communication-dashboard.service';
@@ -58,7 +60,9 @@ import { DatabaseModule } from '../database/database.module';
     EmailLogService,
     InboundEmailService,
     EmailTrackingService,
-    WhatsAppService, 
+    WhatsAppService,
+    WhatsAppLogService,
+    WhatsAppTemplateRegistry,
     SmsService, 
     VoiceService,
     CommunicationDashboardService,
@@ -82,7 +86,9 @@ import { DatabaseModule } from '../database/database.module';
     EmailLogService,
     InboundEmailService,
     EmailTrackingService,
-    WhatsAppService, 
+    WhatsAppService,
+    WhatsAppLogService,
+    WhatsAppTemplateRegistry,
     SmsService, 
     VoiceService,
     CommunicationDashboardService,
@@ -104,6 +110,8 @@ export class CommunicationModule implements OnModuleInit {
     private readonly emailService: EmailService,
     private readonly emailLogService: EmailLogService,
     private readonly emailTrackingService: EmailTrackingService,
+    private readonly whatsappService: WhatsAppService,
+    private readonly whatsappLogService: WhatsAppLogService,
   ) {}
 
   /**
@@ -111,9 +119,13 @@ export class CommunicationModule implements OnModuleInit {
    * éviter la circular dependency. EmailService peut alors appeler
    * emailLogService.createLog() et emailTrackingService.injectTracking()
    * sans dépendre statiquement d'eux.
+   *
+   * De même, injecte WhatsAppLogService dans WhatsAppService pour la
+   * traçabilité des messages WhatsApp (mirror du pattern email).
    */
   onModuleInit() {
     this.emailService.setEmailLogService(this.emailLogService);
     this.emailService.setEmailTrackingService(this.emailTrackingService);
+    this.whatsappService.setWhatsAppLogService(this.whatsappLogService);
   }
 }

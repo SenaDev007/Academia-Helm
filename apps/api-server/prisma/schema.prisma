@@ -8327,21 +8327,59 @@ model InboundEmail {
 model WhatsappLog {
   id           String    @id @default(uuid())
   tenantId     String
-  recipient    String
-  message      String
-  status       String
-  provider     String?
-  providerId   String?
-  sentAt       DateTime?
-  deliveredAt  DateTime?
-  readAt       DateTime?
-  errorMessage String?
+
+  // ─── Catégorisation (mirror EmailLog) ───
+  category       String?   // RECRUTEMENT | PEDAGOGIE | FINANCE | ADMINISTRATIF | COMMUNICATION | SYSTEM
+  subCategory    String?
+  module         String?   // hr | students | pedagogy | finance | communication
+
+  // ─── Destinataire ───
+  recipient      String    // Format E.164 (+229XXXXXXXX)
+  recipientName  String?
+  recipientType  String?   // CANDIDAT | PARENT | STAFF | ENSEIGNANT | EXTERNE
+  recipientId    String?
+
+  // ─── Expéditeur (numéro WhatsApp Business source) ───
+  fromPhone      String?
+
+  // ─── Contenu ───
+  message        String    // Rendu final ou résumé
+
+  // ─── Template tracking ───
+  templateId     String?   // Gupshup elementName (ex: "admission_recue")
+  templateLanguage String? // "fr"
+
+  // ─── Statut & Provider ───
+  status         String    @default("PENDING") // PENDING | SENT | DELIVERED | READ | FAILED
+  provider       String?   // gupshup | twilio-whatsapp | infobip-whatsapp | ...
+  providerId     String?   // ID retourné par le provider
+
+  // ─── Threading ───
+  threadId       String?
+
+  // ─── Timestamps de cycle de vie ───
+  sentAt         DateTime?
+  deliveredAt    DateTime?
+  readAt         DateTime?
+  errorMessage   String?
+
+  // ─── Métadonnées ───
+  triggeredBy        String?   // SYSTEM | STAFF | AUTOMATION | SARA
+  triggeredByUserId  String?
+  relatedEntityId    String?
+  relatedEntityType  String?
+
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
-  @@index([status])
+  @@index([tenantId, status])
+  @@index([tenantId, category])
+  @@index([tenantId, recipient])
+  @@index([tenantId, module])
+  @@index([threadId])
+  @@index([tenantId, createdAt])
   @@map("whatsapp_logs")
 }
 

@@ -62,6 +62,10 @@ export default function StudentAssignmentsContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedClasses, setExpandedClasses] = useState<Set<string>>(new Set());
   const [assigningStudentId, setAssigningStudentId] = useState<string | null>(null);
+  // Multi-sélection pour affectation en lot
+  const [selectedUnassigned, setSelectedUnassigned] = useState<Set<string>>(new Set());
+  const [selectedAssigned, setSelectedAssigned] = useState<Set<string>>(new Set());
+  const [bulkTargetClass, setBulkTargetClass] = useState<string>('');
 
   useEffect(() => {
     if (academicYear) loadData();
@@ -155,6 +159,80 @@ export default function StudentAssignmentsContent() {
     }
   };
 
+  // Multi-affectation : affecter plusieurs élèves non affectés vers une classe
+  const handleBulkAssign = async () => {
+    if (!academicYear || !bulkTargetClass || selectedUnassigned.size === 0) return;
+    setAssigningStudentId('bulk');
+    try {
+      const studentIds = Array.from(selectedUnassigned);
+      await Promise.all(
+        studentIds.map(id =>
+          apiFetch('/students/change-class', {
+            method: 'POST',
+            body: JSON.stringify({
+              studentId: id,
+              academicYearId: academicYear.id,
+              newClassId: bulkTargetClass,
+            }),
+          })
+        )
+      );
+      toast({ title: `✅ ${studentIds.length} élève(s) affecté(s)`, variant: 'success' });
+      setSelectedUnassigned(new Set());
+      setBulkTargetClass('');
+      loadData();
+    } catch (e: any) {
+      toast({ title: 'Erreur affectation en lot', description: e.message, variant: 'error' });
+    } finally {
+      setAssigningStudentId(null);
+    }
+  };
+
+  // Multi-changement de classe : déplacer plusieurs élèves vers une nouvelle classe
+  const handleBulkChangeClass = async () => {
+    if (!academicYear || !bulkTargetClass || selectedAssigned.size === 0) return;
+    setAssigningStudentId('bulk');
+    try {
+      const studentIds = Array.from(selectedAssigned);
+      await Promise.all(
+        studentIds.map(id =>
+          apiFetch('/students/change-class', {
+            method: 'POST',
+            body: JSON.stringify({
+              studentId: id,
+              academicYearId: academicYear.id,
+              newClassId: bulkTargetClass,
+            }),
+          })
+        )
+      );
+      toast({ title: `✅ ${studentIds.length} élève(s) déplacé(s)`, variant: 'success' });
+      setSelectedAssigned(new Set());
+      setBulkTargetClass('');
+      loadData();
+    } catch (e: any) {
+      toast({ title: 'Erreur changement en lot', description: e.message, variant: 'error' });
+    } finally {
+      setAssigningStudentId(null);
+    }
+  };
+
+  const toggleUnassignedSelection = (studentId: string) => {
+    setSelectedUnassigned(prev => {
+      const next = new Set(prev);
+      next.has(studentId) ? next.delete(studentId) : next.add(studentId);
+      return next;
+    });
+  };
+
+  const toggleAssignedSelection = (studentId: string) => {
+    setSelectedAssigned(prev => {
+      const next = new Set(prev);
+      next.has(studentId) ? next.delete(studentId) : next.add(studentId);
+      return next;
+    });
+  };
+
   return (
     <div className="flex flex-col h-full space-y-4 animate-in fade-in duration-500">
       {/* Stats */}
@@ -216,8 +294,43 @@ export default function StudentAssignmentsContent() {
               </div>
             ) : (
               <div className="divide-y divide-slate-50">
+                {/* Barre d'action en lot */}
+                {selectedUnassigned.size > 0 && (
+                  <div className="flex items-center gap-2 p-3 bg-blue-50 border-b border-blue-100">
+                    <span className="text-xs font-bold text-blue-700">{selectedUnassigned.size} sélectionné(s)</span>
+                    <select
+                      value={bulkTargetClass}
+                      onChange={(e) => setBulkTargetClass(e.target.value)}
+                      className="text-xs border border-blue-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 flex-1"
+                    >
+                      <option value="">Classe cible...</option>
+                      {classes.map(cls => (
+                        <option key={cls.id} value={cls.id}>{cls.name}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={handleBulkAssign}
+                      disabled={!bulkTargetClass || assigningStudentId === 'bulk'}
+                      className="px-3 py-1.5 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {assigningStudentId === 'bulk' ? '...' : 'Affecter'}
+                    </button>
+                    <button
+                      onClick={() => setSelectedUnassigned(new Set())}
+                      className="px-2 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 rounded-lg"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
                 {unassignedStudents.map(student => (
                   <div key={student.id} className="flex items-center gap-3 p-3 hover:bg-slate-50 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={selectedUnassigned.has(student.id)}
+                      onChange={() => toggleUnassignedSelection(student.id)}
+                      className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 shrink-0"
+                    />
                     <div className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500 shrink-0">
                       {student.lastName[0]}{student.firstName[0]}
                     </div>
@@ -329,8 +442,43 @@ export default function StudentAssignmentsContent() {
                               <p className="px-4 py-2 text-xs text-slate-400 italic pl-12">Aucun élève</p>
                             ) : (
                               <div className="pl-12 pr-4 py-1">
+                                {/* Barre d'action en lot (changement de classe) */}
+                                {selectedAssigned.size > 0 && (
+                                  <div className="flex items-center gap-2 p-2 mb-1 bg-amber-50 rounded-lg border border-amber-100">
+                                    <span className="text-[10px] font-bold text-amber-700">{selectedAssigned.size} sélectionné(s)</span>
+                                    <select
+                                      value={bulkTargetClass}
+                                      onChange={(e) => setBulkTargetClass(e.target.value)}
+                                      className="text-[10px] border border-amber-200 rounded px-1.5 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 flex-1"
+                                    >
+                                      <option value="">Nouvelle classe...</option>
+                                      {classes.filter(c => c.id !== cls.id).map(c => (
+                                        <option key={c.id} value={c.id}>{c.name}</option>
+                                      ))}
+                                    </select>
+                                    <button
+                                      onClick={handleBulkChangeClass}
+                                      disabled={!bulkTargetClass || assigningStudentId === 'bulk'}
+                                      className="px-2 py-1 text-[10px] font-bold text-white bg-amber-600 rounded hover:bg-amber-700 disabled:opacity-50"
+                                    >
+                                      {assigningStudentId === 'bulk' ? '...' : 'Déplacer'}
+                                    </button>
+                                    <button
+                                      onClick={() => setSelectedAssigned(new Set())}
+                                      className="px-1.5 py-1 text-[10px] text-slate-500 hover:bg-slate-100 rounded"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                )}
                                 {studentsInClass.map((enr, idx) => (
                                   <div key={enr.id} className="flex items-center gap-3 py-1.5 px-2 hover:bg-slate-50 rounded-lg transition-colors">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedAssigned.has(enr.student.id)}
+                                      onChange={() => toggleAssignedSelection(enr.student.id)}
+                                      className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 shrink-0"
+                                    />
                                     <span className="text-[10px] font-mono text-slate-400 w-5 text-right">{idx + 1}</span>
                                     <div className="h-7 w-7 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500 shrink-0">
                                       {enr.student.lastName[0]}{enr.student.firstName[0]}
@@ -338,7 +486,7 @@ export default function StudentAssignmentsContent() {
                                     <span className="text-sm text-slate-700 flex-1">
                                       {enr.student.lastName.toUpperCase()} {enr.student.firstName}
                                     </span>
-                                    {/* Changement de classe */}
+                                    {/* Changement de classe individuel */}
                                     <select
                                       value=""
                                       onChange={(e) => e.target.value && handleAssign(enr.student.id, e.target.value)}

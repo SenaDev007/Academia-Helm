@@ -246,7 +246,32 @@ export default function EnrollmentsContent() {
     return Array.from(levelMap.values())
       .sort((a, b) => levelOrder(a.name) - levelOrder(b.name))
       .map(level => {
-        const levelClasses = (classesByLevel.get(level.id) || []).sort((a, b) => a.name.localeCompare(b.name));
+        // Tri pédagogique des classes (CI < CP < CE1 < CE2 < CM1 < CM2 < 6e < ... < Maternelle 1 < Maternelle 2)
+        // au lieu du tri alphabétique qui donne CE1, CE2, CI, CM1, CM2, CP
+        const classOrder = (name: string): number => {
+          const n = (name || '').trim().toUpperCase();
+          // Maternelle
+          if (n === 'MATERNELLE 1' || n === 'M1' || n === 'MAT1') return 0;
+          if (n === 'MATERNELLE 2' || n === 'M2' || n === 'MAT2') return 1;
+          // Primaire
+          if (n === 'CI') return 10;
+          if (n === 'CP') return 11;
+          if (n === 'CE1') return 12;
+          if (n === 'CE2') return 13;
+          if (n === 'CM1') return 14;
+          if (n === 'CM2') return 15;
+          // Secondaire
+          if (n === '6E' || n === '6ÈME' || n === '6EME') return 20;
+          if (n === '5E' || n === '5ÈME' || n === '5EME') return 21;
+          if (n === '4E' || n === '4ÈME' || n === '4EME') return 22;
+          if (n === '3E' || n === '3ÈME' || n === '3EME') return 23;
+          if (n === '2NDE') return 24;
+          if (n === '1ERE' || n === '1ÈRE') return 25;
+          if (n === 'TERMINALE' || n === 'TLE') return 26;
+          // Fallback : tri alphabétique pour les classes non standard
+          return 100 + name.charCodeAt(0);
+        };
+        const levelClasses = (classesByLevel.get(level.id) || []).sort((a, b) => classOrder(a.name) - classOrder(b.name));
         const levelEnrollments = enrollments.filter(e => {
           const cls = classes.find(c => c.id === e.class?.id);
           return cls?.schoolLevelId === level.id;
@@ -780,10 +805,10 @@ export default function EnrollmentsContent() {
                                                 {enr.student.matricule || enr.student.studentCode || '— matricule non généré —'}
                                               </p>
                                             </div>
-                                            <span className={cn('w-20 px-1.5 py-0.5 rounded text-[10px] font-bold text-center shrink-0', typeInfo.color)}>{typeInfo.label}</span>
-                                            <span className={cn('w-24 px-2 py-0.5 rounded-full text-[10px] font-bold border text-center shrink-0', statusInfo.color)}>{statusInfo.label}</span>
+                                            <div className="w-20 shrink-0 flex justify-center"><span className={cn('px-1.5 py-0.5 rounded text-[10px] font-bold inline-block', typeInfo.color)}>{typeInfo.label}</span></div>
+                                            <div className="w-24 shrink-0 flex justify-center"><span className={cn('px-2 py-0.5 rounded-full text-[10px] font-bold border inline-block', statusInfo.color)}>{statusInfo.label}</span></div>
                                             <span className="w-24 text-xs text-slate-500 shrink-0">{new Date(enr.enrollmentDate).toLocaleDateString('fr-FR')}</span>
-                                            <div className="flex gap-1 w-20 shrink-0 opacity-0 group-hover:opacity-100 transition">
+                                            <div className="flex gap-1 w-20 shrink-0">
                                               {enr.status === 'PENDING' || enr.status === 'PRE_REGISTERED' || enr.status === 'ADMITTED' ? (
                                                 <button onClick={() => handleValidate(enr.student.id)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600" title="Valider"><CheckCircle className="w-4 h-4" /></button>
                                               ) : null}
@@ -926,10 +951,10 @@ export default function EnrollmentsContent() {
                                                       <p className="text-sm font-medium text-slate-800 truncate">{enr.student.lastName.toUpperCase()} {enr.student.firstName}</p>
                                                       <p className="text-[10px] font-mono text-slate-400">{enr.student.matricule || enr.student.studentCode || '—'}</p>
                                                     </div>
-                                                    <span className={cn('w-20 px-1.5 py-0.5 rounded text-[10px] font-bold text-center shrink-0', typeInfo.color)}>{typeInfo.label}</span>
-                                                    <span className={cn('w-24 px-2 py-0.5 rounded-full text-[10px] font-bold border text-center shrink-0', statusInfo.color)}>{statusInfo.label}</span>
+                                                    <div className="w-20 shrink-0 flex justify-center"><span className={cn('px-1.5 py-0.5 rounded text-[10px] font-bold inline-block', typeInfo.color)}>{typeInfo.label}</span></div>
+                                                    <div className="w-24 shrink-0 flex justify-center"><span className={cn('px-2 py-0.5 rounded-full text-[10px] font-bold border inline-block', statusInfo.color)}>{statusInfo.label}</span></div>
                                                     <span className="w-24 text-xs text-slate-500 shrink-0">{new Date(enr.enrollmentDate).toLocaleDateString('fr-FR')}</span>
-                                                    <div className="flex gap-1 w-20 shrink-0 opacity-0 group-hover:opacity-100 transition">
+                                                    <div className="flex gap-1 w-20 shrink-0">
                                                       {enr.status === 'PENDING' || enr.status === 'PRE_REGISTERED' || enr.status === 'ADMITTED' ? (
                                                         <button onClick={() => handleValidate(enr.student.id)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600" title="Valider"><CheckCircle className="w-4 h-4" /></button>
                                                       ) : null}

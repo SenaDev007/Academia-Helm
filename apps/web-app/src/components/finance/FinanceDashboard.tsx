@@ -1,7 +1,12 @@
 /**
  * ============================================================================
  * ACADEMIA HELM - FINANCE MODULE
- * Dashboard pilotage stratégique (Spec Premium)
+ * Dashboard pilotage stratégique (style minimaliste — pattern Students)
+ * ============================================================================
+ *
+ * Style : cartes simples (bg-white rounded-xl border), icônes colorées,
+ * valeurs réelles depuis l'API. Aucune donnée mock.
+ *
  * ============================================================================
  */
 'use client';
@@ -11,50 +16,20 @@ import {
   TrendingUp,
   AlertCircle,
   TrendingDown,
-  Wallet,
   BarChart3,
   DollarSign,
-  Brain,
+  Wallet,
   ChevronRight,
   ArrowUpRight,
-  ArrowDownRight,
   Clock,
-  Lock,
   RefreshCw,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 import { financeService } from '@/services/finance.service';
 import { orionService } from '@/services/orion.service';
 import { formatCurrency } from '@/lib/utils';
-
-/**
- * Composant Mini-Chart (SVG) pour l'esthétique
- */
-function Sparkline({ data, color = '#10b981' }: { data: number[]; color?: string }) {
-  const max = Math.max(...data, 1);
-  const points = data
-    .map((val, i) => `${(i / (data.length - 1)) * 100},${100 - (val / max) * 100}`)
-    .join(' ');
-
-  return (
-    <svg className="w-16 h-8 overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
-      <polyline
-        fill="none"
-        stroke={color}
-        strokeWidth="12"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        points={points}
-      />
-    </svg>
-  );
-}
 
 function FinanceDashboardArrears({
   academicYearId,
@@ -71,7 +46,8 @@ function FinanceDashboardArrears({
     setLoading(true);
     const params = new URLSearchParams({ academicYearId });
     if (schoolLevelId) params.set('schoolLevelId', schoolLevelId);
-    financeService.getArrears(Object.fromEntries(params.entries()))
+    financeService
+      .getArrears(Object.fromEntries(params.entries()))
       .then((data) => setArrears(Array.isArray(data) ? data : []))
       .catch(() => setArrears([]))
       .finally(() => setLoading(false));
@@ -80,73 +56,65 @@ function FinanceDashboardArrears({
   const topByStudent = arrears.slice(0, 5);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.4 }}
-      className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200 shadow-xl shadow-slate-200/50 overflow-hidden"
-    >
-      <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-        <h3 className="font-bold text-slate-800 flex items-center gap-2">
-          <AlertCircle className="w-5 h-5 text-red-500" />
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-red-500" />
           Alertes de Recouvrement
         </h3>
         <Link
           href="/app/finance/collection"
-          className="text-xs font-semibold text-blue-600 hover:text-blue-700 uppercase tracking-wider flex items-center gap-1"
+          className="text-xs font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1"
         >
           Tout voir <ChevronRight className="w-3 h-3" />
         </Link>
       </div>
-      <div className="p-6">
+      <div className="p-5">
         {loading ? (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-12 bg-slate-100 animate-pulse rounded-xl" />
+              <div key={i} className="h-10 bg-gray-100 animate-pulse rounded-lg" />
             ))}
           </div>
         ) : topByStudent.length === 0 ? (
           <div className="text-center py-8">
-            <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-50 text-green-500 mb-3">
-              <RefreshCw className="w-6 h-6" />
+            <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-green-50 text-green-500 mb-3">
+              <RefreshCw className="w-5 h-5" />
             </div>
-            <p className="text-sm text-slate-500">Aucun impayé critique détecté.</p>
+            <p className="text-sm text-gray-500">Aucun impayé critique détecté.</p>
           </div>
         ) : (
-          <ul className="space-y-4">
-            {topByStudent.map((a, idx) => (
-              <motion.li
+          <ul className="space-y-3">
+            {topByStudent.map((a) => (
+              <li
                 key={a.id}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.1 * idx }}
-                className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100"
+                className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-600">
-                    {a.student?.lastName?.[0]}
+                  <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center font-bold text-gray-600 text-sm">
+                    {a.student?.lastName?.[0] ?? '?'}
                   </div>
                   <div>
-                    <p className="font-semibold text-slate-800 text-sm">
+                    <p className="font-medium text-gray-900 text-sm">
                       {a.student?.firstName} {a.student?.lastName}
                     </p>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-gray-500">
                       {a.student?.studentEnrollments?.[0]?.class?.name ?? 'Classe N/A'}
                     </p>
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="font-bold text-red-600 text-sm">{formatCurrency(a.balanceDue)}</p>
-                  <Badge variant="outline" className="text-[10px] uppercase font-black border-red-200 text-red-700 bg-red-50">
+                  <p className="font-semibold text-red-600 text-sm">{formatCurrency(a.balanceDue)}</p>
+                  <Badge variant="outline" className="text-[10px] uppercase border-red-200 text-red-700 bg-red-50">
                     {a.arrearsLevel ?? 'CRITIQUE'}
                   </Badge>
                 </div>
-              </motion.li>
+              </li>
             ))}
           </ul>
         )}
       </div>
-    </motion.div>
+    </div>
   );
 }
 
@@ -183,271 +151,234 @@ export default function FinanceDashboard() {
     load();
   }, [academicYear?.id, schoolLevel?.id]);
 
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: { staggerChildren: 0.1 }
-    }
-  };
+  // KPI values (réels, jamais mock)
+  const totalEncaisse = kpis?.totalEncaissement ?? 0;
+  const totalDu = kpis?.totalDue ?? 0;
+  const tauxRecouvrement = kpis?.tauxRecouvrement ?? 0;
+  const totalDepenses = kpis?.totalDepenses ?? 0;
+  const soldeNet = (kpis?.soldeNet as number) ?? totalEncaisse - totalDepenses;
 
-  const cardVariants = {
-    hidden: { opacity: 0, scale: 0.95, y: 20 },
-    visible: { opacity: 1, scale: 1, y: 0 }
-  };
+  // Calcul du max pour l'affichage du graphique mensuel
+  const maxMonthly = monthlyData.length > 0
+    ? Math.max(...monthlyData.map((d) => Number(d.total) || 0), 1)
+    : 1;
 
   return (
-    <div className="space-y-8 pb-12">
-      {/* KPI Section */}
-      <motion.div 
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
-        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6"
-      >
-        <KPICard
-          title="Total Encaissé"
-          value={kpis?.totalEncaissement ?? 0}
-          icon={<TrendingUp className="w-6 h-6" />}
-          trend="+12.5%"
-          color="emerald"
-          loading={loading}
-          sparklineData={[10, 25, 45, 30, 55, 70, 85]}
-        />
-        <KPICard
-          title="Prévisionnel Dû"
-          value={kpis?.totalDue ?? 0}
-          icon={<DollarSign className="w-6 h-6" />}
-          color="blue"
-          loading={loading}
-          sparklineData={[80, 80, 80, 80, 80, 80, 80]}
-        />
-        <KPICard
-          title="Taux Recouvrement"
-          value={`${kpis?.tauxRecouvrement ?? 0}%`}
-          isCurrency={false}
-          icon={<BarChart3 className="w-6 h-6" />}
-          trend="-2.4%"
-          color="amber"
-          loading={loading}
-          sparklineData={[40, 45, 50, 48, 52, 55, 60]}
-        />
-        <KPICard
-          title="Dépenses Total"
-          value={kpis?.totalDepenses ?? 0}
-          icon={<TrendingDown className="w-6 h-6" />}
-          color="rose"
-          loading={loading}
-          sparklineData={[5, 15, 10, 25, 20, 35, 30]}
-        />
-      </motion.div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-        {/* Main Analytics Area */}
-        <motion.div 
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          className="xl:col-span-2 space-y-8"
-        >
-          {/* Monthly Trend Chart Placeholder */}
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-8 min-h-[400px] flex flex-col">
-            <div className="flex items-center justify-between mb-8">
-              <div>
-                <h3 className="text-xl font-bold text-slate-800">Évolution des Recettes</h3>
-                <p className="text-sm text-slate-500">Performance financière mensuelle</p>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" className="rounded-full">Mensuel</Button>
-                <Button variant="ghost" size="sm" className="rounded-full">Trimestriel</Button>
-              </div>
+    <div className="space-y-6 pb-8">
+      {/* KPI Section — 5 cartes minimaliste (pattern StudentsModuleDashboard) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+        {/* Total Encaissé */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs sm:text-sm font-medium text-gray-500">Total encaissé</p>
+              <p className="text-xl sm:text-2xl font-bold text-emerald-600 mt-1">
+                {loading ? '—' : formatCurrency(totalEncaisse)}
+              </p>
             </div>
-            
-            <div className="flex-1 flex items-end gap-2 pb-4">
-              {loading ? (
-                <div className="w-full h-full bg-slate-50 animate-pulse rounded-2xl" />
-              ) : monthlyData.length === 0 ? (
-                <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 gap-3 border-2 border-dashed border-slate-100 rounded-3xl">
-                  <BarChart3 className="w-12 h-12 opacity-20" />
-                  <p>Données historiques insuffisantes</p>
-                </div>
-              ) : (
-                <div className="w-full h-64 flex items-end justify-between px-4 gap-4">
-                  {monthlyData.map((d, i) => {
-                    const height = (d.total / Math.max(...monthlyData.map(x => x.total), 1)) * 100;
-                    return (
-                      <div key={i} className="flex-1 flex flex-col items-center gap-2 group">
-                        <motion.div 
-                          initial={{ height: 0 }}
-                          animate={{ height: `${height}%` }}
-                          transition={{ delay: 0.5 + i * 0.05, type: 'spring' }}
-                          className="w-full bg-blue-500/10 group-hover:bg-blue-500/20 rounded-t-lg relative overflow-hidden transition-colors"
-                        >
-                          <div className="absolute inset-0 bg-gradient-to-t from-blue-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </motion.div>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
-                          {d.month.split('-')[1]}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+            <div className="p-2 sm:p-3 bg-emerald-50 rounded-lg">
+              <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-600" />
             </div>
           </div>
+        </div>
 
-          <FinanceDashboardArrears academicYearId={academicYear?.id} schoolLevelId={schoolLevel?.id} />
-        </motion.div>
-
-        {/* Sidebar Analytics */}
-        <div className="space-y-8">
-          {/* ORION Intelligence */}
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="bg-slate-900 rounded-3xl p-8 text-white relative overflow-hidden shadow-2xl shadow-blue-900/20"
-          >
-            <div className="absolute top-0 right-0 p-4 opacity-10">
-              <Brain className="w-32 h-32" />
+        {/* Total Dû */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs sm:text-sm font-medium text-gray-500">Prévisionnel dû</p>
+              <p className="text-xl sm:text-2xl font-bold text-blue-600 mt-1">
+                {loading ? '—' : formatCurrency(totalDu)}
+              </p>
             </div>
-            
-            <div className="relative z-10">
-              <div className="flex items-center gap-2 mb-6">
-                <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center">
-                  <Brain className="w-5 h-5 text-white" />
-                </div>
-                <h3 className="font-bold text-lg tracking-tight">ORION Intelligence</h3>
+            <div className="p-2 sm:p-3 bg-blue-50 rounded-lg">
+              <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" />
+            </div>
+          </div>
+        </div>
+
+        {/* Taux Recouvrement */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs sm:text-sm font-medium text-gray-500">Taux recouvrement</p>
+              <p className="text-xl sm:text-2xl font-bold text-amber-600 mt-1">
+                {loading ? '—' : `${tauxRecouvrement}%`}
+              </p>
+            </div>
+            <div className="p-2 sm:p-3 bg-amber-50 rounded-lg">
+              <BarChart3 className="w-5 h-5 sm:w-6 sm:h-6 text-amber-600" />
+            </div>
+          </div>
+        </div>
+
+        {/* Dépenses */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs sm:text-sm font-medium text-gray-500">Dépenses</p>
+              <p className="text-xl sm:text-2xl font-bold text-rose-600 mt-1">
+                {loading ? '—' : formatCurrency(totalDepenses)}
+              </p>
+            </div>
+            <div className="p-2 sm:p-3 bg-rose-50 rounded-lg">
+              <TrendingDown className="w-5 h-5 sm:w-6 sm:h-6 text-rose-600" />
+            </div>
+          </div>
+        </div>
+
+        {/* Solde Net */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs sm:text-sm font-medium text-gray-500">Solde net</p>
+              <p className={`text-xl sm:text-2xl font-bold mt-1 ${soldeNet >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                {loading ? '—' : formatCurrency(soldeNet)}
+              </p>
+            </div>
+            <div className="p-2 sm:p-3 bg-gray-100 rounded-lg">
+              <Wallet className="w-5 h-5 sm:w-6 sm:h-6 text-gray-600" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Section principale : 2 colonnes */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        {/* Colonne gauche : Graphique + Alertes */}
+        <div className="xl:col-span-2 space-y-6">
+          {/* Évolution mensuelle des recettes — style tableau simple */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900">Évolution des recettes</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Performance financière mensuelle</p>
               </div>
-
-              {loading ? (
-                <div className="space-y-4">
-                  <div className="h-4 bg-white/10 animate-pulse rounded w-3/4" />
-                  <div className="h-20 bg-white/5 animate-pulse rounded" />
-                </div>
-              ) : orionAlerts.length === 0 ? (
-                <div className="py-6">
-                  <p className="text-blue-200 text-sm leading-relaxed">
-                    Aucune anomalie détectée. La santé financière de l'établissement est optimale.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                  {orionAlerts.map((a, i) => (
-                    <motion.div
-                      key={i}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.3 + i * 0.1 }}
-                      className={`p-4 rounded-2xl border ${
-                        a.level === 'CRITICAL' 
-                          ? 'bg-red-500/10 border-red-500/20 text-red-100' 
-                          : 'bg-blue-500/10 border-blue-500/20 text-blue-100'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 mb-1">
-                        {a.level === 'CRITICAL' ? <ArrowUpRight className="w-4 h-4 text-red-400" /> : <Clock className="w-4 h-4 text-blue-400" />}
-                        <span className="text-xs font-black uppercase tracking-widest">{a.title}</span>
-                      </div>
-                      <p className="text-xs opacity-80">{a.message}</p>
-                    </motion.div>
-                  ))}
-                </div>
-              )}
-              
-              <Button variant="ghost" className="w-full mt-6 bg-white/5 hover:bg-white/10 text-white border-0 rounded-2xl">
-                Analyser maintenant
-              </Button>
-            </div>
-          </motion.div>
-
-          {/* Rapid Access Grid */}
-          <div className="grid grid-cols-2 gap-4">
-            {FINANCE_SUBMODULE_TABS.filter(t => t.id !== 'dashboard').slice(0, 4).map((tab, i) => (
-              <motion.div
-                key={tab.id}
-                whileHover={{ y: -5 }}
-                className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col items-center text-center gap-3"
+              <Link
+                href="/app/finance/reports"
+                className="text-xs font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1"
               >
-                <Link href={tab.path} className="flex flex-col items-center gap-2">
-                  <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center group-hover:bg-blue-50 transition-colors">
-                    <tab.icon className="w-6 h-6 text-blue-600" />
+                Détails <ChevronRight className="w-3 h-3" />
+              </Link>
+            </div>
+
+            {loading ? (
+              <div className="h-48 bg-gray-50 animate-pulse rounded-lg" />
+            ) : monthlyData.length === 0 ? (
+              <div className="h-48 flex flex-col items-center justify-center text-gray-400 gap-2 border border-dashed border-gray-200 rounded-lg">
+                <BarChart3 className="w-8 h-8 opacity-30" />
+                <p className="text-sm">Aucune donnée mensuelle disponible</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {/* Tableau simple des encaissements mensuels */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-100">
+                        <th className="text-left py-2 px-3 font-medium text-gray-600">Mois</th>
+                        <th className="text-right py-2 px-3 font-medium text-gray-600">Encaissements</th>
+                        <th className="text-left py-2 px-3 font-medium text-gray-600 w-1/3">Proportion</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {monthlyData.map((d, i) => {
+                        const total = Number(d.total) || 0;
+                        const percentage = Math.round((total / maxMonthly) * 100);
+                        return (
+                          <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
+                            <td className="py-2.5 px-3 font-medium text-gray-900">
+                              {d.month}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-semibold text-gray-900">
+                              {formatCurrency(total)}
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
+                                  <div
+                                    className="bg-blue-500 h-full rounded-full transition-all"
+                                    style={{ width: `${percentage}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs text-gray-500 w-10 text-right">{percentage}%</span>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Alertes de recouvrement */}
+          <FinanceDashboardArrears academicYearId={academicYear?.id} schoolLevelId={schoolLevel?.id} />
+        </div>
+
+        {/* Colonne droite : ORION */}
+        <div className="space-y-6">
+          {/* ORION Intelligence */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="p-2 bg-indigo-50 rounded-lg">
+                <BarChart3 className="w-4 h-4 text-indigo-600" />
+              </div>
+              <h3 className="text-sm font-semibold text-gray-900">ORION — Alertes financières</h3>
+            </div>
+
+            {loading ? (
+              <div className="space-y-3">
+                <div className="h-4 bg-gray-100 animate-pulse rounded w-3/4" />
+                <div className="h-16 bg-gray-50 animate-pulse rounded" />
+              </div>
+            ) : orionAlerts.length === 0 ? (
+              <div className="py-6 text-center">
+                <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-green-50 text-green-500 mb-2">
+                  <RefreshCw className="w-5 h-5" />
+                </div>
+                <p className="text-sm text-gray-500">
+                  Aucune anomalie détectée. Santé financière optimale.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                {orionAlerts.map((a, i) => (
+                  <div
+                    key={i}
+                    className={`p-3 rounded-lg border ${
+                      a.level === 'CRITICAL'
+                        ? 'bg-red-50 border-red-200'
+                        : 'bg-amber-50 border-amber-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      {a.level === 'CRITICAL' ? (
+                        <ArrowUpRight className="w-3.5 h-3.5 text-red-500" />
+                      ) : (
+                        <Clock className="w-3.5 h-3.5 text-amber-500" />
+                      )}
+                      <span className="text-xs font-semibold uppercase tracking-wide text-gray-700">
+                        {a.title}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-600">{a.message}</p>
                   </div>
-                  <span className="text-xs font-bold text-slate-800 leading-tight">{tab.label}</span>
-                </Link>
-              </motion.div>
-            ))}
+                ))}
+              </div>
+            )}
+
+            <Link
+              href="/app/finance/audit"
+              className="mt-4 block text-center text-xs font-medium text-blue-600 hover:text-blue-700 py-2 border-t border-gray-100"
+            >
+              Voir le contrôle & audit complet →
+            </Link>
           </div>
         </div>
       </div>
     </div>
-  );
-}
-
-function KPICard({ 
-  title, 
-  value, 
-  icon, 
-  trend, 
-  color, 
-  loading, 
-  isCurrency = true,
-  sparklineData
-}: { 
-  title: string; 
-  value: string | number; 
-  icon: React.ReactNode; 
-  trend?: string; 
-  color: 'emerald' | 'blue' | 'amber' | 'rose';
-  loading: boolean;
-  isCurrency?: boolean;
-  sparklineData: number[];
-}) {
-  const colorMap = {
-    emerald: 'bg-emerald-500 text-emerald-600 ring-emerald-100',
-    blue: 'bg-blue-500 text-blue-600 ring-blue-100',
-    amber: 'bg-amber-500 text-amber-600 ring-amber-100',
-    rose: 'bg-rose-500 text-rose-600 ring-rose-100'
-  };
-
-  const sparkColor = {
-    emerald: '#10b981',
-    blue: '#3b82f6',
-    amber: '#f59e0b',
-    rose: '#f43f5e'
-  };
-
-  return (
-    <motion.div
-      variants={{
-        hidden: { opacity: 0, y: 20 },
-        visible: { opacity: 1, y: 0 }
-      }}
-      whileHover={{ y: -8, transition: { duration: 0.2 } }}
-      className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-xl transition-all duration-300 relative overflow-hidden group"
-    >
-      <div className="absolute top-0 right-0 w-32 h-32 bg-slate-50 rounded-full -mr-16 -mt-16 group-hover:scale-110 transition-transform duration-500" />
-      
-      <div className="relative z-10">
-        <div className="flex items-center justify-between mb-4">
-          <div className={`p-3 rounded-2xl bg-opacity-10 ${colorMap[color].split(' ')[0]} ${colorMap[color].split(' ')[1]}`}>
-            {icon}
-          </div>
-          {trend && (
-            <span className={`text-xs font-bold px-2 py-1 rounded-full ${trend.startsWith('+') ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
-              {trend}
-            </span>
-          )}
-        </div>
-        
-        <div className="space-y-1">
-          <p className="text-sm font-semibold text-slate-500 tracking-wide uppercase">{title}</p>
-          <div className="flex items-end justify-between">
-            <h4 className="text-2xl font-black text-slate-900 tracking-tight">
-              {loading ? '—' : (typeof value === 'number' && isCurrency ? formatCurrency(value) : value)}
-            </h4>
-            {!loading && <Sparkline data={sparklineData} color={sparkColor[color]} />}
-          </div>
-        </div>
-      </div>
-    </motion.div>
   );
 }

@@ -1259,32 +1259,26 @@ export default function EnrollmentsContent() {
               })),
             }}
             onSubmit={async (data) => {
-              // ⚠️ Cette fonction est appelée par :
-              // 1. handleNext (sauvegarde auto à chaque étape) — ne doit pas fermer le modal
-              // 2. handleSubmit (bouton "Enregistrer" final) — doit fermer le modal
-              //
-              // On ne ferme le modal et n'affiche le toast succès QUE si isFinalSubmit est true.
-              // Les erreurs sont relancées (throw) pour que handleNext puisse les attraper.
               const isFinalSubmit = (data as any)._isFinalSubmit === true;
+              // ⚠️ Le update de base est le seul appel critique — les autres sont non bloquants
               const { photoUrl: _photoUrl, ...studentData } = data.student;
               await studentsService.update(editEnrollment.student.id, {
                 ...studentData,
                 academicYearId: academicYear.id,
                 schoolLevelId: schoolLevel.id,
               });
-              // Upload photo via endpoint dédié (pattern RH)
+              // Les opérations suivantes sont non bloquantes (catch individuel)
+              // Upload photo
               if (data.student.photoUrl && data.student.photoUrl.startsWith('data:')) {
-                try {
-                  await studentsService.uploadPhoto(editEnrollment.student.id, data.student.photoUrl);
-                } catch (photoErr: any) {
-                  console.warn('Upload photo failed:', photoErr?.message);
-                }
+                await studentsService.uploadPhoto(editEnrollment.student.id, data.student.photoUrl)
+                  .catch((e: any) => console.warn('Upload photo:', e?.message));
               }
-              // Mettre à jour la classe si elle a changé
+              // Changement de classe
               if (data.classId && data.classId !== editEnrollment.class?.id) {
-                await studentsService.changeClass(editEnrollment.student.id, academicYear.id, data.classId);
+                await studentsService.changeClass(editEnrollment.student.id, academicYear.id, data.classId)
+                  .catch((e: any) => console.warn('Change class:', e?.message));
               }
-              // Ajouter les guardians s'il y en a
+              // Guardians
               if (data.guardians?.length) {
                 for (const g of data.guardians) {
                   if (!g.firstName?.trim() && !g.lastName?.trim()) continue;
@@ -1297,7 +1291,7 @@ export default function EnrollmentsContent() {
                   }).catch(() => undefined);
                 }
               }
-              // Régime financier si fourni
+              // Régime financier
               if (data.feeProfile?.feeRegimeId) {
                 await financeService.createStudentFeeProfile({
                   studentId: editEnrollment.student.id,
@@ -1306,7 +1300,6 @@ export default function EnrollmentsContent() {
                   justification: data.feeProfile.justification,
                 }).catch(() => undefined);
               }
-              // Fermer le modal + toast succès SEULEMENT pour le bouton "Enregistrer" final
               if (isFinalSubmit) {
                 toast({ title: '✅ Inscription mise à jour', variant: 'success' });
                 setEditEnrollment(null);

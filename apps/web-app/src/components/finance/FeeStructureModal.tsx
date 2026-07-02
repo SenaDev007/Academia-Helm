@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
+import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,6 +15,13 @@ const FEE_TYPES = [
   { value: 'ANNEX', label: 'Annexe' },
   { value: 'EXCEPTIONAL', label: 'Exceptionnel' },
 ];
+
+interface Installment {
+  label: string;
+  amount: string;
+  dueDate: string;
+  orderIndex: number;
+}
 
 export default function FeeStructureModal({
   academicYearId,
@@ -42,10 +50,58 @@ export default function FeeStructureModal({
   const [levelId, setLevelId] = useState(initialData?.levelId ?? '');
   const [classId, setClassId] = useState(initialData?.classId ?? '');
 
+  // Installments (tranches)
+  const initialInstallments: Installment[] = initialData?.structureInstallments?.length
+    ? initialData.structureInstallments
+        .sort((a: any, b: any) => a.orderIndex - b.orderIndex)
+        .map((i: any) => ({
+          label: i.label,
+          amount: String(i.amount),
+          dueDate: i.dueDate ? new Date(i.dueDate).toISOString().slice(0, 10) : '',
+          orderIndex: i.orderIndex,
+        }))
+    : [
+        { label: 'Tranche 1', amount: '', dueDate: '', orderIndex: 0 },
+      ];
+  const [installments, setInstallments] = useState<Installment[]>(initialInstallments);
+
+  const addInstallment = () => {
+    setInstallments([
+      ...installments,
+      {
+        label: `Tranche ${installments.length + 1}`,
+        amount: '',
+        dueDate: '',
+        orderIndex: installments.length,
+      },
+    ]);
+  };
+
+  const removeInstallment = (idx: number) => {
+    const updated = installments.filter((_, i) => i !== idx);
+    setInstallments(updated.map((inst, i) => ({ ...inst, orderIndex: i })));
+  };
+
+  const updateInstallment = (idx: number, field: keyof Installment, value: string) => {
+    const updated = [...installments];
+    updated[idx] = { ...updated[idx], [field]: value };
+    setInstallments(updated);
+  };
+
+  // Validation : si isInstallment, les tranches doivent être complètes et leur somme = totalAmount
+  const installmentsSum = installments.reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
+  const totalAmountNum = parseFloat(totalAmount) || 0;
+  const installmentsValid = !isInstallment || (
+    installments.every((i) => i.label && i.amount && i.dueDate) &&
+    Math.abs(installmentsSum - totalAmountNum) < 1
+  );
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const amount = parseFloat(totalAmount);
     if (!name || isNaN(amount) || amount < 0) return;
+    if (isInstallment && !installmentsValid) return;
+
     onSubmit({
       academicYearId,
       name,
@@ -55,6 +111,14 @@ export default function FeeStructureModal({
       isMandatory,
       levelId: applyTo === 'level' ? levelId || undefined : undefined,
       classId: applyTo === 'class' ? classId || undefined : undefined,
+      installments: isInstallment
+        ? installments.map((i) => ({
+            label: i.label,
+            amount: parseFloat(i.amount),
+            dueDate: new Date(i.dueDate),
+            orderIndex: i.orderIndex,
+          }))
+        : undefined,
     });
   };
 
@@ -64,7 +128,7 @@ export default function FeeStructureModal({
         initial={{ opacity: 0, y: 16, scale: 0.99 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.22, ease: 'easeOut' }}
-        className="bg-white rounded-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto border border-blue-100 shadow-2xl"
+        className="bg-white rounded-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-blue-100 shadow-2xl"
       >
         <h3 className="text-lg font-semibold mb-4">{isEdit ? 'Modifier le frais' : 'Nouveau frais'}</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -134,9 +198,81 @@ export default function FeeStructureModal({
             <input type="checkbox" id="mandatory" checked={isMandatory} onChange={(e) => setIsMandatory(e.target.checked)} />
             <Label htmlFor="mandatory">Frais obligatoire</Label>
           </div>
+
+          {/* Éditeur de tranches */}
+          {isInstallment && (
+            <div className="border rounded-lg p-3 bg-slate-50 space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-semibold">Tranches de paiement</Label>
+                <Button type="button" size="sm" variant="outline" onClick={addInstallment}>
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  Ajouter
+                </Button>
+              </div>
+              {installments.map((inst, idx) => (
+                <div key={idx} className="grid grid-cols-12 gap-2 items-end">
+                  <div className="col-span-3">
+                    <Label className="text-xs">Libellé</Label>
+                    <Input
+                      value={inst.label}
+                      onChange={(e) => updateInstallment(idx, 'label', e.target.value)}
+                      placeholder="Tranche 1"
+                      required
+                    />
+                  </div>
+                  <div className="col-span-3">
+                    <Label className="text-xs">Montant (XOF)</Label>
+                    <Input
+                      type="number"
+                      value={inst.amount}
+                      onChange={(e) => updateInstallment(idx, 'amount', e.target.value)}
+                      placeholder="50000"
+                      required
+                    />
+                  </div>
+                  <div className="col-span-4">
+                    <Label className="text-xs">Échéance</Label>
+                    <Input
+                      type="date"
+                      value={inst.dueDate}
+                      onChange={(e) => updateInstallment(idx, 'dueDate', e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="col-span-2 flex justify-end">
+                    {installments.length > 1 && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => removeInstallment(idx)}
+                        title="Supprimer"
+                      >
+                        <Trash2 className="h-4 w-4 text-rose-600" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+              <div className="flex justify-between items-center pt-2 border-t text-sm">
+                <span className="text-slate-600">Somme des tranches :</span>
+                <span className={Math.abs(installmentsSum - totalAmountNum) < 1 ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-semibold'}>
+                  {installmentsSum.toLocaleString('fr-FR')} / {totalAmountNum.toLocaleString('fr-FR')} XOF
+                </span>
+              </div>
+              {isInstallment && !installmentsValid && (
+                <p className="text-xs text-rose-600">
+                  ⚠️ La somme des tranches doit être égale au montant total.
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="flex gap-2 justify-end pt-4">
             <Button type="button" variant="outline" onClick={onClose}>Annuler</Button>
-            <Button type="submit">{isEdit ? 'Enregistrer' : 'Créer'}</Button>
+            <Button type="submit" disabled={isInstallment && !installmentsValid}>
+              {isEdit ? 'Enregistrer' : 'Créer'}
+            </Button>
           </div>
         </form>
       </motion.div>

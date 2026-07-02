@@ -33,9 +33,19 @@ export default function NewPaymentModal({
   const [amount, setAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [reference, setReference] = useState('');
+  const [cashRegisterId, setCashRegisterId] = useState('');
+  const [openCashRegisters, setOpenCashRegisters] = useState<any[]>([]);
   const [preview, setPreview] = useState<{ totalPay: number; lines: { name: string; pay: number }[] } | null>(null);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
+
+  // Charge les caisses ouvertes pour la sélection
+  useEffect(() => {
+    financeService
+      .getCashRegisters({ isActive: true, isOpen: true })
+      .then((data) => setOpenCashRegisters(Array.isArray(data) ? data : []))
+      .catch(() => setOpenCashRegisters([]));
+  }, []);
 
   const selectedAccount = accounts.find((a) => a.id === studentAccountId);
   const amountNum = parseFloat(amount);
@@ -66,15 +76,28 @@ export default function NewPaymentModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!studentAccountId || !amountNum || amountNum <= 0) return;
-    
+
     if (!networkDetectionService.isConnected()) {
       toast({ title: 'Hors Ligne', description: 'Les transactions financières nécessitent une connexion internet.', variant: 'destructive' });
       return;
     }
 
+    // Si paiement CASH, une caisse ouverte est obligatoire
+    if (paymentMethod === 'CASH' && !cashRegisterId) {
+      toast({ title: 'Caisse requise', description: 'Sélectionnez une caisse ouverte pour les paiements en espèces.', variant: 'destructive' });
+      return;
+    }
+
     setLoading(true);
     try {
-      await financeService.createTransaction({ academicYearId, studentAccountId, amount: amountNum, paymentMethod, reference: reference.trim() || undefined });
+      await financeService.createTransaction({
+        academicYearId,
+        studentAccountId,
+        amount: amountNum,
+        paymentMethod,
+        reference: reference.trim() || undefined,
+        cashRegisterId: cashRegisterId || undefined,
+      });
       toast({ title: 'Paiement enregistré', description: 'Le reçu a été généré avec succès.' });
       onSuccess();
     } catch (error: any) {
@@ -123,6 +146,30 @@ export default function NewPaymentModal({
             </Select>
           </div>
           <div>
+            <Label>Caisse {paymentMethod === 'CASH' ? '*' : '(optionnel)'}</Label>
+            <Select value={cashRegisterId} onValueChange={setCashRegisterId}>
+              <SelectTrigger><SelectValue placeholder="Sélectionner une caisse ouverte" /></SelectTrigger>
+              <SelectContent>
+                {openCashRegisters.length === 0 ? (
+                  <SelectItem value="_none" disabled>
+                    Aucune caisse ouverte — ouvrez-en une dans Multi-caisses
+                  </SelectItem>
+                ) : (
+                  openCashRegisters.map((reg) => (
+                    <SelectItem key={reg.id} value={reg.id}>
+                      {reg.code} — {reg.name} (Solde : {formatCurrency(reg.currentBalance)})
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+            {paymentMethod === 'CASH' && openCashRegisters.length === 0 && (
+              <p className="text-xs text-rose-600 mt-1">
+                ⚠️ Aucune caisse ouverte. Ouvrez une caisse dans l'onglet Multi-caisses pour encaisser en espèces.
+              </p>
+            )}
+          </div>
+          <div>
             <Label>Observation / Référence</Label>
             <Input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Optionnel" />
           </div>
@@ -143,7 +190,9 @@ export default function NewPaymentModal({
           )}
           <div className="flex gap-2 justify-end pt-4">
             <Button type="button" variant="outline" onClick={onClose}>Annuler</Button>
-            <Button type="submit" disabled={loading}>{loading ? 'Enregistrement...' : 'Valider paiement'}</Button>
+            <Button type="submit" disabled={loading || (paymentMethod === 'CASH' && !cashRegisterId)}>
+              {loading ? 'Enregistrement...' : 'Valider paiement'}
+            </Button>
           </div>
         </form>
       </motion.div>

@@ -5044,15 +5044,33 @@ model FinancialAnomaly {
 
 /// Extension â€” Multi-caisses.
 model CashRegister {
-  id           String               @id @default(uuid())
-  tenantId     String
-  name         String
-  isActive     Boolean              @default(true)
-  createdAt    DateTime             @default(now())
-  tenant       Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  transactions FinanceTransaction[]
+  id                 String               @id @default(uuid())
+  tenantId           String
+  code               String                                // Code court unique (ex: CAISSE-01, MAIN, SECONDARY)
+  name               String                                // Nom affiché (ex: "Caisse principale", "Caisse mobile")
+  description        String?
+  responsibleUserId  String?                               // User responsable de la caisse (caissier attitré)
+  location           String?                               // Emplacement physique (ex: "Bureau d'accueil", "Cantine")
+  openingBalance     Decimal              @default(0) @db.Decimal(12, 2)  // Solde d'ouverture
+  currentBalance     Decimal              @default(0) @db.Decimal(12, 2)  // Solde courant (mise à jour après chaque transaction)
+  isOpen             Boolean              @default(false)  // Caisse ouverte (true) ou fermée (false)
+  openedAt           DateTime?                              // Dernière ouverture
+  openedByUserId     String?                               // User qui a ouvert la caisse
+  closedAt           DateTime?                              // Dernière fermeture
+  closedByUserId     String?                               // User qui a fermé la caisse
+  isActive           Boolean              @default(true)   // Caisse active (false = archivée, plus utilisable)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  tenant             Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  responsibleUser    User?                @relation("CashRegisterResponsible", fields: [responsibleUserId], references: [id], onDelete: SetNull)
+  openedBy           User?                @relation("CashRegisterOpenedBy", fields: [openedByUserId], references: [id], onDelete: SetNull)
+  closedBy           User?                @relation("CashRegisterClosedBy", fields: [closedByUserId], references: [id], onDelete: SetNull)
+  transactions       FinanceTransaction[]
 
+  @@unique([tenantId, code])
   @@index([tenantId])
+  @@index([tenantId, isActive])
+  @@index([responsibleUserId])
   @@map("cash_registers")
 }
 

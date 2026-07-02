@@ -1,8 +1,15 @@
 /**
  * SOUS-MODULE 2 — Comptes élèves (StudentAccount, AccountBreakdown)
  * Création automatique à admission, calcul totalDue/totalPaid/balance, statut dynamique, injection arriérés N→N+1.
+ *
+ * SÉCURITÉ SQL :
+ * - Les champs balance/totalDue/totalPaid/arrearsAmount sont protégés par le trigger
+ *   `prevent_balance_update` qui exige `app.allow_balance_update = 'true'` en session.
+ * - Le champ `isBlocked` est protégé par `prevent_manual_block_update` qui exige
+ *   `app.allow_block_update = 'true'`.
+ * - Ce service configure ces flags via `prisma.$executeRaw` avant chaque update légitime.
  */
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 
 const STATUS_ACTIVE = 'ACTIVE';
@@ -14,7 +21,25 @@ const STATUS_CLOSED = 'CLOSED';
 
 @Injectable()
 export class StudentAccountService {
+  private readonly logger = new Logger(StudentAccountService.name);
+
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Active le flag SQL `app.allow_balance_update` pour la transaction courante.
+   * À appeler AVANT toute mise à jour légitime de totalDue/totalPaid/balance/arrearsAmount.
+   */
+  private async allowBalanceUpdate(): Promise<void> {
+    await this.prisma.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
+  }
+
+  /**
+   * Active le flag SQL `app.allow_block_update` pour la transaction courante.
+   * À appeler AVANT toute mise à jour légitime de isBlocked.
+   */
+  private async allowBlockUpdate(): Promise<void> {
+    await this.prisma.$executeRawUnsafe(`SET LOCAL app.allow_block_update = 'true'`);
+  }
 
   /**
    * Crée ou récupère le compte élève pour une année.
@@ -149,6 +174,10 @@ export class StudentAccountService {
       status = hasOverdue ? STATUS_OVERDUE : STATUS_PARTIAL;
     }
 
+    // Active le flag SQL pour autoriser la mise à jour de isBlocked (si changement)
+    if (isBlocked !== account.isBlocked) {
+      await this.allowBlockUpdate();
+    }
     await this.prisma.studentAccount.update({
       where: { id: accountId },
       data: { status, isBlocked, updatedAt: new Date() },
@@ -173,6 +202,8 @@ export class StudentAccountService {
     const newTotalDue = Number(account.totalDue) + arrearsAmount;
     const newBalance = Number(account.balance) + arrearsAmount;
 
+    // Active le flag SQL pour autoriser la mise à jour des champs balance
+    await this.allowBalanceUpdate();
     await this.prisma.studentAccount.update({
       where: { id: account.id },
       data: {
@@ -245,6 +276,8 @@ export class StudentAccountService {
     if (!account) throw new NotFoundException('StudentAccount not found');
     if (!account.isBlocked) return account;
 
+    // Active le flag SQL pour autoriser la mise à jour de isBlocked
+    await this.allowBlockUpdate();
     return this.prisma.studentAccount.update({
       where: { id: accountId },
       data: {

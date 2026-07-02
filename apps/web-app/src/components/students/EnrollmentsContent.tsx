@@ -1235,6 +1235,7 @@ export default function EnrollmentsContent() {
             academicYearId={academicYear.id}
             schoolLevelId={schoolLevel.id}
             initialData={{
+              studentId: editEnrollment.student.id,
               firstName: editEnrollment.student.firstName || '',
               lastName: editEnrollment.student.lastName || '',
               matricule: editEnrollment.student.matricule || undefined,

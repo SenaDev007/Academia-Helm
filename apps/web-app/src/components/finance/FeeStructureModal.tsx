@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -42,6 +42,7 @@ export default function FeeStructureModal({
 }) {
   const isEdit = Boolean(feeId);
   const [name, setName] = useState(initialData?.name ?? '');
+  const [nameManuallyEdited, setNameManuallyEdited] = useState(isEdit); // En édition, on ne auto-remplit pas
   const [feeType, setFeeType] = useState(initialData?.feeType ?? 'TUITION');
   const [totalAmount, setTotalAmount] = useState(initialData?.totalAmount != null ? String(initialData.totalAmount) : '');
   const [isInstallment, setIsInstallment] = useState(initialData?.isInstallment ?? false);
@@ -49,6 +50,43 @@ export default function FeeStructureModal({
   const [applyTo, setApplyTo] = useState<'level' | 'class'>(initialData?.classId ? 'class' : 'level');
   const [levelId, setLevelId] = useState(initialData?.levelId ?? '');
   const [classId, setClassId] = useState(initialData?.classId ?? '');
+
+  // Libellés pour l'auto-génération du nom
+  const feeTypeLabel = FEE_TYPES.find((f) => f.value === feeType)?.label ?? feeType;
+  const levelLabel = useMemo(() => {
+    const level = levels.find((l) => l.id === levelId);
+    return level ? (level.label ?? level.code ?? level.name ?? '') : '';
+  }, [levels, levelId]);
+  const classLabel = useMemo(() => {
+    const cls = classes.find((c) => c.id === classId);
+    return cls ? (cls.name ?? '') : '';
+  }, [classes, classId]);
+
+  // Auto-génération du nom : "Frais d'inscription — Primaire" ou "Frais de scolarité — CP1"
+  const autoName = useMemo(() => {
+    const target = applyTo === 'class' && classLabel
+      ? classLabel
+      : applyTo === 'level' && levelLabel
+        ? levelLabel
+        : '';
+    const prefix = feeType === 'INSCRIPTION'
+      ? "Frais d'inscription"
+      : feeType === 'REINSCRIPTION'
+        ? 'Frais de réinscription'
+        : feeType === 'TUITION'
+          ? 'Frais de scolarité'
+          : feeType === 'ANNEX'
+            ? 'Frais annexe'
+            : 'Frais exceptionnel';
+    return target ? `${prefix} — ${target}` : prefix;
+  }, [feeType, applyTo, classLabel, levelLabel]);
+
+  // Auto-remplir le nom si l'utilisateur ne l'a pas modifié manuellement
+  useEffect(() => {
+    if (!nameManuallyEdited) {
+      setName(autoName);
+    }
+  }, [autoName, nameManuallyEdited]);
 
   // Installments (tranches)
   const initialInstallments: Installment[] = initialData?.structureInstallments?.length
@@ -186,7 +224,20 @@ export default function FeeStructureModal({
           )}
           <div>
             <Label>Nom du frais</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: Scolarité 4ème" required />
+            <Input
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                setNameManuallyEdited(true);
+              }}
+              placeholder="Auto-généré selon le type et la cible"
+              required
+            />
+            {!nameManuallyEdited && (
+              <p className="text-xs text-blue-600 mt-1">
+                💡 Le nom se remplit automatiquement. Vous pouvez le personnaliser.
+              </p>
+            )}
           </div>
           <div>
             <Label>Montant total (XOF)</Label>

@@ -58,7 +58,7 @@ class FinanceService {
     if (tenantId) {
       return updateEntityOffline(tenantId, 'FEE_STRUCTURE', id, data);
     }
-    return apiFetch(`${BASE_URL}/fee-structures/${id}`, { method: 'PUT', body: data });
+    return apiFetch(`${BASE_URL}/fee-structures/${id}`, { method: 'PATCH', body: data });
   }
 
   async deleteFeeStructure(id: string): Promise<any> {

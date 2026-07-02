@@ -275,6 +275,7 @@ export class StudentsPrismaService {
       nationality?: string;
       primaryLanguage?: string;
       npi?: string;
+      photoUrl?: string;
       status?: string;
     }
   ) {

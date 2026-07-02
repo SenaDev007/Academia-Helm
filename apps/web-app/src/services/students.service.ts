@@ -242,12 +242,10 @@ class StudentsService {
    * Met à jour un étudiant
    */
   async update(id: string, data: any): Promise<any> {
-    const tenantId = getTenantId();
-    if (tenantId) {
-      return updateEntityOffline(tenantId, "STUDENT", id, data);
-    }
-    
-    // Fallback si tenantId non trouvé
+    // ⚠️ Utiliser directement l'API (pas le mode offline) pour les mises à jour d'élèves.
+    // Le mode offline échoue si l'élève n'est pas dans la DB locale IndexedDB
+    // (ex: élève créé via l'admission, pas via le mode offline).
+    // L'API PATCH transmet directement au backend qui met à jour en DB PostgreSQL.
     return apiFetch(`${BASE_URL}/${encodeURIComponent(id)}`, {
       method: "PATCH",
       body: data,

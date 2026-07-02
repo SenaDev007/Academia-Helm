@@ -16,8 +16,6 @@ import { classesService } from '@/services/classes.service';
 import { getAcademicYears } from '@/services/settings.service';
 import FeeStructureModal from './FeeStructureModal';
 import FeeOverrideModal from './FeeOverrideModal';
-import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
-import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
 import { formatCurrency } from '@/lib/utils';
 import { filterAndSortClasses } from '@/lib/finance/class-sort';
 
@@ -31,8 +29,7 @@ const FEE_TYPES = [
 
 export default function FeeStructuresContent() {
   const confirmDialog = useConfirmDialog();
-  const { academicYear, tenantId } = useModuleContext();
-  const syncStatuses = useEntitySyncStatusBatch('FEE_STRUCTURE', tenantId ?? undefined);
+  const { academicYear } = useModuleContext();
   const { toast } = useToast();
   const [structures, setStructures] = useState<any[]>([]);
   const [levels, setLevels] = useState<any[]>([]);
@@ -224,9 +221,10 @@ export default function FeeStructuresContent() {
         </div>
 
         {/* Tableau des frais */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow>
+            <TableRow className="bg-gray-50">
               <TableHead>Nom du frais</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Appliqué à</TableHead>
@@ -234,20 +232,19 @@ export default function FeeStructuresContent() {
               <TableHead>Tranches</TableHead>
               <TableHead>Oblig.</TableHead>
               <TableHead>Statut</TableHead>
-              <TableHead>Sync</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-gray-500 py-8">
+                <TableCell colSpan={8} className="text-center text-gray-500 py-8">
                   Chargement...
                 </TableCell>
               </TableRow>
             ) : structures.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-gray-500 py-12">
+                <TableCell colSpan={8} className="text-center text-gray-500 py-12">
                   <div className="flex flex-col items-center gap-3">
                     <Plus className="w-10 h-10 text-slate-300" />
                     <p>Aucun frais configuré pour cette année scolaire.</p>
@@ -292,9 +289,6 @@ export default function FeeStructuresContent() {
                       {s.isActive ? 'Actif' : 'Inactif'}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-center">
-                    <EntitySyncIndicator variant="dot" status={syncStatuses[s.id] ?? 'UNKNOWN'} />
-                  </TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="icon" onClick={() => setEditingFee(s)} title="Modifier">
                       <Pencil className="h-4 w-4" />
@@ -305,6 +299,7 @@ export default function FeeStructuresContent() {
             )}
           </TableBody>
         </Table>
+        </div>
       </ModuleContentArea>
 
       {modalNewFee && (

@@ -201,10 +201,10 @@ export default function CashRegistersContent() {
             </Button>
           </div>
         ) : (
-          <div className="bg-white rounded-lg border">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
             <Table>
               <TableHeader>
-                <TableRow>
+                <TableRow className="bg-gray-50">
                   <TableHead>Code</TableHead>
                   <TableHead>Nom</TableHead>
                   <TableHead>Emplacement</TableHead>

@@ -13,13 +13,10 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/components/ui/use-toast';
 import { financeService } from '@/services/finance.service';
-import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
-import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
 import { formatCurrency } from '@/lib/utils';
 
 export default function RecoveryRemindersContent() {
-  const { academicYear, tenantId } = useModuleContext();
-  const syncStatuses = useEntitySyncStatusBatch('PAYMENT', tenantId ?? undefined);
+  const { academicYear } = useModuleContext();
   const { toast } = useToast();
   const [reminders, setReminders] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -109,40 +106,40 @@ export default function RecoveryRemindersContent() {
           <span className="text-sm text-gray-600">Année : {academicYear?.label ?? '—'}</span>
         </div>
 
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow>
+            <TableRow className="bg-gray-50">
               <TableHead>Élève</TableHead>
-              <TableHead>Solde</TableHead>
+              <TableHead className="text-right">Solde dû</TableHead>
               <TableHead>Niveau</TableHead>
               <TableHead>Canal</TableHead>
               <TableHead>Date</TableHead>
-              <TableHead>Sync</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={5} className="text-center text-gray-500">Chargement...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={5} className="text-center text-gray-500 py-8">Chargement...</TableCell></TableRow>
             ) : reminders.length === 0 ? (
-              <TableRow><TableCell colSpan={5} className="text-center text-gray-500">Aucune relance.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={5} className="text-center text-gray-500 py-12">Aucune relance envoyée.</TableCell></TableRow>
             ) : (
               reminders.map((r) => (
-                <TableRow key={r.id}>
-                  <TableCell>
+                <TableRow key={r.id} className="hover:bg-slate-50">
+                  <TableCell className="font-medium">
                     {r.studentAccount?.student ? `${r.studentAccount.student.lastName} ${r.studentAccount.student.firstName}` : r.studentAccountId}
                   </TableCell>
-                  <TableCell>{formatCurrency(r.amountDue)}</TableCell>
+                  <TableCell className="text-right font-semibold">{formatCurrency(r.amountDue)}</TableCell>
                   <TableCell>{levelBadge(r.reminderLevel)}</TableCell>
-                  <TableCell>{r.sentVia}</TableCell>
-                  <TableCell>{r.sentAt ? new Date(r.sentAt).toLocaleDateString('fr-FR') : '—'}</TableCell>
-                  <TableCell className="text-center">
-                    <EntitySyncIndicator variant="dot" status={syncStatuses[r.id] ?? 'UNKNOWN'} />
+                  <TableCell>
+                    <Badge variant="outline">{r.sentVia}</Badge>
                   </TableCell>
+                  <TableCell className="text-sm text-gray-600">{r.sentAt ? new Date(r.sentAt).toLocaleDateString('fr-FR') : '—'}</TableCell>
                 </TableRow>
               ))
             )}
           </TableBody>
         </Table>
+        </div>
       </ModuleContentArea>
 
       {manualModal && (

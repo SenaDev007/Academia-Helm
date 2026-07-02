@@ -45,13 +45,13 @@ export default function FinanceAuditContent() {
           </p>
         </div>
 
-        <div className="bg-white rounded-lg border">
-          <div className="p-4 border-b">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-gray-100">
             <h3 className="font-semibold text-slate-900">Anomalies détectées</h3>
           </div>
           <Table>
             <TableHeader>
-              <TableRow>
+              <TableRow className="bg-gray-50">
                 <TableHead>Type</TableHead>
                 <TableHead>Gravité</TableHead>
                 <TableHead>Référence</TableHead>
@@ -93,13 +93,13 @@ export default function FinanceAuditContent() {
           </Table>
         </div>
 
-        <div className="bg-white rounded-lg border">
-          <div className="p-4 border-b">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-gray-100">
             <h3 className="font-semibold text-slate-900">Historique audit</h3>
           </div>
           <Table>
             <TableHeader>
-              <TableRow>
+              <TableRow className="bg-gray-50">
                 <TableHead>Entité</TableHead>
                 <TableHead>Action</TableHead>
                 <TableHead>Par</TableHead>

@@ -41,8 +41,14 @@ export async function GET(
     url.searchParams.append('academicYearId', academicYearId);
 
     const headers = await getProxyAuthHeaders(request);
+    // On ne veut pas forcer Accept: application/json pour une réponse binaire
+    delete (headers as any)['Accept'];
 
-    const response = await fetch(normalizeApiUrl(url.toString()), { headers });
+    const response = await fetch(normalizeApiUrl(url.toString()), {
+      method: 'GET',
+      headers,
+      cache: 'no-store',
+    });
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => 'Unknown error');
@@ -53,24 +59,21 @@ export async function GET(
       );
     }
 
-    // Stream le PDF binaire vers le client
-    const pdfBuffer = await response.arrayBuffer();
-    const responseHeaders = new Headers();
-    responseHeaders.set('Content-Type', 'application/pdf');
+    // ⚠️ Utiliser Buffer.from(arrayBuffer) comme la route admission document download
+    // qui fonctionne. Passer l'ArrayBuffer brut à NextResponse peut corrompre le PDF.
+    const contentType = response.headers.get('content-type') || 'application/pdf';
+    const contentDisposition = response.headers.get('content-disposition') || 'inline; filename="liste_classe.pdf"';
+    const buffer = Buffer.from(await response.arrayBuffer());
 
-    // Transmettre le Content-Disposition du backend (nom de fichier)
-    const cd = response.headers.get('Content-Disposition');
-    if (cd) {
-      responseHeaders.set('Content-Disposition', cd);
-    } else {
-      responseHeaders.set('Content-Disposition', `inline; filename="liste_classe.pdf"`);
-    }
-
-    responseHeaders.set('Content-Length', String(pdfBuffer.byteLength));
-
-    return new NextResponse(pdfBuffer, {
+    return new NextResponse(buffer, {
       status: 200,
-      headers: responseHeaders,
+      headers: {
+        'Content-Type': contentType,
+        'Content-Disposition': contentDisposition,
+        'Content-Length': String(buffer.length),
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+      },
     });
   } catch (error) {
     console.error('Error generating class list PDF:', error);

@@ -13,6 +13,7 @@ import { fr } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FormModal, ConfirmModal, ReadOnlyModal } from '@/components/modules/blueprint';
 import AdmissionForm from './AdmissionForm';
+import DocumentPreviewModal from './DocumentPreviewModal';
 import { toast } from '@/components/ui/toast';
 import { studentsService } from '@/services/students.service';
 import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
@@ -1398,65 +1399,10 @@ export default function AdmissionsContent() {
 
       {/* ─── MODAL DE VISUALISATION (data URL directe — pas de fetch nécessaire) ─── */}
       {previewDoc && (
-        <div
-          className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={() => setPreviewDoc(null)}
-        >
-          <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col overflow-hidden"
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="p-2 bg-blue-50 rounded-lg shrink-0">
-                  <FileText className="w-5 h-5 text-blue-600" />
-                </div>
-                <div className="min-w-0">
-                  <h3 className="text-sm font-bold text-slate-800 truncate">{previewDoc.fileName}</h3>
-                  <p className="text-[10px] text-slate-400">{previewDoc.mimeType}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {/* Télécharger : créer un <a> avec le data URL directement */}
-                <a
-                  href={previewDoc.filePath}
-                  download={previewDoc.fileName}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 transition"
-                  title="Télécharger"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  Télécharger
-                </a>
-                <button
-                  onClick={() => setPreviewDoc(null)}
-                  className="p-2 hover:bg-slate-200 rounded-lg text-slate-500 transition"
-                  title="Fermer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-            {/* Body — iframe avec data URL directement (pas de fetch, pas d'auth) */}
-            <div className="flex-1 overflow-hidden bg-slate-100">
-              {previewDoc.mimeType.startsWith('image/') ? (
-                <div className="flex items-center justify-center h-full p-4">
-                  <img
-                    src={previewDoc.filePath}
-                    alt={previewDoc.fileName}
-                    className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
-                  />
-                </div>
-              ) : (
-                <iframe
-                  src={previewDoc.filePath}
-                  className="w-full h-full border-0"
-                  title={previewDoc.fileName}
-                />
-              )}
-            </div>
-          </div>
-        </div>
+        <DocumentPreviewModal
+          doc={previewDoc}
+          onClose={() => setPreviewDoc(null)}
+        />
       )}
 
       {/* Modal de confirmation personnalisé (remplace window.confirm) */}

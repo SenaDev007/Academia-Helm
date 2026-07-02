@@ -810,10 +810,30 @@ export class StudentsLifecycleService {
     userId?: string,
   ) {
     const now = new Date();
+
+    // 1. Mettre à jour le statut de l'élève (student.status)
     await this.prisma.student.updateMany({
       where: {
         tenantId,
         id: { in: data.studentIds },
+      },
+      data: {
+        status: data.status,
+        updatedAt: now,
+      },
+    });
+
+    // 2. ⚠️ Mettre aussi à jour le statut de l'enrollment (studentEnrollment.status)
+    //    Le frontend affiche enr.status, pas student.status. Sans cette mise à jour,
+    //    l'élève reste "Pré-inscrit" visuellement même après validation.
+    //    On mappe ACTIVE → ACTIVE pour l'enrollment (PRE_REGISTERED → ACTIVE).
+    await this.prisma.studentEnrollment.updateMany({
+      where: {
+        tenantId,
+        studentId: { in: data.studentIds },
+        // Ne mettre à jour que les enrollments qui ne sont pas déjà dans le statut cible
+        // et qui ne sont pas WITHDRAWN/TRANSFERRED
+        status: { notIn: ['WITHDRAWN', 'TRANSFERRED', data.status] },
       },
       data: {
         status: data.status,

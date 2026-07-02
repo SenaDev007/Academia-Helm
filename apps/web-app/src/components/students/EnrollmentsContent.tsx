@@ -48,6 +48,14 @@ interface Enrollment {
     studentCode?: string;
     status?: string;
     isActive?: boolean;
+    dateOfBirth?: string | null;
+    gender?: string | null;
+    nationality?: string | null;
+    placeOfBirth?: string | null;
+    address?: string | null;
+    photoUrl?: string | null;
+    npi?: string | null;
+    schoolLevelId?: string;
   };
   class?: { id: string; name: string; schoolLevelId?: string };
   enrollmentType: string;
@@ -1208,21 +1216,18 @@ export default function EnrollmentsContent() {
             academicYearId={academicYear.id}
             schoolLevelId={schoolLevel.id}
             initialData={{
-              student: {
-                firstName: editEnrollment.student.firstName,
-                lastName: editEnrollment.student.lastName,
-                matricule: editEnrollment.student.matricule || undefined,
-                studentCode: editEnrollment.student.studentCode,
-                gender: editEnrollment.student.gender as any,
-                dateOfBirth: undefined,
-                nationality: undefined,
-                placeOfBirth: undefined,
-                photoUrl: undefined,
-              },
+              firstName: editEnrollment.student.firstName || '',
+              lastName: editEnrollment.student.lastName || '',
+              matricule: editEnrollment.student.matricule || undefined,
+              studentCode: editEnrollment.student.studentCode,
+              gender: (editEnrollment.student.gender as any) || '',
+              dateOfBirth: editEnrollment.student.dateOfBirth || '',
+              nationality: editEnrollment.student.nationality || '',
+              placeOfBirth: editEnrollment.student.placeOfBirth || '',
+              address: editEnrollment.student.address || '',
+              photoUrl: editEnrollment.student.photoUrl || '',
+              npi: editEnrollment.student.npi || '',
               classId: editEnrollment.class?.id,
-              operation: 'PRE_REGISTER' as const,
-              feeProfile: { feeRegimeId: undefined, justification: undefined },
-              guardians: [],
             }}
             onSubmit={async (data) => {
               try {
@@ -1232,6 +1237,11 @@ export default function EnrollmentsContent() {
                   academicYearId: academicYear.id,
                   schoolLevelId: schoolLevel.id,
                 });
+                // Mettre à jour la classe si elle a changé
+                if (data.classId && data.classId !== editEnrollment.class?.id) {
+                  await studentsService.changeClass(editEnrollment.student.id, academicYear.id, data.classId);
+                }
+                // Ajouter les guardians s'il y en a
                 if (data.guardians?.length) {
                   for (const g of data.guardians) {
                     if (!g.firstName?.trim() && !g.lastName?.trim()) continue;
@@ -1243,6 +1253,15 @@ export default function EnrollmentsContent() {
                       }],
                     }).catch(() => undefined);
                   }
+                }
+                // Régime financier si fourni
+                if (data.feeProfile?.feeRegimeId) {
+                  await financeService.createStudentFeeProfile({
+                    studentId: editEnrollment.student.id,
+                    academicYearId: academicYear.id,
+                    feeRegimeId: data.feeProfile.feeRegimeId,
+                    justification: data.feeProfile.justification,
+                  }).catch(() => undefined);
                 }
                 toast({ title: '✅ Inscription mise à jour', variant: 'success' });
                 setEditEnrollment(null);

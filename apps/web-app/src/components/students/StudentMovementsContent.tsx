@@ -60,10 +60,10 @@ export default function StudentMovementsContent() {
   const [isProcessing, setIsProcessing] = useState(false);
   // Transfert inter-écoles
   const [transferSearchQuery, setTransferSearchQuery] = useState('');
-  const [transferSearchResults, setTransferSearchResults] = useState<any[]>([]);
+  const [allSchools, setAllSchools] = useState<any[]>([]);
   const [transferSelectedSchool, setTransferSelectedSchool] = useState<any | null>(null);
   const [transferExternalSchoolName, setTransferExternalSchoolName] = useState('');
-  const [isSearchingSchools, setIsSearchingSchools] = useState(false);
+  const [isLoadingSchools, setIsLoadingSchools] = useState(false);
 
   useEffect(() => {
     if (academicYear) loadData();
@@ -175,29 +175,40 @@ export default function StudentMovementsContent() {
     setActionReason('');
     setTransferSelectedSchool(null);
     setTransferExternalSchoolName('');
-    setTransferSearchResults([]);
+    setTransferSearchQuery('');
+    if (type === 'transfer') {
+      loadAllSchools();
+    }
   };
 
-  // Rechercher des écoles sur Academia Helm
-  const searchSchools = async (query: string) => {
-    setTransferSearchQuery(query);
-    if (!query.trim() || query.trim().length < 2) {
-      setTransferSearchResults([]);
-      return;
-    }
-    setIsSearchingSchools(true);
+  // Charger toutes les écoles sur Academia Helm à l'ouverture du modal de transfert
+  const loadAllSchools = async () => {
+    if (allSchools.length > 0) return; // déjà chargé
+    setIsLoadingSchools(true);
     try {
-      const res = await fetch(`/api/public/schools?search=${encodeURIComponent(query)}`, { credentials: 'include' });
+      const res = await fetch('/api/public/schools/list', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
-        setTransferSearchResults(Array.isArray(data) ? data : (data?.schools || []));
+        const schools = Array.isArray(data) ? data : (data?.schools || []);
+        setAllSchools(schools);
       }
     } catch {
-      setTransferSearchResults([]);
+      setAllSchools([]);
     } finally {
-      setIsSearchingSchools(false);
+      setIsLoadingSchools(false);
     }
   };
+
+  // Filtrer les écoles localement selon la recherche
+  const filteredSchools = useMemo(() => {
+    if (!transferSearchQuery.trim()) return allSchools;
+    const q = transferSearchQuery.toLowerCase();
+    return allSchools.filter(s =>
+      (s.name || '').toLowerCase().includes(q) ||
+      (s.subdomain || '').toLowerCase().includes(q) ||
+      (s.slug || '').toLowerCase().includes(q)
+    );
+  }, [allSchools, transferSearchQuery]);
 
   return (
     <div className="flex flex-col h-full space-y-4 animate-in fade-in duration-500">
@@ -368,40 +379,47 @@ export default function StudentMovementsContent() {
 
               {actionType === 'transfer' && (
                 <div className="space-y-4">
-                  {/* Recherche d'école sur Academia Helm */}
+                  {/* Sélecteur d'école sur Academia Helm avec recherche */}
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      Rechercher une école sur Academia Helm
+                      École de destination (sur Academia Helm)
                     </label>
+                    {/* Champ de recherche */}
                     <input
                       type="text"
                       value={transferSearchQuery}
-                      onChange={(e) => searchSchools(e.target.value)}
-                      placeholder="Nom de l'école de destination..."
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      onChange={(e) => setTransferSearchQuery(e.target.value)}
+                      placeholder="Rechercher une école..."
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
                     />
-                    {isSearchingSchools && <p className="text-xs text-slate-400 mt-1">Recherche...</p>}
-                    {transferSearchResults.length > 0 && (
-                      <div className="mt-2 border border-slate-200 rounded-lg max-h-40 overflow-y-auto">
-                        {transferSearchResults.map(school => (
+                    {/* Liste des écoles filtrées */}
+                    {isLoadingSchools ? (
+                      <p className="text-xs text-slate-400 py-3 text-center">Chargement des écoles...</p>
+                    ) : filteredSchools.length > 0 ? (
+                      <div className="border border-slate-200 rounded-lg max-h-48 overflow-y-auto">
+                        {filteredSchools.map(school => (
                           <button
                             key={school.id}
                             onClick={() => {
                               setTransferSelectedSchool(school);
                               setTransferExternalSchoolName('');
-                              setTransferSearchResults([]);
-                              setTransferSearchQuery(school.name);
                             }}
                             className={cn(
-                              'w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition',
+                              'w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition border-b border-slate-50 last:border-b-0',
                               transferSelectedSchool?.id === school.id && 'bg-blue-50 font-semibold text-blue-700',
                             )}
                           >
-                            {school.name}
-                            {school.subdomain && <span className="text-xs text-slate-400 ml-2">{school.subdomain}</span>}
+                            <span>{school.name}</span>
+                            {school.subdomain && (
+                              <span className="text-xs text-slate-400 ml-2">{school.subdomain}</span>
+                            )}
                           </button>
                         ))}
                       </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 py-2">
+                        {allSchools.length === 0 ? 'Aucune école trouvée.' : 'Aucune école ne correspond à votre recherche.'}
+                      </p>
                     )}
                     {transferSelectedSchool && (
                       <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-100">
@@ -417,7 +435,7 @@ export default function StudentMovementsContent() {
 
                   {/* OU école externe */}
                   {!transferSelectedSchool && (
-                    <div>
+                    <div className="pt-2 border-t border-slate-100">
                       <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                         Ou nom de l'école (si non sur Academia Helm)
                       </label>

@@ -542,6 +542,7 @@ export default function StudentEnrollmentForm({
     try {
       if (autoSavedStudentId) {
         // Édition : mettre à jour à chaque étape
+        // ⚠️ Pas de _isFinalSubmit → le parent ne fermera pas le modal
         await onSubmit({
           operation,
           student: {
@@ -562,8 +563,6 @@ export default function StudentEnrollmentForm({
         saved = true;
 
         // ── Sauvegarder la photo dès l'étape 2 (upload OU capture) ──
-        // On appelle l'endpoint dédié upload-photo au passage de l'étape 2,
-        // sans attendre le bouton "Enregistrer" final.
         if (step === 2 && formData.photoUrl && formData.photoUrl.startsWith('data:')) {
           try {
             await studentsService.uploadPhoto(autoSavedStudentId, formData.photoUrl);
@@ -572,8 +571,12 @@ export default function StudentEnrollmentForm({
           }
         }
       }
-    } catch (e) {
-      console.warn('[AutoSave] Étape', step, 'échec:', e);
+    } catch (e: any) {
+      // La sauvegarde a échoué — afficher l'erreur et ne pas passer à l'étape suivante
+      console.warn('[AutoSave] Étape', step, 'échec:', e?.message);
+      setStepSavedMessage(null);
+      // Ne pas bloquer le passage à l'étape suivante — l'erreur est non critique
+      // (l'utilisateur pourra corriger plus tard)
     }
 
     // Message visuel de confirmation
@@ -643,6 +646,7 @@ export default function StudentEnrollmentForm({
         classId: formData.classId || undefined,
         // Documents uploadés à l'étape 4
         documents: uploadedDocs,
+        _isFinalSubmit: true, // ← indique au onSubmit parent que c'est le bouton "Enregistrer"
       });
     } catch (err: any) {
       setError(err.message || 'Erreur lors de l\'inscription');

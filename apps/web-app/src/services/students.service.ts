@@ -242,9 +242,11 @@ class StudentsService {
    * Met à jour un étudiant
    */
   async update(id: string, data: any): Promise<any> {
-    // ⚠️ Utiliser directement l'API (pas le mode offline) pour les mises à jour d'élèves.
+    // ⚠️ Le backend StudentsPrismaController utilise @Put(':id'), pas @Patch.
+    // L'ancien StudentsController a @Patch mais il peut être shadowé par le Prisma controller.
+    // On utilise PUT pour être sûr d'atteindre le bon endpoint.
     return apiFetch(`${BASE_URL}/${encodeURIComponent(id)}`, {
-      method: "PATCH",
+      method: "PUT",
       body: data,
     });
   }

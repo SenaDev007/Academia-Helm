@@ -55,7 +55,8 @@ export class ClassListPdfService {
         tenantId,
         classId,
         academicYearId,
-        status: { in: ['ACTIVE', 'VALIDATED', 'ADMITTED', 'RE_ENROLLED'] },
+        // Inclure tous les statuts sauf WITHDRAWN et TRANSFERRED
+        status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] },
       },
       include: {
         student: {
@@ -156,12 +157,12 @@ export class ClassListPdfService {
       ? `Ministère de l'Enseignement Secondaire, de la Formation Technique et Professionnelle, de la Reconversion et de l'Insertion des Jeunes`
       : `Ministère des Enseignements Maternel et Primaire`;
 
-    const logoBlock = data.schoolLogo
-      ? `<img src="${data.schoolLogo}" alt="Logo" style="max-height:70px;max-width:70px;object-fit:contain;" />`
-      : `<div style="width:70px;height:70px;border:2px solid #ccc;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:bold;color:#999;">${(data.schoolName || 'EC').substring(0, 2).toUpperCase()}</div>`;
+    // Drapeau du Bénin en SVG data URL (vert | jaune/rouge)
+    const beninFlagSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="40" viewBox="0 0 75 50"><rect width="30" height="50" fill="#008751"/><rect x="30" width="45" height="25" fill="#FCD116"/><rect x="30" y="25" width="45" height="25" fill="#E8112D"/></svg>`;
+    const beninFlag = `data:image/svg+xml;base64,${Buffer.from(beninFlagSvg).toString('base64')}`;
 
     const contactInfo = [
-      data.schoolSlogan ? `<em>« ${data.schoolSlogan} »</em>` : null,
+      data.schoolSlogan ? `« ${data.schoolSlogan} »` : null,
       data.schoolAddress,
       data.schoolPhone ? `Tél : ${data.schoolPhone}` : null,
       data.schoolEmail ? `Email : ${data.schoolEmail}` : null,
@@ -170,11 +171,11 @@ export class ClassListPdfService {
     const rows = data.students.length > 0
       ? data.students.map(s => `
         <tr>
-          <td style="text-align:center;padding:6px 8px;border:1px solid #ddd;">${s.num}</td>
-          <td style="padding:6px 8px;border:1px solid #ddd;font-weight:600;">${s.name}</td>
-          <td style="text-align:center;padding:6px 8px;border:1px solid #ddd;font-family:monospace;font-size:11px;">${s.matricule}</td>
-          <td style="text-align:center;padding:6px 8px;border:1px solid #ddd;">${s.gender}</td>
-          <td style="text-align:center;padding:6px 8px;border:1px solid #ddd;">${s.dateOfBirth}</td>
+          <td style="text-align:center;padding:8px 10px;border:1px solid #ddd;">${s.num}</td>
+          <td style="padding:8px 10px;border:1px solid #ddd;font-weight:600;">${s.name}</td>
+          <td style="text-align:center;padding:8px 10px;border:1px solid #ddd;font-family:monospace;font-size:11px;">${s.matricule}</td>
+          <td style="text-align:center;padding:8px 10px;border:1px solid #ddd;">${s.gender}</td>
+          <td style="text-align:center;padding:8px 10px;border:1px solid #ddd;">${s.dateOfBirth}</td>
         </tr>
       `).join('')
       : `<tr><td colspan="5" style="text-align:center;padding:20px;border:1px solid #ddd;color:#999;">Aucun élève inscrit dans cette classe</td></tr>`;
@@ -186,27 +187,69 @@ export class ClassListPdfService {
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Times New Roman', Georgia, serif; color: #1a1a1a; font-size: 13px; }
-  .header { text-align: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #0D1F6E; }
+
+  /* ── En-tête officiel ── */
+  .header { margin-bottom: 20px; padding-bottom: 12px; border-bottom: 3px double #0D1F6E; }
   .header-table { width: 100%; border-collapse: collapse; }
-  .header-table td { vertical-align: middle; padding: 5px; }
-  .header-left { text-align: left; width: 25%; }
-  .header-center { text-align: center; width: 50%; }
-  .header-right { text-align: right; width: 25%; }
-  .republique { font-size: 14px; font-weight: bold; text-transform: uppercase; }
-  .ministere { font-size: 11px; font-style: italic; margin-top: 2px; }
-  .school-name { font-size: 16px; font-weight: bold; text-transform: uppercase; margin-top: 4px; }
-  .school-info { font-size: 10px; color: #555; margin-top: 2px; }
-  .document-title { text-align: center; font-size: 18px; font-weight: bold; text-transform: uppercase; margin: 25px 0 15px; color: #0D1F6E; }
-  .class-info { text-align: center; font-size: 14px; margin-bottom: 20px; }
-  .class-info strong { font-size: 16px; }
-  table.students { width: 100%; border-collapse: collapse; margin-top: 10px; }
-  table.students th { background: #0D1F6E; color: #fff; padding: 8px; border: 1px solid #0D1F6E; font-size: 12px; text-transform: uppercase; }
+  .header-table td { vertical-align: middle; padding: 4px 8px; }
+  .header-left { text-align: center; width: 18%; }
+  .header-center { text-align: center; width: 64%; }
+  .header-right { text-align: center; width: 18%; }
+
+  .republique {
+    font-size: 14px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .divider {
+    margin: 6px auto; width: 60%;
+    border: none; border-top: 1px solid #0D1F6E;
+    text-align: center;
+  }
+  .divider::after {
+    content: '◆'; font-size: 8px; color: #0D1F6E;
+    position: relative; top: -6px; background: #fff; padding: 0 6px;
+  }
+  .ministere {
+    font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.3px;
+    line-height: 1.4;
+  }
+  .school-name {
+    font-size: 15px; font-weight: bold; text-transform: uppercase;
+    margin-top: 6px; line-height: 1.3;
+  }
+  .school-info {
+    font-size: 10px; color: #555; margin-top: 4px; line-height: 1.4;
+  }
+
+  /* ── Titre du document ── */
+  .document-title {
+    text-align: center; font-size: 18px; font-weight: bold;
+    text-transform: uppercase; margin: 25px 0 15px; color: #0D1F6E;
+    text-decoration: underline; text-underline-offset: 4px;
+  }
+
+  /* ── Infos classe (3 colonnes) ── */
+  .class-info {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 13px; margin-bottom: 20px; padding: 0 5px;
+  }
+  .class-info-left { text-align: left; font-weight: 600; }
+  .class-info-center { text-align: center; font-weight: 600; }
+  .class-info-right { text-align: right; font-weight: 600; }
+
+  /* ── Tableau ── */
+  table.students { width: 100%; border-collapse: collapse; margin-top: 5px; }
+  table.students th {
+    background: #0D1F6E; color: #fff; padding: 8px;
+    border: 1px solid #0D1F6E; font-size: 12px; text-transform: uppercase;
+  }
   table.students td { font-size: 12px; }
   table.students tr:nth-child(even) { background: #f8fafc; }
+
+  /* ── Footer ── */
   .footer { margin-top: 30px; text-align: center; font-size: 10px; color: #999; border-top: 1px solid #eee; padding-top: 10px; }
-  .signature { margin-top: 40px; display: flex; justify-content: space-between; }
+  .signature { margin-top: 50px; display: flex; justify-content: space-between; }
   .signature-block { text-align: center; font-size: 12px; }
-  .signature-line { margin-top: 50px; border-top: 1px solid #333; width: 200px; margin-left: auto; margin-right: auto; }
+  .signature-line { margin-top: 45px; border-top: 1px solid #333; width: 200px; margin-left: auto; margin-right: auto; }
 </style>
 </head>
 <body>
@@ -214,14 +257,20 @@ export class ClassListPdfService {
   <div class="header">
     <table class="header-table">
       <tr>
-        <td class="header-left">${logoBlock}</td>
+        <td class="header-left">
+          <img src="${beninFlag}" alt="Drapeau du Bénin" style="width:50px;height:34px;" />
+        </td>
         <td class="header-center">
           <div class="republique">République du Bénin</div>
+          <hr class="divider" />
           <div class="ministere">${ministry}</div>
+          <hr class="divider" />
           <div class="school-name">${data.schoolName || 'Établissement'}</div>
-          <div class="school-info">${contactInfo}</div>
+          ${contactInfo ? `<div class="school-info">${contactInfo}</div>` : ''}
         </td>
-        <td class="header-right">${logoBlock}</td>
+        <td class="header-right">
+          <img src="${beninFlag}" alt="Drapeau du Bénin" style="width:50px;height:34px;" />
+        </td>
       </tr>
     </table>
   </div>
@@ -229,11 +278,11 @@ export class ClassListPdfService {
   <!-- TITRE DU DOCUMENT -->
   <div class="document-title">Liste des Élèves</div>
 
-  <!-- INFOS CLASSE -->
+  <!-- INFOS CLASSE — 3 colonnes alignées -->
   <div class="class-info">
-    Classe : <strong>${data.className}</strong><br/>
-    Année scolaire : <strong>${data.academicYearName}</strong><br/>
-    Effectif : <strong>${data.students.length}</strong> élève(s)
+    <span class="class-info-left">Classe : ${data.className}</span>
+    <span class="class-info-center">Effectif : ${data.students.length} élève(s)</span>
+    <span class="class-info-right">Année scolaire : ${data.academicYearName}</span>
   </div>
 
   <!-- TABLEAU DES ÉLÈVES -->

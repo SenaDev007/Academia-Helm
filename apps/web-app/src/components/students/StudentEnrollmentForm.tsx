@@ -59,6 +59,70 @@ interface StudentEnrollmentFormProps {
   initialData?: any;
 }
 
+// ─── Composant DocumentUpload (inline) ───────────────────────────────
+// Zone d'upload simple pour les documents de l'étape 4
+function DocumentUpload({
+  label,
+  description,
+  accept,
+  onFileSelect,
+  uploadedFile,
+  optional,
+}: {
+  label: string;
+  description: string;
+  accept: string;
+  onFileSelect: (file: File | null) => void;
+  uploadedFile?: { fileName: string; fileSize: number } | null;
+  optional?: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  return (
+    <div className="border border-gray-200 rounded-lg p-4">
+      <div className="flex items-center justify-between mb-2">
+        <label className="text-sm font-medium text-gray-700">
+          {label}
+          {optional && <span className="text-gray-400 font-normal ml-1">(optionnel)</span>}
+        </label>
+        {uploadedFile && (
+          <span className="text-xs text-emerald-600 font-medium flex items-center gap-1">
+            <CheckCircle className="w-3.5 h-3.5" />
+            {uploadedFile.fileName} ({Math.round(uploadedFile.fileSize / 1024)} Ko)
+          </span>
+        )}
+      </div>
+      <p className="text-xs text-gray-500 mb-3">{description}</p>
+      <div className="flex gap-2">
+        <input
+          ref={inputRef}
+          type="file"
+          accept={accept}
+          className="sr-only"
+          onChange={(e) => onFileSelect(e.target.files?.[0] || null)}
+        />
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className="px-3 py-2 text-sm font-medium text-blue-600 border border-blue-300 rounded-lg hover:bg-blue-50 inline-flex items-center gap-2"
+        >
+          <Upload className="w-4 h-4" />
+          {uploadedFile ? 'Remplacer' : 'Télécharger'}
+        </button>
+        {uploadedFile && (
+          <button
+            type="button"
+            onClick={() => { onFileSelect(null); if (inputRef.current) inputRef.current.value = ''; }}
+            className="px-3 py-2 text-sm font-medium text-red-500 border border-red-200 rounded-lg hover:bg-red-50 inline-flex items-center gap-2"
+          >
+            <X className="w-4 h-4" />
+            Retirer
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function StudentEnrollmentForm({
   academicYearId,
   schoolLevelId,
@@ -106,7 +170,47 @@ export default function StudentEnrollmentForm({
       email?: string;
       isPrimary?: boolean;
     }>
-  >([]);
+  >(initialData?.guardians || []);
+
+  // Documents uploadés (étape 4)
+  const [uploadedDocs, setUploadedDocs] = useState<{
+    birthCertificate?: { fileName: string; fileDataUrl: string; mimeType: string; fileSize: number } | null;
+    npi?: { fileName: string; fileDataUrl: string; mimeType: string; fileSize: number } | null;
+    lastReportCard?: { fileName: string; fileDataUrl: string; mimeType: string; fileSize: number } | null;
+  }>({});
+
+  // Convertir un File en data URL (base64) pour stockage
+  const fileToDataUrl = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleDocumentUpload = async (docType: 'birthCertificate' | 'npi' | 'lastReportCard', file: File | null) => {
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Le fichier dépasse 5 Mo.');
+      return;
+    }
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      setUploadedDocs(prev => ({
+        ...prev,
+        [docType]: {
+          fileName: file.name,
+          fileDataUrl: dataUrl,
+          mimeType: file.type,
+          fileSize: file.size,
+        },
+      }));
+      setError(null);
+    } catch (e: any) {
+      setError('Erreur lors de la lecture du fichier: ' + e.message);
+    }
+  };
 
   // Régimes disponibles
   const [regimes, setRegimes] = useState<FeeRegime[]>([]);
@@ -478,6 +582,8 @@ export default function StudentEnrollmentForm({
         },
         guardians,
         classId: formData.classId || undefined,
+        // Documents uploadés à l'étape 4
+        documents: uploadedDocs,
       });
     } catch (err: any) {
       setError(err.message || 'Erreur lors de l\'inscription');
@@ -915,7 +1021,7 @@ export default function StudentEnrollmentForm({
         </div>
       )}
 
-      {/* Étape 4 : Documents */}
+      {/* Étape 4 : Documents (upload acte de naissance + NPI) */}
       {step === 4 && (
         <div className="space-y-4">
           <div className="bg-blue-50 border border-blue-200 rounded-md p-4 flex items-start space-x-3">
@@ -925,14 +1031,39 @@ export default function StudentEnrollmentForm({
                 Documents officiels
               </p>
               <p className="text-sm text-blue-700">
-                Vérifiez que vous disposez des documents obligatoires (acte de naissance, photo, pièces d&apos;identité, etc.).
-                Leur numérisation et dépôt se font ensuite dans l&apos;onglet <strong>Documents</strong> du dossier élève.
+                Téléchargez les documents obligatoires. Ils seront stockés dans le dossier de l&apos;élève
+                et accessibles depuis l&apos;onglet <strong>Dossiers Élèves</strong>.
               </p>
             </div>
           </div>
-          <p className="text-sm text-gray-700">
-            Cette étape sert de rappel. Aucune pièce n&apos;est téléchargée ici, pour garder l&apos;inscription rapide.
-          </p>
+
+          {/* Upload Acte de naissance sécurisé */}
+          <DocumentUpload
+            label="Acte de naissance sécurisé"
+            description="PDF ou image (JPG, PNG). Max 5 Mo."
+            accept=".pdf,.jpg,.jpeg,.png,.webp"
+            onFileSelect={(file) => handleDocumentUpload('birthCertificate', file)}
+            uploadedFile={uploadedDocs.birthCertificate}
+          />
+
+          {/* Upload Carte NPI */}
+          <DocumentUpload
+            label="Carte NPI (Numéro Personnel d'Identification)"
+            description="PDF ou image (JPG, PNG). Max 5 Mo."
+            accept=".pdf,.jpg,.jpeg,.png,.webp"
+            onFileSelect={(file) => handleDocumentUpload('npi', file)}
+            uploadedFile={uploadedDocs.npi}
+          />
+
+          {/* Upload Bulletin (optionnel) */}
+          <DocumentUpload
+            label="Bulletin de la classe précédente (optionnel)"
+            description="PDF. Max 5 Mo."
+            accept=".pdf"
+            onFileSelect={(file) => handleDocumentUpload('lastReportCard', file)}
+            uploadedFile={uploadedDocs.lastReportCard}
+            optional
+          />
         </div>
       )}
 

@@ -892,7 +892,11 @@ export class StudentsLifecycleService {
         ...(params.schoolLevelId && { schoolLevelId: params.schoolLevelId }),
       },
       include: {
-        student: true,
+        student: {
+          include: {
+            studentGuardians: { include: { guardian: true } },
+          },
+        },
         class: true,
       },
       orderBy: { enrollmentDate: 'desc' },

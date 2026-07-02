@@ -56,6 +56,17 @@ interface Enrollment {
     photoUrl?: string | null;
     npi?: string | null;
     schoolLevelId?: string;
+    studentGuardians?: Array<{
+      isPrimary?: boolean;
+      guardian: {
+        id: string;
+        firstName?: string;
+        lastName?: string;
+        phone?: string;
+        email?: string;
+        relationship?: string;
+      };
+    }>;
   };
   class?: { id: string; name: string; schoolLevelId?: string };
   enrollmentType: string;
@@ -1228,6 +1239,15 @@ export default function EnrollmentsContent() {
               photoUrl: editEnrollment.student.photoUrl || '',
               npi: editEnrollment.student.npi || '',
               classId: editEnrollment.class?.id,
+              // Pré-remplir les guardians depuis l'admission
+              guardians: (editEnrollment.student.studentGuardians || []).map(sg => ({
+                firstName: sg.guardian?.firstName || '',
+                lastName: sg.guardian?.lastName || '',
+                relationship: sg.guardian?.relationship || 'PARENT',
+                phone: sg.guardian?.phone || '',
+                email: sg.guardian?.email || '',
+                isPrimary: sg.isPrimary ?? false,
+              })),
             }}
             onSubmit={async (data) => {
               try {

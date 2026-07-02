@@ -752,32 +752,25 @@ export default function EnrollmentsContent() {
                               <AnimatePresence>
                                 {isGroupExpanded && (
                                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.15 }} className="overflow-hidden">
-                                    <div className="pl-14 pr-5 py-1">
+                                    <div className="pl-14 pr-5 py-1 overflow-x-auto">
                                       {group.students.map((enr, idx) => {
                                         const statusInfo = STATUS_META[enr.status] || { label: enr.status, color: 'bg-slate-50 text-slate-600 border-slate-200' };
                                         const typeInfo = TYPE_META[enr.enrollmentType] || { label: enr.enrollmentType, color: 'bg-slate-50 text-slate-600' };
                                         return (
-                                          <div key={enr.id} className="flex flex-wrap items-center gap-2 sm:gap-3 py-2.5 px-3 hover:bg-amber-50/40 rounded-lg transition-colors group">
-                                            <span className="text-[10px] font-mono text-slate-400 w-5 sm:w-6 text-right shrink-0">{idx + 1}</span>
+                                          <div key={enr.id} className="flex items-center gap-3 py-2 px-3 hover:bg-amber-50/40 rounded-lg transition-colors group whitespace-nowrap min-w-max">
+                                            <span className="text-[10px] font-mono text-slate-400 w-6 text-right shrink-0">{idx + 1}</span>
                                             <div className="h-8 w-8 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center text-xs font-bold text-amber-600 group-hover:bg-amber-200 group-hover:text-amber-700 transition-colors shrink-0">
                                               {enr.student.lastName[0]}{enr.student.firstName[0]}
                                             </div>
-                                            <div className="flex-1 min-w-0 order-1 sm:order-none w-full sm:w-auto">
-                                              <p className="text-sm font-medium text-slate-800 truncate">{enr.student.lastName.toUpperCase()} {enr.student.firstName}</p>
-                                              <div className="flex items-center gap-1.5 flex-wrap">
-                                                <p className="text-[10px] font-mono text-slate-400">
-                                                  {enr.student.matricule || enr.student.studentCode || '— matricule non généré —'}
-                                                </p>
-                                                {/* Badges sur mobile : inline sous le nom, sur desktop à droite */}
-                                                <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold sm:hidden', typeInfo.color)}>{typeInfo.label}</span>
-                                                <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-bold border sm:hidden', statusInfo.color)}>{statusInfo.label}</span>
-                                                <span className="text-[9px] text-slate-400 sm:hidden">{new Date(enr.enrollmentDate).toLocaleDateString('fr-FR')}</span>
-                                              </div>
+                                            <div className="shrink-0">
+                                              <p className="text-sm font-medium text-slate-800">{enr.student.lastName.toUpperCase()} {enr.student.firstName}</p>
+                                              <p className="text-[10px] font-mono text-slate-400">
+                                                {enr.student.matricule || enr.student.studentCode || '— matricule non généré —'}
+                                              </p>
                                             </div>
-                                            {/* Badges sur desktop seulement */}
-                                            <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0 hidden sm:inline-block', typeInfo.color)}>{typeInfo.label}</span>
-                                            <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-bold border shrink-0 hidden sm:inline-block', statusInfo.color)}>{statusInfo.label}</span>
-                                            <span className="text-[9px] text-slate-400 shrink-0 hidden md:inline">{new Date(enr.enrollmentDate).toLocaleDateString('fr-FR')}</span>
+                                            <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0', typeInfo.color)}>{typeInfo.label}</span>
+                                            <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-bold border shrink-0', statusInfo.color)}>{statusInfo.label}</span>
+                                            <span className="text-[9px] text-slate-400 shrink-0">{new Date(enr.enrollmentDate).toLocaleDateString('fr-FR')}</span>
                                             <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition">
                                               {enr.status === 'PENDING' || enr.status === 'PRE_REGISTERED' || enr.status === 'ADMITTED' ? (
                                                 <button onClick={() => handleValidate(enr.student.id)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600" title="Valider"><CheckCircle className="w-3.5 h-3.5" /></button>
@@ -890,42 +883,32 @@ export default function EnrollmentsContent() {
                                           {filteredStudents.length === 0 ? (
                                             <p className="px-5 py-2 text-xs text-slate-400 italic pl-16">Aucun élève</p>
                                           ) : (
-                                            <div className="pl-14 pr-5 py-1">
+                                            <div className="pl-14 pr-5 py-1 overflow-x-auto">
                                               {filteredStudents.map((enr, idx) => {
                                                 const statusInfo = STATUS_META[enr.status] || { label: enr.status, color: 'bg-slate-50 text-slate-600 border-slate-200' };
                                                 const typeInfo = TYPE_META[enr.enrollmentType] || { label: enr.enrollmentType, color: 'bg-slate-50 text-slate-600' };
                                                 return (
-                                                  <div key={enr.id} className="flex items-start gap-3 py-2.5 px-3 hover:bg-slate-50 rounded-lg transition-colors group">
-                                                    <span className="text-[10px] font-mono text-slate-400 w-6 text-right shrink-0 mt-1">{idx + 1}</span>
+                                                  <div key={enr.id} className="flex items-center gap-3 py-2 px-3 hover:bg-slate-50 rounded-lg transition-colors group whitespace-nowrap min-w-max">
+                                                    <span className="text-[10px] font-mono text-slate-400 w-6 text-right shrink-0">{idx + 1}</span>
                                                     <div className="h-8 w-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-xs font-bold text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors shrink-0">
                                                       {enr.student.lastName[0]}{enr.student.firstName[0]}
                                                     </div>
-                                                    <div className="flex-1 min-w-0">
-                                                      {/* Ligne 1 : Nom + matricule */}
-                                                      <div className="flex items-center justify-between gap-2">
-                                                        <p className="text-sm font-medium text-slate-800 truncate">{enr.student.lastName.toUpperCase()} {enr.student.firstName}</p>
-                                                        {/* Actions — desktop only (hover) */}
-                                                        <div className="hidden sm:flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition">
-                                                          {enr.status === 'PENDING' || enr.status === 'PRE_REGISTERED' || enr.status === 'ADMITTED' ? (
-                                                            <button onClick={() => handleValidate(enr.student.id)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600" title="Valider"><CheckCircle className="w-3.5 h-3.5" /></button>
-                                                          ) : null}
-                                                          <button onClick={() => handleReEnroll(enr)} className="p-1 hover:bg-indigo-100 rounded text-indigo-600" title="Réinscrire"><RotateCcw className="w-3.5 h-3.5" /></button>
-                                                        </div>
-                                                      </div>
-                                                      {/* Ligne 2 : matricule + badges (desktop inline, mobile stacked) */}
-                                                      <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                                                        <p className="text-[10px] font-mono text-slate-400">{enr.student.matricule || enr.student.studentCode || '—'}</p>
-                                                        <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0', typeInfo.color)}>{typeInfo.label}</span>
-                                                        <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-bold border shrink-0', statusInfo.color)}>{statusInfo.label}</span>
-                                                        <span className="text-[9px] text-slate-400 shrink-0 hidden md:inline">{new Date(enr.enrollmentDate).toLocaleDateString('fr-FR')}</span>
-                                                      </div>
-                                                      {/* Actions — mobile only (always visible) */}
-                                                      <div className="flex sm:hidden gap-1 mt-1.5">
-                                                        {enr.status === 'PENDING' || enr.status === 'PRE_REGISTERED' || enr.status === 'ADMITTED' ? (
-                                                          <button onClick={() => handleValidate(enr.student.id)} className="p-1.5 hover:bg-emerald-100 rounded text-emerald-600" title="Valider"><CheckCircle className="w-4 h-4" /></button>
-                                                        ) : null}
-                                                        <button onClick={() => handleReEnroll(enr)} className="p-1.5 hover:bg-indigo-100 rounded text-indigo-600" title="Réinscrire"><RotateCcw className="w-4 h-4" /></button>
-                                                      </div>
+                                                    <div className="shrink-0">
+                                                      <p className="text-sm font-medium text-slate-800">{enr.student.lastName.toUpperCase()} {enr.student.firstName}</p>
+                                                      <p className="text-[10px] font-mono text-slate-400">{enr.student.matricule || enr.student.studentCode || '—'}</p>
+                                                    </div>
+                                                    {/* Type */}
+                                                    <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0', typeInfo.color)}>{typeInfo.label}</span>
+                                                    {/* Statut */}
+                                                    <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-bold border shrink-0', statusInfo.color)}>{statusInfo.label}</span>
+                                                    {/* Date */}
+                                                    <span className="text-[9px] text-slate-400 shrink-0">{new Date(enr.enrollmentDate).toLocaleDateString('fr-FR')}</span>
+                                                    {/* Actions */}
+                                                    <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition">
+                                                      {enr.status === 'PENDING' || enr.status === 'PRE_REGISTERED' || enr.status === 'ADMITTED' ? (
+                                                        <button onClick={() => handleValidate(enr.student.id)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600" title="Valider"><CheckCircle className="w-3.5 h-3.5" /></button>
+                                                      ) : null}
+                                                      <button onClick={() => handleReEnroll(enr)} className="p-1 hover:bg-indigo-100 rounded text-indigo-600" title="Réinscrire"><RotateCcw className="w-3.5 h-3.5" /></button>
                                                     </div>
                                                   </div>
                                                 );

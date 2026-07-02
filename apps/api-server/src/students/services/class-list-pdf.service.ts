@@ -161,6 +161,11 @@ export class ClassListPdfService {
     const beninFlagSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="40" viewBox="0 0 75 50"><rect width="30" height="50" fill="#008751"/><rect x="30" width="45" height="25" fill="#FCD116"/><rect x="30" y="25" width="45" height="25" fill="#E8112D"/></svg>`;
     const beninFlag = `data:image/svg+xml;base64,${Buffer.from(beninFlagSvg).toString('base64')}`;
 
+    // Logo de l'école à droite (si disponible, sinon initiales)
+    const schoolLogoBlock = data.schoolLogo
+      ? `<img src="${data.schoolLogo}" alt="Logo" style="max-width:60px;max-height:60px;object-fit:contain;" />`
+      : `<div style="width:55px;height:55px;border:2px solid #0D1F6E;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:bold;color:#0D1F6E;">${(data.schoolName || 'EC').substring(0, 2).toUpperCase()}</div>`;
+
     const contactInfo = [
       data.schoolSlogan ? `« ${data.schoolSlogan} »` : null,
       data.schoolAddress,
@@ -173,7 +178,7 @@ export class ClassListPdfService {
         <tr>
           <td style="text-align:center;padding:8px 10px;border:1px solid #ddd;">${s.num}</td>
           <td style="padding:8px 10px;border:1px solid #ddd;font-weight:600;">${s.name}</td>
-          <td style="text-align:center;padding:8px 10px;border:1px solid #ddd;font-family:monospace;font-size:11px;">${s.matricule}</td>
+          <td style="text-align:center;padding:8px 10px;border:1px solid #ddd;">${s.matricule}</td>
           <td style="text-align:center;padding:8px 10px;border:1px solid #ddd;">${s.gender}</td>
           <td style="text-align:center;padding:8px 10px;border:1px solid #ddd;">${s.dateOfBirth}</td>
         </tr>
@@ -199,14 +204,15 @@ export class ClassListPdfService {
   .republique {
     font-size: 14px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;
   }
+  /* Séparateur design : ligne + losange CSS + ligne */
   .divider {
-    margin: 6px auto; width: 60%;
-    border: none; border-top: 1px solid #0D1F6E;
-    text-align: center;
+    margin: 6px auto; width: 55%;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
   }
-  .divider::after {
-    content: '◆'; font-size: 8px; color: #0D1F6E;
-    position: relative; top: -6px; background: #fff; padding: 0 6px;
+  .divider-line { flex: 1; height: 1px; background: #0D1F6E; }
+  .divider-diamond {
+    width: 6px; height: 6px; background: #0D1F6E;
+    transform: rotate(45deg); flex-shrink: 0;
   }
   .ministere {
     font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.3px;
@@ -232,9 +238,9 @@ export class ClassListPdfService {
     display: flex; justify-content: space-between; align-items: center;
     font-size: 13px; margin-bottom: 20px; padding: 0 5px;
   }
-  .class-info-left { text-align: left; font-weight: 600; }
-  .class-info-center { text-align: center; font-weight: 600; }
-  .class-info-right { text-align: right; font-weight: 600; }
+  .class-info-left { text-align: left; font-weight: 600; text-decoration: underline; }
+  .class-info-center { text-align: center; font-weight: 600; text-decoration: underline; }
+  .class-info-right { text-align: right; font-weight: 600; text-decoration: underline; }
 
   /* ── Tableau ── */
   table.students { width: 100%; border-collapse: collapse; margin-top: 5px; }
@@ -262,14 +268,14 @@ export class ClassListPdfService {
         </td>
         <td class="header-center">
           <div class="republique">République du Bénin</div>
-          <hr class="divider" />
+          <div class="divider"><div class="divider-line"></div><div class="divider-diamond"></div><div class="divider-line"></div></div>
           <div class="ministere">${ministry}</div>
-          <hr class="divider" />
+          <div class="divider"><div class="divider-line"></div><div class="divider-diamond"></div><div class="divider-line"></div></div>
           <div class="school-name">${data.schoolName || 'Établissement'}</div>
           ${contactInfo ? `<div class="school-info">${contactInfo}</div>` : ''}
         </td>
         <td class="header-right">
-          <img src="${beninFlag}" alt="Drapeau du Bénin" style="width:50px;height:34px;" />
+          ${schoolLogoBlock}
         </td>
       </tr>
     </table>

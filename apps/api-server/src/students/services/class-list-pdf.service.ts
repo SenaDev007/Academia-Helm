@@ -103,17 +103,18 @@ export class ClassListPdfService {
     });
 
     // 5. Générer le PDF via le pool Puppeteer partagé
-    // ⚠️ Utiliser le pattern canonique acquirePage → setContent → page.pdf → releasePage
-    // (PuppeteerPoolService n'expose PAS de méthode renderPdf — c'était un stub inventé)
+    // ⚠️ page.pdf() retourne un Uint8Array — il faut Buffer.from() pour un vrai Buffer Node.js
+    // Sans cette conversion, le PDF est corrompu (Adobe Reader ne peut pas l'ouvrir)
     const { page } = await this.puppeteerPool.acquirePage();
     let pdfBuffer: Buffer;
     try {
       await page.setContent(html, { waitUntil: 'networkidle0' });
-      pdfBuffer = (await page.pdf({
+      const rawPdf = await page.pdf({
         format: 'A4',
         margin: { top: '15mm', bottom: '15mm', left: '15mm', right: '15mm' },
         printBackground: true,
-      })) as Buffer;
+      });
+      pdfBuffer = Buffer.from(rawPdf);
     } finally {
       await this.puppeteerPool.releasePage(page);
     }

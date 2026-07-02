@@ -26,7 +26,7 @@ import {
   Plus, Search, ChevronDown, ChevronRight, Users, Loader2,
   FileText, Download, UserCheck, GraduationCap, BookOpen, Baby,
   RotateCcw, CheckCircle, XCircle, Clock, AlertCircle, Upload,
-  ShieldAlert, Info, BrainCircuit, ChevronUp,
+  ShieldAlert, Info, BrainCircuit, ChevronUp, EyeOff,
 } from 'lucide-react';
 import { FormModal } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -130,6 +130,8 @@ export default function EnrollmentsContent() {
   const [selectedForBulk, setSelectedForBulk] = useState<Set<string>>(new Set());
   const [bulkTargetYear, setBulkTargetYear] = useState<string>('');
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
+  // Tracking de la génération PDF par classe (pour afficher un spinner par bouton)
+  const [pdfGeneratingClassId, setPdfGeneratingClassId] = useState<string | null>(null);
 
   // ─── ORION mini-panel ──────────────────────────────────────────────
   // Alertes ciblées sur les inscriptions : élèves sans matricule, cartes manquantes,
@@ -864,19 +866,40 @@ export default function EnrollmentsContent() {
                                           // Ouvrir/déplier la classe pour visualiser la liste des élèves
                                           if (!isClassExpanded) toggleClass(classInfo.id);
                                         }}
-                                        className="p-1.5 hover:bg-blue-100 rounded-lg text-slate-400 hover:text-blue-600 transition shrink-0"
-                                        title="Visualiser la liste"
-                                      ><FileText className="w-3.5 h-3.5" /></button>
+                                        className={cn(
+                                          'p-1.5 rounded-lg transition shrink-0',
+                                          isClassExpanded
+                                            ? 'bg-blue-100 text-blue-600'
+                                            : 'text-slate-400 hover:bg-blue-100 hover:text-blue-600',
+                                        )}
+                                        title={isClassExpanded ? 'Masquer la liste' : 'Visualiser la liste'}
+                                      >
+                                        {isClassExpanded
+                                          ? <EyeOff className="w-3.5 h-3.5" />
+                                          : <FileText className="w-3.5 h-3.5" />}
+                                      </button>
                                       <button
                                         onClick={() => {
                                           if (!academicYear) return;
+                                          setPdfGeneratingClassId(classInfo.id);
                                           studentsService.generateClassListPdf(classInfo.id, academicYear.id)
                                             .then(() => toast({ title: '✅ PDF généré', description: classInfo.name, variant: 'success' }))
-                                            .catch(err => toast({ title: 'Erreur PDF', description: err.message, variant: 'error' }));
+                                            .catch(err => toast({ title: 'Erreur PDF', description: err.message, variant: 'error' }))
+                                            .finally(() => setPdfGeneratingClassId(null));
                                         }}
-                                        className="p-1.5 hover:bg-emerald-100 rounded-lg text-slate-400 hover:text-emerald-600 transition shrink-0"
+                                        disabled={pdfGeneratingClassId === classInfo.id}
+                                        className={cn(
+                                          'p-1.5 rounded-lg transition shrink-0',
+                                          pdfGeneratingClassId === classInfo.id
+                                            ? 'bg-emerald-100 text-emerald-600 cursor-wait'
+                                            : 'text-slate-400 hover:bg-emerald-100 hover:text-emerald-600',
+                                        )}
                                         title="Générer PDF liste de classe"
-                                      ><Download className="w-3.5 h-3.5" /></button>
+                                      >
+                                        {pdfGeneratingClassId === classInfo.id
+                                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                          : <Download className="w-3.5 h-3.5" />}
+                                      </button>
                                     </div>
 
                                     {/* ÉLÈVES */}

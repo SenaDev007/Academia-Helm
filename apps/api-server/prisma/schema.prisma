@@ -3393,6 +3393,7 @@ model TenantIdentityProfile {
   postalCode           String?
   phonePrimary         String?
   phoneSecondary       String?
+  whatsapp             String?
   email                String?
   website              String?
   currency             String    @default("XOF")

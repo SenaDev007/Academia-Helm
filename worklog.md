@@ -1850,3 +1850,74 @@ Stage Summary:
   3. Le body
   4. Le footer TEXT
   5. Les exemples au format [val1],[val2],...
+
+---
+Task ID: whatsapp-templates-meta-v3-buttons
+Agent: main
+Task: Ajouter phoneNumber et whatsapp aux Identités (DB + UI) + 3 boutons URL aux 20 templates Meta
+
+Work Log:
+
+## 1. DB Migration - Ajout colonne whatsapp à tenant_identity_profiles
+- Création du fichier SQL : prisma/migrations/20260703110000_add_whatsapp_to_identity_profile.sql
+  * ALTER TABLE tenant_identity_profiles ADD COLUMN whatsapp TEXT
+  * (SchoolSettings.whatsapp existe déjà dans le schéma Prisma)
+- Mise à jour du schéma Prisma : TenantIdentityProfile.whatsapp ajouté
+
+## 2. Backend - Identité (controller + service)
+- settings.controller.ts : createIdentityVersion accepte maintenant `whatsapp?: string`
+- identity-profile.service.ts :
+  * createNewVersion() : insert whatsapp dans TenantIdentityProfile
+  * audit log : ajoute whatsapp dans changes
+  * activateVersion() : retourne whatsapp
+  * compareVersions() : compare whatsapp
+  * syncToSchoolSettings() : sync whatsapp vers SchoolSettings.whatsapp
+  * formatProfile() : retourne whatsapp
+  * IdentityProfileData interface : ajoute whatsapp
+
+## 3. Frontend - Onglet Identité (settings/page.tsx)
+- Ajout d'un champ "WhatsApp (E.164)" dans la section Contacts
+  * Placeholder : "+229 97 12 34 56"
+  * Grid passe à 5 champs au lieu de 4 (Tél. principal, Tél. secondaire, WhatsApp, Email, Site web)
+- Hydratation du formulaire : charge whatsapp depuis le profil (ligne 392)
+- Restauration de version : charge whatsapp (ligne 649)
+- settings.service.ts : createIdentityVersion type inclut whatsapp
+
+## 4. Templates WhatsApp Meta v3 — 20 templates avec 3 boutons URL
+- Génération via script Python : scripts/generate-whatsapp-templates-meta-v3.py
+- Fichier HTML rendu : download/whatsapp-templates-meta-v3.html (81 KB, 2027 lignes)
+- 20 templates au format Meta (variables {{snake_case}})
+- Header TEXT court (≤ 60 caractères)
+- Footer "Academia Helm"
+- 3 boutons URL par template :
+  1. "Consulter le site" → https://{{1}}.academiahelm.com (var = subdomain)
+  2. "Discuter sur WhatsApp" → https://wa.me/{{1}} (var = whatsapp_number)
+  3. "Appeler l'école" → https://wa.me/{{1}} (var = phone_number)
+- Samples au format Meta : [val1],[val2],...,[subdomain],[whatsapp_number],[phone_number]
+
+## 5. Contrainte Meta expliquée à l'utilisateur
+- Bouton PHONE_NUMBER : numéro FIXE, aucune variable autorisée
+- Bouton URL : 1 variable autorisée à la fin
+- Solution : utiliser 3 boutons URL avec variables
+  * wa.me/{{phone}} ouvre WhatsApp → utilisateur peut cliquer sur l'icône appel
+
+Stage Summary:
+- 6 fichiers modifiés :
+  1. prisma/migrations/20260703110000_add_whatsapp_to_identity_profile.sql (NOUVEAU)
+  2. prisma/schema.prisma (ajout whatsapp sur TenantIdentityProfile)
+  3. apps/api-server/src/settings/settings.controller.ts (whatsapp dans body type)
+  4. apps/api-server/src/settings/services/identity-profile.service.ts (7 endroits)
+  5. apps/web-app/src/app/app/settings/page.tsx (UI + hydratation)
+  6. apps/web-app/src/services/settings.service.ts (type createIdentityVersion)
+- 2 nouveaux fichiers :
+  1. scripts/generate-whatsapp-templates-meta-v3.py (script générateur)
+  2. download/whatsapp-templates-meta-v3.html (output)
+- Action requise utilisateur :
+  * Appliquer la migration SQL sur Neon DB
+  * Créer les 20 templates dans Meta Business Platform en copiant les contenus
+  * Configurer le subdomain/phone/whatsapp dans Paramètres → Identité
+- Prochaines étapes :
+  * Une fois les templates Meta approuvés, mettre à jour whatsapp-template.registry.ts
+    pour utiliser les noms de variables snake_case (au lieu de {{1}})
+  * Mettre à jour WhatsAppService.sendForTenant() pour injecter automatiquement
+    les 3 variables des boutons à la fin du tableau

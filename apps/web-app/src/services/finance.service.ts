@@ -46,18 +46,10 @@ class FinanceService {
   }
 
   async createFeeStructure(data: any): Promise<any> {
-    const tenantId = getTenantId();
-    if (tenantId) {
-      return createEntityOffline(tenantId, 'FEE_STRUCTURE', data);
-    }
     return apiFetch(`${BASE_URL}/fee-structures`, { method: 'POST', body: data });
   }
 
   async updateFeeStructure(id: string, data: any): Promise<any> {
-    const tenantId = getTenantId();
-    if (tenantId) {
-      return updateEntityOffline(tenantId, 'FEE_STRUCTURE', id, data);
-    }
     return apiFetch(`${BASE_URL}/fee-structures/${id}`, { method: 'PATCH', body: data });
   }
 
@@ -194,23 +186,6 @@ class FinanceService {
     return apiFetch(`${BASE_URL}/reports/monthly-encaissements${qs ? `?${qs}` : ''}`);
   }
 
-  // --- Nouveaux rapports (Phase 6) ---
-  async getComparativeYear(academicYearId: string): Promise<any> {
-    return apiFetch(`${BASE_URL}/reports/comparative-year?academicYearId=${academicYearId}`);
-  }
-
-  async getTop10Impayes(academicYearId: string): Promise<any> {
-    return apiFetch(`${BASE_URL}/reports/top-10-impayes?academicYearId=${academicYearId}`);
-  }
-
-  async getProjectionTresorerie(academicYearId: string): Promise<any> {
-    return apiFetch(`${BASE_URL}/reports/projection-tresorerie?academicYearId=${academicYearId}`);
-  }
-
-  async getCashRegisterComparative(academicYearId: string): Promise<any> {
-    return apiFetch(`${BASE_URL}/reports/cash-register-comparative?academicYearId=${academicYearId}`);
-  }
-
   async getArrears(params?: Record<string, string>): Promise<any> {
     const qs = params ? new URLSearchParams(params).toString() : '';
     return apiFetch(`${BASE_URL}/collection/arrears${qs ? `?${qs}` : ''}`);
@@ -227,74 +202,6 @@ class FinanceService {
 
   async getAuditLogs(limit: number = 30): Promise<any> {
     return apiFetch(`${BASE_URL}/audit-logs?limit=${limit}`);
-  }
-
-  // --- Multi-caisses (CashRegister) ---
-  async getCashRegisters(params?: { isActive?: boolean; isOpen?: boolean; responsibleUserId?: string }): Promise<any> {
-    const query = new URLSearchParams();
-    if (params?.isActive !== undefined) query.set('isActive', String(params.isActive));
-    if (params?.isOpen !== undefined) query.set('isOpen', String(params.isOpen));
-    if (params?.responsibleUserId) query.set('responsibleUserId', params.responsibleUserId);
-    const qs = query.toString();
-    return apiFetch(`${BASE_URL}/cash-registers${qs ? `?${qs}` : ''}`);
-  }
-
-  async getCashRegister(id: string): Promise<any> {
-    return apiFetch(`${BASE_URL}/cash-registers/${id}`);
-  }
-
-  async createCashRegister(data: {
-    code: string;
-    name: string;
-    description?: string;
-    responsibleUserId?: string;
-    location?: string;
-    openingBalance?: number;
-    isActive?: boolean;
-  }): Promise<any> {
-    return apiFetch(`${BASE_URL}/cash-registers`, { method: 'POST', body: data });
-  }
-
-  async updateCashRegister(id: string, data: {
-    name?: string;
-    description?: string;
-    responsibleUserId?: string;
-    location?: string;
-    isActive?: boolean;
-  }): Promise<any> {
-    return apiFetch(`${BASE_URL}/cash-registers/${id}`, { method: 'PATCH', body: data });
-  }
-
-  async archiveCashRegister(id: string): Promise<any> {
-    return apiFetch(`${BASE_URL}/cash-registers/${id}`, { method: 'DELETE' });
-  }
-
-  async openCashRegister(id: string, data: { openingBalance?: number; note?: string }): Promise<any> {
-    return apiFetch(`${BASE_URL}/cash-registers/${id}/open`, { method: 'POST', body: data });
-  }
-
-  async closeCashRegister(id: string, data: { countedBalance?: number; note?: string }): Promise<any> {
-    return apiFetch(`${BASE_URL}/cash-registers/${id}/close`, { method: 'POST', body: data });
-  }
-
-  async getCashRegisterStats(id: string, params?: { dateFrom?: string; dateTo?: string }): Promise<any> {
-    const query = new URLSearchParams();
-    if (params?.dateFrom) query.set('dateFrom', params.dateFrom);
-    if (params?.dateTo) query.set('dateTo', params.dateTo);
-    const qs = query.toString();
-    return apiFetch(`${BASE_URL}/cash-registers/${id}/stats${qs ? `?${qs}` : ''}`);
-  }
-
-  // --- Transactions avec cashRegisterId ---
-  async createTransaction(data: {
-    academicYearId: string;
-    studentAccountId: string;
-    amount: number;
-    paymentMethod: string;
-    reference?: string;
-    cashRegisterId?: string;
-  }): Promise<any> {
-    return apiFetch(`${BASE_URL}/transactions`, { method: 'POST', body: data });
   }
 }
 

@@ -46,23 +46,15 @@ class FinanceService {
   }
 
   async createFeeStructure(data: any): Promise<any> {
-    const tenantId = getTenantId();
-    if (tenantId) {
-      return createEntityOffline(tenantId, 'FEE_STRUCTURE', data);
-    }
     return apiFetch(`${BASE_URL}/fee-structures`, { method: 'POST', body: data });
   }
 
   async updateFeeStructure(id: string, data: any): Promise<any> {
-    const tenantId = getTenantId();
-    if (tenantId) {
-      return updateEntityOffline(tenantId, 'FEE_STRUCTURE', id, data);
-    }
-    return apiFetch(`${BASE_URL}/fee-structures/${id}`, { method: 'PUT', body: data });
+    return apiFetch(`${BASE_URL}/fee-structures/${encodeURIComponent(id)}`, { method: 'PATCH', body: data });
   }
 
   async deleteFeeStructure(id: string): Promise<any> {
-    return apiFetch(`${BASE_URL}/fee-structures/${id}`, { method: 'DELETE' });
+    return apiFetch(`${BASE_URL}/fee-structures/${encodeURIComponent(id)}`, { method: 'DELETE' });
   }
 
   async copyFeeStructuresToYear(data: any): Promise<any> {

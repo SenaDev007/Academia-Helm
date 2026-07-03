@@ -168,6 +168,7 @@ export default function CashRegistersContent() {
   const [transferModal, setTransferModal] = useState(false);
   const [transferForm, setTransferForm] = useState({ fromId: '', toId: '', amount: '', note: '' });
   const [transferPending, setTransferPending] = useState(false);
+  const [staffList, setStaffList] = useState<any[]>([]);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -212,6 +213,17 @@ export default function CashRegistersContent() {
 
   useEffect(() => {
     loadRegisters();
+    // Charger le staff non-enseignant (ADMIN + SUPPORT) depuis le module RH
+    // pour le sélecteur de responsable de caisse
+    Promise.all([
+      fetch('/api/hr/staff?category=ADMIN', { credentials: 'include' }).then((r) => r.ok ? r.json() : []),
+      fetch('/api/hr/staff?category=SUPPORT', { credentials: 'include' }).then((r) => r.ok ? r.json() : []),
+    ])
+      .then(([admin, support]) => {
+        const all = [...(Array.isArray(admin) ? admin : []), ...(Array.isArray(support) ? support : [])];
+        setStaffList(all);
+      })
+      .catch(() => setStaffList([]));
   }, [loadRegisters]);
 
   // Identifier la caisse principale (code MAIN ou première créée)
@@ -294,6 +306,7 @@ export default function CashRegistersContent() {
         name: editModal.name,
         description: editModal.description,
         location: editModal.location,
+        responsibleUserId: editModal.responsibleUserId || undefined,
       });
       toast({ title: '✅ Caisse mise à jour' });
       setEditModal(null);
@@ -958,6 +971,27 @@ export default function CashRegistersContent() {
               />
             </div>
 
+            {/* 3b. Responsable — sélection depuis le staff RH (non-enseignant) */}
+            <div>
+              <Label htmlFor="responsibleUserId">Responsable de la caisse</Label>
+              <select
+                id="responsibleUserId"
+                value={formData.responsibleUserId}
+                onChange={(e) => setFormData({ ...formData, responsibleUserId: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">— Aucun responsable assigné —</option>
+                {staffList.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.firstName} {s.lastName}{s.position ? ` — ${s.position}` : ''}{s.employeeNumber ? ` (${s.employeeNumber})` : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-400 mt-1">
+                💡 Le responsable est sélectionné parmi le staff administratif et de soutien (non-enseignant) du module RH.
+              </p>
+            </div>
+
             {/* 4. Description */}
             <div>
               <Label htmlFor="description">Description</Label>
@@ -1039,6 +1073,22 @@ export default function CashRegistersContent() {
                   value={editModal.location || ''}
                   onChange={(e) => setEditModal({ ...editModal, location: e.target.value })}
                 />
+              </div>
+              <div>
+                <Label htmlFor="edit-responsible">Responsable de la caisse</Label>
+                <select
+                  id="edit-responsible"
+                  value={editModal.responsibleUserId || ''}
+                  onChange={(e) => setEditModal({ ...editModal, responsibleUserId: e.target.value || undefined } as any)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">— Aucun responsable assigné —</option>
+                  {staffList.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.firstName} {s.lastName}{s.position ? ` — ${s.position}` : ''}{s.employeeNumber ? ` (${s.employeeNumber})` : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <Label htmlFor="edit-description">Description</Label>

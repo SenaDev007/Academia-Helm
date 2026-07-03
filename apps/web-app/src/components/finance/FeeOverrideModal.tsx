@@ -62,7 +62,10 @@ export default function FeeOverrideModal({
 
   const selectedStudent = students.find((s) => s.id === studentId);
   const selectedFee = structures.find((s) => s.id === feeStructureId);
-  const originalAmount = selectedFee ? Number(selectedFee.totalAmount) : 0;
+  // En mode édition, utiliser le feeStructure de l'override comme fallback
+  // (structures peut ne pas être encore chargé au montage du modal)
+  const effectiveFee = selectedFee ?? editingOverride?.feeStructure;
+  const originalAmount = effectiveFee ? Number(effectiveFee.totalAmount) : 0;
 
   // Helper : nom intelligent du frais (enrichi avec la classe si manquante)
   // Affichage identique au tableau : "Frais de scolarité — CI — 40000 FCFA"
@@ -86,6 +89,18 @@ export default function FeeOverrideModal({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showSuggestions]);
+
+  // Pré-remplir les champs de réduction en mode édition
+  // quand originalAmount devient disponible (après chargement de structures ou fallback)
+  useEffect(() => {
+    if (!isEdit || !editingOverride || originalAmount <= 0) return;
+    const custom = Number(editingOverride.customAmount ?? 0);
+    const reduction = Math.max(0, originalAmount - custom);
+    const pct = originalAmount > 0 ? (reduction / originalAmount) * 100 : 0;
+    // Ne pré-remplir qu'une seule fois (quand les champs sont vides)
+    setReductionAmount((prev) => prev === '' ? reduction.toFixed(0) : prev);
+    setReductionPercent((prev) => prev === '' ? pct.toFixed(2) : prev);
+  }, [isEdit, editingOverride, originalAmount]);
 
   // Sélection d'un élève depuis les suggestions
   const selectStudent = (s: any) => {

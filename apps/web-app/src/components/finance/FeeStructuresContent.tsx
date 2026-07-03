@@ -51,11 +51,11 @@ export default function FeeStructuresContent() {
   const { academicYear } = useModuleContext();
   const { toast } = useToast();
   const [structures, setStructures] = useState<any[]>([]);
-  const [levels, setLevels] = useState<any[]>([]); // /api/school-levels avec schoolLevelId
+  const [levels, setLevels] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
   const [academicYears, setAcademicYears] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterLevelId, setFilterLevelId] = useState<string>(''); // education_levels UUID
+  const [filterLevelId, setFilterLevelId] = useState<string>('');
   const [filterClassId, setFilterClassId] = useState<string>('');
   const [modalNewFee, setModalNewFee] = useState(false);
   const [editingFee, setEditingFee] = useState<any | null>(null);
@@ -64,21 +64,35 @@ export default function FeeStructuresContent() {
   const [copyFrom, setCopyFrom] = useState('');
   const [copyTo, setCopyTo] = useState('');
 
-  // Obtenir le schoolLevelId (school_levels UUID) depuis l'education_levels UUID
-  const getSchoolLevelId = (eduId: string): string | undefined => {
-    const level = levels.find((l) => l.id === eduId);
-    return level?.schoolLevelId || undefined;
+  // Mapping education_levels UUID → school_levels UUID
+  // levels vient de /api/school-levels (education_levels UUID + code MATERNELLE/PRIMAIRE)
+  // classes vient de /api/all-classes (schoolLevelId = school_levels UUID + schoolLevel.code)
+  // On mappe en matchant par code
+  const eduToSchoolLevelMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const level of levels) {
+      const code = level.code; // MATERNELLE / PRIMAIRE / SECONDAIRE
+      const matchingClass = classes.find((c: any) => c.schoolLevel?.code === code);
+      if (matchingClass) {
+        map[level.id] = matchingClass.schoolLevelId;
+      }
+    }
+    return map;
+  }, [levels, classes]);
+
+  // Convertir education_levels UUID → school_levels UUID
+  const toSchoolLevelId = (eduId: string): string | undefined => {
+    return eduToSchoolLevelMap[eduId] || eduId;
   };
 
-  // Filtrer les classes par niveau (en utilisant schoolLevelId)
+  // Filtrer les classes par niveau
   const filteredSortedClasses = useMemo(() => {
     if (!filterLevelId) return [...classes].sort((a, b) => classOrder(a.name) - classOrder(b.name));
-    const schoolLevelId = getSchoolLevelId(filterLevelId);
-    if (!schoolLevelId) return [];
+    const schoolLevelId = toSchoolLevelId(filterLevelId);
     return classes
       .filter((c: any) => c.schoolLevelId === schoolLevelId)
       .sort((a, b) => classOrder(a.name) - classOrder(b.name));
-  }, [classes, filterLevelId, levels]);
+  }, [classes, filterLevelId, eduToSchoolLevelMap]);
 
   useEffect(() => {
     if (filterClassId && !filteredSortedClasses.find((c) => c.id === filterClassId)) {
@@ -91,20 +105,16 @@ export default function FeeStructuresContent() {
     setLoading(true);
     try {
       const params: Record<string, string> = { academicYearId: academicYear.id };
-      // Pour le backend, on envoie le schoolLevelId (pas l'education_levels UUID)
       if (filterLevelId) {
-        const schoolLevelId = getSchoolLevelId(filterLevelId);
-        if (schoolLevelId) params.levelId = schoolLevelId;
+        const slId = toSchoolLevelId(filterLevelId);
+        if (slId) params.levelId = slId;
       }
       if (filterClassId) params.classId = filterClassId;
       const data = await financeService.getFeeStructures(params);
       setStructures(Array.isArray(data) ? data : []);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  }, [academicYear?.id, filterLevelId, filterClassId, levels]);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }, [academicYear?.id, filterLevelId, filterClassId, eduToSchoolLevelMap]);
 
   useEffect(() => { loadStructures(); }, [loadStructures]);
 
@@ -127,7 +137,6 @@ export default function FeeStructuresContent() {
     if (s.level?.name) return s.level.name;
     return '—';
   };
-
   const classDisplay = (s: any): string => {
     if (s.class?.name) return s.class.name;
     if (s.classId) { const cls = classes.find((c) => c.id === s.classId); if (cls) return cls.name ?? '—'; }
@@ -137,12 +146,8 @@ export default function FeeStructuresContent() {
   const handleCreate = async (body: any) => {
     if (!academicYear?.id) return;
     try {
-      // Convertir levelId en schoolLevelId avant d'envoyer au backend
       const payload = { ...body, academicYearId: academicYear.id };
-      if (payload.levelId) {
-        const schoolLevelId = getSchoolLevelId(payload.levelId);
-        if (schoolLevelId) payload.levelId = schoolLevelId;
-      }
+      if (payload.levelId) payload.levelId = toSchoolLevelId(payload.levelId);
       await financeService.createFeeStructure(payload);
       setModalNewFee(false);
       toast({ title: 'Succès', description: 'Frais configuré avec succès.' });
@@ -156,10 +161,7 @@ export default function FeeStructuresContent() {
     if (!editingFee?.id) return;
     try {
       const payload = { ...body };
-      if (payload.levelId) {
-        const schoolLevelId = getSchoolLevelId(payload.levelId);
-        if (schoolLevelId) payload.levelId = schoolLevelId;
-      }
+      if (payload.levelId) payload.levelId = toSchoolLevelId(payload.levelId);
       await financeService.updateFeeStructure(editingFee.id, payload);
       setEditingFee(null);
       toast({ title: 'Succès', description: 'Frais modifié avec succès.' });
@@ -170,11 +172,11 @@ export default function FeeStructuresContent() {
   };
 
   const handleDelete = async (id: string) => {
-    const ok = await confirmDialog.danger('Ce frais sera supprimé. Cette action est irréversible.', 'Supprimer le frais');
+    const ok = await confirmDialog.danger('Ce frais sera supprimé.', 'Supprimer');
     if (!ok) return;
     try {
       await financeService.deleteFeeStructure(id);
-      toast({ title: 'Succès', description: 'Frais supprimé avec succès.' });
+      toast({ title: 'Succès', description: 'Frais supprimé.' });
       await loadStructures();
     } catch (error: any) {
       toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
@@ -186,7 +188,7 @@ export default function FeeStructuresContent() {
     try {
       await financeService.copyFeeStructuresToYear({ fromAcademicYearId: copyFrom, toAcademicYearId: copyTo });
       setCopyYearModal(false); setCopyFrom(''); setCopyTo('');
-      toast({ title: 'Succès', description: 'Frais copiés avec succès.' });
+      toast({ title: 'Succès', description: 'Frais copiés.' });
       await loadStructures();
     } catch (error: any) {
       toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
@@ -202,7 +204,7 @@ export default function FeeStructuresContent() {
       <div className="space-y-4">
         <ModuleContentArea layout="custom" toolbar={
           <div className="flex items-center justify-between flex-wrap gap-3">
-            <p className="text-sm text-slate-600">Définissez les frais par niveau et classe. Priorité : Classe {'>'} Niveau {'>'} Override élève.</p>
+            <p className="text-sm text-slate-600">Priorité : Classe {'>'} Niveau {'>'} Override élève.</p>
             <div className="flex gap-2">
               <Button onClick={() => setModalNewFee(true)}><Plus className="w-4 h-4 mr-2" />Nouveau frais</Button>
               <Button variant="outline" onClick={() => setCopyYearModal(true)}><Copy className="w-4 h-4 mr-2" />Copier année</Button>
@@ -223,7 +225,7 @@ export default function FeeStructuresContent() {
             </div>
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Classe</Label>
-              <Select value={filterClassId || 'ALL'} onValueChange={(v) => setFilterClassId(v === 'ALL' ? '' : v)} disabled={filteredSortedClasses.length === 0}>
+              <Select value={filterClassId || 'ALL'} onValueChange={(v) => setFilterClassId(v === 'ALL' ? '' : v)}>
                 <SelectTrigger className="w-[220px]"><SelectValue placeholder="Toutes les classes" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">Toutes les classes</SelectItem>
@@ -237,49 +239,39 @@ export default function FeeStructuresContent() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-gray-50">
-                  <TableHead>Nom du frais</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Niveau</TableHead>
-                  <TableHead>Classe</TableHead>
-                  <TableHead className="text-right">Montant</TableHead>
-                  <TableHead>Tranches</TableHead>
-                  <TableHead>Oblig.</TableHead>
-                  <TableHead>Statut</TableHead>
+                  <TableHead>Nom du frais</TableHead><TableHead>Type</TableHead><TableHead>Niveau</TableHead><TableHead>Classe</TableHead>
+                  <TableHead className="text-right">Montant</TableHead><TableHead>Tranches</TableHead><TableHead>Oblig.</TableHead><TableHead>Statut</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {loading ? (
-                  <TableRow><TableCell colSpan={9} className="text-center text-gray-500 py-8">Chargement...</TableCell></TableRow>
-                ) : structures.length === 0 ? (
-                  <TableRow><TableCell colSpan={9} className="text-center text-gray-500 py-12">
-                    <div className="flex flex-col items-center gap-3"><Plus className="w-10 h-10 text-slate-300" /><p>Aucun frais configuré.</p><Button onClick={() => setModalNewFee(true)} size="sm"><Plus className="w-4 h-4 mr-2" />Configurer un frais</Button></div>
-                  </TableCell></TableRow>
-                ) : (
-                  structures.map((s) => (
-                    <TableRow key={s.id} className="hover:bg-slate-50">
-                      <TableCell className="font-medium">{s.name}</TableCell>
-                      <TableCell><Badge variant="outline">{feeTypeLabel(s.feeType)}</Badge></TableCell>
-                      <TableCell className="text-sm text-slate-600">{s.levelId ? <strong>{levelDisplay(s)}</strong> : <span className="text-slate-400">Tous</span>}</TableCell>
-                      <TableCell className="text-sm text-slate-600">{s.classId ? <strong>{classDisplay(s)}</strong> : <span className="text-slate-400">—</span>}</TableCell>
-                      <TableCell className="text-right font-semibold">{formatCurrency(s.totalAmount)}</TableCell>
-                      <TableCell>{s.isInstallment ? <Badge className="bg-blue-50 text-blue-700">{s.structureInstallments?.length || 0} tranches</Badge> : <span className="text-slate-400 text-sm">Non</span>}</TableCell>
-                      <TableCell><Badge variant={s.isMandatory ? 'default' : 'outline'}>{s.isMandatory ? 'Obligatoire' : 'Facultatif'}</Badge></TableCell>
-                      <TableCell><Badge variant={s.isActive ? 'default' : 'secondary'}>{s.isActive ? 'Actif' : 'Inactif'}</Badge></TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" onClick={() => setEditingFee(s)} title="Modifier"><Pencil className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(s.id)} title="Supprimer"><Trash2 className="h-4 w-4 text-red-500" /></Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
+                {loading ? (<TableRow><TableCell colSpan={9} className="text-center text-gray-500 py-8">Chargement...</TableCell></TableRow>
+                ) : structures.length === 0 ? (<TableRow><TableCell colSpan={9} className="text-center text-gray-500 py-12">
+                  <div className="flex flex-col items-center gap-3"><Plus className="w-10 h-10 text-slate-300" /><p>Aucun frais configuré.</p><Button onClick={() => setModalNewFee(true)} size="sm"><Plus className="w-4 h-4 mr-2" />Configurer un frais</Button></div>
+                </TableCell></TableRow>
+                ) : structures.map((s) => (
+                  <TableRow key={s.id} className="hover:bg-slate-50">
+                    <TableCell className="font-medium">{s.name}</TableCell>
+                    <TableCell><Badge variant="outline">{feeTypeLabel(s.feeType)}</Badge></TableCell>
+                    <TableCell className="text-sm">{s.levelId ? <strong>{levelDisplay(s)}</strong> : <span className="text-slate-400">Tous</span>}</TableCell>
+                    <TableCell className="text-sm">{s.classId ? <strong>{classDisplay(s)}</strong> : <span className="text-slate-400">—</span>}</TableCell>
+                    <TableCell className="text-right font-semibold">{formatCurrency(s.totalAmount)}</TableCell>
+                    <TableCell>{s.isInstallment ? <Badge className="bg-blue-50 text-blue-700">{s.structureInstallments?.length || 0} tranches</Badge> : <span className="text-slate-400 text-sm">Non</span>}</TableCell>
+                    <TableCell><Badge variant={s.isMandatory ? 'default' : 'outline'}>{s.isMandatory ? 'Obligatoire' : 'Facultatif'}</Badge></TableCell>
+                    <TableCell><Badge variant={s.isActive ? 'default' : 'secondary'}>{s.isActive ? 'Actif' : 'Inactif'}</Badge></TableCell>
+                    <TableCell className="text-right">
+                      <Button variant="ghost" size="icon" onClick={() => setEditingFee(s)} title="Modifier"><Pencil className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" onClick={() => handleDelete(s.id)} title="Supprimer"><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           </div>
         </ModuleContentArea>
 
-        {modalNewFee && <FeeStructureModal academicYearId={academicYear?.id ?? ''} levels={levels} classes={modalClasses} onClose={() => setModalNewFee(false)} onSubmit={handleCreate} />}
-        {editingFee && <FeeStructureModal academicYearId={academicYear?.id ?? ''} levels={levels} classes={modalClasses} feeId={editingFee.id} initialData={editingFee} onClose={() => setEditingFee(null)} onSubmit={handleUpdate} />}
+        {modalNewFee && <FeeStructureModal academicYearId={academicYear?.id ?? ''} levels={levels} classes={modalClasses} eduToSchoolLevelMap={eduToSchoolLevelMap} onClose={() => setModalNewFee(false)} onSubmit={handleCreate} />}
+        {editingFee && <FeeStructureModal academicYearId={academicYear?.id ?? ''} levels={levels} classes={modalClasses} eduToSchoolLevelMap={eduToSchoolLevelMap} feeId={editingFee.id} initialData={editingFee} onClose={() => setEditingFee(null)} onSubmit={handleUpdate} />}
         {modalOverride && <FeeOverrideModal structures={structures} onClose={() => setModalOverride(false)} />}
         {copyYearModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">

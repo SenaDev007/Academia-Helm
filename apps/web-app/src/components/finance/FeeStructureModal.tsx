@@ -39,11 +39,16 @@ function classOrder(name: string): number {
 interface Installment { label: string; amount: string; dueDate: string; orderIndex: number; }
 
 export default function FeeStructureModal({
-  academicYearId, levels, classes, onClose, onSubmit, feeId, initialData,
+  academicYearId, levels, classes, eduToSchoolLevelMap, onClose, onSubmit, feeId, initialData,
 }: {
-  academicYearId: string; levels: any[]; classes: any[];
-  onClose: () => void; onSubmit: (body: any) => void;
-  feeId?: string; initialData?: any;
+  academicYearId: string;
+  levels: any[];
+  classes: any[];
+  eduToSchoolLevelMap: Record<string, string>; // education_levels UUID → school_levels UUID
+  onClose: () => void;
+  onSubmit: (body: any) => void;
+  feeId?: string;
+  initialData?: any;
 }) {
   const isEdit = Boolean(feeId);
   const [name, setName] = useState(initialData?.name ?? '');
@@ -53,8 +58,7 @@ export default function FeeStructureModal({
   const [isInstallment, setIsInstallment] = useState(initialData?.isInstallment ?? false);
   const [isMandatory, setIsMandatory] = useState(initialData?.isMandatory ?? true);
   const [applyTo, setApplyTo] = useState<'level' | 'class'>(initialData?.classId ? 'class' : 'level');
-  // levelId = education_levels UUID (sélectionné dans le sélecteur)
-  const [levelId, setLevelId] = useState(initialData?.levelId ?? '');
+  const [levelId, setLevelId] = useState(initialData?.levelId ?? ''); // education_levels UUID
   const [classId, setClassId] = useState(initialData?.classId ?? '');
 
   const initialInstallments: Installment[] = initialData?.structureInstallments?.length
@@ -65,22 +69,15 @@ export default function FeeStructureModal({
     : [{ label: 'Tranche 1', amount: '', dueDate: '', orderIndex: 0 }];
   const [installments, setInstallments] = useState<Installment[]>(initialInstallments);
 
-  // Obtenir le schoolLevelId depuis le level sélectionné
-  // levels vient de /api/school-levels qui contient maintenant schoolLevelId
-  const getSchoolLevelId = (eduId: string): string | undefined => {
-    const level = levels.find((l) => l.id === eduId);
-    return level?.schoolLevelId || undefined;
-  };
-
-  // Filtrer les classes par niveau (en utilisant schoolLevelId)
+  // Filtrer les classes par niveau en utilisant le mapping eduToSchoolLevelMap
   const modalFilteredClasses = useMemo(() => {
     if (!levelId) return [...classes].sort((a, b) => classOrder(a.name) - classOrder(b.name));
-    const schoolLevelId = getSchoolLevelId(levelId);
+    const schoolLevelId = eduToSchoolLevelMap[levelId];
     if (!schoolLevelId) return [];
     return classes
       .filter((c: any) => c.schoolLevelId === schoolLevelId)
       .sort((a, b) => classOrder(a.name) - classOrder(b.name));
-  }, [classes, levelId, levels]);
+  }, [classes, levelId, eduToSchoolLevelMap]);
 
   useEffect(() => {
     if (classId && levelId && !modalFilteredClasses.find((c) => c.id === classId)) {
@@ -120,13 +117,12 @@ export default function FeeStructureModal({
   const totalAmountNum = parseFloat(totalAmount) || 0;
   const installmentsValid = !isInstallment || (installments.every((i) => i.label && i.amount && i.dueDate) && Math.abs(installmentsSum - totalAmountNum) < 1);
 
-  // handleSubmit envoie levelId = education_levels UUID
-  // Le parent (FeeStructuresContent) fera la conversion en schoolLevelId
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const amount = parseFloat(totalAmount);
     if (!name || isNaN(amount) || amount < 0) return;
     if (isInstallment && !installmentsValid) return;
+    // levelId = education_levels UUID, le parent fera la conversion
     onSubmit({
       academicYearId, name, feeType, totalAmount: amount, isInstallment, isMandatory,
       levelId: levelId || undefined,
@@ -140,50 +136,41 @@ export default function FeeStructureModal({
       <motion.div initial={{ opacity: 0, y: 16, scale: 0.99 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.22, ease: 'easeOut' }} className="bg-white rounded-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-blue-100 shadow-2xl">
         <h3 className="text-lg font-semibold mb-4">{isEdit ? 'Modifier le frais' : 'Nouveau frais'}</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <Label>Type de frais</Label>
-            <Select value={feeType} onValueChange={setFeeType}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>{FEE_TYPES.map((f) => (<SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>))}</SelectContent>
-            </Select>
+          <div><Label>Type de frais</Label>
+            <Select value={feeType} onValueChange={setFeeType}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{FEE_TYPES.map((f) => (<SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>))}</SelectContent></Select>
           </div>
-          <div>
-            <Label>Appliquer à</Label>
+          <div><Label>Appliquer à</Label>
             <div className="flex gap-4 mt-2">
               <label className="flex items-center gap-2"><input type="radio" checked={applyTo === 'level'} onChange={() => setApplyTo('level')} />Niveau</label>
               <label className="flex items-center gap-2"><input type="radio" checked={applyTo === 'class'} onChange={() => setApplyTo('class')} />Classe spécifique</label>
             </div>
           </div>
-          <div>
-            <Label>Niveau {applyTo === 'class' && <span className="text-xs text-slate-400">(filtre les classes)</span>}</Label>
+          <div><Label>Niveau {applyTo === 'class' && <span className="text-xs text-slate-400">(filtre les classes)</span>}</Label>
             <Select value={levelId} onValueChange={(v) => { setLevelId(v); setClassId(''); }}>
               <SelectTrigger><SelectValue placeholder="Sélectionner un niveau" /></SelectTrigger>
               <SelectContent>{levels.map((l) => (<SelectItem key={l.id} value={l.id}>{l.label ?? l.code ?? l.name ?? 'Niveau'}</SelectItem>))}</SelectContent>
             </Select>
           </div>
           {applyTo === 'class' && (
-            <div>
-              <Label>Classe</Label>
+            <div><Label>Classe</Label>
               <Select value={classId} onValueChange={setClassId} disabled={!levelId || modalFilteredClasses.length === 0}>
                 <SelectTrigger><SelectValue placeholder={levelId ? (modalFilteredClasses.length === 0 ? 'Aucune classe pour ce niveau' : 'Sélectionner une classe') : "Sélectionner d'abord un niveau"} /></SelectTrigger>
                 <SelectContent>{modalFilteredClasses.map((c) => (<SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>))}</SelectContent>
               </Select>
             </div>
           )}
-          <div>
-            <Label>Nom du frais</Label>
+          <div><Label>Nom du frais</Label>
             <Input value={name} onChange={(e) => { setName(e.target.value); setNameManuallyEdited(true); }} placeholder="Auto-généré" required />
-            {!nameManuallyEdited && <p className="text-xs text-blue-600 mt-1">💡 Le nom se remplit automatiquement. Vous pouvez le personnaliser.</p>}
+            {!nameManuallyEdited && <p className="text-xs text-blue-600 mt-1">💡 Le nom se remplit automatiquement.</p>}
           </div>
-          <div>
-            <Label>Montant total (XOF)</Label>
+          <div><Label>Montant total (XOF)</Label>
             <Input type="number" min={0} value={totalAmount} onChange={(e) => setTotalAmount(e.target.value)} required />
           </div>
           <div className="flex items-center gap-2"><input type="checkbox" id="installment" checked={isInstallment} onChange={(e) => setIsInstallment(e.target.checked)} /><Label htmlFor="installment">Paiement en tranches</Label></div>
           <div className="flex items-center gap-2"><input type="checkbox" id="mandatory" checked={isMandatory} onChange={(e) => setIsMandatory(e.target.checked)} /><Label htmlFor="mandatory">Frais obligatoire</Label></div>
           {isInstallment && (
             <div className="border rounded-lg p-3 bg-slate-50 space-y-2">
-              <div className="flex items-center justify-between"><Label className="text-sm font-semibold">Tranches de paiement</Label><Button type="button" size="sm" variant="outline" onClick={addInstallment}><Plus className="h-3.5 w-3.5 mr-1" />Ajouter</Button></div>
+              <div className="flex items-center justify-between"><Label className="text-sm font-semibold">Tranches</Label><Button type="button" size="sm" variant="outline" onClick={addInstallment}><Plus className="h-3.5 w-3.5 mr-1" />Ajouter</Button></div>
               {installments.map((inst, idx) => (
                 <div key={idx} className="grid grid-cols-12 gap-2 items-end">
                   <div className="col-span-3"><Label className="text-xs">Libellé</Label><Input value={inst.label} onChange={(e) => updateInstallment(idx, 'label', e.target.value)} required /></div>
@@ -193,7 +180,7 @@ export default function FeeStructureModal({
                 </div>
               ))}
               <div className="flex justify-between items-center pt-2 border-t text-sm"><span className="text-slate-600">Somme :</span><span className={Math.abs(installmentsSum - totalAmountNum) < 1 ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-semibold'}>{installmentsSum.toLocaleString('fr-FR')} / {totalAmountNum.toLocaleString('fr-FR')} XOF</span></div>
-              {isInstallment && !installmentsValid && <p className="text-xs text-rose-600">⚠️ La somme des tranches doit être égale au montant total.</p>}
+              {isInstallment && !installmentsValid && <p className="text-xs text-rose-600">⚠️ La somme doit être égale au montant total.</p>}
             </div>
           )}
           <div className="flex gap-2 justify-end pt-4"><Button type="button" variant="outline" onClick={onClose}>Annuler</Button><Button type="submit" disabled={isInstallment && !installmentsValid}>{isEdit ? 'Enregistrer' : 'Créer'}</Button></div>

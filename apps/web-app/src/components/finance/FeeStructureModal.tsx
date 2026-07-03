@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { filterAndSortClasses } from '@/lib/finance/class-sort';
 
 const FEE_TYPES = [
   { value: 'INSCRIPTION', label: 'Inscription' },
@@ -42,7 +43,7 @@ export default function FeeStructureModal({
 }) {
   const isEdit = Boolean(feeId);
   const [name, setName] = useState(initialData?.name ?? '');
-  const [nameManuallyEdited, setNameManuallyEdited] = useState(isEdit); // En édition, on ne auto-remplit pas
+  const [nameManuallyEdited, setNameManuallyEdited] = useState(isEdit);
   const [feeType, setFeeType] = useState(initialData?.feeType ?? 'TUITION');
   const [totalAmount, setTotalAmount] = useState(initialData?.totalAmount != null ? String(initialData.totalAmount) : '');
   const [isInstallment, setIsInstallment] = useState(initialData?.isInstallment ?? false);
@@ -51,18 +52,43 @@ export default function FeeStructureModal({
   const [levelId, setLevelId] = useState(initialData?.levelId ?? '');
   const [classId, setClassId] = useState(initialData?.classId ?? '');
 
-  // Libellés pour l'auto-génération du nom
-  const feeTypeLabel = FEE_TYPES.find((f) => f.value === feeType)?.label ?? feeType;
+  // Installments
+  const initialInstallments: Installment[] = initialData?.structureInstallments?.length
+    ? initialData.structureInstallments
+        .sort((a: any, b: any) => a.orderIndex - b.orderIndex)
+        .map((i: any) => ({
+          label: i.label,
+          amount: String(i.amount),
+          dueDate: i.dueDate ? new Date(i.dueDate).toISOString().slice(0, 10) : '',
+          orderIndex: i.orderIndex,
+        }))
+    : [{ label: 'Tranche 1', amount: '', dueDate: '', orderIndex: 0 }];
+  const [installments, setInstallments] = useState<Installment[]>(initialInstallments);
+
+  // Filtrer les classes par niveau sélectionné dans le modal
+  const modalFilteredClasses = useMemo(
+    () => filterAndSortClasses(classes, levelId || undefined),
+    [classes, levelId],
+  );
+
+  // Réinitialiser classId si la classe n'appartient plus au niveau sélectionné
+  useEffect(() => {
+    if (classId && levelId && !modalFilteredClasses.find((c) => c.id === classId)) {
+      setClassId('');
+    }
+  }, [modalFilteredClasses, classId, levelId]);
+
+  // Auto-génération du nom
   const levelLabel = useMemo(() => {
     const level = levels.find((l) => l.id === levelId);
     return level ? (level.label ?? level.code ?? level.name ?? '') : '';
   }, [levels, levelId]);
+
   const classLabel = useMemo(() => {
     const cls = classes.find((c) => c.id === classId);
     return cls ? (cls.name ?? '') : '';
   }, [classes, classId]);
 
-  // Auto-génération du nom : "Frais d'inscription — Primaire" ou "Frais de scolarité — CP1"
   const autoName = useMemo(() => {
     const target = applyTo === 'class' && classLabel
       ? classLabel
@@ -81,65 +107,32 @@ export default function FeeStructureModal({
     return target ? `${prefix} — ${target}` : prefix;
   }, [feeType, applyTo, classLabel, levelLabel]);
 
-  // Auto-remplir le nom si l'utilisateur ne l'a pas modifié manuellement
   useEffect(() => {
     if (!nameManuallyEdited) {
       setName(autoName);
     }
   }, [autoName, nameManuallyEdited]);
 
-  // Installments (tranches)
-  const initialInstallments: Installment[] = initialData?.structureInstallments?.length
-    ? initialData.structureInstallments
-        .sort((a: any, b: any) => a.orderIndex - b.orderIndex)
-        .map((i: any) => ({
-          label: i.label,
-          amount: String(i.amount),
-          dueDate: i.dueDate ? new Date(i.dueDate).toISOString().slice(0, 10) : '',
-          orderIndex: i.orderIndex,
-        }))
-    : [
-        { label: 'Tranche 1', amount: '', dueDate: '', orderIndex: 0 },
-      ];
-  const [installments, setInstallments] = useState<Installment[]>(initialInstallments);
-
+  // Installments handlers
   const addInstallment = () => {
-    setInstallments([
-      ...installments,
-      {
-        label: `Tranche ${installments.length + 1}`,
-        amount: '',
-        dueDate: '',
-        orderIndex: installments.length,
-      },
-    ]);
+    setInstallments([...installments, { label: `Tranche ${installments.length + 1}`, amount: '', dueDate: '', orderIndex: installments.length }]);
   };
-
   const removeInstallment = (idx: number) => {
-    const updated = installments.filter((_, i) => i !== idx);
-    setInstallments(updated.map((inst, i) => ({ ...inst, orderIndex: i })));
+    setInstallments(installments.filter((_, i) => i !== idx).map((inst, i) => ({ ...inst, orderIndex: i })));
   };
-
   const updateInstallment = (idx: number, field: keyof Installment, value: string) => {
-    const updated = [...installments];
-    updated[idx] = { ...updated[idx], [field]: value };
-    setInstallments(updated);
+    setInstallments(installments.map((inst, i) => i === idx ? { ...inst, [field]: value } : inst));
   };
 
-  // Validation : si isInstallment, les tranches doivent être complètes et leur somme = totalAmount
   const installmentsSum = installments.reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
   const totalAmountNum = parseFloat(totalAmount) || 0;
-  const installmentsValid = !isInstallment || (
-    installments.every((i) => i.label && i.amount && i.dueDate) &&
-    Math.abs(installmentsSum - totalAmountNum) < 1
-  );
+  const installmentsValid = !isInstallment || (installments.every((i) => i.label && i.amount && i.dueDate) && Math.abs(installmentsSum - totalAmountNum) < 1);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const amount = parseFloat(totalAmount);
     if (!name || isNaN(amount) || amount < 0) return;
     if (isInstallment && !installmentsValid) return;
-
     onSubmit({
       academicYearId,
       name,
@@ -147,15 +140,10 @@ export default function FeeStructureModal({
       totalAmount: amount,
       isInstallment,
       isMandatory,
-      levelId: applyTo === 'level' ? levelId || undefined : undefined,
+      levelId: applyTo === 'level' ? levelId || undefined : (applyTo === 'class' ? levelId || undefined : undefined),
       classId: applyTo === 'class' ? classId || undefined : undefined,
       installments: isInstallment
-        ? installments.map((i) => ({
-            label: i.label,
-            amount: parseFloat(i.amount),
-            dueDate: new Date(i.dueDate),
-            orderIndex: i.orderIndex,
-          }))
+        ? installments.map((i) => ({ label: i.label, amount: parseFloat(i.amount), dueDate: new Date(i.dueDate), orderIndex: i.orderIndex }))
         : undefined,
     });
   };
@@ -181,6 +169,7 @@ export default function FeeStructureModal({
               </SelectContent>
             </Select>
           </div>
+
           <div>
             <Label>Appliquer à</Label>
             <div className="flex gap-4 mt-2">
@@ -194,59 +183,62 @@ export default function FeeStructureModal({
               </label>
             </div>
           </div>
-          {applyTo === 'level' && (
-            <div>
-              <Label>Niveau</Label>
-              <Select value={levelId} onValueChange={setLevelId}>
-                <SelectTrigger><SelectValue placeholder="Sélectionner un niveau" /></SelectTrigger>
-                <SelectContent>
-                  {levels.map((l) => (
-                    <SelectItem key={l.id} value={l.id}>
-                      {l.label ?? l.code ?? l.name ?? 'Niveau'}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+
+          {/* Niveau — toujours visible (sert de filtre pour les classes aussi) */}
+          <div>
+            <Label>Niveau {applyTo === 'class' && <span className="text-xs text-slate-400">(filtre les classes)</span>}</Label>
+            <Select value={levelId} onValueChange={(v) => { setLevelId(v); setClassId(''); }}>
+              <SelectTrigger><SelectValue placeholder="Sélectionner un niveau" /></SelectTrigger>
+              <SelectContent>
+                {levels.map((l) => (
+                  <SelectItem key={l.id} value={l.id}>
+                    {l.label ?? l.code ?? l.name ?? 'Niveau'}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Classe — visible seulement si applyTo = 'class', filtrée par niveau */}
           {applyTo === 'class' && (
             <div>
               <Label>Classe</Label>
-              <Select value={classId} onValueChange={setClassId}>
-                <SelectTrigger><SelectValue placeholder="Sélectionner une classe" /></SelectTrigger>
+              <Select value={classId} onValueChange={setClassId} disabled={!levelId || modalFilteredClasses.length === 0}>
+                <SelectTrigger>
+                  <SelectValue placeholder={levelId ? (modalFilteredClasses.length === 0 ? 'Aucune classe pour ce niveau' : 'Sélectionner une classe') : "Sélectionner d'abord un niveau"} />
+                </SelectTrigger>
                 <SelectContent>
-                  {classes.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.name ?? 'Classe'}</SelectItem>
+                  {modalFilteredClasses.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
           )}
+
           <div>
             <Label>Nom du frais</Label>
             <Input
               value={name}
-              onChange={(e) => {
-                setName(e.target.value);
-                setNameManuallyEdited(true);
-              }}
+              onChange={(e) => { setName(e.target.value); setNameManuallyEdited(true); }}
               placeholder="Auto-généré selon le type et la cible"
               required
             />
             {!nameManuallyEdited && (
-              <p className="text-xs text-blue-600 mt-1">
-                💡 Le nom se remplit automatiquement. Vous pouvez le personnaliser.
-              </p>
+              <p className="text-xs text-blue-600 mt-1">💡 Le nom se remplit automatiquement. Vous pouvez le personnaliser.</p>
             )}
           </div>
+
           <div>
             <Label>Montant total (XOF)</Label>
             <Input type="number" min={0} value={totalAmount} onChange={(e) => setTotalAmount(e.target.value)} required />
           </div>
+
           <div className="flex items-center gap-2">
             <input type="checkbox" id="installment" checked={isInstallment} onChange={(e) => setIsInstallment(e.target.checked)} />
             <Label htmlFor="installment">Paiement en tranches</Label>
           </div>
+
           <div className="flex items-center gap-2">
             <input type="checkbox" id="mandatory" checked={isMandatory} onChange={(e) => setIsMandatory(e.target.checked)} />
             <Label htmlFor="mandatory">Frais obligatoire</Label>
@@ -258,49 +250,26 @@ export default function FeeStructureModal({
               <div className="flex items-center justify-between">
                 <Label className="text-sm font-semibold">Tranches de paiement</Label>
                 <Button type="button" size="sm" variant="outline" onClick={addInstallment}>
-                  <Plus className="h-3.5 w-3.5 mr-1" />
-                  Ajouter
+                  <Plus className="h-3.5 w-3.5 mr-1" /> Ajouter
                 </Button>
               </div>
               {installments.map((inst, idx) => (
                 <div key={idx} className="grid grid-cols-12 gap-2 items-end">
                   <div className="col-span-3">
                     <Label className="text-xs">Libellé</Label>
-                    <Input
-                      value={inst.label}
-                      onChange={(e) => updateInstallment(idx, 'label', e.target.value)}
-                      placeholder="Tranche 1"
-                      required
-                    />
+                    <Input value={inst.label} onChange={(e) => updateInstallment(idx, 'label', e.target.value)} required />
                   </div>
                   <div className="col-span-3">
-                    <Label className="text-xs">Montant (XOF)</Label>
-                    <Input
-                      type="number"
-                      value={inst.amount}
-                      onChange={(e) => updateInstallment(idx, 'amount', e.target.value)}
-                      placeholder="50000"
-                      required
-                    />
+                    <Label className="text-xs">Montant</Label>
+                    <Input type="number" value={inst.amount} onChange={(e) => updateInstallment(idx, 'amount', e.target.value)} required />
                   </div>
                   <div className="col-span-4">
                     <Label className="text-xs">Échéance</Label>
-                    <Input
-                      type="date"
-                      value={inst.dueDate}
-                      onChange={(e) => updateInstallment(idx, 'dueDate', e.target.value)}
-                      required
-                    />
+                    <Input type="date" value={inst.dueDate} onChange={(e) => updateInstallment(idx, 'dueDate', e.target.value)} required />
                   </div>
                   <div className="col-span-2 flex justify-end">
                     {installments.length > 1 && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => removeInstallment(idx)}
-                        title="Supprimer"
-                      >
+                      <Button type="button" size="sm" variant="ghost" onClick={() => removeInstallment(idx)}>
                         <Trash2 className="h-4 w-4 text-rose-600" />
                       </Button>
                     )}
@@ -308,15 +277,13 @@ export default function FeeStructureModal({
                 </div>
               ))}
               <div className="flex justify-between items-center pt-2 border-t text-sm">
-                <span className="text-slate-600">Somme des tranches :</span>
+                <span className="text-slate-600">Somme :</span>
                 <span className={Math.abs(installmentsSum - totalAmountNum) < 1 ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-semibold'}>
                   {installmentsSum.toLocaleString('fr-FR')} / {totalAmountNum.toLocaleString('fr-FR')} XOF
                 </span>
               </div>
               {isInstallment && !installmentsValid && (
-                <p className="text-xs text-rose-600">
-                  ⚠️ La somme des tranches doit être égale au montant total.
-                </p>
+                <p className="text-xs text-rose-600">⚠️ La somme des tranches doit être égale au montant total.</p>
               )}
             </div>
           )}

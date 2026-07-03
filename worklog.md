@@ -2222,3 +2222,70 @@ Stage Summary:
 - Plus besoin de scroller : il s'affiche centré, à 5rem du haut de l'écran
 - Effet visuel "hologramme" : backdrop blur, glassmorphism, ombre bleutée
 - Fermeture : clic sur backdrop, bouton X, ou Escape
+
+---
+Task ID: multi-class-create-and-button-placement
+Agent: main
+Task: Sélection multiple de classes pour création groupée + déplacer le bouton "Ajouter tranche" en bas
+
+Work Log:
+
+## 1. Multi-select de classes dans FeeStructureModal.tsx
+- State : `classId: string` → `classIds: string[]`
+- En édition : initialisé avec `[initialData.classId]` (une seule classe)
+- En création : initialisé vide `[]`
+- useEffect : nettoie classIds quand les classes filtrées changent (changement de niveau)
+
+### UI multi-select (remplace le Select unique)
+- Header avec : "Classes (N sélectionnée(s))" + boutons "Tout sélectionner" / "Tout désélectionner"
+- Liste scrollable (max-h-44) avec checkbox par classe
+- Chaque ligne : checkbox + nom de la classe
+- Ligne sélectionnée : fond bleu clair (bg-blue-50)
+- Messages informatifs si pas de niveau sélectionné ou aucune classe
+- Bandeau bleu si plus d'1 classe sélectionnée : "Création groupée : N frais identiques seront créés"
+
+### Helpers ajoutés
+- `toggleClass(id)` : ajoute/retire une classe de la sélection
+- `selectAllClasses()` : sélectionne toutes les classes filtrées
+- `clearAllClasses()` : désélectionne tout
+
+### handleSubmit modifié
+- Envoie `classIds: string[]` (au lieu de `classId: string`) en mode classe
+- Le parent gère la création groupée
+
+### Bouton submit adaptatif
+- "Créer" (1 classe ou niveau)
+- "Créer N frais" (plusieurs classes sélectionnées)
+
+### Auto-nom
+- Si 1 seule classe sélectionnée : auto-nom avec le nom de la classe
+- Si plusieurs classes : auto-nom basé sur le niveau (chaque frais aura le même nom mais un classId différent)
+
+## 2. Bouton "Ajouter tranche" déplacé en bas
+- Avant : bouton "Ajouter" en haut à droite du header de la section tranches
+- Après : bouton full-width en bas de la section, juste avant la ligne "Somme"
+- Style : bordure pointillée bleue (border-dashed border-blue-300) + texte bleu + hover bleu clair
+- Plus facile d'accès : pas besoin de remonter pour ajouter une nouvelle tranche
+
+## 3. Parent FeeStructuresContent.tsx — handleCreate adapté
+- Cas 1 : body.classIds est un tableau avec plusieurs éléments → création groupée
+  * Boucle sur chaque classId
+  * Appelle financeService.createFeeStructure() pour chaque classe
+  * Compte succès/échecs
+  * Toast : "N frais créés" ou "Partiellement réussi : X créés, Y en échec"
+- Cas 2 : body.classIds absent ou vide → création unique (niveau ou classe unique)
+  * Comportement inchangé (envoie classId singulier)
+
+### handleUpdate adapté
+- En édition : on prend la 1ère classe du tableau classIds (si présent) pour classId
+- L'édition reste sur une seule classe à la fois (logique : on modifie UN frais existant)
+
+## 4. Fichiers modifiés (2)
+1. apps/web-app/src/components/finance/FeeStructureModal.tsx
+2. apps/web-app/src/components/finance/FeeStructuresContent.tsx
+
+Stage Summary:
+- Multi-select de classes opérationnel avec création groupée
+- Bouton "Ajouter une tranche" déplacé en bas de la section (accès facile)
+- Affichage individuel dans le tableau (chaque classe = 1 ligne séparée)
+- Bouton submit adaptatif : "Créer" ou "Créer N frais"

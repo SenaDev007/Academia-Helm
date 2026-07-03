@@ -207,8 +207,55 @@ export default function FeeStructuresContent() {
   const handleCreate = async (body: any) => {
     if (!academicYear?.id) return;
     try {
+      // Conversion levelId education_levels → school_levels
+      const convertedLevelId = body.levelId ? toSchoolLevelId(body.levelId) : undefined;
+
+      // Cas 1 : création groupée pour plusieurs classes (classIds est un tableau)
+      if (Array.isArray(body.classIds) && body.classIds.length > 0) {
+        const classIds = body.classIds;
+        const basePayload: any = {
+          academicYearId: academicYear.id,
+          name: body.name,
+          feeType: body.feeType,
+          totalAmount: body.totalAmount,
+          isInstallment: body.isInstallment,
+          isMandatory: body.isMandatory,
+          levelId: convertedLevelId,
+          installments: body.installments,
+        };
+
+        let successCount = 0;
+        let failCount = 0;
+        for (const cid of classIds) {
+          try {
+            await financeService.createFeeStructure({ ...basePayload, classId: cid });
+            successCount++;
+          } catch {
+            failCount++;
+          }
+        }
+
+        setModalNewFee(false);
+        if (failCount === 0) {
+          toast({
+            title: 'Succès',
+            description: `${successCount} frais créés avec succès (un par classe sélectionnée).`,
+          });
+        } else {
+          toast({
+            title: 'Partiellement réussi',
+            description: `${successCount} créés, ${failCount} en échec sur ${classIds.length} classes.`,
+            variant: 'destructive',
+          });
+        }
+        await loadStructures();
+        return;
+      }
+
+      // Cas 2 : création unique (niveau ou classe unique)
       const payload = { ...body, academicYearId: academicYear.id };
-      if (payload.levelId) payload.levelId = toSchoolLevelId(payload.levelId);
+      if (payload.levelId) payload.levelId = convertedLevelId;
+      delete payload.classIds; // nettoyer au cas où
       await financeService.createFeeStructure(payload);
       setModalNewFee(false);
       toast({ title: 'Succès', description: 'Frais configuré avec succès.' });
@@ -223,6 +270,12 @@ export default function FeeStructuresContent() {
     try {
       const payload = { ...body };
       if (payload.levelId) payload.levelId = toSchoolLevelId(payload.levelId);
+      // En édition : on prend la 1ère classe du tableau classIds (si présent) pour classId
+      // (l'édition reste sur une seule classe à la fois)
+      if (Array.isArray(payload.classIds) && payload.classIds.length > 0) {
+        payload.classId = payload.classIds[0];
+      }
+      delete payload.classIds;
       await financeService.updateFeeStructure(editingFee.id, payload);
       setEditingFee(null);
       toast({ title: 'Succès', description: 'Frais modifié avec succès.' });

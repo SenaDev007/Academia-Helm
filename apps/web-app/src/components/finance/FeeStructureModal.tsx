@@ -72,7 +72,9 @@ export default function FeeStructureModal({
   const [isMandatory, setIsMandatory] = useState(initialData?.isMandatory ?? true);
   const [applyTo, setApplyTo] = useState<'level' | 'class'>(initialData?.classId ? 'class' : 'level');
   const [levelId, setLevelId] = useState(initialData?.levelId ?? ''); // education_levels UUID
-  const [classId, setClassId] = useState(initialData?.classId ?? '');
+  // Multi-select : classIds est un tableau (création groupée pour plusieurs classes)
+  // En édition, on initialise avec la classe existante (si présente)
+  const [classIds, setClassIds] = useState<string[]>(initialData?.classId ? [initialData.classId] : []);
 
   const initialInstallments: Installment[] = initialData?.structureInstallments?.length
     ? initialData.structureInstallments.sort((a: any, b: any) => a.orderIndex - b.orderIndex).map((i: any) => ({
@@ -104,10 +106,9 @@ export default function FeeStructureModal({
   }, [classes, levelId, eduToSchoolLevelMap]);
 
   useEffect(() => {
-    if (classId && levelId && !modalFilteredClasses.find((c) => c.id === classId)) {
-      setClassId('');
-    }
-  }, [modalFilteredClasses, classId, levelId]);
+    // Enlever les classIds qui ne sont plus dans la liste filtrée (ex: changement de niveau)
+    setClassIds((prev) => prev.filter((id) => modalFilteredClasses.find((c) => c.id === id)));
+  }, [modalFilteredClasses]);
 
   // Auto-génération du nom
   const levelLabel = useMemo(() => {
@@ -116,9 +117,13 @@ export default function FeeStructureModal({
   }, [levels, levelId]);
 
   const classLabel = useMemo(() => {
-    const cls = classes.find((c) => c.id === classId);
-    return cls ? (cls.name ?? '') : '';
-  }, [classes, classId]);
+    // Si une seule classe sélectionnée, on affiche son nom ; sinon on garde vide (auto-nom basé sur niveau)
+    if (classIds.length === 1) {
+      const cls = classes.find((c) => c.id === classIds[0]);
+      return cls ? (cls.name ?? '') : '';
+    }
+    return '';
+  }, [classes, classIds]);
 
   const autoName = useMemo(() => {
     const target = applyTo === 'class' && classLabel ? classLabel : applyTo === 'level' && levelLabel ? levelLabel : '';
@@ -169,10 +174,11 @@ export default function FeeStructureModal({
     if (!name || isNaN(amount) || amount < 0) return;
     if (isInstallment && !installmentsValid) return;
     // levelId = education_levels UUID, le parent fera la conversion
+    // En mode class : on envoie classIds (tableau) pour création groupée
     onSubmit({
       academicYearId, name, feeType, totalAmount: amount, isInstallment, isMandatory,
       levelId: levelId || undefined,
-      classId: applyTo === 'class' ? classId || undefined : undefined,
+      classIds: applyTo === 'class' ? classIds : undefined,
       installments: isInstallment ? installments.map((i) => ({
         label: i.label,
         amount: parseFloat(i.amount),
@@ -184,6 +190,15 @@ export default function FeeStructureModal({
       })) : undefined,
     });
   };
+
+  // Toggle d'une classe dans la sélection multiple
+  const toggleClass = (id: string) => {
+    setClassIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  };
+  const selectAllClasses = () => setClassIds(modalFilteredClasses.map((c) => c.id));
+  const clearAllClasses = () => setClassIds([]);
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50">
@@ -200,17 +215,53 @@ export default function FeeStructureModal({
             </div>
           </div>
           <div><Label>Niveau {applyTo === 'class' && <span className="text-xs text-slate-400">(filtre les classes)</span>}</Label>
-            <Select value={levelId} onValueChange={(v) => { setLevelId(v); setClassId(''); }}>
+            <Select value={levelId} onValueChange={(v) => { setLevelId(v); setClassIds([]); }}>
               <SelectTrigger><SelectValue placeholder="Sélectionner un niveau" /></SelectTrigger>
               <SelectContent>{levels.map((l) => (<SelectItem key={l.id} value={l.id}>{l.label ?? l.code ?? l.name ?? 'Niveau'}</SelectItem>))}</SelectContent>
             </Select>
           </div>
           {applyTo === 'class' && (
-            <div><Label>Classe</Label>
-              <Select value={classId} onValueChange={setClassId} disabled={!levelId || modalFilteredClasses.length === 0}>
-                <SelectTrigger><SelectValue placeholder={levelId ? (modalFilteredClasses.length === 0 ? 'Aucune classe pour ce niveau' : 'Sélectionner une classe') : "Sélectionner d'abord un niveau"} /></SelectTrigger>
-                <SelectContent>{modalFilteredClasses.map((c) => (<SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>))}</SelectContent>
-              </Select>
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <Label>Classes <span className="text-xs text-slate-400">({classIds.length} sélectionnée{classIds.length > 1 ? 's' : ''})</span></Label>
+                {modalFilteredClasses.length > 0 && (
+                  <div className="flex gap-2 text-xs">
+                    <button type="button" onClick={selectAllClasses} className="text-blue-600 hover:text-blue-800 hover:underline">Tout sélectionner</button>
+                    <span className="text-slate-300">|</span>
+                    <button type="button" onClick={clearAllClasses} className="text-slate-500 hover:text-slate-700 hover:underline">Tout désélectionner</button>
+                  </div>
+                )}
+              </div>
+              {!levelId ? (
+                <p className="text-xs text-slate-500 italic p-3 bg-slate-50 rounded-md">Sélectionnez d'abord un niveau pour voir les classes.</p>
+              ) : modalFilteredClasses.length === 0 ? (
+                <p className="text-xs text-slate-500 italic p-3 bg-slate-50 rounded-md">Aucune classe pour ce niveau.</p>
+              ) : (
+                <div className="max-h-44 overflow-y-auto border border-slate-200 rounded-md bg-white divide-y divide-slate-100">
+                  {modalFilteredClasses.map((c) => {
+                    const checked = classIds.includes(c.id);
+                    return (
+                      <label
+                        key={c.id}
+                        className={`flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${checked ? 'bg-blue-50' : 'hover:bg-slate-50'}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleClass(c.id)}
+                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-slate-700">{c.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              {classIds.length > 1 && (
+                <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded p-2 mt-2">
+                  💡 <strong>Création groupée</strong> : {classIds.length} frais identiques seront créés (un par classe sélectionnée). Chaque classe apparaîtra individuellement dans le tableau.
+                </p>
+              )}
             </div>
           )}
           <div><Label>Nom du frais</Label>
@@ -224,10 +275,7 @@ export default function FeeStructureModal({
           <div className="flex items-center gap-2"><input type="checkbox" id="mandatory" checked={isMandatory} onChange={(e) => setIsMandatory(e.target.checked)} /><Label htmlFor="mandatory">Frais obligatoire</Label></div>
           {isInstallment && (
             <div className="border rounded-lg p-3 bg-slate-50 space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-semibold">Tranches</Label>
-                <Button type="button" size="sm" variant="outline" onClick={addInstallment}><Plus className="h-3.5 w-3.5 mr-1" />Ajouter</Button>
-              </div>
+              <Label className="text-sm font-semibold">Tranches</Label>
               <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded p-2">
                 💡 <strong>Tranche 1 = À l'inscription</strong> par défaut (règle usuelle des écoles privées :
                 la 1ère tranche est payée le jour de l'inscription de l'élève). Pour les tranches suivantes,
@@ -282,6 +330,10 @@ export default function FeeStructureModal({
                   )}
                 </div>
               ))}
+              {/* Bouton "Ajouter" déplacé en bas — plus facile d'accès après ajout de tranches */}
+              <Button type="button" size="sm" variant="outline" onClick={addInstallment} className="w-full border-dashed border-blue-300 text-blue-700 hover:bg-blue-50">
+                <Plus className="h-3.5 w-3.5 mr-1" />Ajouter une tranche
+              </Button>
               <div className="flex justify-between items-center pt-2 border-t text-sm">
                 <span className="text-slate-600">Somme :</span>
                 <span className={Math.abs(installmentsSum - totalAmountNum) < 1 ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-semibold'}>
@@ -295,7 +347,16 @@ export default function FeeStructureModal({
               )}
             </div>
           )}
-          <div className="flex gap-2 justify-end pt-4"><Button type="button" variant="outline" onClick={onClose}>Annuler</Button><Button type="submit" disabled={isInstallment && !installmentsValid}>{isEdit ? 'Enregistrer' : 'Créer'}</Button></div>
+          <div className="flex gap-2 justify-end pt-4">
+            <Button type="button" variant="outline" onClick={onClose}>Annuler</Button>
+            <Button type="submit" disabled={isInstallment && !installmentsValid}>
+              {isEdit
+                ? 'Enregistrer'
+                : (applyTo === 'class' && classIds.length > 1
+                    ? `Créer ${classIds.length} frais`
+                    : 'Créer')}
+            </Button>
+          </div>
         </form>
       </motion.div>
     </div>

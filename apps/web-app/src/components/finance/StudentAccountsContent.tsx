@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Eye, Unlock } from 'lucide-react';
+import { Eye, Unlock, UserCog } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -150,10 +150,27 @@ export default function StudentAccountsContent() {
                 <TableCell colSpan={6} className="text-center text-gray-500 py-12">Aucun compte élève.</TableCell>
               </TableRow>
             ) : (
-              accounts.map((a) => (
+              accounts.map((a) => {
+                // Détecter si l'élève a au moins une personnalisation (override)
+                // Un breakdown est "personnalisé" si son initialAmount != feeStructure.totalAmount
+                const hasOverride = (a.breakdowns ?? []).some((b: any) => {
+                  const fsTotal = Number(b.feeStructure?.totalAmount ?? 0);
+                  const initial = Number(b.initialAmount ?? 0);
+                  return Math.abs(fsTotal - initial) > 0.01;
+                });
+                return (
                 <TableRow key={a.id} className="hover:bg-slate-50">
                   <TableCell className="font-medium">
-                    {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.studentId}
+                    <div className="flex items-center gap-2">
+                      <div>
+                        {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.studentId}
+                      </div>
+                      {hasOverride && (
+                        <Badge variant="outline" className="text-purple-700 border-purple-300 bg-purple-50" title="Cet élève a une personnalisation de frais">
+                          <UserCog className="w-3 h-3 mr-1" />Personnalisé
+                        </Badge>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="text-right">{formatCurrency(a.totalDue)}</TableCell>
                   <TableCell className="text-right">{formatCurrency(a.totalPaid)}</TableCell>
@@ -172,7 +189,8 @@ export default function StudentAccountsContent() {
                     )}
                   </TableCell>
                 </TableRow>
-              ))
+                );
+              })
             )}
           </TableBody>
         </Table>
@@ -201,13 +219,68 @@ export default function StudentAccountsContent() {
                   <span>{formatCurrency(detailAccount.arrearsAmount)} — Non payé</span>
                 </li>
               )}
-              {detailAccount.breakdowns?.map((b: any) => (
-                <li key={b.id} className="flex justify-between text-sm">
-                  <span>{b.feeStructure?.name ?? b.feeStructureId}</span>
-                  <span>{formatCurrency(b.initialAmount)} — Soldé: {formatCurrency(b.paidAmount)}</span>
-                </li>
-              ))}
+              {detailAccount.breakdowns?.map((b: any) => {
+                const fsTotal = Number(b.feeStructure?.totalAmount ?? 0);
+                const initial = Number(b.initialAmount ?? 0);
+                const isOverridden = Math.abs(fsTotal - initial) > 0.01;
+                return (
+                  <li key={b.id} className="flex justify-between text-sm">
+                    <span className="flex items-center gap-1">
+                      {b.feeStructure?.name ?? b.feeStructureId}
+                      {isOverridden && (
+                        <Badge variant="outline" className="text-[10px] text-purple-700 border-purple-300 bg-purple-50 ml-1" title={`Personnalisé: ${formatCurrency(fsTotal)} → ${formatCurrency(initial)}`}>
+                          <UserCog className="w-2.5 h-2.5 mr-0.5" />Pers.
+                        </Badge>
+                      )}
+                    </span>
+                    <span className={isOverridden ? 'text-purple-700' : ''}>
+                      {isOverridden && <span className="line-through text-slate-400 mr-1">{formatCurrency(fsTotal)}</span>}
+                      {formatCurrency(initial)} — Soldé: {formatCurrency(b.paidAmount)}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
+            {/* Section Personnalisations — liste les overrides de l'élève pour cette année */}
+            {detailAccount.overrides?.length > 0 && (
+              <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                <h4 className="font-medium mb-2 flex items-center gap-2 text-purple-900">
+                  <UserCog className="w-4 h-4" />
+                  Personnalisations appliquées ({detailAccount.overrides.length})
+                </h4>
+                <ul className="space-y-2">
+                  {detailAccount.overrides.map((o: any) => {
+                    const original = Number(o.feeStructure?.totalAmount ?? 0);
+                    const custom = Number(o.customAmount ?? 0);
+                    const reduction = Math.max(0, original - custom);
+                    const reductionPct = original > 0 ? Math.round((reduction / original) * 100) : 0;
+                    return (
+                      <li key={o.id} className="text-sm bg-white rounded p-2 border border-purple-100">
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="min-w-0">
+                            <p className="font-medium text-slate-800">{o.feeStructure?.name ?? '—'}</p>
+                            <p className="text-xs text-slate-500">
+                              {o.feeStructure?.class?.name ? `Classe: ${o.feeStructure.class.name} · ` : ''}
+                              {reduction > 0 ? `Réduction: ${formatCurrency(reduction)} (${reductionPct}%)` : 'Aucune réduction'}
+                            </p>
+                            <p className="text-xs text-slate-500 italic mt-0.5">Motif: {o.reason}</p>
+                          </div>
+                          <div className="text-right whitespace-nowrap">
+                            <p className="text-xs text-slate-400 line-through">{formatCurrency(original)}</p>
+                            <p className="font-semibold text-emerald-700">{formatCurrency(custom)}</p>
+                          </div>
+                        </div>
+                        {o.creator && (
+                          <p className="text-[10px] text-slate-400 mt-1">
+                            Par {o.creator.firstName || ''} {o.creator.lastName || ''} · {o.createdAt ? new Date(o.createdAt).toLocaleDateString('fr-FR') : ''}
+                          </p>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
             {detailAccount.transactions?.length > 0 && (
               <div className="mt-4">
                 <h4 className="font-medium mb-2">Dernières transactions</h4>

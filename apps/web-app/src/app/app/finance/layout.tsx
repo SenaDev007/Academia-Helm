@@ -36,6 +36,7 @@ import {
   BarChart3,
   ShieldCheck,
   Settings,
+  UserCog,
 } from 'lucide-react';
 import { ModuleHeader, SubModuleNavigation } from '@/components/modules/blueprint';
 
@@ -43,6 +44,7 @@ const FINANCE_TABS = [
   { id: 'dashboard', label: 'Tableau de Bord', path: '/app/finance', icon: LayoutDashboard },
   { id: 'fees', label: 'Configuration des frais', path: '/app/finance/fees', icon: DollarSign },
   { id: 'accounts', label: 'Comptes élèves', path: '/app/finance/accounts', icon: Users },
+  { id: 'overrides', label: 'Personnalisations', path: '/app/finance/overrides', icon: UserCog },
   { id: 'payments', label: 'Encaissements', path: '/app/finance/payments', icon: CreditCard },
   { id: 'collection', label: 'Recouvrement', path: '/app/finance/collection', icon: AlertCircle },
   { id: 'expenses', label: 'Dépenses', path: '/app/finance/expenses', icon: TrendingDown },

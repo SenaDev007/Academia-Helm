@@ -294,7 +294,13 @@ export class StudentAccountService {
       where,
       include: {
         student: { select: { id: true, firstName: true, lastName: true, studentCode: true } },
-        breakdowns: { include: { feeStructure: { select: { id: true, label: true, amount: true } } } },
+        breakdowns: {
+          include: {
+            feeStructure: {
+              select: { id: true, name: true, feeType: true, totalAmount: true, customFeeTypeLabel: true },
+            },
+          },
+        },
       },
       orderBy: [{ student: { lastName: 'asc' } }, { student: { firstName: 'asc' } }],
       take: 500,
@@ -310,10 +316,26 @@ export class StudentAccountService {
         breakdowns: { include: { feeStructure: true } },
         transactions: { orderBy: { createdAt: 'desc' }, take: 50 },
         recoveryReminders: { orderBy: { sentAt: 'desc' }, take: 20 },
+        // Inclure les overrides de l'élève pour cette année (section Personnalisations)
+        // via la relation inverse — FeeOverride.studentId pointe vers Student.id
       },
     });
     if (!account) throw new NotFoundException('StudentAccount not found');
-    return account;
+
+    // Charger les overrides séparément (FeeOverride n'a pas de relation directe avec StudentAccount)
+    const overrides = await this.prisma.feeOverride.findMany({
+      where: {
+        studentId: account.studentId,
+        feeStructure: { academicYearId: account.academicYearId, tenantId },
+      },
+      include: {
+        feeStructure: { include: { class: true, level: true } },
+        creator: { select: { id: true, firstName: true, lastName: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return { ...account, overrides };
   }
 
   /**

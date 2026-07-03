@@ -42,6 +42,22 @@ class FinanceService {
     return financeFetch(`/api/finance/fee-structures/overrides?${qs}`);
   }
 
+  /**
+   * Liste tous les overrides d'un tenant (onglet Personnalisations).
+   * Filtres optionnels : academicYearId, classId, feeStructureId.
+   */
+  async getAllFeeOverrides(params?: Record<string, string>): Promise<any> {
+    const qs = params ? new URLSearchParams(params).toString() : '';
+    return financeFetch(`/api/finance/fee-structures/overrides${qs ? `?${qs}` : ''}`);
+  }
+
+  /**
+   * Supprime un override existant.
+   */
+  async deleteFeeOverride(id: string): Promise<any> {
+    return financeFetch(`/api/finance/fee-structures/overrides/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
   // --- Student Accounts ---
   async getStudentAccounts(params?: Record<string, string>): Promise<any> {
     const qs = params ? new URLSearchParams(params).toString() : '';

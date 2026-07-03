@@ -106,11 +106,29 @@ export class FeeStructureController {
   @Get('overrides')
   async getOverrides(
     @TenantId() tenantId: string,
-    @Query('studentId') studentId: string,
+    @Query('studentId') studentId?: string,
     @Query('academicYearId') academicYearId?: string,
+    @Query('feeStructureId') feeStructureId?: string,
+    @Query('classId') classId?: string,
   ) {
-    if (!studentId) return [];
-    return this.service.getOverridesForStudent(tenantId, studentId, academicYearId);
+    // Si studentId est fourni → on utilise l'ancienne méthode (rétro-compat)
+    if (studentId) {
+      return this.service.getOverridesForStudent(tenantId, studentId, academicYearId);
+    }
+    // Sinon → on liste tous les overrides du tenant (onglet Personnalisations)
+    return this.service.getAllOverrides(tenantId, {
+      academicYearId,
+      feeStructureId,
+      classId,
+    });
+  }
+
+  @Delete('overrides/:id')
+  async deleteOverride(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.service.deleteOverride(id, tenantId);
   }
 
   @Get(':id')

@@ -379,14 +379,71 @@ export class FeeStructureService {
   }
 
   async getOverridesForStudent(tenantId: string, studentId: string, academicYearId?: string) {
-    const where: any = { tenantId, studentId };
+    // FeeOverride n'a pas de tenantId directement — on filtre via feeStructure.tenantId
+    const where: any = { studentId, feeStructure: { tenantId } };
     if (academicYearId) {
-      where.feeStructure = { academicYearId };
+      where.feeStructure.academicYearId = academicYearId;
     }
     return this.prisma.feeOverride.findMany({
       where,
-      include: { feeStructure: true },
+      include: {
+        feeStructure: { include: { class: true, level: true } },
+        student: { select: { id: true, firstName: true, lastName: true, matricule: true, studentCode: true } },
+      },
+      orderBy: { createdAt: 'desc' },
     });
+  }
+
+  /**
+   * Récupère tous les overrides d'un tenant, avec filtres optionnels.
+   * Utilisé par l'onglet "Personnalisations" du module Finance.
+   */
+  async getAllOverrides(
+    tenantId: string,
+    filters: {
+      academicYearId?: string;
+      studentId?: string;
+      feeStructureId?: string;
+      classId?: string;
+    } = {},
+  ) {
+    const where: any = { feeStructure: { tenantId } };
+    if (filters.academicYearId) where.feeStructure.academicYearId = filters.academicYearId;
+    if (filters.feeStructureId) where.feeStructureId = filters.feeStructureId;
+    if (filters.studentId) where.studentId = filters.studentId;
+    if (filters.classId) where.feeStructure.classId = filters.classId;
+
+    return this.prisma.feeOverride.findMany({
+      where,
+      include: {
+        feeStructure: { include: { class: true, level: true } },
+        student: {
+          select: {
+            id: true, firstName: true, lastName: true, matricule: true, studentCode: true,
+            studentEnrollments: { where: { academicYearId: filters.academicYearId }, include: { class: true }, take: 1 },
+          },
+        },
+        creator: { select: { id: true, firstName: true, lastName: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Supprime un override existant.
+   * Vérifie que l'override appartient bien au tenant via feeStructure.tenantId.
+   */
+  async deleteOverride(id: string, tenantId: string) {
+    const override = await this.prisma.feeOverride.findFirst({
+      where: { id, feeStructure: { tenantId } },
+      include: { feeStructure: true, student: { select: { firstName: true, lastName: true } } },
+    });
+    if (!override) {
+      throw new NotFoundException(`FeeOverride ${id} not found`);
+    }
+    await this.audit(tenantId, undefined, 'FEE_OVERRIDE_DELETE', 'FeeOverride', id, { customAmount: override.customAmount, reason: override.reason }, undefined);
+    await this.prisma.feeOverride.delete({ where: { id } });
+    return { id, deleted: true };
   }
 
   /** Copie les FeeStructures d'une année vers une nouvelle année (sans overrides). */

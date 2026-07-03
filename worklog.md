@@ -1819,3 +1819,34 @@ Stage Summary:
   * Idem pour Primaire, Secondaire
   * Sélectionner un niveau + une classe spécifique → filtre exact (comportement inchangé)
 - Aucune migration DB nécessaire
+
+---
+Task ID: whatsapp-templates-meta-v3
+Agent: main
+Task: Régénérer les 20 templates WhatsApp au format Meta Business Platform (variables snake_case + header + footer)
+
+Work Log:
+- Source : scripts/gupshup/gupshup-templates.json (20 templates v2 Gupshup avec {{1}}...{{n}})
+- Conversion vers format Meta Business Platform :
+  * Variables {{1}} → {{snake_case}} (ex: {{school_name}}, {{parent_name}})
+  * Ajout d'un header TEXT court pour chaque template (≤ 60 caractères)
+  * Footer standardisé : "Academia Helm" (court, ≤ 60 caractères)
+  * Suppression de la ligne "Etablissement : {{1}}" du body (remplacée par header + var nommée dans le body)
+  * Variables jamais en début/fin de body ni de ligne
+- 20 templates générés, noms conservés (admission_recue, inscription_confirmee, etc.)
+- Catégories conservées : tous UTILITY
+- Template labels conservés (Admission confirmation, Enrollment confirmation, etc.)
+- Exemples (samples) au format Meta : [val1],[val2],... pour chaque variable
+- Fichier HTML rendu avec boutons "Copier" pour chaque champ (header, body, footer, sample)
+- Sauvegarde : /home/z/my-project/download/whatsapp-templates-meta.html
+
+Stage Summary:
+- 20 templates Meta prêts à copier-coller dans WhatsApp Business Platform
+- Format conforme aux règles Meta (variables nommées + header + footer)
+- Noms, catégories et labels conservés depuis la version Gupshup
+- L'utilisateur peut maintenant créer chaque template dans Meta en copiant :
+  1. Le nom (ex: admission_recue)
+  2. Le header TEXT
+  3. Le body
+  4. Le footer TEXT
+  5. Les exemples au format [val1],[val2],...

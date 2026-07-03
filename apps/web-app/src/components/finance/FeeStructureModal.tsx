@@ -36,64 +36,51 @@ function classOrder(name: string): number {
   return 100 + (name.charCodeAt(0) || 0);
 }
 
-interface Installment {
-  label: string;
-  amount: string;
-  dueDate: string;
-  orderIndex: number;
-}
+interface Installment { label: string; amount: string; dueDate: string; orderIndex: number; }
 
 export default function FeeStructureModal({
   academicYearId, levels, classes, onClose, onSubmit, feeId, initialData,
 }: {
-  academicYearId: string;
-  levels: any[];
-  classes: any[];
-  onClose: () => void;
-  onSubmit: (body: any) => void;
-  feeId?: string;
-  initialData?: any;
+  academicYearId: string; levels: any[]; classes: any[];
+  onClose: () => void; onSubmit: (body: any) => void;
+  feeId?: string; initialData?: any;
 }) {
   const isEdit = Boolean(feeId);
   const [name, setName] = useState(initialData?.name ?? '');
-  // En édition, on ne marque PAS comme manuellement édité pour que l'auto-nom se déclenche
-  // quand l'utilisateur change le type/niveau/classe. Dès qu'il édite manuellement, le flag passe à true.
   const [nameManuallyEdited, setNameManuallyEdited] = useState(false);
   const [feeType, setFeeType] = useState(initialData?.feeType ?? 'TUITION');
   const [totalAmount, setTotalAmount] = useState(initialData?.totalAmount != null ? String(initialData.totalAmount) : '');
   const [isInstallment, setIsInstallment] = useState(initialData?.isInstallment ?? false);
   const [isMandatory, setIsMandatory] = useState(initialData?.isMandatory ?? true);
   const [applyTo, setApplyTo] = useState<'level' | 'class'>(initialData?.classId ? 'class' : 'level');
+  // levelId = education_levels UUID (sélectionné dans le sélecteur)
   const [levelId, setLevelId] = useState(initialData?.levelId ?? '');
   const [classId, setClassId] = useState(initialData?.classId ?? '');
 
   const initialInstallments: Installment[] = initialData?.structureInstallments?.length
     ? initialData.structureInstallments.sort((a: any, b: any) => a.orderIndex - b.orderIndex).map((i: any) => ({
         label: i.label, amount: String(i.amount),
-        dueDate: i.dueDate ? new Date(i.dueDate).toISOString().slice(0, 10) : '',
-        orderIndex: i.orderIndex,
+        dueDate: i.dueDate ? new Date(i.dueDate).toISOString().slice(0, 10) : '', orderIndex: i.orderIndex,
       }))
     : [{ label: 'Tranche 1', amount: '', dueDate: '', orderIndex: 0 }];
   const [installments, setInstallments] = useState<Installment[]>(initialInstallments);
 
-  // Mapping education_levels UUID → school_levels UUID pour le filtrage
-  const eduToSchoolLevelMap = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const level of levels) {
-      const matchingClass = classes.find((c: any) => c.schoolLevel?.code === level.code);
-      if (matchingClass) map[level.id] = matchingClass.schoolLevelId;
-    }
-    return map;
-  }, [levels, classes]);
+  // Obtenir le schoolLevelId depuis le level sélectionné
+  // levels vient de /api/school-levels qui contient maintenant schoolLevelId
+  const getSchoolLevelId = (eduId: string): string | undefined => {
+    const level = levels.find((l) => l.id === eduId);
+    return level?.schoolLevelId || undefined;
+  };
 
-  // Filtrer les classes par niveau sélectionné
+  // Filtrer les classes par niveau (en utilisant schoolLevelId)
   const modalFilteredClasses = useMemo(() => {
     if (!levelId) return [...classes].sort((a, b) => classOrder(a.name) - classOrder(b.name));
-    const schoolLevelId = eduToSchoolLevelMap[levelId] || levelId;
+    const schoolLevelId = getSchoolLevelId(levelId);
+    if (!schoolLevelId) return [];
     return classes
       .filter((c: any) => c.schoolLevelId === schoolLevelId)
       .sort((a, b) => classOrder(a.name) - classOrder(b.name));
-  }, [classes, levelId, eduToSchoolLevelMap]);
+  }, [classes, levelId, levels]);
 
   useEffect(() => {
     if (classId && levelId && !modalFilteredClasses.find((c) => c.id === classId)) {
@@ -133,6 +120,8 @@ export default function FeeStructureModal({
   const totalAmountNum = parseFloat(totalAmount) || 0;
   const installmentsValid = !isInstallment || (installments.every((i) => i.label && i.amount && i.dueDate) && Math.abs(installmentsSum - totalAmountNum) < 1);
 
+  // handleSubmit envoie levelId = education_levels UUID
+  // Le parent (FeeStructuresContent) fera la conversion en schoolLevelId
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const amount = parseFloat(totalAmount);

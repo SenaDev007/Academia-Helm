@@ -1,17 +1,19 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { Eye, Unlock, UserCog } from 'lucide-react';
+import { Eye, Unlock, UserCog, Search, Download } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
 import { financeService } from '@/services/finance.service';
 import { classesService } from '@/services/classes.service';
+import { getAcademicYears } from '@/services/settings.service';
 import { formatCurrency } from '@/lib/utils';
 import { filterAndSortClasses } from '@/lib/finance/class-sort';
 import { Label } from '@/components/ui/label';
@@ -30,18 +32,25 @@ export default function StudentAccountsContent() {
   const { toast } = useToast();
   const [accounts, setAccounts] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
+  const [academicYears, setAcademicYears] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  // Filtre année : par défaut l'année courante du module context, mais l'utilisateur peut changer
+  const [filterYearId, setFilterYearId] = useState('');
   const [filterClassId, setFilterClassId] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [detailAccount, setDetailAccount] = useState<any | null>(null);
   const [unblockReason, setUnblockReason] = useState('');
   const [unblockModal, setUnblockModal] = useState<string | null>(null);
 
+  // L'année effective = filtre utilisateur OU année du contexte
+  const effectiveYearId = filterYearId || academicYear?.id || '';
+
   const loadAccounts = async () => {
-    if (!academicYear?.id) return;
+    if (!effectiveYearId) return;
     setLoading(true);
     try {
-      const params = new URLSearchParams({ academicYearId: academicYear.id });
+      const params = new URLSearchParams({ academicYearId: effectiveYearId });
       if (filterClassId) params.set('classId', filterClassId);
       if (filterStatus) params.set('status', filterStatus);
       const data = await financeService.getStudentAccounts(Object.fromEntries(params.entries()));
@@ -55,12 +64,15 @@ export default function StudentAccountsContent() {
 
   useEffect(() => {
     loadAccounts();
-  }, [academicYear?.id, filterClassId, filterStatus]);
+  }, [effectiveYearId, filterClassId, filterStatus]);
 
   useEffect(() => {
     classesService.getAll({})
       .then((d) => setClasses(Array.isArray(d) ? d : (d.data ?? [])))
       .catch(() => setClasses([]));
+    getAcademicYears()
+      .then((d) => setAcademicYears(Array.isArray(d) ? d : (d.data ?? [])))
+      .catch(() => setAcademicYears([]));
   }, []);
 
   const loadDetail = async (id: string) => {
@@ -86,17 +98,102 @@ export default function StudentAccountsContent() {
     }
   };
 
+  // Filtrage frontend par recherche (nom, prénom, matricule)
+  const filteredAccounts = useMemo(() => {
+    if (!searchQuery.trim()) return accounts;
+    const q = searchQuery.toLowerCase().trim();
+    return accounts.filter((a) => {
+      const name = `${a.student?.lastName || ''} ${a.student?.firstName || ''} ${a.student?.studentCode || ''}`.toLowerCase();
+      return name.includes(q);
+    });
+  }, [accounts, searchQuery]);
+
+  // Export CSV de la liste filtrée
+  const handleExportCSV = () => {
+    if (filteredAccounts.length === 0) {
+      toast({ title: 'Aucune donnée', description: 'Rien à exporter.', variant: 'destructive' });
+      return;
+    }
+    const headers = ['Élève', 'Matricule', 'Total dû', 'Payé', 'Solde', 'Statut', 'Personnalisé'];
+    const rows = filteredAccounts.map((a) => {
+      const name = a.student ? `${a.student.lastName} ${a.student.firstName}` : a.studentId;
+      const matricule = a.student?.studentCode || '';
+      const hasOverride = (a.breakdowns ?? []).some((b: any) => {
+        const fsTotal = Number(b.feeStructure?.totalAmount ?? 0);
+        const initial = Number(b.initialAmount ?? 0);
+        return Math.abs(fsTotal - initial) > 0.01;
+      });
+      return [
+        name,
+        matricule,
+        Number(a.totalDue ?? 0),
+        Number(a.totalPaid ?? 0),
+        Number(a.balance ?? 0),
+        a.status || '',
+        hasOverride ? 'Oui' : 'Non',
+      ];
+    });
+    const csv = [headers, ...rows]
+      .map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const yearLabel = academicYears.find((y) => y.id === effectiveYearId)?.name || 'annee';
+    link.href = url;
+    link.download = `comptes-eleves-${yearLabel}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    toast({ title: 'Export réussi', description: `${filteredAccounts.length} compte(s) exporté(s).` });
+  };
+
   return (
     <div className="space-y-4">
       <ModuleContentArea
         layout="custom"
         toolbar={
-          <p className="text-sm text-slate-600">
-            Solde, total dû, payé et statut par élève et par année.
-          </p>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <p className="text-sm text-slate-600">
+              Solde, total dû, payé et statut par élève et par année.
+            </p>
+            <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={filteredAccounts.length === 0}>
+              <Download className="w-4 h-4 mr-2" />Exporter CSV
+            </Button>
+          </div>
         }
       >
         <div className="mb-4 flex flex-wrap gap-4 items-end">
+          {/* Filtre Année scolaire */}
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Année scolaire</Label>
+            <Select
+              value={filterYearId || (academicYear?.id ?? 'ALL')}
+              onValueChange={(v) => setFilterYearId(v === 'ALL' ? '' : v)}
+            >
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder="Année courante" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={academicYear?.id ?? 'ALL'}>Année courante</SelectItem>
+                {academicYears.filter((y) => y.id !== academicYear?.id).map((y) => (
+                  <SelectItem key={y.id} value={y.id}>{y.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {/* Recherche par nom/matricule */}
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Rechercher</Label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Nom, prénom ou matricule..."
+                className="pl-9 w-[260px]"
+              />
+            </div>
+          </div>
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Classe</Label>
             <Select value={filterClassId || 'ALL'} onValueChange={(v) => setFilterClassId(v === 'ALL' ? '' : v)}>
@@ -145,12 +242,14 @@ export default function StudentAccountsContent() {
               <TableRow>
                 <TableCell colSpan={6} className="text-center text-gray-500 py-8">Chargement...</TableCell>
               </TableRow>
-            ) : accounts.length === 0 ? (
+            ) : filteredAccounts.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-gray-500 py-12">Aucun compte élève.</TableCell>
+                <TableCell colSpan={6} className="text-center text-gray-500 py-12">
+                  {searchQuery ? `Aucun élève trouvé pour « ${searchQuery} ».` : 'Aucun compte élève.'}
+                </TableCell>
               </TableRow>
             ) : (
-              accounts.map((a) => {
+              filteredAccounts.map((a) => {
                 // Détecter si l'élève a au moins une personnalisation (override)
                 // Un breakdown est "personnalisé" si son initialAmount != feeStructure.totalAmount
                 const hasOverride = (a.breakdowns ?? []).some((b: any) => {

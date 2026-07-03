@@ -446,6 +446,36 @@ export class FeeStructureService {
     return { id, deleted: true };
   }
 
+  /**
+   * Modifie un override existant (montant personnalisé + motif).
+   * Vérifie que l'override appartient bien au tenant via feeStructure.tenantId.
+   */
+  async updateOverride(
+    id: string,
+    tenantId: string,
+    data: { customAmount?: number; reason?: string },
+  ) {
+    const override = await this.prisma.feeOverride.findFirst({
+      where: { id, feeStructure: { tenantId } },
+    });
+    if (!override) {
+      throw new NotFoundException(`FeeOverride ${id} not found`);
+    }
+    const updated = await this.prisma.feeOverride.update({
+      where: { id },
+      data: {
+        ...(data.customAmount !== undefined && { customAmount: Number(data.customAmount) }),
+        ...(data.reason !== undefined && { reason: data.reason }),
+      },
+      include: {
+        feeStructure: { include: { class: true, level: true } },
+        student: { select: { id: true, firstName: true, lastName: true, matricule: true, studentCode: true } },
+      },
+    });
+    await this.audit(tenantId, undefined, 'FEE_OVERRIDE_UPDATE', 'FeeOverride', id, { customAmount: override.customAmount, reason: override.reason }, { customAmount: updated.customAmount, reason: updated.reason });
+    return updated;
+  }
+
   /** Copie les FeeStructures d'une année vers une nouvelle année (sans overrides). */
   async copyToNewYear(
     tenantId: string,

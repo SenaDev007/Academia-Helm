@@ -131,6 +131,15 @@ export class FeeStructureController {
     return this.service.deleteOverride(id, tenantId);
   }
 
+  @Patch('overrides/:id')
+  async updateOverride(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Body() body: { customAmount?: number; reason?: string },
+  ) {
+    return this.service.updateOverride(id, tenantId, body);
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string, @TenantId() tenantId: string) {
     return this.service.findOne(id, tenantId);

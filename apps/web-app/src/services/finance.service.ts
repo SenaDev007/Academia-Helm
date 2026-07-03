@@ -58,6 +58,13 @@ class FinanceService {
     return financeFetch(`/api/finance/fee-structures/overrides/${encodeURIComponent(id)}`, { method: 'DELETE' });
   }
 
+  /**
+   * Modifie un override existant (montant personnalisé + motif).
+   */
+  async updateFeeOverride(id: string, data: { customAmount?: number; reason?: string }): Promise<any> {
+    return financeFetch(`/api/finance/fee-structures/overrides/${encodeURIComponent(id)}`, { method: 'PATCH', body: data });
+  }
+
   // --- Student Accounts ---
   async getStudentAccounts(params?: Record<string, string>): Promise<any> {
     const qs = params ? new URLSearchParams(params).toString() : '';

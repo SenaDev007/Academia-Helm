@@ -51,6 +51,9 @@ export default function FeeOverridesContent() {
   const [filterFeeType, setFilterFeeType] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [modalOverride, setModalOverride] = useState(false);
+  const [editingOverride, setEditingOverride] = useState<any | null>(null);
+  // Formulaire d'édition inline (montant + motif)
+  const [editForm, setEditForm] = useState<{ customAmount: string; reason: string }>({ customAmount: '', reason: '' });
 
   // Chargement initial : classes + structures (pour le modal de création)
   useEffect(() => {
@@ -110,6 +113,40 @@ export default function FeeOverridesContent() {
     try {
       await financeService.deleteFeeOverride(id);
       toast({ title: 'Succès', description: 'Personnalisation supprimée.' });
+      await loadOverrides();
+    } catch (error: any) {
+      toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
+    }
+  };
+
+  // Ouvrir le modal d'édition inline (montant + motif)
+  const openEdit = (o: any) => {
+    setEditingOverride(o);
+    setEditForm({
+      customAmount: String(o.customAmount ?? ''),
+      reason: o.reason ?? '',
+    });
+  };
+
+  // Sauvegarder la modification
+  const handleUpdateOverride = async () => {
+    if (!editingOverride) return;
+    const amount = parseFloat(editForm.customAmount);
+    if (isNaN(amount) || amount < 0) {
+      toast({ title: 'Erreur', description: 'Montant invalide', variant: 'destructive' });
+      return;
+    }
+    if (!editForm.reason.trim()) {
+      toast({ title: 'Erreur', description: 'Motif obligatoire', variant: 'destructive' });
+      return;
+    }
+    try {
+      await financeService.updateFeeOverride(editingOverride.id, {
+        customAmount: amount,
+        reason: editForm.reason.trim(),
+      });
+      toast({ title: 'Succès', description: 'Personnalisation modifiée.' });
+      setEditingOverride(null);
       await loadOverrides();
     } catch (error: any) {
       toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
@@ -196,20 +233,20 @@ export default function FeeOverridesContent() {
           </div>
         </div>
 
-        {/* Tableau principal */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        {/* Tableau principal — toutes les cellules sur une seule ligne */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50">
-                <TableHead>Élève</TableHead>
-                <TableHead>Frais concerné</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead className="text-right">Montant initial</TableHead>
-                <TableHead className="text-right">Montant personnalisé</TableHead>
-                <TableHead className="text-right">Réduction</TableHead>
-                <TableHead>Motif</TableHead>
-                <TableHead>Créé par</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead className="whitespace-nowrap">Élève</TableHead>
+                <TableHead className="whitespace-nowrap">Frais concerné</TableHead>
+                <TableHead className="whitespace-nowrap">Type</TableHead>
+                <TableHead className="text-right whitespace-nowrap">Montant initial</TableHead>
+                <TableHead className="text-right whitespace-nowrap">Montant perso.</TableHead>
+                <TableHead className="text-right whitespace-nowrap">Réduction</TableHead>
+                <TableHead className="whitespace-nowrap">Motif</TableHead>
+                <TableHead className="whitespace-nowrap">Créé par</TableHead>
+                <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -233,35 +270,41 @@ export default function FeeOverridesContent() {
                   const custom = Number(o.customAmount ?? 0);
                   const reduction = Math.max(0, original - custom);
                   const reductionPct = original > 0 ? Math.round((reduction / original) * 100) : 0;
-                  const studentName = `${o.student?.lastName || ''} ${o.student?.firstName || ''}`;
+                  const studentName = `${o.student?.lastName || ''} ${o.student?.firstName || ''}`.trim();
+                  const studentMatricule = o.student?.matricule || o.student?.studentCode || '';
                   return (
                     <TableRow key={o.id} className="hover:bg-slate-50">
-                      <TableCell className="font-medium">
-                        <div>
-                          <p>{studentName || '—'}</p>
-                          {o.student?.matricule && <p className="text-xs text-slate-500">{o.student.matricule}</p>}
-                        </div>
+                      {/* Élève — single line: "Nom Prénom (matricule)" */}
+                      <TableCell className="font-medium whitespace-nowrap">
+                        {studentName || '—'}
+                        {studentMatricule && <span className="text-xs text-slate-500 ml-1">({studentMatricule})</span>}
                       </TableCell>
-                      <TableCell className="text-sm">{feeDisplayName(o.feeStructure)}</TableCell>
-                      <TableCell><Badge variant="outline">{feeTypeLabel(o.feeStructure?.feeType)}</Badge></TableCell>
-                      <TableCell className="text-right text-slate-500 line-through">{formatCurrency(original)}</TableCell>
-                      <TableCell className="text-right font-semibold text-emerald-700">{formatCurrency(custom)}</TableCell>
-                      <TableCell className="text-right">
+                      {/* Frais concerné — single line, tronqué si trop long */}
+                      <TableCell className="text-sm whitespace-nowrap max-w-[200px] truncate" title={feeDisplayName(o.feeStructure)}>
+                        {feeDisplayName(o.feeStructure)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap"><Badge variant="outline">{feeTypeLabel(o.feeStructure?.feeType)}</Badge></TableCell>
+                      <TableCell className="text-right text-slate-500 line-through whitespace-nowrap">{formatCurrency(original)}</TableCell>
+                      <TableCell className="text-right font-semibold text-emerald-700 whitespace-nowrap">{formatCurrency(custom)}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap">
                         {reduction > 0 ? (
-                          <div>
-                            <p className="text-rose-600 font-semibold">−{formatCurrency(reduction)}</p>
-                            <p className="text-xs text-slate-500">({reductionPct}%)</p>
-                          </div>
+                          <span className="text-rose-600 font-semibold">
+                            −{formatCurrency(reduction)} <span className="text-xs text-slate-500">({reductionPct}%)</span>
+                          </span>
                         ) : (
                           <span className="text-slate-400 text-sm">—</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-sm text-slate-600 max-w-xs truncate" title={o.reason}>{o.reason}</TableCell>
-                      <TableCell className="text-xs text-slate-500">
+                      {/* Motif — single line, tronqué */}
+                      <TableCell className="text-sm text-slate-600 max-w-[180px] truncate whitespace-nowrap" title={o.reason}>{o.reason}</TableCell>
+                      <TableCell className="text-xs text-slate-500 whitespace-nowrap">
                         {o.creator ? `${o.creator.firstName || ''} ${o.creator.lastName || ''}` : 'Système'}
-                        <p className="text-xs text-slate-400">{o.createdAt ? new Date(o.createdAt).toLocaleDateString('fr-FR') : ''}</p>
+                        <span className="text-slate-400 ml-1">· {o.createdAt ? new Date(o.createdAt).toLocaleDateString('fr-FR') : ''}</span>
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-right whitespace-nowrap">
+                        <Button variant="ghost" size="icon" onClick={() => openEdit(o)} title="Modifier">
+                          <Pencil className="h-4 w-4" />
+                        </Button>
                         <Button variant="ghost" size="icon" onClick={() => handleDelete(o.id, studentName)} title="Supprimer">
                           <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
@@ -274,6 +317,50 @@ export default function FeeOverridesContent() {
           </Table>
         </div>
       </ModuleContentArea>
+
+      {/* Modal d'édition inline (montant + motif) */}
+      {editingOverride && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-lg font-semibold mb-2">Modifier la personnalisation</h3>
+            <p className="text-sm text-slate-600 mb-4">
+              Élève : <strong>{editingOverride.student?.lastName} {editingOverride.student?.firstName}</strong>
+              <br />
+              Frais : <strong>{feeDisplayName(editingOverride.feeStructure)}</strong>
+              <br />
+              Montant initial : <strong>{formatCurrency(Number(editingOverride.feeStructure?.totalAmount ?? 0))}</strong>
+            </p>
+            <div className="space-y-3">
+              <div>
+                <Label className="text-xs">Nouveau montant personnalisé (XOF)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={editForm.customAmount}
+                  onChange={(e) => setEditForm({ ...editForm, customAmount: e.target.value })}
+                  required
+                />
+                <p className="text-xs text-blue-600 mt-1">
+                  Réduction actuelle : {formatCurrency(Math.max(0, Number(editingOverride.feeStructure?.totalAmount ?? 0) - parseFloat(editForm.customAmount || '0')))}
+                </p>
+              </div>
+              <div>
+                <Label className="text-xs">Motif</Label>
+                <Input
+                  value={editForm.reason}
+                  onChange={(e) => setEditForm({ ...editForm, reason: e.target.value })}
+                  placeholder="Ex: réduction cas social, bourse..."
+                  required
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end mt-4">
+              <Button variant="outline" onClick={() => setEditingOverride(null)}>Annuler</Button>
+              <Button onClick={handleUpdateOverride}>Enregistrer</Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {modalOverride && (
         <FeeOverrideModal

@@ -16,18 +16,25 @@ import { formatCurrency } from '@/lib/utils';
 export default function FeeOverrideModal({
   structures,
   onClose,
+  editingOverride,
 }: {
   structures: any[];
   onClose: () => void;
+  editingOverride?: any | null;
 }) {
-  const [studentId, setStudentId] = useState('');
-  const [feeStructureId, setFeeStructureId] = useState('');
+  const isEdit = Boolean(editingOverride);
+  const [studentId, setStudentId] = useState(editingOverride?.studentId ?? '');
+  const [feeStructureId, setFeeStructureId] = useState(editingOverride?.feeStructureId ?? '');
   const [reductionPercent, setReductionPercent] = useState('');
   const [reductionAmount, setReductionAmount] = useState('');
-  const [customAmount, setCustomAmount] = useState('');
-  const [reason, setReason] = useState('');
+  const [customAmount, setCustomAmount] = useState(editingOverride ? String(editingOverride.customAmount ?? '') : '');
+  const [reason, setReason] = useState(editingOverride?.reason ?? '');
   const [students, setStudents] = useState<any[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(
+    editingOverride?.student
+      ? `${editingOverride.student.lastName || ''} ${editingOverride.student.firstName || ''}`.trim()
+      : ''
+  );
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [loading, setLoading] = useState(false);
   const { shouldReduceMotion } = useMotionBudget();
@@ -133,12 +140,21 @@ export default function FeeOverrideModal({
     if (!studentId || !feeStructureId || isNaN(amount) || !reason.trim()) return;
     setLoading(true);
     try {
-      await financeService.overrideFeeStructure({
-        studentId,
-        feeStructureId,
-        customAmount: amount,
-        reason: reason.trim(),
-      });
+      if (isEdit && editingOverride) {
+        // Mode édition : appeler updateFeeOverride
+        await financeService.updateFeeOverride(editingOverride.id, {
+          customAmount: amount,
+          reason: reason.trim(),
+        });
+      } else {
+        // Mode création : appeler overrideFeeStructure
+        await financeService.overrideFeeStructure({
+          studentId,
+          feeStructureId,
+          customAmount: amount,
+          reason: reason.trim(),
+        });
+      }
       onClose();
     } catch (error: any) {
       alert(error?.message || 'Erreur réseau');
@@ -156,7 +172,9 @@ export default function FeeOverrideModal({
         className="bg-white rounded-xl p-6 max-w-lg w-full border border-blue-100 shadow-2xl max-h-[90vh] overflow-y-auto"
       >
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold">Personnalisation élève</h3>
+          <h3 className="text-lg font-semibold">
+            {isEdit ? 'Modifier la personnalisation' : 'Personnalisation élève'}
+          </h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
             <X className="w-5 h-5" />
           </button>
@@ -165,20 +183,31 @@ export default function FeeOverrideModal({
           {/* Recherche d'élève avec autocomplétion — input + dropdown de suggestions */}
           <div>
             <Label>Rechercher un élève</Label>
-            <div className="relative" ref={suggestionsRef}>
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none z-10" />
-              <Input
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setShowSuggestions(true);
-                  setStudentId(''); // reset si on tape à nouveau
-                }}
-                onFocus={() => setShowSuggestions(true)}
-                placeholder="Tapez un nom, prénom ou matricule..."
-                className="pl-10"
-                autoComplete="off"
-              />
+            {isEdit ? (
+              // Mode édition : élève verrouillé (affichage lecture seule)
+              <div className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-sm text-slate-700">
+                {editingOverride?.student
+                  ? `${editingOverride.student.lastName || ''} ${editingOverride.student.firstName || ''}`.trim()
+                  : '—'}
+                {editingOverride?.student?.matricule
+                  ? ` (${editingOverride.student.matricule})`
+                  : ''}
+              </div>
+            ) : (
+              <div className="relative" ref={suggestionsRef}>
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none z-10" />
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setShowSuggestions(true);
+                    setStudentId(''); // reset si on tape à nouveau
+                  }}
+                  onFocus={() => setShowSuggestions(true)}
+                  placeholder="Tapez un nom, prénom ou matricule..."
+                  className="pl-10"
+                  autoComplete="off"
+                />
               {/* Dropdown d'autocomplétion — cliquer pour sélectionner directement */}
               {showSuggestions && searchQuery.trim() && (
                 <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
@@ -212,6 +241,7 @@ export default function FeeOverrideModal({
                 </div>
               )}
             </div>
+            )}
             {selectedStudent && (
               <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
                 ✓ Élève sélectionné : <span className="font-semibold">{selectedStudent.lastName} {selectedStudent.firstName}</span>
@@ -223,16 +253,23 @@ export default function FeeOverrideModal({
           {/* Frais concerné — affichage enrichi avec classe + montant */}
           <div>
             <Label>Frais concerné</Label>
-            <Select value={feeStructureId} onValueChange={handleFeeStructureChange}>
-              <SelectTrigger><SelectValue placeholder="Sélectionner un frais" /></SelectTrigger>
-              <SelectContent>
-                {structures.filter((f) => f.isActive).map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
+            {isEdit ? (
+              // Mode édition : frais verrouillé (affichage lecture seule)
+              <div className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-sm text-slate-700">
+                {selectedFee ? feeDisplayName(selectedFee) : '—'}
+              </div>
+            ) : (
+              <Select value={feeStructureId} onValueChange={handleFeeStructureChange}>
+                <SelectTrigger><SelectValue placeholder="Sélectionner un frais" /></SelectTrigger>
+                <SelectContent>
+                  {structures.filter((f) => f.isActive).map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
                     {feeDisplayName(s)} — {formatCurrency(Number(s.totalAmount))}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            )}
             {selectedFee && (
               <p className="text-xs text-slate-500 mt-1">
                 Montant initial : <span className="font-semibold text-slate-700">{formatCurrency(originalAmount)}</span>
@@ -322,7 +359,7 @@ export default function FeeOverrideModal({
           <div className="flex gap-2 justify-end pt-4">
             <Button type="button" variant="outline" onClick={onClose}>Annuler</Button>
             <Button type="submit" disabled={loading || !customAmount}>
-              {loading ? 'Envoi...' : 'Valider la personnalisation'}
+              {loading ? 'Envoi...' : isEdit ? 'Enregistrer les modifications' : 'Valider la personnalisation'}
             </Button>
           </div>
         </form>

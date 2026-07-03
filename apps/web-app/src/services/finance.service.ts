@@ -50,11 +50,11 @@ class FinanceService {
   }
 
   async updateFeeStructure(id: string, data: any): Promise<any> {
-    return apiFetch(`${BASE_URL}/fee-structures/${id}`, { method: 'PATCH', body: data });
+    return apiFetch(`${BASE_URL}/fee-structures/${encodeURIComponent(id)}`, { method: 'PATCH', body: data });
   }
 
   async deleteFeeStructure(id: string): Promise<any> {
-    return apiFetch(`${BASE_URL}/fee-structures/${id}`, { method: 'DELETE' });
+    return apiFetch(`${BASE_URL}/fee-structures/${encodeURIComponent(id)}`, { method: 'DELETE' });
   }
 
   async copyFeeStructuresToYear(data: any): Promise<any> {

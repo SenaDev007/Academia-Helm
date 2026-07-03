@@ -32,6 +32,13 @@ export interface CreateCashRegisterDto {
   location?: string;
   openingBalance?: number;
   isActive?: boolean;
+  // Champs bancaires
+  bankName?: string;
+  bankAccountNumber?: string;
+  bankIBAN?: string;
+  bankBranch?: string;
+  bankAccountType?: string;
+  bankContact?: string;
 }
 
 export interface UpdateCashRegisterDto {
@@ -40,6 +47,13 @@ export interface UpdateCashRegisterDto {
   responsibleUserId?: string;
   location?: string;
   isActive?: boolean;
+  // Champs bancaires
+  bankName?: string;
+  bankAccountNumber?: string;
+  bankIBAN?: string;
+  bankBranch?: string;
+  bankAccountType?: string;
+  bankContact?: string;
 }
 
 export interface OpenCashRegisterDto {
@@ -85,6 +99,13 @@ export class CashRegisterService {
         openingBalance: new Prisma.Decimal(openingBalance),
         currentBalance: new Prisma.Decimal(openingBalance),
         isActive: dto.isActive ?? true,
+        // Champs bancaires (stockés même si null pour les caisses non-banque)
+        bankName: dto.bankName || null,
+        bankAccountNumber: dto.bankAccountNumber || null,
+        bankIBAN: dto.bankIBAN || null,
+        bankBranch: dto.bankBranch || null,
+        bankAccountType: dto.bankAccountType || null,
+        bankContact: dto.bankContact || null,
       },
       include: {
         responsibleUser: { select: { id: true, firstName: true, lastName: true, email: true } },
@@ -164,6 +185,13 @@ export class CashRegisterService {
         responsibleUserId: dto.responsibleUserId ?? existing.responsibleUserId,
         location: dto.location ?? existing.location,
         isActive: dto.isActive ?? existing.isActive,
+        // Champs bancaires (mis à jour si fournis)
+        ...(dto.bankName !== undefined && { bankName: dto.bankName || null }),
+        ...(dto.bankAccountNumber !== undefined && { bankAccountNumber: dto.bankAccountNumber || null }),
+        ...(dto.bankIBAN !== undefined && { bankIBAN: dto.bankIBAN || null }),
+        ...(dto.bankBranch !== undefined && { bankBranch: dto.bankBranch || null }),
+        ...(dto.bankAccountType !== undefined && { bankAccountType: dto.bankAccountType || null }),
+        ...(dto.bankContact !== undefined && { bankContact: dto.bankContact || null }),
       },
       include: {
         responsibleUser: { select: { id: true, firstName: true, lastName: true, email: true } },

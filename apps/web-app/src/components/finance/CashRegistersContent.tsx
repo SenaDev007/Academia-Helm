@@ -35,6 +35,13 @@ interface CashRegister {
   openedBy?: { id: string; firstName: string; lastName: string };
   closedBy?: { id: string; firstName: string; lastName: string };
   _count?: { transactions: number };
+  // Champs bancaires
+  bankName?: string;
+  bankAccountNumber?: string;
+  bankIBAN?: string;
+  bankBranch?: string;
+  bankAccountType?: string;
+  bankContact?: string;
 }
 
 // Helper : choisir l'icône selon le code/nom de la caisse
@@ -170,7 +177,17 @@ export default function CashRegistersContent() {
     location: '',
     openingBalance: '0',
     responsibleUserId: '',
+    // Champs bancaires
+    bankName: '',
+    bankAccountNumber: '',
+    bankIBAN: '',
+    bankBranch: '',
+    bankAccountType: '',
+    bankContact: '',
   });
+
+  // Détection : le nom de la caisse contient "banque" → afficher les champs bancaires
+  const isBankCaisse = formData.name.toLowerCase().includes('banque') || formData.code.toUpperCase() === 'BANQUE';
 
   const [closeForm, setCloseForm] = useState({
     countedBalance: '',
@@ -251,10 +268,19 @@ export default function CashRegistersContent() {
         location: formData.location || undefined,
         openingBalance: Number(formData.openingBalance) || 0,
         responsibleUserId: formData.responsibleUserId || undefined,
+        // Champs bancaires (envoyés seulement si la caisse est de type banque)
+        ...(isBankCaisse ? {
+          bankName: formData.bankName || undefined,
+          bankAccountNumber: formData.bankAccountNumber || undefined,
+          bankIBAN: formData.bankIBAN || undefined,
+          bankBranch: formData.bankBranch || undefined,
+          bankAccountType: formData.bankAccountType || undefined,
+          bankContact: formData.bankContact || undefined,
+        } : {}),
       });
       toast({ title: '✅ Caisse créée', description: `${formData.code} - ${formData.name}` });
       setCreateModal(false);
-      setFormData({ code: '', name: '', description: '', location: '', openingBalance: '0', responsibleUserId: '' });
+      setFormData({ code: '', name: '', description: '', location: '', openingBalance: '0', responsibleUserId: '', bankName: '', bankAccountNumber: '', bankIBAN: '', bankBranch: '', bankAccountType: '', bankContact: '' });
       loadRegisters();
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
@@ -786,6 +812,36 @@ export default function CashRegistersContent() {
                       </div>
                     )}
 
+                    {/* Informations bancaires — affichées si la caisse a des infos banque */}
+                    {selectedRegister.bankName && (
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Banknote className="w-4 h-4 text-amber-600" />
+                          <p className="text-sm font-semibold text-amber-800">Informations bancaires</p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          {selectedRegister.bankName && (
+                            <div><span className="text-xs text-slate-500">Banque :</span> <span className="font-medium text-slate-800">{selectedRegister.bankName}</span></div>
+                          )}
+                          {selectedRegister.bankAccountNumber && (
+                            <div><span className="text-xs text-slate-500">N° compte :</span> <span className="font-mono text-slate-800">{selectedRegister.bankAccountNumber}</span></div>
+                          )}
+                          {selectedRegister.bankIBAN && (
+                            <div><span className="text-xs text-slate-500">IBAN :</span> <span className="font-mono text-xs text-slate-800">{selectedRegister.bankIBAN}</span></div>
+                          )}
+                          {selectedRegister.bankBranch && (
+                            <div><span className="text-xs text-slate-500">Agence :</span> <span className="text-slate-800">{selectedRegister.bankBranch}</span></div>
+                          )}
+                          {selectedRegister.bankAccountType && (
+                            <div><span className="text-xs text-slate-500">Type :</span> <span className="text-slate-800">{selectedRegister.bankAccountType === 'COURANT' ? 'Compte courant' : 'Compte épargne'}</span></div>
+                          )}
+                          {selectedRegister.bankContact && (
+                            <div><span className="text-xs text-slate-500">Contact :</span> <span className="text-slate-800">{selectedRegister.bankContact}</span></div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Actions */}
                     <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-200">
                       {selectedRegister.isActive && !selectedRegister.isOpen && (
@@ -912,6 +968,46 @@ export default function CashRegistersContent() {
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               />
             </div>
+
+            {/* 5. Champs bancaires — affichés seulement si le nom contient "banque" */}
+            {isBankCaisse && (
+              <div className="space-y-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Banknote className="w-4 h-4 text-amber-600" />
+                  <p className="text-sm font-semibold text-amber-800">Informations bancaires</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="bankName" className="text-xs">Nom de la banque</Label>
+                    <Input id="bankName" placeholder="ex: Ecobank Bénin" value={formData.bankName} onChange={(e) => setFormData({ ...formData, bankName: e.target.value })} />
+                  </div>
+                  <div>
+                    <Label htmlFor="bankAccountNumber" className="text-xs">N° de compte</Label>
+                    <Input id="bankAccountNumber" placeholder="ex: 1234567890" value={formData.bankAccountNumber} onChange={(e) => setFormData({ ...formData, bankAccountNumber: e.target.value })} />
+                  </div>
+                  <div>
+                    <Label htmlFor="bankIBAN" className="text-xs">IBAN</Label>
+                    <Input id="bankIBAN" placeholder="ex: BJ66 BJBJ 0100..." value={formData.bankIBAN} onChange={(e) => setFormData({ ...formData, bankIBAN: e.target.value })} />
+                  </div>
+                  <div>
+                    <Label htmlFor="bankBranch" className="text-xs">Agence</Label>
+                    <Input id="bankBranch" placeholder="ex: Cotonou Centre" value={formData.bankBranch} onChange={(e) => setFormData({ ...formData, bankBranch: e.target.value })} />
+                  </div>
+                  <div>
+                    <Label htmlFor="bankAccountType" className="text-xs">Type de compte</Label>
+                    <select id="bankAccountType" value={formData.bankAccountType} onChange={(e) => setFormData({ ...formData, bankAccountType: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-white text-sm">
+                      <option value="">— Choisir —</option>
+                      <option value="COURANT">Compte courant</option>
+                      <option value="EPARGNE">Compte épargne</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label htmlFor="bankContact" className="text-xs">Contact gestionnaire</Label>
+                    <Input id="bankContact" placeholder="ex: M. Koffi — 01 97 12 34 56" value={formData.bankContact} onChange={(e) => setFormData({ ...formData, bankContact: e.target.value })} />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateModal(false)}>Annuler</Button>

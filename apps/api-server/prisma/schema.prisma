@@ -5063,6 +5063,13 @@ model CashRegister {
   closedAt           DateTime?                              // Dernière fermeture
   closedByUserId     String?                               // User qui a fermé la caisse
   isActive           Boolean              @default(true)   // Caisse active (false = archivée, plus utilisable)
+  // Champs bancaires (utilisés seulement pour les caisses de type banque)
+  bankName           String?                               // Nom de la banque (ex: Ecobank Bénin)
+  bankAccountNumber  String?                               // Numéro de compte bancaire
+  bankIBAN           String?                               // IBAN du compte
+  bankBranch         String?                               // Agence / succursale
+  bankAccountType    String?                               // Type de compte: COURANT, EPARGNE
+  bankContact        String?                               // Contact du gestionnaire de compte
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
   tenant             Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)

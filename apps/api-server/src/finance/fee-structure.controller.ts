@@ -139,4 +139,12 @@ export class FeeStructureController {
       orderIndex: Number(body.orderIndex),
     });
   }
+
+  @Delete(':id')
+  async delete(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.service.delete(id, tenantId);
+  }
 }

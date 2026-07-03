@@ -6,6 +6,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -28,10 +29,18 @@ export class FeeStructureController {
     @CurrentUser() user: any,
     @Body() body: CreateFeeStructureDto,
   ) {
-    const installments = body.installments?.map((i: any) => ({
-      ...i,
-      dueDate: i.dueDate ? new Date(i.dueDate) : new Date(),
-    }));
+    const installments = body.installments?.map((i: any) => {
+      const dueDateType = i.dueDateType ?? 'FIXED';
+      return {
+        label: i.label,
+        amount: Number(i.amount),
+        // dueDate n'est requis que pour le mode FIXED
+        dueDate: dueDateType === 'FIXED' && i.dueDate ? new Date(i.dueDate) : undefined,
+        dueDateType,
+        daysOffset: i.daysOffset != null ? Number(i.daysOffset) : undefined,
+        orderIndex: Number(i.orderIndex),
+      };
+    });
     return this.service.create(tenantId, {
       academicYearId: body.academicYearId,
       levelId: body.levelId,
@@ -126,6 +135,20 @@ export class FeeStructureController {
     if (body.isActive !== undefined) data.isActive = body.isActive;
     if (body.levelId !== undefined) data.levelId = body.levelId || null;
     if (body.classId !== undefined) data.classId = body.classId || null;
+    // Mise à jour des installments (remplacement complet de la collection)
+    if (body.installments !== undefined) {
+      data.installments = (body.installments as any[]).map((i: any) => {
+        const dueDateType = i.dueDateType ?? 'FIXED';
+        return {
+          label: i.label,
+          amount: Number(i.amount),
+          dueDate: dueDateType === 'FIXED' && i.dueDate ? new Date(i.dueDate) : undefined,
+          dueDateType,
+          daysOffset: i.daysOffset != null ? Number(i.daysOffset) : undefined,
+          orderIndex: Number(i.orderIndex),
+        };
+      });
+    }
     return this.service.update(id, tenantId, data, user?.id);
   }
 
@@ -141,5 +164,13 @@ export class FeeStructureController {
       dueDate: new Date(body.dueDate),
       orderIndex: Number(body.orderIndex),
     });
+  }
+
+  @Delete(':id')
+  async delete(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.service.delete(id, tenantId);
   }
 }

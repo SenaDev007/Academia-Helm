@@ -60,7 +60,7 @@ export default function NewPaymentModal({
     const breakdowns = selectedAccount.breakdowns ?? [];
     let remaining = pay;
     const lines: { name: string; pay: number }[] = [];
-    const order = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'AMANTS', 'OTHER'];
+    const order = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'OTHER'];
     const sorted = [...breakdowns].sort((a, b) => order.indexOf(a.feeStructure?.feeType ?? '') - order.indexOf(b.feeStructure?.feeType ?? ''));
     for (const b of sorted) {
       if (remaining <= 0) break;

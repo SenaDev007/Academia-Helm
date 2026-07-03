@@ -28,7 +28,7 @@ export class CreateFeeStructureDto {
   @IsString()
   name: string;
 
-  @IsIn(['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'AMANTS', 'OTHER'])
+  @IsIn(['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'OTHER'])
   feeType: string;
 
   @IsOptional()
@@ -64,7 +64,7 @@ export class UpdateFeeStructureDto {
   name?: string;
 
   @IsOptional()
-  @IsIn(['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'AMANTS', 'OTHER'])
+  @IsIn(['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'OTHER'])
   feeType?: string;
 
   @IsOptional()

@@ -16,6 +16,7 @@ import {
   IsOptional,
   IsIn,
   IsArray,
+  ValidateNested,
 } from 'class-validator';
 
 // ─── 1. FeeStructure ────────────────────────────────────────────────────────
@@ -33,13 +34,11 @@ export class CreateFeeStructureDto {
   @IsNumber()
   totalAmount: number;
 
-  @IsOptional()
   @IsBoolean()
-  isInstallment?: boolean;
+  isInstallment: boolean;
 
-  @IsOptional()
   @IsBoolean()
-  isMandatory?: boolean;
+  isMandatory: boolean;
 
   @IsOptional()
   @IsString()
@@ -51,6 +50,7 @@ export class CreateFeeStructureDto {
 
   @IsOptional()
   @IsArray()
+  @ValidateNested({ each: true })
   installments?: any[];
 }
 
@@ -58,6 +58,14 @@ export class UpdateFeeStructureDto {
   @IsOptional()
   @IsString()
   name?: string;
+
+  @IsOptional()
+  @IsString()
+  feeType?: string;
+
+  @IsOptional()
+  @IsString()
+  academicYearId?: string;
 
   @IsOptional()
   @IsNumber()
@@ -82,6 +90,10 @@ export class UpdateFeeStructureDto {
   @IsOptional()
   @IsString()
   classId?: string | null;
+
+  @IsOptional()
+  @IsArray()
+  installments?: any[];
 }
 
 // ─── 2. FeeCategory ─────────────────────────────────────────────────────────

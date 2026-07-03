@@ -62,11 +62,43 @@ export class FeeStructureService {
     if (!FEE_TYPES.includes(feeType as FeeType)) {
       throw new BadRequestException(`feeType must be one of: ${FEE_TYPES.join(', ')}`);
     }
-    if (data.classId && data.levelId) {
+
+    // Résoudre levelId : le frontend peut envoyer un UUID de education_levels
+    // au lieu de school_levels. On essaie les deux tables.
+    let resolvedLevelId = data.levelId ?? null;
+    if (resolvedLevelId) {
+      // Vérifier si c'est un UUID de school_levels
+      const schoolLevel = await this.prisma.schoolLevel.findFirst({
+        where: { id: resolvedLevelId, tenantId },
+        select: { id: true },
+      });
+      if (!schoolLevel) {
+        // Ce n'est pas dans school_levels → essayer education_levels
+        const eduLevel = await this.prisma.educationLevel.findFirst({
+          where: { id: resolvedLevelId, tenantId },
+          select: { id: true, name: true },
+        });
+        if (eduLevel) {
+          // Résoudre par nom (MATERNELLE/PRIMAIRE/SECONDAIRE)
+          const matchingSchoolLevel = await this.prisma.schoolLevel.findFirst({
+            where: { tenantId, name: eduLevel.name },
+            select: { id: true },
+          });
+          if (matchingSchoolLevel) {
+            resolvedLevelId = matchingSchoolLevel.id;
+          } else {
+            // Si aucun school_level ne correspond, créer ou utiliser le code
+            resolvedLevelId = null;
+          }
+        }
+      }
+    }
+
+    if (data.classId && resolvedLevelId) {
       const cls = await this.prisma.class.findFirst({
         where: { id: data.classId, tenantId },
       });
-      if (cls && cls.schoolLevelId !== data.levelId) {
+      if (cls && cls.schoolLevelId !== resolvedLevelId) {
         throw new BadRequestException('classId must belong to the given levelId');
       }
     }
@@ -75,7 +107,7 @@ export class FeeStructureService {
       data: {
         tenantId,
         academicYearId: data.academicYearId,
-        levelId: data.levelId ?? null,
+        levelId: resolvedLevelId,
         classId: data.classId ?? null,
         name: data.name,
         feeType: feeType as FeeType,
@@ -147,6 +179,7 @@ export class FeeStructureService {
     tenantId: string,
     data: Partial<{
       name: string;
+      feeType: string;
       totalAmount: number;
       isInstallment: boolean;
       isMandatory: boolean;
@@ -158,6 +191,33 @@ export class FeeStructureService {
   ) {
     const existing = await this.findOne(id, tenantId);
     await this.ensureAcademicYearNotClosed(existing.academicYearId, tenantId);
+
+    // Résoudre levelId si fourni (même logique que create)
+    let resolvedLevelId = data.levelId !== undefined ? data.levelId : existing.levelId;
+    if (resolvedLevelId) {
+      const schoolLevel = await this.prisma.schoolLevel.findFirst({
+        where: { id: resolvedLevelId, tenantId },
+        select: { id: true },
+      });
+      if (!schoolLevel) {
+        const eduLevel = await this.prisma.educationLevel.findFirst({
+          where: { id: resolvedLevelId, tenantId },
+          select: { id: true, name: true },
+        });
+        if (eduLevel) {
+          const matchingSchoolLevel = await this.prisma.schoolLevel.findFirst({
+            where: { tenantId, name: eduLevel.name },
+            select: { id: true },
+          });
+          if (matchingSchoolLevel) {
+            resolvedLevelId = matchingSchoolLevel.id;
+          } else {
+            resolvedLevelId = null;
+          }
+        }
+      }
+    }
+
     await this.prisma.feeStructure.update({
       where: { id },
       data: { isActive: false, updatedAt: new Date() },
@@ -166,10 +226,10 @@ export class FeeStructureService {
       data: {
         tenantId,
         academicYearId: existing.academicYearId,
-        levelId: existing.levelId,
-        classId: existing.classId,
+        levelId: resolvedLevelId,
+        classId: data.classId !== undefined ? data.classId : existing.classId,
         name: data.name ?? existing.name,
-        feeType: existing.feeType,
+        feeType: (data.feeType as FeeType) ?? existing.feeType,
         totalAmount: data.totalAmount ?? Number(existing.totalAmount),
         isInstallment: data.isInstallment ?? existing.isInstallment,
         isMandatory: data.isMandatory ?? existing.isMandatory,

@@ -118,6 +118,7 @@ export class FeeStructureController {
   ) {
     const data: any = {};
     if (body.name !== undefined) data.name = body.name;
+    if (body.feeType !== undefined) data.feeType = body.feeType;
     if (body.totalAmount !== undefined) data.totalAmount = Number(body.totalAmount);
     if (body.isInstallment !== undefined) data.isInstallment = body.isInstallment;
     if (body.isMandatory !== undefined) data.isMandatory = body.isMandatory;

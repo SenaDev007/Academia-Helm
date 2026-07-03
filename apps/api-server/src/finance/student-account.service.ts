@@ -42,6 +42,40 @@ export class StudentAccountService {
   }
 
   /**
+   * Résout la date d'échéance réelle d'une tranche en fonction de son mode.
+   *
+   * - FIXED                 : retourne installment.dueDate
+   * - AT_ENROLLMENT         : retourne enrollmentDate (date d'inscription de l'élève)
+   * - DAYS_AFTER_ENROLLMENT : retourne enrollmentDate + daysOffset jours
+   *
+   * Si enrollmentDate est null/undefined (élève sans inscription), on fallback sur
+   * installment.dueDate (ou maintenant si pas de dueDate non plus).
+   */
+  private resolveDueDate(
+    installment: any,
+    enrollmentDate: Date | null | undefined,
+  ): Date | null {
+    const dueDateType = installment.dueDateType ?? 'FIXED';
+
+    if (dueDateType === 'AT_ENROLLMENT') {
+      if (enrollmentDate) return new Date(enrollmentDate);
+      // Fallback : maintenant si pas d'inscription
+      return installment.dueDate ? new Date(installment.dueDate) : new Date();
+    }
+
+    if (dueDateType === 'DAYS_AFTER_ENROLLMENT') {
+      const base = enrollmentDate ? new Date(enrollmentDate) : new Date();
+      const offset = installment.daysOffset ?? 0;
+      const result = new Date(base);
+      result.setDate(result.getDate() + offset);
+      return result;
+    }
+
+    // FIXED
+    return installment.dueDate ? new Date(installment.dueDate) : null;
+  }
+
+  /**
    * Crée ou récupère le compte élève pour une année.
    * Construit les AccountBreakdown à partir des FeeStructure applicables (priorité Classe > Niveau > Override).
    */
@@ -142,9 +176,22 @@ export class StudentAccountService {
   async updateStatus(accountId: string, tenantId: string): Promise<string> {
     const account = await this.prisma.studentAccount.findFirst({
       where: { id: accountId, tenantId },
-      include: { breakdowns: { include: { feeStructure: { include: { structureInstallments: true } } } } },
+      include: {
+        breakdowns: {
+          include: { feeStructure: { include: { structureInstallments: true } } },
+        },
+      },
     });
     if (!account) throw new NotFoundException('StudentAccount not found');
+
+    // Charger la date d'inscription de l'élève pour résoudre les échéances
+    // AT_ENROLLMENT et DAYS_AFTER_ENROLLMENT
+    const enrollment = await this.prisma.studentEnrollment.findFirst({
+      where: { studentId: account.studentId, academicYearId: account.academicYearId },
+      select: { enrollmentDate: true },
+      orderBy: { enrollmentDate: 'desc' },
+    });
+    const enrollmentDate = enrollment?.enrollmentDate ?? null;
 
     const balance = Number(account.balance);
     let status = account.status;
@@ -166,10 +213,13 @@ export class StudentAccountService {
         if (rem <= 0) return false;
         const fs = b.feeStructure;
         const installments = fs?.structureInstallments ?? [];
+        // Résoudre les échéances en tenant compte du mode (FIXED / AT_ENROLLMENT / DAYS_AFTER_ENROLLMENT)
         const nextDue = installments
           .filter((i) => Number(b.paidAmount) < Number(fs?.totalAmount ?? 0))
-          .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0];
-        return nextDue && new Date(nextDue.dueDate) < now;
+          .map((i) => ({ installment: i, resolvedDue: this.resolveDueDate(i, enrollmentDate) }))
+          .filter((x) => x.resolvedDue !== null)
+          .sort((a, b) => a.resolvedDue!.getTime() - b.resolvedDue!.getTime())[0];
+        return nextDue && nextDue.resolvedDue! < now;
       });
       status = hasOverdue ? STATUS_OVERDUE : STATUS_PARTIAL;
     }

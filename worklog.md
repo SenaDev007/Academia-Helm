@@ -1994,3 +1994,90 @@ Stage Summary:
   3. Définir WHATSAPP_PHONE_NUMBER_ID=<phone_number_id Meta>
 - Les 20 templates Meta v3 sont à créer dans Meta Business Platform
   (voir download/whatsapp-templates-meta-v3.html)
+
+---
+Task ID: installment-due-date-rule
+Agent: main
+Task: Permettre de lier la 1ère tranche d'un frais à la date d'inscription de l'élève (au lieu d'une date fixe)
+
+Work Log:
+
+## 1. Migration DB appliquée sur Neon DB
+- Fichier : prisma/migrations/20260703120000_installment_due_date_rule.sql
+- Script d'exécution : scripts/run-migration-installment-rule.js (node-postgres)
+- Création du type enum : installment_due_date_type (FIXED, AT_ENROLLMENT, DAYS_AFTER_ENROLLMENT)
+- Colonnes ajoutées à fee_structure_installments :
+  * dueDateType (NOT NULL, DEFAULT 'FIXED')
+  * daysOffset (INTEGER, NULLABLE)
+- Colonne dueDate rendue nullable (pour AT_ENROLLMENT/DAYS_AFTER_ENROLLMENT)
+- Index sur dueDateType
+- Commentaires SQL ajoutés
+
+## 2. Schéma Prisma mis à jour
+- FeeStructureInstallment.dueDate : DateTime → DateTime? (nullable)
+- Ajout : dueDateType String @default("FIXED")
+- Ajout : daysOffset Int?
+- Ajout : @@index([dueDateType])
+
+## 3. Backend - fee-structure.service.ts
+- create() : accepte dueDateType + daysOffset sur chaque installment
+  * Pour FIXED : dueDate est utilisée (ou new Date() par défaut)
+  * Pour AT_ENROLLMENT : dueDate = null, daysOffset = null
+  * Pour DAYS_AFTER_ENROLLMENT : dueDate = null, daysOffset requis
+- update() : accepte installments[] (remplacement complet de la collection)
+  * deleteMany + createMany pour remplacer les tranches
+  * Recharge le frais avec ses nouveaux installments
+- addInstallment() : signature étendue (dueDateType, daysOffset)
+- copyToNewYear() : copie aussi dueDateType + daysOffset
+
+## 4. Backend - fee-structure.controller.ts
+- create() : parse dueDateType + daysOffset depuis le body, ne force plus dueDate à new Date()
+- update() : transmet installments[] au service avec parsing des nouveaux champs
+
+## 5. Backend - student-account.service.ts
+- Nouvelle méthode privée resolveDueDate(installment, enrollmentDate) :
+  * FIXED → installment.dueDate
+  * AT_ENROLLMENT → enrollmentDate (fallback : installment.dueDate ou maintenant)
+  * DAYS_AFTER_ENROLLMENT → enrollmentDate + daysOffset jours
+- updateStatus() :
+  * Charge l'StudentEnrollment pour récupérer enrollmentDate
+  * Utilise resolveDueDate() pour calculer l'échéance réelle de chaque tranche
+  * Le statut OVERDUE est calculé sur la date résolue, pas sur dueDate brute
+
+## 6. Frontend - FeeStructureModal.tsx (UI repensée)
+- Interface Installment étendue : dueDateType + daysOffset
+- Par défaut, la Tranche 1 est en mode AT_ENROLLMENT (règle métier écoles privées)
+- Les tranches suivantes sont en mode FIXED par défaut
+- UI par tranche (carte avec bordure) :
+  * Libellé + Montant + Mode d'échéance (Select) + bouton supprimer
+  * Champ conditionnel selon le mode :
+    - FIXED : input date
+    - AT_ENROLLMENT : message informatif vert
+    - DAYS_AFTER_ENROLLMENT : input number (jours)
+- Bandeau bleu explicatif en haut de la section tranches
+- Validation adaptée : dueDate requis seulement pour FIXED, daysOffset requis pour DAYS_AFTER_ENROLLMENT
+- handleSubmit() : envoie dueDate seulement pour FIXED, daysOffset seulement pour DAYS_AFTER_ENROLLMENT
+
+## 7. Frontend - FeeStructuresContent.tsx
+- Colonne "Tranches" enrichie :
+  * Badge "N tranches" (inchangé)
+  * Badge vert "1ère = inscription" si au moins une tranche est AT_ENROLLMENT
+  * Badge ambre "+ jours après inscr." si au moins une tranche est DAYS_AFTER_ENROLLMENT
+
+## 8. Fichiers modifiés (8)
+1. apps/api-server/prisma/migrations/20260703120000_installment_due_date_rule.sql (NOUVEAU)
+2. apps/api-server/prisma/schema.prisma (FeeStructureInstallment étendu)
+3. apps/api-server/src/finance/fee-structure.service.ts (4 méthodes modifiées)
+4. apps/api-server/src/finance/fee-structure.controller.ts (create + update)
+5. apps/api-server/src/finance/student-account.service.ts (resolveDueDate + updateStatus)
+6. apps/web-app/src/components/finance/FeeStructureModal.tsx (UI complète repensée)
+7. apps/web-app/src/components/finance/FeeStructuresContent.tsx (badges informatifs)
+8. scripts/run-migration-installment-rule.js (NOUVEAU)
+
+Stage Summary:
+- Migration appliquée directement sur Neon DB (sans attendre Fly.io)
+- La 1ère tranche est maintenant "À l'inscription" par défaut dans le modal
+- 3 modes d'échéance supportés : FIXED, AT_ENROLLMENT, DAYS_AFTER_ENROLLMENT
+- Le calcul de l'échéance réelle se fait au runtime dans StudentAccountService
+  à partir de StudentEnrollment.enrollmentDate
+- Comportement rétro-compatible : les installments existants ont dueDateType='FIXED' par défaut

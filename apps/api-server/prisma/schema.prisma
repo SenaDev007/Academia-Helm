@@ -10029,15 +10029,25 @@ model FeeStructure {
 }
 
 model FeeStructureInstallment {
-  id             String       @id @default(uuid())
+  id             String                   @id @default(uuid())
   feeStructureId String
   label          String
-  amount         Decimal      @db.Decimal(10, 2)
-  dueDate        DateTime     @db.Date
+  amount         Decimal                  @db.Decimal(10, 2)
+  dueDate        DateTime?                @db.Date
+  /// Mode de calcul de l'échéance :
+  ///   - FIXED                 : date fixe (comportement historique, défaut)
+  ///   - AT_ENROLLMENT         : échéance = date d'inscription de l'élève
+  ///   - DAYS_AFTER_ENROLLMENT : échéance = date d'inscription + daysOffset jours
+  /// Pour AT_ENROLLMENT et DAYS_AFTER_ENROLLMENT, dueDate est NULL au niveau du template
+  /// et résolue dynamiquement au moment de la création du compte élève.
+  dueDateType    String                   @default("FIXED")
+  /// Nombre de jours après l'inscription (utilisé uniquement quand dueDateType = DAYS_AFTER_ENROLLMENT).
+  daysOffset     Int?
   orderIndex     Int
-  feeStructure   FeeStructure @relation(fields: [feeStructureId], references: [id], onDelete: Cascade)
+  feeStructure   FeeStructure             @relation(fields: [feeStructureId], references: [id], onDelete: Cascade)
 
   @@index([feeStructureId])
+  @@index([dueDateType])
   @@map("fee_structure_installments")
 }
 

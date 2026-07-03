@@ -52,7 +52,14 @@ export class FeeStructureService {
       totalAmount: number;
       isInstallment?: boolean;
       isMandatory?: boolean;
-      installments?: { label: string; amount: number; dueDate: Date; orderIndex: number }[];
+      installments?: {
+        label: string;
+        amount: number;
+        dueDate?: Date;
+        dueDateType?: 'FIXED' | 'AT_ENROLLMENT' | 'DAYS_AFTER_ENROLLMENT';
+        daysOffset?: number;
+        orderIndex: number;
+      }[];
       createdById?: string;
     },
     userId?: string,
@@ -119,12 +126,28 @@ export class FeeStructureService {
         updatedAt: new Date(),
         structureInstallments: data.installments?.length
           ? {
-              create: data.installments.map((i) => ({
-                label: i.label,
-                amount: i.amount,
-                dueDate: i.dueDate,
-                orderIndex: i.orderIndex,
-              })),
+              create: data.installments.map((i) => {
+                const dueDateType = i.dueDateType ?? 'FIXED';
+                // Pour AT_ENROLLMENT et DAYS_AFTER_ENROLLMENT, dueDate est NULL
+                // (résolue dynamiquement au runtime)
+                const resolvedDueDate =
+                  dueDateType === 'FIXED'
+                    ? i.dueDate ?? new Date()
+                    : null;
+                // Pour DAYS_AFTER_ENROLLMENT, daysOffset doit être défini
+                const resolvedDaysOffset =
+                  dueDateType === 'DAYS_AFTER_ENROLLMENT'
+                    ? i.daysOffset ?? 0
+                    : null;
+                return {
+                  label: i.label,
+                  amount: i.amount,
+                  dueDate: resolvedDueDate,
+                  dueDateType,
+                  daysOffset: resolvedDaysOffset,
+                  orderIndex: i.orderIndex,
+                };
+              }),
             }
           : undefined,
       },
@@ -197,6 +220,14 @@ export class FeeStructureService {
       isActive: boolean;
       levelId: string | null;
       classId: string | null;
+      installments: {
+        label: string;
+        amount: number;
+        dueDate?: Date;
+        dueDateType?: 'FIXED' | 'AT_ENROLLMENT' | 'DAYS_AFTER_ENROLLMENT';
+        daysOffset?: number;
+        orderIndex: number;
+      }[];
     }>,
     userId?: string,
   ) {
@@ -245,18 +276,74 @@ export class FeeStructureService {
       },
       include: { structureInstallments: true, level: true, class: true },
     });
+
+    // Si les installments sont fournis, on remplace la collection existante
+    if (data.installments !== undefined) {
+      // Supprimer les anciens installments
+      await this.prisma.feeStructureInstallment.deleteMany({
+        where: { feeStructureId: id },
+      });
+      // Créer les nouveaux
+      if (data.installments.length > 0) {
+        await this.prisma.feeStructureInstallment.createMany({
+          data: data.installments.map((i) => {
+            const dueDateType = i.dueDateType ?? 'FIXED';
+            const resolvedDueDate =
+              dueDateType === 'FIXED' ? i.dueDate ?? new Date() : null;
+            const resolvedDaysOffset =
+              dueDateType === 'DAYS_AFTER_ENROLLMENT' ? i.daysOffset ?? 0 : null;
+            return {
+              feeStructureId: id,
+              label: i.label,
+              amount: i.amount,
+              dueDate: resolvedDueDate,
+              dueDateType,
+              daysOffset: resolvedDaysOffset,
+              orderIndex: i.orderIndex,
+            };
+          }),
+        });
+      }
+    }
+
+    // Recharger avec les installments à jour
+    const reloaded = await this.prisma.feeStructure.findFirst({
+      where: { id, tenantId },
+      include: {
+        structureInstallments: { orderBy: { orderIndex: 'asc' } },
+        level: true,
+        class: true,
+      },
+    });
+
     await this.audit(tenantId, userId, 'FEE_STRUCTURE_UPDATE', 'FeeStructure', id, { name: existing.name }, { name: updated.name });
-    return updated;
+    return reloaded ?? updated;
   }
 
   async addInstallment(
     feeStructureId: string,
     tenantId: string,
-    data: { label: string; amount: number; dueDate: Date; orderIndex: number },
+    data: {
+      label: string;
+      amount: number;
+      dueDate?: Date;
+      dueDateType?: 'FIXED' | 'AT_ENROLLMENT' | 'DAYS_AFTER_ENROLLMENT';
+      daysOffset?: number;
+      orderIndex: number;
+    },
   ) {
     await this.findOne(feeStructureId, tenantId);
+    const dueDateType = data.dueDateType ?? 'FIXED';
     return this.prisma.feeStructureInstallment.create({
-      data: { feeStructureId, ...data },
+      data: {
+        feeStructureId,
+        label: data.label,
+        amount: data.amount,
+        dueDate: dueDateType === 'FIXED' ? (data.dueDate ?? new Date()) : null,
+        dueDateType,
+        daysOffset: dueDateType === 'DAYS_AFTER_ENROLLMENT' ? (data.daysOffset ?? 0) : null,
+        orderIndex: data.orderIndex,
+      },
     });
   }
 
@@ -330,6 +417,8 @@ export class FeeStructureService {
               label: i.label,
               amount: i.amount,
               dueDate: i.dueDate,
+              dueDateType: i.dueDateType ?? 'FIXED',
+              daysOffset: i.daysOffset ?? null,
               orderIndex: i.orderIndex,
             })),
           },

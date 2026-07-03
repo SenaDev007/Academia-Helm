@@ -36,7 +36,20 @@ function classOrder(name: string): number {
   return 100 + (name.charCodeAt(0) || 0);
 }
 
-interface Installment { label: string; amount: string; dueDate: string; orderIndex: number; }
+interface Installment {
+  label: string;
+  amount: string;
+  dueDate: string;
+  dueDateType: 'FIXED' | 'AT_ENROLLMENT' | 'DAYS_AFTER_ENROLLMENT';
+  daysOffset: string;
+  orderIndex: number;
+}
+
+const DUE_DATE_TYPE_LABELS: Record<Installment['dueDateType'], string> = {
+  AT_ENROLLMENT: "À l'inscription",
+  DAYS_AFTER_ENROLLMENT: "Jours après inscription",
+  FIXED: 'Date fixe',
+};
 
 export default function FeeStructureModal({
   academicYearId, levels, classes, eduToSchoolLevelMap, onClose, onSubmit, feeId, initialData,
@@ -64,9 +77,20 @@ export default function FeeStructureModal({
   const initialInstallments: Installment[] = initialData?.structureInstallments?.length
     ? initialData.structureInstallments.sort((a: any, b: any) => a.orderIndex - b.orderIndex).map((i: any) => ({
         label: i.label, amount: String(i.amount),
-        dueDate: i.dueDate ? new Date(i.dueDate).toISOString().slice(0, 10) : '', orderIndex: i.orderIndex,
+        dueDate: i.dueDate ? new Date(i.dueDate).toISOString().slice(0, 10) : '',
+        dueDateType: (i.dueDateType ?? 'FIXED') as Installment['dueDateType'],
+        daysOffset: i.daysOffset != null ? String(i.daysOffset) : '',
+        orderIndex: i.orderIndex,
       }))
-    : [{ label: 'Tranche 1', amount: '', dueDate: '', orderIndex: 0 }];
+    : [{
+        label: 'Tranche 1',
+        amount: '',
+        dueDate: '',
+        // Par défaut, la 1ère tranche est due à l'inscription (règle métier écoles privées)
+        dueDateType: 'AT_ENROLLMENT',
+        daysOffset: '',
+        orderIndex: 0,
+      }];
   const [installments, setInstallments] = useState<Installment[]>(initialInstallments);
 
   // Filtrer les classes par niveau en utilisant le mapping eduToSchoolLevelMap
@@ -109,13 +133,35 @@ export default function FeeStructureModal({
     if (!nameManuallyEdited) setName(autoName);
   }, [autoName, nameManuallyEdited]);
 
-  const addInstallment = () => setInstallments([...installments, { label: `Tranche ${installments.length + 1}`, amount: '', dueDate: '', orderIndex: installments.length }]);
+  const addInstallment = () => setInstallments([
+    ...installments,
+    {
+      label: `Tranche ${installments.length + 1}`,
+      amount: '',
+      dueDate: '',
+      // Les tranches suivantes sont en mode FIXED par défaut (date fixe)
+      dueDateType: 'FIXED',
+      daysOffset: '',
+      orderIndex: installments.length,
+    },
+  ]);
   const removeInstallment = (idx: number) => setInstallments(installments.filter((_, i) => i !== idx).map((inst, i) => ({ ...inst, orderIndex: i })));
-  const updateInstallment = (idx: number, field: keyof Installment, value: string) => setInstallments(installments.map((inst, i) => i === idx ? { ...inst, [field]: value } : inst));
+  const updateInstallment = (idx: number, field: keyof Installment, value: string) => setInstallments(installments.map((inst, i) => i === idx ? { ...inst, [field]: value } as Installment : inst));
 
   const installmentsSum = installments.reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
   const totalAmountNum = parseFloat(totalAmount) || 0;
-  const installmentsValid = !isInstallment || (installments.every((i) => i.label && i.amount && i.dueDate) && Math.abs(installmentsSum - totalAmountNum) < 1);
+
+  // Validation : chaque tranche doit avoir un libellé + un montant
+  // + une échéance valide selon son mode (date pour FIXED, daysOffset > 0 pour DAYS_AFTER_ENROLLMENT,
+  // rien pour AT_ENROLLMENT)
+  const isInstallmentValid = (i: Installment): boolean => {
+    if (!i.label || !i.amount) return false;
+    if (i.dueDateType === 'FIXED') return Boolean(i.dueDate);
+    if (i.dueDateType === 'DAYS_AFTER_ENROLLMENT') return Boolean(i.daysOffset) && parseInt(i.daysOffset) >= 0;
+    // AT_ENROLLMENT : toujours valide
+    return true;
+  };
+  const installmentsValid = !isInstallment || (installments.every(isInstallmentValid) && Math.abs(installmentsSum - totalAmountNum) < 1);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -127,7 +173,15 @@ export default function FeeStructureModal({
       academicYearId, name, feeType, totalAmount: amount, isInstallment, isMandatory,
       levelId: levelId || undefined,
       classId: applyTo === 'class' ? classId || undefined : undefined,
-      installments: isInstallment ? installments.map((i) => ({ label: i.label, amount: parseFloat(i.amount), dueDate: new Date(i.dueDate), orderIndex: i.orderIndex })) : undefined,
+      installments: isInstallment ? installments.map((i) => ({
+        label: i.label,
+        amount: parseFloat(i.amount),
+        // dueDate n'est envoyé que pour le mode FIXED
+        dueDate: i.dueDateType === 'FIXED' && i.dueDate ? new Date(i.dueDate) : undefined,
+        dueDateType: i.dueDateType,
+        daysOffset: i.dueDateType === 'DAYS_AFTER_ENROLLMENT' && i.daysOffset ? parseInt(i.daysOffset) : undefined,
+        orderIndex: i.orderIndex,
+      })) : undefined,
     });
   };
 
@@ -170,17 +224,75 @@ export default function FeeStructureModal({
           <div className="flex items-center gap-2"><input type="checkbox" id="mandatory" checked={isMandatory} onChange={(e) => setIsMandatory(e.target.checked)} /><Label htmlFor="mandatory">Frais obligatoire</Label></div>
           {isInstallment && (
             <div className="border rounded-lg p-3 bg-slate-50 space-y-2">
-              <div className="flex items-center justify-between"><Label className="text-sm font-semibold">Tranches</Label><Button type="button" size="sm" variant="outline" onClick={addInstallment}><Plus className="h-3.5 w-3.5 mr-1" />Ajouter</Button></div>
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-semibold">Tranches</Label>
+                <Button type="button" size="sm" variant="outline" onClick={addInstallment}><Plus className="h-3.5 w-3.5 mr-1" />Ajouter</Button>
+              </div>
+              <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded p-2">
+                💡 <strong>Tranche 1 = À l'inscription</strong> par défaut (règle usuelle des écoles privées :
+                la 1ère tranche est payée le jour de l'inscription de l'élève). Pour les tranches suivantes,
+                choisissez le mode d'échéance : date fixe, à l'inscription, ou X jours après inscription.
+              </p>
               {installments.map((inst, idx) => (
-                <div key={idx} className="grid grid-cols-12 gap-2 items-end">
-                  <div className="col-span-3"><Label className="text-xs">Libellé</Label><Input value={inst.label} onChange={(e) => updateInstallment(idx, 'label', e.target.value)} required /></div>
-                  <div className="col-span-3"><Label className="text-xs">Montant</Label><Input type="number" value={inst.amount} onChange={(e) => updateInstallment(idx, 'amount', e.target.value)} required /></div>
-                  <div className="col-span-4"><Label className="text-xs">Échéance</Label><Input type="date" value={inst.dueDate} onChange={(e) => updateInstallment(idx, 'dueDate', e.target.value)} required /></div>
-                  <div className="col-span-2 flex justify-end">{installments.length > 1 && <Button type="button" size="sm" variant="ghost" onClick={() => removeInstallment(idx)}><Trash2 className="h-4 w-4 text-rose-600" /></Button>}</div>
+                <div key={idx} className="bg-white border border-slate-200 rounded-lg p-3 space-y-2">
+                  <div className="grid grid-cols-12 gap-2 items-end">
+                    <div className="col-span-3"><Label className="text-xs">Libellé</Label><Input value={inst.label} onChange={(e) => updateInstallment(idx, 'label', e.target.value)} required /></div>
+                    <div className="col-span-3"><Label className="text-xs">Montant</Label><Input type="number" value={inst.amount} onChange={(e) => updateInstallment(idx, 'amount', e.target.value)} required /></div>
+                    <div className="col-span-4">
+                      <Label className="text-xs">Mode d'échéance</Label>
+                      <Select value={inst.dueDateType} onValueChange={(v) => updateInstallment(idx, 'dueDateType', v)}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="AT_ENROLLMENT">À l'inscription</SelectItem>
+                          <SelectItem value="DAYS_AFTER_ENROLLMENT">Jours après inscription</SelectItem>
+                          <SelectItem value="FIXED">Date fixe</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="col-span-2 flex justify-end">
+                      {installments.length > 1 && (
+                        <Button type="button" size="sm" variant="ghost" onClick={() => removeInstallment(idx)}>
+                          <Trash2 className="h-4 w-4 text-rose-600" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  {/* Champ conditionnel selon le mode d'échéance */}
+                  {inst.dueDateType === 'FIXED' && (
+                    <div><Label className="text-xs">Date d'échéance</Label><Input type="date" value={inst.dueDate} onChange={(e) => updateInstallment(idx, 'dueDate', e.target.value)} required /></div>
+                  )}
+                  {inst.dueDateType === 'AT_ENROLLMENT' && (
+                    <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-2">
+                      ✅ L'échéance sera automatiquement calculée = <strong>date d'inscription de l'élève</strong>.
+                      Aucune date à saisir ici ; le système s'en charge au moment de l'inscription.
+                    </p>
+                  )}
+                  {inst.dueDateType === 'DAYS_AFTER_ENROLLMENT' && (
+                    <div>
+                      <Label className="text-xs">Nombre de jours après l'inscription</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={inst.daysOffset}
+                        onChange={(e) => updateInstallment(idx, 'daysOffset', e.target.value)}
+                        placeholder="Ex: 30 = 30 jours après l'inscription"
+                        required
+                      />
+                    </div>
+                  )}
                 </div>
               ))}
-              <div className="flex justify-between items-center pt-2 border-t text-sm"><span className="text-slate-600">Somme :</span><span className={Math.abs(installmentsSum - totalAmountNum) < 1 ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-semibold'}>{installmentsSum.toLocaleString('fr-FR')} / {totalAmountNum.toLocaleString('fr-FR')} XOF</span></div>
-              {isInstallment && !installmentsValid && <p className="text-xs text-rose-600">⚠️ La somme doit être égale au montant total.</p>}
+              <div className="flex justify-between items-center pt-2 border-t text-sm">
+                <span className="text-slate-600">Somme :</span>
+                <span className={Math.abs(installmentsSum - totalAmountNum) < 1 ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-semibold'}>
+                  {installmentsSum.toLocaleString('fr-FR')} / {totalAmountNum.toLocaleString('fr-FR')} XOF
+                </span>
+              </div>
+              {isInstallment && !installmentsValid && (
+                <p className="text-xs text-rose-600">
+                  ⚠️ La somme doit être égale au montant total et chaque tranche doit avoir un libellé, un montant et une échéance valide.
+                </p>
+              )}
             </div>
           )}
           <div className="flex gap-2 justify-end pt-4"><Button type="button" variant="outline" onClick={onClose}>Annuler</Button><Button type="submit" disabled={isInstallment && !installmentsValid}>{isEdit ? 'Enregistrer' : 'Créer'}</Button></div>

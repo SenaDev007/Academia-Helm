@@ -262,7 +262,21 @@ export default function FeeStructuresContent() {
                     <TableCell className="text-sm">{s.levelId ? <strong>{levelDisplay(s)}</strong> : <span className="text-slate-400">Tous</span>}</TableCell>
                     <TableCell className="text-sm">{s.classId ? <strong>{classDisplay(s)}</strong> : <span className="text-slate-400">—</span>}</TableCell>
                     <TableCell className="text-right font-semibold">{formatCurrency(s.totalAmount)}</TableCell>
-                    <TableCell>{s.isInstallment ? <Badge className="bg-blue-50 text-blue-700">{s.structureInstallments?.length || 0} tranches</Badge> : <span className="text-slate-400 text-sm">Non</span>}</TableCell>
+                    <TableCell>
+                      {s.isInstallment ? (
+                        <div className="space-y-1">
+                          <Badge className="bg-blue-50 text-blue-700">{s.structureInstallments?.length || 0} tranches</Badge>
+                          {s.structureInstallments?.some((i: any) => i.dueDateType === 'AT_ENROLLMENT') && (
+                            <Badge variant="outline" className="ml-1 text-emerald-700 border-emerald-300">1ère = inscription</Badge>
+                          )}
+                          {s.structureInstallments?.some((i: any) => i.dueDateType === 'DAYS_AFTER_ENROLLMENT') && (
+                            <Badge variant="outline" className="ml-1 text-amber-700 border-amber-300">+ jours après inscr.</Badge>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 text-sm">Non</span>
+                      )}
+                    </TableCell>
                     <TableCell><Badge variant={s.isMandatory ? 'default' : 'outline'}>{s.isMandatory ? 'Obligatoire' : 'Facultatif'}</Badge></TableCell>
                     <TableCell><Badge variant={s.isActive ? 'default' : 'secondary'}>{s.isActive ? 'Actif' : 'Inactif'}</Badge></TableCell>
                     <TableCell className="text-right">

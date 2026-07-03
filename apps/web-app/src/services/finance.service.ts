@@ -238,6 +238,21 @@ class FinanceService {
     return financeFetch('/api/finance/settings', { method: 'PATCH', body: data });
   }
 
+  /**
+   * Historique des modifications des paramètres financiers.
+   * Lit les entrées financial_audit_logs (entityType = 'FinancialSettings').
+   */
+  async getSettingsHistory(): Promise<any> {
+    return financeFetch('/api/finance/settings/history');
+  }
+
+  /**
+   * Alertes ORION — surveillance des changements critiques des 30 derniers jours.
+   */
+  async getSettingsOrionAlerts(): Promise<any> {
+    return financeFetch('/api/finance/settings/orion-alerts');
+  }
+
   // --- Audit ---
   async getAnomalies(limit: number = 30): Promise<any> {
     return financeFetch(`/api/finance/anomalies?limit=${limit}`);

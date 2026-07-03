@@ -3,16 +3,41 @@
  *
  * Ce composant est utilisé directement par FinanceModulePage.
  * Il NE contient PAS de SubModuleNavigation (géré par ModuleContainer).
+ *
+ * Sections :
+ * 1. 🧠 ORION — Surveillance des changements critiques (statut global + alertes)
+ * 2. 🔒 Blocage & Recouvrement
+ * 3. 💳 Paiement
+ * 4. 🔄 Annulation
+ * 5. 🏦 Clôture
+ * 6. 📊 Budget
+ * 7. 🌐 Paiement en ligne (Fedapay)
+ * 8. 📜 Historique des modifications (audit logs)
  */
 'use client';
 
 import { useState, useEffect } from 'react';
+import { ShieldCheck, AlertTriangle, AlertCircle, Info, History } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import { financeService } from '@/services/finance.service';
 import { useToast } from '@/components/ui/use-toast';
+import { formatCurrency } from '@/lib/utils';
+
+const SEVERITY_CONFIG = {
+  CRITICAL: { icon: AlertCircle, color: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-200', label: 'Critique' },
+  WARNING: { icon: AlertTriangle, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200', label: 'Avertissement' },
+  INFO: { icon: Info, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200', label: 'Info' },
+};
+
+const STATUS_CONFIG = {
+  GREEN: { label: 'Aucun changement critique récent', color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200', icon: ShieldCheck },
+  ORANGE: { label: 'Changements modérés détectés', color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200', icon: AlertTriangle },
+  RED: { label: 'Changements critiques détectés', color: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-200', icon: AlertCircle },
+};
 
 export default function FinanceSettingsContent() {
   const { toast } = useToast();
@@ -33,6 +58,8 @@ export default function FinanceSettingsContent() {
     fedapaySecretKey: '',
   });
   const [existingMaskedKey, setExistingMaskedKey] = useState<string>('');
+  const [history, setHistory] = useState<any[]>([]);
+  const [orionAlerts, setOrionAlerts] = useState<any>(null);
 
   useEffect(() => {
     financeService.getSettings().then((s) => {
@@ -57,7 +84,22 @@ export default function FinanceSettingsContent() {
         setExistingMaskedKey(s.fedapaySecretKey ?? '');
       }
     });
+    // Charger l'historique et les alertes ORION
+    refreshHistoryAndAlerts();
   }, []);
+
+  const refreshHistoryAndAlerts = async () => {
+    try {
+      const [hist, orion] = await Promise.all([
+        financeService.getSettingsHistory(),
+        financeService.getSettingsOrionAlerts(),
+      ]);
+      setHistory(Array.isArray(hist) ? hist : []);
+      setOrionAlerts(orion ?? null);
+    } catch (e) {
+      console.error('Failed to load history/alerts', e);
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -82,6 +124,8 @@ export default function FinanceSettingsContent() {
         ...(form.fedapaySecretKey ? { fedapaySecretKey: form.fedapaySecretKey } : {}),
       });
       toast({ title: '✅ Paramètres enregistrés' });
+      // Rafraîchir l'historique et les alertes ORION après modification
+      await refreshHistoryAndAlerts();
     } catch (e: any) {
       toast({
         title: 'Erreur',
@@ -91,6 +135,9 @@ export default function FinanceSettingsContent() {
     }
     setSaving(false);
   };
+
+  const orionStatus = orionAlerts?.status ? STATUS_CONFIG[orionAlerts.status] : STATUS_CONFIG.GREEN;
+  const OrionIcon = orionStatus.icon;
 
   return (
     <div className="space-y-4">
@@ -103,7 +150,62 @@ export default function FinanceSettingsContent() {
         }
       >
         <div className="max-w-2xl space-y-6">
-          {/* Blocage & Recouvrement */}
+          {/* 🧠 ORION — Surveillance des changements critiques */}
+          {orionAlerts && (
+            <div className={`rounded-lg border p-5 ${orionStatus.bg} ${orionStatus.border}`}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className={`font-semibold flex items-center gap-2 ${orionStatus.color}`}>
+                  <OrionIcon className="w-5 h-5" />
+                  ORION — Surveillance Paramétrage
+                </h3>
+                <Badge className={`${orionStatus.bg} ${orionStatus.color} ${orionStatus.border} border`}>
+                  {orionStatus.label}
+                </Badge>
+              </div>
+              {orionAlerts.stats.total === 0 ? (
+                <p className="text-sm text-slate-600">
+                  🟢 Aucun changement critique récent. Les paramètres financiers sont stables.
+                </p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-3 gap-2 mb-3 text-center">
+                    <div className="bg-white rounded p-2 border">
+                      <p className="text-lg font-bold text-rose-600">{orionAlerts.stats.critical}</p>
+                      <p className="text-xs text-slate-500">Critiques</p>
+                    </div>
+                    <div className="bg-white rounded p-2 border">
+                      <p className="text-lg font-bold text-amber-600">{orionAlerts.stats.warning}</p>
+                      <p className="text-xs text-slate-500">Avertissements</p>
+                    </div>
+                    <div className="bg-white rounded p-2 border">
+                      <p className="text-lg font-bold text-blue-600">{orionAlerts.stats.info}</p>
+                      <p className="text-xs text-slate-500">Infos</p>
+                    </div>
+                  </div>
+                  <ul className="space-y-1.5">
+                    {orionAlerts.alerts.slice(0, 5).map((alert: any, idx: number) => {
+                      const cfg = SEVERITY_CONFIG[alert.severity as keyof typeof SEVERITY_CONFIG];
+                      const AlertIcon = cfg.icon;
+                      return (
+                        <li key={idx} className={`flex items-start gap-2 text-sm ${cfg.color}`}>
+                          <AlertIcon className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                          <div className="min-w-0">
+                            <p>{alert.message}</p>
+                            <p className="text-xs text-slate-400">
+                              {new Date(alert.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              {alert.performedBy ? ` · par ${alert.performedBy}` : ''}
+                            </p>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* 🔒 Blocage & Recouvrement */}
           <div className="bg-white rounded-lg border p-5">
             <h3 className="font-semibold mb-3 text-slate-900">Blocage & Recouvrement</h3>
             <div className="space-y-3">
@@ -293,6 +395,62 @@ export default function FinanceSettingsContent() {
             <Button onClick={handleSave} disabled={saving} size="lg">
               {saving ? 'Enregistrement…' : 'Enregistrer les paramètres'}
             </Button>
+          </div>
+
+          {/* 📜 Historique des modifications */}
+          <div className="bg-white rounded-lg border p-5">
+            <h3 className="font-semibold mb-3 text-slate-900 flex items-center gap-2">
+              <History className="w-5 h-5 text-slate-600" />
+              Historique des modifications
+            </h3>
+            {history.length === 0 ? (
+              <p className="text-sm text-slate-500 italic">Aucune modification enregistrée.</p>
+            ) : (
+              <ul className="space-y-3">
+                {history.slice(0, 10).map((h) => (
+                  <li key={h.id} className="border-l-2 border-slate-200 pl-3 py-1">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-xs">{h.action}</Badge>
+                        {h.performedBy && (
+                          <span className="text-xs text-slate-500">
+                            par <strong>{h.performedBy.name}</strong>
+                            {h.performedBy.role ? ` (${h.performedBy.role})` : ''}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-xs text-slate-400">
+                        {new Date(h.performedAt).toLocaleDateString('fr-FR', {
+                          day: '2-digit', month: 'short', year: 'numeric',
+                          hour: '2-digit', minute: '2-digit',
+                        })}
+                      </span>
+                    </div>
+                    {/* Changements détectés */}
+                    {h.criticalChanges && h.criticalChanges.length > 0 && (
+                      <ul className="space-y-0.5 mt-1">
+                        {h.criticalChanges.map((c: any, idx: number) => {
+                          const cfg = SEVERITY_CONFIG[c.severity as keyof typeof SEVERITY_CONFIG];
+                          return (
+                            <li key={idx} className={`text-xs ${cfg.color}`}>{c.message}</li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                    {/* Détail des valeurs */}
+                    {h.oldValue && h.newValue && (
+                      <div className="text-xs text-slate-400 mt-1">
+                        {Object.keys(h.newValue).filter((k) => k !== 'fedapaySecretKeyUpdated').length > 0 && (
+                          <span>
+                            Champs modifiés : {Object.keys(h.newValue).filter((k) => k !== 'fedapaySecretKeyUpdated').join(', ')}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
       </ModuleContentArea>

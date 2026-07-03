@@ -211,4 +211,182 @@ export class FinancialSettingsService {
     this.logger.log(`Migration complete: ${migrated} keys encrypted, ${skipped} already encrypted or null`);
     return { migrated, skipped };
   }
+
+  /**
+   * Récupère l'historique des modifications des FinancialSettings pour un tenant.
+   * Lit les entrées financial_audit_logs où entityType = 'FinancialSettings'.
+   * Inclut les informations sur l'utilisateur qui a fait la modification.
+   */
+  async getHistory(tenantId: string, limit = 20) {
+    const logs = await this.prisma.financialAuditLog.findMany({
+      where: {
+        tenantId,
+        entityType: 'FinancialSettings',
+      },
+      include: {
+        performer: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            role: true,
+          },
+        },
+      },
+      orderBy: { performedAt: 'desc' },
+      take: limit,
+    });
+
+    return logs.map((log) => ({
+      id: log.id,
+      action: log.action,
+      oldValue: log.oldValue as any,
+      newValue: log.newValue as any,
+      performedAt: log.performedAt,
+      ipAddress: log.ipAddress,
+      performedBy: log.performer
+        ? {
+            name: `${log.performer.firstName || ''} ${log.performer.lastName || ''}`.trim(),
+            email: log.performer.email,
+            role: log.performer.role,
+          }
+        : null,
+      // Détection des changements critiques pour ORION
+      criticalChanges: this.detectCriticalChanges(log.oldValue as any, log.newValue as any),
+    }));
+  }
+
+  /**
+   * Détecte les changements critiques pour la surveillance ORION.
+   * Retourne une liste d'alertes avec sévérité (CRITICAL / WARNING / INFO).
+   *
+   * Règles (conformes à la spec MODULE FINANCE.txt — section ORION) :
+   * - Seuil blocage réduit de 50% ou plus → 🔴 CRITICAL
+   * - Clôture automatique désactivée → 🟠 WARNING
+   * - Seuil budget réduit → 🟠 WARNING
+   * - Fedapay activé/désactivé → ℹ️ INFO
+   */
+  private detectCriticalChanges(
+    oldValue: any,
+    newValue: any,
+  ): Array<{ severity: 'CRITICAL' | 'WARNING' | 'INFO'; message: string; field: string }> {
+    const alerts: Array<{ severity: 'CRITICAL' | 'WARNING' | 'INFO'; message: string; field: string }> = [];
+    if (!oldValue || !newValue) return alerts;
+
+    // 1. Seuil blocage réduit de 50% ou plus
+    const oldThreshold = Number(oldValue.blockingThreshold ?? 0);
+    const newThreshold = Number(newValue.blockingThreshold ?? 0);
+    if (oldThreshold > 0 && newThreshold > 0 && newThreshold < oldThreshold) {
+      const reductionPct = ((oldThreshold - newThreshold) / oldThreshold) * 100;
+      if (reductionPct >= 50) {
+        alerts.push({
+          severity: 'CRITICAL',
+          field: 'blockingThreshold',
+          message: `🔴 Seuil blocage réduit de ${reductionPct.toFixed(0)}% (${oldThreshold} → ${newThreshold} FCFA)`,
+        });
+      } else if (reductionPct >= 25) {
+        alerts.push({
+          severity: 'WARNING',
+          field: 'blockingThreshold',
+          message: `🟠 Seuil blocage réduit de ${reductionPct.toFixed(0)}% (${oldThreshold} → ${newThreshold} FCFA)`,
+        });
+      }
+    }
+
+    // 2. Clôture automatique désactivée
+    if (oldValue.autoClosureEnabled === true && newValue.autoClosureEnabled === false) {
+      alerts.push({
+        severity: 'WARNING',
+        field: 'autoClosureEnabled',
+        message: '🟠 Clôture automatique désactivée',
+      });
+    }
+
+    // 3. Seuil budget réduit
+    const oldBudget = Number(oldValue.budgetAlertThreshold ?? 85);
+    const newBudget = Number(newValue.budgetAlertThreshold ?? 85);
+    if (newBudget < oldBudget) {
+      alerts.push({
+        severity: 'WARNING',
+        field: 'budgetAlertThreshold',
+        message: `🟠 Seuil alerte budget réduit (${oldBudget}% → ${newBudget}%)`,
+      });
+    }
+
+    // 4. Fedapay activé/désactivé
+    if (oldValue.fedapayEnabled !== newValue.fedapayEnabled) {
+      alerts.push({
+        severity: 'INFO',
+        field: 'fedapayEnabled',
+        message: newValue.fedapayEnabled
+          ? 'ℹ️ Fedapay activé'
+          : 'ℹ️ Fedapay désactivé',
+      });
+    }
+
+    // 5. Délai d'annulation réduit
+    const oldDelay = Number(oldValue.cancellationDelayHours ?? 24);
+    const newDelay = Number(newValue.cancellationDelayHours ?? 24);
+    if (newDelay < oldDelay) {
+      alerts.push({
+        severity: 'INFO',
+        field: 'cancellationDelayHours',
+        message: `ℹ️ Délai d'annulation réduit (${oldDelay}h → ${newDelay}h)`,
+      });
+    }
+
+    return alerts;
+  }
+
+  /**
+   * Récupère les alertes ORION actives pour les paramètres financiers.
+   * Analyse l'historique récent (30 derniers jours) et retourne les changements critiques.
+   */
+  async getOrionAlerts(tenantId: string) {
+    const history = await this.getHistory(tenantId, 50);
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    // Filtrer les changements des 30 derniers jours
+    const recentChanges = history.filter((h) => new Date(h.performedAt) >= thirtyDaysAgo);
+
+    // Collecter toutes les alertes critiques
+    const allAlerts: Array<{
+      severity: 'CRITICAL' | 'WARNING' | 'INFO';
+      message: string;
+      field: string;
+      date: Date;
+      performedBy: string | null;
+    }> = [];
+
+    for (const change of recentChanges) {
+      for (const alert of change.criticalChanges) {
+        allAlerts.push({
+          ...alert,
+          date: new Date(change.performedAt),
+          performedBy: change.performedBy?.name ?? null,
+        });
+      }
+    }
+
+    // Statistiques
+    const stats = {
+      total: allAlerts.length,
+      critical: allAlerts.filter((a) => a.severity === 'CRITICAL').length,
+      warning: allAlerts.filter((a) => a.severity === 'WARNING').length,
+      info: allAlerts.filter((a) => a.severity === 'INFO').length,
+    };
+
+    // État global ORION
+    let globalStatus: 'GREEN' | 'ORANGE' | 'RED' = 'GREEN';
+    if (stats.critical > 0) globalStatus = 'RED';
+    else if (stats.warning > 0) globalStatus = 'ORANGE';
+
+    return {
+      status: globalStatus,
+      stats,
+      alerts: allAlerts.sort((a, b) => b.date.getTime() - a.date.getTime()),
+    };
+  }
 }

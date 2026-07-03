@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { filterAndSortClasses } from '@/lib/finance/class-sort';
 
 const FEE_TYPES = [
   { value: 'INSCRIPTION', label: 'Inscription' },
@@ -17,6 +16,26 @@ const FEE_TYPES = [
   { value: 'EXCEPTIONAL', label: 'Exceptionnel' },
 ];
 
+function classOrder(name: string): number {
+  const n = (name || '').trim().toUpperCase();
+  if (n === 'MATERNELLE 1' || n === 'M1') return 0;
+  if (n === 'MATERNELLE 2' || n === 'M2') return 1;
+  if (n === 'CI') return 10;
+  if (n === 'CP') return 11;
+  if (n === 'CE1') return 12;
+  if (n === 'CE2') return 13;
+  if (n === 'CM1') return 14;
+  if (n === 'CM2') return 15;
+  if (n === '6E' || n === '6ÈME') return 20;
+  if (n === '5E' || n === '5ÈME') return 21;
+  if (n === '4E' || n === '4ÈME') return 22;
+  if (n === '3E' || n === '3ÈME') return 23;
+  if (n === '2NDE') return 24;
+  if (n === '1ERE' || n === '1ÈRE') return 25;
+  if (n === 'TERMINALE' || n === 'TLE') return 26;
+  return 100 + (name.charCodeAt(0) || 0);
+}
+
 interface Installment {
   label: string;
   amount: string;
@@ -25,13 +44,7 @@ interface Installment {
 }
 
 export default function FeeStructureModal({
-  academicYearId,
-  levels,
-  classes,
-  onClose,
-  onSubmit,
-  feeId,
-  initialData,
+  academicYearId, levels, classes, onClose, onSubmit, feeId, initialData,
 }: {
   academicYearId: string;
   levels: any[];
@@ -43,7 +56,9 @@ export default function FeeStructureModal({
 }) {
   const isEdit = Boolean(feeId);
   const [name, setName] = useState(initialData?.name ?? '');
-  const [nameManuallyEdited, setNameManuallyEdited] = useState(isEdit);
+  // En édition, on ne marque PAS comme manuellement édité pour que l'auto-nom se déclenche
+  // quand l'utilisateur change le type/niveau/classe. Dès qu'il édite manuellement, le flag passe à true.
+  const [nameManuallyEdited, setNameManuallyEdited] = useState(false);
   const [feeType, setFeeType] = useState(initialData?.feeType ?? 'TUITION');
   const [totalAmount, setTotalAmount] = useState(initialData?.totalAmount != null ? String(initialData.totalAmount) : '');
   const [isInstallment, setIsInstallment] = useState(initialData?.isInstallment ?? false);
@@ -53,22 +68,32 @@ export default function FeeStructureModal({
   const [classId, setClassId] = useState(initialData?.classId ?? '');
 
   const initialInstallments: Installment[] = initialData?.structureInstallments?.length
-    ? initialData.structureInstallments
-        .sort((a: any, b: any) => a.orderIndex - b.orderIndex)
-        .map((i: any) => ({
-          label: i.label,
-          amount: String(i.amount),
-          dueDate: i.dueDate ? new Date(i.dueDate).toISOString().slice(0, 10) : '',
-          orderIndex: i.orderIndex,
-        }))
+    ? initialData.structureInstallments.sort((a: any, b: any) => a.orderIndex - b.orderIndex).map((i: any) => ({
+        label: i.label, amount: String(i.amount),
+        dueDate: i.dueDate ? new Date(i.dueDate).toISOString().slice(0, 10) : '',
+        orderIndex: i.orderIndex,
+      }))
     : [{ label: 'Tranche 1', amount: '', dueDate: '', orderIndex: 0 }];
   const [installments, setInstallments] = useState<Installment[]>(initialInstallments);
 
+  // Mapping education_levels UUID → school_levels UUID pour le filtrage
+  const eduToSchoolLevelMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const level of levels) {
+      const matchingClass = classes.find((c: any) => c.schoolLevel?.code === level.code);
+      if (matchingClass) map[level.id] = matchingClass.schoolLevelId;
+    }
+    return map;
+  }, [levels, classes]);
+
   // Filtrer les classes par niveau sélectionné
-  const modalFilteredClasses = useMemo(
-    () => filterAndSortClasses(classes, levelId || undefined),
-    [classes, levelId],
-  );
+  const modalFilteredClasses = useMemo(() => {
+    if (!levelId) return [...classes].sort((a, b) => classOrder(a.name) - classOrder(b.name));
+    const schoolLevelId = eduToSchoolLevelMap[levelId] || levelId;
+    return classes
+      .filter((c: any) => c.schoolLevelId === schoolLevelId)
+      .sort((a, b) => classOrder(a.name) - classOrder(b.name));
+  }, [classes, levelId, eduToSchoolLevelMap]);
 
   useEffect(() => {
     if (classId && levelId && !modalFilteredClasses.find((c) => c.id === classId)) {
@@ -89,15 +114,10 @@ export default function FeeStructureModal({
 
   const autoName = useMemo(() => {
     const target = applyTo === 'class' && classLabel ? classLabel : applyTo === 'level' && levelLabel ? levelLabel : '';
-    const prefix = feeType === 'INSCRIPTION'
-      ? "Frais d'inscription"
-      : feeType === 'REINSCRIPTION'
-        ? 'Frais de réinscription'
-        : feeType === 'TUITION'
-          ? 'Frais de scolarité'
-          : feeType === 'ANNEX'
-            ? 'Frais annexe'
-            : 'Frais exceptionnel';
+    const prefix = feeType === 'INSCRIPTION' ? "Frais d'inscription"
+      : feeType === 'REINSCRIPTION' ? 'Frais de réinscription'
+      : feeType === 'TUITION' ? 'Frais de scolarité'
+      : feeType === 'ANNEX' ? 'Frais annexe' : 'Frais exceptionnel';
     return target ? `${prefix} — ${target}` : prefix;
   }, [feeType, applyTo, classLabel, levelLabel]);
 
@@ -120,7 +140,7 @@ export default function FeeStructureModal({
     if (isInstallment && !installmentsValid) return;
     onSubmit({
       academicYearId, name, feeType, totalAmount: amount, isInstallment, isMandatory,
-      levelId: applyTo === 'level' ? levelId || undefined : (applyTo === 'class' ? levelId || undefined : undefined),
+      levelId: levelId || undefined,
       classId: applyTo === 'class' ? classId || undefined : undefined,
       installments: isInstallment ? installments.map((i) => ({ label: i.label, amount: parseFloat(i.amount), dueDate: new Date(i.dueDate), orderIndex: i.orderIndex })) : undefined,
     });

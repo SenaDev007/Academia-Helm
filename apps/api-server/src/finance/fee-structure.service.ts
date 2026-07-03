@@ -172,7 +172,7 @@ export class FeeStructureService {
   }
 
   /**
-   * Historisation : aucune modification destructive. Ancienne version désactivée (isActive=false), nouvelle version créée.
+   * Modification directe (pas d'historisation — l'utilisateur veut que la donnée soit modifiée en place).
    */
   async update(
     id: string,
@@ -218,32 +218,24 @@ export class FeeStructureService {
       }
     }
 
-    await this.prisma.feeStructure.update({
+    // Mise à jour directe (pas d'historisation)
+    const updated = await this.prisma.feeStructure.update({
       where: { id },
-      data: { isActive: false, updatedAt: new Date() },
-    });
-    const created = await this.prisma.feeStructure.create({
       data: {
-        tenantId,
-        academicYearId: existing.academicYearId,
-        levelId: resolvedLevelId,
-        classId: data.classId !== undefined ? data.classId : existing.classId,
-        name: data.name ?? existing.name,
-        feeType: (data.feeType as FeeType) ?? existing.feeType,
-        totalAmount: data.totalAmount ?? Number(existing.totalAmount),
-        isInstallment: data.isInstallment ?? existing.isInstallment,
-        isMandatory: data.isMandatory ?? existing.isMandatory,
-        isActive: true,
-        createdById: userId ?? existing.createdById ?? null,
+        ...(data.name !== undefined && { name: data.name }),
+        ...(data.feeType !== undefined && { feeType: data.feeType as FeeType }),
+        ...(data.totalAmount !== undefined && { totalAmount: Number(data.totalAmount) }),
+        ...(data.isInstallment !== undefined && { isInstallment: data.isInstallment }),
+        ...(data.isMandatory !== undefined && { isMandatory: data.isMandatory }),
+        ...(data.isActive !== undefined && { isActive: data.isActive }),
+        ...(data.levelId !== undefined && { levelId: resolvedLevelId }),
+        ...(data.classId !== undefined && { classId: data.classId || null }),
         updatedAt: new Date(),
-        structureInstallments: existing.structureInstallments?.length
-          ? { create: existing.structureInstallments.map((i) => ({ label: i.label, amount: i.amount, dueDate: i.dueDate, orderIndex: i.orderIndex })) }
-          : undefined,
       },
       include: { structureInstallments: true, level: true, class: true },
     });
-    await this.audit(tenantId, userId, 'FEE_STRUCTURE_UPDATE', 'FeeStructure', id, { previousId: id }, { newId: created.id, replacedBy: created.id });
-    return created;
+    await this.audit(tenantId, userId, 'FEE_STRUCTURE_UPDATE', 'FeeStructure', id, { name: existing.name }, { name: updated.name });
+    return updated;
   }
 
   async addInstallment(

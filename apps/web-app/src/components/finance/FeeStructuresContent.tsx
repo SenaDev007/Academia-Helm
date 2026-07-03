@@ -26,16 +26,36 @@ const FEE_TYPES = [
   { value: 'EXCEPTIONAL', label: 'Exceptionnel' },
 ];
 
+function classOrder(name: string): number {
+  const n = (name || '').trim().toUpperCase();
+  if (n === 'MATERNELLE 1' || n === 'M1' || n === 'MAT1') return 0;
+  if (n === 'MATERNELLE 2' || n === 'M2' || n === 'MAT2') return 1;
+  if (n === 'CI') return 10;
+  if (n === 'CP') return 11;
+  if (n === 'CE1') return 12;
+  if (n === 'CE2') return 13;
+  if (n === 'CM1') return 14;
+  if (n === 'CM2') return 15;
+  if (n === '6E' || n === '6ÈME' || n === '6EME') return 20;
+  if (n === '5E' || n === '5ÈME' || n === '5EME') return 21;
+  if (n === '4E' || n === '4ÈME' || n === '4EME') return 22;
+  if (n === '3E' || n === '3ÈME' || n === '3EME') return 23;
+  if (n === '2NDE') return 24;
+  if (n === '1ERE' || n === '1ÈRE') return 25;
+  if (n === 'TERMINALE' || n === 'TLE') return 26;
+  return 100 + (name.charCodeAt(0) || 0);
+}
+
 export default function FeeStructuresContent() {
   const confirmDialog = useConfirmDialog();
   const { academicYear } = useModuleContext();
   const { toast } = useToast();
   const [structures, setStructures] = useState<any[]>([]);
-  const [levels, setLevels] = useState<any[]>([]);
+  const [levels, setLevels] = useState<any[]>([]); // /api/school-levels avec schoolLevelId
   const [classes, setClasses] = useState<any[]>([]);
   const [academicYears, setAcademicYears] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterLevelId, setFilterLevelId] = useState<string>('');
+  const [filterLevelId, setFilterLevelId] = useState<string>(''); // education_levels UUID
   const [filterClassId, setFilterClassId] = useState<string>('');
   const [modalNewFee, setModalNewFee] = useState(false);
   const [editingFee, setEditingFee] = useState<any | null>(null);
@@ -44,38 +64,21 @@ export default function FeeStructuresContent() {
   const [copyFrom, setCopyFrom] = useState('');
   const [copyTo, setCopyTo] = useState('');
 
-  // Mapping education_levels UUID → school_levels UUID (pour le filtrage)
-  // /api/school-levels retourne education_levels UUIDs
-  // classes.schoolLevelId contient school_levels UUIDs
-  // On construit le mapping en matchant par code (MATERNELLE/PRIMAIRE/SECONDAIRE)
-  const eduToSchoolLevelMap = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const level of levels) {
-      const code = level.code;
-      const matchingClass = classes.find((c: any) => c.schoolLevel?.code === code);
-      if (matchingClass) {
-        map[level.id] = matchingClass.schoolLevelId;
-      }
-    }
-    return map;
-  }, [levels, classes]);
-
-  // Convertir un education_levels UUID → school_levels UUID
-  const resolveSchoolLevelId = (eduId: string): string | undefined => {
-    return eduToSchoolLevelMap[eduId] || eduId;
+  // Obtenir le schoolLevelId (school_levels UUID) depuis l'education_levels UUID
+  const getSchoolLevelId = (eduId: string): string | undefined => {
+    const level = levels.find((l) => l.id === eduId);
+    return level?.schoolLevelId || undefined;
   };
 
-  // Filtrer les classes par niveau (en utilisant le school_levels UUID)
+  // Filtrer les classes par niveau (en utilisant schoolLevelId)
   const filteredSortedClasses = useMemo(() => {
-    if (!filterLevelId) {
-      // Toutes les classes, triées par ordre pédagogique
-      return [...classes].sort((a, b) => classOrder(a.name) - classOrder(b.name));
-    }
-    const schoolLevelId = resolveSchoolLevelId(filterLevelId);
+    if (!filterLevelId) return [...classes].sort((a, b) => classOrder(a.name) - classOrder(b.name));
+    const schoolLevelId = getSchoolLevelId(filterLevelId);
+    if (!schoolLevelId) return [];
     return classes
       .filter((c: any) => c.schoolLevelId === schoolLevelId)
       .sort((a, b) => classOrder(a.name) - classOrder(b.name));
-  }, [classes, filterLevelId, eduToSchoolLevelMap]);
+  }, [classes, filterLevelId, levels]);
 
   useEffect(() => {
     if (filterClassId && !filteredSortedClasses.find((c) => c.id === filterClassId)) {
@@ -88,9 +91,9 @@ export default function FeeStructuresContent() {
     setLoading(true);
     try {
       const params: Record<string, string> = { academicYearId: academicYear.id };
+      // Pour le backend, on envoie le schoolLevelId (pas l'education_levels UUID)
       if (filterLevelId) {
-        // Convertir en school_levels UUID pour le backend
-        const schoolLevelId = resolveSchoolLevelId(filterLevelId);
+        const schoolLevelId = getSchoolLevelId(filterLevelId);
         if (schoolLevelId) params.levelId = schoolLevelId;
       }
       if (filterClassId) params.classId = filterClassId;
@@ -101,7 +104,7 @@ export default function FeeStructuresContent() {
     } finally {
       setLoading(false);
     }
-  }, [academicYear?.id, filterLevelId, filterClassId, eduToSchoolLevelMap]);
+  }, [academicYear?.id, filterLevelId, filterClassId, levels]);
 
   useEffect(() => { loadStructures(); }, [loadStructures]);
 
@@ -134,7 +137,13 @@ export default function FeeStructuresContent() {
   const handleCreate = async (body: any) => {
     if (!academicYear?.id) return;
     try {
-      await financeService.createFeeStructure({ ...body, academicYearId: academicYear.id });
+      // Convertir levelId en schoolLevelId avant d'envoyer au backend
+      const payload = { ...body, academicYearId: academicYear.id };
+      if (payload.levelId) {
+        const schoolLevelId = getSchoolLevelId(payload.levelId);
+        if (schoolLevelId) payload.levelId = schoolLevelId;
+      }
+      await financeService.createFeeStructure(payload);
       setModalNewFee(false);
       toast({ title: 'Succès', description: 'Frais configuré avec succès.' });
       await loadStructures();
@@ -146,7 +155,12 @@ export default function FeeStructuresContent() {
   const handleUpdate = async (body: any) => {
     if (!editingFee?.id) return;
     try {
-      await financeService.updateFeeStructure(editingFee.id, body);
+      const payload = { ...body };
+      if (payload.levelId) {
+        const schoolLevelId = getSchoolLevelId(payload.levelId);
+        if (schoolLevelId) payload.levelId = schoolLevelId;
+      }
+      await financeService.updateFeeStructure(editingFee.id, payload);
       setEditingFee(null);
       toast({ title: 'Succès', description: 'Frais modifié avec succès.' });
       await loadStructures();
@@ -180,8 +194,6 @@ export default function FeeStructuresContent() {
   };
 
   const feeTypeLabel = (t: string) => FEE_TYPES.find((f) => f.value === t)?.label ?? t;
-
-  // Classes pour le modal (toutes, triées)
   const modalClasses = useMemo(() => [...classes].sort((a, b) => classOrder(a.name) - classOrder(b.name)), [classes]);
 
   return (
@@ -286,25 +298,4 @@ export default function FeeStructuresContent() {
       </div>
     </>
   );
-}
-
-// Tri pédagogique local (M1 < M2 < CI < CP < ... < CM2)
-function classOrder(name: string): number {
-  const n = (name || '').trim().toUpperCase();
-  if (n === 'MATERNELLE 1' || n === 'M1' || n === 'MAT1') return 0;
-  if (n === 'MATERNELLE 2' || n === 'M2' || n === 'MAT2') return 1;
-  if (n === 'CI') return 10;
-  if (n === 'CP') return 11;
-  if (n === 'CE1') return 12;
-  if (n === 'CE2') return 13;
-  if (n === 'CM1') return 14;
-  if (n === 'CM2') return 15;
-  if (n === '6E' || n === '6ÈME' || n === '6EME') return 20;
-  if (n === '5E' || n === '5ÈME' || n === '5EME') return 21;
-  if (n === '4E' || n === '4ÈME' || n === '4EME') return 22;
-  if (n === '3E' || n === '3ÈME' || n === '3EME') return 23;
-  if (n === '2NDE') return 24;
-  if (n === '1ERE' || n === '1ÈRE') return 25;
-  if (n === 'TERMINALE' || n === 'TLE') return 26;
-  return 100 + (name.charCodeAt(0) || 0);
 }

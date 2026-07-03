@@ -229,6 +229,13 @@ class FinanceService {
     return financeFetch(`/api/finance/cash-registers/${encodeURIComponent(id)}/stats${qs ? `?${qs}` : ''}`);
   }
 
+  /**
+   * Transfert de fonds entre deux caisses.
+   */
+  async transferCashRegister(data: { fromId: string; toId: string; amount: number; note?: string }): Promise<any> {
+    return financeFetch('/api/finance/cash-registers/transfer', { method: 'POST', body: data });
+  }
+
   // --- Settings ---
   async getSettings(): Promise<any> {
     return financeFetch('/api/finance/settings');

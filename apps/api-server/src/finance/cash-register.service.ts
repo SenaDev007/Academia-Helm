@@ -350,4 +350,109 @@ export class CashRegisterService {
       );
     }
   }
+
+  /**
+   * Transfert de fonds entre deux caisses du même tenant.
+   * - Débite la caisse source (currentBalance -= amount)
+   * - Crédite la caisse cible (currentBalance += amount)
+   * - Vérifie que le solde source est suffisant
+   * - Vérifie que les deux caisses sont ouvertes et actives
+   * - Crée une transaction de type TRANSFER pour l'audit
+   */
+  async transfer(
+    fromId: string,
+    toId: string,
+    tenantId: string,
+    data: { amount: number; note?: string },
+    userId?: string,
+  ) {
+    if (fromId === toId) {
+      throw new BadRequestException('Les caisses source et cible doivent être différentes');
+    }
+    if (!data.amount || data.amount <= 0) {
+      throw new BadRequestException('Le montant du transfert doit être positif');
+    }
+
+    const fromRegister = await this.findOne(fromId, tenantId);
+    const toRegister = await this.findOne(toId, tenantId);
+
+    if (!fromRegister.isOpen) {
+      throw new BadRequestException(`La caisse source "${fromRegister.code}" doit être ouverte pour transférer`);
+    }
+    if (!toRegister.isOpen) {
+      throw new BadRequestException(`La caisse cible "${toRegister.code}" doit être ouverte pour recevoir`);
+    }
+
+    const fromBalance = Number(fromRegister.currentBalance);
+    if (fromBalance < data.amount) {
+      throw new BadRequestException(`Solde insuffisant dans la caisse source (${fromBalance} < ${data.amount})`);
+    }
+
+    // Débiter la source
+    await this.prisma.cashRegister.update({
+      where: { id: fromId },
+      data: {
+        currentBalance: Number(fromBalance) - data.amount,
+        updatedAt: new Date(),
+      },
+    });
+
+    // Créditer la cible
+    await this.prisma.cashRegister.update({
+      where: { id: toId },
+      data: {
+        currentBalance: Number(toRegister.currentBalance) + data.amount,
+        updatedAt: new Date(),
+      },
+    });
+
+    // Créer une transaction d'audit (type TRANSFER)
+    try {
+      await this.prisma.financeTransaction.create({
+        data: {
+          tenantId,
+          cashRegisterId: fromId,
+          transactionType: 'TRANSFER_OUT',
+          amount: data.amount,
+          paymentMethod: 'CASH',
+          reference: `TRANSFER→${toRegister.code}`,
+          receiptNumber: `TRF-${Date.now()}`,
+          notes: data.note || `Transfert vers ${toRegister.name}`,
+          deviceId: null,
+          reversalOfId: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      await this.prisma.financeTransaction.create({
+        data: {
+          tenantId,
+          cashRegisterId: toId,
+          transactionType: 'TRANSFER_IN',
+          amount: data.amount,
+          paymentMethod: 'CASH',
+          reference: `TRANSFER←${fromRegister.code}`,
+          receiptNumber: `TRF-${Date.now()}-IN`,
+          notes: data.note || `Transfert depuis ${fromRegister.name}`,
+          deviceId: null,
+          reversalOfId: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+    } catch (err: any) {
+      this.logger.warn(`Transfer audit log failed (non-blocking): ${err.message}`);
+    }
+
+    this.logger.log(
+      `Transfer ${data.amount} XOF from ${fromRegister.code} → ${toRegister.code} by user ${userId || 'system'}`,
+    );
+
+    return {
+      success: true,
+      from: { id: fromId, code: fromRegister.code, name: fromRegister.name, newBalance: fromBalance - data.amount },
+      to: { id: toId, code: toRegister.code, name: toRegister.name, newBalance: Number(toRegister.currentBalance) + data.amount },
+      amount: data.amount,
+    };
+  }
 }

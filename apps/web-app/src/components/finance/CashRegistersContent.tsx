@@ -4,8 +4,9 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Wallet, Plus, Lock, Unlock, Archive, Edit, Trash2, BarChart3, X,
-  Safe, Smartphone, Building2, Store, Banknote, TrendingUp, Clock,
+  Gem, Smartphone, Building2, Store, Banknote, TrendingUp, Clock,
   ArrowUpRight, ArrowDownRight, Receipt, ChevronRight, Sparkles,
+  ArrowLeftRight, Send,
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
@@ -40,7 +41,7 @@ interface CashRegister {
 function getCaisseIcon(reg: CashRegister) {
   const code = (reg.code || '').toUpperCase();
   const name = (reg.name || '').toLowerCase();
-  if (code === 'MAIN' || name.includes('principal') || name.includes('coffre')) return Safe;
+  if (code === 'MAIN' || name.includes('principal') || name.includes('coffre')) return Gem;
   if (name.includes('mobile') || name.includes('cellulaire')) return Smartphone;
   if (name.includes('cantine') || name.includes('shop') || name.includes('boutique')) return Store;
   if (name.includes('accueil') || name.includes('bureau')) return Building2;
@@ -57,6 +58,80 @@ const CAISSE_COLORS = [
   { bg: 'from-rose-500 to-red-500', ring: 'ring-rose-400', glow: 'shadow-rose-500/30', text: 'text-rose-600' },
   { bg: 'from-indigo-500 to-violet-500', ring: 'ring-indigo-400', glow: 'shadow-indigo-500/30', text: 'text-indigo-600' },
 ];
+
+// ============================================================================
+// Composant : AnimatedBalance
+// Solde animé en rotation continue — défilement de chiffres aléatoires
+// pendant quelques secondes, puis affiche le vrai solde.
+// L'animation s'arrête au survol (hover) pour permettre la lecture.
+// ============================================================================
+function AnimatedBalance({ amount, className = '', isMain = false }: { amount: number; className?: string; isMain?: boolean }) {
+  const [displayAmount, setDisplayAmount] = useState(amount);
+  const [isHovered, setIsHovered] = useState(false);
+  const [phase, setPhase] = useState<'rotating' | 'settling' | 'stable'>('rotating');
+
+  useEffect(() => {
+    if (isHovered) {
+      // Au survol → afficher le vrai montant immédiatement
+      setDisplayAmount(amount);
+      setPhase('stable');
+      return;
+    }
+
+    // Phase 1: rotation (chiffres aléatoires pendant 2s)
+    setPhase('rotating');
+    const rotateInterval = setInterval(() => {
+      setDisplayAmount(Math.floor(Math.random() * 900000) + 10000);
+    }, 60);
+
+    // Phase 2: settling (défilement ralenti vers le vrai montant pendant 1.5s)
+    const settleTimer = setTimeout(() => {
+      clearInterval(rotateInterval);
+      setPhase('settling');
+      const steps = 20;
+      const startVal = displayAmount;
+      const diff = amount - startVal;
+      let step = 0;
+      const settleInterval = setInterval(() => {
+        step++;
+        if (step >= steps) {
+          setDisplayAmount(amount);
+          setPhase('stable');
+          clearInterval(settleInterval);
+        } else {
+          setDisplayAmount(Math.round(startVal + (diff * step) / steps));
+        }
+      }, 75);
+    }, 2000);
+
+    return () => {
+      clearInterval(rotateInterval);
+      clearTimeout(settleTimer);
+    };
+  }, [amount, isHovered]);
+
+  // Phase stable: après 3.5s, relancer l'animation (cycle continu)
+  useEffect(() => {
+    if (phase !== 'stable' || isHovered) return;
+    const restartTimer = setTimeout(() => {
+      setPhase('rotating');
+    }, 4000); // 4s stable puis relance
+    return () => clearTimeout(restartTimer);
+  }, [phase, isHovered]);
+
+  const formatted = new Intl.NumberFormat('fr-FR').format(Math.round(displayAmount));
+
+  return (
+    <span
+      className={`${className} ${phase === 'rotating' ? 'tabular-nums' : ''} transition-opacity`}
+      style={{ opacity: phase === 'rotating' ? 0.7 : 1 }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {formatted}
+    </span>
+  );
+}
 
 // Noms de caisses prédéfinis avec auto-génération de code, emplacement et description
 const PREDEFINED_CAISSES = [
@@ -83,6 +158,9 @@ export default function CashRegistersContent() {
   const [statsModal, setStatsModal] = useState<CashRegister | null>(null);
   const [stats, setStats] = useState<any>(null);
   const [selectedRegister, setSelectedRegister] = useState<CashRegister | null>(null);
+  const [transferModal, setTransferModal] = useState(false);
+  const [transferForm, setTransferForm] = useState({ fromId: '', toId: '', amount: '', note: '' });
+  const [transferPending, setTransferPending] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -261,6 +339,59 @@ export default function CashRegistersContent() {
     }
   };
 
+  // Ouvrir le modal de transfert (pré-rempli avec la caisse sélectionnée si possible)
+  const openTransfer = (fromReg?: CashRegister) => {
+    setTransferForm({
+      fromId: fromReg?.id || '',
+      toId: '',
+      amount: '',
+      note: '',
+    });
+    setTransferModal(true);
+  };
+
+  const handleTransfer = async () => {
+    if (!transferForm.fromId || !transferForm.toId) {
+      toast({ title: 'Erreur', description: 'Sélectionnez les caisses source et cible', variant: 'destructive' });
+      return;
+    }
+    if (transferForm.fromId === transferForm.toId) {
+      toast({ title: 'Erreur', description: 'Les caisses source et cible doivent être différentes', variant: 'destructive' });
+      return;
+    }
+    const amount = parseFloat(transferForm.amount);
+    if (isNaN(amount) || amount <= 0) {
+      toast({ title: 'Erreur', description: 'Montant invalide', variant: 'destructive' });
+      return;
+    }
+    setTransferPending(true);
+    try {
+      const result = await financeService.transferCashRegister({
+        fromId: transferForm.fromId,
+        toId: transferForm.toId,
+        amount,
+        note: transferForm.note || undefined,
+      });
+      toast({
+        title: '✅ Transfert réussi',
+        description: `${formatCurrency(amount)} XOF transférés de ${result.from.code} vers ${result.to.code}`,
+      });
+      setTransferModal(false);
+      loadRegisters();
+      if (selectedRegister) {
+        // Mettre à jour le solde affiché dans le panneau de détails
+        const updated = result.from.id === selectedRegister.id ? result.from : result.to.id === selectedRegister.id ? result.to : null;
+        if (updated) {
+          setSelectedRegister({ ...selectedRegister, currentBalance: String(updated.newBalance) });
+        }
+      }
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+    } finally {
+      setTransferPending(false);
+    }
+  };
+
   // Position des caisses secondaires en cercle autour du coffre-fort
   const getPosition = (index: number, total: number) => {
     if (total <= 0) return { x: 0, y: 0 };
@@ -282,10 +413,16 @@ export default function CashRegistersContent() {
             <p className="text-sm text-slate-600">
               Gestion des caisses — coffre-fort central et caisses secondaires.
             </p>
-            <Button onClick={() => setCreateModal(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Nouvelle caisse
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={() => openTransfer()} disabled={registers.filter((r) => r.isOpen).length < 2}>
+                <ArrowLeftRight className="h-4 w-4 mr-2" />
+                Transférer
+              </Button>
+              <Button onClick={() => setCreateModal(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Nouvelle caisse
+              </Button>
+            </div>
           </div>
         }
       >
@@ -300,7 +437,7 @@ export default function CashRegistersContent() {
               animate={{ scale: 1, opacity: 1 }}
               transition={{ duration: 0.5 }}
             >
-              <Safe className="h-16 w-16 mx-auto text-slate-300 mb-4" />
+              <Gem className="h-16 w-16 mx-auto text-slate-300 mb-4" />
               <p className="text-slate-500 mb-4 text-lg">Aucune caisse configurée</p>
               <Button onClick={() => setCreateModal(true)} size="lg">
                 <Plus className="h-5 w-5 mr-2" />
@@ -440,7 +577,7 @@ export default function CashRegistersContent() {
                     <div className="relative">
                       <div className="flex items-center justify-between mb-3">
                         <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center backdrop-blur-sm">
-                          <Safe className="w-6 h-6 text-white" />
+                          <Gem className="w-6 h-6 text-white" />
                         </div>
                         {mainRegister?.isOpen ? (
                           <div className="flex items-center gap-1.5">
@@ -459,7 +596,7 @@ export default function CashRegistersContent() {
                       </div>
                       <p className="text-xs text-slate-400 uppercase tracking-wider">{mainRegister?.code || 'MAIN'}</p>
                       <p className="text-sm font-semibold text-white mb-3">{mainRegister?.name || 'Caisse principale'}</p>
-                      <p className="text-3xl font-bold text-white">{formatCurrency(Number(mainRegister?.currentBalance || 0))}</p>
+                      <p className="text-3xl font-bold text-white"><AnimatedBalance amount={Number(mainRegister?.currentBalance || 0)} isMain className="text-white" /></p>
                       <p className="text-xs text-slate-400 mt-1">FCFA · {mainRegister?._count?.transactions || 0} transactions</p>
                     </div>
                   </div>
@@ -523,7 +660,7 @@ export default function CashRegistersContent() {
                         </div>
                         <p className="text-[10px] text-slate-400 uppercase tracking-wide font-mono">{reg.code}</p>
                         <p className="text-xs font-semibold text-slate-800 truncate">{reg.name}</p>
-                        <p className={`text-lg font-bold ${color.text} mt-1`}>{formatCurrency(Number(reg.currentBalance || 0))}</p>
+                        <p className={`text-lg font-bold ${color.text} mt-1`}><AnimatedBalance amount={Number(reg.currentBalance || 0)} className={color.text} /></p>
                         <p className="text-[10px] text-slate-400">{reg._count?.transactions || 0} transactions</p>
                         {!reg.isActive && (
                           <div className="absolute top-1 right-1">
@@ -670,6 +807,11 @@ export default function CashRegistersContent() {
                       <Button variant="outline" onClick={() => handleStats(selectedRegister)}>
                         <BarChart3 className="h-4 w-4 mr-2" />Statistiques
                       </Button>
+                      {selectedRegister.isOpen && (
+                        <Button variant="outline" onClick={() => openTransfer(selectedRegister)} className="text-indigo-600 hover:bg-indigo-50">
+                          <ArrowLeftRight className="h-4 w-4 mr-2" />Transférer
+                        </Button>
+                      )}
                       <Button variant="outline" onClick={() => setEditModal(selectedRegister)}>
                         <Edit className="h-4 w-4 mr-2" />Modifier
                       </Button>
@@ -901,6 +1043,105 @@ export default function CashRegistersContent() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setStatsModal(null)}>Fermer</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* === Modal Transfert === */}
+      <Dialog open={transferModal} onOpenChange={setTransferModal}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ArrowLeftRight className="w-5 h-5 text-indigo-600" />
+              Transfert entre caisses
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {/* Caisse source */}
+            <div>
+              <Label htmlFor="fromId">Caisse source (débit)</Label>
+              <select
+                id="fromId"
+                value={transferForm.fromId}
+                onChange={(e) => setTransferForm({ ...transferForm, fromId: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">— Sélectionner —</option>
+                {registers.filter((r) => r.isOpen && r.isActive).map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.code} — {r.name} (Solde: {formatCurrency(Number(r.currentBalance))} XOF)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Flèche visuelle */}
+            <div className="flex justify-center">
+              <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">
+                <ArrowDownRight className="w-5 h-5 text-indigo-600" />
+              </div>
+            </div>
+
+            {/* Caisse cible */}
+            <div>
+              <Label htmlFor="toId">Caisse cible (crédit)</Label>
+              <select
+                id="toId"
+                value={transferForm.toId}
+                onChange={(e) => setTransferForm({ ...transferForm, toId: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">— Sélectionner —</option>
+                {registers.filter((r) => r.isOpen && r.isActive && r.id !== transferForm.fromId).map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.code} — {r.name} (Solde: {formatCurrency(Number(r.currentBalance))} XOF)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Montant */}
+            <div>
+              <Label htmlFor="transferAmount">Montant à transférer (XOF)</Label>
+              <Input
+                id="transferAmount"
+                type="number"
+                min={0}
+                value={transferForm.amount}
+                onChange={(e) => setTransferForm({ ...transferForm, amount: e.target.value })}
+                placeholder="Ex: 50000"
+              />
+              {transferForm.fromId && transferForm.amount && (
+                <p className="text-xs text-slate-500 mt-1">
+                  Solde source après transfert : {formatCurrency(Number(registers.find((r) => r.id === transferForm.fromId)?.currentBalance || 0) - parseFloat(transferForm.amount || '0'))} XOF
+                </p>
+              )}
+            </div>
+
+            {/* Note */}
+            <div>
+              <Label htmlFor="transferNote">Note (optionnel)</Label>
+              <Input
+                id="transferNote"
+                value={transferForm.note}
+                onChange={(e) => setTransferForm({ ...transferForm, note: e.target.value })}
+                placeholder="Ex: Approvisionnement caisse cantine"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTransferModal(false)}>Annuler</Button>
+            <Button
+              onClick={handleTransfer}
+              disabled={transferPending || !transferForm.fromId || !transferForm.toId || !transferForm.amount}
+              className="bg-indigo-600 hover:bg-indigo-700"
+            >
+              {transferPending ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Transfert...</>
+              ) : (
+                <><Send className="w-4 h-4 mr-2" />Transférer</>
+              )}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

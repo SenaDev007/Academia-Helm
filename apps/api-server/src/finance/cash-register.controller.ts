@@ -167,4 +167,21 @@ export class CashRegisterController {
       dateTo ? new Date(dateTo) : undefined,
     );
   }
+
+  /**
+   * POST /finance/cash-registers/transfer
+   * Transfert de fonds entre deux caisses.
+   * Body: { fromId, toId, amount, note? }
+   */
+  @Post('transfer')
+  async transfer(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() body: { fromId: string; toId: string; amount: number; note?: string },
+  ) {
+    return this.service.transfer(body.fromId, body.toId, tenantId, {
+      amount: Number(body.amount),
+      note: body.note,
+    }, user?.id);
+  }
 }

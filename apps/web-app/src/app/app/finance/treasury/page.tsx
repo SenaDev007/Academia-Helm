@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
-import { CheckCircle, Eye, ArrowLeftRight, Safe, Loader2, Wallet } from 'lucide-react';
+import { CheckCircle, Eye, ArrowLeftRight, Gem, Loader2, Wallet } from 'lucide-react';
 import { ModuleHeader, SubModuleNavigation, ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
@@ -223,7 +223,7 @@ export default function TreasuryPage() {
               {/* Coffre-fort (destination) */}
               <div className="flex items-center justify-between p-3 bg-gradient-to-r from-slate-900 to-indigo-900 text-white rounded-lg">
                 <div className="flex items-center gap-2">
-                  <Safe className="w-5 h-5" />
+                  <Gem className="w-5 h-5" />
                   <div>
                     <p className="text-sm font-semibold">{mainRegister.code} — {mainRegister.name}</p>
                     <p className="text-xs text-slate-400">Coffre-fort (destination)</p>

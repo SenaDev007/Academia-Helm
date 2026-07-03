@@ -1,18 +1,20 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Wallet, Plus, Lock, Unlock, Archive, Edit, Trash2, BarChart3, X } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Wallet, Plus, Lock, Unlock, Archive, Edit, Trash2, BarChart3, X,
+  Safe, Smartphone, Building2, Store, Banknote, TrendingUp, Clock,
+  ArrowUpRight, ArrowDownRight, Receipt, ChevronRight, Sparkles,
+} from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
-import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { financeService } from '@/services/finance.service';
 import { formatCurrency } from '@/lib/utils';
 
@@ -34,7 +36,30 @@ interface CashRegister {
   _count?: { transactions: number };
 }
 
+// Helper : choisir l'icône selon le code/nom de la caisse
+function getCaisseIcon(reg: CashRegister) {
+  const code = (reg.code || '').toUpperCase();
+  const name = (reg.name || '').toLowerCase();
+  if (code === 'MAIN' || name.includes('principal') || name.includes('coffre')) return Safe;
+  if (name.includes('mobile') || name.includes('cellulaire')) return Smartphone;
+  if (name.includes('cantine') || name.includes('shop') || name.includes('boutique')) return Store;
+  if (name.includes('accueil') || name.includes('bureau')) return Building2;
+  if (name.includes('banque') || name.includes('bank')) return Banknote;
+  return Wallet;
+}
+
+// Couleurs pour les caisses secondaires (cycle)
+const CAISSE_COLORS = [
+  { bg: 'from-blue-500 to-cyan-500', ring: 'ring-blue-400', glow: 'shadow-blue-500/30', text: 'text-blue-600' },
+  { bg: 'from-purple-500 to-pink-500', ring: 'ring-purple-400', glow: 'shadow-purple-500/30', text: 'text-purple-600' },
+  { bg: 'from-amber-500 to-orange-500', ring: 'ring-amber-400', glow: 'shadow-amber-500/30', text: 'text-amber-600' },
+  { bg: 'from-emerald-500 to-teal-500', ring: 'ring-emerald-400', glow: 'shadow-emerald-500/30', text: 'text-emerald-600' },
+  { bg: 'from-rose-500 to-red-500', ring: 'ring-rose-400', glow: 'shadow-rose-500/30', text: 'text-rose-600' },
+  { bg: 'from-indigo-500 to-violet-500', ring: 'ring-indigo-400', glow: 'shadow-indigo-500/30', text: 'text-indigo-600' },
+];
+
 export default function CashRegistersContent() {
+  const confirmDialog = useConfirmDialog();
   const { toast } = useToast();
   const [registers, setRegisters] = useState<CashRegister[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,6 +68,7 @@ export default function CashRegistersContent() {
   const [closeModal, setCloseModal] = useState<CashRegister | null>(null);
   const [statsModal, setStatsModal] = useState<CashRegister | null>(null);
   const [stats, setStats] = useState<any>(null);
+  const [selectedRegister, setSelectedRegister] = useState<CashRegister | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -78,6 +104,25 @@ export default function CashRegistersContent() {
   useEffect(() => {
     loadRegisters();
   }, [loadRegisters]);
+
+  // Identifier la caisse principale (code MAIN ou première créée)
+  const mainRegister = useMemo(() => {
+    return registers.find((r) => r.code?.toUpperCase() === 'MAIN') || registers[0] || null;
+  }, [registers]);
+
+  // Caisses secondaires (toutes sauf la principale)
+  const secondaryRegisters = useMemo(() => {
+    if (!mainRegister) return registers;
+    return registers.filter((r) => r.id !== mainRegister.id);
+  }, [registers, mainRegister]);
+
+  // Statistiques globales
+  const globalStats = useMemo(() => {
+    const totalBalance = registers.reduce((sum, r) => sum + Number(r.currentBalance || 0), 0);
+    const openCount = registers.filter((r) => r.isOpen).length;
+    const totalTransactions = registers.reduce((sum, r) => sum + (r._count?.transactions || 0), 0);
+    return { totalBalance, openCount, totalCaisses: registers.length, totalTransactions };
+  }, [registers]);
 
   const handleCreate = async () => {
     if (!formData.code || !formData.name) {
@@ -123,6 +168,9 @@ export default function CashRegistersContent() {
       await financeService.openCashRegister(reg.id, {});
       toast({ title: '🔓 Caisse ouverte', description: `${reg.code} - ${reg.name}` });
       loadRegisters();
+      if (selectedRegister?.id === reg.id) {
+        setSelectedRegister({ ...reg, isOpen: true });
+      }
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
     }
@@ -152,11 +200,16 @@ export default function CashRegistersContent() {
   };
 
   const handleArchive = async (reg: CashRegister) => {
-    if (!confirm(`Archiver la caisse "${reg.code} - ${reg.name}" ? Elle ne pourra plus être utilisée.`)) return;
+    const ok = await confirmDialog.danger(
+      `La caisse "${reg.code} - ${reg.name}" sera archivée. Elle ne pourra plus être utilisée.`,
+      'Archiver',
+    );
+    if (!ok) return;
     try {
       await financeService.archiveCashRegister(reg.id);
       toast({ title: '📦 Caisse archivée' });
       loadRegisters();
+      if (selectedRegister?.id === reg.id) setSelectedRegister(null);
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
     }
@@ -172,13 +225,26 @@ export default function CashRegistersContent() {
     }
   };
 
+  // Position des caisses secondaires en cercle autour du coffre-fort
+  const getPosition = (index: number, total: number) => {
+    if (total <= 0) return { x: 0, y: 0 };
+    const angle = (index / total) * 2 * Math.PI - Math.PI / 2; // Commence en haut
+    const radius = Math.min(280, 140 + total * 20); // Rayon dynamique
+    return {
+      x: Math.cos(angle) * radius,
+      y: Math.sin(angle) * radius,
+    };
+  };
+
   return (
     <>
+      {confirmDialog.dialog}
       <ModuleContentArea
+        layout="custom"
         toolbar={
           <div className="flex items-center justify-between">
             <p className="text-sm text-slate-600">
-              Gestion des caisses de l'établissement — ouverture/fermeture, suivi des soldes, rapprochement.
+              Gestion des caisses — coffre-fort central et caisses secondaires.
             </p>
             <Button onClick={() => setCreateModal(true)}>
               <Plus className="h-4 w-4 mr-2" />
@@ -188,128 +254,399 @@ export default function CashRegistersContent() {
         }
       >
         {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
+          <div className="flex items-center justify-center py-24">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600" />
           </div>
         ) : registers.length === 0 ? (
-          <div className="text-center py-12">
-            <Wallet className="h-12 w-12 mx-auto text-slate-300 mb-4" />
-            <p className="text-slate-500 mb-4">Aucune caisse configurée</p>
-            <Button onClick={() => setCreateModal(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Créer la première caisse
-            </Button>
+          <div className="text-center py-24">
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ duration: 0.5 }}
+            >
+              <Safe className="h-16 w-16 mx-auto text-slate-300 mb-4" />
+              <p className="text-slate-500 mb-4 text-lg">Aucune caisse configurée</p>
+              <Button onClick={() => setCreateModal(true)} size="lg">
+                <Plus className="h-5 w-5 mr-2" />
+                Créer le coffre-fort principal
+              </Button>
+            </motion.div>
           </div>
         ) : (
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-gray-50">
-                  <TableHead>Code</TableHead>
-                  <TableHead>Nom</TableHead>
-                  <TableHead>Emplacement</TableHead>
-                  <TableHead>Responsable</TableHead>
-                  <TableHead className="text-right">Solde courant</TableHead>
-                  <TableHead>Statut</TableHead>
-                  <TableHead className="text-center">Transactions</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {registers.map((reg) => (
-                  <TableRow key={reg.id} className={!reg.isActive ? 'opacity-50' : ''}>
-                    <TableCell className="font-mono font-semibold">{reg.code}</TableCell>
-                    <TableCell>{reg.name}</TableCell>
-                    <TableCell className="text-slate-500">{reg.location || '-'}</TableCell>
-                    <TableCell className="text-slate-500">
-                      {reg.responsibleUser
-                        ? `${reg.responsibleUser.firstName} ${reg.responsibleUser.lastName}`
-                        : '-'}
-                    </TableCell>
-                    <TableCell className="text-right font-semibold">
-                      {formatCurrency(Number(reg.currentBalance))}
-                    </TableCell>
-                    <TableCell>
-                      {reg.isOpen ? (
-                        <Badge className="bg-emerald-100 text-emerald-700">
-                          <Unlock className="h-3 w-3 mr-1" />
-                          Ouverte
-                        </Badge>
-                      ) : reg.isActive ? (
-                        <Badge variant="secondary">
-                          <Lock className="h-3 w-3 mr-1" />
-                          Fermée
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline">
-                          <Archive className="h-3 w-3 mr-1" />
-                          Archivée
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-center text-slate-500">
-                      {reg._count?.transactions || 0}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        {reg.isActive && !reg.isOpen && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleOpen(reg)}
-                            title="Ouvrir la caisse"
-                          >
-                            <Unlock className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                        {reg.isOpen && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setCloseModal(reg);
-                              setCloseForm({
-                                countedBalance: String(reg.currentBalance),
-                                note: '',
-                              });
-                            }}
-                            title="Fermer la caisse"
-                          >
-                            <Lock className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleStats(reg)}
-                          title="Statistiques"
-                        >
-                          <BarChart3 className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setEditModal(reg)}
-                          title="Modifier"
-                        >
-                          <Edit className="h-3.5 w-3.5" />
-                        </Button>
-                        {reg.isActive && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleArchive(reg)}
-                            title="Archiver"
-                          >
-                            <Archive className="h-3.5 w-3.5" />
-                          </Button>
+          <div className="space-y-6">
+            {/* === BANDEAU STATISTIQUES GLOBALES === */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.05 }}
+                className="bg-gradient-to-br from-slate-900 to-indigo-900 text-white rounded-xl p-4 shadow-lg"
+              >
+                <p className="text-xs text-slate-400 uppercase tracking-wide">Solde total</p>
+                <p className="text-2xl font-bold mt-1">{formatCurrency(globalStats.totalBalance)}</p>
+                <p className="text-xs text-slate-400 mt-0.5">FCFA</p>
+              </motion.div>
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 }}
+                className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm"
+              >
+                <p className="text-xs text-slate-500 uppercase tracking-wide">Caisses ouvertes</p>
+                <p className="text-2xl font-bold mt-1 text-emerald-600">{globalStats.openCount}<span className="text-slate-400 text-lg">/{globalStats.totalCaisses}</span></p>
+                <div className="flex gap-1 mt-1">
+                  {registers.map((r) => (
+                    <div key={r.id} className={`w-2 h-2 rounded-full ${r.isOpen ? 'bg-emerald-500' : 'bg-slate-200'}`} />
+                  ))}
+                </div>
+              </motion.div>
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.15 }}
+                className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm"
+              >
+                <p className="text-xs text-slate-500 uppercase tracking-wide">Transactions totales</p>
+                <p className="text-2xl font-bold mt-1 text-indigo-600">{globalStats.totalTransactions}</p>
+                <p className="text-xs text-slate-400 mt-0.5">toutes caisses</p>
+              </motion.div>
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2 }}
+                className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm"
+              >
+                <p className="text-xs text-slate-500 uppercase tracking-wide">Caisses actives</p>
+                <p className="text-2xl font-bold mt-1 text-blue-600">{registers.filter((r) => r.isActive).length}</p>
+                <p className="text-xs text-slate-400 mt-0.5">caisses configurées</p>
+              </motion.div>
+            </div>
+
+            {/* === CONSTELLATION COFFRE-FORT + CAISSES === */}
+            <div className="relative bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl border border-slate-200 overflow-hidden" style={{ minHeight: '640px' }}>
+
+              {/* Décor : grille subtile en fond */}
+              <div className="absolute inset-0 opacity-[0.03]" style={{
+                backgroundImage: 'radial-gradient(circle, #6366f1 1px, transparent 1px)',
+                backgroundSize: '30px 30px',
+              }} />
+
+              {/* SVG pour les lignes de connexion */}
+              <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 1 }}>
+                {secondaryRegisters.map((reg, idx) => {
+                  const pos = getPosition(idx, secondaryRegisters.length);
+                  return (
+                    <line
+                      key={reg.id}
+                      x1="50%"
+                      y1="50%"
+                      x2={`calc(50% + ${pos.x}px)`}
+                      y2={`calc(50% + ${pos.y}px)`}
+                      stroke={reg.isOpen ? '#10b981' : '#cbd5e1'}
+                      strokeWidth="1.5"
+                      strokeDasharray={reg.isOpen ? '0' : '4 4'}
+                      opacity="0.5"
+                    />
+                  );
+                })}
+              </svg>
+
+              {/* COFFRE-FORT CENTRAL */}
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" style={{ zIndex: 2 }}>
+                <motion.button
+                  initial={{ scale: 0.5, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ duration: 0.6, ease: 'easeOut' }}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => setSelectedRegister(mainRegister)}
+                  className="relative group"
+                >
+                  {/* Halo pulsant */}
+                  {mainRegister?.isOpen && (
+                    <motion.div
+                      className="absolute inset-0 rounded-3xl bg-emerald-400/30"
+                      animate={{
+                        scale: [1, 1.3, 1],
+                        opacity: [0.5, 0, 0.5],
+                      }}
+                      transition={{
+                        duration: 2.5,
+                        repeat: Infinity,
+                        ease: 'easeInOut',
+                      }}
+                    />
+                  )}
+                  {/* Second halo (décalé) */}
+                  {mainRegister?.isOpen && (
+                    <motion.div
+                      className="absolute inset-0 rounded-3xl bg-indigo-400/20"
+                      animate={{
+                        scale: [1, 1.5, 1],
+                        opacity: [0.3, 0, 0.3],
+                      }}
+                      transition={{
+                        duration: 3,
+                        repeat: Infinity,
+                        ease: 'easeInOut',
+                        delay: 0.5,
+                      }}
+                    />
+                  )}
+
+                  {/* Carte coffre-fort */}
+                  <div className={`relative bg-gradient-to-br ${mainRegister?.isOpen ? 'from-slate-900 via-indigo-900 to-slate-900' : 'from-slate-700 to-slate-900'} text-white rounded-3xl p-6 shadow-2xl ring-2 ${mainRegister?.isOpen ? 'ring-emerald-400/50' : 'ring-slate-500/30'} backdrop-blur-md w-64`}>
+                    {/* Effet de brillance */}
+                    <div className="absolute inset-0 rounded-3xl opacity-20" style={{
+                      background: 'linear-gradient(135deg, transparent 30%, rgba(255,255,255,0.3) 50%, transparent 70%)',
+                    }} />
+
+                    <div className="relative">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center backdrop-blur-sm">
+                          <Safe className="w-6 h-6 text-white" />
+                        </div>
+                        {mainRegister?.isOpen ? (
+                          <div className="flex items-center gap-1.5">
+                            <motion.div
+                              className="w-2 h-2 rounded-full bg-emerald-400"
+                              animate={{ opacity: [1, 0.3, 1] }}
+                              transition={{ duration: 1.5, repeat: Infinity }}
+                            />
+                            <span className="text-xs text-emerald-300 font-medium">Ouverte</span>
+                          </div>
+                        ) : (
+                          <Badge className="bg-slate-600/50 text-slate-300">
+                            <Lock className="w-3 h-3 mr-1" />Fermée
+                          </Badge>
                         )}
                       </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                      <p className="text-xs text-slate-400 uppercase tracking-wider">{mainRegister?.code || 'MAIN'}</p>
+                      <p className="text-sm font-semibold text-white mb-3">{mainRegister?.name || 'Caisse principale'}</p>
+                      <p className="text-3xl font-bold text-white">{formatCurrency(Number(mainRegister?.currentBalance || 0))}</p>
+                      <p className="text-xs text-slate-400 mt-1">FCFA · {mainRegister?._count?.transactions || 0} transactions</p>
+                    </div>
+                  </div>
+                </motion.button>
+
+                {/* Label COFFRE-FORT */}
+                <div className="text-center mt-3">
+                  <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest bg-indigo-50 px-3 py-1 rounded-full">
+                    💎 Coffre-Fort
+                  </span>
+                </div>
+              </div>
+
+              {/* CAISSES SECONDAIRES — disposées en cercle */}
+              {secondaryRegisters.map((reg, idx) => {
+                const pos = getPosition(idx, secondaryRegisters.length);
+                const color = CAISSE_COLORS[idx % CAISSE_COLORS.length];
+                const Icon = getCaisseIcon(reg);
+                return (
+                  <div
+                    key={reg.id}
+                    className="absolute top-1/2 left-1/2"
+                    style={{
+                      transform: `translate(calc(-50% + ${pos.x}px), calc(-50% + ${pos.y}px))`,
+                      zIndex: 2,
+                    }}
+                  >
+                    <motion.button
+                      initial={{ scale: 0, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ delay: 0.3 + idx * 0.1, type: 'spring', stiffness: 200 }}
+                      whileHover={{ scale: 1.08, y: -4 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => setSelectedRegister(reg)}
+                      className="relative group"
+                    >
+                      {/* Halo si ouverte */}
+                      {reg.isOpen && (
+                        <motion.div
+                          className={`absolute inset-0 rounded-2xl bg-gradient-to-br ${color.bg} opacity-30`}
+                          animate={{ scale: [1, 1.25, 1], opacity: [0.3, 0, 0.3] }}
+                          transition={{ duration: 2, repeat: Infinity, delay: idx * 0.3 }}
+                        />
+                      )}
+
+                      {/* Carte caisse secondaire */}
+                      <div className={`relative bg-white rounded-2xl p-4 shadow-lg ring-1 ${reg.isOpen ? `ring-2 ${color.ring} ${color.glow} shadow-xl` : 'ring-slate-200'} w-44 transition-all`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${color.bg} flex items-center justify-center shadow-md`}>
+                            <Icon className="w-4 h-4 text-white" />
+                          </div>
+                          {reg.isOpen ? (
+                            <motion.div
+                              className="w-2 h-2 rounded-full bg-emerald-400"
+                              animate={{ opacity: [1, 0.3, 1] }}
+                              transition={{ duration: 1.5, repeat: Infinity }}
+                            />
+                          ) : (
+                            <Lock className="w-3 h-3 text-slate-300" />
+                          )}
+                        </div>
+                        <p className="text-[10px] text-slate-400 uppercase tracking-wide font-mono">{reg.code}</p>
+                        <p className="text-xs font-semibold text-slate-800 truncate">{reg.name}</p>
+                        <p className={`text-lg font-bold ${color.text} mt-1`}>{formatCurrency(Number(reg.currentBalance || 0))}</p>
+                        <p className="text-[10px] text-slate-400">{reg._count?.transactions || 0} transactions</p>
+                        {!reg.isActive && (
+                          <div className="absolute top-1 right-1">
+                            <Archive className="w-3 h-3 text-slate-300" />
+                          </div>
+                        )}
+                      </div>
+                    </motion.button>
+                  </div>
+                );
+              })}
+
+              {/* Légende en bas */}
+              <div className="absolute bottom-3 left-3 flex items-center gap-4 text-xs text-slate-500">
+                <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-400" /> Ouverte</span>
+                <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-slate-300" /> Fermée</span>
+                <span className="flex items-center gap-1"><Archive className="w-3 h-3" /> Archivée</span>
+              </div>
+            </div>
+
+            {/* === PANNEAU DÉTAILS (au clic sur une caisse) === */}
+            <AnimatePresence mode="wait">
+              {selectedRegister && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 20 }}
+                  transition={{ duration: 0.3 }}
+                  className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden"
+                >
+                  {/* En-tête du panneau */}
+                  <div className={`bg-gradient-to-r ${selectedRegister.code?.toUpperCase() === 'MAIN' || selectedRegister === mainRegister ? 'from-slate-900 to-indigo-900' : 'from-slate-700 to-slate-900'} text-white p-5`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center backdrop-blur-sm">
+                          {(() => {
+                            const Icon = getCaisseIcon(selectedRegister);
+                            return <Icon className="w-6 h-6 text-white" />;
+                          })()}
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-400 uppercase tracking-wide">{selectedRegister.code}</p>
+                          <h3 className="text-lg font-bold text-white">{selectedRegister.name}</h3>
+                          <p className="text-xs text-slate-400">{selectedRegister.location || '—'}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {selectedRegister.isOpen ? (
+                          <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                            <motion.div className="w-2 h-2 rounded-full bg-emerald-400 mr-1.5" animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.5, repeat: Infinity }} />
+                            Ouverte
+                          </Badge>
+                        ) : selectedRegister.isActive ? (
+                          <Badge className="bg-slate-600/50 text-slate-300"><Lock className="w-3 h-3 mr-1" />Fermée</Badge>
+                        ) : (
+                          <Badge className="bg-slate-600/50 text-slate-300"><Archive className="w-3 h-3 mr-1" />Archivée</Badge>
+                        )}
+                        <button onClick={() => setSelectedRegister(null)} className="text-slate-400 hover:text-white p-1">
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Corps du panneau */}
+                  <div className="p-5 space-y-4">
+                    {/* KPI cards */}
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
+                        <p className="text-xs text-slate-500">Solde courant</p>
+                        <p className="text-xl font-bold text-slate-900">{formatCurrency(Number(selectedRegister.currentBalance || 0))}</p>
+                      </div>
+                      <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
+                        <p className="text-xs text-slate-500">Solde d'ouverture</p>
+                        <p className="text-xl font-bold text-slate-700">{formatCurrency(Number(selectedRegister.openingBalance || 0))}</p>
+                      </div>
+                      <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
+                        <p className="text-xs text-slate-500">Transactions</p>
+                        <p className="text-xl font-bold text-indigo-600">{selectedRegister._count?.transactions || 0}</p>
+                      </div>
+                    </div>
+
+                    {/* Infos détaillées */}
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <p className="text-xs text-slate-500 mb-1">Responsable</p>
+                        <p className="font-medium text-slate-800">
+                          {selectedRegister.responsibleUser
+                            ? `${selectedRegister.responsibleUser.firstName} ${selectedRegister.responsibleUser.lastName}`
+                            : 'Non assigné'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-500 mb-1">Dernière ouverture</p>
+                        <p className="font-medium text-slate-800">
+                          {selectedRegister.openedAt
+                            ? new Date(selectedRegister.openedAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })
+                            : '—'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-500 mb-1">Ouverte par</p>
+                        <p className="font-medium text-slate-800">
+                          {selectedRegister.openedBy
+                            ? `${selectedRegister.openedBy.firstName} ${selectedRegister.openedBy.lastName}`
+                            : '—'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-500 mb-1">Dernière fermeture</p>
+                        <p className="font-medium text-slate-800">
+                          {selectedRegister.closedAt
+                            ? new Date(selectedRegister.closedAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })
+                            : '—'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {selectedRegister.description && (
+                      <div>
+                        <p className="text-xs text-slate-500 mb-1">Description</p>
+                        <p className="text-sm text-slate-700">{selectedRegister.description}</p>
+                      </div>
+                    )}
+
+                    {/* Actions */}
+                    <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-200">
+                      {selectedRegister.isActive && !selectedRegister.isOpen && (
+                        <Button onClick={() => handleOpen(selectedRegister)} className="bg-emerald-600 hover:bg-emerald-700">
+                          <Unlock className="h-4 w-4 mr-2" />Ouvrir la caisse
+                        </Button>
+                      )}
+                      {selectedRegister.isOpen && (
+                        <Button
+                          onClick={() => {
+                            setCloseModal(selectedRegister);
+                            setCloseForm({ countedBalance: String(selectedRegister.currentBalance), note: '' });
+                          }}
+                          className="bg-rose-600 hover:bg-rose-700"
+                        >
+                          <Lock className="h-4 w-4 mr-2" />Fermer la caisse
+                        </Button>
+                      )}
+                      <Button variant="outline" onClick={() => handleStats(selectedRegister)}>
+                        <BarChart3 className="h-4 w-4 mr-2" />Statistiques
+                      </Button>
+                      <Button variant="outline" onClick={() => setEditModal(selectedRegister)}>
+                        <Edit className="h-4 w-4 mr-2" />Modifier
+                      </Button>
+                      {selectedRegister.isActive && (
+                        <Button variant="outline" onClick={() => handleArchive(selectedRegister)} className="text-rose-600 hover:bg-rose-50">
+                          <Archive className="h-4 w-4 mr-2" />Archiver
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         )}
       </ModuleContentArea>
@@ -485,24 +822,14 @@ export default function CashRegistersContent() {
               {stats.byMethod && stats.byMethod.length > 0 && (
                 <div>
                   <p className="text-sm font-semibold mb-2">Par méthode de paiement</p>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Méthode</TableHead>
-                        <TableHead className="text-right">Nb transactions</TableHead>
-                        <TableHead className="text-right">Total</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {stats.byMethod.map((m: any) => (
-                        <TableRow key={m.method}>
-                          <TableCell className="font-medium">{m.method}</TableCell>
-                          <TableCell className="text-right">{m.count}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(m.total)} XOF</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                  <div className="space-y-1">
+                    {stats.byMethod.map((m: any) => (
+                      <div key={m.method} className="flex justify-between text-sm bg-slate-50 p-2 rounded">
+                        <span className="font-medium">{m.method}</span>
+                        <span>{m.count} transactions — {formatCurrency(m.total)} XOF</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

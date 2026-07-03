@@ -171,6 +171,21 @@ export default function FeeStructuresContent() {
     return '—';
   };
 
+  // Helper : nom intelligent du frais
+  // Si le frais a une classe (classId) mais que le nom ne contient pas déjà le nom de la classe,
+  // on enrichit le nom avec " — NomClasse" (ex: "Frais de scolarité" → "Frais de scolarité — CE1")
+  // Cas d'usage : création groupée où le nom générique a été utilisé pour toutes les classes
+  const feeDisplayName = (s: any): string => {
+    const baseName = s.name ?? '';
+    if (!s.classId) return baseName;
+    const className = s.class?.name ?? classes.find((c) => c.id === s.classId)?.name;
+    if (!className) return baseName;
+    // Si le nom contient déjà le nom de la classe (ex: "Frais de scolarité — CE1"), on garde tel quel
+    if (baseName.includes(className)) return baseName;
+    // Sinon on enrichit
+    return `${baseName} — ${className}`;
+  };
+
   // Helper : libellé du mode d'échéance d'une tranche
   const dueDateTypeLabel = (i: any): string => {
     const t = i.dueDateType ?? 'FIXED';
@@ -364,7 +379,7 @@ export default function FeeStructuresContent() {
                 </TableCell></TableRow>
                 ) : structures.map((s) => (
                   <TableRow key={s.id} className="hover:bg-slate-50">
-                    <TableCell className="font-medium">{s.name}</TableCell>
+                    <TableCell className="font-medium">{feeDisplayName(s)}</TableCell>
                     <TableCell><Badge variant="outline">{feeTypeLabel(s.feeType)}</Badge></TableCell>
                     <TableCell className="text-sm">{s.levelId ? <strong>{levelDisplay(s)}</strong> : <span className="text-slate-400">Tous</span>}</TableCell>
                     <TableCell className="text-sm">{s.classId ? <strong>{classDisplay(s)}</strong> : <span className="text-slate-400">—</span>}</TableCell>
@@ -477,10 +492,15 @@ export default function FeeStructuresContent() {
                   </div>
                 </div>
 
-                {/* Nom du frais concerné */}
+                {/* Nom du frais concerné — enrichi intelligemment avec la classe si manquante */}
                 <div className="px-5 py-2.5 bg-slate-50 border-b border-slate-200">
                   <p className="text-xs text-slate-500 uppercase tracking-wide">Frais</p>
-                  <p className="text-sm font-semibold text-slate-800 truncate">{s.name}</p>
+                  <p className="text-sm font-semibold text-slate-800 truncate">{feeDisplayName(s)}</p>
+                  {s.classId && (
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Classe : <span className="font-medium text-slate-700">{classDisplay(s)}</span>
+                    </p>
+                  )}
                 </div>
 
                 {/* Liste des tranches */}

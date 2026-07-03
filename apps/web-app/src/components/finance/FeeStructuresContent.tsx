@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Plus, Copy, UserCog, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Copy, UserCog, Pencil, Trash2, X, ChevronDown, Calendar, Clock, CalendarClock } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
@@ -63,6 +63,8 @@ export default function FeeStructuresContent() {
   const [copyYearModal, setCopyYearModal] = useState(false);
   const [copyFrom, setCopyFrom] = useState('');
   const [copyTo, setCopyTo] = useState('');
+  const [installmentPopoverId, setInstallmentPopoverId] = useState<string | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
 
   // Mapping education_levels UUID → school_levels UUID
   // levels vient de /api/school-levels (education_levels UUID + code MATERNELLE/PRIMAIRE)
@@ -118,6 +120,25 @@ export default function FeeStructuresContent() {
 
   useEffect(() => { loadStructures(); }, [loadStructures]);
 
+  // Fermer le popover au clic en dehors ou sur Escape
+  useEffect(() => {
+    if (!installmentPopoverId) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        setInstallmentPopoverId(null);
+      }
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setInstallmentPopoverId(null);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [installmentPopoverId]);
+
   useEffect(() => {
     // Utiliser la route BFF /api/all-classes (same-origin, pas de Cloudflare)
     // au lieu de classesService.getAll() qui utilise axios cross-origin
@@ -148,6 +169,39 @@ export default function FeeStructuresContent() {
     if (s.class?.name) return s.class.name;
     if (s.classId) { const cls = classes.find((c) => c.id === s.classId); if (cls) return cls.name ?? '—'; }
     return '—';
+  };
+
+  // Helper : libellé du mode d'échéance d'une tranche
+  const dueDateTypeLabel = (i: any): string => {
+    const t = i.dueDateType ?? 'FIXED';
+    if (t === 'AT_ENROLLMENT') return "À l'inscription";
+    if (t === 'DAYS_AFTER_ENROLLMENT') return `${i.daysOffset ?? 0} jour(s) après inscription`;
+    return 'Date fixe';
+  };
+
+  // Helper : description lisible de l'échéance d'une tranche
+  const dueDateDescription = (i: any): string => {
+    const t = i.dueDateType ?? 'FIXED';
+    if (t === 'AT_ENROLLMENT') {
+      return 'Sera calculée à l\'inscription de l\'élève';
+    }
+    if (t === 'DAYS_AFTER_ENROLLMENT') {
+      return `${i.daysOffset ?? 0} jour(s) après l'inscription`;
+    }
+    if (i.dueDate) {
+      return new Date(i.dueDate).toLocaleDateString('fr-FR', {
+        day: '2-digit', month: 'long', year: 'numeric',
+      });
+    }
+    return '—';
+  };
+
+  // Helper : icône selon le mode d'échéance
+  const dueDateIcon = (i: any) => {
+    const t = i.dueDateType ?? 'FIXED';
+    if (t === 'AT_ENROLLMENT') return <Calendar className="w-3.5 h-3.5 text-emerald-600" />;
+    if (t === 'DAYS_AFTER_ENROLLMENT') return <CalendarClock className="w-3.5 h-3.5 text-amber-600" />;
+    return <Clock className="w-3.5 h-3.5 text-slate-500" />;
   };
 
   const handleCreate = async (body: any) => {
@@ -264,13 +318,101 @@ export default function FeeStructuresContent() {
                     <TableCell className="text-right font-semibold">{formatCurrency(s.totalAmount)}</TableCell>
                     <TableCell>
                       {s.isInstallment ? (
-                        <div className="space-y-1">
-                          <Badge className="bg-blue-50 text-blue-700">{s.structureInstallments?.length || 0} tranches</Badge>
-                          {s.structureInstallments?.some((i: any) => i.dueDateType === 'AT_ENROLLMENT') && (
-                            <Badge variant="outline" className="ml-1 text-emerald-700 border-emerald-300">1ère = inscription</Badge>
-                          )}
-                          {s.structureInstallments?.some((i: any) => i.dueDateType === 'DAYS_AFTER_ENROLLMENT') && (
-                            <Badge variant="outline" className="ml-1 text-amber-700 border-amber-300">+ jours après inscr.</Badge>
+                        <div className="relative inline-block" ref={installmentPopoverId === s.id ? popoverRef : undefined}>
+                          {/* Badge cliquable — hover plus clair (pas plus foncé) */}
+                          <button
+                            type="button"
+                            onClick={() => setInstallmentPopoverId(installmentPopoverId === s.id ? null : s.id)}
+                            className="inline-flex items-center gap-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-0.5 text-xs font-semibold cursor-pointer transition-colors hover:bg-blue-100 hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                            title="Cliquez pour voir les tranches"
+                          >
+                            {s.structureInstallments?.length || 0} tranche(s)
+                            <ChevronDown className={`w-3 h-3 transition-transform ${installmentPopoverId === s.id ? 'rotate-180' : ''}`} />
+                          </button>
+
+                          {/* Badges secondaires (info rapide sur les modes) */}
+                          <div className="flex gap-1 mt-1 flex-wrap">
+                            {s.structureInstallments?.some((i: any) => i.dueDateType === 'AT_ENROLLMENT') && (
+                              <span className="inline-flex items-center gap-0.5 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-1.5 py-0">
+                                <Calendar className="w-2.5 h-2.5" />1ère = inscr.
+                              </span>
+                            )}
+                            {s.structureInstallments?.some((i: any) => i.dueDateType === 'DAYS_AFTER_ENROLLMENT') && (
+                              <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-1.5 py-0">
+                                <CalendarClock className="w-2.5 h-2.5" />Jours après inscr.
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Popover hologramme — détails des tranches */}
+                          {installmentPopoverId === s.id && (
+                            <div
+                              className="absolute z-50 mt-2 right-0 w-80 bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden"
+                              style={{ minWidth: '320px' }}
+                            >
+                              {/* Header du popover */}
+                              <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-slate-200">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                                    <Calendar className="w-4 h-4 text-blue-600" />
+                                  </div>
+                                  <div>
+                                    <p className="text-sm font-bold text-slate-800">Tranches de paiement</p>
+                                    <p className="text-xs text-slate-500">{s.structureInstallments?.length || 0} tranche(s) · Total : {formatCurrency(s.totalAmount)}</p>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setInstallmentPopoverId(null)}
+                                  className="p-1 rounded-full hover:bg-white/80 text-slate-500 hover:text-slate-700 transition-colors"
+                                  title="Fermer"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </div>
+
+                              {/* Liste des tranches */}
+                              <div className="max-h-64 overflow-y-auto">
+                                {[...(s.structureInstallments || [])]
+                                  .sort((a: any, b: any) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
+                                  .map((i: any, idx: number) => {
+                                    const mode = i.dueDateType ?? 'FIXED';
+                                    const modeBg = mode === 'AT_ENROLLMENT'
+                                      ? 'bg-emerald-50 border-emerald-200'
+                                      : mode === 'DAYS_AFTER_ENROLLMENT'
+                                        ? 'bg-amber-50 border-amber-200'
+                                        : 'bg-slate-50 border-slate-200';
+                                    return (
+                                      <div key={i.id ?? idx} className={`px-4 py-3 border-b last:border-b-0 ${modeBg}`}>
+                                        <div className="flex items-start justify-between gap-2">
+                                          <div className="flex items-center gap-2 min-w-0">
+                                            <div className="flex-shrink-0 w-6 h-6 rounded-full bg-white border border-slate-300 flex items-center justify-center text-[10px] font-bold text-slate-600">
+                                              {idx + 1}
+                                            </div>
+                                            <div className="min-w-0">
+                                              <p className="text-sm font-semibold text-slate-800 truncate">{i.label}</p>
+                                              <p className="text-xs text-slate-500">{dueDateTypeLabel(i)}</p>
+                                            </div>
+                                          </div>
+                                          <p className="text-sm font-bold text-slate-800 whitespace-nowrap">
+                                            {formatCurrency(i.amount)}
+                                          </p>
+                                        </div>
+                                        <div className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-600 pl-8">
+                                          {dueDateIcon(i)}
+                                          <span>{dueDateDescription(i)}</span>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                              </div>
+
+                              {/* Footer du popover — somme de contrôle */}
+                              <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs">
+                                <span className="text-slate-500">Somme des tranches :</span>
+                                <span className="font-bold text-slate-800">{formatCurrency(s.totalAmount)}</span>
+                              </div>
+                            </div>
                           )}
                         </div>
                       ) : (

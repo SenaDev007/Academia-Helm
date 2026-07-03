@@ -2081,3 +2081,74 @@ Stage Summary:
 - Le calcul de l'échéance réelle se fait au runtime dans StudentAccountService
   à partir de StudentEnrollment.enrollmentDate
 - Comportement rétro-compatible : les installments existants ont dueDateType='FIXED' par défaut
+
+---
+Task ID: installment-popover-ui
+Agent: main
+Task: Corriger le hover du badge tranches + ajouter un popover au clic avec la liste détaillée des tranches
+
+Work Log:
+
+## Problème 1 : Hover du badge illisible
+- Le composant Badge par défaut a `hover:bg-blue-700` qui reste actif même avec `className="bg-blue-50 text-blue-700"`
+- Au survol : fond bleu foncé + texte bleu foncé = illisible
+- Solution : remplacer le Badge par un <button> custom avec :
+  * `bg-blue-50 text-blue-700 border border-blue-200` (état normal)
+  * `hover:bg-blue-100 hover:border-blue-300` (hover plus clair, pas plus foncé)
+  * `cursor-pointer` pour indiquer l'interactivité
+  * Icône ChevronDown qui pivote à l'ouverture
+
+## Problème 2 : Popover au clic
+- Pas de composant Popover existant dans /components/ui
+- Pas de @radix-ui/react-popover dans package.json
+- Solution : popover sur-mesure en React pur (pas de dépendance supplémentaire)
+
+### Implémentation du popover
+- State `installmentPopoverId` : ID de la structure dont le popover est ouvert (null si fermé)
+- Ref `popoverRef` : pour détecter le clic en dehors
+- useEffect : écoute mousedown + Escape pour fermer
+- Positionnement : `absolute` + `right-0` + `mt-2` (sous le badge, aligné à droite)
+- Largeur : `w-80` (320px) avec `min-width: 320px`
+
+### Structure du popover
+1. **Header** (gradient bleu → indigo) :
+   - Icône Calendar dans un cercle bleu
+   - Titre "Tranches de paiement"
+   - Sous-titre : nombre de tranches + montant total
+   - Bouton X pour fermer
+2. **Liste des tranches** (scrollable max-h-64) :
+   - Chaque tranche a un fond coloré selon son mode :
+     * AT_ENROLLMENT → vert (emerald)
+     * DAYS_AFTER_ENROLLMENT → ambre
+     * FIXED → gris (slate)
+   - Numéro de tranche dans un cercle
+   - Libellé + mode d'échéance
+   - Montant à droite
+   - Ligne d'échéance avec icône + description formatée
+3. **Footer** (gris clair) :
+   - Somme des tranches = montant total (contrôle visuel)
+
+### Helpers ajoutés
+- `dueDateTypeLabel(i)` : libellé du mode ("À l'inscription", "X jour(s) après inscription", "Date fixe")
+- `dueDateDescription(i)` : description lisible de l'échéance (date formatée ou règle dynamique)
+- `dueDateIcon(i)` : icône selon le mode (Calendar vert, CalendarClock ambre, Clock gris)
+
+### Imports ajoutés
+- `useRef` depuis react
+- `X, ChevronDown, Calendar, Clock, CalendarClock` depuis lucide-react
+
+### Badges secondaires conservés
+- Sous le badge principal, 2 petits badges informatifs :
+  * "1ère = inscr." (vert) si au moins une tranche est AT_ENROLLMENT
+  * "Jours après inscr." (ambre) si au moins une tranche est DAYS_AFTER_ENROLLMENT
+- Reformulés en mini-badges compacts avec icônes
+
+## Fichiers modifiés (1)
+1. apps/web-app/src/components/finance/FeeStructuresContent.tsx
+
+Stage Summary:
+- Hover du badge corrigé : bleu plus clair au survol (pas plus foncé)
+- Popover au clic : liste détaillée des tranches avec montants + échéances
+- Fermeture au clic extérieur ou sur Escape ou sur le X
+- Couleurs cohérentes avec les modes d'échéance (vert/ambre/gris)
+- Effet "hologramme" avec ombre 2xl + bordure arrondie + header gradient

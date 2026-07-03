@@ -316,7 +316,7 @@ export default function CashRegistersContent() {
 
       {/* === Modal Création === */}
       <Dialog open={createModal} onOpenChange={setCreateModal}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Nouvelle caisse</DialogTitle>
           </DialogHeader>
@@ -378,7 +378,7 @@ export default function CashRegistersContent() {
 
       {/* === Modal Édition === */}
       <Dialog open={!!editModal} onOpenChange={(v) => !v && setEditModal(null)}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Modifier la caisse {editModal?.code}</DialogTitle>
           </DialogHeader>
@@ -419,7 +419,7 @@ export default function CashRegistersContent() {
 
       {/* === Modal Fermeture === */}
       <Dialog open={!!closeModal} onOpenChange={(v) => !v && setCloseModal(null)}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Fermer la caisse {closeModal?.code}</DialogTitle>
           </DialogHeader>
@@ -458,7 +458,7 @@ export default function CashRegistersContent() {
 
       {/* === Modal Statistiques === */}
       <Dialog open={!!statsModal} onOpenChange={(v) => !v && setStatsModal(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Statistiques — {statsModal?.code} {statsModal?.name}</DialogTitle>
           </DialogHeader>

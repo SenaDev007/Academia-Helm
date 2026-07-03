@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { Eye, Unlock, UserCog, Search, Download } from 'lucide-react';
+import { Eye, Unlock, UserCog, Search, Download, Receipt, Clock } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -40,6 +40,9 @@ export default function StudentAccountsContent() {
   const [filterStatus, setFilterStatus] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [detailAccount, setDetailAccount] = useState<any | null>(null);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const [paymentHistory, setPaymentHistory] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const [unblockReason, setUnblockReason] = useState('');
   const [unblockModal, setUnblockModal] = useState<string | null>(null);
 
@@ -82,6 +85,27 @@ export default function StudentAccountsContent() {
     } catch (e) {
       console.error(e);
     }
+  };
+
+  // Charger l'historique des paiements d'un élève (tableau droit)
+  // Utilise getStudentAccountDetails qui inclut les transactions
+  const loadPaymentHistory = async (accountId: string) => {
+    setLoadingHistory(true);
+    try {
+      const data = await financeService.getStudentAccountDetails(accountId);
+      setPaymentHistory(data?.transactions ?? []);
+    } catch (e) {
+      console.error(e);
+      setPaymentHistory([]);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  // Sélectionner un élève dans le tableau gauche → charger son historique à droite
+  const selectStudent = (accountId: string) => {
+    setSelectedAccountId(accountId);
+    loadPaymentHistory(accountId);
   };
 
   const handleUnblock = async () => {
@@ -225,74 +249,166 @@ export default function StudentAccountsContent() {
             </Select>
           </div>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-gray-50">
-              <TableHead>Élève</TableHead>
-              <TableHead className="text-right">Total dû</TableHead>
-              <TableHead className="text-right">Payé</TableHead>
-              <TableHead className="text-right">Solde</TableHead>
-              <TableHead>Statut</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center text-gray-500 py-8">Chargement...</TableCell>
-              </TableRow>
-            ) : filteredAccounts.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center text-gray-500 py-12">
-                  {searchQuery ? `Aucun élève trouvé pour « ${searchQuery} ».` : 'Aucun compte élève.'}
-                </TableCell>
-              </TableRow>
-            ) : (
-              filteredAccounts.map((a) => {
-                // Détecter si l'élève a au moins une personnalisation (override)
-                // Un breakdown est "personnalisé" si son initialAmount != feeStructure.totalAmount
-                const hasOverride = (a.breakdowns ?? []).some((b: any) => {
-                  const fsTotal = Number(b.feeStructure?.totalAmount ?? 0);
-                  const initial = Number(b.initialAmount ?? 0);
-                  return Math.abs(fsTotal - initial) > 0.01;
-                });
-                return (
-                <TableRow key={a.id} className="hover:bg-slate-50">
-                  <TableCell className="font-medium">
-                    <div className="flex items-center gap-2">
-                      <div>
-                        {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.studentId}
-                      </div>
-                      {hasOverride && (
-                        <Badge variant="outline" className="text-purple-700 border-purple-300 bg-purple-50" title="Cet élève a une personnalisation de frais">
-                          <UserCog className="w-3 h-3 mr-1" />Personnalisé
-                        </Badge>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right">{formatCurrency(a.totalDue)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(a.totalPaid)}</TableCell>
-                  <TableCell className="text-right font-semibold">{formatCurrency(a.balance)}</TableCell>
-                  <TableCell>
-                    <Badge className={STATUS_COLORS[a.status] ?? 'bg-gray-100 text-gray-800'}>{a.status}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="ghost" size="icon" onClick={() => loadDetail(a.id)}>
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                    {a.isBlocked && (
-                      <Button variant="ghost" size="icon" onClick={() => setUnblockModal(a.id)}>
-                        <Unlock className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
+
+        {/* Layout 2 tableaux côte à côte : Comptes (gauche) + Historique paiements (droite) */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+          {/* TABLEAU GAUCHE — Comptes élèves (cliquable pour sélectionner) */}
+          <div>
+            <h3 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+              <UserCog className="w-4 h-4 text-slate-500" />
+              Comptes élèves
+            </h3>
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-gray-50">
+                    <TableHead>Élève</TableHead>
+                    <TableHead className="text-right">Total dû</TableHead>
+                    <TableHead className="text-right">Payé</TableHead>
+                    <TableHead className="text-right">Solde</TableHead>
+                    <TableHead>Statut</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {loading ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-gray-500 py-8">Chargement...</TableCell>
+                    </TableRow>
+                  ) : filteredAccounts.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-gray-500 py-12">
+                        {searchQuery ? `Aucun élève trouvé pour « ${searchQuery} ».` : 'Aucun compte élève.'}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredAccounts.map((a) => {
+                      const hasOverride = (a.breakdowns ?? []).some((b: any) => {
+                        const fsTotal = Number(b.feeStructure?.totalAmount ?? 0);
+                        const initial = Number(b.initialAmount ?? 0);
+                        return Math.abs(fsTotal - initial) > 0.01;
+                      });
+                      const isSelected = selectedAccountId === a.id;
+                      return (
+                        <TableRow
+                          key={a.id}
+                          className={`cursor-pointer transition-colors ${isSelected ? 'bg-blue-50' : 'hover:bg-slate-50'}`}
+                          onClick={() => selectStudent(a.id)}
+                        >
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                              <div>
+                                {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.studentId}
+                              </div>
+                              {hasOverride && (
+                                <Badge variant="outline" className="text-purple-700 border-purple-300 bg-purple-50" title="Cet élève a une personnalisation de frais">
+                                  <UserCog className="w-3 h-3 mr-1" />Pers.
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right whitespace-nowrap">{formatCurrency(a.totalDue)}</TableCell>
+                          <TableCell className="text-right whitespace-nowrap">{formatCurrency(a.totalPaid)}</TableCell>
+                          <TableCell className="text-right font-semibold whitespace-nowrap">{formatCurrency(a.balance)}</TableCell>
+                          <TableCell>
+                            <Badge className={STATUS_COLORS[a.status] ?? 'bg-gray-100 text-gray-800'}>{a.status}</Badge>
+                          </TableCell>
+                          <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                            <Button variant="ghost" size="icon" onClick={() => loadDetail(a.id)} title="Détails">
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            {a.isBlocked && (
+                              <Button variant="ghost" size="icon" onClick={() => setUnblockModal(a.id)} title="Débloquer">
+                                <Unlock className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+
+          {/* TABLEAU DROIT — Historique des encaissements de l'élève sélectionné */}
+          <div>
+            <h3 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+              <Receipt className="w-4 h-4 text-slate-500" />
+              Historique des encaissements
+              {selectedAccountId && (
+                <span className="text-xs font-normal text-slate-500 ml-1">
+                  ({filteredAccounts.find((a) => a.id === selectedAccountId)?.student
+                    ? `${filteredAccounts.find((a) => a.id === selectedAccountId)?.student.lastName} ${filteredAccounts.find((a) => a.id === selectedAccountId)?.student.firstName}`
+                    : '—'})
+                </span>
+              )}
+            </h3>
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              {!selectedAccountId ? (
+                <div className="text-center text-gray-500 py-16">
+                  <Receipt className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                  <p>Sélectionnez un élève à gauche pour voir son historique de paiements.</p>
+                </div>
+              ) : loadingHistory ? (
+                <div className="text-center text-gray-500 py-8">Chargement de l'historique...</div>
+              ) : paymentHistory.length === 0 ? (
+                <div className="text-center text-gray-500 py-16">
+                  <Clock className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                  <p>Aucun paiement enregistré pour cet élève.</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-gray-50">
+                      <TableHead className="whitespace-nowrap">N° reçu</TableHead>
+                      <TableHead className="text-right whitespace-nowrap">Montant</TableHead>
+                      <TableHead className="whitespace-nowrap">Mode</TableHead>
+                      <TableHead className="whitespace-nowrap">Date</TableHead>
+                      <TableHead className="whitespace-nowrap">Heure</TableHead>
+                      <TableHead className="whitespace-nowrap">Référence</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {paymentHistory.map((t: any) => (
+                      <TableRow key={t.id} className="hover:bg-slate-50">
+                        <TableCell className="font-mono text-xs whitespace-nowrap">
+                          {t.receiptNumber || '—'}
+                        </TableCell>
+                        <TableCell className="text-right font-semibold text-emerald-700 whitespace-nowrap">
+                          {formatCurrency(t.amount)}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          <Badge variant="outline">{t.paymentMethod || '—'}</Badge>
+                        </TableCell>
+                        <TableCell className="text-sm whitespace-nowrap">
+                          {t.createdAt ? new Date(t.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'}
+                        </TableCell>
+                        <TableCell className="text-sm whitespace-nowrap">
+                          {t.createdAt ? new Date(t.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                        </TableCell>
+                        <TableCell className="text-xs text-slate-500 whitespace-nowrap" title={t.reference || ''}>
+                          {t.reference || '—'}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+              {/* Récapitulatif du total payé si historique non vide */}
+              {selectedAccountId && paymentHistory.length > 0 && (
+                <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-sm">
+                  <span className="text-slate-500">Total encaissé :</span>
+                  <span className="font-bold text-emerald-700">
+                    {formatCurrency(paymentHistory.reduce((sum, t) => sum + Number(t.amount ?? 0), 0))}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
         </div>
       </ModuleContentArea>
       {detailAccount && (

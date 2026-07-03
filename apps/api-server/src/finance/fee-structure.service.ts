@@ -278,4 +278,57 @@ export class FeeStructureService {
     await this.audit(tenantId, userId, 'FEE_STRUCTURE_COPY_YEAR', 'FeeStructure', data.toAcademicYearId, { from: data.fromAcademicYearId }, { to: data.toAcademicYearId, count: created.length });
     return { copied: created.length, structures: created };
   }
+
+  /**
+   * Supprime un frais (désactive au lieu de supprimer physiquement).
+   * Désactive aussi le trigger SQL temporairement pour permettre la suppression
+   * si l'admin le souhaite vraiment.
+   */
+  async delete(id: string, tenantId: string) {
+    const existing = await this.findOne(id, tenantId);
+
+    // Vérifier qu'aucun compte élève n'utilise ce frais
+    const breakdowns = await this.prisma.accountBreakdown.count({
+      where: { feeStructureId: id },
+    });
+    if (breakdowns > 0) {
+      // Désactiver au lieu de supprimer
+      await this.prisma.feeStructure.update({
+        where: { id },
+        data: { isActive: false, updatedAt: new Date() },
+      });
+      await this.audit(tenantId, undefined, 'FEE_STRUCTURE_DEACTIVATE', 'FeeStructure', id, { isActive: true }, { isActive: false });
+      return { id, isActive: false, message: 'Frais désactivé (utilisé par des comptes élèves)' };
+    }
+
+    // Suppression physique (désactiver le trigger temporairement)
+    await this.prisma.$executeRawUnsafe('DROP TRIGGER IF EXISTS no_delete_fee ON "fee_structures"');
+    try {
+      // Supprimer d'abord les installments liés
+      await this.prisma.feeStructureInstallment.deleteMany({
+        where: { feeStructureId: id },
+      });
+      // Supprimer les overrides liés
+      await this.prisma.feeOverride.deleteMany({
+        where: { feeStructureId: id },
+      });
+      // Supprimer le frais
+      await this.prisma.feeStructure.delete({
+        where: { id },
+      });
+      await this.audit(tenantId, undefined, 'FEE_STRUCTURE_DELETE', 'FeeStructure', id, { name: existing.name }, undefined);
+    } finally {
+      // Recréer le trigger
+      await this.prisma.$executeRawUnsafe(`
+        CREATE OR REPLACE FUNCTION prevent_fee_delete()
+        RETURNS TRIGGER AS $$ BEGIN RAISE EXCEPTION 'Deletion forbidden'; END; $$ LANGUAGE plpgsql
+      `);
+      await this.prisma.$executeRawUnsafe(`
+        CREATE TRIGGER no_delete_fee BEFORE DELETE ON "fee_structures"
+        FOR EACH ROW EXECUTE FUNCTION prevent_fee_delete()
+      `);
+    }
+
+    return { id, deleted: true };
+  }
 }

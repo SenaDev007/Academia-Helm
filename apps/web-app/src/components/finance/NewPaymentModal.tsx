@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
+import { Wallet, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
 import { financeService } from '@/services/finance.service';
 import { networkDetectionService } from '@/lib/offline/network-detection.service';
@@ -17,6 +19,16 @@ const METHODS = [
   { value: 'WIRE', label: 'Virement' },
   { value: 'FEDAPAY', label: 'Fedapay' },
 ];
+
+// Mapping : type de frais → code de caisse recommandé
+const FEE_TYPE_TO_CAISSE_CODE: Record<string, string> = {
+  INSCRIPTION: 'ACCUEIL',
+  REINSCRIPTION: 'ACCUEIL',
+  TUITION: 'ACCUEIL',
+  CANTEEN: 'CANTEEN',
+  EXAMEN: 'ACCUEIL',
+  OTHER: 'ACCUEIL',
+};
 
 export default function NewPaymentModal({
   academicYearId,
@@ -35,8 +47,9 @@ export default function NewPaymentModal({
   const [reference, setReference] = useState('');
   const [cashRegisterId, setCashRegisterId] = useState('');
   const [openCashRegisters, setOpenCashRegisters] = useState<any[]>([]);
-  const [preview, setPreview] = useState<{ totalPay: number; lines: { name: string; pay: number }[] } | null>(null);
+  const [preview, setPreview] = useState<{ totalPay: number; lines: { name: string; pay: number; feeType: string }[] } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [autoSelected, setAutoSelected] = useState(false);
   const { toast } = useToast();
 
   // Charge les caisses ouvertes pour la sélection
@@ -50,6 +63,36 @@ export default function NewPaymentModal({
   const selectedAccount = accounts.find((a) => a.id === studentAccountId);
   const amountNum = parseFloat(amount);
 
+  // Détection du type de frais prioritaire (premier non-payé dans l'ordre INSCRIPTION > TUITION > CANTEEN > etc.)
+  const primaryFeeType = useMemo(() => {
+    if (!selectedAccount) return null;
+    const breakdowns = selectedAccount.breakdowns ?? [];
+    const order = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'OTHER'];
+    const sorted = [...breakdowns].sort((a, b) => order.indexOf(a.feeStructure?.feeType ?? '') - order.indexOf(b.feeStructure?.feeType ?? ''));
+    const firstUnpaid = sorted.find((b) => Number(b.remainingAmount ?? 0) > 0);
+    return firstUnpaid?.feeStructure?.feeType ?? null;
+  }, [selectedAccount]);
+
+  // Auto-sélection intelligente de la caisse selon le type de frais
+  useEffect(() => {
+    if (!primaryFeeType || openCashRegisters.length === 0 || autoSelected) return;
+    const recommendedCode = FEE_TYPE_TO_CAISSE_CODE[primaryFeeType];
+    if (!recommendedCode) return;
+    // Chercher une caisse ouverte dont le code correspond
+    const recommended = openCashRegisters.find((r) => r.code?.toUpperCase() === recommendedCode);
+    if (recommended) {
+      setCashRegisterId(recommended.id);
+      setAutoSelected(true);
+    } else {
+      // Fallback : première caisse ouverte (ex: MAIN ou ACCUEIL)
+      const fallback = openCashRegisters.find((r) => r.code?.toUpperCase() === 'MAIN') || openCashRegisters[0];
+      if (fallback) {
+        setCashRegisterId(fallback.id);
+        setAutoSelected(true);
+      }
+    }
+  }, [primaryFeeType, openCashRegisters, autoSelected]);
+
   useEffect(() => {
     if (!selectedAccount || !amountNum || amountNum <= 0) {
       setPreview(null);
@@ -59,7 +102,7 @@ export default function NewPaymentModal({
     const pay = Math.min(amountNum, balance);
     const breakdowns = selectedAccount.breakdowns ?? [];
     let remaining = pay;
-    const lines: { name: string; pay: number }[] = [];
+    const lines: { name: string; pay: number; feeType: string }[] = [];
     const order = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'OTHER'];
     const sorted = [...breakdowns].sort((a, b) => order.indexOf(a.feeStructure?.feeType ?? '') - order.indexOf(b.feeStructure?.feeType ?? ''));
     for (const b of sorted) {
@@ -67,11 +110,17 @@ export default function NewPaymentModal({
       const rem = Number(b.remainingAmount ?? 0);
       if (rem <= 0) continue;
       const delta = Math.min(remaining, rem);
-      lines.push({ name: b.feeStructure?.name ?? b.feeStructureId, pay: delta });
+      lines.push({ name: b.feeStructure?.name ?? b.feeStructureId, pay: delta, feeType: b.feeStructure?.feeType ?? 'OTHER' });
       remaining -= delta;
     }
     setPreview({ totalPay: pay, lines });
   }, [selectedAccount, amountNum]);
+
+  // Si l'utilisateur change manuellement de caisse, désactiver l'auto-sélection
+  const handleCashRegisterChange = (id: string) => {
+    setCashRegisterId(id);
+    setAutoSelected(false);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,6 +137,13 @@ export default function NewPaymentModal({
       return;
     }
 
+    // Fedapay → toujours vers la caisse banque si elle existe
+    let finalCashRegisterId = cashRegisterId;
+    if (paymentMethod === 'FEDAPAY') {
+      const bankCaisse = openCashRegisters.find((r) => r.code?.toUpperCase() === 'BANQUE' || r.name?.toLowerCase().includes('banque'));
+      if (bankCaisse) finalCashRegisterId = bankCaisse.id;
+    }
+
     setLoading(true);
     try {
       await financeService.createTransaction({
@@ -96,7 +152,7 @@ export default function NewPaymentModal({
         amount: amountNum,
         paymentMethod,
         reference: reference.trim() || undefined,
-        cashRegisterId: cashRegisterId || undefined,
+        cashRegisterId: finalCashRegisterId || undefined,
       });
       toast({ title: 'Paiement enregistré', description: 'Le reçu a été généré avec succès.' });
       onSuccess();
@@ -106,6 +162,11 @@ export default function NewPaymentModal({
       setLoading(false);
     }
   };
+
+  // Caisse actuellement sélectionnée (pour afficher le solde)
+  const selectedCaisse = openCashRegisters.find((r) => r.id === cashRegisterId);
+  // Caisse recommandée selon le type de frais
+  const recommendedCaisseCode = primaryFeeType ? FEE_TYPE_TO_CAISSE_CODE[primaryFeeType] : null;
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50">
@@ -119,7 +180,7 @@ export default function NewPaymentModal({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <Label>Élève / Compte</Label>
-            <Select value={studentAccountId} onValueChange={setStudentAccountId}>
+            <Select value={studentAccountId} onValueChange={(v) => { setStudentAccountId(v); setAutoSelected(false); }}>
               <SelectTrigger><SelectValue placeholder="Sélectionner un compte" /></SelectTrigger>
               <SelectContent>
                 {accounts.filter((a) => Number(a.balance) > 0).map((a) => (
@@ -130,6 +191,25 @@ export default function NewPaymentModal({
               </SelectContent>
             </Select>
           </div>
+
+          {/* Badge du type de frais détecté */}
+          {primaryFeeType && (
+            <div className="flex items-center gap-2 text-xs">
+              <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+              <span className="text-slate-500">Type de frais prioritaire :</span>
+              <Badge variant="outline" className="text-indigo-700 border-indigo-300 bg-indigo-50">
+                {primaryFeeType === 'INSCRIPTION' ? 'Inscription' :
+                 primaryFeeType === 'REINSCRIPTION' ? 'Réinscription' :
+                 primaryFeeType === 'TUITION' ? 'Scolarité' :
+                 primaryFeeType === 'CANTEEN' ? 'Cantine' :
+                 primaryFeeType === 'EXAMEN' ? 'Examen' : 'Autre'}
+              </Badge>
+              {recommendedCaisseCode && (
+                <span className="text-slate-400">→ Caisse recommandée : <strong className="text-slate-600">{recommendedCaisseCode}</strong></span>
+              )}
+            </div>
+          )}
+
           <div>
             <Label>Montant (XOF)</Label>
             <Input type="number" min={0} value={amount} onChange={(e) => setAmount(e.target.value)} required />
@@ -147,7 +227,7 @@ export default function NewPaymentModal({
           </div>
           <div>
             <Label>Caisse {paymentMethod === 'CASH' ? '*' : '(optionnel)'}</Label>
-            <Select value={cashRegisterId} onValueChange={setCashRegisterId}>
+            <Select value={cashRegisterId} onValueChange={handleCashRegisterChange}>
               <SelectTrigger><SelectValue placeholder="Sélectionner une caisse ouverte" /></SelectTrigger>
               <SelectContent>
                 {openCashRegisters.length === 0 ? (
@@ -155,17 +235,31 @@ export default function NewPaymentModal({
                     Aucune caisse ouverte — ouvrez-en une dans Multi-caisses
                   </SelectItem>
                 ) : (
-                  openCashRegisters.map((reg) => (
-                    <SelectItem key={reg.id} value={reg.id}>
-                      {reg.code} — {reg.name} (Solde : {formatCurrency(reg.currentBalance)})
-                    </SelectItem>
-                  ))
+                  openCashRegisters.map((reg) => {
+                    const isRecommended = recommendedCaisseCode && reg.code?.toUpperCase() === recommendedCaisseCode;
+                    return (
+                      <SelectItem key={reg.id} value={reg.id}>
+                        {reg.code} — {reg.name} (Solde : {formatCurrency(reg.currentBalance)}){isRecommended ? ' ⭐' : ''}
+                      </SelectItem>
+                    );
+                  })
                 )}
               </SelectContent>
             </Select>
+            {autoSelected && selectedCaisse && (
+              <p className="text-xs text-indigo-600 mt-1 flex items-center gap-1">
+                <Sparkles className="w-3 h-3" />
+                Caisse auto-sélectionnée : {selectedCaisse.code} — {selectedCaisse.name}. Vous pouvez la modifier.
+              </p>
+            )}
             {paymentMethod === 'CASH' && openCashRegisters.length === 0 && (
               <p className="text-xs text-rose-600 mt-1">
                 ⚠️ Aucune caisse ouverte. Ouvrez une caisse dans l'onglet Multi-caisses pour encaisser en espèces.
+              </p>
+            )}
+            {paymentMethod === 'FEDAPAY' && (
+              <p className="text-xs text-amber-600 mt-1">
+                💡 Les paiements Fedapay seront automatiquement dirigés vers la caisse banque si elle existe.
               </p>
             )}
           </div>
@@ -178,7 +272,10 @@ export default function NewPaymentModal({
               <p className="font-medium mb-2">Aperçu imputation</p>
               {preview.lines.map((l, i) => (
                 <div key={i} className="flex justify-between">
-                  <span>{l.name}</span>
+                  <span className="flex items-center gap-1">
+                    {l.name}
+                    <Badge variant="outline" className="text-[10px] ml-1">{l.feeType}</Badge>
+                  </span>
                   <span>{formatCurrency(l.pay)}</span>
                 </div>
               ))}

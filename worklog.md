@@ -2152,3 +2152,73 @@ Stage Summary:
 - Fermeture au clic extérieur ou sur Escape ou sur le X
 - Couleurs cohérentes avec les modes d'échéance (vert/ambre/gris)
 - Effet "hologramme" avec ombre 2xl + bordure arrondie + header gradient
+
+---
+Task ID: installment-hologram-floating
+Agent: main
+Task: Transformer le popover inline en hologramme flottant au-dessus du tableau (fixed position)
+
+Work Log:
+
+## Problème
+- Le popover était en position: absolute à l'intérieur de la cellule du tableau
+- Sur la dernière ligne, il fallait scroller vers le bas pour voir le popover
+- L'utilisateur veut un hologramme flottant AU-DESSUS du tableau (z-order supérieur), pas dedans
+
+## Solution : position: fixed + backdrop
+- Suppression du popover inline (absolute) dans la cellule
+- Le badge reste dans la cellule (juste un bouton cliquable + badges secondaires)
+- L'hologramme est rendu à la fin du composant, en dehors du tableau
+
+### Structure de l'hologramme
+1. **Backdrop** (`fixed inset-0 z-50`) :
+   - Semi-transparent : rgba(15, 23, 42, 0.25)
+   - backdrop-filter: blur(2px) → effet "verre dépoli"
+   - Clic sur le backdrop → ferme l'hologramme
+   - Padding top 20 (5rem) pour pas coller au haut de l'écran
+
+2. **Panneau flottant** (`max-w-md`, centré) :
+   - `bg-white/95` avec backdrop-filter → effet glassmorphism
+   - Box-shadow bleutée pour effet "hologramme flottant" :
+     `0 25px 50px -12px rgba(59, 130, 246, 0.25)`
+   - Bordure arrondie 2xl
+   - `animate-in fade-in slide-in-from-top-4` → animation d'entrée
+
+3. **Header** (gradient bleu → indigo → violet) :
+   - Effet de brillance diagonale en arrière-plan
+   - Icône Calendar dans cercle glassmorphism
+   - Titre "Tranches de paiement" + nb tranches + total
+   - Bouton X pour fermer
+
+4. **Section "Frais"** (gris clair) :
+   - Affiche le nom du frais concerné (pour contexte)
+
+5. **Liste des tranches** (scrollable max 50vh) :
+   - Chaque tranche a un border-left coloré selon le mode :
+     * AT_ENROLLMENT → vert emerald
+     * DAYS_AFTER_ENROLLMENT → ambre
+     * FIXED → gris slate
+   - Numéro + libellé + mode + montant + échéance
+
+6. **Footer** (gradient gris → bleu) :
+   - Somme de contrôle = montant total
+
+### Détails techniques
+- `installmentPopoverId` (state) : ID de la structure dont l'hologramme est ouvert
+- `popoverRef` (ref) : pour le stopPropagation sur le panneau
+- `onClick` sur backdrop → ferme ; `onClick` sur panneau → stopPropagation
+- Le useEffect Escape est conservé (le backdrop gère le clic mais pas le clavier)
+
+### Rétro-compatibilité
+- Le badge dans la cellule reste cliquable (toggle)
+- L'icône ChevronDown pivote toujours à l'ouverture
+- Les mini-badges secondaires restent affichés (info rapide sur les modes)
+
+## Fichiers modifiés (1)
+1. apps/web-app/src/components/finance/FeeStructuresContent.tsx
+
+Stage Summary:
+- L'hologramme flotte maintenant AU-DESSUS du tableau (position: fixed)
+- Plus besoin de scroller : il s'affiche centré, à 5rem du haut de l'écran
+- Effet visuel "hologramme" : backdrop blur, glassmorphism, ombre bleutée
+- Fermeture : clic sur backdrop, bouton X, ou Escape

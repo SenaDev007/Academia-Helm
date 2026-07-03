@@ -318,7 +318,7 @@ export default function FeeStructuresContent() {
                     <TableCell className="text-right font-semibold">{formatCurrency(s.totalAmount)}</TableCell>
                     <TableCell>
                       {s.isInstallment ? (
-                        <div className="relative inline-block" ref={installmentPopoverId === s.id ? popoverRef : undefined}>
+                        <div className="space-y-1">
                           {/* Badge cliquable — hover plus clair (pas plus foncé) */}
                           <button
                             type="button"
@@ -331,7 +331,7 @@ export default function FeeStructuresContent() {
                           </button>
 
                           {/* Badges secondaires (info rapide sur les modes) */}
-                          <div className="flex gap-1 mt-1 flex-wrap">
+                          <div className="flex gap-1 flex-wrap">
                             {s.structureInstallments?.some((i: any) => i.dueDateType === 'AT_ENROLLMENT') && (
                               <span className="inline-flex items-center gap-0.5 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-1.5 py-0">
                                 <Calendar className="w-2.5 h-2.5" />1ère = inscr.
@@ -343,77 +343,6 @@ export default function FeeStructuresContent() {
                               </span>
                             )}
                           </div>
-
-                          {/* Popover hologramme — détails des tranches */}
-                          {installmentPopoverId === s.id && (
-                            <div
-                              className="absolute z-50 mt-2 right-0 w-80 bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden"
-                              style={{ minWidth: '320px' }}
-                            >
-                              {/* Header du popover */}
-                              <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-slate-200">
-                                <div className="flex items-center gap-2">
-                                  <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
-                                    <Calendar className="w-4 h-4 text-blue-600" />
-                                  </div>
-                                  <div>
-                                    <p className="text-sm font-bold text-slate-800">Tranches de paiement</p>
-                                    <p className="text-xs text-slate-500">{s.structureInstallments?.length || 0} tranche(s) · Total : {formatCurrency(s.totalAmount)}</p>
-                                  </div>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => setInstallmentPopoverId(null)}
-                                  className="p-1 rounded-full hover:bg-white/80 text-slate-500 hover:text-slate-700 transition-colors"
-                                  title="Fermer"
-                                >
-                                  <X className="w-4 h-4" />
-                                </button>
-                              </div>
-
-                              {/* Liste des tranches */}
-                              <div className="max-h-64 overflow-y-auto">
-                                {[...(s.structureInstallments || [])]
-                                  .sort((a: any, b: any) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
-                                  .map((i: any, idx: number) => {
-                                    const mode = i.dueDateType ?? 'FIXED';
-                                    const modeBg = mode === 'AT_ENROLLMENT'
-                                      ? 'bg-emerald-50 border-emerald-200'
-                                      : mode === 'DAYS_AFTER_ENROLLMENT'
-                                        ? 'bg-amber-50 border-amber-200'
-                                        : 'bg-slate-50 border-slate-200';
-                                    return (
-                                      <div key={i.id ?? idx} className={`px-4 py-3 border-b last:border-b-0 ${modeBg}`}>
-                                        <div className="flex items-start justify-between gap-2">
-                                          <div className="flex items-center gap-2 min-w-0">
-                                            <div className="flex-shrink-0 w-6 h-6 rounded-full bg-white border border-slate-300 flex items-center justify-center text-[10px] font-bold text-slate-600">
-                                              {idx + 1}
-                                            </div>
-                                            <div className="min-w-0">
-                                              <p className="text-sm font-semibold text-slate-800 truncate">{i.label}</p>
-                                              <p className="text-xs text-slate-500">{dueDateTypeLabel(i)}</p>
-                                            </div>
-                                          </div>
-                                          <p className="text-sm font-bold text-slate-800 whitespace-nowrap">
-                                            {formatCurrency(i.amount)}
-                                          </p>
-                                        </div>
-                                        <div className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-600 pl-8">
-                                          {dueDateIcon(i)}
-                                          <span>{dueDateDescription(i)}</span>
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                              </div>
-
-                              {/* Footer du popover — somme de contrôle */}
-                              <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs">
-                                <span className="text-slate-500">Somme des tranches :</span>
-                                <span className="font-bold text-slate-800">{formatCurrency(s.totalAmount)}</span>
-                              </div>
-                            </div>
-                          )}
                         </div>
                       ) : (
                         <span className="text-slate-400 text-sm">Non</span>
@@ -449,6 +378,103 @@ export default function FeeStructuresContent() {
             </div>
           </div>
         )}
+
+        {/* Hologramme flottant — détails des tranches (au-dessus du tableau, pas dedans) */}
+        {installmentPopoverId && (() => {
+          const s = structures.find((st) => st.id === installmentPopoverId);
+          if (!s) return null;
+          return (
+            <div
+              className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4"
+              onClick={() => setInstallmentPopoverId(null)}
+              style={{ backdropFilter: 'blur(2px)', background: 'rgba(15, 23, 42, 0.25)' }}
+            >
+              <div
+                ref={popoverRef}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-md bg-white/95 rounded-2xl shadow-2xl border border-blue-200 overflow-hidden animate-in fade-in slide-in-from-top-4 duration-200"
+                style={{ boxShadow: '0 25px 50px -12px rgba(59, 130, 246, 0.25), 0 0 0 1px rgba(59, 130, 246, 0.1)' }}
+              >
+                {/* Header du hologramme — effet glassmorphism */}
+                <div className="relative px-5 py-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white overflow-hidden">
+                  {/* Effet de brillance en arrière-plan */}
+                  <div className="absolute inset-0 opacity-20" style={{
+                    background: 'linear-gradient(135deg, transparent 30%, rgba(255,255,255,0.4) 50%, transparent 70%)',
+                  }} />
+                  <div className="relative flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur flex items-center justify-center ring-2 ring-white/30">
+                        <Calendar className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold tracking-wide">Tranches de paiement</p>
+                        <p className="text-xs text-white/80">
+                          {s.structureInstallments?.length || 0} tranche(s) · Total : {formatCurrency(s.totalAmount)}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setInstallmentPopoverId(null)}
+                      className="p-1.5 rounded-full hover:bg-white/20 transition-colors"
+                      title="Fermer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Nom du frais concerné */}
+                <div className="px-5 py-2.5 bg-slate-50 border-b border-slate-200">
+                  <p className="text-xs text-slate-500 uppercase tracking-wide">Frais</p>
+                  <p className="text-sm font-semibold text-slate-800 truncate">{s.name}</p>
+                </div>
+
+                {/* Liste des tranches */}
+                <div className="max-h-[50vh] overflow-y-auto">
+                  {[...(s.structureInstallments || [])]
+                    .sort((a: any, b: any) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
+                    .map((i: any, idx: number) => {
+                      const mode = i.dueDateType ?? 'FIXED';
+                      const modeBg = mode === 'AT_ENROLLMENT'
+                        ? 'bg-emerald-50/70 border-l-emerald-500'
+                        : mode === 'DAYS_AFTER_ENROLLMENT'
+                          ? 'bg-amber-50/70 border-l-amber-500'
+                          : 'bg-slate-50/70 border-l-slate-400';
+                      return (
+                        <div key={i.id ?? idx} className={`px-5 py-3 border-b border-slate-100 last:border-b-0 border-l-4 ${modeBg}`}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="flex-shrink-0 w-7 h-7 rounded-full bg-white border border-slate-300 flex items-center justify-center text-xs font-bold text-slate-700 shadow-sm">
+                                {idx + 1}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold text-slate-800 truncate">{i.label}</p>
+                                <p className="text-xs text-slate-500">{dueDateTypeLabel(i)}</p>
+                              </div>
+                            </div>
+                            <p className="text-sm font-bold text-slate-900 whitespace-nowrap">
+                              {formatCurrency(i.amount)}
+                            </p>
+                          </div>
+                          <div className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-600 pl-9">
+                            {dueDateIcon(i)}
+                            <span>{dueDateDescription(i)}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+
+                {/* Footer du hologramme — somme de contrôle */}
+                <div className="px-5 py-3 bg-gradient-to-r from-slate-50 to-blue-50 border-t border-slate-200 flex items-center justify-between">
+                  <span className="text-xs text-slate-600">Somme des tranches :</span>
+                  <span className="text-sm font-bold text-blue-700">{formatCurrency(s.totalAmount)}</span>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </>
   );

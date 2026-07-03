@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Plus, Copy, UserCog, Pencil, Trash2 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
@@ -17,7 +17,6 @@ import { getAcademicYears } from '@/services/settings.service';
 import FeeStructureModal from './FeeStructureModal';
 import FeeOverrideModal from './FeeOverrideModal';
 import { formatCurrency } from '@/lib/utils';
-import { filterAndSortClasses } from '@/lib/finance/class-sort';
 
 const FEE_TYPES = [
   { value: 'INSCRIPTION', label: 'Inscription' },
@@ -45,12 +44,55 @@ export default function FeeStructuresContent() {
   const [copyFrom, setCopyFrom] = useState('');
   const [copyTo, setCopyTo] = useState('');
 
-  const loadStructures = async () => {
+  // Mapping education_levels UUID → school_levels UUID (pour le filtrage)
+  // /api/school-levels retourne education_levels UUIDs
+  // classes.schoolLevelId contient school_levels UUIDs
+  // On construit le mapping en matchant par code (MATERNELLE/PRIMAIRE/SECONDAIRE)
+  const eduToSchoolLevelMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const level of levels) {
+      const code = level.code;
+      const matchingClass = classes.find((c: any) => c.schoolLevel?.code === code);
+      if (matchingClass) {
+        map[level.id] = matchingClass.schoolLevelId;
+      }
+    }
+    return map;
+  }, [levels, classes]);
+
+  // Convertir un education_levels UUID → school_levels UUID
+  const resolveSchoolLevelId = (eduId: string): string | undefined => {
+    return eduToSchoolLevelMap[eduId] || eduId;
+  };
+
+  // Filtrer les classes par niveau (en utilisant le school_levels UUID)
+  const filteredSortedClasses = useMemo(() => {
+    if (!filterLevelId) {
+      // Toutes les classes, triées par ordre pédagogique
+      return [...classes].sort((a, b) => classOrder(a.name) - classOrder(b.name));
+    }
+    const schoolLevelId = resolveSchoolLevelId(filterLevelId);
+    return classes
+      .filter((c: any) => c.schoolLevelId === schoolLevelId)
+      .sort((a, b) => classOrder(a.name) - classOrder(b.name));
+  }, [classes, filterLevelId, eduToSchoolLevelMap]);
+
+  useEffect(() => {
+    if (filterClassId && !filteredSortedClasses.find((c) => c.id === filterClassId)) {
+      setFilterClassId('');
+    }
+  }, [filteredSortedClasses, filterClassId]);
+
+  const loadStructures = useCallback(async () => {
     if (!academicYear?.id) return;
     setLoading(true);
     try {
       const params: Record<string, string> = { academicYearId: academicYear.id };
-      if (filterLevelId) params.levelId = filterLevelId;
+      if (filterLevelId) {
+        // Convertir en school_levels UUID pour le backend
+        const schoolLevelId = resolveSchoolLevelId(filterLevelId);
+        if (schoolLevelId) params.levelId = schoolLevelId;
+      }
       if (filterClassId) params.classId = filterClassId;
       const data = await financeService.getFeeStructures(params);
       setStructures(Array.isArray(data) ? data : []);
@@ -59,9 +101,9 @@ export default function FeeStructuresContent() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [academicYear?.id, filterLevelId, filterClassId, eduToSchoolLevelMap]);
 
-  useEffect(() => { loadStructures(); }, [academicYear?.id, filterLevelId, filterClassId]);
+  useEffect(() => { loadStructures(); }, [loadStructures]);
 
   useEffect(() => {
     classesService.getAll({})
@@ -76,21 +118,10 @@ export default function FeeStructuresContent() {
       .catch(() => setAcademicYears([]));
   }, []);
 
-  // Filtrer et trier les classes par niveau + ordre pédagogique
-  const filteredSortedClasses = useMemo(
-    () => filterAndSortClasses(classes, filterLevelId || undefined),
-    [classes, filterLevelId],
-  );
-
-  useEffect(() => {
-    if (filterClassId && !filteredSortedClasses.find((c) => c.id === filterClassId)) setFilterClassId('');
-  }, [filteredSortedClasses, filterClassId]);
-
   const levelDisplay = (s: any): string => {
     if (s.level?.label) return s.level.label;
     if (s.level?.code) return s.level.code;
     if (s.level?.name) return s.level.name;
-    if (s.levelId) { const level = levels.find((l) => l.id === s.levelId); if (level) return level.label ?? level.code ?? level.name ?? '—'; }
     return '—';
   };
 
@@ -106,7 +137,7 @@ export default function FeeStructuresContent() {
       await financeService.createFeeStructure({ ...body, academicYearId: academicYear.id });
       setModalNewFee(false);
       toast({ title: 'Succès', description: 'Frais configuré avec succès.' });
-      loadStructures();
+      await loadStructures();
     } catch (error: any) {
       toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
     }
@@ -117,8 +148,8 @@ export default function FeeStructuresContent() {
     try {
       await financeService.updateFeeStructure(editingFee.id, body);
       setEditingFee(null);
-      toast({ title: 'Succès', description: 'Frais mis à jour avec succès.' });
-      loadStructures();
+      toast({ title: 'Succès', description: 'Frais modifié avec succès.' });
+      await loadStructures();
     } catch (error: any) {
       toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
     }
@@ -130,7 +161,7 @@ export default function FeeStructuresContent() {
     try {
       await financeService.deleteFeeStructure(id);
       toast({ title: 'Succès', description: 'Frais supprimé avec succès.' });
-      loadStructures();
+      await loadStructures();
     } catch (error: any) {
       toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
     }
@@ -142,14 +173,16 @@ export default function FeeStructuresContent() {
       await financeService.copyFeeStructuresToYear({ fromAcademicYearId: copyFrom, toAcademicYearId: copyTo });
       setCopyYearModal(false); setCopyFrom(''); setCopyTo('');
       toast({ title: 'Succès', description: 'Frais copiés avec succès.' });
-      loadStructures();
+      await loadStructures();
     } catch (error: any) {
       toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
     }
   };
 
   const feeTypeLabel = (t: string) => FEE_TYPES.find((f) => f.value === t)?.label ?? t;
-  const modalClasses = useMemo(() => filterAndSortClasses(classes), [classes]);
+
+  // Classes pour le modal (toutes, triées)
+  const modalClasses = useMemo(() => [...classes].sort((a, b) => classOrder(a.name) - classOrder(b.name)), [classes]);
 
   return (
     <>
@@ -253,4 +286,25 @@ export default function FeeStructuresContent() {
       </div>
     </>
   );
+}
+
+// Tri pédagogique local (M1 < M2 < CI < CP < ... < CM2)
+function classOrder(name: string): number {
+  const n = (name || '').trim().toUpperCase();
+  if (n === 'MATERNELLE 1' || n === 'M1' || n === 'MAT1') return 0;
+  if (n === 'MATERNELLE 2' || n === 'M2' || n === 'MAT2') return 1;
+  if (n === 'CI') return 10;
+  if (n === 'CP') return 11;
+  if (n === 'CE1') return 12;
+  if (n === 'CE2') return 13;
+  if (n === 'CM1') return 14;
+  if (n === 'CM2') return 15;
+  if (n === '6E' || n === '6ÈME' || n === '6EME') return 20;
+  if (n === '5E' || n === '5ÈME' || n === '5EME') return 21;
+  if (n === '4E' || n === '4ÈME' || n === '4EME') return 22;
+  if (n === '3E' || n === '3ÈME' || n === '3EME') return 23;
+  if (n === '2NDE') return 24;
+  if (n === '1ERE' || n === '1ÈRE') return 25;
+  if (n === 'TERMINALE' || n === 'TLE') return 26;
+  return 100 + (name.charCodeAt(0) || 0);
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,9 +11,23 @@ const FEE_TYPES = [
   { value: 'INSCRIPTION', label: 'Inscription' },
   { value: 'REINSCRIPTION', label: 'Réinscription' },
   { value: 'TUITION', label: 'Scolarité' },
-  { value: 'ANNEX', label: 'Annexe' },
-  { value: 'EXCEPTIONAL', label: 'Exceptionnel' },
+  { value: 'CANTEEN', label: 'Cantine' },
+  { value: 'AMANTS', label: 'Frais des amants' },
+  { value: 'OTHER', label: 'Autre' },
 ];
+
+// Helper : préfixe du nom auto-généré selon le type de frais
+function feeTypePrefix(feeType: string, customLabel: string): string {
+  switch (feeType) {
+    case 'INSCRIPTION': return "Frais d'inscription";
+    case 'REINSCRIPTION': return 'Frais de réinscription';
+    case 'TUITION': return 'Frais de scolarité';
+    case 'CANTEEN': return 'Frais de cantine';
+    case 'AMANTS': return 'Frais des amants';
+    case 'OTHER': return customLabel.trim() ? `Frais de ${customLabel.trim()}` : 'Frais personnalisé';
+    default: return 'Frais';
+  }
+}
 
 export default function FeeStructureModal({
   academicYearId,
@@ -34,7 +48,9 @@ export default function FeeStructureModal({
 }) {
   const isEdit = Boolean(feeId);
   const [name, setName] = useState(initialData?.name ?? '');
+  const [nameManuallyEdited, setNameManuallyEdited] = useState(false);
   const [feeType, setFeeType] = useState(initialData?.feeType ?? 'TUITION');
+  const [customFeeTypeLabel, setCustomFeeTypeLabel] = useState(initialData?.customFeeTypeLabel ?? '');
   const [totalAmount, setTotalAmount] = useState(initialData?.totalAmount != null ? String(initialData.totalAmount) : '');
   const [isInstallment, setIsInstallment] = useState(initialData?.isInstallment ?? false);
   const [isMandatory, setIsMandatory] = useState(initialData?.isMandatory ?? true);
@@ -42,14 +58,38 @@ export default function FeeStructureModal({
   const [levelId, setLevelId] = useState(initialData?.levelId ?? '');
   const [classId, setClassId] = useState(initialData?.classId ?? '');
 
+  // Auto-génération du nom
+  const levelLabel = useMemo(() => {
+    const level = levels.find((l) => l.id === levelId);
+    return level ? (level.label ?? level.code ?? level.name ?? '') : '';
+  }, [levels, levelId]);
+
+  const classLabel = useMemo(() => {
+    const cls = classes.find((c) => c.id === classId);
+    return cls ? (cls.name ?? '') : '';
+  }, [classes, classId]);
+
+  const autoName = useMemo(() => {
+    const prefix = feeTypePrefix(feeType, customFeeTypeLabel);
+    const target = applyTo === 'class' && classLabel ? classLabel : applyTo === 'level' && levelLabel ? levelLabel : '';
+    return target ? `${prefix} — ${target}` : prefix;
+  }, [feeType, customFeeTypeLabel, applyTo, classLabel, levelLabel]);
+
+  useEffect(() => {
+    if (!nameManuallyEdited) setName(autoName);
+  }, [autoName, nameManuallyEdited]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const amount = parseFloat(totalAmount);
     if (!name || isNaN(amount) || amount < 0) return;
+    // Pour OTHER, le customFeeTypeLabel est obligatoire
+    if (feeType === 'OTHER' && !customFeeTypeLabel.trim()) return;
     onSubmit({
       academicYearId,
       name,
       feeType,
+      customFeeTypeLabel: feeType === 'OTHER' ? customFeeTypeLabel.trim() : undefined,
       totalAmount: amount,
       isInstallment,
       isMandatory,
@@ -79,6 +119,20 @@ export default function FeeStructureModal({
               </SelectContent>
             </Select>
           </div>
+          {feeType === 'OTHER' && (
+            <div>
+              <Label>Précisez le type de frais</Label>
+              <Input
+                value={customFeeTypeLabel}
+                onChange={(e) => setCustomFeeTypeLabel(e.target.value)}
+                placeholder="Ex: Transport, Activités, Examens..."
+                required
+              />
+              <p className="text-xs text-blue-600 mt-1">
+                💡 Ce nom sera utilisé pour générer automatiquement le nom du frais (ex: « Frais de Transport — CE1 »).
+              </p>
+            </div>
+          )}
           <div>
             <Label>Appliquer à</Label>
             <div className="flex gap-4 mt-2">
@@ -120,7 +174,18 @@ export default function FeeStructureModal({
           )}
           <div>
             <Label>Nom du frais</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: Scolarité 4ème" required />
+            <Input
+              value={name}
+              onChange={(e) => { setName(e.target.value); setNameManuallyEdited(true); }}
+              placeholder="Auto-généré"
+              required
+            />
+            {!nameManuallyEdited && <p className="text-xs text-blue-600 mt-1">💡 Le nom se remplit automatiquement selon le type, le niveau et la classe.</p>}
+            {nameManuallyEdited && (
+              <button type="button" onClick={() => { setNameManuallyEdited(false); setName(autoName); }} className="text-xs text-slate-500 hover:text-blue-600 mt-1 underline">
+                ↺ Revenir au nom auto-généré
+              </button>
+            )}
           </div>
           <div>
             <Label>Montant total (XOF)</Label>

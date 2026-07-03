@@ -38,6 +38,7 @@ export class FeeStructureController {
       classId: body.classId,
       name: body.name,
       feeType: body.feeType,
+      customFeeTypeLabel: body.customFeeTypeLabel,
       totalAmount: Number(body.totalAmount),
       isInstallment: body.isInstallment ?? false,
       isMandatory: body.isMandatory ?? true,
@@ -117,6 +118,8 @@ export class FeeStructureController {
   ) {
     const data: any = {};
     if (body.name !== undefined) data.name = body.name;
+    if (body.feeType !== undefined) data.feeType = body.feeType;
+    if (body.customFeeTypeLabel !== undefined) data.customFeeTypeLabel = body.customFeeTypeLabel || null;
     if (body.totalAmount !== undefined) data.totalAmount = Number(body.totalAmount);
     if (body.isInstallment !== undefined) data.isInstallment = body.isInstallment;
     if (body.isMandatory !== undefined) data.isMandatory = body.isMandatory;

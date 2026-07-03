@@ -6,7 +6,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../database/prisma.service';
 import { FeeType } from '@prisma/client';
 
-const FEE_TYPES: FeeType[] = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'ANNEX', 'EXCEPTIONAL'];
+const FEE_TYPES: FeeType[] = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'AMANTS', 'OTHER'];
 
 @Injectable()
 export class FeeStructureService {
@@ -49,6 +49,7 @@ export class FeeStructureService {
       classId?: string;
       name: string;
       feeType: FeeType | string;
+      customFeeTypeLabel?: string;
       totalAmount: number;
       isInstallment?: boolean;
       isMandatory?: boolean;
@@ -79,6 +80,7 @@ export class FeeStructureService {
         classId: data.classId ?? null,
         name: data.name,
         feeType: feeType as FeeType,
+        customFeeTypeLabel: data.customFeeTypeLabel ?? null,
         totalAmount: data.totalAmount,
         isInstallment: data.isInstallment ?? false,
         isMandatory: data.isMandatory ?? true,
@@ -147,6 +149,8 @@ export class FeeStructureService {
     tenantId: string,
     data: Partial<{
       name: string;
+      feeType: FeeType | string;
+      customFeeTypeLabel: string | null;
       totalAmount: number;
       isInstallment: boolean;
       isMandatory: boolean;
@@ -162,6 +166,16 @@ export class FeeStructureService {
       where: { id },
       data: { isActive: false, updatedAt: new Date() },
     });
+
+    // Résoudre feeType si fourni
+    let resolvedFeeType = existing.feeType;
+    if (data.feeType) {
+      const ft = (typeof data.feeType === 'string' && FEE_TYPES.includes(data.feeType as FeeType)) ? data.feeType as FeeType : data.feeType;
+      if (FEE_TYPES.includes(ft as FeeType)) {
+        resolvedFeeType = ft as FeeType;
+      }
+    }
+
     const created = await this.prisma.feeStructure.create({
       data: {
         tenantId,
@@ -169,7 +183,8 @@ export class FeeStructureService {
         levelId: existing.levelId,
         classId: existing.classId,
         name: data.name ?? existing.name,
-        feeType: existing.feeType,
+        feeType: resolvedFeeType,
+        customFeeTypeLabel: data.customFeeTypeLabel !== undefined ? data.customFeeTypeLabel : existing.customFeeTypeLabel,
         totalAmount: data.totalAmount ?? Number(existing.totalAmount),
         isInstallment: data.isInstallment ?? existing.isInstallment,
         isMandatory: data.isMandatory ?? existing.isMandatory,

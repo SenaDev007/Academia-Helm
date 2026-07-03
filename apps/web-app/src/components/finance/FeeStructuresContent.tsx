@@ -28,8 +28,9 @@ const FEE_TYPES = [
   { value: 'INSCRIPTION', label: 'Inscription' },
   { value: 'REINSCRIPTION', label: 'Réinscription' },
   { value: 'TUITION', label: 'Scolarité' },
-  { value: 'ANNEX', label: 'Annexe' },
-  { value: 'EXCEPTIONAL', label: 'Exceptionnel' },
+  { value: 'CANTEEN', label: 'Cantine' },
+  { value: 'AMANTS', label: 'Frais des amants' },
+  { value: 'OTHER', label: 'Autre' },
 ];
 
 export default function FeeStructuresContent() {
@@ -44,6 +45,7 @@ export default function FeeStructuresContent() {
   const [loading, setLoading] = useState(true);
   const [filterLevelId, setFilterLevelId] = useState<string>('');
   const [filterClassId, setFilterClassId] = useState<string>('');
+  const [filterFeeType, setFilterFeeType] = useState<string>('');
   const [modalNewFee, setModalNewFee] = useState(false);
   const [editingFee, setEditingFee] = useState<any | null>(null);
   const [modalOverride, setModalOverride] = useState(false);
@@ -58,6 +60,7 @@ export default function FeeStructuresContent() {
       const params = new URLSearchParams({ academicYearId: academicYear.id });
       if (filterLevelId) params.set('levelId', filterLevelId);
       if (filterClassId) params.set('classId', filterClassId);
+      if (filterFeeType) params.set('feeType', filterFeeType);
       const data = await financeService.getFeeStructures(Object.fromEntries(params.entries()));
       setStructures(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -69,7 +72,7 @@ export default function FeeStructuresContent() {
 
   useEffect(() => {
     loadStructures();
-  }, [academicYear?.id, filterLevelId, filterClassId]);
+  }, [academicYear?.id, filterLevelId, filterClassId, filterFeeType]);
 
   useEffect(() => {
     classesService.getAll({})
@@ -192,6 +195,17 @@ export default function FeeStructuresContent() {
               <SelectItem value="ALL">Toutes classes</SelectItem>
               {classes.map((c) => (
                 <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={filterFeeType || 'ALL'} onValueChange={(v) => setFilterFeeType(v === 'ALL' ? '' : v)}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Filtre Type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Tous types</SelectItem>
+              {FEE_TYPES.map((f) => (
+                <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>

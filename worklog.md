@@ -1921,3 +1921,76 @@ Stage Summary:
     pour utiliser les noms de variables snake_case (au lieu de {{1}})
   * Mettre à jour WhatsAppService.sendForTenant() pour injecter automatiquement
     les 3 variables des boutons à la fin du tableau
+
+---
+Task ID: whatsapp-meta-v3-registry-and-service
+Agent: main
+Task: Migration whatsapp DB + passage du registry et service WhatsApp vers Meta v3 (variables snake_case + 3 boutons URL + Meta Graph API)
+
+Work Log:
+
+## 1. Migration SQL appliquée sur Neon DB (pas d'attente Fly.io)
+- Script : scripts/run-migration-whatsapp.js (utilise node-postgres)
+- Connexion directe à Neon DB via DATABASE_URL
+- ALTER TABLE tenant_identity_profiles ADD COLUMN whatsapp TEXT
+- Vérification : school_settings.whatsapp existait déjà
+- Commentaire SQL ajouté sur la colonne
+
+## 2. Réécriture complète de whatsapp-template.registry.ts (v3)
+- Script générateur : scripts/generate-whatsapp-template-registry.py
+- Passage de variables positionnelles {{1}}, {{2}}... à variables nommées {{snake_case}}
+- Nouvelle interface MetaTemplate (remplace GupshupTemplate) avec :
+  * header: string (TEXT court)
+  * bodyVariables: string[] (liste ordonnée des variables du body)
+  * buttons: MetaTemplateButton[] (3 boutons URL)
+  * buttonParamCount: number
+- Constante BUTTONS_URL : 3 boutons standard
+  * Consulter le site → https://{{1}}.academiahelm.com (var = subdomain)
+  * Discuter sur WhatsApp → https://wa.me/{{1}} (var = whatsapp_number)
+  * Appeler l'école → https://wa.me/{{1}} (var = phone_number)
+- Nouvelles méthodes :
+  * buildBodyParamsByName(elementName, schoolName, callerParams) → Record<string, string>
+  * buildButtonParams(branding) → [subdomain, whatsapp, phone]
+  * renderBody(elementName, paramsByName) avec regex nommées
+  * normalizePhone(phone) pour format E.164 sans +
+
+## 3. Mise à jour WhatsAppService.sendForTenant()
+- Import GupshupTemplate → MetaTemplate
+- TenantBranding enrichi : subdomain, whatsappNumber, phoneNumber
+- getTenantBranding() : charge tenantIdentityProfile.whatsapp + tenant.subdomain
+  (en parallèle via Promise.all)
+- sendForTenant() :
+  * Appelle buildBodyParamsByName() au lieu de buildBodyParams()
+  * Appelle buildButtonParams(branding) pour les 3 boutons
+  * templateVariables combine bodyParamsByName + boutons (clé = varName)
+  * renderBody() appelé avec paramsByName (objet nommé)
+- sendMock() : corrige l'appel renderBody (passe request.variables directement)
+- sendViaGupshup() : boucle sur bodyVariables au lieu de 1..N (rétrocompatible)
+- sendViaWhatsAppBusiness() : RÉÉCRIT pour Meta Graph API v3
+  * Construit components : header + body + 3 boutons URL
+  * Header: { type: 'header', parameters: [{ type: 'text', text: header }] }
+  * Body: { type: 'body', parameters: [{ type: 'text', text: var_value }] }
+  * Bouton: { type: 'button', sub_type: 'url', index: i, parameters: [{ type: 'text', text: val }] }
+- Variables d'env supportées (rétrocompatibilité) :
+  * WHATSAPP_ACCESS_TOKEN ou WHATSAPP_BUSINESS_ACCESS_TOKEN
+  * WHATSAPP_PHONE_NUMBER_ID ou WHATSAPP_BUSINESS_PHONE_NUMBER_ID
+  * WHATSAPP_API_URL ou WHATSAPP_BUSINESS_API_URL (défaut: graph.facebook.com/v18.0)
+
+## 4. Fichiers modifiés (7)
+1. apps/api-server/prisma/migrations/20260703110000_add_whatsapp_to_identity_profile.sql (déjà créé)
+2. apps/api-server/src/communication/services/whatsapp-template.registry.ts (RÉÉCRIT)
+3. apps/api-server/src/communication/services/whatsapp.service.ts (4 sections modifiées)
+4. scripts/run-migration-whatsapp.js (NOUVEAU)
+5. scripts/generate-whatsapp-template-registry.py (NOUVEAU)
+6. worklog.md (cette entrée)
+
+Stage Summary:
+- Migration DB appliquée directement sur Neon DB ( colonne whatsapp dans tenant_identity_profiles)
+- Registry WhatsApp passé en v3 (variables snake_case + 3 boutons URL)
+- Service WhatsApp adapté pour Meta Graph API
+- Pour activer Meta Graph API en production :
+  1. Définir WHATSAPP_PROVIDER=whatsapp-business (au lieu de gupshup)
+  2. Définir WHATSAPP_ACCESS_TOKEN=<token Meta>
+  3. Définir WHATSAPP_PHONE_NUMBER_ID=<phone_number_id Meta>
+- Les 20 templates Meta v3 sont à créer dans Meta Business Platform
+  (voir download/whatsapp-templates-meta-v3.html)

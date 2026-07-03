@@ -46,7 +46,7 @@ import {
 } from '../../common/utils/phone';
 import {
   WhatsAppTemplateRegistry,
-  GupshupTemplate,
+  MetaTemplate,
 } from './whatsapp-template.registry';
 import {
   WhatsAppLogService,
@@ -57,7 +57,7 @@ export interface WhatsAppRequest {
   to: string; // Numéro au format international (ex: +22961234567)
   message?: string; // Message texte (pour fallback sans template)
   template?: string; // Nom du template Gupshup (elementName)
-  variables?: Record<string, string>; // Variables pour le template (clé = index 1-based)
+  variables?: Record<string, string>; // Variables pour le template (clé = nom de variable Meta v3)
   contentSid?: string; // Content SID pour Twilio WhatsApp
   contentVariables?: Record<string, string>; // Variables pour Content SID Twilio
 }
@@ -78,6 +78,10 @@ export interface TenantBranding {
   schoolLogo?: string | null;
   schoolPhone?: string | null;
   schoolEmail?: string | null;
+  // v3 : pour les 3 boutons URL dynamiques
+  subdomain?: string | null;
+  whatsappNumber?: string | null;
+  phoneNumber?: string | null;
 }
 
 // ─── Résultat d'envoi catégorisé ───────────────────────────────────────────
@@ -265,16 +269,24 @@ export class WhatsAppService {
    */
   async getTenantBranding(tenantId: string): Promise<TenantBranding> {
     try {
-      const profile = await this.prisma.tenantIdentityProfile.findFirst({
-        where: { tenantId, isActive: true },
-        select: {
-          schoolName: true,
-          schoolAcronym: true,
-          logoUrl: true,
-          phonePrimary: true,
-          email: true,
-        },
-      });
+      // Charger le profil d'identité actif + le tenant (pour subdomain)
+      const [profile, tenant] = await Promise.all([
+        this.prisma.tenantIdentityProfile.findFirst({
+          where: { tenantId, isActive: true },
+          select: {
+            schoolName: true,
+            schoolAcronym: true,
+            logoUrl: true,
+            phonePrimary: true,
+            email: true,
+            whatsapp: true,
+          },
+        }),
+        this.prisma.tenant.findUnique({
+          where: { id: tenantId },
+          select: { name: true, subdomain: true },
+        }),
+      ]);
 
       if (profile?.schoolName) {
         const apiBaseUrl =
@@ -290,14 +302,14 @@ export class WhatsAppService {
           schoolLogo: logoUrl,
           schoolPhone: profile.phonePrimary,
           schoolEmail: profile.email,
+          // v3 : pour les 3 boutons URL dynamiques
+          subdomain: tenant?.subdomain || null,
+          whatsappNumber: (profile as any).whatsapp || profile.phonePrimary || null,
+          phoneNumber: profile.phonePrimary || null,
         };
       }
 
       // Fallback sur le tenant directement
-      const tenant = await this.prisma.tenant.findUnique({
-        where: { id: tenantId },
-        select: { name: true },
-      });
       return { schoolName: tenant?.name || 'Établissement' };
     } catch (err: any) {
       this.logger.warn(
@@ -381,17 +393,18 @@ export class WhatsAppService {
     triggeredByUserId?: string;
     threadId?: string;
   }): Promise<CategorizedSendResult> {
-    // 1. Charger le branding école
+    // 1. Charger le branding école (inclut subdomain/whatsapp/phone pour boutons URL)
     const branding = await this.getTenantBranding(params.tenantId);
     const schoolDisplay = this.getSchoolDisplay(branding);
 
     // 2. Valider le template
     const template = this.templateRegistry.require(params.templateName);
 
-    // 3. Construire le tableau final de bodyParams en injectant schoolName en position 1
-    let fullBodyParams: string[];
+    // 3. Construire l'objet paramsByName (variables nommées Meta v3)
+    //    Inclut school_name + variables métier (callerParams mappées via bodyVariables)
+    let bodyParamsByName: Record<string, string>;
     try {
-      fullBodyParams = this.templateRegistry.buildBodyParams(
+      bodyParamsByName = this.templateRegistry.buildBodyParamsByName(
         params.templateName,
         schoolDisplay,
         params.callerParams,
@@ -403,23 +416,32 @@ export class WhatsAppService {
       };
     }
 
-    // 4. Construire les variables pour Gupshup (clé = index 1-based)
-    const templateVariables: Record<string, string> = {};
-    fullBodyParams.forEach((value, i) => {
-      templateVariables[String(i + 1)] = value;
+    // 4. Construire les variables de boutons URL (3 valeurs : subdomain, whatsapp, phone)
+    const buttonParams = this.templateRegistry.buildButtonParams(branding);
+
+    // 5. Construire templateVariables pour Meta Graph API :
+    //    - Clé = nom de variable (Meta utilise les noms nommés)
+    //    - Valeurs body + valeurs boutons
+    const templateVariables: Record<string, string> = { ...bodyParamsByName };
+    // Les variables des boutons sont nommées selon varName des MetaTemplateButton
+    const buttons = template.buttons ?? [];
+    buttons.forEach((btn, i) => {
+      templateVariables[btn.varName] = buttonParams[i] ?? '';
     });
 
-    // 5. Rendu final du message pour le log
+    // 6. Rendu final du message pour le log
     const renderedMessage = this.templateRegistry.renderBody(
       params.templateName,
-      fullBodyParams,
+      bodyParamsByName,
     );
 
-    // 6. Source phone (numéro WhatsApp Business)
+    // 7. Source phone (numéro WhatsApp Business)
     const fromPhone =
-      this.configService.get<string>('GUPSHUP_SOURCE_PHONE') || undefined;
+      this.configService.get<string>('GUPSHUP_SOURCE_PHONE') ||
+      this.configService.get<string>('WHATSAPP_PHONE_NUMBER') ||
+      undefined;
 
-    // 7. Envoyer avec tracing
+    // 8. Envoyer avec tracing
     return this.sendCategorized({
       tenantId: params.tenantId,
       category: params.category,
@@ -497,12 +519,12 @@ export class WhatsAppService {
         );
       }
 
-      // Gupshup attend les params dans l'ordre (pas de clés)
-      // Les variables reçues sont { "1": "val1", "2": "val2", ... }
+      // v3 : les variables sont nommées dans templateVariables { school_name, var1, var2, ... }
+      // Gupshup attend les params dans l'ordre d'apparition dans bodyVariables
       const orderedParams: string[] = [];
       if (request.variables) {
-        for (let i = 1; i <= tpl.bodyPlaceholderCount; i++) {
-          orderedParams.push(request.variables[String(i)] || '');
+        for (const varName of tpl.bodyVariables) {
+          orderedParams.push(request.variables[varName] || '');
         }
       } else if (tpl.bodyPlaceholderCount > 0) {
         throw new Error(
@@ -511,6 +533,7 @@ export class WhatsAppService {
         );
       }
 
+      // Gupshup utilise encore {{1}}, {{2}}... donc on envoie le tableau ordonné
       const templatePayload = {
         id: request.template,
         params: orderedParams,
@@ -643,21 +666,58 @@ export class WhatsAppService {
   ): Promise<{ success: boolean; messageId?: string }> {
     const apiUrl =
       this.configService.get<string>('WHATSAPP_BUSINESS_API_URL') ||
+      this.configService.get<string>('WHATSAPP_API_URL') ||
       'https://graph.facebook.com/v18.0';
-    const accessToken = this.configService.get<string>(
-      'WHATSAPP_BUSINESS_ACCESS_TOKEN',
-    );
-    const phoneNumberId = this.configService.get<string>(
-      'WHATSAPP_BUSINESS_PHONE_NUMBER_ID',
-    );
+    const accessToken =
+      this.configService.get<string>('WHATSAPP_BUSINESS_ACCESS_TOKEN') ||
+      this.configService.get<string>('WHATSAPP_ACCESS_TOKEN');
+    const phoneNumberId =
+      this.configService.get<string>('WHATSAPP_BUSINESS_PHONE_NUMBER_ID') ||
+      this.configService.get<string>('WHATSAPP_PHONE_NUMBER_ID');
 
     if (!accessToken || !phoneNumberId) {
       throw new Error(
-        'WhatsApp Business API configuration incomplete. Check WHATSAPP_BUSINESS_ACCESS_TOKEN and WHATSAPP_BUSINESS_PHONE_NUMBER_ID',
+        'WhatsApp Business API configuration incomplete. Check WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID',
       );
     }
 
     if (request.template) {
+      // v3 : construire le payload Meta avec header + body + footer + boutons URL
+      const tpl = this.templateRegistry.require(request.template);
+
+      // Construire les components pour Meta Graph API
+      const components: any[] = [];
+
+      // 1. Header component (TEXT, sans variable)
+      if (tpl.header) {
+        components.push({
+          type: 'header',
+          parameters: [{ type: 'text', text: tpl.header }],
+        });
+      }
+
+      // 2. Body component : paramètres dans l'ordre d'apparition dans bodyVariables
+      const bodyParameters = tpl.bodyVariables.map((varName) => ({
+        type: 'text',
+        text: (request.variables as Record<string, string>)?.[varName] ?? '',
+      }));
+      components.push({ type: 'body', parameters: bodyParameters });
+
+      // 3. Button components : 3 boutons URL avec variables
+      //    Dans Meta, les boutons URL utilisent le type "button" avec sub_type "url"
+      //    et index 0-based, avec une seule variable text par bouton
+      const buttons = tpl.buttons ?? [];
+      for (let i = 0; i < buttons.length; i++) {
+        const btn = buttons[i];
+        const varValue = (request.variables as Record<string, string>)?.[btn.varName] ?? '';
+        components.push({
+          type: 'button',
+          sub_type: 'url',
+          index: i,
+          parameters: [{ type: 'text', text: varValue }],
+        });
+      }
+
       const response = await fetch(`${apiUrl}/${phoneNumberId}/messages`, {
         method: 'POST',
         headers: {
@@ -670,17 +730,8 @@ export class WhatsAppService {
           type: 'template',
           template: {
             name: request.template,
-            language: { code: 'fr' },
-            components: request.variables
-              ? [
-                  {
-                    type: 'body',
-                    parameters: Object.entries(request.variables).map(
-                      ([, value]) => ({ type: 'text', text: value }),
-                    ),
-                  },
-                ]
-              : [],
+            language: { code: tpl.language || 'fr' },
+            components,
           },
         }),
       });
@@ -694,7 +745,7 @@ export class WhatsAppService {
 
       const result = await response.json();
       this.logger.log(
-        `WhatsApp sent via Business API to ${request.to}: ${result.messages?.[0]?.id}`,
+        `WhatsApp sent via Meta Graph API to ${request.to}: ${result.messages?.[0]?.id}`,
       );
 
       return {
@@ -703,6 +754,7 @@ export class WhatsAppService {
       };
     }
 
+    // Envoi texte simple (sans template)
     const response = await fetch(`${apiUrl}/${phoneNumberId}/messages`, {
       method: 'POST',
       headers: {
@@ -724,7 +776,7 @@ export class WhatsAppService {
 
     const result = await response.json();
     this.logger.log(
-      `WhatsApp sent via Business API to ${request.to}: ${result.messages?.[0]?.id}`,
+      `WhatsApp sent via Meta Graph API to ${request.to}: ${result.messages?.[0]?.id}`,
     );
 
     return {
@@ -975,9 +1027,10 @@ export class WhatsAppService {
     if (request.template && request.variables) {
       this.logger.log(`[MOCK WHATSAPP] Variables: ${JSON.stringify(request.variables)}`);
       try {
+        // v3 : request.variables est déjà un Record<string, string> (variables nommées)
         const rendered = this.templateRegistry.renderBody(
           request.template,
-          Object.values(request.variables),
+          request.variables as Record<string, string>,
         );
         this.logger.log(`[MOCK WHATSAPP] Rendered:\n${rendered}`);
       } catch (e: any) {

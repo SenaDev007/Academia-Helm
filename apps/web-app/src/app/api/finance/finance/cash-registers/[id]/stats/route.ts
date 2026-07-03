@@ -6,6 +6,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params;
   const qs = request.nextUrl.searchParams.toString();
   const headers = await getProxyAuthHeaders(request);
-  const r = await fetch(normalizeApiUrl(`${API_URL}/api/finance/cash-registers/${id}/stats${qs ? `?${qs}` : ''}`), { headers });
+  const r = await fetch(normalizeApiUrl(`${API_URL}/finance/cash-registers/${id}/stats${qs ? `?${qs}` : ''}`), { headers });
   return NextResponse.json(await r.json().catch(() => ({})), { status: r.status });
 }

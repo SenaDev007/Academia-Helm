@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   try {
     const qs = request.nextUrl.searchParams.toString();
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(normalizeApiUrl(`${API_URL}/api/finance/reports/cash-register-comparative${qs ? `?${qs}` : ''}`), { headers });
+    const response = await fetch(normalizeApiUrl(`${API_URL}/finance/reports/cash-register-comparative${qs ? `?${qs}` : ''}`), { headers });
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (e) {
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(normalizeApiUrl(`${API_URL}/api/finance/reports/cash-register-comparative`), {
+    const response = await fetch(normalizeApiUrl(`${API_URL}/finance/reports/cash-register-comparative`), {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -36,7 +36,7 @@ export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(normalizeApiUrl(`${API_URL}/api/finance/reports/cash-register-comparative`), {
+    const response = await fetch(normalizeApiUrl(`${API_URL}/finance/reports/cash-register-comparative`), {
       method: 'PATCH',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

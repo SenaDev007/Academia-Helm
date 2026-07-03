@@ -5,6 +5,6 @@ const API_URL = getApiBaseUrlForRoutes();
 export async function POST(request: NextRequest) {
   const body = await request.json();
   const headers = await getProxyAuthHeaders(request);
-  const r = await fetch(normalizeApiUrl(`${API_URL}/api/finance/recovery-reminders/manual`), { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const r = await fetch(normalizeApiUrl(`${API_URL}/finance/recovery-reminders/manual`), { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   return NextResponse.json(await r.json().catch(() => ({})), { status: r.status });
 }

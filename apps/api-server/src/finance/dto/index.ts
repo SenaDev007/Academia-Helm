@@ -60,6 +60,14 @@ export class UpdateFeeStructureDto {
   name?: string;
 
   @IsOptional()
+  @IsString()
+  feeType?: string;
+
+  @IsOptional()
+  @IsString()
+  academicYearId?: string;
+
+  @IsOptional()
   @IsNumber()
   totalAmount?: number;
 
@@ -82,6 +90,10 @@ export class UpdateFeeStructureDto {
   @IsOptional()
   @IsString()
   classId?: string | null;
+
+  @IsOptional()
+  @IsArray()
+  installments?: any[];
 }
 
 // ─── 2. FeeCategory ─────────────────────────────────────────────────────────

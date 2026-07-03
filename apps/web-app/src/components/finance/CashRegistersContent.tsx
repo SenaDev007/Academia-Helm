@@ -58,6 +58,20 @@ const CAISSE_COLORS = [
   { bg: 'from-indigo-500 to-violet-500', ring: 'ring-indigo-400', glow: 'shadow-indigo-500/30', text: 'text-indigo-600' },
 ];
 
+// Noms de caisses prédéfinis avec auto-génération de code, emplacement et description
+const PREDEFINED_CAISSES = [
+  { name: 'Caisse principale', code: 'MAIN', location: 'Bureau de la Direction', description: 'Coffre-fort principal de l\'établissement — toutes les recettes y sont consolidées.' },
+  { name: 'Caisse d\'accueil', code: 'ACCUEIL', location: 'Bureau d\'accueil', description: 'Caisse du secrétariat pour les paiements courants (inscriptions, frais divers).' },
+  { name: 'Caisse cantine', code: 'CANTEEN', location: 'Réfectoire / Cantine', description: 'Caisse dédiée à la collecte des frais de cantine et snack.' },
+  { name: 'Caisse mobile', code: 'MOBILE', location: 'Mobile / Terrain', description: 'Caisse mobile pour les encaissements sur le terrain (événements, sorties).' },
+  { name: 'Caisse comptabilité', code: 'COMPTA', location: 'Service comptabilité', description: 'Caisse du service comptable pour les virements et dépenses.' },
+  { name: 'Caisse economat', code: 'ECO', location: 'Économat / Magasin', description: 'Caisse de l\'économat pour les achats et approvisionnements.' },
+  { name: 'Caisse examen', code: 'EXAMEN', location: 'Salle des examens', description: 'Caisse dédiée aux frais d\'examens et concours.' },
+  { name: 'Caisse transport', code: 'TRANSPORT', location: 'Service transport', description: 'Caisse pour la collecte des frais de transport scolaire.' },
+  { name: 'Caisse activités', code: 'ACTIVITES', location: 'Service activités parascolaires', description: 'Caisse pour les activités parascolaires, sorties et événements.' },
+  { name: 'Caisse banque', code: 'BANQUE', location: 'Banque partenaire', description: 'Caisse de liaison avec le compte bancaire de l\'établissement.' },
+];
+
 export default function CashRegistersContent() {
   const confirmDialog = useConfirmDialog();
   const { toast } = useToast();
@@ -123,6 +137,28 @@ export default function CashRegistersContent() {
     const totalTransactions = registers.reduce((sum, r) => sum + (r._count?.transactions || 0), 0);
     return { totalBalance, openCount, totalCaisses: registers.length, totalTransactions };
   }, [registers]);
+
+  // Handler : sélection d'un nom prédéfini → auto-génère code, emplacement, description
+  const selectPredefinedCaisse = (predef: typeof PREDEFINED_CAISSES[0]) => {
+    setFormData((prev) => ({
+      ...prev,
+      name: predef.name,
+      code: predef.code,
+      location: predef.location,
+      description: predef.description,
+    }));
+  };
+
+  // Handler : nom personnalisé → vide les champs auto-générés si le nom ne match plus
+  const handleNameChange = (name: string) => {
+    const match = PREDEFINED_CAISSES.find((p) => p.name === name);
+    setFormData((prev) => ({
+      ...prev,
+      name,
+      // Si le nom correspond à un prédéfini, auto-générer
+      ...(match ? { code: match.code, location: match.location, description: match.description } : {}),
+    }));
+  };
 
   const handleCreate = async () => {
     if (!formData.code || !formData.name) {
@@ -657,7 +693,41 @@ export default function CashRegistersContent() {
           <DialogHeader>
             <DialogTitle>Nouvelle caisse</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          <div className="space-y-4 py-2 max-h-[60vh] overflow-y-auto">
+            {/* 1. Nom de la caisse — avec suggestions prédéfinies */}
+            <div>
+              <Label htmlFor="name">Nom de la caisse *</Label>
+              <Input
+                id="name"
+                placeholder="Sélectionnez un nom ou tapez le vôtre..."
+                value={formData.name}
+                onChange={(e) => handleNameChange(e.target.value)}
+                className="mb-2"
+              />
+              {/* Suggestions prédéfinies — cliquer pour auto-remplir */}
+              <div className="flex flex-wrap gap-1.5">
+                {PREDEFINED_CAISSES.map((predef) => {
+                  const isActive = formData.name === predef.name;
+                  return (
+                    <button
+                      key={predef.code}
+                      type="button"
+                      onClick={() => selectPredefinedCaisse(predef)}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition-all ${
+                        isActive
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-600'
+                      }`}
+                    >
+                      {predef.name}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-slate-400 mt-1.5">💡 Cliquez sur un nom prédéfini pour auto-générer le code, l'emplacement et la description.</p>
+            </div>
+
+            {/* 2. Code + Solde d'ouverture */}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="code">Code *</Label>
@@ -678,15 +748,8 @@ export default function CashRegistersContent() {
                 />
               </div>
             </div>
-            <div>
-              <Label htmlFor="name">Nom *</Label>
-              <Input
-                id="name"
-                placeholder="ex: Caisse principale"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              />
-            </div>
+
+            {/* 3. Emplacement */}
             <div>
               <Label htmlFor="location">Emplacement</Label>
               <Input
@@ -696,6 +759,8 @@ export default function CashRegistersContent() {
                 onChange={(e) => setFormData({ ...formData, location: e.target.value })}
               />
             </div>
+
+            {/* 4. Description */}
             <div>
               <Label htmlFor="description">Description</Label>
               <Input

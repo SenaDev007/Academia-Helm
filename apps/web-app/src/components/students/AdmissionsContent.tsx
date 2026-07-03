@@ -5,7 +5,7 @@ import {
   Plus, Search, Filter, CheckCircle, XCircle, Clock, FileText,
   UserCheck, Calendar, BadgeCheck, AlertCircle, Loader2, Eye,
   Send, Pencil, X, Info, Star, AlertTriangle, Trash2, RotateCcw,
-  ExternalLink,
+  ExternalLink, ArrowUpDown, ArrowUpAZ, ArrowDownAZ, ArrowDownUp,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { format } from 'date-fns';
@@ -55,6 +55,7 @@ export default function AdmissionsContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('ALL');
+  const [sortBy, setSortBy] = useState<'name-asc' | 'name-desc' | 'date-recent' | 'date-old'>('name-asc');
 
   // Nettoyer la sélection quand on change de filtre
   useEffect(() => { setSelectedIds(new Set()); }, [activeFilter]);
@@ -694,6 +695,26 @@ export default function AdmissionsContent() {
                           (a.admissionNumber?.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesFilter = activeFilter === 'ALL' || a.status === activeFilter;
     return matchesSearch && matchesFilter;
+  }).sort((a, b) => {
+    // Tri selon le mode sélectionné
+    switch (sortBy) {
+      case 'name-asc':
+        return `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`, 'fr');
+      case 'name-desc':
+        return `${b.firstName} ${b.lastName}`.localeCompare(`${a.firstName} ${a.lastName}`, 'fr');
+      case 'date-recent': {
+        const dA = new Date(a.submittedAt || a.createdAt || 0).getTime();
+        const dB = new Date(b.submittedAt || b.createdAt || 0).getTime();
+        return dB - dA;
+      }
+      case 'date-old': {
+        const dA = new Date(a.submittedAt || a.createdAt || 0).getTime();
+        const dB = new Date(b.submittedAt || b.createdAt || 0).getTime();
+        return dA - dB;
+      }
+      default:
+        return 0;
+    }
   });
 
   // Filtres étendus avec compteurs
@@ -747,6 +768,36 @@ export default function AdmissionsContent() {
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm transition-all"
             />
+          </div>
+        </div>
+
+        {/* Sélecteur de tri */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg p-1">
+            {[
+              { id: 'name-asc', icon: ArrowUpAZ, label: 'A → Z' },
+              { id: 'name-desc', icon: ArrowDownAZ, label: 'Z → A' },
+              { id: 'date-recent', icon: ArrowDownUp, label: 'Récent' },
+              { id: 'date-old', icon: ArrowUpDown, label: 'Ancien' },
+            ].map((opt) => {
+              const Icon = opt.icon;
+              const isActive = sortBy === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => setSortBy(opt.id as any)}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
+                    isActive
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                  title={opt.label}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">{opt.label}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 

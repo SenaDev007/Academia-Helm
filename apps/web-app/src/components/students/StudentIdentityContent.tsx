@@ -10,7 +10,7 @@
  * ============================================================================
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   User, Shield, Users, Mail, Phone, FileCheck, AlertCircle,
   Search, Loader2, Download, Eye, X,
@@ -68,9 +68,12 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
 export default function StudentIdentityContent() {
   const { academicYear, schoolLevel } = useModuleContext();
   const [students, setStudents] = useState<StudentIdentity[]>([]);
+  const [allClasses, setAllClasses] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStudent, setSelectedStudent] = useState<StudentIdentity | null>(null);
+  const [filterLevel, setFilterLevel] = useState<string>('ALL');
+  const [filterClass, setFilterClass] = useState<string>('ALL');
 
   useEffect(() => {
     if (academicYear && schoolLevel) loadData();
@@ -79,13 +82,16 @@ export default function StudentIdentityContent() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const params = {
-        academicYearId: academicYear?.id || '',
-        schoolLevelId: schoolLevel?.id || '',
-        includeGuardians: 'true',
-      };
-      const data = await studentsService.getAll(params);
-      setStudents(Array.isArray(data) ? data : []);
+      const [studentsData, classesData] = await Promise.all([
+        studentsService.getAll({
+          academicYearId: academicYear?.id || '',
+          schoolLevelId: schoolLevel?.id || '',
+          includeGuardians: 'true',
+        }),
+        fetch('/api/all-classes', { credentials: 'include' }).then(r => r.ok ? r.json() : []).catch(() => []),
+      ]);
+      setStudents(Array.isArray(studentsData) ? studentsData : []);
+      setAllClasses(Array.isArray(classesData) ? classesData : []);
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message, variant: 'error' });
     } finally {
@@ -93,11 +99,108 @@ export default function StudentIdentityContent() {
     }
   };
 
-  const filteredStudents = students.filter(s =>
-    `${s.firstName} ${s.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (s.matricule || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (s.npi || '').toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Construire un map classId → { name, schoolLevelId, schoolLevelName }
+  const classMap = useMemo(() => {
+    const m = new Map<string, { name: string; schoolLevelId: string; schoolLevelName: string }>();
+    for (const c of allClasses) {
+      m.set(c.id, {
+        name: c.name,
+        schoolLevelId: c.schoolLevelId || '',
+        schoolLevelName: c.schoolLevel?.name || '',
+      });
+    }
+    return m;
+  }, [allClasses]);
+
+  // Récupérer le niveau scolaire d'un élève depuis son enrollment
+  const getStudentLevel = (s: StudentIdentity): string => {
+    const enr = s.studentEnrollments?.find(e => e.class?.id);
+    if (enr?.class?.id) {
+      return classMap.get(enr.class.id)?.schoolLevelName || '';
+    }
+    return '';
+  };
+
+  // Récupérer le nom de la classe d'un élève
+  const getStudentClassName = (s: StudentIdentity): string => {
+    const enr = s.studentEnrollments?.find(e => e.class?.id);
+    return enr?.class?.name || '';
+  };
+
+  // Récupérer le classId d'un élève
+  const getStudentClassId = (s: StudentIdentity): string => {
+    const enr = s.studentEnrollments?.find(e => e.class?.id);
+    return enr?.class?.id || '';
+  };
+
+  // Filtrer par recherche + niveau + classe
+  const filteredStudents = students.filter(s => {
+    // Filtre recherche
+    if (searchTerm.trim()) {
+      const q = searchTerm.toLowerCase();
+      if (!`${s.firstName} ${s.lastName}`.toLowerCase().includes(q) &&
+          !(s.matricule || '').toLowerCase().includes(q) &&
+          !(s.npi || '').toLowerCase().includes(q)) return false;
+    }
+    // Filtre niveau
+    if (filterLevel !== 'ALL') {
+      const level = getStudentLevel(s);
+      if (!level.toUpperCase().includes(filterLevel)) return false;
+    }
+    // Filtre classe
+    if (filterClass !== 'ALL') {
+      if (getStudentClassId(s) !== filterClass) return false;
+    }
+    return true;
+  });
+
+  // Grouper par niveau puis par classe
+  const groupedStudents = useMemo(() => {
+    const levelOrder = (name: string) => {
+      const n = (name || '').toUpperCase();
+      if (n.includes('MATERNELLE')) return 0;
+      if (n.includes('PRIMAIRE')) return 1;
+      if (n.includes('SECONDAIRE')) return 2;
+      return 3;
+    };
+    const classOrder = (name: string): number => {
+      const n = (name || '').trim().toUpperCase();
+      if (n === 'MATERNELLE 1' || n === 'M1') return 0;
+      if (n === 'MATERNELLE 2' || n === 'M2') return 1;
+      if (n === 'CI') return 10;
+      if (n === 'CP') return 11;
+      if (n === 'CE1') return 12;
+      if (n === 'CE2') return 13;
+      if (n === 'CM1') return 14;
+      if (n === 'CM2') return 15;
+      if (n.startsWith('6')) return 20;
+      if (n.startsWith('5')) return 21;
+      if (n.startsWith('4')) return 22;
+      if (n.startsWith('3')) return 23;
+      if (n.startsWith('2NDE')) return 24;
+      if (n.startsWith('1ER')) return 25;
+      if (n.startsWith('TERM')) return 26;
+      return 100 + (name || '').charCodeAt(0);
+    };
+
+    const groups = new Map<string, { levelName: string; classes: Map<string, { className: string; students: StudentIdentity[] }> }>();
+    for (const s of filteredStudents) {
+      const levelName = getStudentLevel(s) || 'Non affecté';
+      const className = getStudentClassName(s) || 'Sans classe';
+      const levelKey = levelName;
+      if (!groups.has(levelKey)) groups.set(levelKey, { levelName, classes: new Map() });
+      const levelGroup = groups.get(levelKey)!;
+      if (!levelGroup.classes.has(className)) levelGroup.classes.set(className, { className, students: [] });
+      levelGroup.classes.get(className)!.students.push(s);
+    }
+
+    return Array.from(groups.values())
+      .sort((a, b) => levelOrder(a.levelName) - levelOrder(b.levelName))
+      .map(g => ({
+        ...g,
+        classes: Array.from(g.classes.values()).sort((a, b) => classOrder(a.className) - classOrder(b.className)),
+      }));
+  }, [filteredStudents, classMap]);
 
   const getInitials = (s: StudentIdentity) => `${s.lastName?.[0] || ''}${s.firstName?.[0] || ''}`.toUpperCase();
   const getAge = (dob?: string) => {
@@ -129,6 +232,37 @@ export default function StudentIdentityContent() {
         </div>
       </div>
 
+      {/* Filtres par niveau et classe */}
+      <div className="flex flex-wrap gap-2">
+        <select
+          value={filterLevel}
+          onChange={(e) => { setFilterLevel(e.target.value); setFilterClass('ALL'); }}
+          className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="ALL">Tous les niveaux</option>
+          <option value="MATERNELLE">Maternelle</option>
+          <option value="PRIMAIRE">Primaire</option>
+          <option value="SECONDAIRE">Secondaire</option>
+        </select>
+        {filterLevel !== 'ALL' && (
+          <select
+            value={filterClass}
+            onChange={(e) => setFilterClass(e.target.value)}
+            className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="ALL">Toutes les classes</option>
+            {allClasses
+              .filter(c => {
+                const levelName = (c.schoolLevel?.name || '').toUpperCase();
+                return levelName.includes(filterLevel);
+              })
+              .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+              .map(c => <option key={c.id} value={c.id}>{c.name}</option>)
+            }
+          </select>
+        )}
+      </div>
+
       {isLoading ? (
         <div className="flex items-center justify-center py-12"><Loader2 className="w-8 h-8 text-blue-500 animate-spin" /></div>
       ) : filteredStudents.length === 0 ? (
@@ -137,8 +271,26 @@ export default function StudentIdentityContent() {
           <p className="text-sm">Aucun élève trouvé</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredStudents.map((student) => {
+        <div className="space-y-6">
+          {groupedStudents.map((levelGroup) => (
+            <div key={levelGroup.levelName}>
+              {/* En-tête niveau */}
+              <div className="flex items-center gap-2 mb-3">
+                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">{levelGroup.levelName}</h3>
+                <span className="px-2 py-0.5 bg-slate-100 rounded-full text-[10px] font-bold text-slate-600">
+                  {levelGroup.classes.reduce((acc, c) => acc + c.students.length, 0)} élève(s)
+                </span>
+              </div>
+              {/* Classes dans ce niveau */}
+              <div className="space-y-4">
+                {levelGroup.classes.map((classGroup) => (
+                  <div key={classGroup.className}>
+                    <h4 className="text-xs font-semibold text-slate-500 mb-2 flex items-center gap-1.5">
+                      <span className="w-1 h-3 bg-blue-500 rounded-full"></span>
+                      {classGroup.className} · {classGroup.students.length} élève(s)
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {classGroup.students.map((student) => {
             const statusInfo = STATUS_LABELS[student.status] || STATUS_LABELS.ACTIVE;
             const age = getAge(student.dateOfBirth);
             return (
@@ -241,6 +393,12 @@ export default function StudentIdentityContent() {
               </div>
             );
           })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 

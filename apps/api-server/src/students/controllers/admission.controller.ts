@@ -122,6 +122,61 @@ export class AdmissionController {
     return this.admissionService.convertToStudent(id, tenantId, user?.id);
   }
 
+  // ═══ Batch / Bulk operations ═══
+
+  @Post('batch/submit')
+  async batchSubmit(
+    @TenantId() tenantId: string,
+    @Body() body: { admissionIds: string[] },
+  ) {
+    const results: { id: string; success: boolean; error?: string }[] = [];
+    for (const id of body.admissionIds) {
+      try {
+        await this.admissionService.submit(id, tenantId);
+        results.push({ id, success: true });
+      } catch (e: any) {
+        results.push({ id, success: false, error: e?.message ?? 'Erreur' });
+      }
+    }
+    return { total: body.admissionIds.length, succeeded: results.filter(r => r.success).length, failed: results.filter(r => !r.success).length, results };
+  }
+
+  @Post('batch/accept')
+  async batchAccept(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() body: { admissionIds: string[]; comment?: string },
+  ) {
+    const results: { id: string; success: boolean; error?: string }[] = [];
+    for (const id of body.admissionIds) {
+      try {
+        await this.admissionService.accept(id, tenantId, body.comment ?? '', user?.id);
+        results.push({ id, success: true });
+      } catch (e: any) {
+        results.push({ id, success: false, error: e?.message ?? 'Erreur' });
+      }
+    }
+    return { total: body.admissionIds.length, succeeded: results.filter(r => r.success).length, failed: results.filter(r => !r.success).length, results };
+  }
+
+  @Post('batch/convert')
+  async batchConvert(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() body: { admissionIds: string[] },
+  ) {
+    const results: { id: string; success: boolean; studentId?: string; matricule?: string; error?: string }[] = [];
+    for (const id of body.admissionIds) {
+      try {
+        const student = await this.admissionService.convertToStudent(id, tenantId, user?.id);
+        results.push({ id, success: true, studentId: student?.id, matricule: student?.matricule });
+      } catch (e: any) {
+        results.push({ id, success: false, error: e?.message ?? 'Erreur' });
+      }
+    }
+    return { total: body.admissionIds.length, succeeded: results.filter(r => r.success).length, failed: results.filter(r => !r.success).length, results };
+  }
+
   // ═══ Documents ═══
 
   @Get(':id/documents')

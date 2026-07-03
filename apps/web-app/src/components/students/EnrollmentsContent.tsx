@@ -26,11 +26,12 @@ import {
   Plus, Search, ChevronDown, ChevronRight, Users, Loader2,
   FileText, Download, UserCheck, GraduationCap, BookOpen, Baby,
   RotateCcw, CheckCircle, XCircle, Clock, AlertCircle, Upload,
-  ShieldAlert, Info, BrainCircuit, ChevronUp,
+  ShieldAlert, Info, BrainCircuit, ChevronUp, EyeOff, Eye, FileDown, Pencil,
 } from 'lucide-react';
 import { FormModal } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { motion, AnimatePresence } from 'framer-motion';
+import DocumentPreviewModal from './DocumentPreviewModal';
 import StudentEnrollmentForm from '@/components/students/StudentEnrollmentForm';
 import { studentsService } from '@/services/students.service';
 import { financeService } from '@/services/finance.service';
@@ -47,6 +48,25 @@ interface Enrollment {
     studentCode?: string;
     status?: string;
     isActive?: boolean;
+    dateOfBirth?: string | null;
+    gender?: string | null;
+    nationality?: string | null;
+    placeOfBirth?: string | null;
+    address?: string | null;
+    photoUrl?: string | null;
+    npi?: string | null;
+    schoolLevelId?: string;
+    studentGuardians?: Array<{
+      isPrimary?: boolean;
+      guardian: {
+        id: string;
+        firstName?: string;
+        lastName?: string;
+        phone?: string;
+        email?: string;
+        relationship?: string;
+      };
+    }>;
   };
   class?: { id: string; name: string; schoolLevelId?: string };
   enrollmentType: string;
@@ -103,6 +123,42 @@ const getLevelBgColor = (name: string) => {
   return 'bg-slate-50';
 };
 
+// Badge couleur pour le count d'élèves (respecte la palette du niveau)
+const getLevelBadgeColor = (name: string) => {
+  const n = name.toUpperCase();
+  if (n.includes('MATERNELLE')) return 'bg-pink-50 text-pink-700';
+  if (n.includes('PRIMAIRE')) return 'bg-blue-50 text-blue-700';
+  if (n.includes('SECONDAIRE')) return 'bg-purple-50 text-purple-700';
+  return 'bg-slate-50 text-slate-700';
+};
+
+// Couleur de survol pour les lignes de classe (respecte la palette du niveau)
+const getLevelHoverColor = (name: string) => {
+  const n = name.toUpperCase();
+  if (n.includes('MATERNELLE')) return 'hover:bg-pink-50/30';
+  if (n.includes('PRIMAIRE')) return 'hover:bg-blue-50/30';
+  if (n.includes('SECONDAIRE')) return 'hover:bg-purple-50/30';
+  return 'hover:bg-slate-50';
+};
+
+// Couleur du bouton PDF selon le niveau
+const getLevelButtonHover = (name: string) => {
+  const n = name.toUpperCase();
+  if (n.includes('MATERNELLE')) return 'hover:bg-pink-100 hover:text-pink-600';
+  if (n.includes('PRIMAIRE')) return 'hover:bg-blue-100 hover:text-blue-600';
+  if (n.includes('SECONDAIRE')) return 'hover:bg-purple-100 hover:text-purple-600';
+  return 'hover:bg-slate-100 hover:text-slate-600';
+};
+
+// Couleur du bouton "Généré" (vert) selon le niveau
+const getLevelGeneratedColor = (name: string) => {
+  const n = name.toUpperCase();
+  if (n.includes('MATERNELLE')) return 'text-pink-500';
+  if (n.includes('PRIMAIRE')) return 'text-emerald-500';
+  if (n.includes('SECONDAIRE')) return 'text-purple-500';
+  return 'text-emerald-500';
+};
+
 const getLevelDisplayName = (name: string) => {
   const n = name.toUpperCase();
   if (n.includes('MATERNELLE')) return 'Niveau Maternelle';
@@ -120,6 +176,7 @@ export default function EnrollmentsContent() {
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [editEnrollment, setEditEnrollment] = useState<Enrollment | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedLevels, setExpandedLevels] = useState<Set<string>>(new Set());
   const [expandedClasses, setExpandedClasses] = useState<Set<string>>(new Set());
@@ -130,6 +187,12 @@ export default function EnrollmentsContent() {
   const [selectedForBulk, setSelectedForBulk] = useState<Set<string>>(new Set());
   const [bulkTargetYear, setBulkTargetYear] = useState<string>('');
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
+  // Tracking de la génération PDF par classe (pour afficher un spinner par bouton)
+  const [pdfGeneratingClassId, setPdfGeneratingClassId] = useState<string | null>(null);
+  // Classes qui ont déjà un PDF généré en DB (pour afficher le check ✅)
+  const [pdfExistsClasses, setPdfExistsClasses] = useState<Set<string>>(new Set());
+  // PDF liste de classe en cours de visualisation (blob URL + fileName)
+  const [previewClassPdf, setPreviewClassPdf] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
 
   // ─── ORION mini-panel ──────────────────────────────────────────────
   // Alertes ciblées sur les inscriptions : élèves sans matricule, cartes manquantes,
@@ -145,13 +208,35 @@ export default function EnrollmentsContent() {
     if (academicYear) loadData();
   }, [academicYear, schoolLevel]);
 
+  // ─── Vérifier quels PDFs existent déjà en DB ─────────────────────────
+  // Permet d'afficher un check ✅ sur les classes qui ont déjà un PDF généré
+  useEffect(() => {
+    if (!academicYear || classes.length === 0) return;
+    const checkAll = async () => {
+      const results = await Promise.all(
+        classes.map(async (cls) => {
+          try {
+            const res = await studentsService.checkClassListPdfExists(cls.id, academicYear.id);
+            return res.exists ? cls.id : null;
+          } catch { return null; }
+        }),
+      );
+      setPdfExistsClasses(new Set(results.filter(Boolean) as string[]));
+    };
+    checkAll();
+  }, [academicYear, classes]);
+
   const loadData = async () => {
     if (!academicYear) return;
     setIsLoading(true);
     setOrionLoading(true);
     try {
       const [classesRes, enrollmentsData, yearsRes, orionKpisData, orionAlertsData] = await Promise.all([
-        fetch(`/api/classes?limit=200`, { cache: 'no-store' }).then(r => r.json()).catch(() => []),
+        // ⚠️ Utiliser /api/all-classes (route BFF dédiée) au lieu de /api/classes
+        // car /api/classes exige schoolLevelId et échoue en 400 si l'admin est en
+        // "Tous les niveaux" (schoolLevelId=ALL). /api/all-classes force le header
+        // x-school-level-id=ALL et retourne toutes les classes du tenant.
+        fetch(`/api/all-classes`, { cache: 'no-store' }).then(r => r.ok ? r.json() : []).catch(() => []),
         // ⚠️ getEnrollments doit être résilient : si l'API échoue (403, 404, réseau),
         // on retourne un tableau vide plutôt que de faire crasher tout l'onglet.
         // Le toast "Erreur de connexion" qui apparaissait venait d'ici.
@@ -240,7 +325,32 @@ export default function EnrollmentsContent() {
     return Array.from(levelMap.values())
       .sort((a, b) => levelOrder(a.name) - levelOrder(b.name))
       .map(level => {
-        const levelClasses = (classesByLevel.get(level.id) || []).sort((a, b) => a.name.localeCompare(b.name));
+        // Tri pédagogique des classes (CI < CP < CE1 < CE2 < CM1 < CM2 < 6e < ... < Maternelle 1 < Maternelle 2)
+        // au lieu du tri alphabétique qui donne CE1, CE2, CI, CM1, CM2, CP
+        const classOrder = (name: string): number => {
+          const n = (name || '').trim().toUpperCase();
+          // Maternelle
+          if (n === 'MATERNELLE 1' || n === 'M1' || n === 'MAT1') return 0;
+          if (n === 'MATERNELLE 2' || n === 'M2' || n === 'MAT2') return 1;
+          // Primaire
+          if (n === 'CI') return 10;
+          if (n === 'CP') return 11;
+          if (n === 'CE1') return 12;
+          if (n === 'CE2') return 13;
+          if (n === 'CM1') return 14;
+          if (n === 'CM2') return 15;
+          // Secondaire
+          if (n === '6E' || n === '6ÈME' || n === '6EME') return 20;
+          if (n === '5E' || n === '5ÈME' || n === '5EME') return 21;
+          if (n === '4E' || n === '4ÈME' || n === '4EME') return 22;
+          if (n === '3E' || n === '3ÈME' || n === '3EME') return 23;
+          if (n === '2NDE') return 24;
+          if (n === '1ERE' || n === '1ÈRE') return 25;
+          if (n === 'TERMINALE' || n === 'TLE') return 26;
+          // Fallback : tri alphabétique pour les classes non standard
+          return 100 + name.charCodeAt(0);
+        };
+        const levelClasses = (classesByLevel.get(level.id) || []).sort((a, b) => classOrder(a.name) - classOrder(b.name));
         const levelEnrollments = enrollments.filter(e => {
           const cls = classes.find(c => c.id === e.class?.id);
           return cls?.schoolLevelId === level.id;
@@ -748,29 +858,44 @@ export default function EnrollmentsContent() {
                               <AnimatePresence>
                                 {isGroupExpanded && (
                                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.15 }} className="overflow-hidden">
-                                    <div className="pl-14 pr-5 py-1">
+                                    <div className="pl-14 pr-5 py-1 overflow-x-auto">
+                                      {/* En-tête de colonnes */}
+                                      <div className="flex items-center gap-3 py-1.5 px-3 border-b border-amber-100 whitespace-nowrap min-w-max text-[10px] font-bold text-amber-500 uppercase">
+                                        <span className="w-8 text-center shrink-0">N°</span>
+                                        <span className="w-8 shrink-0"></span>
+                                        <span className="w-56 shrink-0">Nom & Matricule</span>
+                                        <span className="w-20 shrink-0">Type</span>
+                                        <span className="w-24 shrink-0">Statut</span>
+                                        <span className="w-24 shrink-0">Date</span>
+                                        <span className="w-20 shrink-0">Actions</span>
+                                      </div>
                                       {group.students.map((enr, idx) => {
                                         const statusInfo = STATUS_META[enr.status] || { label: enr.status, color: 'bg-slate-50 text-slate-600 border-slate-200' };
                                         const typeInfo = TYPE_META[enr.enrollmentType] || { label: enr.enrollmentType, color: 'bg-slate-50 text-slate-600' };
                                         return (
-                                          <div key={enr.id} className="flex items-center gap-3 py-2 px-3 hover:bg-amber-50/40 rounded-lg transition-colors group">
-                                            <span className="text-[10px] font-mono text-slate-400 w-6 text-right shrink-0">{idx + 1}</span>
-                                            <div className="h-8 w-8 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center text-xs font-bold text-amber-600 group-hover:bg-amber-200 group-hover:text-amber-700 transition-colors shrink-0">
-                                              {enr.student.lastName[0]}{enr.student.firstName[0]}
+                                          <div key={enr.id} className="flex items-center gap-3 py-2 px-3 hover:bg-amber-50/40 rounded-lg transition-colors group whitespace-nowrap min-w-max">
+                                            <span className="w-8 text-center text-sm font-bold text-slate-500 shrink-0">{idx + 1}</span>
+                                            <div className="w-8 h-8 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center text-xs font-bold text-amber-600 group-hover:bg-amber-200 group-hover:text-amber-700 transition-colors shrink-0 overflow-hidden">
+                                              {enr.student.photoUrl ? (
+                                                <img src={enr.student.photoUrl} alt="" className="w-full h-full object-cover rounded-full" />
+                                              ) : (
+                                                <>{enr.student.lastName[0]}{enr.student.firstName[0]}</>
+                                              )}
                                             </div>
-                                            <div className="flex-1 min-w-0">
-                                              <p className="text-sm font-medium text-slate-800">{enr.student.lastName.toUpperCase()} {enr.student.firstName}</p>
+                                            <div className="w-56 shrink-0">
+                                              <p className="text-sm font-medium text-slate-800 truncate">{enr.student.lastName.toUpperCase()} {enr.student.firstName}</p>
                                               <p className="text-[10px] font-mono text-slate-400">
                                                 {enr.student.matricule || enr.student.studentCode || '— matricule non généré —'}
                                               </p>
                                             </div>
-                                            <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0', typeInfo.color)}>{typeInfo.label}</span>
-                                            <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-bold border shrink-0', statusInfo.color)}>{statusInfo.label}</span>
-                                            <span className="text-[9px] text-slate-400 shrink-0 hidden sm:inline">{new Date(enr.enrollmentDate).toLocaleDateString('fr-FR')}</span>
-                                            <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition">
+                                            <div className="w-20 shrink-0 flex justify-center"><span className={cn('px-1.5 py-0.5 rounded text-[10px] font-bold inline-block', typeInfo.color)}>{typeInfo.label}</span></div>
+                                            <div className="w-24 shrink-0 flex justify-center"><span className={cn('px-2 py-0.5 rounded-full text-[10px] font-bold border inline-block', statusInfo.color)}>{statusInfo.label}</span></div>
+                                            <span className="w-24 text-xs text-slate-500 shrink-0">{new Date(enr.enrollmentDate).toLocaleDateString('fr-FR')}</span>
+                                            <div className="flex gap-1 w-28 shrink-0">
                                               {enr.status === 'PENDING' || enr.status === 'PRE_REGISTERED' || enr.status === 'ADMITTED' ? (
-                                                <button onClick={() => handleValidate(enr.student.id)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600" title="Valider"><CheckCircle className="w-3.5 h-3.5" /></button>
+                                                <button onClick={() => handleValidate(enr.student.id)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600" title="Valider"><CheckCircle className="w-4 h-4" /></button>
                                               ) : null}
+                                              <button onClick={() => setEditEnrollment(enr)} className="p-1 hover:bg-amber-100 rounded text-amber-600" title="Éditer / Compléter"><Pencil className="w-4 h-4" /></button>
                                               {/* Générer le matricule si manquant (élève converti sans classe avant le fix) */}
                                               {(!enr.student.matricule && !enr.student.studentCode) && (
                                                 <button
@@ -785,9 +910,9 @@ export default function EnrollmentsContent() {
                                                   }}
                                                   className="p-1 hover:bg-blue-100 rounded text-blue-600"
                                                   title="Générer le matricule"
-                                                ><FileText className="w-3.5 h-3.5" /></button>
+                                                ><FileText className="w-4 h-4" /></button>
                                               )}
-                                              <button onClick={() => handleReEnroll(enr)} className="p-1 hover:bg-indigo-100 rounded text-indigo-600" title="Réinscrire"><RotateCcw className="w-3.5 h-3.5" /></button>
+                                              <button onClick={() => handleReEnroll(enr)} className="p-1 hover:bg-indigo-100 rounded text-indigo-600" title="Réinscrire"><RotateCcw className="w-4 h-4" /></button>
                                             </div>
                                           </div>
                                         );
@@ -814,7 +939,7 @@ export default function EnrollmentsContent() {
                     {/* NIVEAU */}
                     <button
                       onClick={() => toggleLevel(node.level.id)}
-                      className="w-full flex items-center gap-3 px-5 py-4 hover:bg-slate-50 transition-colors text-left group"
+                      className={cn('w-full flex items-center gap-3 px-5 py-4 transition-colors text-left group', getLevelHoverColor(node.level.name))}
                     >
                       <div className="shrink-0">
                         {isExpanded ? <ChevronDown className="w-5 h-5 text-slate-400 group-hover:text-blue-600" /> : <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-blue-600" />}
@@ -842,7 +967,7 @@ export default function EnrollmentsContent() {
                                   : students;
                                 return (
                                   <div key={classInfo.id}>
-                                    <div className="w-full flex items-center gap-3 px-5 py-2.5 hover:bg-blue-50/30 transition-colors text-left group">
+                                    <div className={cn('w-full flex items-center gap-3 px-5 py-2.5 transition-colors text-left group', getLevelHoverColor(levelName))}>
                                       <button
                                         onClick={() => toggleClass(classInfo.id)}
                                         className="flex items-center gap-3 flex-1 min-w-0 text-left"
@@ -853,23 +978,64 @@ export default function EnrollmentsContent() {
                                         </div>
                                         <div className="p-1.5 bg-slate-100 rounded-lg shrink-0"><Users className="w-4 h-4 text-slate-500" /></div>
                                         <span className="flex-1 text-sm font-semibold text-slate-700 truncate">{classInfo.name}</span>
-                                        <span className="px-2 py-0.5 bg-blue-50 rounded-full text-[10px] font-bold text-blue-700 shrink-0">{filteredStudents.length} élève{filteredStudents.length > 1 ? 's' : ''}</span>
+                                        <span className={cn('px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0', getLevelBadgeColor(levelName))}>{filteredStudents.length} élève{filteredStudents.length > 1 ? 's' : ''}</span>
                                       </button>
-                                      <button
-                                        onClick={() => toast({ title: 'Liste de classe', description: `${classInfo.name} — ${filteredStudents.length} élèves`, variant: 'info' })}
-                                        className="p-1.5 hover:bg-blue-100 rounded-lg text-slate-400 hover:text-blue-600 transition shrink-0"
-                                        title="Visualiser la liste"
-                                      ><FileText className="w-3.5 h-3.5" /></button>
                                       <button
                                         onClick={() => {
                                           if (!academicYear) return;
-                                          studentsService.generateClassListPdf(classInfo.id, academicYear.id)
-                                            .then(() => toast({ title: '✅ PDF généré', description: classInfo.name, variant: 'success' }))
-                                            .catch(err => toast({ title: 'Erreur PDF', description: err.message, variant: 'error' }));
+                                          setPdfGeneratingClassId(classInfo.id);
+                                          // Générer + stocker en DB (pattern RH contrats)
+                                          studentsService.generateAndStoreClassListPdf(classInfo.id, academicYear.id)
+                                            .then(() => {
+                                              // Marquer la classe comme ayant un PDF
+                                              setPdfExistsClasses(prev => new Set(prev).add(classInfo.id));
+                                              toast({ title: '✅ PDF généré et enregistré', description: classInfo.name, variant: 'success' });
+                                            })
+                                            .catch(err => toast({ title: 'Erreur PDF', description: err.message, variant: 'error' }))
+                                            .finally(() => setPdfGeneratingClassId(null));
                                         }}
-                                        className="p-1.5 hover:bg-emerald-100 rounded-lg text-slate-400 hover:text-emerald-600 transition shrink-0"
-                                        title="Générer PDF liste de classe"
-                                      ><Download className="w-3.5 h-3.5" /></button>
+                                        disabled={pdfGeneratingClassId === classInfo.id}
+                                        className={cn(
+                                          'p-1.5 rounded-lg transition shrink-0',
+                                          pdfGeneratingClassId === classInfo.id
+                                            ? 'bg-blue-100 text-blue-600 cursor-wait'
+                                            : cn('text-slate-400', getLevelButtonHover(levelName)),
+                                        )}
+                                        title="Générer la liste de classe (PDF)"
+                                      >
+                                        {pdfGeneratingClassId === classInfo.id
+                                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                          : pdfExistsClasses.has(classInfo.id)
+                                            ? <FileDown className={cn('w-3.5 h-3.5', getLevelGeneratedColor(levelName))} />
+                                            : <FileDown className="w-3.5 h-3.5" />}
+                                      </button>
+                                      {/* Bouton Visualiser — récupère le PDF stocké en DB (instantané) */}
+                                      <button
+                                        onClick={async () => {
+                                          if (!academicYear) return;
+                                          setPdfGeneratingClassId(classInfo.id);
+                                          try {
+                                            const { url, fileName } = await studentsService.getStoredClassListPdf(classInfo.id, academicYear.id);
+                                            setPreviewClassPdf({ filePath: url, fileName, mimeType: 'application/pdf' });
+                                          } catch (err: any) {
+                                            toast({ title: '⚠️ Aucun PDF', description: 'Générez d\'abord le document', variant: 'info' });
+                                          } finally {
+                                            setPdfGeneratingClassId(null);
+                                          }
+                                        }}
+                                        disabled={pdfGeneratingClassId === classInfo.id || !pdfExistsClasses.has(classInfo.id)}
+                                        className={cn(
+                                          'p-1.5 rounded-lg transition shrink-0',
+                                          pdfExistsClasses.has(classInfo.id)
+                                            ? cn('text-slate-400', getLevelButtonHover(levelName))
+                                            : 'text-slate-300 cursor-not-allowed',
+                                        )}
+                                        title={pdfExistsClasses.has(classInfo.id) ? 'Visualiser la liste de classe' : 'Générez d\'abord le PDF'}
+                                      >
+                                        {pdfGeneratingClassId === classInfo.id
+                                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                          : <Eye className="w-3.5 h-3.5" />}
+                                      </button>
                                     </div>
 
                                     {/* ÉLÈVES */}
@@ -879,32 +1045,43 @@ export default function EnrollmentsContent() {
                                           {filteredStudents.length === 0 ? (
                                             <p className="px-5 py-2 text-xs text-slate-400 italic pl-16">Aucun élève</p>
                                           ) : (
-                                            <div className="pl-14 pr-5 py-1">
+                                            <div className="pl-14 pr-5 py-1 overflow-x-auto">
+                                              {/* En-tête de colonnes */}
+                                              <div className="flex items-center gap-3 py-1.5 px-3 border-b border-slate-100 whitespace-nowrap min-w-max text-[10px] font-bold text-slate-400 uppercase">
+                                                <span className="w-8 text-center shrink-0">N°</span>
+                                                <span className="w-8 shrink-0"></span>
+                                                <span className="w-56 shrink-0">Nom & Matricule</span>
+                                                <span className="w-20 shrink-0">Type</span>
+                                                <span className="w-24 shrink-0">Statut</span>
+                                                <span className="w-24 shrink-0">Date</span>
+                                                <span className="w-20 shrink-0">Actions</span>
+                                              </div>
                                               {filteredStudents.map((enr, idx) => {
                                                 const statusInfo = STATUS_META[enr.status] || { label: enr.status, color: 'bg-slate-50 text-slate-600 border-slate-200' };
                                                 const typeInfo = TYPE_META[enr.enrollmentType] || { label: enr.enrollmentType, color: 'bg-slate-50 text-slate-600' };
                                                 return (
-                                                  <div key={enr.id} className="flex items-center gap-3 py-2 px-3 hover:bg-slate-50 rounded-lg transition-colors group">
-                                                    <span className="text-[10px] font-mono text-slate-400 w-6 text-right shrink-0">{idx + 1}</span>
-                                                    <div className="h-8 w-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-xs font-bold text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors shrink-0">
-                                                      {enr.student.lastName[0]}{enr.student.firstName[0]}
+                                                  <div key={enr.id} className="flex items-center gap-3 py-2 px-3 hover:bg-slate-50 rounded-lg transition-colors group whitespace-nowrap min-w-max">
+                                                    <span className="w-8 text-center text-sm font-bold text-slate-500 shrink-0">{idx + 1}</span>
+                                                    <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-xs font-bold text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors shrink-0 overflow-hidden">
+                                                      {enr.student.photoUrl ? (
+                                                        <img src={enr.student.photoUrl} alt="" className="w-full h-full object-cover rounded-full" />
+                                                      ) : (
+                                                        <>{enr.student.lastName[0]}{enr.student.firstName[0]}</>
+                                                      )}
                                                     </div>
-                                                    <div className="flex-1 min-w-0">
-                                                      <p className="text-sm font-medium text-slate-800">{enr.student.lastName.toUpperCase()} {enr.student.firstName}</p>
+                                                    <div className="w-56 shrink-0">
+                                                      <p className="text-sm font-medium text-slate-800 truncate">{enr.student.lastName.toUpperCase()} {enr.student.firstName}</p>
                                                       <p className="text-[10px] font-mono text-slate-400">{enr.student.matricule || enr.student.studentCode || '—'}</p>
                                                     </div>
-                                                    {/* Type */}
-                                                    <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0', typeInfo.color)}>{typeInfo.label}</span>
-                                                    {/* Statut */}
-                                                    <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-bold border shrink-0', statusInfo.color)}>{statusInfo.label}</span>
-                                                    {/* Date */}
-                                                    <span className="text-[9px] text-slate-400 shrink-0 hidden sm:inline">{new Date(enr.enrollmentDate).toLocaleDateString('fr-FR')}</span>
-                                                    {/* Actions */}
-                                                    <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition">
+                                                    <div className="w-20 shrink-0 flex justify-center"><span className={cn('px-1.5 py-0.5 rounded text-[10px] font-bold inline-block', typeInfo.color)}>{typeInfo.label}</span></div>
+                                                    <div className="w-24 shrink-0 flex justify-center"><span className={cn('px-2 py-0.5 rounded-full text-[10px] font-bold border inline-block', statusInfo.color)}>{statusInfo.label}</span></div>
+                                                    <span className="w-24 text-xs text-slate-500 shrink-0">{new Date(enr.enrollmentDate).toLocaleDateString('fr-FR')}</span>
+                                                    <div className="flex gap-1 w-28 shrink-0">
                                                       {enr.status === 'PENDING' || enr.status === 'PRE_REGISTERED' || enr.status === 'ADMITTED' ? (
-                                                        <button onClick={() => handleValidate(enr.student.id)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600" title="Valider"><CheckCircle className="w-3.5 h-3.5" /></button>
+                                                        <button onClick={() => handleValidate(enr.student.id)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600" title="Valider"><CheckCircle className="w-4 h-4" /></button>
                                                       ) : null}
-                                                      <button onClick={() => handleReEnroll(enr)} className="p-1 hover:bg-indigo-100 rounded text-indigo-600" title="Réinscrire"><RotateCcw className="w-3.5 h-3.5" /></button>
+                                                      <button onClick={() => setEditEnrollment(enr)} className="p-1 hover:bg-amber-100 rounded text-amber-600" title="Éditer / Compléter"><Pencil className="w-4 h-4" /></button>
+                                                      <button onClick={() => handleReEnroll(enr)} className="p-1 hover:bg-indigo-100 rounded text-indigo-600" title="Réinscrire"><RotateCcw className="w-4 h-4" /></button>
                                                     </div>
                                                   </div>
                                                 );
@@ -1030,6 +1207,107 @@ export default function EnrollmentsContent() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ─── MODAL : Visualisation PDF liste de classe ───
+          Réutilise le même DocumentPreviewModal que l'onglet Admission.
+          Le PDF est généré côté backend, retourné comme blob URL, et affiché
+          dans une iframe. Les boutons Télécharger + Ouvrir sont intégrés au modal. */}
+      {previewClassPdf && (
+        <DocumentPreviewModal
+          doc={previewClassPdf}
+          onClose={() => setPreviewClassPdf(null)}
+        />
+      )}
+
+      {/* ─── MODAL : Éditer / Compléter une inscription ───
+          Ouvre le StudentEnrollmentForm pré-rempli avec les données de l'élève.
+          Permet de compléter les informations manquantes (guardians, finances, etc.). */}
+      {editEnrollment && academicYear && schoolLevel && (
+        <FormModal
+          title="Éditer / Compléter l'inscription"
+          isOpen={!!editEnrollment}
+          onClose={() => setEditEnrollment(null)}
+          size="xl"
+          actions={null}
+        >
+          <StudentEnrollmentForm
+            academicYearId={academicYear.id}
+            schoolLevelId={schoolLevel.id}
+            initialData={{
+              studentId: editEnrollment.student.id,
+              firstName: editEnrollment.student.firstName || '',
+              lastName: editEnrollment.student.lastName || '',
+              matricule: editEnrollment.student.matricule || undefined,
+              studentCode: editEnrollment.student.studentCode,
+              gender: (editEnrollment.student.gender as any) || '',
+              dateOfBirth: editEnrollment.student.dateOfBirth || '',
+              nationality: editEnrollment.student.nationality || '',
+              placeOfBirth: editEnrollment.student.placeOfBirth || '',
+              address: editEnrollment.student.address || '',
+              photoUrl: editEnrollment.student.photoUrl || '',
+              npi: editEnrollment.student.npi || '',
+              classId: editEnrollment.class?.id,
+              // Pré-remplir les guardians depuis l'admission
+              guardians: (editEnrollment.student.studentGuardians || []).map(sg => ({
+                firstName: sg.guardian?.firstName || '',
+                lastName: sg.guardian?.lastName || '',
+                relationship: sg.guardian?.relationship || 'PARENT',
+                phone: sg.guardian?.phone || '',
+                email: sg.guardian?.email || '',
+                isPrimary: sg.isPrimary ?? false,
+              })),
+            }}
+            onSubmit={async (data) => {
+              const isFinalSubmit = (data as any)._isFinalSubmit === true;
+              // ⚠️ Le update de base est le seul appel critique — les autres sont non bloquants
+              // On inclut photoUrl dans le update() directement (contournement endpoint upload-photo)
+              await studentsService.update(editEnrollment.student.id, {
+                ...data.student,
+                academicYearId: academicYear.id,
+                schoolLevelId: schoolLevel.id,
+              });
+              // Upload photo via endpoint dédié (pattern RH) — non bloquant
+              if (data.student.photoUrl && data.student.photoUrl.startsWith('data:')) {
+                await studentsService.uploadPhoto(editEnrollment.student.id, data.student.photoUrl)
+                  .catch((e: any) => console.warn('Upload photo endpoint:', e?.message));
+              }
+              // Changement de classe
+              if (data.classId && data.classId !== editEnrollment.class?.id) {
+                await studentsService.changeClass(editEnrollment.student.id, academicYear.id, data.classId)
+                  .catch((e: any) => console.warn('Change class:', e?.message));
+              }
+              // Guardians
+              if (data.guardians?.length) {
+                for (const g of data.guardians) {
+                  if (!g.firstName?.trim() && !g.lastName?.trim()) continue;
+                  await studentsService.addGuardians(editEnrollment.student.id, {
+                    guardians: [{
+                      firstName: g.firstName, lastName: g.lastName,
+                      relationship: g.relationship || 'GUARDIAN',
+                      phone: g.phone, email: g.email, isPrimary: g.isPrimary ?? false,
+                    }],
+                  }).catch(() => undefined);
+                }
+              }
+              // Régime financier
+              if (data.feeProfile?.feeRegimeId) {
+                await financeService.createStudentFeeProfile({
+                  studentId: editEnrollment.student.id,
+                  academicYearId: academicYear.id,
+                  feeRegimeId: data.feeProfile.feeRegimeId,
+                  justification: data.feeProfile.justification,
+                }).catch(() => undefined);
+              }
+              if (isFinalSubmit) {
+                toast({ title: '✅ Inscription mise à jour', variant: 'success' });
+                setEditEnrollment(null);
+                loadData();
+              }
+            }}
+            onCancel={() => setEditEnrollment(null)}
+          />
+        </FormModal>
       )}
     </>
   );

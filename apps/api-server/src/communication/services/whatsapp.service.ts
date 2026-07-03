@@ -2,54 +2,158 @@
  * ============================================================================
  * WHATSAPP SERVICE - ENVOI DE MESSAGES WHATSAPP
  * ============================================================================
- * 
- * Service pour l'envoi de messages WhatsApp via différents providers
- * Supporte : WhatsApp Business API, Twilio WhatsApp, API Gateway
- * 
+ *
+ * Service pour l'envoi de messages WhatsApp via différents providers.
+ * Supporte :
+ *   - Gupshup.io (RECOMMANDÉ - templates pré-approuvés Meta)
+ *   - WhatsApp Business API (Facebook Graph)
+ *   - Twilio WhatsApp (Content API)
+ *   - Infobip WhatsApp
+ *   - Gateway générique
+ *   - Mock (développement)
+ *
+ * ─── Architecture multi-canal ────────────────────────────────────────────
+ *
+ *   Business Service (RH, Élèves, Pédagogie)
+ *          │
+ *          ▼
+ *   WhatsAppService.sendCategorized()   ← Orchestration + tracing
+ *          │
+ *          ├─ WhatsAppLogService.createLog()    (PENDING)
+ *          ├─ WhatsAppService.sendWhatsApp()    (provider dispatch)
+ *          │     └─ sendViaGupshup()            (Gupshup API)
+ *          ├─ WhatsAppLogService.markAsSent()   (SENT + providerId)
+ *          └─ WhatsAppLogService.markAsFailed() (FAILED + errorMessage)
+ *
+ * ─── Personnalisation par école tenante ──────────────────────────────────
+ *
+ * Chaque template WhatsApp utilise un header {{1}} = nom de l'école.
+ * Le service sendCategorizedForTenant() charge automatiquement le
+ * tenant_identity_profile (schoolAcronym + schoolName) et l'injecte
+ * comme premier paramètre.
+ *
  * ============================================================================
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import twilio from 'twilio';
+import { PrismaService } from '../../database/prisma.service';
+import {
+  normalizePhoneE164,
+  toGupshupDestination,
+  isValidPhoneE164,
+} from '../../common/utils/phone';
+import {
+  WhatsAppTemplateRegistry,
+  GupshupTemplate,
+} from './whatsapp-template.registry';
+import {
+  WhatsAppLogService,
+  CategorizedWhatsAppRequest,
+} from './whatsapp-log.service';
 
 export interface WhatsAppRequest {
   to: string; // Numéro au format international (ex: +22961234567)
-  message?: string; // Message texte (pour WhatsApp Business ou fallback)
-  template?: string; // Nom du template (pour WhatsApp Business)
-  variables?: Record<string, string>; // Variables pour le template
-  contentSid?: string; // Content SID pour Twilio WhatsApp (template dynamique)
-  contentVariables?: Record<string, string>; // Variables pour le Content SID Twilio
+  message?: string; // Message texte (pour fallback sans template)
+  template?: string; // Nom du template Gupshup (elementName)
+  variables?: Record<string, string>; // Variables pour le template (clé = index 1-based)
+  contentSid?: string; // Content SID pour Twilio WhatsApp
+  contentVariables?: Record<string, string>; // Variables pour Content SID Twilio
 }
 
-export type WhatsAppProvider = 'whatsapp-business' | 'twilio-whatsapp' | 'infobip-whatsapp' | 'gateway' | 'mock';
+export type WhatsAppProvider =
+  | 'gupshup'
+  | 'whatsapp-business'
+  | 'twilio-whatsapp'
+  | 'infobip-whatsapp'
+  | 'gateway'
+  | 'mock';
+
+// ─── Branding école ────────────────────────────────────────────────────────
+
+export interface TenantBranding {
+  schoolName: string;
+  schoolAcronym?: string | null;
+  schoolLogo?: string | null;
+  schoolPhone?: string | null;
+  schoolEmail?: string | null;
+}
+
+// ─── Résultat d'envoi catégorisé ───────────────────────────────────────────
+
+export interface CategorizedSendResult {
+  success: boolean;
+  logId?: string;
+  providerId?: string;
+  error?: string;
+}
+
+// ─── Service ──────────────────────────────────────────────────────────────
 
 @Injectable()
 export class WhatsAppService {
   private readonly logger = new Logger(WhatsAppService.name);
   private readonly provider: WhatsAppProvider;
+  private _whatsappLogService: WhatsAppLogService | null = null;
 
-  constructor(private readonly configService: ConfigService) {
-    this.provider = (this.configService.get<string>('WHATSAPP_PROVIDER', 'mock') as WhatsAppProvider) || 'mock';
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly prisma: PrismaService,
+    private readonly templateRegistry: WhatsAppTemplateRegistry,
+  ) {
+    this.provider = (this.configService.get<string>(
+      'WHATSAPP_PROVIDER',
+      'mock',
+    ) as WhatsAppProvider) || 'mock';
+    this.logger.log(`📱 WhatsAppService initialisé (provider: ${this.provider})`);
   }
 
   /**
-   * Envoie un message WhatsApp
+   * Injection du WhatsAppLogService (lazy) pour éviter la circular dependency.
+   * Appelé par CommunicationModule.onModuleInit().
    */
-  async sendWhatsApp(request: WhatsAppRequest): Promise<{ success: boolean; messageId?: string }> {
+  setWhatsAppLogService(service: WhatsAppLogService): void {
+    this._whatsappLogService = service;
+  }
+
+  // ========================================================================
+  // ENVOI SIMPLE (sans tracing)
+  // ========================================================================
+
+  /**
+   * Envoie un message WhatsApp via le provider configuré.
+   *
+   * @throws Error si l'envoi échoue
+   */
+  async sendWhatsApp(
+    request: WhatsAppRequest,
+  ): Promise<{ success: boolean; messageId?: string }> {
     try {
+      // Normalisation du numéro destinataire
+      const normalizedTo = normalizePhoneE164(request.to);
+      if (!isValidPhoneE164(normalizedTo)) {
+        throw new Error(
+          `Numéro WhatsApp invalide: "${request.to}" → normalisé: "${normalizedTo}". ` +
+            `Format attendu: +229XXXXXXXX (E.164)`,
+        );
+      }
+      const normalizedRequest = { ...request, to: normalizedTo };
+
       switch (this.provider) {
+        case 'gupshup':
+          return await this.sendViaGupshup(normalizedRequest);
         case 'whatsapp-business':
-          return await this.sendViaWhatsAppBusiness(request);
+          return await this.sendViaWhatsAppBusiness(normalizedRequest);
         case 'twilio-whatsapp':
-          return await this.sendViaTwilioWhatsApp(request);
+          return await this.sendViaTwilioWhatsApp(normalizedRequest);
         case 'infobip-whatsapp':
-          return await this.sendViaInfobipWhatsApp(request);
+          return await this.sendViaInfobipWhatsApp(normalizedRequest);
         case 'gateway':
-          return await this.sendViaGateway(request);
+          return await this.sendViaGateway(normalizedRequest);
         case 'mock':
         default:
-          return await this.sendMock(request);
+          return await this.sendMock(normalizedRequest);
       }
     } catch (error: any) {
       this.logger.error(`Failed to send WhatsApp via ${this.provider}:`, error);
@@ -57,53 +161,541 @@ export class WhatsAppService {
     }
   }
 
+  // ========================================================================
+  // ENVOI CATÉGORISÉ (avec tracing dans whatsapp_logs)
+  // ========================================================================
+
+  /**
+   * Envoie un message WhatsApp catégorisé avec traçabilité complète.
+   *
+   * Ne lance JAMAIS d'erreur — retourne { success: false, error } en cas d'échec.
+   * Le caller peut donc l'utiliser en fire-and-forget.
+   *
+   * @example
+   * const result = await whatsappService.sendCategorized({
+   *   tenantId: 'abc',
+   *   category: 'RECRUTEMENT',
+   *   module: 'hr',
+   *   to: '+22997123456',
+   *   toName: 'Erhel DEGBE',
+   *   recipientType: 'CANDIDAT',
+   *   recipientId: 'candidate-uuid',
+   *   message: 'Candidature reçue',
+   *   templateId: 'candidature_recue',
+   *   templateLanguage: 'fr',
+   *   triggeredBy: 'SYSTEM',
+   *   relatedEntityId: 'application-uuid',
+   *   relatedEntityType: 'HrApplication',
+   * });
+   */
+  async sendCategorized(
+    request: CategorizedWhatsAppRequest & {
+      /** Template Gupshup à utiliser (elementName). Si fourni, variables seront envoyées. */
+      templateName?: string;
+      /** Variables du template (clé = index 1-based, valeur = texte). */
+      templateVariables?: Record<string, string>;
+    },
+  ): Promise<CategorizedSendResult> {
+    // 1. Créer un log PENDING avant l'envoi
+    let logId: string | undefined;
+    if (this._whatsappLogService) {
+      try {
+        const logResult = await this._whatsappLogService.createLog(request);
+        logId = logResult.logId;
+      } catch (err: any) {
+        this.logger.warn(
+          `createLog failed — sending without tracing. Error: ${err.message}`,
+        );
+      }
+    }
+
+    // 2. Construire la requête d'envoi
+    const sendRequest: WhatsAppRequest = {
+      to: request.to,
+      message: request.message,
+      template: request.templateName,
+      variables: request.templateVariables,
+    };
+
+    // 3. Envoi via le provider
+    try {
+      const result = await this.sendWhatsApp(sendRequest);
+
+      if (result.success) {
+        if (logId && this._whatsappLogService) {
+          await this._whatsappLogService.markAsSent(
+            logId,
+            this.provider,
+            result.messageId,
+          );
+        }
+        return {
+          success: true,
+          logId,
+          providerId: result.messageId,
+        };
+      } else {
+        const errorMsg = 'Provider returned success=false';
+        if (logId && this._whatsappLogService) {
+          await this._whatsappLogService.markAsFailed(logId, errorMsg);
+        }
+        return { success: false, logId, error: errorMsg };
+      }
+    } catch (err: any) {
+      const errorMsg = err.message || 'Unknown error';
+      if (logId && this._whatsappLogService) {
+        try {
+          await this._whatsappLogService.markAsFailed(logId, errorMsg);
+        } catch (markErr: any) {
+          this.logger.error(`markAsFailed also failed: ${markErr.message}`);
+        }
+      }
+      return { success: false, logId, error: errorMsg };
+    }
+  }
+
+  // ========================================================================
+  // ENVOI PAR ÉCOLE TENANTE (avec branding automatique)
+  // ========================================================================
+
+  /**
+   * Charge le branding d'une école (tenant_identity_profiles).
+   *
+   * @returns { schoolName, schoolAcronym, schoolLogo, schoolPhone, schoolEmail }
+   */
+  async getTenantBranding(tenantId: string): Promise<TenantBranding> {
+    try {
+      const profile = await this.prisma.tenantIdentityProfile.findFirst({
+        where: { tenantId, isActive: true },
+        select: {
+          schoolName: true,
+          schoolAcronym: true,
+          logoUrl: true,
+          phonePrimary: true,
+          email: true,
+        },
+      });
+
+      if (profile?.schoolName) {
+        const apiBaseUrl =
+          this.configService.get<string>('APP_PUBLIC_URL') ||
+          'https://academia-helm-api.fly.dev';
+        const logoUrl = profile.logoUrl
+          ? `${apiBaseUrl}/api/tenants/${tenantId}/logo`
+          : null;
+
+        return {
+          schoolName: profile.schoolName,
+          schoolAcronym: profile.schoolAcronym,
+          schoolLogo: logoUrl,
+          schoolPhone: profile.phonePrimary,
+          schoolEmail: profile.email,
+        };
+      }
+
+      // Fallback sur le tenant directement
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { name: true },
+      });
+      return { schoolName: tenant?.name || 'Établissement' };
+    } catch (err: any) {
+      this.logger.warn(
+        `getTenantBranding failed for tenant ${tenantId}: ${err.message}`,
+      );
+      return { schoolName: 'Établissement' };
+    }
+  }
+
+  /**
+   * Génère la chaîne d'en-tête personnalisée pour une école.
+   * Format: "${schoolAcronym} — ${schoolName}" (ou juste schoolName si pas d'acronym).
+   *
+   * @example
+   * getSchoolDisplay(branding)
+   * // → "CSPEB — Complexe Scolaire Pierre Emeri Bocco"
+   */
+  getSchoolDisplay(branding: TenantBranding): string {
+    if (branding.schoolAcronym && branding.schoolName) {
+      return `${branding.schoolAcronym} - ${branding.schoolName}`;
+    }
+    return branding.schoolName || 'Établissement';
+  }
+
+  /**
+   * Envoie un message WhatsApp à un parent/candidat d'une école spécifique.
+   *
+   * Cette méthode charge automatiquement le branding école (schoolName) et
+   * l'injecte en position 1 du tableau de bodyParams. Le caller ne doit
+   * fournir QUE les variables métier (sans schoolName).
+   *
+   * Convention v2 :
+   *   - {{1}} = schoolName (injecté automatiquement)
+   *   - {{2}}, {{3}}, ... = callerParams (fournis par le caller)
+   *   - callerParamCount = bodyPlaceholderCount - 1
+   *
+   * @param params.tenantId - ID du tenant (école)
+   * @param params.templateName - Nom du template Gupshup (elementName)
+   * @param params.to - Numéro destinataire (E.164)
+   * @param params.callerParams - Variables métier (SANS schoolName, qui est injecté auto)
+   * @param params.category - Catégorie (RECRUTEMENT, PEDAGOGIE, FINANCE, ADMINISTRATIF)
+   * @param params.module - Module (hr, students, pedagogy)
+   * @param params.recipientName - Nom du destinataire
+   * @param params.recipientType - Type (CANDIDAT, PARENT, STAFF, ENSEIGNANT, EXTERNE)
+   * @param params.recipientId - ID du destinataire en DB
+   * @param params.relatedEntityId - ID de l'entité liée (Admission, HrApplication, etc.)
+   * @param params.relatedEntityType - Type de l'entité liée
+   * @param params.triggeredBy - Source du déclenchement (SYSTEM, STAFF, AUTOMATION, SARA)
+   *
+   * @example
+   * // Pour le template 'admission_recue' qui a callerParamCount=5 :
+   * await whatsappService.sendForTenant({
+   *   tenantId: 'cspeb-uuid',
+   *   templateName: 'admission_recue',
+   *   to: '+22997123456',
+   *   callerParams: ['Marie ADANDE', 'Jean ADANDE', '2025-2026', 'CP1', 'ADM-2025-001'],
+   *   //                ^guardianName  ^childName    ^year       ^class  ^admissionNumber
+   *   category: 'ADMINISTRATIF',
+   *   module: 'students',
+   *   recipientName: 'Marie ADANDE',
+   *   recipientType: 'PARENT',
+   *   relatedEntityId: 'admission-uuid',
+   *   relatedEntityType: 'Admission',
+   *   triggeredBy: 'SYSTEM',
+   * });
+   */
+  async sendForTenant(params: {
+    tenantId: string;
+    templateName: string;
+    to: string;
+    callerParams: string[];
+    category: 'RECRUTEMENT' | 'PEDAGOGIE' | 'FINANCE' | 'ADMINISTRATIF' | 'COMMUNICATION' | 'SYSTEM';
+    module?: 'hr' | 'students' | 'pedagogy' | 'finance' | 'communication';
+    subCategory?: string;
+    recipientName?: string;
+    recipientType?: 'CANDIDAT' | 'PARENT' | 'STAFF' | 'ENSEIGNANT' | 'EXTERNE';
+    recipientId?: string;
+    relatedEntityId?: string;
+    relatedEntityType?: string;
+    triggeredBy?: 'SYSTEM' | 'STAFF' | 'AUTOMATION' | 'SARA';
+    triggeredByUserId?: string;
+    threadId?: string;
+  }): Promise<CategorizedSendResult> {
+    // 1. Charger le branding école
+    const branding = await this.getTenantBranding(params.tenantId);
+    const schoolDisplay = this.getSchoolDisplay(branding);
+
+    // 2. Valider le template
+    const template = this.templateRegistry.require(params.templateName);
+
+    // 3. Construire le tableau final de bodyParams en injectant schoolName en position 1
+    let fullBodyParams: string[];
+    try {
+      fullBodyParams = this.templateRegistry.buildBodyParams(
+        params.templateName,
+        schoolDisplay,
+        params.callerParams,
+      );
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err.message,
+      };
+    }
+
+    // 4. Construire les variables pour Gupshup (clé = index 1-based)
+    const templateVariables: Record<string, string> = {};
+    fullBodyParams.forEach((value, i) => {
+      templateVariables[String(i + 1)] = value;
+    });
+
+    // 5. Rendu final du message pour le log
+    const renderedMessage = this.templateRegistry.renderBody(
+      params.templateName,
+      fullBodyParams,
+    );
+
+    // 6. Source phone (numéro WhatsApp Business)
+    const fromPhone =
+      this.configService.get<string>('GUPSHUP_SOURCE_PHONE') || undefined;
+
+    // 7. Envoyer avec tracing
+    return this.sendCategorized({
+      tenantId: params.tenantId,
+      category: params.category,
+      subCategory: params.subCategory,
+      module: params.module,
+      to: params.to,
+      toName: params.recipientName,
+      recipientType: params.recipientType,
+      recipientId: params.recipientId,
+      fromPhone,
+      message: renderedMessage,
+      templateId: params.templateName,
+      templateLanguage: 'fr',
+      threadId: params.threadId,
+      triggeredBy: params.triggeredBy,
+      triggeredByUserId: params.triggeredByUserId,
+      relatedEntityId: params.relatedEntityId,
+      relatedEntityType: params.relatedEntityType,
+      templateName: params.templateName,
+      templateVariables,
+    });
+  }
+
+  // ========================================================================
+  // PROVIDER: GUPSHUP
+  // ========================================================================
+
+  /**
+   * Envoie un message WhatsApp via l'API Gupshup.io.
+   *
+   * Endpoint: POST https://api.gupshup.io/wa/api/v1/template/msg
+   * Headers: apikey + Content-Type: application/x-www-form-urlencoded
+   * Body (form-urlencoded):
+   *   - channel: "whatsapp"
+   *   - source: numéro WhatsApp Business (sans "+")
+   *   - destination: numéro destinataire (sans "+")
+   *   - src.name: nom de l'app Gupshup
+   *   - template: JSON { id: elementName, params: [val1, val2, ...] }
+   *
+   * Réponse: HTTP 202 + { status: "submitted", messageId: "..." }
+   */
+  private async sendViaGupshup(
+    request: WhatsAppRequest,
+  ): Promise<{ success: boolean; messageId?: string }> {
+    const apiKey = this.configService.get<string>('GUPSHUP_API_KEY');
+    const appName = this.configService.get<string>('GUPSHUP_APP_NAME');
+    const sourcePhone = this.configService.get<string>('GUPSHUP_SOURCE_PHONE');
+    const apiUrl =
+      this.configService.get<string>('GUPSHUP_API_URL') ||
+      'https://api.gupshup.io/wa/api/v1';
+
+    if (!apiKey || !appName || !sourcePhone) {
+      throw new Error(
+        'Configuration Gupshup incomplète. Vérifiez GUPSHUP_API_KEY, GUPSHUP_APP_NAME, GUPSHUP_SOURCE_PHONE',
+      );
+    }
+
+    // Source: numéro WhatsApp Business sans "+"
+    const source = toGupshupDestination(sourcePhone);
+    // Destination: numéro destinataire sans "+"
+    const destination = toGupshupDestination(request.to);
+
+    // ─── Cas 1: envoi via template ───
+    if (request.template) {
+      // Valider que le template existe dans le registry
+      const tpl = this.templateRegistry.get(request.template);
+      if (!tpl) {
+        throw new Error(
+          `Template WhatsApp inconnu: "${request.template}". ` +
+            `Templates disponibles: ${this.templateRegistry
+              .list()
+              .map((t) => t.elementName)
+              .slice(0, 5)
+              .join(', ')}...`,
+        );
+      }
+
+      // Gupshup attend les params dans l'ordre (pas de clés)
+      // Les variables reçues sont { "1": "val1", "2": "val2", ... }
+      const orderedParams: string[] = [];
+      if (request.variables) {
+        for (let i = 1; i <= tpl.bodyPlaceholderCount; i++) {
+          orderedParams.push(request.variables[String(i)] || '');
+        }
+      } else if (tpl.bodyPlaceholderCount > 0) {
+        throw new Error(
+          `Template "${request.template}" requiert ${tpl.bodyPlaceholderCount} variables, ` +
+            `mais request.variables est vide`,
+        );
+      }
+
+      const templatePayload = {
+        id: request.template,
+        params: orderedParams,
+      };
+
+      // Construction du body form-urlencoded
+      const formData = new URLSearchParams();
+      formData.append('channel', 'whatsapp');
+      formData.append('source', source);
+      formData.append('destination', destination);
+      formData.append('src.name', appName);
+      formData.append('template', JSON.stringify(templatePayload));
+
+      const url = `${apiUrl}/template/msg`;
+      this.logger.debug(
+        `Gupshup API call: POST ${url} | template=${request.template} | dest=${destination}`,
+      );
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          apikey: apiKey,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: formData.toString(),
+      });
+
+      const responseText = await response.text();
+      let result: any;
+      try {
+        result = JSON.parse(responseText);
+      } catch {
+        result = { raw: responseText };
+      }
+
+      // Gupshup retourne 202 + { status: "submitted", messageId: "..." } en cas de succès
+      if (
+        (response.status === 200 || response.status === 202) &&
+        (result.status === 'submitted' || result.status === 'success' || result.messageId)
+      ) {
+        const messageId =
+          result.messageId ||
+          result.response?.messages?.[0]?.id ||
+          result.response?.id ||
+          `gupshup-${Date.now()}`;
+        this.logger.log(
+          `✅ WhatsApp envoyé via Gupshup (template "${request.template}") à ${destination}: ${messageId}`,
+        );
+        return { success: true, messageId };
+      }
+
+      // Erreur
+      const errMsg =
+        result.message ||
+        result.error ||
+        result.raw ||
+        `HTTP ${response.status}`;
+      this.logger.error(
+        `❌ Gupshup API error for template "${request.template}" to ${destination}: ${errMsg}`,
+      );
+      this.logger.debug(`Gupshup full response: ${JSON.stringify(result)}`);
+      throw new Error(`Gupshup: ${errMsg}`);
+    }
+
+    // ─── Cas 2: envoi texte simple (sans template) ───
+    // Note: WhatsApp Business API n'autorise l'envoi de texte libre que dans
+    // les 24h suivant la dernière interaction de l'utilisateur (customer care window)
+    if (!request.message) {
+      throw new Error(
+        'Envoi WhatsApp sans template: request.message est requis',
+      );
+    }
+
+    const formData = new URLSearchParams();
+    formData.append('channel', 'whatsapp');
+    formData.append('source', source);
+    formData.append('destination', destination);
+    formData.append('src.name', appName);
+    formData.append('message', request.message);
+
+    const url = `${apiUrl}/msg`;
+    this.logger.debug(
+      `Gupshup API call (text): POST ${url} | dest=${destination}`,
+    );
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        apikey: apiKey,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: formData.toString(),
+    });
+
+    const responseText = await response.text();
+    let result: any;
+    try {
+      result = JSON.parse(responseText);
+    } catch {
+      result = { raw: responseText };
+    }
+
+    if (
+      (response.status === 200 || response.status === 202) &&
+      (result.status === 'submitted' || result.status === 'success' || result.messageId)
+    ) {
+      const messageId = result.messageId || `gupshup-${Date.now()}`;
+      this.logger.log(
+        `✅ WhatsApp envoyé via Gupshup (texte) à ${destination}: ${messageId}`,
+      );
+      return { success: true, messageId };
+    }
+
+    const errMsg = result.message || result.error || `HTTP ${response.status}`;
+    this.logger.error(
+      `❌ Gupshup API error (text) to ${destination}: ${errMsg}`,
+    );
+    throw new Error(`Gupshup: ${errMsg}`);
+  }
+
+  // ========================================================================
+  // PROVIDER: WHATSAPP BUSINESS (Facebook Graph API)
+  // ========================================================================
+
   /**
    * Envoie un message via WhatsApp Business API
    */
-  private async sendViaWhatsAppBusiness(request: WhatsAppRequest): Promise<{ success: boolean; messageId?: string }> {
-    const apiUrl = this.configService.get<string>('WHATSAPP_BUSINESS_API_URL') || 'https://graph.facebook.com/v18.0';
-    const accessToken = this.configService.get<string>('WHATSAPP_BUSINESS_ACCESS_TOKEN');
-    const phoneNumberId = this.configService.get<string>('WHATSAPP_BUSINESS_PHONE_NUMBER_ID');
+  private async sendViaWhatsAppBusiness(
+    request: WhatsAppRequest,
+  ): Promise<{ success: boolean; messageId?: string }> {
+    const apiUrl =
+      this.configService.get<string>('WHATSAPP_BUSINESS_API_URL') ||
+      'https://graph.facebook.com/v18.0';
+    const accessToken = this.configService.get<string>(
+      'WHATSAPP_BUSINESS_ACCESS_TOKEN',
+    );
+    const phoneNumberId = this.configService.get<string>(
+      'WHATSAPP_BUSINESS_PHONE_NUMBER_ID',
+    );
 
     if (!accessToken || !phoneNumberId) {
-      throw new Error('WhatsApp Business API configuration incomplete. Check WHATSAPP_BUSINESS_ACCESS_TOKEN and WHATSAPP_BUSINESS_PHONE_NUMBER_ID');
+      throw new Error(
+        'WhatsApp Business API configuration incomplete. Check WHATSAPP_BUSINESS_ACCESS_TOKEN and WHATSAPP_BUSINESS_PHONE_NUMBER_ID',
+      );
     }
 
-    // Si un template est fourni, utiliser l'API de template
     if (request.template) {
       const response = await fetch(`${apiUrl}/${phoneNumberId}/messages`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
+          Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           messaging_product: 'whatsapp',
-          to: request.to,
+          to: request.to.replace(/^\+/, ''),
           type: 'template',
           template: {
             name: request.template,
             language: { code: 'fr' },
-            components: request.variables ? [
-              {
-                type: 'body',
-                parameters: Object.entries(request.variables).map(([key, value]) => ({
-                  type: 'text',
-                  text: value,
-                })),
-              },
-            ] : [],
+            components: request.variables
+              ? [
+                  {
+                    type: 'body',
+                    parameters: Object.entries(request.variables).map(
+                      ([, value]) => ({ type: 'text', text: value }),
+                    ),
+                  },
+                ]
+              : [],
           },
         }),
       });
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(`WhatsApp Business API error: ${JSON.stringify(error)}`);
+        throw new Error(
+          `WhatsApp Business API error: ${JSON.stringify(error)}`,
+        );
       }
 
       const result = await response.json();
-      this.logger.log(`WhatsApp sent via Business API to ${request.to}: ${result.messages?.[0]?.id}`);
+      this.logger.log(
+        `WhatsApp sent via Business API to ${request.to}: ${result.messages?.[0]?.id}`,
+      );
 
       return {
         success: true,
@@ -111,20 +703,17 @@ export class WhatsAppService {
       };
     }
 
-    // Message texte simple
     const response = await fetch(`${apiUrl}/${phoneNumberId}/messages`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${accessToken}`,
+        Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         messaging_product: 'whatsapp',
-        to: request.to,
+        to: request.to.replace(/^\+/, ''),
         type: 'text',
-        text: {
-          body: request.message,
-        },
+        text: { body: request.message },
       }),
     });
 
@@ -134,7 +723,9 @@ export class WhatsAppService {
     }
 
     const result = await response.json();
-    this.logger.log(`WhatsApp sent via Business API to ${request.to}: ${result.messages?.[0]?.id}`);
+    this.logger.log(
+      `WhatsApp sent via Business API to ${request.to}: ${result.messages?.[0]?.id}`,
+    );
 
     return {
       success: true,
@@ -142,36 +733,41 @@ export class WhatsAppService {
     };
   }
 
+  // ========================================================================
+  // PROVIDER: TWILIO WHATSAPP
+  // ========================================================================
+
   /**
    * Envoie un message via Twilio WhatsApp
-   * Supporte deux méthodes :
-   * 1. Content SID avec variables (recommandé pour templates dynamiques)
-   * 2. Message texte simple (fallback)
    */
-  private async sendViaTwilioWhatsApp(request: WhatsAppRequest): Promise<{ success: boolean; messageId?: string }> {
+  private async sendViaTwilioWhatsApp(
+    request: WhatsAppRequest,
+  ): Promise<{ success: boolean; messageId?: string }> {
     const accountSid = this.configService.get<string>('TWILIO_ACCOUNT_SID');
     const authToken = this.configService.get<string>('TWILIO_AUTH_TOKEN');
-    const fromNumber = this.configService.get<string>('TWILIO_WHATSAPP_NUMBER') || 'whatsapp:+14155238886';
-    const defaultContentSid = this.configService.get<string>('TWILIO_WHATSAPP_CONTENT_SID');
+    const fromNumber =
+      this.configService.get<string>('TWILIO_WHATSAPP_NUMBER') ||
+      'whatsapp:+14155238886';
+    const defaultContentSid = this.configService.get<string>(
+      'TWILIO_WHATSAPP_CONTENT_SID',
+    );
 
     if (!accountSid || !authToken) {
-      throw new Error('Twilio configuration incomplete. Check TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN');
+      throw new Error(
+        'Twilio configuration incomplete. Check TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN',
+      );
     }
 
     if (!fromNumber) {
       throw new Error('TWILIO_WHATSAPP_NUMBER is required for WhatsApp messages');
     }
 
-    // Client Twilio
     const client = twilio(accountSid, authToken);
 
     try {
-      // Priorité 1 : Utiliser Content SID avec variables (template dynamique)
-      // Utilisé uniquement si contentSid ET contentVariables sont explicitement fournis
       if (request.contentSid && request.contentVariables) {
-        // Convertir les variables en JSON string comme requis par Twilio
         const contentVariables = JSON.stringify(request.contentVariables);
-        
+
         const result = await client.messages.create({
           from: fromNumber,
           to: `whatsapp:${request.to}`,
@@ -179,20 +775,16 @@ export class WhatsAppService {
           contentVariables: contentVariables,
         });
 
-        this.logger.log(`✅ WhatsApp sent via Twilio (Content SID) to ${request.to}: ${result.sid}`);
-        this.logger.debug(`💬 Twilio Message SID: ${result.sid}, Status: ${result.status}, Content SID: ${request.contentSid}, Variables: ${contentVariables}`);
+        this.logger.log(
+          `✅ WhatsApp sent via Twilio (Content SID) to ${request.to}: ${result.sid}`,
+        );
 
-        return {
-          success: true,
-          messageId: result.sid,
-        };
+        return { success: true, messageId: result.sid };
       }
 
-      // Priorité 2 : Utiliser Content SID par défaut si configuré ET contentVariables fourni
-      // (pour compatibilité avec l'envoi OTP qui utilise defaultContentSid)
       if (defaultContentSid && request.contentVariables) {
         const contentVariables = JSON.stringify(request.contentVariables);
-        
+
         const result = await client.messages.create({
           from: fromNumber,
           to: `whatsapp:${request.to}`,
@@ -200,18 +792,17 @@ export class WhatsAppService {
           contentVariables: contentVariables,
         });
 
-        this.logger.log(`✅ WhatsApp sent via Twilio (Content SID default) to ${request.to}: ${result.sid}`);
-        this.logger.debug(`💬 Twilio Message SID: ${result.sid}, Status: ${result.status}, Content SID: ${defaultContentSid}, Variables: ${contentVariables}`);
+        this.logger.log(
+          `✅ WhatsApp sent via Twilio (Content SID default) to ${request.to}: ${result.sid}`,
+        );
 
-        return {
-          success: true,
-          messageId: result.sid,
-        };
+        return { success: true, messageId: result.sid };
       }
 
-      // Priorité 3 : Message texte simple (pour conversations initiées par l'utilisateur)
       if (!request.message) {
-        throw new Error('Either contentSid with contentVariables or message is required for WhatsApp');
+        throw new Error(
+          'Either contentSid with contentVariables or message is required for WhatsApp',
+        );
       }
 
       const result = await client.messages.create({
@@ -220,77 +811,57 @@ export class WhatsAppService {
         to: `whatsapp:${request.to}`,
       });
 
-      this.logger.log(`✅ WhatsApp sent via Twilio (text) to ${request.to}: ${result.sid}`);
-      this.logger.debug(`💬 Twilio Message SID: ${result.sid}, Status: ${result.status}, Body: ${request.message.substring(0, 50)}...`);
+      this.logger.log(
+        `✅ WhatsApp sent via Twilio (text) to ${request.to}: ${result.sid}`,
+      );
 
-      return {
-        success: true,
-        messageId: result.sid,
-      };
+      return { success: true, messageId: result.sid };
     } catch (error: any) {
-      this.logger.error(`❌ Failed to send WhatsApp via Twilio to ${request.to}:`, error);
-      
-      // Gestion des erreurs spécifiques Twilio
+      this.logger.error(
+        `❌ Failed to send WhatsApp via Twilio to ${request.to}:`,
+        error,
+      );
+
       if (error.code === 21211) {
-        throw new Error('Numéro de téléphone invalide. Vérifiez le format (ex: +22961234567)');
+        throw new Error(
+          'Numéro de téléphone invalide. Vérifiez le format (ex: +22961234567)',
+        );
       } else if (error.code === 21614) {
-        throw new Error('Numéro WhatsApp Twilio invalide. Vérifiez TWILIO_WHATSAPP_NUMBER');
+        throw new Error(
+          'Numéro WhatsApp Twilio invalide. Vérifiez TWILIO_WHATSAPP_NUMBER',
+        );
       } else if (error.code === 20003) {
-        throw new Error('Identifiants Twilio invalides. Vérifiez TWILIO_ACCOUNT_SID et TWILIO_AUTH_TOKEN');
+        throw new Error(
+          'Identifiants Twilio invalides. Vérifiez TWILIO_ACCOUNT_SID et TWILIO_AUTH_TOKEN',
+        );
       }
-      
-      throw new Error(`Erreur Twilio WhatsApp: ${error.message || 'Échec d\'envoi WhatsApp'}`);
+
+      throw new Error(
+        `Erreur Twilio WhatsApp: ${error.message || "Échec d'envoi WhatsApp"}`,
+      );
     }
   }
 
-  /**
-   * Envoie un message via Gateway générique
-   */
-  private async sendViaGateway(request: WhatsAppRequest): Promise<{ success: boolean; messageId?: string }> {
-    const gatewayUrl = this.configService.get<string>('WHATSAPP_GATEWAY_URL');
-    const apiKey = this.configService.get<string>('WHATSAPP_GATEWAY_API_KEY');
-
-    if (!gatewayUrl || !apiKey) {
-      throw new Error('WhatsApp Gateway configuration incomplete. Check WHATSAPP_GATEWAY_URL and WHATSAPP_GATEWAY_API_KEY');
-    }
-
-    const response = await fetch(gatewayUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        to: request.to,
-        message: request.message,
-        template: request.template,
-        variables: request.variables,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`WhatsApp Gateway returned ${response.status}: ${await response.text()}`);
-    }
-
-    const result = await response.json();
-    this.logger.log(`WhatsApp sent via Gateway to ${request.to}: ${result.messageId || 'unknown'}`);
-
-    return {
-      success: true,
-      messageId: result.messageId || result.id,
-    };
-  }
+  // ========================================================================
+  // PROVIDER: INFOBIP
+  // ========================================================================
 
   /**
    * Envoie un message via Infobip WhatsApp
    */
-  private async sendViaInfobipWhatsApp(request: WhatsAppRequest): Promise<{ success: boolean; messageId?: string }> {
+  private async sendViaInfobipWhatsApp(
+    request: WhatsAppRequest,
+  ): Promise<{ success: boolean; messageId?: string }> {
     const apiUrl = this.configService.get<string>('INFOBIP_API_URL');
     const apiKey = this.configService.get<string>('INFOBIP_API_KEY');
-    const senderNumber = this.configService.get<string>('INFOBIP_WHATSAPP_NUMBER');
+    const senderNumber = this.configService.get<string>(
+      'INFOBIP_WHATSAPP_NUMBER',
+    );
 
     if (!apiUrl || !apiKey || !senderNumber) {
-      throw new Error('Configuration Infobip WhatsApp incomplète. Vérifiez INFOBIP_API_URL, INFOBIP_API_KEY et INFOBIP_WHATSAPP_NUMBER');
+      throw new Error(
+        'Configuration Infobip WhatsApp incomplète. Vérifiez INFOBIP_API_URL, INFOBIP_API_KEY et INFOBIP_WHATSAPP_NUMBER',
+      );
     }
 
     const payload: any = {
@@ -303,15 +874,15 @@ export class WhatsAppService {
         templateName: request.template,
         templateData: {
           body: {
-            placeholders: request.variables ? Object.values(request.variables) : [],
+            placeholders: request.variables
+              ? Object.values(request.variables)
+              : [],
           },
         },
         language: 'fr',
       };
     } else {
-      payload.content = {
-        text: request.message,
-      };
+      payload.content = { text: request.message };
     }
 
     const response = await fetch(`${apiUrl}/whatsapp/1/message/text`, {
@@ -327,26 +898,97 @@ export class WhatsAppService {
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       this.logger.error('Infobip WhatsApp API error:', errorData);
-      throw new Error(`Infobip WhatsApp error HTTP ${response.status}: ${JSON.stringify(errorData)}`);
+      throw new Error(
+        `Infobip WhatsApp error HTTP ${response.status}: ${JSON.stringify(errorData)}`,
+      );
     }
 
     const result = await response.json();
     const messageId = result.messageId || `infobip-wa-${Date.now()}`;
     this.logger.log(`✅ WhatsApp sent via Infobip to ${request.to}: ${messageId}`);
 
+    return { success: true, messageId };
+  }
+
+  // ========================================================================
+  // PROVIDER: GENERIC GATEWAY
+  // ========================================================================
+
+  /**
+   * Envoie un message via Gateway générique
+   */
+  private async sendViaGateway(
+    request: WhatsAppRequest,
+  ): Promise<{ success: boolean; messageId?: string }> {
+    const gatewayUrl = this.configService.get<string>('WHATSAPP_GATEWAY_URL');
+    const apiKey = this.configService.get<string>('WHATSAPP_GATEWAY_API_KEY');
+
+    if (!gatewayUrl || !apiKey) {
+      throw new Error(
+        'WhatsApp Gateway configuration incomplete. Check WHATSAPP_GATEWAY_URL and WHATSAPP_GATEWAY_API_KEY',
+      );
+    }
+
+    const response = await fetch(gatewayUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        to: request.to,
+        message: request.message,
+        template: request.template,
+        variables: request.variables,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `WhatsApp Gateway returned ${response.status}: ${await response.text()}`,
+      );
+    }
+
+    const result = await response.json();
+    this.logger.log(
+      `WhatsApp sent via Gateway to ${request.to}: ${result.messageId || 'unknown'}`,
+    );
+
     return {
       success: true,
-      messageId: messageId,
+      messageId: result.messageId || result.id,
     };
   }
+
+  // ========================================================================
+  // PROVIDER: MOCK (développement)
+  // ========================================================================
 
   /**
    * Mode mock (développement)
    */
-  private async sendMock(request: WhatsAppRequest): Promise<{ success: boolean; messageId?: string }> {
+  private async sendMock(
+    request: WhatsAppRequest,
+  ): Promise<{ success: boolean; messageId?: string }> {
     this.logger.log(`[MOCK WHATSAPP] To: ${request.to}`);
-    this.logger.log(`[MOCK WHATSAPP] Message: ${request.message}`);
-    this.logger.warn('⚠️  WhatsApp service is in MOCK mode. No messages will be sent. Configure WHATSAPP_PROVIDER for production.');
+    this.logger.log(`[MOCK WHATSAPP] Template: ${request.template || 'none'}`);
+    if (request.template && request.variables) {
+      this.logger.log(`[MOCK WHATSAPP] Variables: ${JSON.stringify(request.variables)}`);
+      try {
+        const rendered = this.templateRegistry.renderBody(
+          request.template,
+          Object.values(request.variables),
+        );
+        this.logger.log(`[MOCK WHATSAPP] Rendered:\n${rendered}`);
+      } catch (e: any) {
+        this.logger.warn(`[MOCK WHATSAPP] Render failed: ${e.message}`);
+      }
+    } else if (request.message) {
+      this.logger.log(`[MOCK WHATSAPP] Message: ${request.message}`);
+    }
+    this.logger.warn(
+      '⚠️  WhatsApp service is in MOCK mode. No messages will be sent. Configure WHATSAPP_PROVIDER=gupshup for production.',
+    );
 
     await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -355,6 +997,10 @@ export class WhatsAppService {
       messageId: `mock-whatsapp-${Date.now()}`,
     };
   }
+
+  // ========================================================================
+  // HELPERS MÉTIER
+  // ========================================================================
 
   /**
    * Formate un message de rappel de facturation
@@ -366,7 +1012,8 @@ export class WhatsAppService {
     status: string;
     renewalUrl: string;
   }): string {
-    const statusText = data.status === 'TRIAL_ACTIVE' ? 'période d\'essai' : 'abonnement';
+    const statusText =
+      data.status === 'TRIAL_ACTIVE' ? "période d'essai" : 'abonnement';
 
     return `🔔 *Rappel Academia Helm*
 

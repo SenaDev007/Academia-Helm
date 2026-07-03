@@ -8,15 +8,22 @@ export type CompressImageFileOptions = {
   maxEdge?: number;
   /** Qualité JPEG/WebP 0–1 (défaut 0.82). */
   quality?: number;
-  /** Sortie : JPEG très compatible ; WebP si le navigateur le supporte en toDataURL. */
-  mimeType?: 'image/jpeg' | 'image/webp';
+  /** Sortie : PNG préserve la transparence ; JPEG très compatible ; WebP si supporté. */
+  mimeType?: 'image/png' | 'image/jpeg' | 'image/webp';
+  /**
+   * Préserver la transparence (défaut : true).
+   * Si true et que le fichier source est PNG/WebP avec transparence, on garde PNG.
+   * Si false, on force le mimeType demandé (ex: JPEG = fond noir pour les PNG transparents).
+   */
+  preserveTransparency?: boolean;
 };
 
 const DEFAULT_MAX = 1024;
 const DEFAULT_Q = 0.82;
 
 /**
- * Lit un fichier image, redimensionne (fit inside), ré-encode en JPEG ou WebP.
+ * Lit un fichier image, redimensionne (fit inside), ré-encode.
+ * Par défaut, préserve la transparence (PNG) pour les logos et images avec alpha.
  */
 export async function compressImageFileToDataUrl(
   file: File,
@@ -24,7 +31,17 @@ export async function compressImageFileToDataUrl(
 ): Promise<string> {
   const maxEdge = options.maxEdge ?? DEFAULT_MAX;
   const quality = options.quality ?? DEFAULT_Q;
-  const mimeType = options.mimeType ?? 'image/jpeg';
+  const preserveTransparency = options.preserveTransparency ?? true;
+
+  // Déterminer le mimeType de sortie
+  let mimeType = options.mimeType ?? 'image/jpeg';
+
+  // ⚠️ Si le fichier source a de la transparence (PNG, WebP) et qu'on veut la préserver,
+  // on force PNG (le seul format universellement supporté avec alpha channel).
+  // JPEG ne supporte PAS la transparence → les pixels transparents deviennent NOIRS.
+  if (preserveTransparency && (file.type === 'image/png' || file.type === 'image/webp')) {
+    mimeType = 'image/png';
+  }
 
   if (!file.type.startsWith('image/')) {
     throw new TypeError('Le fichier doit être une image.');
@@ -52,6 +69,9 @@ export async function compressImageFileToDataUrl(
     if (!ctx) {
       throw new Error('Canvas 2D indisponible');
     }
+
+    // ⚠️ Ne PAS remplir le canvas avec une couleur de fond si on préserve la transparence.
+    // Le canvas est transparent par défaut. drawImage préserve l'alpha channel.
     ctx.drawImage(bitmap, 0, 0, w, h);
 
     if (mimeType === 'image/webp') {
@@ -59,9 +79,14 @@ export async function compressImageFileToDataUrl(
         const u = canvas.toDataURL('image/webp', quality);
         if (u.startsWith('data:image/webp')) return u;
       } catch {
-        /* fallback jpeg */
+        /* fallback png ou jpeg */
       }
     }
+
+    if (mimeType === 'image/png') {
+      return canvas.toDataURL('image/png');
+    }
+
     return canvas.toDataURL('image/jpeg', quality);
   } finally {
     bitmap.close();

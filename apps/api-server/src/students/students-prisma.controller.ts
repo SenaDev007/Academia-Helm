@@ -120,4 +120,18 @@ export class StudentsPrismaController {
       studentId: id,
     });
   }
+
+  /**
+   * POST /students/:id/upload-photo
+   * Upload photo d'élève via data URL (base64) — pattern identique au RH (staff).
+   * Body: { photoDataUrl: string }
+   */
+  @Post(':id/upload-photo')
+  async uploadPhoto(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @TenantId() tenantId: string,
+    @Body('photoDataUrl') photoDataUrl: string,
+  ) {
+    return this.studentsService.uploadStudentPhotoDataUrl(id, tenantId, photoDataUrl);
+  }
 }

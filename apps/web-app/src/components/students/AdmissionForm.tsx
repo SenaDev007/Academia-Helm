@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { User, MapPin, GraduationCap, Users, Shield, BookOpen, Globe, School, Save, Loader2 } from 'lucide-react';
+import { User, MapPin, GraduationCap, Users, Shield, BookOpen, School, Save, Loader2 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import PhoneInput from '@/components/ui/phone-input';
 
@@ -31,7 +31,7 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
     requestedLevelId: initialData?.requestedLevelId || schoolLevel?.id || '',
     requestedClassId: initialData?.requestedClassId || '',
     requestedSeriesId: initialData?.requestedSeriesId || '',
-    wantsBilingual: initialData?.wantsBilingual || false,
+    wantsBilingual: false, // Supprimé du formulaire — l'école est déjà bilingue ou non
     previousSchool: initialData?.previousSchool || '',
     previousLevel: initialData?.previousLevel || '',
     changeReason: initialData?.changeReason || '',
@@ -76,35 +76,35 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
   const loadClasses = async (levelId: string) => {
     setIsLoadingClasses(true);
     try {
-      // Utiliser l'API pédagogie qui retourne les classes officielles (AcademicClass)
-      // filtrées par année scolaire. On filtre ensuite côté client par niveau.
-      // ⚠️ L'API /api/classes utilise @SchoolLevelId() decorator qui attend un ID
-      // de school_levels (ancien modèle), pas education_levels. Pour éviter ce
-      // mismatch, on utilise /api/pedagogy/academic-structure/classes qui est
-      // plus fiable et retourne les classes avec leur level inclus.
-      const yearId = academicYear?.id || formData.academicYearId;
-      if (!yearId) {
-        setClasses([]);
-        return;
-      }
+      // ⚠️ On utilise /api/all-classes (route BFF dédiée) pour récupérer TOUTES
+      // les classes du tenant sans filtrage par schoolLevelId du contexte admin.
+      // La route /api/classes?schoolLevelId=ALL ne fonctionne pas car le
+      // PaginationDto du backend a forbidNonWhitelisted: true → rejette le param
+      // schoolLevelId (400 Bad Request silencieux).
+      // /api/all-classes contourne en forçant le header x-school-level-id=ALL.
       const res = await fetch(
-        `/api/pedagogy/academic-structure/classes?academicYearId=${yearId}`,
+        '/api/all-classes',
         { credentials: 'include' }
       );
       if (res.ok) {
         const data = await res.json();
         const allClasses = Array.isArray(data) ? data : [];
-        // Filtrer côté client par le niveau sélectionné.
-        // AcademicClass a une relation `level` (AcademicLevel) avec un champ `name`.
-        // On compare par nom (MATERNELLE/PRIMAIRE/SECONDAIRE) car les IDs sont
-        // différents entre EducationLevel et AcademicLevel.
+        console.log('[AdmissionForm] Loaded classes:', allClasses.length, allClasses.map(c => ({ id: c.id?.substring(0, 8), name: c.name })));
+        // Filtrer côté client par le schoolLevelId sélectionné.
+        // Les classes retournées ont un champ schoolLevelId (UUID de school_levels).
+        // levelId ici est aussi un UUID de education_levels (le select du formulaire
+        // utilise les education_levels). On doit donc faire un matching par nom.
         const selectedLevel = levels.find(l => l.id === levelId);
         const levelCode = selectedLevel?.code?.toUpperCase() || '';
+        const levelName = selectedLevel?.name?.toUpperCase() || '';
         const filtered = allClasses.filter((c: any) => {
-          if (!c.level) return false;
-          const classLevelName = (c.level.name || '').toUpperCase();
-          // Match par nom : MATERNELLE matche MATERNELLE, PRIMAIRE matche PRIMAIRE, etc.
-          return classLevelName === levelCode ||
+          // c.schoolLevel est inclus (relation), avec un champ name
+          const classLevelName = (c.schoolLevel?.name || '').toUpperCase();
+          const classLevelCode = (c.schoolLevel?.code || '').toUpperCase();
+          // Match par nom ou code : MATERNELLE matche MATERNELLE, etc.
+          if (!levelCode && !levelName) return true; // pas de filtre si pas de niveau sélectionné
+          return classLevelName === levelName ||
+                 classLevelCode === levelCode ||
                  classLevelName.includes(levelCode) ||
                  levelCode.includes(classLevelName);
         });
@@ -165,7 +165,7 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
         address: formData.address || undefined,
         requestedClassId: formData.requestedClassId || undefined,
         requestedSeriesId: formData.requestedSeriesId || undefined,
-        wantsBilingual: formData.wantsBilingual,
+        wantsBilingual: false, // Supprimé du formulaire — déterminé par la config de l'école
         previousSchool: formData.previousSchool || undefined,
         previousLevel: formData.previousLevel || undefined,
         changeReason: formData.changeReason || undefined,
@@ -380,21 +380,6 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
             className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-all"
             placeholder="Ex: Déménagement, recherche de meilleure qualité pédagogique..."
           />
-        </div>
-
-        <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-xl border border-slate-200">
-          <input
-            type="checkbox"
-            id="wantsBilingual"
-            name="wantsBilingual"
-            checked={formData.wantsBilingual}
-            onChange={handleInputChange}
-            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-          />
-          <label htmlFor="wantsBilingual" className="text-sm font-medium text-slate-700 flex items-center gap-2">
-            <Globe className="w-4 h-4 text-slate-400" />
-            Candidature pour le cursus bilingue (Français/Anglais)
-          </label>
         </div>
       </div>
 

@@ -51,7 +51,7 @@ export default function PublicReceiptVerificationPage() {
       const { getApiBaseUrl } = await import('@/lib/utils/urls');
       const apiUrl = getApiBaseUrl();
       const response = await fetch(
-        `${apiUrl}/receipts/public/verify/${token}`
+        `${apiUrl}/public/receipts/verify/${token}`
       );
 
       if (!response.ok) {

@@ -3,8 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Eye, Unlock } from 'lucide-react';
-import { ModuleHeader, SubModuleNavigation, ModuleContentArea } from '@/components/modules/blueprint';
-import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
+import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -13,9 +12,9 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
 import { financeService } from '@/services/finance.service';
 import { classesService } from '@/services/classes.service';
-import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
-import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
 import { formatCurrency } from '@/lib/utils';
+import { filterAndSortClasses } from '@/lib/finance/class-sort';
+import { Label } from '@/components/ui/label';
 
 const STATUS_COLORS: Record<string, string> = {
   PAID: 'bg-green-100 text-green-800',
@@ -27,8 +26,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function StudentAccountsContent() {
-  const { academicYear, tenantId } = useModuleContext();
-  const syncStatuses = useEntitySyncStatusBatch('STUDENT', tenantId ?? undefined);
+  const { academicYear } = useModuleContext();
   const { toast } = useToast();
   const [accounts, setAccounts] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
@@ -88,80 +86,80 @@ export default function StudentAccountsContent() {
     }
   };
 
-  const subModuleTabs = FINANCE_SUBMODULE_TABS.map((t) => ({
-    id: t.id,
-    label: t.label,
-    path: t.path,
-    icon: <t.icon className="w-4 h-4" />,
-  }));
-
   return (
-    <div className="space-y-6">
-      <ModuleHeader title="Comptes élèves" description="Solde, total dû, payé et statut par élève et par année." icon="finance" />
-      <SubModuleNavigation tabs={subModuleTabs} currentPath="/app/finance/accounts" />
-      <ModuleContentArea layout="custom">
-        <div className="mb-4 flex flex-wrap gap-4 items-center">
-          <span className="text-sm text-gray-600">Année : {academicYear?.label ?? '—'}</span>
-          <Select value={filterClassId || 'ALL'} onValueChange={(v) => setFilterClassId(v === 'ALL' ? '' : v)}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Filtre Classe" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">Toutes</SelectItem>
-              {classes.map((c) => (
-                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={filterStatus || 'ALL'} onValueChange={(v) => setFilterStatus(v === 'ALL' ? '' : v)}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Filtre Statut" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">Tous</SelectItem>
-              <SelectItem value="PAID">Payé</SelectItem>
-              <SelectItem value="PARTIAL">Partiel</SelectItem>
-              <SelectItem value="OVERDUE">En retard</SelectItem>
-              <SelectItem value="BLOCKED">Bloqué</SelectItem>
-              <SelectItem value="ACTIVE">Actif</SelectItem>
-            </SelectContent>
-          </Select>
+    <div className="space-y-4">
+      <ModuleContentArea
+        layout="custom"
+        toolbar={
+          <p className="text-sm text-slate-600">
+            Solde, total dû, payé et statut par élève et par année.
+          </p>
+        }
+      >
+        <div className="mb-4 flex flex-wrap gap-4 items-end">
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Classe</Label>
+            <Select value={filterClassId || 'ALL'} onValueChange={(v) => setFilterClassId(v === 'ALL' ? '' : v)}>
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder="Toutes les classes" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Toutes les classes</SelectItem>
+                {filterAndSortClasses(classes).map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Statut</Label>
+            <Select value={filterStatus || 'ALL'} onValueChange={(v) => setFilterStatus(v === 'ALL' ? '' : v)}>
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder="Tous les statuts" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Tous les statuts</SelectItem>
+                <SelectItem value="PAID">Payé</SelectItem>
+                <SelectItem value="PARTIAL">Partiel</SelectItem>
+                <SelectItem value="OVERDUE">En retard</SelectItem>
+                <SelectItem value="BLOCKED">Bloqué</SelectItem>
+                <SelectItem value="ACTIVE">Actif</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow>
+            <TableRow className="bg-gray-50">
               <TableHead>Élève</TableHead>
-              <TableHead>Total dû</TableHead>
-              <TableHead>Payé</TableHead>
-              <TableHead>Solde</TableHead>
+              <TableHead className="text-right">Total dû</TableHead>
+              <TableHead className="text-right">Payé</TableHead>
+              <TableHead className="text-right">Solde</TableHead>
               <TableHead>Statut</TableHead>
-              <TableHead>Sync</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-gray-500">Chargement...</TableCell>
+                <TableCell colSpan={6} className="text-center text-gray-500 py-8">Chargement...</TableCell>
               </TableRow>
             ) : accounts.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-gray-500">Aucun compte.</TableCell>
+                <TableCell colSpan={6} className="text-center text-gray-500 py-12">Aucun compte élève.</TableCell>
               </TableRow>
             ) : (
               accounts.map((a) => (
-                <TableRow key={a.id}>
+                <TableRow key={a.id} className="hover:bg-slate-50">
                   <TableCell className="font-medium">
                     {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.studentId}
                   </TableCell>
-                  <TableCell>{formatCurrency(a.totalDue)}</TableCell>
-                  <TableCell>{formatCurrency(a.totalPaid)}</TableCell>
-                  <TableCell>{formatCurrency(a.balance)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(a.totalDue)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(a.totalPaid)}</TableCell>
+                  <TableCell className="text-right font-semibold">{formatCurrency(a.balance)}</TableCell>
                   <TableCell>
                     <Badge className={STATUS_COLORS[a.status] ?? 'bg-gray-100 text-gray-800'}>{a.status}</Badge>
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <EntitySyncIndicator variant="dot" status={syncStatuses[a.id] ?? 'UNKNOWN'} />
                   </TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="icon" onClick={() => loadDetail(a.id)}>
@@ -178,6 +176,7 @@ export default function StudentAccountsContent() {
             )}
           </TableBody>
         </Table>
+        </div>
       </ModuleContentArea>
       {detailAccount && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">

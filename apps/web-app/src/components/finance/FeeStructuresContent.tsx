@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { financeService } from '@/services/finance.service';
-import { classesService } from '@/services/classes.service';
+import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 import { getAcademicYears } from '@/services/settings.service';
 import FeeStructureModal from './FeeStructureModal';
 import FeeOverrideModal from './FeeOverrideModal';
@@ -119,8 +119,15 @@ export default function FeeStructuresContent() {
   useEffect(() => { loadStructures(); }, [loadStructures]);
 
   useEffect(() => {
-    classesService.getAll({})
-      .then((d) => setClasses(Array.isArray(d) ? d : (d.data ?? [])))
+    // Utiliser la route BFF /api/all-classes (same-origin, pas de Cloudflare)
+    // au lieu de classesService.getAll() qui utilise axios cross-origin
+    const authHeaders = getClientAuthorizationHeader();
+    fetch('/api/all-classes', { headers: { ...authHeaders }, credentials: 'include', cache: 'no-store' })
+      .then((res) => res.json())
+      .then((d) => {
+        const cls = Array.isArray(d) ? d : (d.data ?? []);
+        setClasses(cls);
+      })
       .catch(() => setClasses([]));
     fetch('/api/school-levels')
       .then((res) => res.json())

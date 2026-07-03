@@ -11,7 +11,7 @@ export async function GET(
   const { id } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(normalizeApiUrl(`${API_URL}/api/finance/fees/definitions/${id}`), { headers });
+    const response = await fetch(normalizeApiUrl(`${API_URL}/finance/fees/definitions/${id}`), { headers });
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (e) {
@@ -27,7 +27,7 @@ export async function PUT(
   try {
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(normalizeApiUrl(`${API_URL}/api/finance/fees/definitions/${id}`), {
+    const response = await fetch(normalizeApiUrl(`${API_URL}/finance/fees/definitions/${id}`), {
       method: 'PUT',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -46,7 +46,7 @@ export async function DELETE(
   const { id } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(normalizeApiUrl(`${API_URL}/api/finance/fees/definitions/${id}`), {
+    const response = await fetch(normalizeApiUrl(`${API_URL}/finance/fees/definitions/${id}`), {
       method: 'DELETE',
       headers,
     });

@@ -435,32 +435,7 @@ export default function StudentsModulePage() {
                 },
               ]
             : [],
-          actions: (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleCreate}
-                disabled={schoolLevel?.id === 'ALL'}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Créer un nouvel élève</span>
-              </button>
-              <button
-                onClick={() => setIsImportModalOpen(true)}
-                className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
-              >
-                <Upload className="w-4 h-4" />
-                <span>Import</span>
-              </button>
-              <button
-                onClick={() => window.alert('Export EDUCMASTER : utilisez l\'action "Exporter" sur une ligne élève')}
-                className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
-              >
-                <Download className="w-4 h-4" />
-                <span>Export EDUCMASTER</span>
-              </button>
-            </div>
-          ),
+          actions: null,
         }}
         subModules={{
           activeModuleId: activeSubModuleId,
@@ -469,13 +444,13 @@ export default function StudentsModulePage() {
             { id: 'dashboard', label: 'Tableau de Bord', icon: <LayoutDashboard className="w-4 h-4" /> },
             { id: 'admissions', label: 'Admissions', icon: <UserPlus className="w-4 h-4" /> },
             { id: 'enrollments', label: 'Inscriptions', icon: <GraduationCap className="w-4 h-4" /> },
-            { id: 'dossiers', label: 'Dossiers Élèves', icon: <FileText className="w-4 h-4" /> },
-            { id: 'families', label: 'Familles', icon: <User className="w-4 h-4" /> },
             { id: 'assignments', label: 'Affectations', icon: <Share2 className="w-4 h-4" /> },
             { id: 'movements', label: 'Mouvements', icon: <History className="w-4 h-4" /> },
-            { id: 'history', label: 'Historique Scolaire', icon: <Archive className="w-4 h-4" /> },
             { id: 'finance', label: 'Régimes & Finance', icon: <DollarSign className="w-4 h-4" /> },
             { id: 'cards', label: 'Cartes Scolaires', icon: <IdCard className="w-4 h-4" /> },
+            { id: 'dossiers', label: 'Dossiers Élèves', icon: <FileText className="w-4 h-4" /> },
+            { id: 'families', label: 'Familles', icon: <User className="w-4 h-4" /> },
+            { id: 'history', label: 'Historique Scolaire', icon: <Archive className="w-4 h-4" /> },
             { id: 'compliance', label: 'Conformité', icon: <BadgeCheck className="w-4 h-4" /> },
             { id: 'educmaster', label: 'EDUCMASTER', icon: <Globe className="w-4 h-4" /> },
             { id: 'analytics', label: 'ORION & Stats', icon: <Activity className="w-4 h-4" /> },

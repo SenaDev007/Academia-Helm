@@ -11,7 +11,7 @@ export async function PATCH(
   const { id } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(normalizeApiUrl(`${API_URL}/api/finance/daily-closures/${id}/validate`), {
+    const response = await fetch(normalizeApiUrl(`${API_URL}/finance/daily-closures/${id}/validate`), {
       method: 'PATCH',
       headers,
     });

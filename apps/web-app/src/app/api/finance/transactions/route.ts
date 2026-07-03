@@ -6,9 +6,9 @@ const API_URL = getApiBaseUrlForRoutes();
 
 export async function GET(request: NextRequest) {
   try {
-    const q = request.nextUrl.searchParams.toString();
+    const qs = request.nextUrl.searchParams.toString();
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(normalizeApiUrl(`${API_URL}/api/finance/transactions${q ? `?${q}` : ''}`), { headers });
+    const response = await fetch(normalizeApiUrl(`${API_URL}/finance/transactions${qs ? `?${qs}` : ''}`), { headers });
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (e) {
@@ -20,8 +20,24 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(normalizeApiUrl(`${API_URL}/api/finance/transactions`), {
+    const response = await fetch(normalizeApiUrl(`${API_URL}/finance/transactions`), {
       method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json().catch(() => ({}));
+    return NextResponse.json(data, { status: response.status });
+  } catch (e) {
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const headers = await getProxyAuthHeaders(request);
+    const response = await fetch(normalizeApiUrl(`${API_URL}/finance/transactions`), {
+      method: 'PATCH',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });

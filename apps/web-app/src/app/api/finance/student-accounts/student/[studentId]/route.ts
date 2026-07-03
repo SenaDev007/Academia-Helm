@@ -12,7 +12,7 @@ export async function GET(
   try {
     const q = request.nextUrl.searchParams.toString();
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(normalizeApiUrl(`${API_URL}/api/finance/accounts/student/${studentId}${q ? `?${q}` : ''}`), { headers });
+    const response = await fetch(normalizeApiUrl(`${API_URL}/finance/accounts/student/${studentId}${q ? `?${q}` : ''}`), { headers });
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (e) {

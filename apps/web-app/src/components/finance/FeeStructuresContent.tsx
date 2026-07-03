@@ -210,8 +210,7 @@ export default function FeeStructuresContent() {
       {confirmDialog.dialog}
       <div className="space-y-4">
         <ModuleContentArea layout="custom" toolbar={
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <p className="text-sm text-slate-600">Priorité : Classe {'>'} Niveau {'>'} Override élève.</p>
+          <div className="flex items-center justify-end flex-wrap gap-3">
             <div className="flex gap-2">
               <Button onClick={() => setModalNewFee(true)}><Plus className="w-4 h-4 mr-2" />Nouveau frais</Button>
               <Button variant="outline" onClick={() => setCopyYearModal(true)}><Copy className="w-4 h-4 mr-2" />Copier année</Button>

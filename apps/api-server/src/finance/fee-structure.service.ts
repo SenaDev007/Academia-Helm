@@ -145,8 +145,19 @@ export class FeeStructureService {
     },
   ) {
     const where: any = { tenantId, academicYearId: filters.academicYearId };
-    if (filters.levelId) where.levelId = filters.levelId;
-    if (filters.classId) where.classId = filters.classId;
+
+    // Si levelId est fourni (sans classId), on inclut :
+    //  - les structures de niveau (levelId = filters.levelId)
+    //  - les structures de classe appartenant à ce niveau (class.schoolLevelId = filters.levelId)
+    if (filters.levelId && !filters.classId) {
+      where.OR = [
+        { levelId: filters.levelId },
+        { class: { schoolLevelId: filters.levelId } },
+      ];
+    } else {
+      if (filters.levelId) where.levelId = filters.levelId;
+      if (filters.classId) where.classId = filters.classId;
+    }
     if (filters.feeType) where.feeType = filters.feeType;
     if (filters.isActive !== undefined) where.isActive = filters.isActive;
 

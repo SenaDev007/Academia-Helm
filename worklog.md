@@ -1780,3 +1780,42 @@ Stage Summary:
   2. apps/web-app/src/components/students/AdmissionForm.tsx — fallback option pour classe hors liste
 - Aucune migration DB nécessaire
 - L'admission existante affichera un UUID tronqué (données anciennes), mais les nouvelles admissions afficheront le vrai nom de classe
+
+---
+Task ID: fix-filtre-niveau-toutes-classes
+Agent: main
+Task: Corriger le filtrage des frais par niveau quand "Toutes les classes" est sélectionné + supprimer le texte "Priorité" du header
+
+Work Log:
+- Constat utilisateur : le filtre niveau+classe marche, mais quand on sélectionne un niveau
+  (Maternelle/Primaire) ET "Toutes les classes", seules les structures ayant `levelId` défini
+  s'affichent. Les structures ayant un `classId` (sans `levelId`) appartenant à ce niveau
+  n'apparaissent pas.
+
+- Cause racine : backend fee-structure.service.ts → findAll()
+  Le filtre `where.levelId = filters.levelId` ne matche QUE les structures de niveau.
+  Les structures créées avec une classe spécifique ont `levelId = null` et sont exclues.
+
+- Fix backend : fee-structure.service.ts findAll()
+  Quand `levelId` est fourni SANS `classId`, on utilise une condition OR :
+    where.OR = [
+      { levelId: filters.levelId },                       // structures de niveau
+      { class: { schoolLevelId: filters.levelId } },      // structures de classe du niveau
+    ];
+  Vérifié Prisma : Class.schoolLevelId → SchoolLevel.id (relation valide)
+  Quand `classId` est aussi fourni, on garde l'ancien comportement (filtre exact).
+
+- Fix frontend : FeeStructuresContent.tsx toolbar
+  Suppression du texte "Priorité : Classe > Niveau > Override élève."
+  Le conteneur flex passe de `justify-between` à `justify-end` (boutons à droite uniquement).
+
+Stage Summary:
+- 2 fichiers modifiés :
+  1. apps/api-server/src/finance/fee-structure.service.ts — findAll() avec OR levelId/class.schoolLevelId
+  2. apps/web-app/src/components/finance/FeeStructuresContent.tsx — suppression texte Priorité
+- Comportement attendu après déploiement :
+  * Sélectionner "Maternelle" + "Toutes les classes" → affiche TOUTES les configurations
+    (niveau Maternelle + toutes les classes CI/CP/... appartenant à Maternelle)
+  * Idem pour Primaire, Secondaire
+  * Sélectionner un niveau + une classe spécifique → filtre exact (comportement inchangé)
+- Aucune migration DB nécessaire

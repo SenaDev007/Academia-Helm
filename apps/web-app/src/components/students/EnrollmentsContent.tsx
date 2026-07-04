@@ -1140,10 +1140,20 @@ export default function EnrollmentsContent() {
                 if (isAutoSave) {
                   if (existingStudentId) {
                     // Update simple (pas de admit, pas de preRegister)
+                    // ⚠️ Le backend UpdateStudentPrismaDto n'accepte QUE : firstName,
+                    // lastName, dateOfBirth, gender, nationality, primaryLanguage,
+                    // npi, photoUrl, placeOfBirth, status. academicYearId et
+                    // schoolLevelId sont REJETÉS (forbidNonWhitelisted: true).
                     await studentsService.update(existingStudentId, {
-                      ...data.student,
-                      academicYearId: academicYear.id,
-                      schoolLevelId: schoolLevel.id,
+                      firstName: data.student.firstName,
+                      lastName: data.student.lastName,
+                      dateOfBirth: data.student.dateOfBirth,
+                      gender: data.student.gender,
+                      nationality: data.student.nationality,
+                      primaryLanguage: data.student.primaryLanguage,
+                      npi: data.student.npi,
+                      photoUrl: data.student.photoUrl,
+                      placeOfBirth: data.student.placeOfBirth,
                     });
                     // Changement de classe si fournie
                     if (data.classId) {
@@ -1176,7 +1186,7 @@ export default function EnrollmentsContent() {
                   } else {
                     // Première étape : créer en PRE_REGISTER (sans admit)
                     student = await studentsService.preRegister({
-                      academicYearId: academicYear.id, schoolLevelId: schoolLevel.id,
+                      academicYearId: academicYear.id, schoolLevelId: schoolLevel.schoolLevelId || schoolLevel.id,
                       firstName: data.student.firstName, lastName: data.student.lastName,
                       dateOfBirth: data.student.dateOfBirth, gender: data.student.gender,
                       nationality: data.student.nationality, placeOfBirth: data.student.placeOfBirth,
@@ -1203,15 +1213,22 @@ export default function EnrollmentsContent() {
                     student = await studentsService.admit({
                       studentId: existingStudentId,
                       academicYearId: academicYear.id,
-                      schoolLevelId: schoolLevel.id,
+                      schoolLevelId: schoolLevel.schoolLevelId || schoolLevel.id,
                       classId: data.classId,
                     });
                   } else {
                     // PRE_REGISTER final : l'élève existe déjà, on le retourne
+                    // ⚠️ Ne pas envoyer academicYearId ni schoolLevelId (rejetés par UpdateStudentPrismaDto)
                     student = await studentsService.update(existingStudentId, {
-                      ...data.student,
-                      academicYearId: academicYear.id,
-                      schoolLevelId: schoolLevel.id,
+                      firstName: data.student.firstName,
+                      lastName: data.student.lastName,
+                      dateOfBirth: data.student.dateOfBirth,
+                      gender: data.student.gender,
+                      nationality: data.student.nationality,
+                      primaryLanguage: data.student.primaryLanguage,
+                      npi: data.student.npi,
+                      photoUrl: data.student.photoUrl,
+                      placeOfBirth: data.student.placeOfBirth,
                     });
                   }
                 } else {
@@ -1219,7 +1236,7 @@ export default function EnrollmentsContent() {
                   // créer + éventuellement admettre
                   if (data.operation === 'PRE_REGISTER') {
                     student = await studentsService.preRegister({
-                      academicYearId: academicYear.id, schoolLevelId: schoolLevel.id,
+                      academicYearId: academicYear.id, schoolLevelId: schoolLevel.schoolLevelId || schoolLevel.id,
                       firstName: data.student.firstName, lastName: data.student.lastName,
                       dateOfBirth: data.student.dateOfBirth, gender: data.student.gender,
                       nationality: data.student.nationality, placeOfBirth: data.student.placeOfBirth,
@@ -1228,7 +1245,7 @@ export default function EnrollmentsContent() {
                   } else {
                     // ADMIT : preRegister + admit
                     student = await studentsService.preRegister({
-                      academicYearId: academicYear.id, schoolLevelId: schoolLevel.id,
+                      academicYearId: academicYear.id, schoolLevelId: schoolLevel.schoolLevelId || schoolLevel.id,
                       firstName: data.student.firstName, lastName: data.student.lastName,
                       dateOfBirth: data.student.dateOfBirth, gender: data.student.gender,
                       nationality: data.student.nationality, placeOfBirth: data.student.placeOfBirth,
@@ -1237,7 +1254,7 @@ export default function EnrollmentsContent() {
                     student = await studentsService.admit({
                       studentId: student.id,
                       academicYearId: academicYear.id,
-                      schoolLevelId: schoolLevel.id,
+                      schoolLevelId: schoolLevel.schoolLevelId || schoolLevel.id,
                       classId: data.classId,
                     });
                   }
@@ -1406,10 +1423,17 @@ export default function EnrollmentsContent() {
               const isFinalSubmit = (data as any)._isFinalSubmit === true;
               // ⚠️ Le update de base est le seul appel critique — les autres sont non bloquants
               // On inclut photoUrl dans le update() directement (contournement endpoint upload-photo)
+              // ⚠️ Ne pas envoyer academicYearId ni schoolLevelId (rejetés par UpdateStudentPrismaDto)
               await studentsService.update(editEnrollment.student.id, {
-                ...data.student,
-                academicYearId: academicYear.id,
-                schoolLevelId: schoolLevel.id,
+                firstName: data.student.firstName,
+                lastName: data.student.lastName,
+                dateOfBirth: data.student.dateOfBirth,
+                gender: data.student.gender,
+                nationality: data.student.nationality,
+                primaryLanguage: data.student.primaryLanguage,
+                npi: data.student.npi,
+                photoUrl: data.student.photoUrl,
+                placeOfBirth: data.student.placeOfBirth,
               });
               // Upload photo via endpoint dédié (pattern RH) — non bloquant
               if (data.student.photoUrl && data.student.photoUrl.startsWith('data:')) {

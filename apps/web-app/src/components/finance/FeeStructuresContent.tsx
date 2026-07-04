@@ -787,32 +787,12 @@ export default function FeeStructuresContent() {
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold text-slate-700">Code du régime <span className="text-red-500">*</span></Label>
                 <Select value={regimeForm.code} onValueChange={(v) => setRegimeForm({ ...regimeForm, code: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Sélectionner un code" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="STANDARD">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-[9px] font-mono">STANDARD</Badge>
-                        <span className="text-xs text-slate-600">Tarif normal</span>
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="ENFANT_ENSEIGNANT">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-[9px] font-mono">ENFANT_ENSEIGNANT</Badge>
-                        <span className="text-xs text-slate-600">Personnel</span>
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="REDUCTION">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-[9px] font-mono">REDUCTION</Badge>
-                        <span className="text-xs text-slate-600">Réduction</span>
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="BOURSE">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-[9px] font-mono">BOURSE</Badge>
-                        <span className="text-xs text-slate-600">Boursier</span>
-                      </div>
-                    </SelectItem>
+                    <SelectItem value="STANDARD">STANDARD — Tarif normal</SelectItem>
+                    <SelectItem value="ENFANT_ENSEIGNANT">ENFANT_ENSEIGNANT — Personnel</SelectItem>
+                    <SelectItem value="REDUCTION">REDUCTION — Réduction</SelectItem>
+                    <SelectItem value="BOURSE">BOURSE — Boursier</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -857,7 +837,7 @@ export default function FeeStructuresContent() {
                 <Button
                   type="submit"
                   disabled={regimeSubmitting || !regimeForm.schoolLevelId || !regimeForm.label.trim()}
-                  className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 min-w-[120px]"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white min-w-[120px]"
                 >
                   {regimeSubmitting ? (
                     <>

@@ -1130,6 +1130,7 @@ export default function EnrollmentsContent() {
               try {
                 let student: any;
                 if (data.operation === 'PRE_REGISTER') {
+                  // Pré-inscription simple (statut PRE_REGISTERED, sans matricule)
                   student = await studentsService.preRegister({
                     academicYearId: academicYear.id, schoolLevelId: schoolLevel.id,
                     firstName: data.student.firstName, lastName: data.student.lastName,
@@ -1138,20 +1139,60 @@ export default function EnrollmentsContent() {
                     photoUrl: data.student.photoUrl, classId: data.classId,
                   });
                 } else {
-                  student = await studentsService.create({ ...data.student, academicYearId: academicYear.id, schoolLevelId: schoolLevel.id });
+                  // Admission formelle (ADMIT) :
+                  // 1) preRegister → crée Student + Enrollment PRE_REGISTERED
+                  // 2) admit → génère matricule, change statut ADMITTED, assigne classe
+                  student = await studentsService.preRegister({
+                    academicYearId: academicYear.id, schoolLevelId: schoolLevel.id,
+                    firstName: data.student.firstName, lastName: data.student.lastName,
+                    dateOfBirth: data.student.dateOfBirth, gender: data.student.gender,
+                    nationality: data.student.nationality, placeOfBirth: data.student.placeOfBirth,
+                    photoUrl: data.student.photoUrl, classId: data.classId,
+                  });
+                  // L'admission formelle — indispensable pour avoir un matricule
+                  student = await studentsService.admit({
+                    studentId: student.id,
+                    academicYearId: academicYear.id,
+                    schoolLevelId: schoolLevel.id,
+                    classId: data.classId,
+                  });
                 }
-                await financeService.createStudentFeeProfile({ studentId: student.id, academicYearId: academicYear.id, feeRegimeId: data.feeProfile.feeRegimeId, justification: data.feeProfile.justification }).catch(() => undefined);
+                // Régime tarifaire (non bloquant)
+                await financeService.createStudentFeeProfile({
+                  studentId: student.id,
+                  academicYearId: academicYear.id,
+                  feeRegimeId: data.feeProfile.feeRegimeId,
+                  justification: data.feeProfile.justification,
+                }).catch((e: any) => console.warn('FeeProfile:', e?.message));
+                // Parents / tuteurs (non bloquant)
                 if (data.guardians?.length) {
                   for (const g of data.guardians) {
                     if (!g.firstName?.trim() && !g.lastName?.trim()) continue;
-                    await studentsService.addGuardians(student.id, { guardians: [{ firstName: g.firstName, lastName: g.lastName, relationship: g.relationship || 'GUARDIAN', phone: g.phone, email: g.email, isPrimary: g.isPrimary ?? false }] }).catch(() => undefined);
+                    await studentsService.addGuardians(student.id, {
+                      guardians: [{
+                        firstName: g.firstName, lastName: g.lastName,
+                        relationship: g.relationship || 'GUARDIAN',
+                        phone: g.phone, email: g.email, isPrimary: g.isPrimary ?? false,
+                      }],
+                    }).catch((e: any) => console.warn('Guardian:', e?.message));
                   }
                 }
-                toast({ title: 'Succès', description: 'Inscription effectuée', variant: 'success' });
+                toast({
+                  title: data.operation === 'PRE_REGISTER' ? 'Pré-inscription enregistrée' : 'Admission effectuée',
+                  description: data.operation === 'PRE_REGISTER'
+                    ? `${data.student.firstName} ${data.student.lastName} a été pré-inscrit(e).`
+                    : `${data.student.firstName} ${data.student.lastName} a été admis(e)${student?.matricule ? ` (matricule: ${student.matricule})` : ''}.`,
+                  variant: 'success',
+                });
                 setIsCreateModalOpen(false);
                 loadData();
               } catch (e: any) {
-                toast({ title: 'Erreur', description: e.message, variant: 'error' });
+                console.error('Erreur inscription:', e);
+                toast({
+                  title: "Erreur lors de l'inscription",
+                  description: e?.message || 'Une erreur est survenue. Veuillez réessayer.',
+                  variant: 'error',
+                });
               }
             }}
             onCancel={() => setIsCreateModalOpen(false)}

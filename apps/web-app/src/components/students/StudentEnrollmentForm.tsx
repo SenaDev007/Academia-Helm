@@ -1422,7 +1422,10 @@ export default function StudentEnrollmentForm({
                 </p>
               )}
               {formData.classId && (
-                <p className="text-gray-700">Classe cible : {formData.classId}</p>
+                <p className="text-gray-700">
+                  Classe cible :{' '}
+                  {classesList.find((c) => c.id === formData.classId)?.name ?? formData.classId}
+                </p>
               )}
             </div>
           </div>

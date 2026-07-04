@@ -328,6 +328,25 @@ class StudentsService {
   }
 
   /**
+   * Admission formelle : génère le matricule institutionnel,
+   * change le statut d'enrollment PRE_REGISTERED → ADMITTED,
+   * assigne la classe (si fournie) et crée le dossier académique.
+   * Backend : POST /students/admit
+   */
+  async admit(data: {
+    studentId: string;
+    academicYearId: string;
+    schoolLevelId: string;
+    classId?: string | null;
+    validateDocuments?: boolean;
+  }): Promise<any> {
+    return apiFetch(`${BASE_URL}/admit`, {
+      method: "POST",
+      body: data,
+    });
+  }
+
+  /**
    * Ajouter des tuteurs
    */
   async addGuardians(

@@ -1801,7 +1801,6 @@ model User {
   feeOverridesCreated                       FeeOverride[]                     @relation("FeeOverrideCreator")
   feeStructuresCreated                      FeeStructure[]                    @relation("FeeStructureCreator")
   validatedFinanceDailyClosures             FinanceDailyClosure[]             @relation("FinanceDailyClosureValidator")
-  cashRegistersResponsible                  CashRegister[]                    @relation("CashRegisterResponsible")
   cashRegistersOpened                       CashRegister[]                    @relation("CashRegisterOpenedBy")
   cashRegistersClosed                       CashRegister[]                    @relation("CashRegisterClosedBy")
   approvedFinanceExpenses                   FinanceExpense[]                  @relation("FinanceExpenseApprover")

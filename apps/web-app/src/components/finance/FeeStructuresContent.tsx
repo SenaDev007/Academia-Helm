@@ -6,6 +6,7 @@ import { Plus, Copy, UserCog, Pencil, Trash2, X, ChevronDown, Calendar, Clock, C
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
@@ -660,7 +661,7 @@ export default function FeeStructuresContent() {
           <div className="mb-3">
             <Select value={regimeLevelId || 'ALL'} onValueChange={(v) => { setRegimeLevelId(v === 'ALL' ? '' : v); }}>
               <SelectTrigger className="w-[260px]"><SelectValue placeholder="Sélectionner un niveau" /></SelectTrigger>
-              <SelectContent>
+              <SelectContent className="w-[260px]">
                 <SelectItem value="ALL">Tous les niveaux</SelectItem>
                 {levels.map((l) => (<SelectItem key={l.id} value={l.id}>{l.label ?? l.code ?? l.name}</SelectItem>))}
               </SelectContent>

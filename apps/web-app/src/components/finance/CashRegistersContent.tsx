@@ -307,6 +307,13 @@ export default function CashRegistersContent() {
         description: editModal.description,
         location: editModal.location,
         responsibleUserId: editModal.responsibleUserId || undefined,
+        // Champs bancaires
+        bankName: editModal.bankName || undefined,
+        bankAccountNumber: editModal.bankAccountNumber || undefined,
+        bankIBAN: editModal.bankIBAN || undefined,
+        bankBranch: editModal.bankBranch || undefined,
+        bankAccountType: editModal.bankAccountType || undefined,
+        bankContact: editModal.bankContact || undefined,
       });
       toast({ title: '✅ Caisse mise à jour' });
       setEditModal(null);
@@ -435,7 +442,8 @@ export default function CashRegistersContent() {
   const getPosition = (index: number, total: number) => {
     if (total <= 0) return { x: 0, y: 0 };
     const angle = (index / total) * 2 * Math.PI - Math.PI / 2; // Commence en haut
-    const radius = Math.min(280, 140 + total * 20); // Rayon dynamique
+    // Rayon dynamique : plus il y a de caisses, plus le cercle est grand
+    const radius = Math.max(180, Math.min(320, 120 + total * 30));
     return {
       x: Math.cos(angle) * radius,
       y: Math.sin(angle) * radius,
@@ -535,7 +543,7 @@ export default function CashRegistersContent() {
             </div>
 
             {/* === CONSTELLATION COFFRE-FORT + CAISSES === */}
-            <div className="relative bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl border border-slate-200 overflow-hidden" style={{ minHeight: '640px' }}>
+            <div className="relative bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl border border-slate-200 overflow-hidden" style={{ minHeight: '720px' }}>
 
               {/* Décor : grille subtile en fond */}
               <div className="absolute inset-0 opacity-[0.03]" style={{
@@ -1050,30 +1058,49 @@ export default function CashRegistersContent() {
         </DialogContent>
       </Dialog>
 
-      {/* === Modal Édition === */}
+      {/* === Modal Édition — identique au modal création avec tous les champs === */}
       <Dialog open={!!editModal} onOpenChange={(v) => !v && setEditModal(null)}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Modifier la caisse {editModal?.code}</DialogTitle>
           </DialogHeader>
           {editModal && (
-            <div className="space-y-4 py-2">
+            <div className="space-y-4 py-2 max-h-[60vh] overflow-y-auto">
+              {/* Nom */}
               <div>
-                <Label htmlFor="edit-name">Nom</Label>
-                <Input
-                  id="edit-name"
-                  value={editModal.name}
-                  onChange={(e) => setEditModal({ ...editModal, name: e.target.value })}
-                />
+                <Label htmlFor="edit-name">Nom de la caisse *</Label>
+                <Input id="edit-name" value={editModal.name} onChange={(e) => setEditModal({ ...editModal, name: e.target.value })} />
               </div>
+
+              {/* Solde d'ouverture (lecture seule en édition = solde courant modifiable) */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="edit-openingBalance">Solde d'ouverture (XOF)</Label>
+                  <Input
+                    id="edit-openingBalance"
+                    type="number"
+                    value={String(editModal.openingBalance ?? '')}
+                    onChange={(e) => setEditModal({ ...editModal, openingBalance: e.target.value } as any)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-currentBalance">Solde courant (XOF)</Label>
+                  <Input
+                    id="edit-currentBalance"
+                    type="number"
+                    value={String(editModal.currentBalance ?? '')}
+                    onChange={(e) => setEditModal({ ...editModal, currentBalance: e.target.value } as any)}
+                  />
+                </div>
+              </div>
+
+              {/* Emplacement */}
               <div>
                 <Label htmlFor="edit-location">Emplacement</Label>
-                <Input
-                  id="edit-location"
-                  value={editModal.location || ''}
-                  onChange={(e) => setEditModal({ ...editModal, location: e.target.value })}
-                />
+                <Input id="edit-location" value={editModal.location || ''} onChange={(e) => setEditModal({ ...editModal, location: e.target.value })} />
               </div>
+
+              {/* Responsable */}
               <div>
                 <Label htmlFor="edit-responsible">Responsable de la caisse</Label>
                 <select
@@ -1090,13 +1117,59 @@ export default function CashRegistersContent() {
                   ))}
                 </select>
               </div>
+
+              {/* Description */}
               <div>
                 <Label htmlFor="edit-description">Description</Label>
-                <Input
-                  id="edit-description"
-                  value={editModal.description || ''}
-                  onChange={(e) => setEditModal({ ...editModal, description: e.target.value })}
-                />
+                <Input id="edit-description" value={editModal.description || ''} onChange={(e) => setEditModal({ ...editModal, description: e.target.value })} />
+              </div>
+
+              {/* Champs bancaires — si la caisse est de type banque */}
+              {(editModal.name?.toLowerCase().includes('banque') || editModal.code?.toUpperCase() === 'BANQUE') && (
+                <div className="space-y-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Banknote className="w-4 h-4 text-amber-600" />
+                    <p className="text-sm font-semibold text-amber-800">Informations bancaires</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs">Nom de la banque</Label>
+                      <Input value={editModal.bankName || ''} onChange={(e) => setEditModal({ ...editModal, bankName: e.target.value } as any)} />
+                    </div>
+                    <div>
+                      <Label className="text-xs">N° de compte</Label>
+                      <Input value={editModal.bankAccountNumber || ''} onChange={(e) => setEditModal({ ...editModal, bankAccountNumber: e.target.value } as any)} />
+                    </div>
+                    <div>
+                      <Label className="text-xs">IBAN</Label>
+                      <Input value={editModal.bankIBAN || ''} onChange={(e) => setEditModal({ ...editModal, bankIBAN: e.target.value } as any)} />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Agence</Label>
+                      <Input value={editModal.bankBranch || ''} onChange={(e) => setEditModal({ ...editModal, bankBranch: e.target.value } as any)} />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Type de compte</Label>
+                      <select value={editModal.bankAccountType || ''} onChange={(e) => setEditModal({ ...editModal, bankAccountType: e.target.value } as any)} className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-white text-sm">
+                        <option value="">— Choisir —</option>
+                        <option value="COURANT">Compte courant</option>
+                        <option value="EPARGNE">Compte épargne</option>
+                      </select>
+                    </div>
+                    <div>
+                      <Label className="text-xs">Contact gestionnaire</Label>
+                      <Input value={editModal.bankContact || ''} onChange={(e) => setEditModal({ ...editModal, bankContact: e.target.value } as any)} />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Infos dynamiques (lecture seule) */}
+              <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-lg text-xs text-slate-600">
+                <div><strong>Ouverte le :</strong> {editModal.openedAt ? new Date(editModal.openedAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}</div>
+                <div><strong>Fermée le :</strong> {editModal.closedAt ? new Date(editModal.closedAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}</div>
+                <div><strong>Ouv. par :</strong> {editModal.openedBy ? `${editModal.openedBy.firstName || ''} ${editModal.openedBy.lastName || ''}`.trim() : '—'}</div>
+                <div><strong>Ferm. par :</strong> {editModal.closedBy ? `${editModal.closedBy.firstName || ''} ${editModal.closedBy.lastName || ''}`.trim() : '—'}</div>
               </div>
             </div>
           )}

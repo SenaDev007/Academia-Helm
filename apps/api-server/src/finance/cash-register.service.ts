@@ -88,31 +88,14 @@ export class CashRegisterService {
     }
 
     const openingBalance = dto.openingBalance ?? 0;
-
-    // Résoudre responsibleUserId : si c'est un Staff ID (pas un User ID),
-    // chercher le User correspondant via User.staffId
-    let resolvedResponsibleUserId = dto.responsibleUserId || null;
-    if (dto.responsibleUserId) {
-      const userExists = await this.prisma.user.findFirst({
-        where: { id: dto.responsibleUserId },
-        select: { id: true },
-      });
-      if (!userExists) {
-        const userWithStaff = await this.prisma.user.findFirst({
-          where: { staffId: dto.responsibleUserId },
-          select: { id: true },
-        });
-        resolvedResponsibleUserId = userWithStaff?.id || null;
-      }
-    }
-
+    // responsibleUserId stocke directement le Staff ID (pas de FK, pas de résolution)
     return this.prisma.cashRegister.create({
       data: {
         tenantId,
         code: dto.code,
         name: dto.name,
         description: dto.description,
-        responsibleUserId: resolvedResponsibleUserId,
+        responsibleUserId: dto.responsibleUserId || null,
         location: dto.location,
         openingBalance: new Prisma.Decimal(openingBalance),
         currentBalance: new Prisma.Decimal(openingBalance),
@@ -126,7 +109,6 @@ export class CashRegisterService {
         bankContact: dto.bankContact || null,
       },
       include: {
-        responsibleUser: { select: { id: true, firstName: true, lastName: true, email: true } },
         _count: { select: { transactions: true } },
       },
     });
@@ -145,12 +127,9 @@ export class CashRegisterService {
     if (filters?.isOpen !== undefined) where.isOpen = filters.isOpen;
     if (filters?.responsibleUserId) where.responsibleUserId = filters.responsibleUserId;
 
-    return this.prisma.cashRegister.findMany({
+    const registers = await this.prisma.cashRegister.findMany({
       where,
       include: {
-        responsibleUser: {
-          select: { id: true, firstName: true, lastName: true, email: true },
-        },
         openedBy: {
           select: { id: true, firstName: true, lastName: true },
         },
@@ -158,6 +137,22 @@ export class CashRegisterService {
       },
       orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
     });
+
+    // Enrichir avec les infos du staff responsable (responsibleUserId = Staff.id)
+    const staffIds = registers.map((r) => r.responsibleUserId).filter(Boolean);
+    let staffMap = new Map<string, any>();
+    if (staffIds.length > 0) {
+      const staffs = await this.prisma.staff.findMany({
+        where: { id: { in: staffIds } },
+        select: { id: true, firstName: true, lastName: true, position: true, email: true, employeeNumber: true },
+      });
+      staffMap = new Map(staffs.map((s) => [s.id, s]));
+    }
+
+    return registers.map((r) => ({
+      ...r,
+      responsibleUser: r.responsibleUserId ? staffMap.get(r.responsibleUserId) || null : null,
+    }));
   }
 
   /**
@@ -167,7 +162,6 @@ export class CashRegisterService {
     const register = await this.prisma.cashRegister.findFirst({
       where: { id, tenantId },
       include: {
-        responsibleUser: { select: { id: true, firstName: true, lastName: true, email: true } },
         openedBy: { select: { id: true, firstName: true, lastName: true } },
         closedBy: { select: { id: true, firstName: true, lastName: true } },
         transactions: {
@@ -185,6 +179,16 @@ export class CashRegisterService {
       },
     });
     if (!register) throw new NotFoundException('Caisse non trouvée');
+
+    // Enrichir avec les infos du staff responsable
+    if (register.responsibleUserId) {
+      const staff = await this.prisma.staff.findFirst({
+        where: { id: register.responsibleUserId },
+        select: { id: true, firstName: true, lastName: true, position: true, email: true, employeeNumber: true },
+      });
+      (register as any).responsibleUser = staff;
+    }
+
     return register;
   }
 
@@ -195,36 +199,13 @@ export class CashRegisterService {
   async update(id: string, tenantId: string, dto: UpdateCashRegisterDto) {
     const existing = await this.findOne(id, tenantId);
 
-    // Résoudre responsibleUserId : si c'est un Staff ID (pas un User ID),
-    // chercher le User correspondant via User.staffId
-    let resolvedResponsibleUserId = dto.responsibleUserId ?? existing.responsibleUserId;
-    if (dto.responsibleUserId && dto.responsibleUserId !== existing.responsibleUserId) {
-      // Vérifier si c'est déjà un User ID
-      const userExists = await this.prisma.user.findFirst({
-        where: { id: dto.responsibleUserId },
-        select: { id: true },
-      });
-      if (!userExists) {
-        // Ce n'est pas un User ID → chercher le User lié à ce Staff
-        const userWithStaff = await this.prisma.user.findFirst({
-          where: { staffId: dto.responsibleUserId },
-          select: { id: true },
-        });
-        if (userWithStaff) {
-          resolvedResponsibleUserId = userWithStaff.id;
-        } else {
-          // Pas de User lié → stocker null (le staff n'a pas encore de compte)
-          resolvedResponsibleUserId = null;
-        }
-      }
-    }
-
+    // responsibleUserId stocke directement le Staff ID (pas de FK, pas de résolution)
     return this.prisma.cashRegister.update({
       where: { id },
       data: {
         name: dto.name ?? existing.name,
         description: dto.description ?? existing.description,
-        responsibleUserId: resolvedResponsibleUserId,
+        responsibleUserId: dto.responsibleUserId !== undefined ? (dto.responsibleUserId || null) : existing.responsibleUserId,
         location: dto.location ?? existing.location,
         isActive: dto.isActive ?? existing.isActive,
         // Champs bancaires (mis à jour si fournis)

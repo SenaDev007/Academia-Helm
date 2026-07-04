@@ -5070,10 +5070,11 @@ model CashRegister {
   bankBranch         String?                               // Agence / succursale
   bankAccountType    String?                               // Type de compte: COURANT, EPARGNE
   bankContact        String?                               // Contact du gestionnaire de compte
+  /// ID du staff responsable (Stock.id, pas User.id — pas de FK pour permettre staff sans compte user)
+  responsibleUserId  String?
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
   tenant             Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  responsibleUser    User?                @relation("CashRegisterResponsible", fields: [responsibleUserId], references: [id], onDelete: SetNull)
   openedBy           User?                @relation("CashRegisterOpenedBy", fields: [openedByUserId], references: [id], onDelete: SetNull)
   closedBy           User?                @relation("CashRegisterClosedBy", fields: [closedByUserId], references: [id], onDelete: SetNull)
   transactions       FinanceTransaction[]

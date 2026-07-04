@@ -169,6 +169,11 @@ export default function CashRegistersContent() {
   const [transferForm, setTransferForm] = useState({ fromId: '', toId: '', amount: '', note: '' });
   const [transferPending, setTransferPending] = useState(false);
   const [staffList, setStaffList] = useState<any[]>([]);
+  // Onglet actif : constellation | historique
+  const [activeTab, setActiveTab] = useState<'constellation' | 'historique'>('constellation');
+  // Historique des transferts
+  const [transfers, setTransfers] = useState<any[]>([]);
+  const [transfersLoading, setTransfersLoading] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -233,6 +238,26 @@ export default function CashRegistersContent() {
       })
       .catch(() => setStaffList([]));
   }, [loadRegisters]);
+
+  // Charger l'historique des transferts
+  const loadTransfers = useCallback(async () => {
+    setTransfersLoading(true);
+    try {
+      const data = await financeService.getCashRegisterTransfers({ limit: 100 });
+      setTransfers(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      console.error('loadTransfers error:', e);
+      setTransfers([]);
+    } finally {
+      setTransfersLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'historique') {
+      loadTransfers();
+    }
+  }, [activeTab, loadTransfers]);
 
   // Identifier la caisse principale (code MAIN ou première créée)
   const mainRegister = useMemo(() => {
@@ -572,6 +597,44 @@ export default function CashRegistersContent() {
               </motion.div>
             </div>
 
+            {/* === ONGLETS : Constellation | Historique === */}
+            <div className="flex items-center gap-2 border-b border-slate-200">
+              <button
+                onClick={() => setActiveTab('constellation')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'constellation'
+                    ? 'border-indigo-600 text-indigo-600'
+                    : 'border-transparent text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Gem className="w-4 h-4" />
+                  Constellation
+                </div>
+              </button>
+              <button
+                onClick={() => setActiveTab('historique')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'historique'
+                    ? 'border-indigo-600 text-indigo-600'
+                    : 'border-transparent text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4" />
+                  Historique des transferts
+                  {transfers.length > 0 && (
+                    <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-indigo-100 text-indigo-700">
+                      {transfers.length}
+                    </span>
+                  )}
+                </div>
+              </button>
+            </div>
+
+            {/* === CONTENU ONGLET CONSTELLATION === */}
+            {activeTab === 'constellation' && (
+            <>
             {/* === CONSTELLATION COFFRE-FORT + CAISSES === */}
             <div
               className="relative bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl border border-slate-200 overflow-hidden transition-all duration-500 ease-out"
@@ -675,7 +738,23 @@ export default function CashRegistersContent() {
                         )}
                       </div>
                       <p className="text-xs text-slate-400 uppercase tracking-wider">{mainRegister?.code || 'MAIN'}</p>
-                      <p className="text-sm font-semibold text-white mb-3">{mainRegister?.name || 'Caisse principale'}</p>
+                      <p className="text-sm font-semibold text-white mb-1">{mainRegister?.name || 'Caisse principale'}</p>
+                      {/* Description défilante (marquee) */}
+                      {mainRegister?.description && (
+                        <div className="relative overflow-hidden h-4 mb-2">
+                          <motion.div
+                            className="absolute whitespace-nowrap text-[10px] text-slate-300"
+                            animate={{ x: ['100%', '-100%'] }}
+                            transition={{
+                              duration: mainRegister.description.length > 50 ? 15 : 10,
+                              repeat: Infinity,
+                              ease: 'linear',
+                            }}
+                          >
+                            {mainRegister.description}
+                          </motion.div>
+                        </div>
+                      )}
                       <p className="text-3xl font-bold text-white"><AnimatedBalance amount={Number(mainRegister?.currentBalance || 0)} isMain className="text-white" /></p>
                       <p className="text-xs text-slate-400 mt-1">FCFA · {mainRegister?._count?.transactions || 0} transactions</p>
                     </div>
@@ -740,6 +819,22 @@ export default function CashRegistersContent() {
                         </div>
                         <p className="text-[10px] text-slate-400 uppercase tracking-wide font-mono">{reg.code}</p>
                         <p className="text-xs font-semibold text-slate-800 truncate">{reg.name}</p>
+                        {/* Description défilante (marquee) si elle est longue */}
+                        {reg.description && (
+                          <div className="relative overflow-hidden h-4 mt-0.5">
+                            <motion.div
+                              className="absolute whitespace-nowrap text-[10px] text-slate-500"
+                              animate={{ x: ['100%', '-100%'] }}
+                              transition={{
+                                duration: reg.description.length > 40 ? 12 : 8,
+                                repeat: Infinity,
+                                ease: 'linear',
+                              }}
+                            >
+                              {reg.description}
+                            </motion.div>
+                          </div>
+                        )}
                         <p className={`text-lg font-bold ${color.text} mt-1`}><AnimatedBalance amount={Number(reg.currentBalance || 0)} className={color.text} /></p>
                         <p className="text-[10px] text-slate-400">{reg._count?.transactions || 0} transactions</p>
                         {!reg.isActive && (
@@ -760,6 +855,74 @@ export default function CashRegistersContent() {
                 <span className="flex items-center gap-1"><Archive className="w-3 h-3" /> Archivée</span>
               </div>
             </div>
+            </>
+            )}
+
+            {/* === CONTENU ONGLET HISTORIQUE === */}
+            {activeTab === 'historique' && (
+              <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                {transfersLoading ? (
+                  <div className="flex items-center justify-center py-16">
+                    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600" />
+                  </div>
+                ) : transfers.length === 0 ? (
+                  <div className="text-center py-16">
+                    <Clock className="w-12 h-12 mx-auto text-slate-300 mb-3" />
+                    <p className="text-slate-500 text-sm">Aucun transfert enregistré pour le moment.</p>
+                    <p className="text-slate-400 text-xs mt-1">Les transferts entre caisses apparaîtront ici automatiquement.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50 border-b border-slate-200">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-semibold text-slate-600">Date</th>
+                          <th className="px-4 py-3 text-left font-semibold text-slate-600">Caisse source</th>
+                          <th className="px-4 py-3 text-left font-semibold text-slate-600">Caisse cible</th>
+                          <th className="px-4 py-3 text-right font-semibold text-slate-600">Montant</th>
+                          <th className="px-4 py-3 text-left font-semibold text-slate-600">Note</th>
+                          <th className="px-4 py-3 text-left font-semibold text-slate-600">Référence</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {transfers.map((t: any, idx: number) => (
+                          <tr key={t.id || idx} className="hover:bg-slate-50">
+                            <td className="px-4 py-3 text-xs text-slate-600">
+                              {t.createdAt ? new Date(t.createdAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded bg-rose-50 text-rose-700">
+                                  {t.fromCode || '—'}
+                                </span>
+                                <span className="text-xs text-slate-600">{t.fromName || ''}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded bg-emerald-50 text-emerald-700">
+                                  {t.toCode || '—'}
+                                </span>
+                                <span className="text-xs text-slate-600">{t.toName || ''}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-right font-bold text-indigo-600">
+                              {formatCurrency(Number(t.amount || 0))}
+                            </td>
+                            <td className="px-4 py-3 text-xs text-slate-600 max-w-xs truncate">
+                              {t.note || '—'}
+                            </td>
+                            <td className="px-4 py-3 text-[10px] font-mono text-slate-400">
+                              {t.reference || '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* === PANNEAU DÉTAILS (au clic sur une caisse) === */}
             <AnimatePresence mode="wait">
@@ -1272,36 +1435,118 @@ export default function CashRegistersContent() {
             <DialogTitle>Statistiques — {statsModal?.code} {statsModal?.name}</DialogTitle>
           </DialogHeader>
           {stats && (
-            <div className="space-y-4 py-2">
-              <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-4 py-2 max-h-[60vh] overflow-y-auto">
+              {/* KPIs principaux */}
+              <div className="grid grid-cols-4 gap-2">
                 <div className="bg-emerald-50 p-3 rounded-lg">
-                  <p className="text-xs text-emerald-600">Volume total</p>
-                  <p className="text-lg font-bold text-emerald-900">{formatCurrency(stats.totalVolume)} XOF</p>
+                  <p className="text-[10px] text-emerald-600 uppercase tracking-wide font-semibold">Volume total</p>
+                  <p className="text-base font-bold text-emerald-900">{formatCurrency(stats.totalVolume)}</p>
+                  <p className="text-[10px] text-emerald-500">FCFA</p>
                 </div>
                 <div className="bg-rose-50 p-3 rounded-lg">
-                  <p className="text-xs text-rose-600">Annulations</p>
-                  <p className="text-lg font-bold text-rose-900">{formatCurrency(stats.reversalVolume)} XOF</p>
+                  <p className="text-[10px] text-rose-600 uppercase tracking-wide font-semibold">Annulations</p>
+                  <p className="text-base font-bold text-rose-900">{formatCurrency(stats.reversalVolume)}</p>
+                  <p className="text-[10px] text-rose-500">FCFA</p>
                 </div>
                 <div className="bg-blue-50 p-3 rounded-lg">
-                  <p className="text-xs text-blue-600">Volume net</p>
-                  <p className="text-lg font-bold text-blue-900">{formatCurrency(stats.netVolume)} XOF</p>
+                  <p className="text-[10px] text-blue-600 uppercase tracking-wide font-semibold">Volume net</p>
+                  <p className="text-base font-bold text-blue-900">{formatCurrency(stats.netVolume)}</p>
+                  <p className="text-[10px] text-blue-500">FCFA</p>
+                </div>
+                <div className="bg-indigo-50 p-3 rounded-lg">
+                  <p className="text-[10px] text-indigo-600 uppercase tracking-wide font-semibold">Transactions</p>
+                  <p className="text-base font-bold text-indigo-900">{stats.totalTransactions}</p>
+                  <p className="text-[10px] text-indigo-500">opérations</p>
                 </div>
               </div>
-              <div className="bg-slate-50 p-3 rounded-lg">
-                <p className="text-xs text-slate-500 mb-1">Transactions totales</p>
-                <p className="text-2xl font-bold">{stats.totalTransactions}</p>
+
+              {/* Transferts in/out */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-lg">
+                  <p className="text-xs font-semibold text-emerald-700 mb-1">Transferts entrants</p>
+                  <p className="text-2xl font-bold text-emerald-900">{stats.transfersIn || 0}</p>
+                  <p className="text-[10px] text-emerald-600">{formatCurrency(stats.totalIn || 0)} FCFA reçus</p>
+                </div>
+                <div className="bg-rose-50 border border-rose-200 p-3 rounded-lg">
+                  <p className="text-xs font-semibold text-rose-700 mb-1">Transferts sortants</p>
+                  <p className="text-2xl font-bold text-rose-900">{stats.transfersOut || 0}</p>
+                  <p className="text-[10px] text-rose-600">{formatCurrency(stats.totalOut || 0)} FCFA envoyés</p>
+                </div>
               </div>
-              {stats.byMethod && stats.byMethod.length > 0 && (
-                <div>
-                  <p className="text-sm font-semibold mb-2">Par méthode de paiement</p>
-                  <div className="space-y-1">
-                    {stats.byMethod.map((m: any) => (
-                      <div key={m.method} className="flex justify-between text-sm bg-slate-50 p-2 rounded">
-                        <span className="font-medium">{m.method}</span>
-                        <span>{m.count} transactions — {formatCurrency(m.total)} XOF</span>
-                      </div>
-                    ))}
+
+              {/* Graphique 1 : Répartition par direction (barres horizontales) */}
+              {stats.byDirection && stats.byDirection.length > 0 && (
+                <div className="bg-slate-50 p-3 rounded-lg">
+                  <p className="text-sm font-semibold text-slate-700 mb-2">Répartition par direction</p>
+                  <div className="space-y-2">
+                    {stats.byDirection.map((d: any) => {
+                      const maxTotal = Math.max(...stats.byDirection.map((x: any) => Number(x.total || 0)), 1);
+                      const pct = (Number(d.total || 0) / maxTotal) * 100;
+                      const colorClass = d.direction === 'CREDIT' ? 'bg-emerald-500' : d.direction === 'DEBIT' ? 'bg-rose-500' : 'bg-slate-400';
+                      const label = d.direction === 'CREDIT' ? 'Crédit (entrées)' : d.direction === 'DEBIT' ? 'Débit (sorties)' : 'Neutre';
+                      return (
+                        <div key={d.direction}>
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="font-medium text-slate-700">{label}</span>
+                            <span className="text-slate-600">{d.count} tx · {formatCurrency(Number(d.total || 0))} FCFA</span>
+                          </div>
+                          <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                            <motion.div
+                              className={`h-full ${colorClass} rounded-full`}
+                              initial={{ width: 0 }}
+                              animate={{ width: `${pct}%` }}
+                              transition={{ duration: 0.8, ease: 'easeOut' }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
+                </div>
+              )}
+
+              {/* Graphique 2 : Évolution sur 7 jours (barres verticales) */}
+              {stats.evolution && stats.evolution.length > 0 && (
+                <div className="bg-slate-50 p-3 rounded-lg">
+                  <p className="text-sm font-semibold text-slate-700 mb-2">Évolution sur 7 jours</p>
+                  <div className="flex items-end justify-between gap-1 h-32">
+                    {stats.evolution.map((e: any, idx: number) => {
+                      const maxValue = Math.max(...stats.evolution.map((x: any) => Math.max(Number(x.credit || 0), Number(x.debit || 0))), 1);
+                      const creditH = (Number(e.credit || 0) / maxValue) * 100;
+                      const debitH = (Number(e.debit || 0) / maxValue) * 100;
+                      const dateLabel = new Date(e.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+                      return (
+                        <div key={idx} className="flex-1 flex flex-col items-center gap-1">
+                          <div className="flex items-end gap-0.5 h-24 w-full justify-center">
+                            <div
+                              className="w-2 bg-emerald-500 rounded-t"
+                              style={{ height: `${creditH}%` }}
+                              title={`Crédit: ${formatCurrency(Number(e.credit || 0))} FCFA`}
+                            />
+                            <div
+                              className="w-2 bg-rose-500 rounded-t"
+                              style={{ height: `${debitH}%` }}
+                              title={`Débit: ${formatCurrency(Number(e.debit || 0))} FCFA`}
+                            />
+                          </div>
+                          <span className="text-[9px] text-slate-500">{dateLabel}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex justify-center gap-4 mt-2 text-[10px] text-slate-600">
+                    <span className="flex items-center gap-1"><div className="w-2 h-2 bg-emerald-500 rounded" /> Crédit</span>
+                    <span className="flex items-center gap-1"><div className="w-2 h-2 bg-rose-500 rounded" /> Débit</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Solde courant */}
+              {stats.register && (
+                <div className="bg-gradient-to-r from-indigo-600 to-violet-600 p-3 rounded-lg text-white">
+                  <p className="text-[10px] uppercase tracking-wide opacity-80">Solde courant de la caisse</p>
+                  <p className="text-2xl font-bold">{formatCurrency(Number(stats.register.currentBalance || 0))} FCFA</p>
+                  <p className="text-[10px] opacity-80">{stats.register.isOpen ? '🟢 Caisse ouverte' : '🔴 Caisse fermée'}</p>
                 </div>
               )}
             </div>

@@ -351,30 +351,64 @@ export class CashRegisterService {
   ) {
     const register = await this.findOne(id, tenantId);
 
-    const where: any = { cashRegisterId: id, tenantId };
-    if (dateFrom || dateTo) {
-      where.createdAt = {};
-      if (dateFrom) where.createdAt.gte = dateFrom;
-      if (dateTo) where.createdAt.lte = dateTo;
-    }
+    // Construire la clause WHERE pour cash_register_transactions
+    const dateCondition = dateFrom || dateTo
+      ? `AND "createdAt" BETWEEN ${dateFrom ? `'${new Date(dateFrom).toISOString()}'` : "'1900-01-01'"} AND ${dateTo ? `'${new Date(dateTo).toISOString()}'` : "'2999-12-31'"}`
+      : '';
 
-    const [transactions, totalVolume, reversalVolume, byMethod] = await Promise.all([
-      this.prisma.financeTransaction.count({ where }),
-      this.prisma.financeTransaction.aggregate({
-        where: { ...where, type: 'PAYMENT' },
-        _sum: { amount: true },
-      }),
-      this.prisma.financeTransaction.aggregate({
-        where: { ...where, type: 'REVERSAL' },
-        _sum: { amount: true },
-      }),
-      this.prisma.financeTransaction.groupBy({
-        by: ['paymentMethod'],
-        where: { ...where, type: 'PAYMENT' },
-        _sum: { amount: true },
-        _count: true,
-      }),
+    // Statistiques depuis cash_register_transactions (transferts + ajustements)
+    // + finance_transactions (encaissements liés aux élèves)
+    const [transferStats, paymentStats] = await Promise.all([
+      // Transferts + ajustements depuis cash_register_transactions
+      this.prisma.$queryRaw`
+        SELECT
+          COALESCE(SUM(CASE WHEN "transactionType" = 'TRANSFER_IN' THEN "amount" ELSE 0 END), 0) AS "totalIn",
+          COALESCE(SUM(CASE WHEN "transactionType" = 'TRANSFER_OUT' THEN "amount" ELSE 0 END), 0) AS "totalOut",
+          COUNT(*) AS "totalTransactions",
+          COUNT(CASE WHEN "transactionType" = 'TRANSFER_IN' THEN 1 END) AS "transferInCount",
+          COUNT(CASE WHEN "transactionType" = 'TRANSFER_OUT' THEN 1 END) AS "transferOutCount"
+        FROM "cash_register_transactions"
+        WHERE "cashRegisterId" = ${id}
+          AND "tenantId" = ${tenantId}
+      `,
+      // Encaissements liés aux élèves depuis finance_transactions
+      this.prisma.$queryRaw`
+        SELECT
+          COALESCE(SUM(CASE WHEN "type" = 'PAYMENT' THEN "amount" ELSE 0 END), 0) AS "paymentVolume",
+          COALESCE(SUM(CASE WHEN "type" = 'REVERSAL' THEN "amount" ELSE 0 END), 0) AS "reversalVolume"
+        FROM "finance_transactions"
+        WHERE "cashRegisterId" = ${id}
+          AND "tenantId" = ${tenantId}
+      `,
     ]);
+
+    // Répartition par direction (IN/OUT/NEUTRAL)
+    const byDirection = await this.prisma.$queryRaw`
+      SELECT "direction", COUNT(*) AS "count", SUM("amount") AS "total"
+      FROM "cash_register_transactions"
+      WHERE "cashRegisterId" = ${id}
+        AND "tenantId" = ${tenantId}
+      GROUP BY "direction"
+    `;
+
+    // Évolution temporelle (7 derniers jours) — volume par jour
+    const evolution = await this.prisma.$queryRaw`
+      SELECT
+        DATE("createdAt") AS "date",
+        SUM(CASE WHEN "direction" = 'CREDIT' THEN "amount" ELSE 0 END) AS "credit",
+        SUM(CASE WHEN "direction" = 'DEBIT' THEN "amount" ELSE 0 END) AS "debit"
+      FROM "cash_register_transactions"
+      WHERE "cashRegisterId" = ${id}
+        AND "tenantId" = ${tenantId}
+        AND "createdAt" >= NOW() - INTERVAL '7 days'
+      GROUP BY DATE("createdAt")
+      ORDER BY "date" ASC
+    `;
+
+    const transferData: any = transferStats[0] || {};
+    const paymentData: any = paymentStats[0] || {};
+    const totalVolume = Number(transferData.totalIn || 0) + Number(paymentData.paymentVolume || 0);
+    const reversalVolume = Math.abs(Number(paymentData.reversalVolume || 0));
 
     return {
       register: {
@@ -385,16 +419,85 @@ export class CashRegisterService {
         isOpen: register.isOpen,
       },
       period: { dateFrom, dateTo },
-      totalTransactions: transactions,
-      totalVolume: Number(totalVolume._sum.amount ?? 0),
-      reversalVolume: Math.abs(Number(reversalVolume._sum.amount ?? 0)),
-      netVolume: Number(totalVolume._sum.amount ?? 0) + Number(reversalVolume._sum.amount ?? 0),
-      byMethod: byMethod.map((m) => ({
-        method: m.paymentMethod,
-        count: m._count,
-        total: Number(m._sum.amount ?? 0),
+      totalTransactions: Number(transferData.totalTransactions || 0),
+      totalVolume,
+      reversalVolume,
+      netVolume: totalVolume - reversalVolume,
+      // Nouvelles métriques pour les graphiques
+      transfersIn: Number(transferData.transferInCount || 0),
+      transfersOut: Number(transferData.transferOutCount || 0),
+      totalIn: Number(transferData.totalIn || 0),
+      totalOut: Number(transferData.totalOut || 0),
+      byDirection: (byDirection as any[]).map((d) => ({
+        direction: d.direction,
+        count: Number(d.count),
+        total: Number(d.total),
+      })),
+      evolution: (evolution as any[]).map((e) => ({
+        date: e.date,
+        credit: Number(e.credit || 0),
+        debit: Number(e.debit || 0),
       })),
     };
+  }
+
+  /**
+   * Récupère l'historique des transferts d'un tenant (toutes caisses confondues
+   * ou filtré par caisse source/cible).
+   * Utilisé par l'onglet "Historique" du module Multi-caisses.
+   */
+  async getTransfers(
+    tenantId: string,
+    filters?: { cashRegisterId?: string; dateFrom?: Date; dateTo?: Date; limit?: number },
+  ) {
+    const where: string[] = [`t."tenantId" = ${tenantId}`];
+    if (filters?.cashRegisterId) {
+      where.push(`(t."fromCashRegisterId" = ${filters.cashRegisterId} OR t."toCashRegisterId" = ${filters.cashRegisterId})`);
+    }
+    if (filters?.dateFrom) where.push(`t."createdAt" >= '${new Date(filters.dateFrom).toISOString()}'`);
+    if (filters?.dateTo) where.push(`t."createdAt" <= '${new Date(filters.dateTo).toISOString()}'`);
+
+    const limit = filters?.limit || 100;
+
+    const transfers = await this.prisma.$queryRawUnsafe(`
+      SELECT
+        t.*,
+        fr."code" AS "fromCode", fr."name" AS "fromName",
+        tr."code" AS "toCode", tr."name" AS "toName"
+      FROM "cash_register_transfers" t
+      LEFT JOIN "cash_registers" fr ON fr."id" = t."fromCashRegisterId"
+      LEFT JOIN "cash_registers" tr ON tr."id" = t."toCashRegisterId"
+      WHERE ${where.join(' AND ')}
+      ORDER BY t."createdAt" DESC
+      LIMIT ${limit}
+    `);
+
+    return transfers;
+  }
+
+  /**
+   * Récupère l'historique des transactions d'une caisse (transferts in/out,
+   * ajustements, ouvertures, fermetures).
+   */
+  async getRegisterTransactions(
+    id: string,
+    tenantId: string,
+    filters?: { dateFrom?: Date; dateTo?: Date; limit?: number },
+  ) {
+    const where: string[] = [`"cashRegisterId" = ${id}`, `"tenantId" = ${tenantId}`];
+    if (filters?.dateFrom) where.push(`"createdAt" >= '${new Date(filters.dateFrom).toISOString()}'`);
+    if (filters?.dateTo) where.push(`"createdAt" <= '${new Date(filters.dateTo).toISOString()}'`);
+
+    const limit = filters?.limit || 100;
+
+    const transactions = await this.prisma.$queryRawUnsafe(`
+      SELECT * FROM "cash_register_transactions"
+      WHERE ${where.join(' AND ')}
+      ORDER BY "createdAt" DESC
+      LIMIT ${limit}
+    `);
+
+    return transactions;
   }
 
   /**
@@ -475,41 +578,48 @@ export class CashRegisterService {
       },
     });
 
-    // Créer une transaction d'audit (type TRANSFER)
+    // ─── Audit : insérer dans cash_register_transfers + cash_register_transactions ───
+    // On utilise $executeRaw car ces tables ne sont pas dans le schema Prisma
+    // (créées via migration SQL directe). Prisma ne les connaît pas.
+    const transferId = `trf-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    const txOutId = `txo-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    const txInId = `txi-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    const reference = `TRF-${Date.now()}`;
+    const now = new Date().toISOString();
+    const note = data.note || `Transfert ${fromRegister.code} → ${toRegister.code}`;
+
     try {
-      await this.prisma.financeTransaction.create({
-        data: {
-          tenantId,
-          cashRegisterId: fromId,
-          transactionType: 'TRANSFER_OUT',
-          amount: data.amount,
-          paymentMethod: 'CASH',
-          reference: `TRANSFER→${toRegister.code}`,
-          receiptNumber: `TRF-${Date.now()}`,
-          notes: data.note || `Transfert vers ${toRegister.name}`,
-          deviceId: null,
-          reversalOfId: null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      });
-      await this.prisma.financeTransaction.create({
-        data: {
-          tenantId,
-          cashRegisterId: toId,
-          transactionType: 'TRANSFER_IN',
-          amount: data.amount,
-          paymentMethod: 'CASH',
-          reference: `TRANSFER←${fromRegister.code}`,
-          receiptNumber: `TRF-${Date.now()}-IN`,
-          notes: data.note || `Transfert depuis ${fromRegister.name}`,
-          deviceId: null,
-          reversalOfId: null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      });
+      // 1. Enregistrer le transfert
+      await this.prisma.$executeRaw`
+        INSERT INTO "cash_register_transfers"
+          ("id", "tenantId", "fromCashRegisterId", "toCashRegisterId",
+           "amount", "note", "reference", "userId", "status", "createdAt")
+        VALUES
+          (${transferId}, ${tenantId}, ${fromId}, ${toId},
+           ${data.amount}, ${note}, ${reference}, ${userId || null}, 'COMPLETED', ${now})
+      `;
+
+      // 2. Transaction sortante (débit) sur la caisse source
+      await this.prisma.$executeRaw`
+        INSERT INTO "cash_register_transactions"
+          ("id", "tenantId", "cashRegisterId", "transactionType",
+           "amount", "direction", "note", "reference", "userId", "relatedTransferId", "createdAt")
+        VALUES
+          (${txOutId}, ${tenantId}, ${fromId}, 'TRANSFER_OUT',
+           ${data.amount}, 'DEBIT', ${note}, ${reference}, ${userId || null}, ${transferId}, ${now})
+      `;
+
+      // 3. Transaction entrante (crédit) sur la caisse cible
+      await this.prisma.$executeRaw`
+        INSERT INTO "cash_register_transactions"
+          ("id", "tenantId", "cashRegisterId", "transactionType",
+           "amount", "direction", "note", "reference", "userId", "relatedTransferId", "createdAt")
+        VALUES
+          (${txInId}, ${tenantId}, ${toId}, 'TRANSFER_IN',
+           ${data.amount}, 'CREDIT', ${note}, ${reference}, ${userId || null}, ${transferId}, ${now})
+      `;
     } catch (err: any) {
+      // Non bloquant : les soldes sont déjà mis à jour, on log juste l'erreur d'audit
       this.logger.warn(`Transfer audit log failed (non-blocking): ${err.message}`);
     }
 

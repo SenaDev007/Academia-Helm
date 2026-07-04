@@ -236,6 +236,40 @@ class FinanceService {
     return financeFetch('/api/finance/cash-registers/transfer', { method: 'POST', body: data });
   }
 
+  /**
+   * Historique des transferts inter-caisses d'un tenant.
+   * Filtres optionnels : cashRegisterId, dateFrom, dateTo, limit.
+   */
+  async getCashRegisterTransfers(params?: {
+    cashRegisterId?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    limit?: number;
+  }): Promise<any> {
+    const qs = params
+      ? new URLSearchParams(
+          Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '') as [string, string][]
+        ).toString()
+      : '';
+    return financeFetch(`/api/finance/cash-registers/transfers${qs ? `?${qs}` : ''}`);
+  }
+
+  /**
+   * Historique des transactions d'une caisse (transferts in/out, ajustements).
+   */
+  async getCashRegisterTransactions(id: string, params?: {
+    dateFrom?: string;
+    dateTo?: string;
+    limit?: number;
+  }): Promise<any> {
+    const qs = params
+      ? new URLSearchParams(
+          Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '') as [string, string][]
+        ).toString()
+      : '';
+    return financeFetch(`/api/finance/cash-registers/${encodeURIComponent(id)}/transactions${qs ? `?${qs}` : ''}`);
+  }
+
   // --- Settings ---
   async getSettings(): Promise<any> {
     return financeFetch('/api/finance/settings');

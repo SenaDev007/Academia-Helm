@@ -169,6 +169,46 @@ export class CashRegisterController {
   }
 
   /**
+   * GET /finance/cash-registers/transfers?cashRegisterId=&dateFrom=&dateTo=&limit=
+   * Historique des transferts inter-caisses d'un tenant.
+   * Peut être filtré par caisse (source ou cible) et par période.
+   */
+  @Get('transfers')
+  async getTransfers(
+    @TenantId() tenantId: string,
+    @Query('cashRegisterId') cashRegisterId?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.service.getTransfers(tenantId, {
+      cashRegisterId,
+      dateFrom: dateFrom ? new Date(dateFrom) : undefined,
+      dateTo: dateTo ? new Date(dateTo) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
+  }
+
+  /**
+   * GET /finance/cash-registers/:id/transactions?dateFrom=&dateTo=&limit=
+   * Historique des transactions d'une caisse spécifique.
+   */
+  @Get(':id/transactions')
+  async getRegisterTransactions(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.service.getRegisterTransactions(id, tenantId, {
+      dateFrom: dateFrom ? new Date(dateFrom) : undefined,
+      dateTo: dateTo ? new Date(dateTo) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
+  }
+
+  /**
    * POST /finance/cash-registers/transfer
    * Transfert de fonds entre deux caisses.
    * Body: { fromId, toId, amount, note? }

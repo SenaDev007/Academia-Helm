@@ -509,6 +509,11 @@ export default function StudentEnrollmentForm({
   };
 
   const validateRegimeStep = (): boolean => {
+    // Si aucun régime n'est disponible, on ne bloque pas l'inscription
+    if (regimes.length === 0) {
+      return true;
+    }
+
     if (!formData.feeRegimeId) {
       setError('Veuillez sélectionner un régime tarifaire');
       return false;
@@ -1226,9 +1231,12 @@ export default function StudentEnrollmentForm({
               <p className="text-sm text-gray-600">Chargement des régimes...</p>
             </div>
           ) : regimes.length === 0 ? (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
-              <p className="text-sm text-yellow-800">
-                Aucun régime tarifaire configuré pour ce niveau. Veuillez configurer les régimes dans les paramètres financiers.
+            <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+              <p className="text-sm text-blue-800 mb-2">
+                Aucun régime tarifaire configuré pour ce niveau. Un régime standard sera appliqué par défaut.
+              </p>
+              <p className="text-xs text-blue-600">
+                Vous pouvez continuer l'inscription. Le régime standard sera créé automatiquement.
               </p>
             </div>
           ) : (
@@ -1482,7 +1490,7 @@ export default function StudentEnrollmentForm({
             <motion.button
               type="button"
               onClick={handleSubmit}
-              disabled={isSubmitting || !formData.feeRegimeId}
+              disabled={isSubmitting || (regimes.length > 0 && !formData.feeRegimeId)}
               whileHover={{ y: -1 }}
               whileTap={{ scale: 0.99 }}
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center space-x-2"

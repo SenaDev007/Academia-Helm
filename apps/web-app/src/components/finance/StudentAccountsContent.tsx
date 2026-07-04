@@ -290,10 +290,53 @@ export default function StudentAccountsContent() {
                         return Math.abs(fsTotal - initial) > 0.01;
                       });
                       const isSelected = selectedAccountId === a.id;
+
+                      // Code couleur basé sur le statut de paiement
+                      const totalDue = Number(a.totalDue ?? 0);
+                      const totalPaid = Number(a.totalPaid ?? 0);
+                      const balance = Number(a.balance ?? 0);
+                      let rowBg = '';
+                      let rowBorder = '';
+                      if (balance <= 0) {
+                        rowBg = 'bg-green-50'; rowBorder = 'border-l-4 border-green-500';
+                      } else if (totalPaid <= 0) {
+                        rowBg = 'bg-red-50'; rowBorder = 'border-l-4 border-red-500';
+                      } else if (a.status === 'OVERDUE' || a.status === 'BLOCKED') {
+                        rowBg = 'bg-orange-50'; rowBorder = 'border-l-4 border-orange-500';
+                      } else {
+                        rowBg = 'bg-amber-50'; rowBorder = 'border-l-4 border-amber-400';
+                      }
+
+                      // Extraire les montants par type de frais depuis les breakdowns
+                      const breakdowns = a.breakdowns ?? [];
+                      const getAmounts = (feeType: string) => {
+                        const b = breakdowns.find((bd: any) => bd.feeStructure?.feeType === feeType);
+                        return {
+                          due: b ? Number(b.initialAmount ?? 0) : 0,
+                          paid: b ? Number(b.paidAmount ?? 0) : 0,
+                          remaining: b ? Number(b.remainingAmount ?? 0) : 0,
+                        };
+                      };
+                      const inscription = getAmounts('INSCRIPTION');
+                      const reinscription = getAmounts('REINSCRIPTION');
+                      const tuition = getAmounts('TUITION');
+                      const hasReinscription = reinscription.due > 0;
+
+                      // Helper pour afficher un détail de frais
+                      const FeeDetail = ({ label, due, paid, remaining }: { label: string; due: number; paid: number; remaining: number }) => {
+                        if (due <= 0) return null;
+                        return (
+                          <div className="flex justify-between text-[10px] text-slate-500">
+                            <span>{label}</span>
+                            <span>{formatCurrency(remaining <= 0 ? 0 : remaining)}</span>
+                          </div>
+                        );
+                      };
+
                       return (
                         <TableRow
                           key={a.id}
-                          className={`cursor-pointer transition-colors ${isSelected ? 'bg-blue-50' : 'hover:bg-slate-50'}`}
+                          className={`cursor-pointer transition-colors ${rowBorder} ${rowBg} ${isSelected ? 'ring-2 ring-blue-400' : 'hover:bg-slate-100'}`}
                           onClick={() => selectStudent(a.id)}
                         >
                           <TableCell className="font-medium">
@@ -308,9 +351,63 @@ export default function StudentAccountsContent() {
                               )}
                             </div>
                           </TableCell>
-                          <TableCell className="text-right whitespace-nowrap">{formatCurrency(a.totalDue)}</TableCell>
-                          <TableCell className="text-right whitespace-nowrap">{formatCurrency(a.totalPaid)}</TableCell>
-                          <TableCell className="text-right font-semibold whitespace-nowrap">{formatCurrency(a.balance)}</TableCell>
+                          {/* Total dû — avec détail par frais */}
+                          <TableCell className="text-right whitespace-nowrap">
+                            <div className="font-semibold text-red-700">{formatCurrency(totalDue)}</div>
+                            <div className="mt-1 space-y-0.5">
+                              {inscription.due > 0 && <FeeDetail label="Inscription" {...inscription} />}
+                              {hasReinscription && <FeeDetail label="Réinscription" {...reinscription} />}
+                              {tuition.due > 0 && <FeeDetail label="Scolarité" {...tuition} />}
+                            </div>
+                          </TableCell>
+                          {/* Payé — avec détail par frais */}
+                          <TableCell className="text-right whitespace-nowrap">
+                            <div className="font-semibold text-emerald-700">{formatCurrency(totalPaid)}</div>
+                            <div className="mt-1 space-y-0.5">
+                              {inscription.due > 0 && (
+                                <div className="flex justify-between text-[10px] text-slate-500">
+                                  <span>Inscription</span>
+                                  <span>{formatCurrency(inscription.paid)}</span>
+                                </div>
+                              )}
+                              {hasReinscription && (
+                                <div className="flex justify-between text-[10px] text-slate-500">
+                                  <span>Réinscription</span>
+                                  <span>{formatCurrency(reinscription.paid)}</span>
+                                </div>
+                              )}
+                              {tuition.due > 0 && (
+                                <div className="flex justify-between text-[10px] text-slate-500">
+                                  <span>Scolarité</span>
+                                  <span>{formatCurrency(tuition.paid)}</span>
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+                          {/* Solde — avec détail par frais */}
+                          <TableCell className="text-right whitespace-nowrap">
+                            <div className={`font-bold ${balance <= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(balance)}</div>
+                            <div className="mt-1 space-y-0.5">
+                              {inscription.due > 0 && (
+                                <div className="flex justify-between text-[10px] text-slate-500">
+                                  <span>Inscription</span>
+                                  <span className={inscription.remaining <= 0 ? 'text-green-600' : ''}>{formatCurrency(inscription.remaining <= 0 ? 0 : inscription.remaining)}</span>
+                                </div>
+                              )}
+                              {hasReinscription && (
+                                <div className="flex justify-between text-[10px] text-slate-500">
+                                  <span>Réinscription</span>
+                                  <span className={reinscription.remaining <= 0 ? 'text-green-600' : ''}>{formatCurrency(reinscription.remaining <= 0 ? 0 : reinscription.remaining)}</span>
+                                </div>
+                              )}
+                              {tuition.due > 0 && (
+                                <div className="flex justify-between text-[10px] text-slate-500">
+                                  <span>Scolarité</span>
+                                  <span className={tuition.remaining <= 0 ? 'text-green-600' : ''}>{formatCurrency(tuition.remaining <= 0 ? 0 : tuition.remaining)}</span>
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
                           <TableCell>
                             <Badge className={STATUS_COLORS[a.status] ?? 'bg-gray-100 text-gray-800'}>{a.status}</Badge>
                           </TableCell>

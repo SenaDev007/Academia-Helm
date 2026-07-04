@@ -18,6 +18,7 @@ import { CollectionPrismaController } from './collection-prisma.controller';
 import { TreasuryPrismaController } from './treasury-prisma.controller';
 import { DatabaseModule } from '../database/database.module';
 import { SettingsModule } from '../settings/settings.module';
+import { CommonModule } from '../common/common.module';
 // Sous-modules Finance (config frais, comptes, encaissements, recouvrement)
 import { FeeStructureController } from './fee-structure.controller';
 import { FeeStructureService } from './fee-structure.service';
@@ -62,10 +63,12 @@ import { FinancialSettingsController } from './financial-settings.controller';
 import { FinanceReportsService } from './finance-reports.service';
 import { FinanceReportsController } from './finance-reports.controller';
 import { FinanceAuditController } from './finance-audit.controller';
+import { CashRegisterService } from './cash-register.service';
+import { CashRegisterController } from './cash-register.controller';
 import { CommunicationModule } from '../communication/communication.module';
 
 @Module({
-  imports: [ConfigModule, DatabaseModule, SettingsModule, CommunicationModule],
+  imports: [ConfigModule, DatabaseModule, SettingsModule, CommunicationModule, CommonModule],
   controllers: [
     FeeStructureController,
     StudentAccountController,
@@ -95,6 +98,7 @@ import { CommunicationModule } from '../communication/communication.module';
     FinancialSettingsController,
     FinanceReportsController,
     FinanceAuditController,
+    CashRegisterController,
   ],
   providers: [
     FeesPrismaService,
@@ -124,6 +128,7 @@ import { CommunicationModule } from '../communication/communication.module';
     FinanceDailyClosureService,
     FinancialSettingsService,
     FinanceReportsService,
+    CashRegisterService,
   ],
   exports: [
     FeesPrismaService,
@@ -144,6 +149,7 @@ import { CommunicationModule } from '../communication/communication.module';
     CollectionCaseService,
     ReceiptGenerationService,
     FinancialSettingsService,
+    CashRegisterService,
     FinanceReportsService,
   ],
 })

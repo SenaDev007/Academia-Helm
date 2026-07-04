@@ -1,21 +1,22 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { Eye, Unlock } from 'lucide-react';
-import { ModuleHeader, SubModuleNavigation, ModuleContentArea } from '@/components/modules/blueprint';
-import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
+import { Eye, Unlock, UserCog, Search, Download, Receipt, Clock } from 'lucide-react';
+import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
 import { financeService } from '@/services/finance.service';
 import { classesService } from '@/services/classes.service';
-import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
-import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
+import { getAcademicYears } from '@/services/settings.service';
 import { formatCurrency } from '@/lib/utils';
+import { filterAndSortClasses } from '@/lib/finance/class-sort';
+import { Label } from '@/components/ui/label';
 
 const STATUS_COLORS: Record<string, string> = {
   PAID: 'bg-green-100 text-green-800',
@@ -27,23 +28,32 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function StudentAccountsContent() {
-  const { academicYear, tenantId } = useModuleContext();
-  const syncStatuses = useEntitySyncStatusBatch('STUDENT', tenantId ?? undefined);
+  const { academicYear } = useModuleContext();
   const { toast } = useToast();
   const [accounts, setAccounts] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
+  const [academicYears, setAcademicYears] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  // Filtre année : par défaut l'année courante du module context, mais l'utilisateur peut changer
+  const [filterYearId, setFilterYearId] = useState('');
   const [filterClassId, setFilterClassId] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [detailAccount, setDetailAccount] = useState<any | null>(null);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const [paymentHistory, setPaymentHistory] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const [unblockReason, setUnblockReason] = useState('');
   const [unblockModal, setUnblockModal] = useState<string | null>(null);
 
+  // L'année effective = filtre utilisateur OU année du contexte
+  const effectiveYearId = filterYearId || academicYear?.id || '';
+
   const loadAccounts = async () => {
-    if (!academicYear?.id) return;
+    if (!effectiveYearId) return;
     setLoading(true);
     try {
-      const params = new URLSearchParams({ academicYearId: academicYear.id });
+      const params = new URLSearchParams({ academicYearId: effectiveYearId });
       if (filterClassId) params.set('classId', filterClassId);
       if (filterStatus) params.set('status', filterStatus);
       const data = await financeService.getStudentAccounts(Object.fromEntries(params.entries()));
@@ -57,12 +67,15 @@ export default function StudentAccountsContent() {
 
   useEffect(() => {
     loadAccounts();
-  }, [academicYear?.id, filterClassId, filterStatus]);
+  }, [effectiveYearId, filterClassId, filterStatus]);
 
   useEffect(() => {
     classesService.getAll({})
       .then((d) => setClasses(Array.isArray(d) ? d : (d.data ?? [])))
       .catch(() => setClasses([]));
+    getAcademicYears()
+      .then((d) => setAcademicYears(Array.isArray(d) ? d : (d.data ?? [])))
+      .catch(() => setAcademicYears([]));
   }, []);
 
   const loadDetail = async (id: string) => {
@@ -72,6 +85,27 @@ export default function StudentAccountsContent() {
     } catch (e) {
       console.error(e);
     }
+  };
+
+  // Charger l'historique des paiements d'un élève (tableau droit)
+  // Utilise getStudentAccountDetails qui inclut les transactions
+  const loadPaymentHistory = async (accountId: string) => {
+    setLoadingHistory(true);
+    try {
+      const data = await financeService.getStudentAccountDetails(accountId);
+      setPaymentHistory(data?.transactions ?? []);
+    } catch (e) {
+      console.error(e);
+      setPaymentHistory([]);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  // Sélectionner un élève dans le tableau gauche → charger son historique à droite
+  const selectStudent = (accountId: string) => {
+    setSelectedAccountId(accountId);
+    loadPaymentHistory(accountId);
   };
 
   const handleUnblock = async () => {
@@ -88,96 +122,294 @@ export default function StudentAccountsContent() {
     }
   };
 
-  const subModuleTabs = FINANCE_SUBMODULE_TABS.map((t) => ({
-    id: t.id,
-    label: t.label,
-    path: t.path,
-    icon: <t.icon className="w-4 h-4" />,
-  }));
+  // Filtrage frontend par recherche (nom, prénom, matricule)
+  const filteredAccounts = useMemo(() => {
+    if (!searchQuery.trim()) return accounts;
+    const q = searchQuery.toLowerCase().trim();
+    return accounts.filter((a) => {
+      const name = `${a.student?.lastName || ''} ${a.student?.firstName || ''} ${a.student?.studentCode || ''}`.toLowerCase();
+      return name.includes(q);
+    });
+  }, [accounts, searchQuery]);
+
+  // Export CSV de la liste filtrée
+  const handleExportCSV = () => {
+    if (filteredAccounts.length === 0) {
+      toast({ title: 'Aucune donnée', description: 'Rien à exporter.', variant: 'destructive' });
+      return;
+    }
+    const headers = ['Élève', 'Matricule', 'Total dû', 'Payé', 'Solde', 'Statut', 'Personnalisé'];
+    const rows = filteredAccounts.map((a) => {
+      const name = a.student ? `${a.student.lastName} ${a.student.firstName}` : a.studentId;
+      const matricule = a.student?.studentCode || '';
+      const hasOverride = (a.breakdowns ?? []).some((b: any) => {
+        const fsTotal = Number(b.feeStructure?.totalAmount ?? 0);
+        const initial = Number(b.initialAmount ?? 0);
+        return Math.abs(fsTotal - initial) > 0.01;
+      });
+      return [
+        name,
+        matricule,
+        Number(a.totalDue ?? 0),
+        Number(a.totalPaid ?? 0),
+        Number(a.balance ?? 0),
+        a.status || '',
+        hasOverride ? 'Oui' : 'Non',
+      ];
+    });
+    const csv = [headers, ...rows]
+      .map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const yearLabel = academicYears.find((y) => y.id === effectiveYearId)?.name || 'annee';
+    link.href = url;
+    link.download = `comptes-eleves-${yearLabel}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    toast({ title: 'Export réussi', description: `${filteredAccounts.length} compte(s) exporté(s).` });
+  };
 
   return (
-    <div className="space-y-6">
-      <ModuleHeader title="Comptes élèves" description="Solde, total dû, payé et statut par élève et par année." icon="finance" />
-      <SubModuleNavigation tabs={subModuleTabs} currentPath="/app/finance/accounts" />
-      <ModuleContentArea layout="custom">
-        <div className="mb-4 flex flex-wrap gap-4 items-center">
-          <span className="text-sm text-gray-600">Année : {academicYear?.label ?? '—'}</span>
-          <Select value={filterClassId || 'ALL'} onValueChange={(v) => setFilterClassId(v === 'ALL' ? '' : v)}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Filtre Classe" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">Toutes</SelectItem>
-              {classes.map((c) => (
-                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={filterStatus || 'ALL'} onValueChange={(v) => setFilterStatus(v === 'ALL' ? '' : v)}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Filtre Statut" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">Tous</SelectItem>
-              <SelectItem value="PAID">Payé</SelectItem>
-              <SelectItem value="PARTIAL">Partiel</SelectItem>
-              <SelectItem value="OVERDUE">En retard</SelectItem>
-              <SelectItem value="BLOCKED">Bloqué</SelectItem>
-              <SelectItem value="ACTIVE">Actif</SelectItem>
-            </SelectContent>
-          </Select>
+    <div className="space-y-4">
+      <ModuleContentArea
+        layout="custom"
+        toolbar={
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <p className="text-sm text-slate-600">
+              Solde, total dû, payé et statut par élève et par année.
+            </p>
+            <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={filteredAccounts.length === 0}>
+              <Download className="w-4 h-4 mr-2" />Exporter CSV
+            </Button>
+          </div>
+        }
+      >
+        <div className="mb-4 flex flex-wrap gap-4 items-end">
+          {/* Filtre Année scolaire */}
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Année scolaire</Label>
+            <Select
+              value={filterYearId || (academicYear?.id ?? 'ALL')}
+              onValueChange={(v) => setFilterYearId(v === 'ALL' ? '' : v)}
+            >
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder="Année courante" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={academicYear?.id ?? 'ALL'}>Année courante</SelectItem>
+                {academicYears.filter((y) => y.id !== academicYear?.id).map((y) => (
+                  <SelectItem key={y.id} value={y.id}>{y.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {/* Recherche par nom/matricule */}
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Rechercher</Label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Nom, prénom ou matricule..."
+                className="pl-9 w-[260px]"
+              />
+            </div>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Classe</Label>
+            <Select value={filterClassId || 'ALL'} onValueChange={(v) => setFilterClassId(v === 'ALL' ? '' : v)}>
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder="Toutes les classes" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Toutes les classes</SelectItem>
+                {filterAndSortClasses(classes).map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Statut</Label>
+            <Select value={filterStatus || 'ALL'} onValueChange={(v) => setFilterStatus(v === 'ALL' ? '' : v)}>
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder="Tous les statuts" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Tous les statuts</SelectItem>
+                <SelectItem value="PAID">Payé</SelectItem>
+                <SelectItem value="PARTIAL">Partiel</SelectItem>
+                <SelectItem value="OVERDUE">En retard</SelectItem>
+                <SelectItem value="BLOCKED">Bloqué</SelectItem>
+                <SelectItem value="ACTIVE">Actif</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Élève</TableHead>
-              <TableHead>Total dû</TableHead>
-              <TableHead>Payé</TableHead>
-              <TableHead>Solde</TableHead>
-              <TableHead>Statut</TableHead>
-              <TableHead>Sync</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center text-gray-500">Chargement...</TableCell>
-              </TableRow>
-            ) : accounts.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center text-gray-500">Aucun compte.</TableCell>
-              </TableRow>
-            ) : (
-              accounts.map((a) => (
-                <TableRow key={a.id}>
-                  <TableCell className="font-medium">
-                    {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.studentId}
-                  </TableCell>
-                  <TableCell>{formatCurrency(a.totalDue)}</TableCell>
-                  <TableCell>{formatCurrency(a.totalPaid)}</TableCell>
-                  <TableCell>{formatCurrency(a.balance)}</TableCell>
-                  <TableCell>
-                    <Badge className={STATUS_COLORS[a.status] ?? 'bg-gray-100 text-gray-800'}>{a.status}</Badge>
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <EntitySyncIndicator variant="dot" status={syncStatuses[a.id] ?? 'UNKNOWN'} />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="ghost" size="icon" onClick={() => loadDetail(a.id)}>
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                    {a.isBlocked && (
-                      <Button variant="ghost" size="icon" onClick={() => setUnblockModal(a.id)}>
-                        <Unlock className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+
+        {/* Layout 2 tableaux côte à côte : Comptes (gauche) + Historique paiements (droite) */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+          {/* TABLEAU GAUCHE — Comptes élèves (cliquable pour sélectionner) */}
+          <div>
+            <h3 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+              <UserCog className="w-4 h-4 text-slate-500" />
+              Comptes élèves
+            </h3>
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-gray-50">
+                    <TableHead>Élève</TableHead>
+                    <TableHead className="text-right">Total dû</TableHead>
+                    <TableHead className="text-right">Payé</TableHead>
+                    <TableHead className="text-right">Solde</TableHead>
+                    <TableHead>Statut</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {loading ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-gray-500 py-8">Chargement...</TableCell>
+                    </TableRow>
+                  ) : filteredAccounts.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-gray-500 py-12">
+                        {searchQuery ? `Aucun élève trouvé pour « ${searchQuery} ».` : 'Aucun compte élève.'}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredAccounts.map((a) => {
+                      const hasOverride = (a.breakdowns ?? []).some((b: any) => {
+                        const fsTotal = Number(b.feeStructure?.totalAmount ?? 0);
+                        const initial = Number(b.initialAmount ?? 0);
+                        return Math.abs(fsTotal - initial) > 0.01;
+                      });
+                      const isSelected = selectedAccountId === a.id;
+                      return (
+                        <TableRow
+                          key={a.id}
+                          className={`cursor-pointer transition-colors ${isSelected ? 'bg-blue-50' : 'hover:bg-slate-50'}`}
+                          onClick={() => selectStudent(a.id)}
+                        >
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                              <div>
+                                {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.studentId}
+                              </div>
+                              {hasOverride && (
+                                <Badge variant="outline" className="text-purple-700 border-purple-300 bg-purple-50" title="Cet élève a une personnalisation de frais">
+                                  <UserCog className="w-3 h-3 mr-1" />Pers.
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right whitespace-nowrap">{formatCurrency(a.totalDue)}</TableCell>
+                          <TableCell className="text-right whitespace-nowrap">{formatCurrency(a.totalPaid)}</TableCell>
+                          <TableCell className="text-right font-semibold whitespace-nowrap">{formatCurrency(a.balance)}</TableCell>
+                          <TableCell>
+                            <Badge className={STATUS_COLORS[a.status] ?? 'bg-gray-100 text-gray-800'}>{a.status}</Badge>
+                          </TableCell>
+                          <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                            <Button variant="ghost" size="icon" onClick={() => loadDetail(a.id)} title="Détails">
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            {a.isBlocked && (
+                              <Button variant="ghost" size="icon" onClick={() => setUnblockModal(a.id)} title="Débloquer">
+                                <Unlock className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+
+          {/* TABLEAU DROIT — Historique des encaissements de l'élève sélectionné */}
+          <div>
+            <h3 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+              <Receipt className="w-4 h-4 text-slate-500" />
+              Historique des encaissements
+              {selectedAccountId && (
+                <span className="text-xs font-normal text-slate-500 ml-1">
+                  ({filteredAccounts.find((a) => a.id === selectedAccountId)?.student
+                    ? `${filteredAccounts.find((a) => a.id === selectedAccountId)?.student.lastName} ${filteredAccounts.find((a) => a.id === selectedAccountId)?.student.firstName}`
+                    : '—'})
+                </span>
+              )}
+            </h3>
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              {!selectedAccountId ? (
+                <div className="text-center text-gray-500 py-16">
+                  <Receipt className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                  <p>Sélectionnez un élève à gauche pour voir son historique de paiements.</p>
+                </div>
+              ) : loadingHistory ? (
+                <div className="text-center text-gray-500 py-8">Chargement de l'historique...</div>
+              ) : paymentHistory.length === 0 ? (
+                <div className="text-center text-gray-500 py-16">
+                  <Clock className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                  <p>Aucun paiement enregistré pour cet élève.</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-gray-50">
+                      <TableHead className="whitespace-nowrap">N° reçu</TableHead>
+                      <TableHead className="text-right whitespace-nowrap">Montant</TableHead>
+                      <TableHead className="whitespace-nowrap">Mode</TableHead>
+                      <TableHead className="whitespace-nowrap">Date</TableHead>
+                      <TableHead className="whitespace-nowrap">Heure</TableHead>
+                      <TableHead className="whitespace-nowrap">Référence</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {paymentHistory.map((t: any) => (
+                      <TableRow key={t.id} className="hover:bg-slate-50">
+                        <TableCell className="font-mono text-xs whitespace-nowrap">
+                          {t.receiptNumber || '—'}
+                        </TableCell>
+                        <TableCell className="text-right font-semibold text-emerald-700 whitespace-nowrap">
+                          {formatCurrency(t.amount)}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          <Badge variant="outline">{t.paymentMethod || '—'}</Badge>
+                        </TableCell>
+                        <TableCell className="text-sm whitespace-nowrap">
+                          {t.createdAt ? new Date(t.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'}
+                        </TableCell>
+                        <TableCell className="text-sm whitespace-nowrap">
+                          {t.createdAt ? new Date(t.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                        </TableCell>
+                        <TableCell className="text-xs text-slate-500 whitespace-nowrap" title={t.reference || ''}>
+                          {t.reference || '—'}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+              {/* Récapitulatif du total payé si historique non vide */}
+              {selectedAccountId && paymentHistory.length > 0 && (
+                <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-sm">
+                  <span className="text-slate-500">Total encaissé :</span>
+                  <span className="font-bold text-emerald-700">
+                    {formatCurrency(paymentHistory.reduce((sum, t) => sum + Number(t.amount ?? 0), 0))}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+        </div>
       </ModuleContentArea>
       {detailAccount && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -202,13 +434,68 @@ export default function StudentAccountsContent() {
                   <span>{formatCurrency(detailAccount.arrearsAmount)} — Non payé</span>
                 </li>
               )}
-              {detailAccount.breakdowns?.map((b: any) => (
-                <li key={b.id} className="flex justify-between text-sm">
-                  <span>{b.feeStructure?.name ?? b.feeStructureId}</span>
-                  <span>{formatCurrency(b.initialAmount)} — Soldé: {formatCurrency(b.paidAmount)}</span>
-                </li>
-              ))}
+              {detailAccount.breakdowns?.map((b: any) => {
+                const fsTotal = Number(b.feeStructure?.totalAmount ?? 0);
+                const initial = Number(b.initialAmount ?? 0);
+                const isOverridden = Math.abs(fsTotal - initial) > 0.01;
+                return (
+                  <li key={b.id} className="flex justify-between text-sm">
+                    <span className="flex items-center gap-1">
+                      {b.feeStructure?.name ?? b.feeStructureId}
+                      {isOverridden && (
+                        <Badge variant="outline" className="text-[10px] text-purple-700 border-purple-300 bg-purple-50 ml-1" title={`Personnalisé: ${formatCurrency(fsTotal)} → ${formatCurrency(initial)}`}>
+                          <UserCog className="w-2.5 h-2.5 mr-0.5" />Pers.
+                        </Badge>
+                      )}
+                    </span>
+                    <span className={isOverridden ? 'text-purple-700' : ''}>
+                      {isOverridden && <span className="line-through text-slate-400 mr-1">{formatCurrency(fsTotal)}</span>}
+                      {formatCurrency(initial)} — Soldé: {formatCurrency(b.paidAmount)}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
+            {/* Section Personnalisations — liste les overrides de l'élève pour cette année */}
+            {detailAccount.overrides?.length > 0 && (
+              <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                <h4 className="font-medium mb-2 flex items-center gap-2 text-purple-900">
+                  <UserCog className="w-4 h-4" />
+                  Personnalisations appliquées ({detailAccount.overrides.length})
+                </h4>
+                <ul className="space-y-2">
+                  {detailAccount.overrides.map((o: any) => {
+                    const original = Number(o.feeStructure?.totalAmount ?? 0);
+                    const custom = Number(o.customAmount ?? 0);
+                    const reduction = Math.max(0, original - custom);
+                    const reductionPct = original > 0 ? Math.round((reduction / original) * 100) : 0;
+                    return (
+                      <li key={o.id} className="text-sm bg-white rounded p-2 border border-purple-100">
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="min-w-0">
+                            <p className="font-medium text-slate-800">{o.feeStructure?.name ?? '—'}</p>
+                            <p className="text-xs text-slate-500">
+                              {o.feeStructure?.class?.name ? `Classe: ${o.feeStructure.class.name} · ` : ''}
+                              {reduction > 0 ? `Réduction: ${formatCurrency(reduction)} (${reductionPct}%)` : 'Aucune réduction'}
+                            </p>
+                            <p className="text-xs text-slate-500 italic mt-0.5">Motif: {o.reason}</p>
+                          </div>
+                          <div className="text-right whitespace-nowrap">
+                            <p className="text-xs text-slate-400 line-through">{formatCurrency(original)}</p>
+                            <p className="font-semibold text-emerald-700">{formatCurrency(custom)}</p>
+                          </div>
+                        </div>
+                        {o.creator && (
+                          <p className="text-[10px] text-slate-400 mt-1">
+                            Par {o.creator.firstName || ''} {o.creator.lastName || ''} · {o.createdAt ? new Date(o.createdAt).toLocaleDateString('fr-FR') : ''}
+                          </p>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
             {detailAccount.transactions?.length > 0 && (
               <div className="mt-4">
                 <h4 className="font-medium mb-2">Dernières transactions</h4>

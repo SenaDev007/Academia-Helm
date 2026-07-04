@@ -124,6 +124,29 @@ class StudentsService {
     );
   }
 
+  // ─── Batch / Bulk admission operations ───
+
+  async batchSubmitAdmissions(admissionIds: string[]): Promise<any> {
+    return apiFetch(`${BASE_URL}/admissions/batch/submit`, {
+      method: "POST",
+      body: { admissionIds },
+    });
+  }
+
+  async batchAcceptAdmissions(admissionIds: string[], comment?: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/admissions/batch/accept`, {
+      method: "POST",
+      body: { admissionIds, comment },
+    });
+  }
+
+  async batchConvertAdmissions(admissionIds: string[]): Promise<any> {
+    return apiFetch(`${BASE_URL}/admissions/batch/convert`, {
+      method: "POST",
+      body: { admissionIds },
+    });
+  }
+
   async deleteAdmission(id: string): Promise<any> {
     return apiFetch(`${BASE_URL}/admissions/${encodeURIComponent(id)}`, {
       method: "DELETE",
@@ -242,15 +265,24 @@ class StudentsService {
    * Met à jour un étudiant
    */
   async update(id: string, data: any): Promise<any> {
-    const tenantId = getTenantId();
-    if (tenantId) {
-      return updateEntityOffline(tenantId, "STUDENT", id, data);
-    }
-    
-    // Fallback si tenantId non trouvé
+    // ⚠️ Le backend StudentsPrismaController utilise @Put(':id'), pas @Patch.
+    // L'ancien StudentsController a @Patch mais il peut être shadowé par le Prisma controller.
+    // On utilise PUT pour être sûr d'atteindre le bon endpoint.
     return apiFetch(`${BASE_URL}/${encodeURIComponent(id)}`, {
-      method: "PATCH",
+      method: "PUT",
       body: data,
+    });
+  }
+
+  /**
+   * Upload photo d'élève via data URL (base64) — pattern identique au RH.
+   * Backend : POST /students/:id/upload-photo
+   * Body: { photoDataUrl: string }
+   */
+  async uploadPhoto(studentId: string, photoDataUrl: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/${encodeURIComponent(studentId)}/upload-photo`, {
+      method: "POST",
+      body: { photoDataUrl },
     });
   }
 
@@ -443,25 +475,32 @@ class StudentsService {
   }
 
   /**
-   * Génère le PDF de la liste d'élèves d'une classe.
+   * Génère le PDF de la liste d'élèves d'une classe et retourne une blob URL
+   * + le nom du fichier pour affichage dans un DocumentPreviewModal.
    *
-   * Backend : GET /students/class-list/:classId/pdf?academicYearId=...
+   * BFF : GET /api/students/class-list/:classId/pdf?academicYearId=...
+   * (proxy vers backend NestJS)
    *
    * En-tête adapté au niveau (Maternelle/Primaire vs Secondaire).
-   * Le nom de fichier est récupéré depuis Content-Disposition si présent.
+   *
+   * @returns { url: string; fileName: string } — blob URL à passer à l'iframe/img
+   *          + nom du fichier pour le bouton Télécharger du modal
+   *          ⚠️ L'appelant DOIT faire URL.revokeObjectURL(url) à la fermeture du modal
    */
-  async generateClassListPdf(classId: string, academicYearId: string): Promise<void> {
-    const token = typeof window !== 'undefined'
-      ? (document.cookie.split('; ').find(r => r.startsWith('academia_token='))?.split('=')[1] || '')
-      : '';
-    const res = await fetch(`${BASE_URL}/class-list/${encodeURIComponent(classId)}/pdf?academicYearId=${encodeURIComponent(academicYearId)}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      credentials: 'include',
-    });
-    if (!res.ok) throw new Error('Génération PDF échouée');
+  async generateClassListPdf(
+    classId: string,
+    academicYearId: string,
+  ): Promise<{ url: string; fileName: string }> {
+    const res = await fetch(
+      `/api/students/class-list/${encodeURIComponent(classId)}/pdf?academicYearId=${encodeURIComponent(academicYearId)}`,
+      { credentials: 'include' },
+    );
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`Génération PDF échouée (${res.status}): ${errText}`);
+    }
     const blob = await res.blob();
 
-    // Récupérer le nom de fichier depuis Content-Disposition (fallback: liste_classe.pdf)
     let filename = 'liste_classe.pdf';
     const cd = res.headers.get('Content-Disposition');
     if (cd) {
@@ -470,13 +509,79 @@ class StudentsService {
     }
 
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    return { url, fileName: filename };
+  }
+
+  /**
+   * Génère le PDF et le STOCKE en DB (GeneratedDocument).
+   * Pattern Generate + Visualiser (comme RH contrats) : générer une fois,
+   * visualiser ensuite instantanément sans regénérer.
+   *
+   * BFF : POST /api/students/class-list/:classId/pdf/generate
+   */
+  async generateAndStoreClassListPdf(
+    classId: string,
+    academicYearId: string,
+  ): Promise<{ success: boolean; documentId: string; fileName: string; fileSize: number; generatedAt: string }> {
+    const res = await fetch(
+      `/api/students/class-list/${encodeURIComponent(classId)}/pdf/generate`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ academicYearId }),
+        credentials: 'include',
+      },
+    );
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`Génération PDF échouée (${res.status}): ${errText}`);
+    }
+    return res.json();
+  }
+
+  /**
+   * Récupère le PDF stocké en DB (sans regénérer). Retourne une blob URL.
+   * Lance une erreur si aucun PDF n'a été généré.
+   *
+   * BFF : GET /api/students/class-list/:classId/pdf/stored
+   */
+  async getStoredClassListPdf(
+    classId: string,
+    academicYearId: string,
+  ): Promise<{ url: string; fileName: string }> {
+    const res = await fetch(
+      `/api/students/class-list/${encodeURIComponent(classId)}/pdf/stored?academicYearId=${encodeURIComponent(academicYearId)}`,
+      { credentials: 'include' },
+    );
+    if (!res.ok) {
+      throw new Error('Aucun PDF généré pour cette classe. Générez d\'abord le document.');
+    }
+    const blob = await res.blob();
+    let filename = 'liste_classe.pdf';
+    const cd = res.headers.get('Content-Disposition');
+    if (cd) {
+      const match = cd.match(/filename="?([^";]+)"?/);
+      if (match) filename = decodeURIComponent(match[1]);
+    }
+    const url = URL.createObjectURL(blob);
+    return { url, fileName: filename };
+  }
+
+  /**
+   * Vérifie si un PDF a déjà été généré pour cette classe.
+   *
+   * BFF : GET /api/students/class-list/:classId/pdf/exists
+   */
+  async checkClassListPdfExists(
+    classId: string,
+    academicYearId: string,
+  ): Promise<{ exists: boolean; documentId?: string; generatedAt?: string; fileName?: string }> {
+    const res = await fetch(
+      `/api/students/class-list/${encodeURIComponent(classId)}/pdf/exists?academicYearId=${encodeURIComponent(academicYearId)}`,
+      { credentials: 'include' },
+    );
+    if (!res.ok) return { exists: false };
+    return res.json();
   }
 
   /**

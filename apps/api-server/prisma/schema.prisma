@@ -1801,6 +1801,9 @@ model User {
   feeOverridesCreated                       FeeOverride[]                     @relation("FeeOverrideCreator")
   feeStructuresCreated                      FeeStructure[]                    @relation("FeeStructureCreator")
   validatedFinanceDailyClosures             FinanceDailyClosure[]             @relation("FinanceDailyClosureValidator")
+  cashRegistersResponsible                  CashRegister[]                    @relation("CashRegisterResponsible")
+  cashRegistersOpened                       CashRegister[]                    @relation("CashRegisterOpenedBy")
+  cashRegistersClosed                       CashRegister[]                    @relation("CashRegisterClosedBy")
   approvedFinanceExpenses                   FinanceExpense[]                  @relation("FinanceExpenseApprover")
   requestedFinanceExpenses                  FinanceExpense[]                  @relation("FinanceExpenseRequester")
   financialAuditLogsPerformed               FinancialAuditLog[]               @relation("FinancialAuditLogPerformer")
@@ -3390,6 +3393,7 @@ model TenantIdentityProfile {
   postalCode           String?
   phonePrimary         String?
   phoneSecondary       String?
+  whatsapp             String?
   email                String?
   website              String?
   currency             String    @default("XOF")
@@ -5044,15 +5048,39 @@ model FinancialAnomaly {
 
 /// Extension â€” Multi-caisses.
 model CashRegister {
-  id           String               @id @default(uuid())
-  tenantId     String
-  name         String
-  isActive     Boolean              @default(true)
-  createdAt    DateTime             @default(now())
-  tenant       Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  transactions FinanceTransaction[]
+  id                 String               @id @default(uuid())
+  tenantId           String
+  code               String                                // Code court unique (ex: CAISSE-01, MAIN, SECONDARY)
+  name               String                                // Nom affiché (ex: "Caisse principale", "Caisse mobile")
+  description        String?
+  responsibleUserId  String?                               // ID du staff responsable (Staff.id, pas User.id — pas de FK)
+  location           String?                               // Emplacement physique (ex: "Bureau d'accueil", "Cantine")
+  openingBalance     Decimal              @default(0) @db.Decimal(12, 2)  // Solde d'ouverture
+  currentBalance     Decimal              @default(0) @db.Decimal(12, 2)  // Solde courant (mise à jour après chaque transaction)
+  isOpen             Boolean              @default(false)  // Caisse ouverte (true) ou fermée (false)
+  openedAt           DateTime?                              // Dernière ouverture
+  openedByUserId     String?                               // User qui a ouvert la caisse
+  closedAt           DateTime?                              // Dernière fermeture
+  closedByUserId     String?                               // User qui a fermé la caisse
+  isActive           Boolean              @default(true)   // Caisse active (false = archivée, plus utilisable)
+  // Champs bancaires (utilisés seulement pour les caisses de type banque)
+  bankName           String?                               // Nom de la banque (ex: Ecobank Bénin)
+  bankAccountNumber  String?                               // Numéro de compte bancaire
+  bankIBAN           String?                               // IBAN du compte
+  bankBranch         String?                               // Agence / succursale
+  bankAccountType    String?                               // Type de compte: COURANT, EPARGNE
+  bankContact        String?                               // Contact du gestionnaire de compte
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  tenant             Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  openedBy           User?                @relation("CashRegisterOpenedBy", fields: [openedByUserId], references: [id], onDelete: SetNull)
+  closedBy           User?                @relation("CashRegisterClosedBy", fields: [closedByUserId], references: [id], onDelete: SetNull)
+  transactions       FinanceTransaction[]
 
+  @@unique([tenantId, code])
   @@index([tenantId])
+  @@index([tenantId, isActive])
+  @@index([responsibleUserId])
   @@map("cash_registers")
 }
 
@@ -8327,21 +8355,59 @@ model InboundEmail {
 model WhatsappLog {
   id           String    @id @default(uuid())
   tenantId     String
-  recipient    String
-  message      String
-  status       String
-  provider     String?
-  providerId   String?
-  sentAt       DateTime?
-  deliveredAt  DateTime?
-  readAt       DateTime?
-  errorMessage String?
+
+  // ─── Catégorisation (mirror EmailLog) ───
+  category       String?   // RECRUTEMENT | PEDAGOGIE | FINANCE | ADMINISTRATIF | COMMUNICATION | SYSTEM
+  subCategory    String?
+  module         String?   // hr | students | pedagogy | finance | communication
+
+  // ─── Destinataire ───
+  recipient      String    // Format E.164 (+229XXXXXXXX)
+  recipientName  String?
+  recipientType  String?   // CANDIDAT | PARENT | STAFF | ENSEIGNANT | EXTERNE
+  recipientId    String?
+
+  // ─── Expéditeur (numéro WhatsApp Business source) ───
+  fromPhone      String?
+
+  // ─── Contenu ───
+  message        String    // Rendu final ou résumé
+
+  // ─── Template tracking ───
+  templateId     String?   // Gupshup elementName (ex: "admission_recue")
+  templateLanguage String? // "fr"
+
+  // ─── Statut & Provider ───
+  status         String    @default("PENDING") // PENDING | SENT | DELIVERED | READ | FAILED
+  provider       String?   // gupshup | twilio-whatsapp | infobip-whatsapp | ...
+  providerId     String?   // ID retourné par le provider
+
+  // ─── Threading ───
+  threadId       String?
+
+  // ─── Timestamps de cycle de vie ───
+  sentAt         DateTime?
+  deliveredAt    DateTime?
+  readAt         DateTime?
+  errorMessage   String?
+
+  // ─── Métadonnées ───
+  triggeredBy        String?   // SYSTEM | STAFF | AUTOMATION | SARA
+  triggeredByUserId  String?
+  relatedEntityId    String?
+  relatedEntityType  String?
+
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
-  @@index([status])
+  @@index([tenantId, status])
+  @@index([tenantId, category])
+  @@index([tenantId, recipient])
+  @@index([tenantId, module])
+  @@index([threadId])
+  @@index([tenantId, createdAt])
   @@map("whatsapp_logs")
 }
 
@@ -9945,6 +10011,9 @@ model FeeStructure {
   classId               String?
   name                  String
   feeType               FeeType
+  /// Libellé personnalisé du type de frais (utilisé uniquement quand feeType = OTHER).
+  /// Ex: "Transport", "Activités". Le nom du frais est auto-généré avec ce libellé.
+  customFeeTypeLabel    String?
   totalAmount           Decimal                   @db.Decimal(10, 2)
   isInstallment         Boolean                   @default(false)
   isMandatory           Boolean                   @default(true)
@@ -9969,15 +10038,25 @@ model FeeStructure {
 }
 
 model FeeStructureInstallment {
-  id             String       @id @default(uuid())
+  id             String                   @id @default(uuid())
   feeStructureId String
   label          String
-  amount         Decimal      @db.Decimal(10, 2)
-  dueDate        DateTime     @db.Date
+  amount         Decimal                  @db.Decimal(10, 2)
+  dueDate        DateTime?                @db.Date
+  /// Mode de calcul de l'échéance :
+  ///   - FIXED                 : date fixe (comportement historique, défaut)
+  ///   - AT_ENROLLMENT         : échéance = date d'inscription de l'élève
+  ///   - DAYS_AFTER_ENROLLMENT : échéance = date d'inscription + daysOffset jours
+  /// Pour AT_ENROLLMENT et DAYS_AFTER_ENROLLMENT, dueDate est NULL au niveau du template
+  /// et résolue dynamiquement au moment de la création du compte élève.
+  dueDateType    String                   @default("FIXED")
+  /// Nombre de jours après l'inscription (utilisé uniquement quand dueDateType = DAYS_AFTER_ENROLLMENT).
+  daysOffset     Int?
   orderIndex     Int
-  feeStructure   FeeStructure @relation(fields: [feeStructureId], references: [id], onDelete: Cascade)
+  feeStructure   FeeStructure             @relation(fields: [feeStructureId], references: [id], onDelete: Cascade)
 
   @@index([feeStructureId])
+  @@index([dueDateType])
   @@map("fee_structure_installments")
 }
 
@@ -13892,8 +13971,9 @@ enum FeeType {
   INSCRIPTION
   REINSCRIPTION
   TUITION
-  ANNEX
-  EXCEPTIONAL
+  CANTEEN
+  EXAMEN
+  OTHER
 }
 
 /// Sous-module 2 â€” Statut du compte Ã©lÃ¨ve (spec institutionnelle).

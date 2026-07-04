@@ -498,11 +498,15 @@ export class AdmissionService {
           );
         }
       } catch (admitErr: any) {
-        // Si admit() échoue, l'élève reste en PRE_REGISTERED — on ne bloque
-        // pas la conversion, on log l'erreur pour debug.
+        // Si admit() échoue, on BLOQUE la conversion — l'élève ne doit pas
+        // être marqué CONVERTED sans matricule ni compte financier.
         this.logger.error(
-          `Admission ${admission.admissionNumber}: admit() failed for student ${student.id}: ${admitErr.message}`,
+          `Admission ${admission.admissionNumber}: admit() FAILED for student ${student.id}: ${admitErr.message}`,
           admitErr.stack,
+        );
+        throw new BadRequestException(
+          `Échec de l'admission formelle (admit): ${admitErr.message}. ` +
+          `L'élève a été pré-inscrit mais le matricule et le compte financier n'ont pas pu être créés.`,
         );
       }
 

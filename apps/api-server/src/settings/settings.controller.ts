@@ -208,6 +208,7 @@ export class SettingsController {
       postalCode?: string;
       phonePrimary?: string;
       phoneSecondary?: string;
+      whatsapp?: string;
       email?: string;
       website?: string;
       currency?: string;

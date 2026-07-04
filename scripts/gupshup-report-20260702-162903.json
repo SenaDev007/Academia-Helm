@@ -1,0 +1,19 @@
+{
+  "timestamp": "2026-07-02 16:29:03",
+  "mode": "dry-run",
+  "total": 1,
+  "success": 1,
+  "failed": 0,
+  "results": [
+    {
+      "elementName": "admission_recue",
+      "useCase": "Admission confirmation",
+      "success": true,
+      "status_code": 0,
+      "response": {
+        "dry_run": true
+      },
+      "error": null
+    }
+  ]
+}

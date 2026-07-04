@@ -1,5 +1,5 @@
 /**
- * Onglets du module Finance & Économat — Dashboard + 8 sous-modules (spec Academia Helm)
+ * Onglets du module Finance & Économat — Dashboard + 8 sous-modules + extensions (spec Academia Helm)
  */
 import {
   LayoutDashboard,
@@ -12,6 +12,7 @@ import {
   BarChart3,
   Settings,
   ShieldCheck,
+  Coins,
 } from 'lucide-react';
 
 export const FINANCE_SUBMODULE_TABS = [
@@ -22,6 +23,7 @@ export const FINANCE_SUBMODULE_TABS = [
   { id: 'collection', label: 'Recouvrement', path: '/app/finance/collection', icon: AlertCircle },
   { id: 'expenses', label: 'Dépenses', path: '/app/finance/expenses', icon: TrendingDown },
   { id: 'treasury', label: 'Clôture & Trésorerie', path: '/app/finance/treasury', icon: Wallet },
+  { id: 'cash-registers', label: 'Multi-caisses', path: '/app/finance/cash-registers', icon: Coins },
   { id: 'aggregation', label: 'Agrégation & Bilan Global', path: '/app/finance/aggregation', icon: BarChart3 },
   { id: 'reports', label: 'Rapports financiers', path: '/app/finance/reports', icon: BarChart3 },
   { id: 'audit', label: 'Contrôle & Audit', path: '/app/finance/audit', icon: ShieldCheck },

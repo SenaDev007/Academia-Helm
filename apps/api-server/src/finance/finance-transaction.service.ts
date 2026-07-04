@@ -1,17 +1,24 @@
 /**
  * SOUS-MODULE 3 — Encaissements (FinanceTransaction)
  * Reçu AH-YYYY-NNNNNN, imputation prioritaire, hash d'intégrité (spec extension).
+ *
+ * EXTENSION MULTI-CAISSES :
+ * - Accepte cashRegisterId optionnel pour lier la transaction à une caisse
+ * - Met à jour le currentBalance de la caisse après chaque transaction
+ * - Valide que la caisse est ouverte avant d'accepter un paiement
  */
 import * as crypto from 'crypto';
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { TransactionType, PaymentMethod } from '@prisma/client';
 
-const PRIORITY_ORDER = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'ANNEX', 'EXCEPTIONAL'];
+const PRIORITY_ORDER = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'OTHER'];
 const PAYMENT_METHODS: PaymentMethod[] = ['CASH', 'MOBILE_MONEY', 'WIRE', 'FEDAPAY'];
 
 @Injectable()
 export class FinanceTransactionService {
+  private readonly logger = new Logger(FinanceTransactionService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   private async nextReceiptNumber(tenantId: string): Promise<string> {
@@ -44,10 +51,28 @@ export class FinanceTransactionService {
       cashierId: string;
       deviceId?: string;
       receiptUrl?: string;
+      cashRegisterId?: string;  // ← NOUVEAU : caisse utilisée pour ce paiement
     },
   ) {
     const paymentMethod = (typeof data.paymentMethod === 'string' && PAYMENT_METHODS.includes(data.paymentMethod as PaymentMethod))
       ? (data.paymentMethod as PaymentMethod) : 'CASH';
+
+    // Validation de la caisse si fournie
+    if (data.cashRegisterId) {
+      const register = await this.prisma.cashRegister.findFirst({
+        where: { id: data.cashRegisterId, tenantId },
+      });
+      if (!register) {
+        throw new NotFoundException('Caisse non trouvée');
+      }
+      if (!register.isActive) {
+        throw new BadRequestException('Caisse archivée — paiements interdits.');
+      }
+      if (!register.isOpen) {
+        throw new BadRequestException('Caisse fermée — ouvrez-la avant d\'encaisser.');
+      }
+    }
+
     const account = await this.prisma.studentAccount.findFirst({
       where: { id: data.studentAccountId, tenantId },
       include: {
@@ -96,6 +121,7 @@ export class FinanceTransactionService {
         deviceId: data.deviceId ?? null,
         receiptNumber,
         receiptUrl: data.receiptUrl ?? null,
+        cashRegisterId: data.cashRegisterId ?? null,
         allocations: updates.length
           ? { create: updates.map((u) => ({ accountBreakdownId: u.breakdownId, amount: u.paidDelta })) }
           : undefined,
@@ -122,13 +148,29 @@ export class FinanceTransactionService {
       });
     }
 
+    // Mise à jour du solde de la caisse (multi-caisses)
+    if (data.cashRegisterId) {
+      try {
+        await this.prisma.cashRegister.update({
+          where: { id: data.cashRegisterId },
+          data: { currentBalance: { increment: data.amount } },
+        });
+      } catch (err: any) {
+        this.logger.error(`Failed to update cash register balance: ${err.message}`);
+      }
+    }
+
     // Note: totalPaid, balance and status are now updated via the DB Trigger 'update_balance_after_transaction'
     // on the finance_transactions table to ensure atomicity.
 
 
     return this.prisma.financeTransaction.findUnique({
       where: { id: tx.id },
-      include: { studentAccount: { include: { breakdowns: true, student: true } }, allocations: true },
+      include: {
+        studentAccount: { include: { breakdowns: true, student: true } },
+        allocations: true,
+        cashRegister: { select: { id: true, code: true, name: true } },
+      },
     });
   }
 

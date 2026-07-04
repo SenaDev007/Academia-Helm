@@ -11,7 +11,7 @@ export async function PUT(
   const { id } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(normalizeApiUrl(`${API_URL}/api/finance/expenses/${id}/reject`), {
+    const response = await fetch(normalizeApiUrl(`${API_URL}/finance/expenses/${id}/reject`), {
       method: 'PUT',
       headers,
     });

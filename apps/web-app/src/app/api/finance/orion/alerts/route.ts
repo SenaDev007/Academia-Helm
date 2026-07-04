@@ -9,9 +9,9 @@ export async function GET(request: NextRequest) {
     const academicYearId = request.nextUrl.searchParams.get('academicYearId') ?? '';
     const headers = await getProxyAuthHeaders(request);
     const [receiptRes, arrearsRes, reductionsRes] = await Promise.allSettled([
-      fetch(normalizeApiUrl(`${API_URL}/api/finance/orion/receipt-notifications/alerts?academicYearId=${academicYearId}`), { headers }),
-      fetch(normalizeApiUrl(`${API_URL}/api/finance/orion/arrears/alerts?academicYearId=${academicYearId}`), { headers }),
-      fetch(normalizeApiUrl(`${API_URL}/api/finance/orion/reductions/alerts?academicYearId=${academicYearId}`), { headers }),
+      fetch(normalizeApiUrl(`${API_URL}/finance/orion/receipt-notifications/alerts?academicYearId=${academicYearId}`), { headers }),
+      fetch(normalizeApiUrl(`${API_URL}/finance/orion/arrears/alerts?academicYearId=${academicYearId}`), { headers }),
+      fetch(normalizeApiUrl(`${API_URL}/finance/orion/reductions/alerts?academicYearId=${academicYearId}`), { headers }),
     ]);
     const receiptAlerts = receiptRes.status === 'fulfilled' && receiptRes.value.ok ? await receiptRes.value.json() : [];
     const arrearsAlerts = arrearsRes.status === 'fulfilled' && arrearsRes.value.ok ? await arrearsRes.value.json() : [];

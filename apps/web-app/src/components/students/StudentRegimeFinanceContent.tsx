@@ -111,7 +111,7 @@ export default function StudentRegimeFinanceContent() {
             {data.map((item) => (
               <tr key={item.id} className="hover:bg-gray-50 transition-colors">
                 <td className="px-6 py-4">
-                  <div className="font-bold text-gray-900 text-sm">{item.student.lastName} {item.student.firstName}</div>
+                  <div className="font-bold text-gray-900 text-sm">{item.student?.lastName || item.lastName || '—'} {item.student?.firstName || item.firstName || ''}</div>
                   <div className="text-[10px] text-blue-600 font-bold uppercase tracking-tighter mt-0.5">
                     {item.feeProfile?.feeRegime.label || 'SANS RÃ‰GIME'}
                   </div>

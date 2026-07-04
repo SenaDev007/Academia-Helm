@@ -5,14 +5,16 @@ import {
   Plus, Search, Filter, CheckCircle, XCircle, Clock, FileText,
   UserCheck, Calendar, BadgeCheck, AlertCircle, Loader2, Eye,
   Send, Pencil, X, Info, Star, AlertTriangle, Trash2, RotateCcw,
-  ExternalLink,
+  ExternalLink, ArrowUpDown, ArrowUpAZ, ArrowDownAZ, ArrowDownUp,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FormModal, ConfirmModal, ReadOnlyModal } from '@/components/modules/blueprint';
+import { Button } from '@/components/ui/button';
 import AdmissionForm from './AdmissionForm';
+import DocumentPreviewModal from './DocumentPreviewModal';
 import { toast } from '@/components/ui/toast';
 import { studentsService } from '@/services/students.service';
 import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
@@ -53,6 +55,10 @@ export default function AdmissionsContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('ALL');
+  const [sortBy, setSortBy] = useState<'name-asc' | 'name-desc' | 'date-recent' | 'date-old'>('name-asc');
+
+  // Nettoyer la sélection quand on change de filtre
+  useEffect(() => { setSelectedIds(new Set()); }, [activeFilter]);
 
   // ⚠️ Niveaux scolaires — chargés depuis /api/school-levels pour faire le
   // mapping schoolLevelId → label côté client. La relation schoolLevel a été
@@ -65,17 +71,38 @@ export default function AdmissionsContent() {
   // par le parent dans la liste + le détail + l'édition.
   const [schoolClasses, setSchoolClasses] = useState<any[]>([]);
 
+  // Multi-sélection pour actions en lot
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchActionPending, setBatchActionPending] = useState(false);
+
   useEffect(() => {
     fetch('/api/school-levels', { credentials: 'include' })
       .then(res => res.ok ? res.json() : [])
       .then(data => setSchoolLevels(Array.isArray(data) ? data : []))
       .catch(() => setSchoolLevels([]));
 
-    // Charger toutes les classes du tenant (limit=200) pour résoudre requestedClassId
-    fetch('/api/classes?limit=200', { credentials: 'include' })
-      .then(res => res.ok ? res.json() : [])
-      .then(data => setSchoolClasses(Array.isArray(data) ? data : []))
-      .catch(() => setSchoolClasses([]));
+    // Charger TOUTES les classes du tenant via la route BFF dédiée /api/all-classes
+    // ⚠️ On n'utilise PAS /api/classes?schoolLevelId=ALL car le PaginationDto du backend
+    // a forbidNonWhitelisted: true → rejette le param schoolLevelId (400 Bad Request).
+    // La route /api/all-classes contourne ce problème en forçant le header
+    // x-school-level-id=ALL côté BFF.
+    fetch('/api/all-classes', { credentials: 'include' })
+      .then(res => {
+        if (!res.ok) {
+          console.warn('[AdmissionsContent] /api/all-classes returned', res.status, res.statusText);
+          return [];
+        }
+        return res.json();
+      })
+      .then(data => {
+        const classes = Array.isArray(data) ? data : [];
+        console.log('[AdmissionsContent] Loaded classes:', classes.length, classes.map(c => ({ id: c.id?.substring(0, 8), name: c.name })));
+        setSchoolClasses(classes);
+      })
+      .catch((e) => {
+        console.warn('[AdmissionsContent] Failed to load classes:', e?.message);
+        setSchoolClasses([]);
+      });
   }, []);
 
   // Helper : retourne le label d'un niveau à partir de son ID
@@ -308,6 +335,108 @@ export default function AdmissionsContent() {
       toast({ title: 'Erreur', description: e.message, variant: 'error' });
     } finally {
       setIsActionPending(false);
+    }
+  };
+
+  // ─── Batch / Multi-sélection ─────────────────────────────────────────────
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = (ids: string[]) => {
+    setSelectedIds(prev => {
+      // Si tous sont déjà sélectionnés → désélectionner tout
+      if (ids.every(id => prev.has(id))) return new Set();
+      // Sinon → sélectionner tous
+      return new Set(ids);
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const handleBatchSubmit = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    const ok = await setConfirmModal({
+      title: 'Soumettre en lot',
+      message: `Soumettre ${ids.length} candidature(s) ?`,
+      confirmText: 'Soumettre',
+    });
+    if (!ok) return;
+    setBatchActionPending(true);
+    try {
+      const result = await studentsService.batchSubmitAdmissions(ids);
+      toast({
+        title: '✅ Soumission en lot terminée',
+        description: `${result.succeeded} réussie(s), ${result.failed} échouée(s)`,
+      });
+      clearSelection();
+      loadAdmissions();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
+    } finally {
+      setBatchActionPending(false);
+      setConfirmModal(null);
+    }
+  };
+
+  const handleBatchAccept = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    const ok = await setConfirmModal({
+      title: 'Accepter en lot',
+      message: `Accepter ${ids.length} candidature(s) ?`,
+      confirmText: 'Accepter',
+    });
+    if (!ok) return;
+    setBatchActionPending(true);
+    try {
+      const result = await studentsService.batchAcceptAdmissions(ids);
+      toast({
+        title: '✅ Acceptation en lot terminée',
+        description: `${result.succeeded} réussie(s), ${result.failed} échouée(s)`,
+      });
+      clearSelection();
+      loadAdmissions();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
+    } finally {
+      setBatchActionPending(false);
+      setConfirmModal(null);
+    }
+  };
+
+  const handleBatchConvert = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    const ok = await setConfirmModal({
+      title: 'Convertir en lot',
+      message: `Convertir ${ids.length} candidature(s) en élèves ? Cette action générera matricules, comptes financiers, dossiers académiques, tokens QR et responsables légaux.`,
+      confirmText: 'Convertir',
+    });
+    if (!ok) return;
+    setBatchActionPending(true);
+    try {
+      const result = await studentsService.batchConvertAdmissions(ids);
+      const succeeded = result.results.filter((r: any) => r.success);
+      const matricules = succeeded.map((r: any) => r.matricule).filter(Boolean).join(', ');
+      toast({
+        title: '✅ Conversion en lot terminée',
+        description: `${result.succeeded} élève(s) créé(s)${matricules ? ` — Matricules: ${matricules}` : ''}${result.failed > 0 ? ` — ${result.failed} échouée(s)` : ''}`,
+      });
+      clearSelection();
+      loadAdmissions();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
+    } finally {
+      setBatchActionPending(false);
+      setConfirmModal(null);
     }
   };
 
@@ -566,6 +695,26 @@ export default function AdmissionsContent() {
                           (a.admissionNumber?.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesFilter = activeFilter === 'ALL' || a.status === activeFilter;
     return matchesSearch && matchesFilter;
+  }).sort((a, b) => {
+    // Tri selon le mode sélectionné
+    switch (sortBy) {
+      case 'name-asc':
+        return `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`, 'fr');
+      case 'name-desc':
+        return `${b.firstName} ${b.lastName}`.localeCompare(`${a.firstName} ${a.lastName}`, 'fr');
+      case 'date-recent': {
+        const dA = new Date(a.submittedAt || a.createdAt || 0).getTime();
+        const dB = new Date(b.submittedAt || b.createdAt || 0).getTime();
+        return dB - dA;
+      }
+      case 'date-old': {
+        const dA = new Date(a.submittedAt || a.createdAt || 0).getTime();
+        const dB = new Date(b.submittedAt || b.createdAt || 0).getTime();
+        return dA - dB;
+      }
+      default:
+        return 0;
+    }
   });
 
   // Filtres étendus avec compteurs
@@ -622,6 +771,36 @@ export default function AdmissionsContent() {
           </div>
         </div>
 
+        {/* Sélecteur de tri */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg p-1">
+            {[
+              { id: 'name-asc', icon: ArrowUpAZ, label: 'A → Z' },
+              { id: 'name-desc', icon: ArrowDownAZ, label: 'Z → A' },
+              { id: 'date-recent', icon: ArrowDownUp, label: 'Récent' },
+              { id: 'date-old', icon: ArrowUpDown, label: 'Ancien' },
+            ].map((opt) => {
+              const Icon = opt.icon;
+              const isActive = sortBy === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => setSortBy(opt.id as any)}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
+                    isActive
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                  title={opt.label}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <div className="flex items-center space-x-2">
           <button
             onClick={() => setIsCreateModalOpen(true)}
@@ -659,6 +838,59 @@ export default function AdmissionsContent() {
         ))}
       </div>
 
+      {/* Barre d'actions batch (multi-sélection) */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-semibold text-blue-900">
+              {selectedIds.size} sélectionnée(s)
+            </span>
+            <button onClick={clearSelection} className="text-xs text-blue-600 hover:text-blue-800 underline">
+              Tout désélectionner
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            {/* Submit batch — visible si au moins une PENDING */}
+            {filteredAdmissions.some(a => selectedIds.has(a.id) && a.status === 'PENDING') && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleBatchSubmit}
+                disabled={batchActionPending}
+                className="border-blue-300 text-blue-700 hover:bg-blue-100"
+              >
+                <Send className="w-3.5 h-3.5 mr-1.5" />
+                Soumettre en lot
+              </Button>
+            )}
+            {/* Accept batch — visible si au moins une SUBMITTED ou UNDER_REVIEW */}
+            {filteredAdmissions.some(a => selectedIds.has(a.id) && (a.status === 'SUBMITTED' || a.status === 'UNDER_REVIEW')) && (
+              <Button
+                size="sm"
+                onClick={handleBatchAccept}
+                disabled={batchActionPending}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                <CheckCircle className="w-3.5 h-3.5 mr-1.5" />
+                Accepter en lot
+              </Button>
+            )}
+            {/* Convert batch — visible si au moins une ACCEPTED */}
+            {filteredAdmissions.some(a => selectedIds.has(a.id) && a.status === 'ACCEPTED') && (
+              <Button
+                size="sm"
+                onClick={handleBatchConvert}
+                disabled={batchActionPending}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white"
+              >
+                <UserCheck className="w-3.5 h-3.5 mr-1.5" />
+                Convertir en lot
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Main Table Content */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1">
         {isLoading ? (
@@ -681,6 +913,14 @@ export default function AdmissionsContent() {
             <table className="min-w-full divide-y divide-slate-200">
               <thead>
                 <tr className="bg-slate-50/50">
+                  <th className="px-4 py-4 text-left">
+                    <input
+                      type="checkbox"
+                      checked={filteredAdmissions.length > 0 && filteredAdmissions.every(a => selectedIds.has(a.id))}
+                      onChange={() => toggleSelectAll(filteredAdmissions.map(a => a.id))}
+                      className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                  </th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Candidat</th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Niveau</th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Classe</th>
@@ -700,8 +940,16 @@ export default function AdmissionsContent() {
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: idx * 0.05 }}
-                        className="group hover:bg-slate-50/80 transition-colors"
+                        className={`group hover:bg-slate-50/80 transition-colors ${selectedIds.has(admission.id) ? 'bg-blue-50/50' : ''}`}
                       >
+                        <td className="px-4 py-4 whitespace-nowrap">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(admission.id)}
+                            onChange={() => toggleSelect(admission.id)}
+                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                          />
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
                             <div className="h-10 w-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500 font-bold group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors">
@@ -719,12 +967,6 @@ export default function AdmissionsContent() {
                                   <>
                                     <span>•</span>
                                     <span>{admission.gender === 'M' ? 'Garçon' : 'Fille'}</span>
-                                  </>
-                                )}
-                                {admission.wantsBilingual && (
-                                  <>
-                                    <span>•</span>
-                                    <span className="text-blue-500">Bilingue</span>
                                   </>
                                 )}
                               </div>
@@ -965,7 +1207,6 @@ export default function AdmissionsContent() {
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div><span className="text-slate-400">Niveau souhaité :</span> <strong>{getLevelLabel(selectedAdmission.schoolLevelId)}</strong></div>
                 <div><span className="text-slate-400">Classe souhaitée :</span> <strong>{getClassLabel(selectedAdmission.requestedClassId)}</strong></div>
-                <div><span className="text-slate-400">Cursus bilingue :</span> {selectedAdmission.wantsBilingual ? '✓ Oui' : '✗ Non'}</div>
                 <div className="col-span-2"><span className="text-slate-400">Établissement précédent :</span> {selectedAdmission.previousSchool || '—'}</div>
               </div>
             </div>
@@ -1388,65 +1629,10 @@ export default function AdmissionsContent() {
 
       {/* ─── MODAL DE VISUALISATION (data URL directe — pas de fetch nécessaire) ─── */}
       {previewDoc && (
-        <div
-          className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={() => setPreviewDoc(null)}
-        >
-          <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col overflow-hidden"
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="p-2 bg-blue-50 rounded-lg shrink-0">
-                  <FileText className="w-5 h-5 text-blue-600" />
-                </div>
-                <div className="min-w-0">
-                  <h3 className="text-sm font-bold text-slate-800 truncate">{previewDoc.fileName}</h3>
-                  <p className="text-[10px] text-slate-400">{previewDoc.mimeType}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {/* Télécharger : créer un <a> avec le data URL directement */}
-                <a
-                  href={previewDoc.filePath}
-                  download={previewDoc.fileName}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 transition"
-                  title="Télécharger"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  Télécharger
-                </a>
-                <button
-                  onClick={() => setPreviewDoc(null)}
-                  className="p-2 hover:bg-slate-200 rounded-lg text-slate-500 transition"
-                  title="Fermer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-            {/* Body — iframe avec data URL directement (pas de fetch, pas d'auth) */}
-            <div className="flex-1 overflow-hidden bg-slate-100">
-              {previewDoc.mimeType.startsWith('image/') ? (
-                <div className="flex items-center justify-center h-full p-4">
-                  <img
-                    src={previewDoc.filePath}
-                    alt={previewDoc.fileName}
-                    className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
-                  />
-                </div>
-              ) : (
-                <iframe
-                  src={previewDoc.filePath}
-                  className="w-full h-full border-0"
-                  title={previewDoc.fileName}
-                />
-              )}
-            </div>
-          </div>
-        </div>
+        <DocumentPreviewModal
+          doc={previewDoc}
+          onClose={() => setPreviewDoc(null)}
+        />
       )}
 
       {/* Modal de confirmation personnalisé (remplace window.confirm) */}

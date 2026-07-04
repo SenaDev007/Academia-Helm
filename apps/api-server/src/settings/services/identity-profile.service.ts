@@ -152,6 +152,7 @@ export class IdentityProfileService {
           // Contacts
           phonePrimary: opt(data.phonePrimary),
           phoneSecondary: opt(data.phoneSecondary),
+          whatsapp: opt(data.whatsapp),
           email: opt(data.email),
           website: opt(data.website),
           // Paramètres régionaux
@@ -207,6 +208,7 @@ export class IdentityProfileService {
         postalCode: toChange((p) => p.postalCode, (p) => p.postalCode),
         phonePrimary: toChange((p) => p.phonePrimary, (p) => p.phonePrimary),
         phoneSecondary: toChange((p) => p.phoneSecondary, (p) => p.phoneSecondary),
+        whatsapp: toChange((p) => (p as any).whatsapp, (p) => (p as any).whatsapp),
         email: toChange((p) => p.email, (p) => p.email),
         website: toChange((p) => p.website, (p) => p.website),
         currency: toChange((p) => p.currency, (p) => p.currency),
@@ -268,6 +270,7 @@ export class IdentityProfileService {
         postalCode: profileToActivate.postalCode,
         phonePrimary: profileToActivate.phonePrimary,
         phoneSecondary: profileToActivate.phoneSecondary,
+        whatsapp: (profileToActivate as any).whatsapp,
         email: profileToActivate.email,
         website: profileToActivate.website,
         currency: profileToActivate.currency,
@@ -338,7 +341,7 @@ export class IdentityProfileService {
     const fieldsToCompare = [
       'schoolName', 'schoolAcronym', 'schoolType', 'authorizationNumber',
       'foundationDate', 'slogan', 'address', 'city', 'department', 'country',
-      'postalCode', 'phonePrimary', 'phoneSecondary', 'email', 'website',
+      'postalCode', 'phonePrimary', 'phoneSecondary', 'whatsapp', 'email', 'website',
       'currency', 'timezone', 'logoUrl', 'stampUrl', 'directorSignatureUrl',
     ];
 
@@ -450,6 +453,7 @@ export class IdentityProfileService {
         postalCode: profile.postalCode,
         phone: profile.phonePrimary,
         secondaryPhone: profile.phoneSecondary,
+        whatsapp: (profile as any).whatsapp,
         email: profile.email,
         website: profile.website,
         currency: profile.currency,
@@ -474,6 +478,7 @@ export class IdentityProfileService {
         postalCode: profile.postalCode,
         phone: profile.phonePrimary,
         secondaryPhone: profile.phoneSecondary,
+        whatsapp: (profile as any).whatsapp,
         email: profile.email,
         website: profile.website,
         currency: profile.currency,
@@ -508,6 +513,7 @@ export class IdentityProfileService {
       postalCode: profile.postalCode,
       phonePrimary: profile.phonePrimary,
       phoneSecondary: profile.phoneSecondary,
+      whatsapp: (profile as any).whatsapp,
       email: profile.email,
       website: profile.website,
       currency: profile.currency,
@@ -540,6 +546,7 @@ interface CreateIdentityProfileDto {
   postalCode?: string;
   phonePrimary?: string;
   phoneSecondary?: string;
+  whatsapp?: string;
   email?: string;
   website?: string;
   currency?: string;

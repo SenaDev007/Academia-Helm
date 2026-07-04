@@ -1780,3 +1780,512 @@ Stage Summary:
   2. apps/web-app/src/components/students/AdmissionForm.tsx — fallback option pour classe hors liste
 - Aucune migration DB nécessaire
 - L'admission existante affichera un UUID tronqué (données anciennes), mais les nouvelles admissions afficheront le vrai nom de classe
+
+---
+Task ID: fix-filtre-niveau-toutes-classes
+Agent: main
+Task: Corriger le filtrage des frais par niveau quand "Toutes les classes" est sélectionné + supprimer le texte "Priorité" du header
+
+Work Log:
+- Constat utilisateur : le filtre niveau+classe marche, mais quand on sélectionne un niveau
+  (Maternelle/Primaire) ET "Toutes les classes", seules les structures ayant `levelId` défini
+  s'affichent. Les structures ayant un `classId` (sans `levelId`) appartenant à ce niveau
+  n'apparaissent pas.
+
+- Cause racine : backend fee-structure.service.ts → findAll()
+  Le filtre `where.levelId = filters.levelId` ne matche QUE les structures de niveau.
+  Les structures créées avec une classe spécifique ont `levelId = null` et sont exclues.
+
+- Fix backend : fee-structure.service.ts findAll()
+  Quand `levelId` est fourni SANS `classId`, on utilise une condition OR :
+    where.OR = [
+      { levelId: filters.levelId },                       // structures de niveau
+      { class: { schoolLevelId: filters.levelId } },      // structures de classe du niveau
+    ];
+  Vérifié Prisma : Class.schoolLevelId → SchoolLevel.id (relation valide)
+  Quand `classId` est aussi fourni, on garde l'ancien comportement (filtre exact).
+
+- Fix frontend : FeeStructuresContent.tsx toolbar
+  Suppression du texte "Priorité : Classe > Niveau > Override élève."
+  Le conteneur flex passe de `justify-between` à `justify-end` (boutons à droite uniquement).
+
+Stage Summary:
+- 2 fichiers modifiés :
+  1. apps/api-server/src/finance/fee-structure.service.ts — findAll() avec OR levelId/class.schoolLevelId
+  2. apps/web-app/src/components/finance/FeeStructuresContent.tsx — suppression texte Priorité
+- Comportement attendu après déploiement :
+  * Sélectionner "Maternelle" + "Toutes les classes" → affiche TOUTES les configurations
+    (niveau Maternelle + toutes les classes CI/CP/... appartenant à Maternelle)
+  * Idem pour Primaire, Secondaire
+  * Sélectionner un niveau + une classe spécifique → filtre exact (comportement inchangé)
+- Aucune migration DB nécessaire
+
+---
+Task ID: whatsapp-templates-meta-v3
+Agent: main
+Task: Régénérer les 20 templates WhatsApp au format Meta Business Platform (variables snake_case + header + footer)
+
+Work Log:
+- Source : scripts/gupshup/gupshup-templates.json (20 templates v2 Gupshup avec {{1}}...{{n}})
+- Conversion vers format Meta Business Platform :
+  * Variables {{1}} → {{snake_case}} (ex: {{school_name}}, {{parent_name}})
+  * Ajout d'un header TEXT court pour chaque template (≤ 60 caractères)
+  * Footer standardisé : "Academia Helm" (court, ≤ 60 caractères)
+  * Suppression de la ligne "Etablissement : {{1}}" du body (remplacée par header + var nommée dans le body)
+  * Variables jamais en début/fin de body ni de ligne
+- 20 templates générés, noms conservés (admission_recue, inscription_confirmee, etc.)
+- Catégories conservées : tous UTILITY
+- Template labels conservés (Admission confirmation, Enrollment confirmation, etc.)
+- Exemples (samples) au format Meta : [val1],[val2],... pour chaque variable
+- Fichier HTML rendu avec boutons "Copier" pour chaque champ (header, body, footer, sample)
+- Sauvegarde : /home/z/my-project/download/whatsapp-templates-meta.html
+
+Stage Summary:
+- 20 templates Meta prêts à copier-coller dans WhatsApp Business Platform
+- Format conforme aux règles Meta (variables nommées + header + footer)
+- Noms, catégories et labels conservés depuis la version Gupshup
+- L'utilisateur peut maintenant créer chaque template dans Meta en copiant :
+  1. Le nom (ex: admission_recue)
+  2. Le header TEXT
+  3. Le body
+  4. Le footer TEXT
+  5. Les exemples au format [val1],[val2],...
+
+---
+Task ID: whatsapp-templates-meta-v3-buttons
+Agent: main
+Task: Ajouter phoneNumber et whatsapp aux Identités (DB + UI) + 3 boutons URL aux 20 templates Meta
+
+Work Log:
+
+## 1. DB Migration - Ajout colonne whatsapp à tenant_identity_profiles
+- Création du fichier SQL : prisma/migrations/20260703110000_add_whatsapp_to_identity_profile.sql
+  * ALTER TABLE tenant_identity_profiles ADD COLUMN whatsapp TEXT
+  * (SchoolSettings.whatsapp existe déjà dans le schéma Prisma)
+- Mise à jour du schéma Prisma : TenantIdentityProfile.whatsapp ajouté
+
+## 2. Backend - Identité (controller + service)
+- settings.controller.ts : createIdentityVersion accepte maintenant `whatsapp?: string`
+- identity-profile.service.ts :
+  * createNewVersion() : insert whatsapp dans TenantIdentityProfile
+  * audit log : ajoute whatsapp dans changes
+  * activateVersion() : retourne whatsapp
+  * compareVersions() : compare whatsapp
+  * syncToSchoolSettings() : sync whatsapp vers SchoolSettings.whatsapp
+  * formatProfile() : retourne whatsapp
+  * IdentityProfileData interface : ajoute whatsapp
+
+## 3. Frontend - Onglet Identité (settings/page.tsx)
+- Ajout d'un champ "WhatsApp (E.164)" dans la section Contacts
+  * Placeholder : "+229 97 12 34 56"
+  * Grid passe à 5 champs au lieu de 4 (Tél. principal, Tél. secondaire, WhatsApp, Email, Site web)
+- Hydratation du formulaire : charge whatsapp depuis le profil (ligne 392)
+- Restauration de version : charge whatsapp (ligne 649)
+- settings.service.ts : createIdentityVersion type inclut whatsapp
+
+## 4. Templates WhatsApp Meta v3 — 20 templates avec 3 boutons URL
+- Génération via script Python : scripts/generate-whatsapp-templates-meta-v3.py
+- Fichier HTML rendu : download/whatsapp-templates-meta-v3.html (81 KB, 2027 lignes)
+- 20 templates au format Meta (variables {{snake_case}})
+- Header TEXT court (≤ 60 caractères)
+- Footer "Academia Helm"
+- 3 boutons URL par template :
+  1. "Consulter le site" → https://{{1}}.academiahelm.com (var = subdomain)
+  2. "Discuter sur WhatsApp" → https://wa.me/{{1}} (var = whatsapp_number)
+  3. "Appeler l'école" → https://wa.me/{{1}} (var = phone_number)
+- Samples au format Meta : [val1],[val2],...,[subdomain],[whatsapp_number],[phone_number]
+
+## 5. Contrainte Meta expliquée à l'utilisateur
+- Bouton PHONE_NUMBER : numéro FIXE, aucune variable autorisée
+- Bouton URL : 1 variable autorisée à la fin
+- Solution : utiliser 3 boutons URL avec variables
+  * wa.me/{{phone}} ouvre WhatsApp → utilisateur peut cliquer sur l'icône appel
+
+Stage Summary:
+- 6 fichiers modifiés :
+  1. prisma/migrations/20260703110000_add_whatsapp_to_identity_profile.sql (NOUVEAU)
+  2. prisma/schema.prisma (ajout whatsapp sur TenantIdentityProfile)
+  3. apps/api-server/src/settings/settings.controller.ts (whatsapp dans body type)
+  4. apps/api-server/src/settings/services/identity-profile.service.ts (7 endroits)
+  5. apps/web-app/src/app/app/settings/page.tsx (UI + hydratation)
+  6. apps/web-app/src/services/settings.service.ts (type createIdentityVersion)
+- 2 nouveaux fichiers :
+  1. scripts/generate-whatsapp-templates-meta-v3.py (script générateur)
+  2. download/whatsapp-templates-meta-v3.html (output)
+- Action requise utilisateur :
+  * Appliquer la migration SQL sur Neon DB
+  * Créer les 20 templates dans Meta Business Platform en copiant les contenus
+  * Configurer le subdomain/phone/whatsapp dans Paramètres → Identité
+- Prochaines étapes :
+  * Une fois les templates Meta approuvés, mettre à jour whatsapp-template.registry.ts
+    pour utiliser les noms de variables snake_case (au lieu de {{1}})
+  * Mettre à jour WhatsAppService.sendForTenant() pour injecter automatiquement
+    les 3 variables des boutons à la fin du tableau
+
+---
+Task ID: whatsapp-meta-v3-registry-and-service
+Agent: main
+Task: Migration whatsapp DB + passage du registry et service WhatsApp vers Meta v3 (variables snake_case + 3 boutons URL + Meta Graph API)
+
+Work Log:
+
+## 1. Migration SQL appliquée sur Neon DB (pas d'attente Fly.io)
+- Script : scripts/run-migration-whatsapp.js (utilise node-postgres)
+- Connexion directe à Neon DB via DATABASE_URL
+- ALTER TABLE tenant_identity_profiles ADD COLUMN whatsapp TEXT
+- Vérification : school_settings.whatsapp existait déjà
+- Commentaire SQL ajouté sur la colonne
+
+## 2. Réécriture complète de whatsapp-template.registry.ts (v3)
+- Script générateur : scripts/generate-whatsapp-template-registry.py
+- Passage de variables positionnelles {{1}}, {{2}}... à variables nommées {{snake_case}}
+- Nouvelle interface MetaTemplate (remplace GupshupTemplate) avec :
+  * header: string (TEXT court)
+  * bodyVariables: string[] (liste ordonnée des variables du body)
+  * buttons: MetaTemplateButton[] (3 boutons URL)
+  * buttonParamCount: number
+- Constante BUTTONS_URL : 3 boutons standard
+  * Consulter le site → https://{{1}}.academiahelm.com (var = subdomain)
+  * Discuter sur WhatsApp → https://wa.me/{{1}} (var = whatsapp_number)
+  * Appeler l'école → https://wa.me/{{1}} (var = phone_number)
+- Nouvelles méthodes :
+  * buildBodyParamsByName(elementName, schoolName, callerParams) → Record<string, string>
+  * buildButtonParams(branding) → [subdomain, whatsapp, phone]
+  * renderBody(elementName, paramsByName) avec regex nommées
+  * normalizePhone(phone) pour format E.164 sans +
+
+## 3. Mise à jour WhatsAppService.sendForTenant()
+- Import GupshupTemplate → MetaTemplate
+- TenantBranding enrichi : subdomain, whatsappNumber, phoneNumber
+- getTenantBranding() : charge tenantIdentityProfile.whatsapp + tenant.subdomain
+  (en parallèle via Promise.all)
+- sendForTenant() :
+  * Appelle buildBodyParamsByName() au lieu de buildBodyParams()
+  * Appelle buildButtonParams(branding) pour les 3 boutons
+  * templateVariables combine bodyParamsByName + boutons (clé = varName)
+  * renderBody() appelé avec paramsByName (objet nommé)
+- sendMock() : corrige l'appel renderBody (passe request.variables directement)
+- sendViaGupshup() : boucle sur bodyVariables au lieu de 1..N (rétrocompatible)
+- sendViaWhatsAppBusiness() : RÉÉCRIT pour Meta Graph API v3
+  * Construit components : header + body + 3 boutons URL
+  * Header: { type: 'header', parameters: [{ type: 'text', text: header }] }
+  * Body: { type: 'body', parameters: [{ type: 'text', text: var_value }] }
+  * Bouton: { type: 'button', sub_type: 'url', index: i, parameters: [{ type: 'text', text: val }] }
+- Variables d'env supportées (rétrocompatibilité) :
+  * WHATSAPP_ACCESS_TOKEN ou WHATSAPP_BUSINESS_ACCESS_TOKEN
+  * WHATSAPP_PHONE_NUMBER_ID ou WHATSAPP_BUSINESS_PHONE_NUMBER_ID
+  * WHATSAPP_API_URL ou WHATSAPP_BUSINESS_API_URL (défaut: graph.facebook.com/v18.0)
+
+## 4. Fichiers modifiés (7)
+1. apps/api-server/prisma/migrations/20260703110000_add_whatsapp_to_identity_profile.sql (déjà créé)
+2. apps/api-server/src/communication/services/whatsapp-template.registry.ts (RÉÉCRIT)
+3. apps/api-server/src/communication/services/whatsapp.service.ts (4 sections modifiées)
+4. scripts/run-migration-whatsapp.js (NOUVEAU)
+5. scripts/generate-whatsapp-template-registry.py (NOUVEAU)
+6. worklog.md (cette entrée)
+
+Stage Summary:
+- Migration DB appliquée directement sur Neon DB ( colonne whatsapp dans tenant_identity_profiles)
+- Registry WhatsApp passé en v3 (variables snake_case + 3 boutons URL)
+- Service WhatsApp adapté pour Meta Graph API
+- Pour activer Meta Graph API en production :
+  1. Définir WHATSAPP_PROVIDER=whatsapp-business (au lieu de gupshup)
+  2. Définir WHATSAPP_ACCESS_TOKEN=<token Meta>
+  3. Définir WHATSAPP_PHONE_NUMBER_ID=<phone_number_id Meta>
+- Les 20 templates Meta v3 sont à créer dans Meta Business Platform
+  (voir download/whatsapp-templates-meta-v3.html)
+
+---
+Task ID: installment-due-date-rule
+Agent: main
+Task: Permettre de lier la 1ère tranche d'un frais à la date d'inscription de l'élève (au lieu d'une date fixe)
+
+Work Log:
+
+## 1. Migration DB appliquée sur Neon DB
+- Fichier : prisma/migrations/20260703120000_installment_due_date_rule.sql
+- Script d'exécution : scripts/run-migration-installment-rule.js (node-postgres)
+- Création du type enum : installment_due_date_type (FIXED, AT_ENROLLMENT, DAYS_AFTER_ENROLLMENT)
+- Colonnes ajoutées à fee_structure_installments :
+  * dueDateType (NOT NULL, DEFAULT 'FIXED')
+  * daysOffset (INTEGER, NULLABLE)
+- Colonne dueDate rendue nullable (pour AT_ENROLLMENT/DAYS_AFTER_ENROLLMENT)
+- Index sur dueDateType
+- Commentaires SQL ajoutés
+
+## 2. Schéma Prisma mis à jour
+- FeeStructureInstallment.dueDate : DateTime → DateTime? (nullable)
+- Ajout : dueDateType String @default("FIXED")
+- Ajout : daysOffset Int?
+- Ajout : @@index([dueDateType])
+
+## 3. Backend - fee-structure.service.ts
+- create() : accepte dueDateType + daysOffset sur chaque installment
+  * Pour FIXED : dueDate est utilisée (ou new Date() par défaut)
+  * Pour AT_ENROLLMENT : dueDate = null, daysOffset = null
+  * Pour DAYS_AFTER_ENROLLMENT : dueDate = null, daysOffset requis
+- update() : accepte installments[] (remplacement complet de la collection)
+  * deleteMany + createMany pour remplacer les tranches
+  * Recharge le frais avec ses nouveaux installments
+- addInstallment() : signature étendue (dueDateType, daysOffset)
+- copyToNewYear() : copie aussi dueDateType + daysOffset
+
+## 4. Backend - fee-structure.controller.ts
+- create() : parse dueDateType + daysOffset depuis le body, ne force plus dueDate à new Date()
+- update() : transmet installments[] au service avec parsing des nouveaux champs
+
+## 5. Backend - student-account.service.ts
+- Nouvelle méthode privée resolveDueDate(installment, enrollmentDate) :
+  * FIXED → installment.dueDate
+  * AT_ENROLLMENT → enrollmentDate (fallback : installment.dueDate ou maintenant)
+  * DAYS_AFTER_ENROLLMENT → enrollmentDate + daysOffset jours
+- updateStatus() :
+  * Charge l'StudentEnrollment pour récupérer enrollmentDate
+  * Utilise resolveDueDate() pour calculer l'échéance réelle de chaque tranche
+  * Le statut OVERDUE est calculé sur la date résolue, pas sur dueDate brute
+
+## 6. Frontend - FeeStructureModal.tsx (UI repensée)
+- Interface Installment étendue : dueDateType + daysOffset
+- Par défaut, la Tranche 1 est en mode AT_ENROLLMENT (règle métier écoles privées)
+- Les tranches suivantes sont en mode FIXED par défaut
+- UI par tranche (carte avec bordure) :
+  * Libellé + Montant + Mode d'échéance (Select) + bouton supprimer
+  * Champ conditionnel selon le mode :
+    - FIXED : input date
+    - AT_ENROLLMENT : message informatif vert
+    - DAYS_AFTER_ENROLLMENT : input number (jours)
+- Bandeau bleu explicatif en haut de la section tranches
+- Validation adaptée : dueDate requis seulement pour FIXED, daysOffset requis pour DAYS_AFTER_ENROLLMENT
+- handleSubmit() : envoie dueDate seulement pour FIXED, daysOffset seulement pour DAYS_AFTER_ENROLLMENT
+
+## 7. Frontend - FeeStructuresContent.tsx
+- Colonne "Tranches" enrichie :
+  * Badge "N tranches" (inchangé)
+  * Badge vert "1ère = inscription" si au moins une tranche est AT_ENROLLMENT
+  * Badge ambre "+ jours après inscr." si au moins une tranche est DAYS_AFTER_ENROLLMENT
+
+## 8. Fichiers modifiés (8)
+1. apps/api-server/prisma/migrations/20260703120000_installment_due_date_rule.sql (NOUVEAU)
+2. apps/api-server/prisma/schema.prisma (FeeStructureInstallment étendu)
+3. apps/api-server/src/finance/fee-structure.service.ts (4 méthodes modifiées)
+4. apps/api-server/src/finance/fee-structure.controller.ts (create + update)
+5. apps/api-server/src/finance/student-account.service.ts (resolveDueDate + updateStatus)
+6. apps/web-app/src/components/finance/FeeStructureModal.tsx (UI complète repensée)
+7. apps/web-app/src/components/finance/FeeStructuresContent.tsx (badges informatifs)
+8. scripts/run-migration-installment-rule.js (NOUVEAU)
+
+Stage Summary:
+- Migration appliquée directement sur Neon DB (sans attendre Fly.io)
+- La 1ère tranche est maintenant "À l'inscription" par défaut dans le modal
+- 3 modes d'échéance supportés : FIXED, AT_ENROLLMENT, DAYS_AFTER_ENROLLMENT
+- Le calcul de l'échéance réelle se fait au runtime dans StudentAccountService
+  à partir de StudentEnrollment.enrollmentDate
+- Comportement rétro-compatible : les installments existants ont dueDateType='FIXED' par défaut
+
+---
+Task ID: installment-popover-ui
+Agent: main
+Task: Corriger le hover du badge tranches + ajouter un popover au clic avec la liste détaillée des tranches
+
+Work Log:
+
+## Problème 1 : Hover du badge illisible
+- Le composant Badge par défaut a `hover:bg-blue-700` qui reste actif même avec `className="bg-blue-50 text-blue-700"`
+- Au survol : fond bleu foncé + texte bleu foncé = illisible
+- Solution : remplacer le Badge par un <button> custom avec :
+  * `bg-blue-50 text-blue-700 border border-blue-200` (état normal)
+  * `hover:bg-blue-100 hover:border-blue-300` (hover plus clair, pas plus foncé)
+  * `cursor-pointer` pour indiquer l'interactivité
+  * Icône ChevronDown qui pivote à l'ouverture
+
+## Problème 2 : Popover au clic
+- Pas de composant Popover existant dans /components/ui
+- Pas de @radix-ui/react-popover dans package.json
+- Solution : popover sur-mesure en React pur (pas de dépendance supplémentaire)
+
+### Implémentation du popover
+- State `installmentPopoverId` : ID de la structure dont le popover est ouvert (null si fermé)
+- Ref `popoverRef` : pour détecter le clic en dehors
+- useEffect : écoute mousedown + Escape pour fermer
+- Positionnement : `absolute` + `right-0` + `mt-2` (sous le badge, aligné à droite)
+- Largeur : `w-80` (320px) avec `min-width: 320px`
+
+### Structure du popover
+1. **Header** (gradient bleu → indigo) :
+   - Icône Calendar dans un cercle bleu
+   - Titre "Tranches de paiement"
+   - Sous-titre : nombre de tranches + montant total
+   - Bouton X pour fermer
+2. **Liste des tranches** (scrollable max-h-64) :
+   - Chaque tranche a un fond coloré selon son mode :
+     * AT_ENROLLMENT → vert (emerald)
+     * DAYS_AFTER_ENROLLMENT → ambre
+     * FIXED → gris (slate)
+   - Numéro de tranche dans un cercle
+   - Libellé + mode d'échéance
+   - Montant à droite
+   - Ligne d'échéance avec icône + description formatée
+3. **Footer** (gris clair) :
+   - Somme des tranches = montant total (contrôle visuel)
+
+### Helpers ajoutés
+- `dueDateTypeLabel(i)` : libellé du mode ("À l'inscription", "X jour(s) après inscription", "Date fixe")
+- `dueDateDescription(i)` : description lisible de l'échéance (date formatée ou règle dynamique)
+- `dueDateIcon(i)` : icône selon le mode (Calendar vert, CalendarClock ambre, Clock gris)
+
+### Imports ajoutés
+- `useRef` depuis react
+- `X, ChevronDown, Calendar, Clock, CalendarClock` depuis lucide-react
+
+### Badges secondaires conservés
+- Sous le badge principal, 2 petits badges informatifs :
+  * "1ère = inscr." (vert) si au moins une tranche est AT_ENROLLMENT
+  * "Jours après inscr." (ambre) si au moins une tranche est DAYS_AFTER_ENROLLMENT
+- Reformulés en mini-badges compacts avec icônes
+
+## Fichiers modifiés (1)
+1. apps/web-app/src/components/finance/FeeStructuresContent.tsx
+
+Stage Summary:
+- Hover du badge corrigé : bleu plus clair au survol (pas plus foncé)
+- Popover au clic : liste détaillée des tranches avec montants + échéances
+- Fermeture au clic extérieur ou sur Escape ou sur le X
+- Couleurs cohérentes avec les modes d'échéance (vert/ambre/gris)
+- Effet "hologramme" avec ombre 2xl + bordure arrondie + header gradient
+
+---
+Task ID: installment-hologram-floating
+Agent: main
+Task: Transformer le popover inline en hologramme flottant au-dessus du tableau (fixed position)
+
+Work Log:
+
+## Problème
+- Le popover était en position: absolute à l'intérieur de la cellule du tableau
+- Sur la dernière ligne, il fallait scroller vers le bas pour voir le popover
+- L'utilisateur veut un hologramme flottant AU-DESSUS du tableau (z-order supérieur), pas dedans
+
+## Solution : position: fixed + backdrop
+- Suppression du popover inline (absolute) dans la cellule
+- Le badge reste dans la cellule (juste un bouton cliquable + badges secondaires)
+- L'hologramme est rendu à la fin du composant, en dehors du tableau
+
+### Structure de l'hologramme
+1. **Backdrop** (`fixed inset-0 z-50`) :
+   - Semi-transparent : rgba(15, 23, 42, 0.25)
+   - backdrop-filter: blur(2px) → effet "verre dépoli"
+   - Clic sur le backdrop → ferme l'hologramme
+   - Padding top 20 (5rem) pour pas coller au haut de l'écran
+
+2. **Panneau flottant** (`max-w-md`, centré) :
+   - `bg-white/95` avec backdrop-filter → effet glassmorphism
+   - Box-shadow bleutée pour effet "hologramme flottant" :
+     `0 25px 50px -12px rgba(59, 130, 246, 0.25)`
+   - Bordure arrondie 2xl
+   - `animate-in fade-in slide-in-from-top-4` → animation d'entrée
+
+3. **Header** (gradient bleu → indigo → violet) :
+   - Effet de brillance diagonale en arrière-plan
+   - Icône Calendar dans cercle glassmorphism
+   - Titre "Tranches de paiement" + nb tranches + total
+   - Bouton X pour fermer
+
+4. **Section "Frais"** (gris clair) :
+   - Affiche le nom du frais concerné (pour contexte)
+
+5. **Liste des tranches** (scrollable max 50vh) :
+   - Chaque tranche a un border-left coloré selon le mode :
+     * AT_ENROLLMENT → vert emerald
+     * DAYS_AFTER_ENROLLMENT → ambre
+     * FIXED → gris slate
+   - Numéro + libellé + mode + montant + échéance
+
+6. **Footer** (gradient gris → bleu) :
+   - Somme de contrôle = montant total
+
+### Détails techniques
+- `installmentPopoverId` (state) : ID de la structure dont l'hologramme est ouvert
+- `popoverRef` (ref) : pour le stopPropagation sur le panneau
+- `onClick` sur backdrop → ferme ; `onClick` sur panneau → stopPropagation
+- Le useEffect Escape est conservé (le backdrop gère le clic mais pas le clavier)
+
+### Rétro-compatibilité
+- Le badge dans la cellule reste cliquable (toggle)
+- L'icône ChevronDown pivote toujours à l'ouverture
+- Les mini-badges secondaires restent affichés (info rapide sur les modes)
+
+## Fichiers modifiés (1)
+1. apps/web-app/src/components/finance/FeeStructuresContent.tsx
+
+Stage Summary:
+- L'hologramme flotte maintenant AU-DESSUS du tableau (position: fixed)
+- Plus besoin de scroller : il s'affiche centré, à 5rem du haut de l'écran
+- Effet visuel "hologramme" : backdrop blur, glassmorphism, ombre bleutée
+- Fermeture : clic sur backdrop, bouton X, ou Escape
+
+---
+Task ID: multi-class-create-and-button-placement
+Agent: main
+Task: Sélection multiple de classes pour création groupée + déplacer le bouton "Ajouter tranche" en bas
+
+Work Log:
+
+## 1. Multi-select de classes dans FeeStructureModal.tsx
+- State : `classId: string` → `classIds: string[]`
+- En édition : initialisé avec `[initialData.classId]` (une seule classe)
+- En création : initialisé vide `[]`
+- useEffect : nettoie classIds quand les classes filtrées changent (changement de niveau)
+
+### UI multi-select (remplace le Select unique)
+- Header avec : "Classes (N sélectionnée(s))" + boutons "Tout sélectionner" / "Tout désélectionner"
+- Liste scrollable (max-h-44) avec checkbox par classe
+- Chaque ligne : checkbox + nom de la classe
+- Ligne sélectionnée : fond bleu clair (bg-blue-50)
+- Messages informatifs si pas de niveau sélectionné ou aucune classe
+- Bandeau bleu si plus d'1 classe sélectionnée : "Création groupée : N frais identiques seront créés"
+
+### Helpers ajoutés
+- `toggleClass(id)` : ajoute/retire une classe de la sélection
+- `selectAllClasses()` : sélectionne toutes les classes filtrées
+- `clearAllClasses()` : désélectionne tout
+
+### handleSubmit modifié
+- Envoie `classIds: string[]` (au lieu de `classId: string`) en mode classe
+- Le parent gère la création groupée
+
+### Bouton submit adaptatif
+- "Créer" (1 classe ou niveau)
+- "Créer N frais" (plusieurs classes sélectionnées)
+
+### Auto-nom
+- Si 1 seule classe sélectionnée : auto-nom avec le nom de la classe
+- Si plusieurs classes : auto-nom basé sur le niveau (chaque frais aura le même nom mais un classId différent)
+
+## 2. Bouton "Ajouter tranche" déplacé en bas
+- Avant : bouton "Ajouter" en haut à droite du header de la section tranches
+- Après : bouton full-width en bas de la section, juste avant la ligne "Somme"
+- Style : bordure pointillée bleue (border-dashed border-blue-300) + texte bleu + hover bleu clair
+- Plus facile d'accès : pas besoin de remonter pour ajouter une nouvelle tranche
+
+## 3. Parent FeeStructuresContent.tsx — handleCreate adapté
+- Cas 1 : body.classIds est un tableau avec plusieurs éléments → création groupée
+  * Boucle sur chaque classId
+  * Appelle financeService.createFeeStructure() pour chaque classe
+  * Compte succès/échecs
+  * Toast : "N frais créés" ou "Partiellement réussi : X créés, Y en échec"
+- Cas 2 : body.classIds absent ou vide → création unique (niveau ou classe unique)
+  * Comportement inchangé (envoie classId singulier)
+
+### handleUpdate adapté
+- En édition : on prend la 1ère classe du tableau classIds (si présent) pour classId
+- L'édition reste sur une seule classe à la fois (logique : on modifie UN frais existant)
+
+## 4. Fichiers modifiés (2)
+1. apps/web-app/src/components/finance/FeeStructureModal.tsx
+2. apps/web-app/src/components/finance/FeeStructuresContent.tsx
+
+Stage Summary:
+- Multi-select de classes opérationnel avec création groupée
+- Bouton "Ajouter une tranche" déplacé en bas de la section (accès facile)
+- Affichage individuel dans le tableau (chaque classe = 1 ligne séparée)
+- Bouton submit adaptatif : "Créer" ou "Créer N frais"

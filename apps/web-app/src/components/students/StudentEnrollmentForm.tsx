@@ -54,7 +54,7 @@ interface StudentEnrollmentFormProps {
       isPrimary?: boolean;
     }>;
     classId?: string;
-  }) => Promise<void>;
+  }) => Promise<any>;
   onCancel: () => void;
   initialData?: any;
 }
@@ -252,23 +252,26 @@ export default function StudentEnrollmentForm({
   const loadRegimes = async () => {
     setIsLoadingRegimes(true);
     try {
+      // schoolLevelId est déjà le bon UUID (school_levels) grâce au fix précédent
+      // dans EnrollmentsContent qui passe schoolLevel.schoolLevelId || schoolLevel.id
       const params = new URLSearchParams({
         academicYearId,
         schoolLevelId,
       });
 
       const data = await financeService.getFeeRegimes(Object.fromEntries(params.entries()));
-      setRegimes(data);
+      const list = Array.isArray(data) ? data : [];
+      setRegimes(list);
 
       // Sélectionner le régime par défaut
-      const defaultRegime = data.find((r: FeeRegime) => r.isDefault);
+      const defaultRegime = list.find((r: FeeRegime) => r.isDefault);
       if (defaultRegime) {
         setSelectedRegime(defaultRegime);
         setFormData((prev) => ({ ...prev, feeRegimeId: defaultRegime.id }));
       }
     } catch (error) {
       console.error('Failed to load fee regimes:', error);
-      setError('Impossible de charger les régimes tarifaires');
+      setRegimes([]);
     } finally {
       setIsLoadingRegimes(false);
     }
@@ -542,11 +545,45 @@ export default function StudentEnrollmentForm({
     }
 
     // ── Bouton "Valider & Suivant" : sauvegarder avant de passer ──────
+    // 1) Si aucun élève n'existe encore en DB, on le crée en PRE_REGISTER
+    //    dès la première étape validée (pour pouvoir le mettre à jour
+    //    incrémentalement aux étapes suivantes sans perdre les données).
+    // 2) Si l'élève existe déjà (mode édition OU créé lors d'une étape
+    //    précédente), on fait un update simple des champs de l'étape.
     let saved = false;
     setIsSubmitting(true);
     try {
-      if (autoSavedStudentId) {
-        // Édition : mettre à jour à chaque étape (avec photoUrl inclus)
+      if (!autoSavedStudentId) {
+        // ── Mode création : créer l'élève en PRE_REGISTER ──
+        // On appelle onSubmit avec un flag _isAutoSave pour que le parent
+        // sache qu'il ne faut PAS faire admit() (juste preRegister).
+        const result: any = await onSubmit({
+          operation: 'PRE_REGISTER', // Toujours PRE_REGISTER pendant la saisie
+          student: {
+            firstName: formData.firstName,
+            lastName: formData.lastName,
+            dateOfBirth: formData.dateOfBirth || undefined,
+            gender: formData.gender || undefined,
+            nationality: formData.nationality || undefined,
+            placeOfBirth: formData.placeOfBirth || undefined,
+            npi: formData.npi || undefined,
+            photoUrl: formData.photoUrl || undefined,
+          },
+          feeProfile: { feeRegimeId: formData.feeRegimeId || '', justification: formData.justification || undefined },
+          guardians: step >= 3 ? guardians : [],
+          classId: formData.classId || undefined,
+          documents: {},
+          _isAutoSave: true,
+        } as any);
+        // Le parent retourne l'élève créé — on stocke son ID
+        if (result?.id) {
+          setAutoSavedStudentId(result.id);
+        }
+        saved = true;
+      } else {
+        // ── Mode update : mettre à jour l'élève existant ──
+        // On appelle onSubmit avec _isAutoSave=true pour que le parent
+        // fasse juste un update (pas de admit/preRegister).
         await onSubmit({
           operation,
           student: {
@@ -559,11 +596,13 @@ export default function StudentEnrollmentForm({
             npi: formData.npi || undefined,
             photoUrl: formData.photoUrl || undefined,
           },
-          feeProfile: { feeRegimeId: '', justification: undefined },
-          guardians: [],
+          feeProfile: { feeRegimeId: formData.feeRegimeId || '', justification: formData.justification || undefined },
+          guardians: step >= 3 ? guardians : [],
           classId: formData.classId || undefined,
           documents: {},
-        });
+          _isAutoSave: true,
+          _studentId: autoSavedStudentId, // ← indique au parent quel élève updater
+        } as any);
         saved = true;
 
         // Upload photo via endpoint dédié (non bloquant)
@@ -647,7 +686,10 @@ export default function StudentEnrollmentForm({
         // Documents uploadés à l'étape 4
         documents: uploadedDocs,
         _isFinalSubmit: true, // ← indique au onSubmit parent que c'est le bouton "Enregistrer"
-      });
+        // Si l'élève a été auto-sauvegardé, on transmet son ID pour que le parent
+        // puisse faire admit() dessus (au lieu de re-créer un doublon).
+        _studentId: autoSavedStudentId || undefined,
+      } as any);
     } catch (err: any) {
       setError(err.message || 'Erreur lors de l\'inscription');
     } finally {
@@ -1143,7 +1185,7 @@ export default function StudentEnrollmentForm({
                 Classe et régime de scolarité
               </p>
               <p className="text-sm text-blue-700">
-                Choisissez la classe cible (facultatif) et le régime de scolarité. Le régime impacte toute l&apos;année scolaire
+                Choisissez la classe cible et le régime de scolarité. Le régime impacte toute l&apos;année scolaire
                 et ne peut être modifié que par la direction.
               </p>
             </div>
@@ -1151,7 +1193,7 @@ export default function StudentEnrollmentForm({
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Classe (optionnel)
+              Classe
             </label>
             <select
               value={formData.classId}

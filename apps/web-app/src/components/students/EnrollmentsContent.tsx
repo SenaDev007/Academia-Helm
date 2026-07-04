@@ -1128,55 +1128,143 @@ export default function EnrollmentsContent() {
             schoolLevelId={schoolLevel.schoolLevelId || schoolLevel.id}
             onSubmit={async (data) => {
               try {
+                const isAutoSave = (data as any)._isAutoSave === true;
+                const isFinalSubmit = (data as any)._isFinalSubmit === true;
+                const existingStudentId = (data as any)._studentId as string | undefined;
                 let student: any;
-                if (data.operation === 'PRE_REGISTER') {
-                  // Pré-inscription simple (statut PRE_REGISTERED, sans matricule)
-                  student = await studentsService.preRegister({
-                    academicYearId: academicYear.id, schoolLevelId: schoolLevel.id,
-                    firstName: data.student.firstName, lastName: data.student.lastName,
-                    dateOfBirth: data.student.dateOfBirth, gender: data.student.gender,
-                    nationality: data.student.nationality, placeOfBirth: data.student.placeOfBirth,
-                    photoUrl: data.student.photoUrl, classId: data.classId,
-                  });
-                } else {
-                  // Admission formelle (ADMIT) :
-                  // 1) preRegister → crée Student + Enrollment PRE_REGISTERED
-                  // 2) admit → génère matricule, change statut ADMITTED, assigne classe
-                  student = await studentsService.preRegister({
-                    academicYearId: academicYear.id, schoolLevelId: schoolLevel.id,
-                    firstName: data.student.firstName, lastName: data.student.lastName,
-                    dateOfBirth: data.student.dateOfBirth, gender: data.student.gender,
-                    nationality: data.student.nationality, placeOfBirth: data.student.placeOfBirth,
-                    photoUrl: data.student.photoUrl, classId: data.classId,
-                  });
-                  // L'admission formelle — indispensable pour avoir un matricule
-                  student = await studentsService.admit({
-                    studentId: student.id,
-                    academicYearId: academicYear.id,
-                    schoolLevelId: schoolLevel.id,
-                    classId: data.classId,
-                  });
-                }
-                // Régime tarifaire (non bloquant)
-                await financeService.createStudentFeeProfile({
-                  studentId: student.id,
-                  academicYearId: academicYear.id,
-                  feeRegimeId: data.feeProfile.feeRegimeId,
-                  justification: data.feeProfile.justification,
-                }).catch((e: any) => console.warn('FeeProfile:', e?.message));
-                // Parents / tuteurs (non bloquant)
-                if (data.guardians?.length) {
-                  for (const g of data.guardians) {
-                    if (!g.firstName?.trim() && !g.lastName?.trim()) continue;
-                    await studentsService.addGuardians(student.id, {
-                      guardians: [{
-                        firstName: g.firstName, lastName: g.lastName,
-                        relationship: g.relationship || 'GUARDIAN',
-                        phone: g.phone, email: g.email, isPrimary: g.isPrimary ?? false,
-                      }],
-                    }).catch((e: any) => console.warn('Guardian:', e?.message));
+
+                // ─── Auto-save (étapes intermédiaires) ───
+                // Si un élève existe déjà (créé à une étape précédente), on update.
+                // Sinon, on crée en PRE_REGISTER et on retourne l'élève (avec son ID)
+                // pour que le formulaire puisse stocker l'ID et updater aux étapes suivantes.
+                if (isAutoSave) {
+                  if (existingStudentId) {
+                    // Update simple (pas de admit, pas de preRegister)
+                    await studentsService.update(existingStudentId, {
+                      ...data.student,
+                      academicYearId: academicYear.id,
+                      schoolLevelId: schoolLevel.id,
+                    });
+                    // Changement de classe si fournie
+                    if (data.classId) {
+                      await studentsService.changeClass(existingStudentId, academicYear.id, data.classId)
+                        .catch((e: any) => console.warn('AutoSave changeClass:', e?.message));
+                    }
+                    // Régime tarifaire (non bloquant)
+                    if (data.feeProfile?.feeRegimeId) {
+                      await financeService.createStudentFeeProfile({
+                        studentId: existingStudentId,
+                        academicYearId: academicYear.id,
+                        feeRegimeId: data.feeProfile.feeRegimeId,
+                        justification: data.feeProfile.justification,
+                      }).catch((e: any) => console.warn('AutoSave FeeProfile:', e?.message));
+                    }
+                    // Guardians (non bloquant)
+                    if (data.guardians?.length) {
+                      for (const g of data.guardians) {
+                        if (!g.firstName?.trim() && !g.lastName?.trim()) continue;
+                        await studentsService.addGuardians(existingStudentId, {
+                          guardians: [{
+                            firstName: g.firstName, lastName: g.lastName,
+                            relationship: g.relationship || 'GUARDIAN',
+                            phone: g.phone, email: g.email, isPrimary: g.isPrimary ?? false,
+                          }],
+                        }).catch((e: any) => console.warn('AutoSave Guardian:', e?.message));
+                      }
+                    }
+                    return { id: existingStudentId };
+                  } else {
+                    // Première étape : créer en PRE_REGISTER (sans admit)
+                    student = await studentsService.preRegister({
+                      academicYearId: academicYear.id, schoolLevelId: schoolLevel.id,
+                      firstName: data.student.firstName, lastName: data.student.lastName,
+                      dateOfBirth: data.student.dateOfBirth, gender: data.student.gender,
+                      nationality: data.student.nationality, placeOfBirth: data.student.placeOfBirth,
+                      photoUrl: data.student.photoUrl, classId: data.classId,
+                    });
+                    // Régime tarifaire (non bloquant) — pour appliquer dès le début
+                    if (data.feeProfile?.feeRegimeId) {
+                      await financeService.createStudentFeeProfile({
+                        studentId: student.id,
+                        academicYearId: academicYear.id,
+                        feeRegimeId: data.feeProfile.feeRegimeId,
+                        justification: data.feeProfile.justification,
+                      }).catch((e: any) => console.warn('AutoSave FeeProfile:', e?.message));
+                    }
+                    return student; // ← retourne l'élève créé pour que le form stocke l'ID
                   }
                 }
+
+                // ─── Final submit (bouton "Enregistrer l'admission") ───
+                if (existingStudentId) {
+                  // L'élève a déjà été créé par auto-save : on fait juste admit()
+                  // (les autres champs ont déjà été mis à jour incrémentalement)
+                  if (data.operation === 'ADMIT') {
+                    student = await studentsService.admit({
+                      studentId: existingStudentId,
+                      academicYearId: academicYear.id,
+                      schoolLevelId: schoolLevel.id,
+                      classId: data.classId,
+                    });
+                  } else {
+                    // PRE_REGISTER final : l'élève existe déjà, on le retourne
+                    student = await studentsService.update(existingStudentId, {
+                      ...data.student,
+                      academicYearId: academicYear.id,
+                      schoolLevelId: schoolLevel.id,
+                    });
+                  }
+                } else {
+                  // L'élève n'a pas été auto-sauvegardé (cas normal) :
+                  // créer + éventuellement admettre
+                  if (data.operation === 'PRE_REGISTER') {
+                    student = await studentsService.preRegister({
+                      academicYearId: academicYear.id, schoolLevelId: schoolLevel.id,
+                      firstName: data.student.firstName, lastName: data.student.lastName,
+                      dateOfBirth: data.student.dateOfBirth, gender: data.student.gender,
+                      nationality: data.student.nationality, placeOfBirth: data.student.placeOfBirth,
+                      photoUrl: data.student.photoUrl, classId: data.classId,
+                    });
+                  } else {
+                    // ADMIT : preRegister + admit
+                    student = await studentsService.preRegister({
+                      academicYearId: academicYear.id, schoolLevelId: schoolLevel.id,
+                      firstName: data.student.firstName, lastName: data.student.lastName,
+                      dateOfBirth: data.student.dateOfBirth, gender: data.student.gender,
+                      nationality: data.student.nationality, placeOfBirth: data.student.placeOfBirth,
+                      photoUrl: data.student.photoUrl, classId: data.classId,
+                    });
+                    student = await studentsService.admit({
+                      studentId: student.id,
+                      academicYearId: academicYear.id,
+                      schoolLevelId: schoolLevel.id,
+                      classId: data.classId,
+                    });
+                  }
+                  // Régime tarifaire (non bloquant)
+                  if (data.feeProfile?.feeRegimeId) {
+                    await financeService.createStudentFeeProfile({
+                      studentId: student.id,
+                      academicYearId: academicYear.id,
+                      feeRegimeId: data.feeProfile.feeRegimeId,
+                      justification: data.feeProfile.justification,
+                    }).catch((e: any) => console.warn('FeeProfile:', e?.message));
+                  }
+                  // Parents / tuteurs (non bloquant)
+                  if (data.guardians?.length) {
+                    for (const g of data.guardians) {
+                      if (!g.firstName?.trim() && !g.lastName?.trim()) continue;
+                      await studentsService.addGuardians(student.id, {
+                        guardians: [{
+                          firstName: g.firstName, lastName: g.lastName,
+                          relationship: g.relationship || 'GUARDIAN',
+                          phone: g.phone, email: g.email, isPrimary: g.isPrimary ?? false,
+                        }],
+                      }).catch((e: any) => console.warn('Guardian:', e?.message));
+                    }
+                  }
+                }
+
                 toast({
                   title: data.operation === 'PRE_REGISTER' ? 'Pré-inscription enregistrée' : 'Admission effectuée',
                   description: data.operation === 'PRE_REGISTER'
@@ -1186,6 +1274,7 @@ export default function EnrollmentsContent() {
                 });
                 setIsCreateModalOpen(false);
                 loadData();
+                return student;
               } catch (e: any) {
                 console.error('Erreur inscription:', e);
                 toast({
@@ -1193,6 +1282,7 @@ export default function EnrollmentsContent() {
                   description: e?.message || 'Une erreur est survenue. Veuillez réessayer.',
                   variant: 'error',
                 });
+                throw e; // ← re-throw pour que handleNext/handleSubmit puisse réagir
               }
             }}
             onCancel={() => setIsCreateModalOpen(false)}

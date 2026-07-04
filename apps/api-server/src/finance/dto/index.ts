@@ -230,6 +230,15 @@ export class CreateTransactionDto {
   @IsOptional()
   @IsString()
   receiptUrl?: string;
+
+  /**
+   * Caisse associée au paiement (obligatoire pour les espèces, optionnelle
+   * pour les autres méthodes). Le frontend NewPaymentModal l'envoie pour
+   * permettre le suivi du solde par caisse.
+   */
+  @IsOptional()
+  @IsString()
+  cashRegisterId?: string;
 }
 
 // ─── 7. ExpenseCategory ─────────────────────────────────────────────────────

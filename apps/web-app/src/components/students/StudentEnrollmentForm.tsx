@@ -544,93 +544,12 @@ export default function StudentEnrollmentForm({
       return;
     }
 
-    // ── Bouton "Valider & Suivant" : sauvegarder avant de passer ──────
-    // 1) Si aucun élève n'existe encore en DB, on le crée en PRE_REGISTER
-    //    dès la première étape validée (pour pouvoir le mettre à jour
-    //    incrémentalement aux étapes suivantes sans perdre les données).
-    // 2) Si l'élève existe déjà (mode édition OU créé lors d'une étape
-    //    précédente), on fait un update simple des champs de l'étape.
-    let saved = false;
-    setIsSubmitting(true);
-    try {
-      if (!autoSavedStudentId) {
-        // ── Mode création : créer l'élève en PRE_REGISTER ──
-        // On appelle onSubmit avec un flag _isAutoSave pour que le parent
-        // sache qu'il ne faut PAS faire admit() (juste preRegister).
-        const result: any = await onSubmit({
-          operation: 'PRE_REGISTER', // Toujours PRE_REGISTER pendant la saisie
-          student: {
-            firstName: formData.firstName,
-            lastName: formData.lastName,
-            dateOfBirth: formData.dateOfBirth || undefined,
-            gender: formData.gender || undefined,
-            nationality: formData.nationality || undefined,
-            placeOfBirth: formData.placeOfBirth || undefined,
-            npi: formData.npi || undefined,
-            photoUrl: formData.photoUrl || undefined,
-          },
-          feeProfile: { feeRegimeId: formData.feeRegimeId || '', justification: formData.justification || undefined },
-          guardians: step >= 3 ? guardians : [],
-          classId: formData.classId || undefined,
-          documents: {},
-          _isAutoSave: true,
-        } as any);
-        // Le parent retourne l'élève créé — on stocke son ID
-        if (result?.id) {
-          setAutoSavedStudentId(result.id);
-        }
-        saved = true;
-      } else {
-        // ── Mode update : mettre à jour l'élève existant ──
-        // On appelle onSubmit avec _isAutoSave=true pour que le parent
-        // fasse juste un update (pas de admit/preRegister).
-        await onSubmit({
-          operation,
-          student: {
-            firstName: formData.firstName,
-            lastName: formData.lastName,
-            dateOfBirth: formData.dateOfBirth || undefined,
-            gender: formData.gender || undefined,
-            nationality: formData.nationality || undefined,
-            placeOfBirth: formData.placeOfBirth || undefined,
-            npi: formData.npi || undefined,
-            photoUrl: formData.photoUrl || undefined,
-          },
-          feeProfile: { feeRegimeId: formData.feeRegimeId || '', justification: formData.justification || undefined },
-          guardians: step >= 3 ? guardians : [],
-          classId: formData.classId || undefined,
-          documents: {},
-          _isAutoSave: true,
-          _studentId: autoSavedStudentId, // ← indique au parent quel élève updater
-        } as any);
-        saved = true;
-
-        // Upload photo via endpoint dédié (non bloquant)
-        if (step === 2 && formData.photoUrl && formData.photoUrl.startsWith('data:')) {
-          await studentsService.uploadPhoto(autoSavedStudentId, formData.photoUrl)
-            .catch((e: any) => console.warn('[AutoSave] Upload photo:', e?.message));
-        }
-      }
-    } catch (e: any) {
-      console.warn('[AutoSave] Étape', step, 'échec:', e?.message);
-      setStepSavedMessage(null);
-    } finally {
-      setIsSubmitting(false);
-    }
-
-    // Message visuel de confirmation
-    const stepLabels: Record<number, string> = {
-      1: 'Identité',
-      2: 'Photo',
-      3: 'Parents',
-      4: 'Documents',
-      5: 'Classe & Régime',
-    };
-    if (saved) {
-      setStepSavedMessage(`✅ Étape "${stepLabels[step]}" sauvegardée`);
-      setTimeout(() => setStepSavedMessage(null), 3000);
-    }
-
+    // ── Bouton "Valider & Suivant" : juste passer à l'étape suivante ──────
+    // L'auto-save a été supprimé (causait des erreurs 400/404 et des doublons).
+    // La sauvegarde en DB se fait UNIQUEMENT au final submit (bouton
+    // "Enregistrer l'admission" à l'étape 6).
+    // Les données saisies restent en mémoire (formData/guardians) pendant
+    // toute la saisie, et sont persistées d'un coup à la fin.
     setStep((prev) => Math.min(6, prev + 1));
   };
 

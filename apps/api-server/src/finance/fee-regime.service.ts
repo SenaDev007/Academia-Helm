@@ -64,6 +64,10 @@ export class FeeRegimeService {
 
     return this.prisma.feeRegime.create({
       data,
+      include: {
+        rules: true,
+        schoolLevel: true,
+      },
     });
   }
 
@@ -86,6 +90,7 @@ export class FeeRegimeService {
       },
       include: {
         rules: true,
+        schoolLevel: true,
       },
       orderBy: [
         { isDefault: 'desc' },
@@ -119,7 +124,7 @@ export class FeeRegimeService {
         this.logger.warn(`Auto-création régime échouée: ${err.message} → retry findMany`);
         regimes = await this.prisma.feeRegime.findMany({
           where: { tenantId, academicYearId, schoolLevelId },
-          include: { rules: true },
+          include: { rules: true, schoolLevel: true },
           orderBy: [{ isDefault: 'desc' }, { code: 'asc' }],
         });
       }

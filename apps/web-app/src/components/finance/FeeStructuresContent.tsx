@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Plus, Copy, UserCog, Pencil, Trash2, X, ChevronDown, Calendar, Clock, CalendarClock, Users, Loader2, Sparkles, Tag } from 'lucide-react';
+import { Plus, Copy, UserCog, Pencil, Trash2, X, ChevronDown, Calendar, Clock, CalendarClock, Users, Loader2, Sparkles, Tag, Baby, BookOpen, GraduationCap } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
@@ -47,6 +47,43 @@ function classOrder(name: string): number {
   if (n === '1ERE' || n === '1ÈRE') return 25;
   if (n === 'TERMINALE' || n === 'TLE') return 26;
   return 100 + (name.charCodeAt(0) || 0);
+}
+
+// ─── Styles par niveau scolaire (icône + couleur) ──────────────────────────
+// Utilisé pour les cartes de régime tarifaire afin d'identifier visuellement
+// le niveau associé à chaque régime (Maternelle / Primaire / Secondaire).
+const LEVEL_STYLES: Record<string, { icon: any; bg: string; text: string; border: string; label: string }> = {
+  MATERNELLE: {
+    icon: Baby,
+    bg: 'bg-pink-100',
+    text: 'text-pink-700',
+    border: 'border-pink-200',
+    label: 'Maternelle',
+  },
+  PRIMAIRE: {
+    icon: BookOpen,
+    bg: 'bg-blue-100',
+    text: 'text-blue-700',
+    border: 'border-blue-200',
+    label: 'Primaire',
+  },
+  SECONDAIRE: {
+    icon: GraduationCap,
+    bg: 'bg-violet-100',
+    text: 'text-violet-700',
+    border: 'border-violet-200',
+    label: 'Secondaire',
+  },
+};
+
+/**
+ * Renvoie le style d'un niveau scolaire à partir de son code.
+ * Fall-back générique (slate) si le code n'est pas reconnu.
+ */
+function getLevelStyle(code?: string) {
+  if (!code) return { icon: BookOpen, bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-200', label: 'Niveau inconnu' };
+  const upper = code.toUpperCase();
+  return LEVEL_STYLES[upper] || { icon: BookOpen, bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-200', label: code };
 }
 
 export default function FeeStructuresContent() {
@@ -732,42 +769,60 @@ export default function FeeStructuresContent() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {regimes.map((regime) => (
-                <div key={regime.id} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-[10px] font-mono">{regime.code}</Badge>
-                        {regime.isDefault && <Badge className="bg-emerald-100 text-emerald-700 text-[10px]">Défaut</Badge>}
-                      </div>
-                      <p className="font-semibold text-sm text-slate-800 mt-1">{regime.label}</p>
+              {regimes.map((regime) => {
+                // Résoudre le niveau scolaire du régime (inclus par le backend)
+                // regime.schoolLevel.code = MATERNELLE / PRIMAIRE / SECONDAIRE
+                const sl = regime.schoolLevel;
+                const levelStyle = getLevelStyle(sl?.code);
+                const LevelIcon = levelStyle.icon;
+                return (
+                  <div
+                    key={regime.id}
+                    className={`bg-white rounded-xl p-4 shadow-sm border-l-4 ${levelStyle.border.replace('border-', 'border-l-')}`}
+                  >
+                    {/* Bandeau niveau scolaire (icône + couleur) */}
+                    <div className={`flex items-center gap-2 mb-2 px-2 py-1 rounded-md ${levelStyle.bg}`}>
+                      <LevelIcon className={`w-3.5 h-3.5 ${levelStyle.text}`} />
+                      <span className={`text-[11px] font-bold uppercase tracking-wide ${levelStyle.text}`}>
+                        {levelStyle.label}
+                      </span>
                     </div>
-                    <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditingRegime(regime)} title="Modifier">
-                        <Pencil className="w-3 h-3" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDeleteRegime(regime.id)} title="Supprimer">
-                        <Trash2 className="w-3 h-3 text-red-500" />
-                      </Button>
-                    </div>
-                  </div>
-                  {regime.description && <p className="text-xs text-slate-500 mb-2">{regime.description}</p>}
-                  {regime.rules?.length > 0 ? (
-                    <div className="space-y-1">
-                      {regime.rules.map((rule: any, idx: number) => (
-                        <div key={idx} className="flex justify-between text-xs bg-slate-50 px-2 py-1 rounded">
-                          <span className="text-slate-600">{rule.feeType}</span>
-                          <span className="font-medium text-indigo-600">
-                            {rule.discountType === 'PERCENT' ? `−${rule.discountValue}%` : `−${formatCurrency(rule.discountValue)}`}
-                          </span>
+
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-[10px] font-mono">{regime.code}</Badge>
+                          {regime.isDefault && <Badge className="bg-emerald-100 text-emerald-700 text-[10px]">Défaut</Badge>}
                         </div>
-                      ))}
+                        <p className="font-semibold text-sm text-slate-800 mt-1">{regime.label}</p>
+                      </div>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditingRegime(regime)} title="Modifier">
+                          <Pencil className="w-3 h-3" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDeleteRegime(regime.id)} title="Supprimer">
+                          <Trash2 className="w-3 h-3 text-red-500" />
+                        </Button>
+                      </div>
                     </div>
-                  ) : (
-                    <p className="text-xs text-slate-400 italic">Aucune règle de réduction</p>
-                  )}
-                </div>
-              ))}
+                    {regime.description && <p className="text-xs text-slate-500 mb-2">{regime.description}</p>}
+                    {regime.rules?.length > 0 ? (
+                      <div className="space-y-1">
+                        {regime.rules.map((rule: any, idx: number) => (
+                          <div key={idx} className="flex justify-between text-xs bg-slate-50 px-2 py-1 rounded">
+                            <span className="text-slate-600">{rule.feeType}</span>
+                            <span className="font-medium text-indigo-600">
+                              {rule.discountType === 'PERCENT' ? `−${rule.discountValue}%` : `−${formatCurrency(rule.discountValue)}`}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 italic">Aucune règle de réduction</p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

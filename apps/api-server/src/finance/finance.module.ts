@@ -40,6 +40,7 @@ import { PaymentsEnhancedController } from './payments-enhanced.controller';
 import { CollectionCaseService } from './collection-case.service';
 import { ReceiptGenerationService } from './receipt-generation.service';
 import { ReceiptFinanceService } from './receipt-finance.service';
+import { ReceiptNotificationFinanceService } from './receipt-notification-finance.service';
 import { ReceiptNotificationService } from './receipt-notification.service';
 import { FinanceOrionService } from './finance-orion.service';
 import { CollectionCaseController } from './collection-case.controller';
@@ -113,6 +114,7 @@ import { CommunicationModule } from '../communication/communication.module';
     RecoveryReminderService,
     RecoveryReminderEmailService,
     ReceiptFinanceService,
+    ReceiptNotificationFinanceService,
     // Module 4 - Frais & Priorité de Paiement
     PaymentAllocationService,
     FeeInstallmentService,

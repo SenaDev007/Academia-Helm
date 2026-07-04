@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { FinanceTransactionService } from './finance-transaction.service';
 import { ReceiptFinanceService } from './receipt-finance.service';
+import { ReceiptNotificationFinanceService } from './receipt-notification-finance.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -18,6 +19,7 @@ export class FinanceTransactionController {
   constructor(
     private readonly service: FinanceTransactionService,
     private readonly receiptFinanceService: ReceiptFinanceService,
+    private readonly receiptNotificationService: ReceiptNotificationFinanceService,
   ) {}
 
   @Post()
@@ -93,45 +95,23 @@ export class FinanceTransactionController {
     @TenantId() tenantId: string,
     @Body() body: { channels?: string[] },
   ) {
-    const channels = body?.channels || ['email'];
-    const results: any = {};
+    const requestedChannels = (body?.channels || ['email']) as ('email' | 'whatsapp' | 'sms')[];
+    const results = await this.receiptNotificationService.sendReceiptNotifications(
+      id,
+      tenantId,
+      requestedChannels,
+    );
 
-    // Générer (ou récupérer) le PDF
-    const { pdfBuffer } = await this.receiptFinanceService.generateForTransaction(id, tenantId);
-
-    // Récupérer la transaction + contacts parent
+    // Récupérer le n° reçu pour la réponse
     const tx = await this.service.prismaClient.financeTransaction.findUnique({
       where: { id },
-      include: {
-        studentAccount: { include: { student: true } },
-      },
+      select: { receiptNumber: true },
     });
-    if (!tx) throw new NotFoundException('Transaction introuvable');
-
-    const contacts = await this.receiptFinanceService.getParentContacts(tx.studentAccount.studentId);
-
-    // TODO: brancher EmailService.sendCategorized + WhatsAppService + SmsService
-    // Pour l'instant, on retourne juste un statut indiquant que le PDF est prêt
-    // et les contacts détectés.
-    for (const ch of channels) {
-      if (ch === 'email' && contacts.email) {
-        results.email = { status: 'pending', to: contacts.email };
-        // FIXME: appeler emailService.sendCategorized({ to: contacts.email, attachments: [{ filename: 'recu.pdf', content: pdfBuffer }] })
-      } else if (ch === 'whatsapp' && contacts.phone) {
-        results.whatsapp = { status: 'pending', to: contacts.phone };
-        // FIXME: appeler whatsappService.sendCategorizedForTenant()
-      } else if (ch === 'sms' && contacts.phone) {
-        results.sms = { status: 'pending', to: contacts.phone };
-        // FIXME: appeler smsService.sendSMS()
-      } else {
-        results[ch] = { status: 'skipped', reason: 'Pas de contact disponible' };
-      }
-    }
 
     return {
       success: true,
       transactionId: id,
-      receiptNumber: tx.receiptNumber,
+      receiptNumber: tx?.receiptNumber,
       channels: results,
     };
   }

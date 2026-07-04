@@ -1,0 +1,209 @@
+{
+  "timestamp": "2026-07-02 16:29:08",
+  "mode": "dry-run",
+  "total": 20,
+  "success": 20,
+  "failed": 0,
+  "results": [
+    {
+      "elementName": "admission_recue",
+      "useCase": "Admission confirmation",
+      "success": true,
+      "status_code": 0,
+      "response": {
+        "dry_run": true
+      },
+      "error": null
+    },
+    {
+      "elementName": "inscription_confirmee",
+      "useCase": "Enrollment confirmation",
+      "success": true,
+      "status_code": 0,
+      "response": {
+        "dry_run": true
+      },
+      "error": null
+    },
+    {
+      "elementName": "candidature_recue",
+      "useCase": "Application received",
+      "success": true,
+      "status_code": 0,
+      "response": {
+        "dry_run": true
+      },
+      "error": null
+    },
+    {
+      "elementName": "entretien_programme",
+      "useCase": "Interview scheduled",
+      "success": true,
+      "status_code": 0,
+      "response": {
+        "dry_run": true
+      },
+      "error": null
+    },
+    {
+      "elementName": "test_programme",
+      "useCase": "Test scheduled",
+      "success": true,
+      "status_code": 0,
+      "response": {
+        "dry_run": true
+      },
+      "error": null
+    },
+    {
+      "elementName": "resultat_entretien",
+      "useCase": "Interview result",
+      "success": true,
+      "status_code": 0,
+      "response": {
+        "dry_run": true
+      },
+      "error": null
+    },
+    {
+      "elementName": "resultat_test",
+      "useCase": "Test result",
+      "success": true,
+      "status_code": 0,
+      "response": {
+        "dry_run": true
+      },
+      "error": null
+    },
+    {
+      "elementName": "embauche_confirmee",
+      "useCase": "Job offer accepted",
+      "success": true,
+      "status_code": 0,
+      "response": {
+        "dry_run": true
+      },
+      "error": null
+    },
+    {
+      "elementName": "contrat_signe",
+      "useCase": "Contract signed",
+      "success": true,
+      "status_code": 0,
+      "response": {
+        "dry_run": true
+      },
+      "error": null
+    },
+    {
+      "elementName": "candidature_rejetee",
+      "useCase": "Application rejected",
+      "success": true,
+      "status_code": 0,
+      "response": {
+        "dry_run": true
+      },
+      "error": null
+    },
+    {
+      "elementName": "demande_documents",
+      "useCase": "Document request",
+      "success": true,
+      "status_code": 0,
+      "response": {
+        "dry_run": true
+      },
+      "error": null
+    },
+    {
+      "elementName": "identifiants_connexion",
+      "useCase": "Account credentials",
+      "success": true,
+      "status_code": 0,
+      "response": {
+        "dry_run": true
+      },
+      "error": null
+    },
+    {
+      "elementName": "decision_conge",
+      "useCase": "Leave decision",
+      "success": true,
+      "status_code": 0,
+      "response": {
+        "dry_run": true
+      },
+      "error": null
+    },
+    {
+      "elementName": "decision_heures_sup",
+      "useCase": "Overtime decision",
+      "success": true,
+      "status_code": 0,
+      "response": {
+        "dry_run": true
+      },
+      "error": null
+    },
+    {
+      "elementName": "resume_recrutement_quotidien",
+      "useCase": "Recruitment summary",
+      "success": true,
+      "status_code": 0,
+      "response": {
+        "dry_run": true
+      },
+      "error": null
+    },
+    {
+      "elementName": "test_a_passer",
+      "useCase": "Test invitation",
+      "success": true,
+      "status_code": 0,
+      "response": {
+        "dry_run": true
+      },
+      "error": null
+    },
+    {
+      "elementName": "carte_professionnelle",
+      "useCase": "Staff card ready",
+      "success": true,
+      "status_code": 0,
+      "response": {
+        "dry_run": true
+      },
+      "error": null
+    },
+    {
+      "elementName": "soumission_document_pedago",
+      "useCase": "Document submitted",
+      "success": true,
+      "status_code": 0,
+      "response": {
+        "dry_run": true
+      },
+      "error": null
+    },
+    {
+      "elementName": "validation_document_pedago",
+      "useCase": "Document validated",
+      "success": true,
+      "status_code": 0,
+      "response": {
+        "dry_run": true
+      },
+      "error": null
+    },
+    {
+      "elementName": "recapitulatif_pedagogique",
+      "useCase": "Profile summary",
+      "success": true,
+      "status_code": 0,
+      "response": {
+        "dry_run": true
+      },
+      "error": null
+    }
+  ]
+}

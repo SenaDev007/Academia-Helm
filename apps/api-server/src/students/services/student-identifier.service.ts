@@ -4,8 +4,8 @@
  * ============================================================================
  *
  * Format UNIFIÉ (aligné sur le standard RH) :
- *   AH-STU-YY-XXXXXX
- *   ex: AH-STU-25-000001
+ *   AH-STU-YY-XXX
+ *   ex: AH-STU-25-001
  *
  * - "AH" = Academia Helm prefix
  * - "STU" = Student identifier (équivalent de STF pour le staff)
@@ -16,8 +16,8 @@
  * Le matricule LOCAL (par école) est généré par MatriculeService.
  *
  * Le format est cohérent avec StaffMatriculeService :
- *   - Staff global : AH-STF-YY-XXXXXX (ex: AH-STF-25-000001)
- *   - Élève global : AH-STU-YY-XXXXXX (ex: AH-STU-25-000001)
+ *   - Staff global : AH-STF-YY-XXX (ex: AH-STF-25-001)
+ *   - Élève global : AH-STU-YY-XXX (ex: AH-STU-25-001)
  *
  * Le matricule global est VERROUILLÉ (locked=true) dès sa création —
  * il ne change jamais, même si l'élève change d'école.
@@ -27,7 +27,7 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 
-const GLOBAL_SEQUENCE_PAD = 6;
+const GLOBAL_SEQUENCE_PAD = 3;
 const STUDENT_TYPE_CODE = 'STU';
 
 @Injectable()
@@ -38,7 +38,7 @@ export class StudentIdentifierService {
 
   /**
    * Génère un matricule global unique pour un élève.
-   * Format: AH-STU-YY-XXXXXX  ex: AH-STU-25-000001
+   * Format: AH-STU-YY-XXX  ex: AH-STU-25-001
    *
    * Le matricule est verrouillé (locked=true) dès sa création.
    * Il est stocké dans StudentIdentifier + sur Student.globalStudentId.
@@ -146,13 +146,22 @@ export class StudentIdentifierService {
       },
     });
 
-    // Mettre à jour Student.globalStudentId
+    // Mettre à jour Student.globalStudentId uniquement.
+    // ⚠️ NE PAS écraser matricule ni studentCode — ce sont les matricules LOCAUX
+    // (format <CODE_TENANT>-E-<YY>-<XXXXX> ex: CSPEB-E-26-00001) générés par
+    // admit() via MatriculeService.generateInTransaction().
+    // globalStudentId est le matricule GLOBAL Academia Helm (AH-STU-YY-XXX)
+    // qui est unique sur toute la plateforme et sert d'identifiant inter-écoles.
+    //
+    // Le frontend affiche student.matricule || student.studentCode (le local),
+    // PAS globalStudentId. Si on écrase matricule avec globalMatricule, on perd
+    // le matricule local et l'admin ne voit plus le bon identifiant.
     await this.prisma.student.update({
       where: { id: studentId },
       data: { globalStudentId: globalMatricule },
     });
 
-    this.logger.log(`Generated global matricule ${globalMatricule} for student ${studentId}`);
+    this.logger.log(`Generated global matricule ${globalMatricule} for student ${studentId} (globalStudentId updated, local matricule preserved)`);
 
     return identifier;
   }

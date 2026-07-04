@@ -6,6 +6,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -28,16 +29,25 @@ export class FeeStructureController {
     @CurrentUser() user: any,
     @Body() body: CreateFeeStructureDto,
   ) {
-    const installments = body.installments?.map((i: any) => ({
-      ...i,
-      dueDate: i.dueDate ? new Date(i.dueDate) : new Date(),
-    }));
+    const installments = body.installments?.map((i: any) => {
+      const dueDateType = i.dueDateType ?? 'FIXED';
+      return {
+        label: i.label,
+        amount: Number(i.amount),
+        // dueDate n'est requis que pour le mode FIXED
+        dueDate: dueDateType === 'FIXED' && i.dueDate ? new Date(i.dueDate) : undefined,
+        dueDateType,
+        daysOffset: i.daysOffset != null ? Number(i.daysOffset) : undefined,
+        orderIndex: Number(i.orderIndex),
+      };
+    });
     return this.service.create(tenantId, {
       academicYearId: body.academicYearId,
       levelId: body.levelId,
       classId: body.classId,
       name: body.name,
       feeType: body.feeType,
+      customFeeTypeLabel: body.customFeeTypeLabel,
       totalAmount: Number(body.totalAmount),
       isInstallment: body.isInstallment ?? false,
       isMandatory: body.isMandatory ?? true,
@@ -96,11 +106,38 @@ export class FeeStructureController {
   @Get('overrides')
   async getOverrides(
     @TenantId() tenantId: string,
-    @Query('studentId') studentId: string,
+    @Query('studentId') studentId?: string,
     @Query('academicYearId') academicYearId?: string,
+    @Query('feeStructureId') feeStructureId?: string,
+    @Query('classId') classId?: string,
   ) {
-    if (!studentId) return [];
-    return this.service.getOverridesForStudent(tenantId, studentId, academicYearId);
+    // Si studentId est fourni → on utilise l'ancienne méthode (rétro-compat)
+    if (studentId) {
+      return this.service.getOverridesForStudent(tenantId, studentId, academicYearId);
+    }
+    // Sinon → on liste tous les overrides du tenant (onglet Personnalisations)
+    return this.service.getAllOverrides(tenantId, {
+      academicYearId,
+      feeStructureId,
+      classId,
+    });
+  }
+
+  @Delete('overrides/:id')
+  async deleteOverride(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.service.deleteOverride(id, tenantId);
+  }
+
+  @Patch('overrides/:id')
+  async updateOverride(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Body() body: { customAmount?: number; reason?: string },
+  ) {
+    return this.service.updateOverride(id, tenantId, body);
   }
 
   @Get(':id')
@@ -117,12 +154,28 @@ export class FeeStructureController {
   ) {
     const data: any = {};
     if (body.name !== undefined) data.name = body.name;
+    if (body.feeType !== undefined) data.feeType = body.feeType;
+    if (body.customFeeTypeLabel !== undefined) data.customFeeTypeLabel = body.customFeeTypeLabel || null;
     if (body.totalAmount !== undefined) data.totalAmount = Number(body.totalAmount);
     if (body.isInstallment !== undefined) data.isInstallment = body.isInstallment;
     if (body.isMandatory !== undefined) data.isMandatory = body.isMandatory;
     if (body.isActive !== undefined) data.isActive = body.isActive;
     if (body.levelId !== undefined) data.levelId = body.levelId || null;
     if (body.classId !== undefined) data.classId = body.classId || null;
+    // Mise à jour des installments (remplacement complet de la collection)
+    if (body.installments !== undefined) {
+      data.installments = (body.installments as any[]).map((i: any) => {
+        const dueDateType = i.dueDateType ?? 'FIXED';
+        return {
+          label: i.label,
+          amount: Number(i.amount),
+          dueDate: dueDateType === 'FIXED' && i.dueDate ? new Date(i.dueDate) : undefined,
+          dueDateType,
+          daysOffset: i.daysOffset != null ? Number(i.daysOffset) : undefined,
+          orderIndex: Number(i.orderIndex),
+        };
+      });
+    }
     return this.service.update(id, tenantId, data, user?.id);
   }
 
@@ -138,5 +191,13 @@ export class FeeStructureController {
       dueDate: new Date(body.dueDate),
       orderIndex: Number(body.orderIndex),
     });
+  }
+
+  @Delete(':id')
+  async delete(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.service.delete(id, tenantId);
   }
 }

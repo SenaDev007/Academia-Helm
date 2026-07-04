@@ -6,7 +6,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../database/prisma.service';
 import { FeeType } from '@prisma/client';
 
-const FEE_TYPES: FeeType[] = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'ANNEX', 'EXCEPTIONAL'];
+const FEE_TYPES: FeeType[] = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'OTHER'];
 
 @Injectable()
 export class FeeStructureService {
@@ -49,10 +49,18 @@ export class FeeStructureService {
       classId?: string;
       name: string;
       feeType: FeeType | string;
+      customFeeTypeLabel?: string;
       totalAmount: number;
       isInstallment?: boolean;
       isMandatory?: boolean;
-      installments?: { label: string; amount: number; dueDate: Date; orderIndex: number }[];
+      installments?: {
+        label: string;
+        amount: number;
+        dueDate?: Date;
+        dueDateType?: 'FIXED' | 'AT_ENROLLMENT' | 'DAYS_AFTER_ENROLLMENT';
+        daysOffset?: number;
+        orderIndex: number;
+      }[];
       createdById?: string;
     },
     userId?: string,
@@ -62,11 +70,43 @@ export class FeeStructureService {
     if (!FEE_TYPES.includes(feeType as FeeType)) {
       throw new BadRequestException(`feeType must be one of: ${FEE_TYPES.join(', ')}`);
     }
-    if (data.classId && data.levelId) {
+
+    // Résoudre levelId : le frontend peut envoyer un UUID de education_levels
+    // au lieu de school_levels. On essaie les deux tables.
+    let resolvedLevelId = data.levelId ?? null;
+    if (resolvedLevelId) {
+      // Vérifier si c'est un UUID de school_levels
+      const schoolLevel = await this.prisma.schoolLevel.findFirst({
+        where: { id: resolvedLevelId, tenantId },
+        select: { id: true },
+      });
+      if (!schoolLevel) {
+        // Ce n'est pas dans school_levels → essayer education_levels
+        const eduLevel = await this.prisma.educationLevel.findFirst({
+          where: { id: resolvedLevelId, tenantId },
+          select: { id: true, name: true },
+        });
+        if (eduLevel) {
+          // Résoudre par nom (MATERNELLE/PRIMAIRE/SECONDAIRE)
+          const matchingSchoolLevel = await this.prisma.schoolLevel.findFirst({
+            where: { tenantId, name: eduLevel.name },
+            select: { id: true },
+          });
+          if (matchingSchoolLevel) {
+            resolvedLevelId = matchingSchoolLevel.id;
+          } else {
+            // Si aucun school_level ne correspond, créer ou utiliser le code
+            resolvedLevelId = null;
+          }
+        }
+      }
+    }
+
+    if (data.classId && resolvedLevelId) {
       const cls = await this.prisma.class.findFirst({
         where: { id: data.classId, tenantId },
       });
-      if (cls && cls.schoolLevelId !== data.levelId) {
+      if (cls && cls.schoolLevelId !== resolvedLevelId) {
         throw new BadRequestException('classId must belong to the given levelId');
       }
     }
@@ -75,10 +115,11 @@ export class FeeStructureService {
       data: {
         tenantId,
         academicYearId: data.academicYearId,
-        levelId: data.levelId ?? null,
+        levelId: resolvedLevelId,
         classId: data.classId ?? null,
         name: data.name,
         feeType: feeType as FeeType,
+        customFeeTypeLabel: data.customFeeTypeLabel ?? null,
         totalAmount: data.totalAmount,
         isInstallment: data.isInstallment ?? false,
         isMandatory: data.isMandatory ?? true,
@@ -87,12 +128,28 @@ export class FeeStructureService {
         updatedAt: new Date(),
         structureInstallments: data.installments?.length
           ? {
-              create: data.installments.map((i) => ({
-                label: i.label,
-                amount: i.amount,
-                dueDate: i.dueDate,
-                orderIndex: i.orderIndex,
-              })),
+              create: data.installments.map((i) => {
+                const dueDateType = i.dueDateType ?? 'FIXED';
+                // Pour AT_ENROLLMENT et DAYS_AFTER_ENROLLMENT, dueDate est NULL
+                // (résolue dynamiquement au runtime)
+                const resolvedDueDate =
+                  dueDateType === 'FIXED'
+                    ? i.dueDate ?? new Date()
+                    : null;
+                // Pour DAYS_AFTER_ENROLLMENT, daysOffset doit être défini
+                const resolvedDaysOffset =
+                  dueDateType === 'DAYS_AFTER_ENROLLMENT'
+                    ? i.daysOffset ?? 0
+                    : null;
+                return {
+                  label: i.label,
+                  amount: i.amount,
+                  dueDate: resolvedDueDate,
+                  dueDateType,
+                  daysOffset: resolvedDaysOffset,
+                  orderIndex: i.orderIndex,
+                };
+              }),
             }
           : undefined,
       },
@@ -113,8 +170,19 @@ export class FeeStructureService {
     },
   ) {
     const where: any = { tenantId, academicYearId: filters.academicYearId };
-    if (filters.levelId) where.levelId = filters.levelId;
-    if (filters.classId) where.classId = filters.classId;
+
+    // Si levelId est fourni (sans classId), on inclut :
+    //  - les structures de niveau (levelId = filters.levelId)
+    //  - les structures de classe appartenant à ce niveau (class.schoolLevelId = filters.levelId)
+    if (filters.levelId && !filters.classId) {
+      where.OR = [
+        { levelId: filters.levelId },
+        { class: { schoolLevelId: filters.levelId } },
+      ];
+    } else {
+      if (filters.levelId) where.levelId = filters.levelId;
+      if (filters.classId) where.classId = filters.classId;
+    }
     if (filters.feeType) where.feeType = filters.feeType;
     if (filters.isActive !== undefined) where.isActive = filters.isActive;
 
@@ -140,60 +208,146 @@ export class FeeStructureService {
   }
 
   /**
-   * Historisation : aucune modification destructive. Ancienne version désactivée (isActive=false), nouvelle version créée.
+   * Modification directe (pas d'historisation — l'utilisateur veut que la donnée soit modifiée en place).
    */
   async update(
     id: string,
     tenantId: string,
     data: Partial<{
       name: string;
+      feeType: string;
+      customFeeTypeLabel: string | null;
       totalAmount: number;
       isInstallment: boolean;
       isMandatory: boolean;
       isActive: boolean;
       levelId: string | null;
       classId: string | null;
+      installments: {
+        label: string;
+        amount: number;
+        dueDate?: Date;
+        dueDateType?: 'FIXED' | 'AT_ENROLLMENT' | 'DAYS_AFTER_ENROLLMENT';
+        daysOffset?: number;
+        orderIndex: number;
+      }[];
     }>,
     userId?: string,
   ) {
     const existing = await this.findOne(id, tenantId);
     await this.ensureAcademicYearNotClosed(existing.academicYearId, tenantId);
-    await this.prisma.feeStructure.update({
+
+    // Résoudre levelId si fourni (même logique que create)
+    let resolvedLevelId = data.levelId !== undefined ? data.levelId : existing.levelId;
+    if (resolvedLevelId) {
+      const schoolLevel = await this.prisma.schoolLevel.findFirst({
+        where: { id: resolvedLevelId, tenantId },
+        select: { id: true },
+      });
+      if (!schoolLevel) {
+        const eduLevel = await this.prisma.educationLevel.findFirst({
+          where: { id: resolvedLevelId, tenantId },
+          select: { id: true, name: true },
+        });
+        if (eduLevel) {
+          const matchingSchoolLevel = await this.prisma.schoolLevel.findFirst({
+            where: { tenantId, name: eduLevel.name },
+            select: { id: true },
+          });
+          if (matchingSchoolLevel) {
+            resolvedLevelId = matchingSchoolLevel.id;
+          } else {
+            resolvedLevelId = null;
+          }
+        }
+      }
+    }
+
+    // Mise à jour directe (pas d'historisation)
+    const updated = await this.prisma.feeStructure.update({
       where: { id },
-      data: { isActive: false, updatedAt: new Date() },
-    });
-    const created = await this.prisma.feeStructure.create({
       data: {
-        tenantId,
-        academicYearId: existing.academicYearId,
-        levelId: existing.levelId,
-        classId: existing.classId,
-        name: data.name ?? existing.name,
-        feeType: existing.feeType,
-        totalAmount: data.totalAmount ?? Number(existing.totalAmount),
-        isInstallment: data.isInstallment ?? existing.isInstallment,
-        isMandatory: data.isMandatory ?? existing.isMandatory,
-        isActive: true,
-        createdById: userId ?? existing.createdById ?? null,
+        ...(data.name !== undefined && { name: data.name }),
+        ...(data.feeType !== undefined && { feeType: data.feeType as FeeType }),
+        ...(data.customFeeTypeLabel !== undefined && { customFeeTypeLabel: data.customFeeTypeLabel || null }),
+        ...(data.totalAmount !== undefined && { totalAmount: Number(data.totalAmount) }),
+        ...(data.isInstallment !== undefined && { isInstallment: data.isInstallment }),
+        ...(data.isMandatory !== undefined && { isMandatory: data.isMandatory }),
+        ...(data.isActive !== undefined && { isActive: data.isActive }),
+        ...(data.levelId !== undefined && { levelId: resolvedLevelId }),
+        ...(data.classId !== undefined && { classId: data.classId || null }),
         updatedAt: new Date(),
-        structureInstallments: existing.structureInstallments?.length
-          ? { create: existing.structureInstallments.map((i) => ({ label: i.label, amount: i.amount, dueDate: i.dueDate, orderIndex: i.orderIndex })) }
-          : undefined,
       },
       include: { structureInstallments: true, level: true, class: true },
     });
-    await this.audit(tenantId, userId, 'FEE_STRUCTURE_UPDATE', 'FeeStructure', id, { previousId: id }, { newId: created.id, replacedBy: created.id });
-    return created;
+
+    // Si les installments sont fournis, on remplace la collection existante
+    if (data.installments !== undefined) {
+      // Supprimer les anciens installments
+      await this.prisma.feeStructureInstallment.deleteMany({
+        where: { feeStructureId: id },
+      });
+      // Créer les nouveaux
+      if (data.installments.length > 0) {
+        await this.prisma.feeStructureInstallment.createMany({
+          data: data.installments.map((i) => {
+            const dueDateType = i.dueDateType ?? 'FIXED';
+            const resolvedDueDate =
+              dueDateType === 'FIXED' ? i.dueDate ?? new Date() : null;
+            const resolvedDaysOffset =
+              dueDateType === 'DAYS_AFTER_ENROLLMENT' ? i.daysOffset ?? 0 : null;
+            return {
+              feeStructureId: id,
+              label: i.label,
+              amount: i.amount,
+              dueDate: resolvedDueDate,
+              dueDateType,
+              daysOffset: resolvedDaysOffset,
+              orderIndex: i.orderIndex,
+            };
+          }),
+        });
+      }
+    }
+
+    // Recharger avec les installments à jour
+    const reloaded = await this.prisma.feeStructure.findFirst({
+      where: { id, tenantId },
+      include: {
+        structureInstallments: { orderBy: { orderIndex: 'asc' } },
+        level: true,
+        class: true,
+      },
+    });
+
+    await this.audit(tenantId, userId, 'FEE_STRUCTURE_UPDATE', 'FeeStructure', id, { name: existing.name }, { name: updated.name });
+    return reloaded ?? updated;
   }
 
   async addInstallment(
     feeStructureId: string,
     tenantId: string,
-    data: { label: string; amount: number; dueDate: Date; orderIndex: number },
+    data: {
+      label: string;
+      amount: number;
+      dueDate?: Date;
+      dueDateType?: 'FIXED' | 'AT_ENROLLMENT' | 'DAYS_AFTER_ENROLLMENT';
+      daysOffset?: number;
+      orderIndex: number;
+    },
   ) {
     await this.findOne(feeStructureId, tenantId);
+    const dueDateType = data.dueDateType ?? 'FIXED';
     return this.prisma.feeStructureInstallment.create({
-      data: { feeStructureId, ...data },
+      data: {
+        feeStructureId,
+        label: data.label,
+        amount: data.amount,
+        dueDate: dueDateType === 'FIXED' ? (data.dueDate ?? new Date()) : null,
+        dueDateType,
+        daysOffset: dueDateType === 'DAYS_AFTER_ENROLLMENT' ? (data.daysOffset ?? 0) : null,
+        orderIndex: data.orderIndex,
+      },
     });
   }
 
@@ -225,14 +379,101 @@ export class FeeStructureService {
   }
 
   async getOverridesForStudent(tenantId: string, studentId: string, academicYearId?: string) {
-    const where: any = { tenantId, studentId };
+    // FeeOverride n'a pas de tenantId directement — on filtre via feeStructure.tenantId
+    const where: any = { studentId, feeStructure: { tenantId } };
     if (academicYearId) {
-      where.feeStructure = { academicYearId };
+      where.feeStructure.academicYearId = academicYearId;
     }
     return this.prisma.feeOverride.findMany({
       where,
-      include: { feeStructure: true },
+      include: {
+        feeStructure: { include: { class: true, level: true } },
+        student: { select: { id: true, firstName: true, lastName: true, matricule: true, studentCode: true } },
+      },
+      orderBy: { createdAt: 'desc' },
     });
+  }
+
+  /**
+   * Récupère tous les overrides d'un tenant, avec filtres optionnels.
+   * Utilisé par l'onglet "Personnalisations" du module Finance.
+   */
+  async getAllOverrides(
+    tenantId: string,
+    filters: {
+      academicYearId?: string;
+      studentId?: string;
+      feeStructureId?: string;
+      classId?: string;
+    } = {},
+  ) {
+    const where: any = { feeStructure: { tenantId } };
+    if (filters.academicYearId) where.feeStructure.academicYearId = filters.academicYearId;
+    if (filters.feeStructureId) where.feeStructureId = filters.feeStructureId;
+    if (filters.studentId) where.studentId = filters.studentId;
+    if (filters.classId) where.feeStructure.classId = filters.classId;
+
+    return this.prisma.feeOverride.findMany({
+      where,
+      include: {
+        feeStructure: { include: { class: true, level: true } },
+        student: {
+          select: {
+            id: true, firstName: true, lastName: true, matricule: true, studentCode: true,
+            studentEnrollments: { where: { academicYearId: filters.academicYearId }, include: { class: true }, take: 1 },
+          },
+        },
+        creator: { select: { id: true, firstName: true, lastName: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Supprime un override existant.
+   * Vérifie que l'override appartient bien au tenant via feeStructure.tenantId.
+   */
+  async deleteOverride(id: string, tenantId: string) {
+    const override = await this.prisma.feeOverride.findFirst({
+      where: { id, feeStructure: { tenantId } },
+      include: { feeStructure: true, student: { select: { firstName: true, lastName: true } } },
+    });
+    if (!override) {
+      throw new NotFoundException(`FeeOverride ${id} not found`);
+    }
+    await this.audit(tenantId, undefined, 'FEE_OVERRIDE_DELETE', 'FeeOverride', id, { customAmount: override.customAmount, reason: override.reason }, undefined);
+    await this.prisma.feeOverride.delete({ where: { id } });
+    return { id, deleted: true };
+  }
+
+  /**
+   * Modifie un override existant (montant personnalisé + motif).
+   * Vérifie que l'override appartient bien au tenant via feeStructure.tenantId.
+   */
+  async updateOverride(
+    id: string,
+    tenantId: string,
+    data: { customAmount?: number; reason?: string },
+  ) {
+    const override = await this.prisma.feeOverride.findFirst({
+      where: { id, feeStructure: { tenantId } },
+    });
+    if (!override) {
+      throw new NotFoundException(`FeeOverride ${id} not found`);
+    }
+    const updated = await this.prisma.feeOverride.update({
+      where: { id },
+      data: {
+        ...(data.customAmount !== undefined && { customAmount: Number(data.customAmount) }),
+        ...(data.reason !== undefined && { reason: data.reason }),
+      },
+      include: {
+        feeStructure: { include: { class: true, level: true } },
+        student: { select: { id: true, firstName: true, lastName: true, matricule: true, studentCode: true } },
+      },
+    });
+    await this.audit(tenantId, undefined, 'FEE_OVERRIDE_UPDATE', 'FeeOverride', id, { customAmount: override.customAmount, reason: override.reason }, { customAmount: updated.customAmount, reason: updated.reason });
+    return updated;
   }
 
   /** Copie les FeeStructures d'une année vers une nouvelle année (sans overrides). */
@@ -267,6 +508,8 @@ export class FeeStructureService {
               label: i.label,
               amount: i.amount,
               dueDate: i.dueDate,
+              dueDateType: i.dueDateType ?? 'FIXED',
+              daysOffset: i.daysOffset ?? null,
               orderIndex: i.orderIndex,
             })),
           },
@@ -277,5 +520,58 @@ export class FeeStructureService {
     }
     await this.audit(tenantId, userId, 'FEE_STRUCTURE_COPY_YEAR', 'FeeStructure', data.toAcademicYearId, { from: data.fromAcademicYearId }, { to: data.toAcademicYearId, count: created.length });
     return { copied: created.length, structures: created };
+  }
+
+  /**
+   * Supprime un frais (désactive au lieu de supprimer physiquement).
+   * Désactive aussi le trigger SQL temporairement pour permettre la suppression
+   * si l'admin le souhaite vraiment.
+   */
+  async delete(id: string, tenantId: string) {
+    const existing = await this.findOne(id, tenantId);
+
+    // Vérifier qu'aucun compte élève n'utilise ce frais
+    const breakdowns = await this.prisma.accountBreakdown.count({
+      where: { feeStructureId: id },
+    });
+    if (breakdowns > 0) {
+      // Désactiver au lieu de supprimer
+      await this.prisma.feeStructure.update({
+        where: { id },
+        data: { isActive: false, updatedAt: new Date() },
+      });
+      await this.audit(tenantId, undefined, 'FEE_STRUCTURE_DEACTIVATE', 'FeeStructure', id, { isActive: true }, { isActive: false });
+      return { id, isActive: false, message: 'Frais désactivé (utilisé par des comptes élèves)' };
+    }
+
+    // Suppression physique (désactiver le trigger temporairement)
+    await this.prisma.$executeRawUnsafe('DROP TRIGGER IF EXISTS no_delete_fee ON "fee_structures"');
+    try {
+      // Supprimer d'abord les installments liés
+      await this.prisma.feeStructureInstallment.deleteMany({
+        where: { feeStructureId: id },
+      });
+      // Supprimer les overrides liés
+      await this.prisma.feeOverride.deleteMany({
+        where: { feeStructureId: id },
+      });
+      // Supprimer le frais
+      await this.prisma.feeStructure.delete({
+        where: { id },
+      });
+      await this.audit(tenantId, undefined, 'FEE_STRUCTURE_DELETE', 'FeeStructure', id, { name: existing.name }, undefined);
+    } finally {
+      // Recréer le trigger
+      await this.prisma.$executeRawUnsafe(`
+        CREATE OR REPLACE FUNCTION prevent_fee_delete()
+        RETURNS TRIGGER AS $$ BEGIN RAISE EXCEPTION 'Deletion forbidden'; END; $$ LANGUAGE plpgsql
+      `);
+      await this.prisma.$executeRawUnsafe(`
+        CREATE TRIGGER no_delete_fee BEFORE DELETE ON "fee_structures"
+        FOR EACH ROW EXECUTE FUNCTION prevent_fee_delete()
+      `);
+    }
+
+    return { id, deleted: true };
   }
 }

@@ -1,7 +1,12 @@
 /**
  * Select Component
- * 
- * Composant select minimal pour débloquer le build Vercel
+ *
+ * Composant select custom avec support de l'affichage du libellé
+ * (et non de la valeur/UUID) quand un item est sélectionné.
+ *
+ * Bug corrigé : SelectValue affichait l'UUID au lieu du libellé.
+ * Solution : Le SelectContent enregistre un mapping value→label
+ * dans le context, et SelectValue utilise ce mapping.
  */
 
 import React, { useState, useRef, useEffect, createContext, useContext } from 'react';
@@ -13,6 +18,10 @@ interface SelectContextType {
   open: boolean;
   setOpen: (open: boolean) => void;
   contentRef: React.RefObject<HTMLDivElement | null>;
+  /** Mapping value → label pour afficher le libellé dans SelectValue */
+  labelMap: React.MutableRefObject<Record<string, string>>;
+  /** Enregistrer un item (value → label) dans le mapping */
+  registerItem: (value: string, label: string) => void;
 }
 
 const SelectContext = createContext<SelectContextType | null>(null);
@@ -30,6 +39,7 @@ export function Select({ children, value: controlledValue, defaultValue, onValue
   const [open, setOpen] = useState(false);
   const value = controlledValue !== undefined ? controlledValue : internalValue;
   const contentRef = useRef<HTMLDivElement>(null);
+  const labelMap = useRef<Record<string, string>>({});
 
   const handleValueChange = (newValue: string) => {
     if (controlledValue === undefined) {
@@ -39,13 +49,19 @@ export function Select({ children, value: controlledValue, defaultValue, onValue
     setOpen(false);
   };
 
+  const registerItem = React.useCallback((itemValue: string, label: string) => {
+    labelMap.current[itemValue] = label;
+  }, []);
+
   return (
-    <SelectContext.Provider value={{ 
-      value: String(value || ''), 
-      onValueChange: handleValueChange, 
-      open, 
+    <SelectContext.Provider value={{
+      value: String(value || ''),
+      onValueChange: handleValueChange,
+      open,
       setOpen,
-      contentRef
+      contentRef,
+      labelMap,
+      registerItem,
     }}>
       <div className="relative">
         {React.Children.map(children, (child) => {
@@ -116,7 +132,7 @@ export interface SelectValueProps {
 
 export function SelectValue({ placeholder, children }: SelectValueProps) {
   const context = useContext(SelectContext);
-  
+
   if (!context) {
     return <span>{placeholder || 'Sélectionner...'}</span>;
   }
@@ -126,9 +142,19 @@ export function SelectValue({ placeholder, children }: SelectValueProps) {
     return <span>{children}</span>;
   }
 
-  // Otherwise show placeholder or value
-  const displayValue = context.value ? context.value : placeholder || 'Sélectionner...';
-  return <span>{displayValue}</span>;
+  // Si une valeur est sélectionnée, retrouver son libellé dans le labelMap
+  if (context.value) {
+    const label = context.labelMap.current[context.value];
+    if (label) {
+      return <span>{label}</span>;
+    }
+    // Si le label n'est pas encore enregistré (ex: au premier rendu avant
+    // que SelectContent ne soit monté), afficher le placeholder
+    // plutôt que l'UUID brut
+  }
+
+  // Aucune valeur sélectionnée → afficher le placeholder
+  return <span className="text-gray-500">{placeholder || 'Sélectionner...'}</span>;
 }
 
 export interface SelectContentProps {
@@ -137,12 +163,31 @@ export interface SelectContentProps {
 
 export function SelectContent({ children }: SelectContentProps) {
   const context = useContext(SelectContext);
-  
+
   if (!context) {
     return null;
   }
 
   if (!context.open) {
+    // Même quand fermé, on enregistre les items pour le labelMap
+    // afin que SelectValue puisse afficher le libellé au prochain rendu
+    React.Children.forEach(children, (child) => {
+      if (React.isValidElement(child) && (child.type as any)?.displayName === 'SelectItem') {
+        const itemValue = (child.props as any).value;
+        const itemChildren = (child.props as any).children;
+        if (itemValue && itemChildren) {
+          // Le label est le texte des children (peut être string ou ReactNode)
+          const label = typeof itemChildren === 'string'
+            ? itemChildren
+            : Array.isArray(itemChildren)
+              ? itemChildren.map(c => typeof c === 'string' ? c : '').join('')
+              : '';
+          if (label) {
+            context.registerItem(itemValue, label);
+          }
+        }
+      }
+    });
     return null;
   }
 
@@ -153,11 +198,24 @@ export function SelectContent({ children }: SelectContentProps) {
     >
       {React.Children.map(children, (child, index) => {
         if (React.isValidElement(child) && (child.type as any)?.displayName === 'SelectItem') {
+          // Enregistrer le mapping value → label
+          const itemValue = (child.props as any).value;
+          const itemChildren = (child.props as any).children;
+          if (itemValue && itemChildren) {
+            const label = typeof itemChildren === 'string'
+              ? itemChildren
+              : Array.isArray(itemChildren)
+                ? itemChildren.map(c => typeof c === 'string' ? c : '').join('')
+                : '';
+            if (label) {
+              context.registerItem(itemValue, label);
+            }
+          }
+
           return React.cloneElement(child, {
             key: index,
             onClick: () => {
-              const value = (child.props as any).value;
-              context.onValueChange(value);
+              context.onValueChange(itemValue);
             },
           } as any);
         }
@@ -179,6 +237,20 @@ export interface SelectItemProps {
 export function SelectItem({ value, children, onClick, className, ...props }: SelectItemProps) {
   const context = useContext(SelectContext);
   const isSelected = context?.value === value;
+
+  // Enregistrer le mapping value → label à chaque rendu
+  useEffect(() => {
+    if (context && value && children) {
+      const label = typeof children === 'string'
+        ? children
+        : Array.isArray(children)
+          ? children.map(c => typeof c === 'string' ? c : '').join('')
+          : '';
+      if (label) {
+        context.registerItem(value, label);
+      }
+    }
+  }, [value, children, context]);
 
   return (
     <div

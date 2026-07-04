@@ -1,0 +1,234 @@
+{
+  "_meta": {
+    "description": "20 templates WhatsApp pour Academia Helm - v2 (sans header, ecole en body position 1)",
+    "version": "2.0.0",
+    "language": "fr",
+    "category": "UTILITY",
+    "footer": "Academia Helm - Plateforme educative",
+    "note": "VERSION 2.0 - Suppression du header parametre (causait rejet Meta 'Variables can't be at start or end'). Le nom de l'ecole est maintenant integre dans le body en premiere ligne 'Etablissement : {{1}}' et repris dans la signature.",
+    "variable_convention": "{{1}} = schoolName (injecte automatiquement par sendForTenant), {{2}}, {{3}}... = variables metier",
+    "sample_school_name": "CSPEB"
+  },
+  "templates": [
+    {
+      "elementName": "admission_recue",
+      "useCase": "Admission confirmation",
+      "category": "UTILITY",
+      "templateType": "TEXT",
+      "body": "Etablissement : {{1}}\n\nBonjour {{2}},\n\nNous accusons reception de la demande d'admission de {{3}} pour l'annee scolaire {{4}} en classe de {{5}}.\n\nNumero de dossier : {{6}}\n\nNotre equipe pedagogique examinera votre demande dans les meilleurs delais et reviendra vers vous pour les prochaines etapes.\n\nCordialement,\nLa Direction de {{1}}",
+      "footer": "Academia Helm - Plateforme educative",
+      "bodyPlaceholderCount": 6,
+      "callerParamCount": 5,
+      "sampleBody": "[CSPEB],[Marie ADANDE],[Jean ADANDE],[2025-2026],[CP1],[ADM-2025-001]"
+    },
+    {
+      "elementName": "inscription_confirmee",
+      "useCase": "Enrollment confirmation",
+      "category": "UTILITY",
+      "templateType": "TEXT",
+      "body": "Etablissement : {{1}}\n\nBonjour {{2}},\n\nFelicitations ! L'inscription de {{3}} est officiellement confirmee a {{1}}.\n\nClasse : {{4}}\nMatricule : {{5}}\nAnnee scolaire : {{6}}\n\nConservez precieusement ce matricule : il vous sera demande pour toute communication avec l'ecole.\n\nCordialement,\nLa Direction de {{1}}",
+      "footer": "Academia Helm - Plateforme educative",
+      "bodyPlaceholderCount": 6,
+      "callerParamCount": 5,
+      "sampleBody": "[CSPEB],[Marie ADANDE],[Jean ADANDE],[CP1],[001],[2025-2026]"
+    },
+    {
+      "elementName": "candidature_recue",
+      "useCase": "Application received",
+      "category": "UTILITY",
+      "templateType": "TEXT",
+      "body": "Etablissement : {{1}}\n\nBonjour {{2}},\n\nNous avons bien recu votre candidature pour le poste de {{3}} chez {{1}}.\n\nVotre profil sera examine par notre equipe de recrutement. Si votre candidature est retenue, vous serez contacte(e) pour la suite du processus.\n\nCordialement,\nL'equipe RH de {{1}}",
+      "footer": "Academia Helm - Plateforme educative",
+      "bodyPlaceholderCount": 3,
+      "callerParamCount": 2,
+      "sampleBody": "[CSPEB],[Erhel DEGBE],[Professeur de Mathematiques]"
+    },
+    {
+      "elementName": "entretien_programme",
+      "useCase": "Interview scheduled",
+      "category": "UTILITY",
+      "templateType": "TEXT",
+      "body": "Etablissement : {{1}}\n\nBonjour {{2}},\n\nUn entretien est programme pour votre candidature au poste de {{3}} chez {{1}}.\n\nDate : {{4}}\nHeure : {{5}}\nFormat : {{6}}\nEvaluateur : {{7}}\n\nLien / Contact : {{8}}\n\nMerci de confirmer votre presence.\n\nCordialement,\nL'equipe RH de {{1}}",
+      "footer": "Academia Helm - Plateforme educative",
+      "bodyPlaceholderCount": 8,
+      "callerParamCount": 7,
+      "sampleBody": "[CSPEB],[Erhel DEGBE],[Professeur de Mathematiques],[15/01/2026],[10h00],[Visioconference],[M. Kossi ADANDE],[https://meet.google.com/abc-defg-hij]"
+    },
+    {
+      "elementName": "test_programme",
+      "useCase": "Test scheduled",
+      "category": "UTILITY",
+      "templateType": "TEXT",
+      "body": "Etablissement : {{1}}\n\nBonjour {{2}},\n\nUn test est programme pour votre candidature au poste de {{3}} chez {{1}}.\n\nTest : {{4}}\nDuree : {{5}}\nBareme : {{6}} / Seuil de reussite : {{7}}\n\nInstructions : {{8}}\n\nCordialement,\nL'equipe RH de {{1}}",
+      "footer": "Academia Helm - Plateforme educative",
+      "bodyPlaceholderCount": 8,
+      "callerParamCount": 7,
+      "sampleBody": "[CSPEB],[Erhel DEGBE],[Professeur de Mathematiques],[Test de competences pedagogiques],[60 minutes],[100],[50],[Aucun document autorise]"
+    },
+    {
+      "elementName": "resultat_entretien",
+      "useCase": "Interview result",
+      "category": "UTILITY",
+      "templateType": "TEXT",
+      "body": "Etablissement : {{1}}\n\nBonjour {{2}},\n\nSuite a votre entretien pour le poste de {{3}} chez {{1}}, nous vous informons que votre candidature est {{4}}.\n\nRetour de l'evaluateur : {{5}}\n\nCordialement,\nL'equipe RH de {{1}}",
+      "footer": "Academia Helm - Plateforme educative",
+      "bodyPlaceholderCount": 5,
+      "callerParamCount": 4,
+      "sampleBody": "[CSPEB],[Erhel DEGBE],[Professeur de Mathematiques],[retenue],[Tres bonne presentation, profil adapte au poste]"
+    },
+    {
+      "elementName": "resultat_test",
+      "useCase": "Test result",
+      "category": "UTILITY",
+      "templateType": "TEXT",
+      "body": "Etablissement : {{1}}\n\nBonjour {{2}},\n\nSuite au test \"{{3}}\" pour votre candidature au poste de {{4}} chez {{1}}, votre resultat est {{5}}.\n\nScore : {{6}} / {{7}}\n\nRetour : {{8}}\n\nCordialement,\nL'equipe RH de {{1}}",
+      "footer": "Academia Helm - Plateforme educative",
+      "bodyPlaceholderCount": 8,
+      "callerParamCount": 7,
+      "sampleBody": "[CSPEB],[Erhel DEGBE],[Test de competences pedagogiques],[Professeur de Mathematiques],[reussi],[78],[100],[Tres bonnes reponses sur la didactique]"
+    },
+    {
+      "elementName": "embauche_confirmee",
+      "useCase": "Job offer accepted",
+      "category": "UTILITY",
+      "templateType": "TEXT",
+      "body": "Etablissement : {{1}}\n\nBonjour {{2}},\n\nFelicitations ! Vous etes officiellement embauche(e) chez {{1}} pour le poste de {{3}}.\n\nType de contrat : {{4}}\nDate de prise de fonction : {{5}}\nSalaire : {{6}}\n\nVotre contrat : {{7}}\n\nBienvenue dans l'equipe !\n\nCordialement,\nLa Direction de {{1}}",
+      "footer": "Academia Helm - Plateforme educative",
+      "bodyPlaceholderCount": 7,
+      "callerParamCount": 6,
+      "sampleBody": "[CSPEB],[Erhel DEGBE],[Professeur de Mathematiques],[CDI],[01/09/2026],[350000 FCFA],[https://academiahelm.com/contract/abc123]"
+    },
+    {
+      "elementName": "contrat_signe",
+      "useCase": "Contract signed",
+      "category": "UTILITY",
+      "templateType": "TEXT",
+      "body": "Etablissement : {{1}}\n\nBonjour {{2}},\n\nVotre contrat de travail chez {{1}} (poste : {{3}}) a ete signe avec succes.\n\nType de contrat : {{4}}\nDate de signature : {{5}}\n\nTelecharger : {{6}}\n\nBienvenue definitivement dans l'equipe !\n\nCordialement,\nLa Direction de {{1}}",
+      "footer": "Academia Helm - Plateforme educative",
+      "bodyPlaceholderCount": 6,
+      "callerParamCount": 5,
+      "sampleBody": "[CSPEB],[Erhel DEGBE],[Professeur de Mathematiques],[CDI],[15/01/2026],[https://academiahelm.com/contract/abc123.pdf]"
+    },
+    {
+      "elementName": "candidature_rejetee",
+      "useCase": "Application rejected",
+      "category": "UTILITY",
+      "templateType": "TEXT",
+      "body": "Etablissement : {{1}}\n\nBonjour {{2}},\n\nNous vous remercions de l'interet que vous portez a {{1}} pour le poste de {{3}}.\n\nApres examen de votre candidature, nous regrettons de vous informer que nous ne pourrons pas donner une suite favorable a votre demande.\n\n{{4}}\n\nNous vous souhaitons plein de succes dans vos futures demarches.\n\nCordialement,\nL'equipe RH de {{1}}",
+      "footer": "Academia Helm - Plateforme educative",
+      "bodyPlaceholderCount": 4,
+      "callerParamCount": 3,
+      "sampleBody": "[CSPEB],[Erhel DEGBE],[Professeur de Mathematiques],[Nous vous remercions de votre comprehension.]"
+    },
+    {
+      "elementName": "demande_documents",
+      "useCase": "Document request",
+      "category": "UTILITY",
+      "templateType": "TEXT",
+      "body": "Etablissement : {{1}}\n\nBonjour {{2}},\n\nPour finaliser votre dossier de candidature (poste : {{3}}) chez {{1}}, merci de fournir les documents suivants via le lien securise ci-dessous :\n\nDocuments requis : {{4}}\n\nLien de televersement : {{5}}\nDate limite : {{6}}\n\nCordialement,\nL'equipe RH de {{1}}",
+      "footer": "Academia Helm - Plateforme educative",
+      "bodyPlaceholderCount": 6,
+      "callerParamCount": 5,
+      "sampleBody": "[CSPEB],[Erhel DEGBE],[Professeur de Mathematiques],[CV, Diplome, Casier judiciaire],[https://academiahelm.com/upload/token123],[22/01/2026]"
+    },
+    {
+      "elementName": "identifiants_connexion",
+      "useCase": "Account credentials",
+      "category": "UTILITY",
+      "templateType": "TEXT",
+      "body": "Etablissement : {{1}}\n\nBonjour {{2}},\n\nVos identifiants de connexion a la plateforme de {{1}} ont ete crees.\n\nIdentifiant : {{3}}\nMot de passe temporaire : {{4}}\nRole : {{5}}\nPortail : {{6}}\n\nPour des raisons de securite, veuillez changer ce mot de passe lors de votre premiere connexion.\n\nCordialement,\nL'administration de {{1}}",
+      "footer": "Academia Helm - Plateforme educative",
+      "bodyPlaceholderCount": 6,
+      "callerParamCount": 5,
+      "sampleBody": "[CSPEB],[Erhel DEGBE],[MAT001],[TempPass2026],[Enseignant],[https://cspeb.academiahelm.com/login]"
+    },
+    {
+      "elementName": "decision_conge",
+      "useCase": "Leave decision",
+      "category": "UTILITY",
+      "templateType": "TEXT",
+      "body": "Etablissement : {{1}}\n\nBonjour {{2}},\n\nVotre demande de conge ({{3}}) du {{4}} au {{5}} ({{6}} jours) a ete {{7}} chez {{1}}.\n\n{{8}}\n\nCordialement,\nLa Direction de {{1}}",
+      "footer": "Academia Helm - Plateforme educative",
+      "bodyPlaceholderCount": 8,
+      "callerParamCount": 7,
+      "sampleBody": "[CSPEB],[Erhel DEGBE],[Conge annuel],[01/02/2026],[07/02/2026],[7],[approuvee],[Bon retour parmi nous.]"
+    },
+    {
+      "elementName": "decision_heures_sup",
+      "useCase": "Overtime decision",
+      "category": "UTILITY",
+      "templateType": "TEXT",
+      "body": "Etablissement : {{1}}\n\nBonjour {{2}},\n\nVos heures supplementaires du {{3}} ({{4}}h) ont ete {{5}} chez {{1}}.\n\n{{6}}\n\nCordialement,\nLa Direction de {{1}}",
+      "footer": "Academia Helm - Plateforme educative",
+      "bodyPlaceholderCount": 6,
+      "callerParamCount": 5,
+      "sampleBody": "[CSPEB],[Erhel DEGBE],[15/01/2026],[4],[validees],[Ces heures seront integrees a votre prochaine paie.]"
+    },
+    {
+      "elementName": "resume_recrutement_quotidien",
+      "useCase": "Recruitment summary",
+      "category": "UTILITY",
+      "templateType": "TEXT",
+      "body": "Etablissement : {{1}}\n\nBonjour,\n\nResume recrutement du {{2}} - {{1}} :\n\nNouvelles candidatures : {{3}}\nEntretiens programmés : {{4}}\nEntretiens realises : {{5}}\nTests programmés : {{6}}\nTests realises : {{7}}\nEmbauches : {{8}}\nRejets : {{9}}\n\nConnectez-vous a votre espace pour le detail.\n\nCordialement,\nL'equipe RH de {{1}}",
+      "footer": "Academia Helm - Plateforme educative",
+      "bodyPlaceholderCount": 9,
+      "callerParamCount": 8,
+      "sampleBody": "[CSPEB],[15/01/2026],[3],[2],[1],[1],[0],[1],[1]"
+    },
+    {
+      "elementName": "test_a_passer",
+      "useCase": "Test invitation",
+      "category": "UTILITY",
+      "templateType": "TEXT",
+      "body": "Etablissement : {{1}}\n\nBonjour {{2}},\n\nVous etes invite(e) a passer le test \"{{3}}\" chez {{1}}.\n\nDuree : {{4}} minutes\nA passer avant : {{5}}\n\nLien du test : {{6}}\n\nBon courage !\n\nCordialement,\nL'equipe RH de {{1}}",
+      "footer": "Academia Helm - Plateforme educative",
+      "bodyPlaceholderCount": 6,
+      "callerParamCount": 5,
+      "sampleBody": "[CSPEB],[Erhel DEGBE],[Test de competences pedagogiques],[60],[22/01/2026 23h59],[https://academiahelm.com/test/token123]"
+    },
+    {
+      "elementName": "carte_professionnelle",
+      "useCase": "Staff card ready",
+      "category": "UTILITY",
+      "templateType": "TEXT",
+      "body": "Etablissement : {{1}}\n\nBonjour {{2}},\n\nVotre carte professionnelle de {{1}} est disponible.\n\nVous pouvez la telecharger et la presenter a votre employeur ou partenaires.\n\nLien : {{3}}\n\nCordialement,\nLa Direction de {{1}}",
+      "footer": "Academia Helm - Plateforme educative",
+      "bodyPlaceholderCount": 3,
+      "callerParamCount": 2,
+      "sampleBody": "[CSPEB],[Erhel DEGBE],[https://academiahelm.com/card/MAT001.pdf]"
+    },
+    {
+      "elementName": "soumission_document_pedago",
+      "useCase": "Document submitted",
+      "category": "UTILITY",
+      "templateType": "TEXT",
+      "body": "Etablissement : {{1}}\n\nBonjour,\n\nUne nouvelle soumission pedagogique a ete effectuee chez {{1}} :\n\nType : {{2}}\nTitre : {{3}}\nEnseignant : {{4}}\n{{5}}\n\nConnectez-vous a votre espace pour valider.\n\nCordialement,\nLa Direction pedagogique de {{1}}",
+      "footer": "Academia Helm - Plateforme educative",
+      "bodyPlaceholderCount": 5,
+      "callerParamCount": 4,
+      "sampleBody": "[CSPEB],[Fiche pedagogique],[Semaine 3 - Janvier 2026],[Erhel DEGBE],[Classe : CP1 | Matiere : Mathematiques]"
+    },
+    {
+      "elementName": "validation_document_pedago",
+      "useCase": "Document validated",
+      "category": "UTILITY",
+      "templateType": "TEXT",
+      "body": "Etablissement : {{1}}\n\nBonjour {{2}},\n\nVotre document pedagogique \"{{3}}\" ({{4}}) a ete {{5}} chez {{1}}.\n\n{{6}}\n\nConnectez-vous pour consulter les details.\n\nCordialement,\nLa Direction pedagogique de {{1}}",
+      "footer": "Academia Helm - Plateforme educative",
+      "bodyPlaceholderCount": 6,
+      "callerParamCount": 5,
+      "sampleBody": "[CSPEB],[Erhel DEGBE],[Semaine 3 - Janvier 2026],[Fiche pedagogique],[valide],[Tres bon travail, contenus conformes au programme officiel]"
+    },
+    {
+      "elementName": "recapitulatif_pedagogique",
+      "useCase": "Profile summary",
+      "category": "UTILITY",
+      "templateType": "TEXT",
+      "body": "Etablissement : {{1}}\n\nBonjour {{2}},\n\nVotre recapitulatif pedagogique ({{3}}) est disponible chez {{1}}.\n\nMatricule : {{4}}\nNiveau : {{5}}\nHeures assignees : {{6}} / {{7}} ({{8}})\n\nLe recapitulatif complet vous a ete envoye par email (avec PDF en piece jointe).\n\nCordialement,\nLa Direction pedagogique de {{1}}",
+      "footer": "Academia Helm - Plateforme educative",
+      "bodyPlaceholderCount": 8,
+      "callerParamCount": 7,
+      "sampleBody": "[CSPEB],[Erhel DEGBE],[2025-2026],[MAT001],[Primaire],[18],[24],[Sous-charge]"
+    }
+  ]
+}

@@ -1,8 +1,15 @@
 /**
  * SOUS-MODULE 2 — Comptes élèves (StudentAccount, AccountBreakdown)
  * Création automatique à admission, calcul totalDue/totalPaid/balance, statut dynamique, injection arriérés N→N+1.
+ *
+ * SÉCURITÉ SQL :
+ * - Les champs balance/totalDue/totalPaid/arrearsAmount sont protégés par le trigger
+ *   `prevent_balance_update` qui exige `app.allow_balance_update = 'true'` en session.
+ * - Le champ `isBlocked` est protégé par `prevent_manual_block_update` qui exige
+ *   `app.allow_block_update = 'true'`.
+ * - Ce service configure ces flags via `prisma.$executeRaw` avant chaque update légitime.
  */
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 
 const STATUS_ACTIVE = 'ACTIVE';
@@ -14,7 +21,59 @@ const STATUS_CLOSED = 'CLOSED';
 
 @Injectable()
 export class StudentAccountService {
+  private readonly logger = new Logger(StudentAccountService.name);
+
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Active le flag SQL `app.allow_balance_update` pour la transaction courante.
+   * À appeler AVANT toute mise à jour légitime de totalDue/totalPaid/balance/arrearsAmount.
+   */
+  private async allowBalanceUpdate(): Promise<void> {
+    await this.prisma.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
+  }
+
+  /**
+   * Active le flag SQL `app.allow_block_update` pour la transaction courante.
+   * À appeler AVANT toute mise à jour légitime de isBlocked.
+   */
+  private async allowBlockUpdate(): Promise<void> {
+    await this.prisma.$executeRawUnsafe(`SET LOCAL app.allow_block_update = 'true'`);
+  }
+
+  /**
+   * Résout la date d'échéance réelle d'une tranche en fonction de son mode.
+   *
+   * - FIXED                 : retourne installment.dueDate
+   * - AT_ENROLLMENT         : retourne enrollmentDate (date d'inscription de l'élève)
+   * - DAYS_AFTER_ENROLLMENT : retourne enrollmentDate + daysOffset jours
+   *
+   * Si enrollmentDate est null/undefined (élève sans inscription), on fallback sur
+   * installment.dueDate (ou maintenant si pas de dueDate non plus).
+   */
+  private resolveDueDate(
+    installment: any,
+    enrollmentDate: Date | null | undefined,
+  ): Date | null {
+    const dueDateType = installment.dueDateType ?? 'FIXED';
+
+    if (dueDateType === 'AT_ENROLLMENT') {
+      if (enrollmentDate) return new Date(enrollmentDate);
+      // Fallback : maintenant si pas d'inscription
+      return installment.dueDate ? new Date(installment.dueDate) : new Date();
+    }
+
+    if (dueDateType === 'DAYS_AFTER_ENROLLMENT') {
+      const base = enrollmentDate ? new Date(enrollmentDate) : new Date();
+      const offset = installment.daysOffset ?? 0;
+      const result = new Date(base);
+      result.setDate(result.getDate() + offset);
+      return result;
+    }
+
+    // FIXED
+    return installment.dueDate ? new Date(installment.dueDate) : null;
+  }
 
   /**
    * Crée ou récupère le compte élève pour une année.
@@ -117,9 +176,22 @@ export class StudentAccountService {
   async updateStatus(accountId: string, tenantId: string): Promise<string> {
     const account = await this.prisma.studentAccount.findFirst({
       where: { id: accountId, tenantId },
-      include: { breakdowns: { include: { feeStructure: { include: { structureInstallments: true } } } } },
+      include: {
+        breakdowns: {
+          include: { feeStructure: { include: { structureInstallments: true } } },
+        },
+      },
     });
     if (!account) throw new NotFoundException('StudentAccount not found');
+
+    // Charger la date d'inscription de l'élève pour résoudre les échéances
+    // AT_ENROLLMENT et DAYS_AFTER_ENROLLMENT
+    const enrollment = await this.prisma.studentEnrollment.findFirst({
+      where: { studentId: account.studentId, academicYearId: account.academicYearId },
+      select: { enrollmentDate: true },
+      orderBy: { enrollmentDate: 'desc' },
+    });
+    const enrollmentDate = enrollment?.enrollmentDate ?? null;
 
     const balance = Number(account.balance);
     let status = account.status;
@@ -141,14 +213,21 @@ export class StudentAccountService {
         if (rem <= 0) return false;
         const fs = b.feeStructure;
         const installments = fs?.structureInstallments ?? [];
+        // Résoudre les échéances en tenant compte du mode (FIXED / AT_ENROLLMENT / DAYS_AFTER_ENROLLMENT)
         const nextDue = installments
           .filter((i) => Number(b.paidAmount) < Number(fs?.totalAmount ?? 0))
-          .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0];
-        return nextDue && new Date(nextDue.dueDate) < now;
+          .map((i) => ({ installment: i, resolvedDue: this.resolveDueDate(i, enrollmentDate) }))
+          .filter((x) => x.resolvedDue !== null)
+          .sort((a, b) => a.resolvedDue!.getTime() - b.resolvedDue!.getTime())[0];
+        return nextDue && nextDue.resolvedDue! < now;
       });
       status = hasOverdue ? STATUS_OVERDUE : STATUS_PARTIAL;
     }
 
+    // Active le flag SQL pour autoriser la mise à jour de isBlocked (si changement)
+    if (isBlocked !== account.isBlocked) {
+      await this.allowBlockUpdate();
+    }
     await this.prisma.studentAccount.update({
       where: { id: accountId },
       data: { status, isBlocked, updatedAt: new Date() },
@@ -173,6 +252,8 @@ export class StudentAccountService {
     const newTotalDue = Number(account.totalDue) + arrearsAmount;
     const newBalance = Number(account.balance) + arrearsAmount;
 
+    // Active le flag SQL pour autoriser la mise à jour des champs balance
+    await this.allowBalanceUpdate();
     await this.prisma.studentAccount.update({
       where: { id: account.id },
       data: {
@@ -213,7 +294,13 @@ export class StudentAccountService {
       where,
       include: {
         student: { select: { id: true, firstName: true, lastName: true, studentCode: true } },
-        breakdowns: { include: { feeStructure: { select: { id: true, label: true, amount: true } } } },
+        breakdowns: {
+          include: {
+            feeStructure: {
+              select: { id: true, name: true, feeType: true, totalAmount: true, customFeeTypeLabel: true },
+            },
+          },
+        },
       },
       orderBy: [{ student: { lastName: 'asc' } }, { student: { firstName: 'asc' } }],
       take: 500,
@@ -229,10 +316,26 @@ export class StudentAccountService {
         breakdowns: { include: { feeStructure: true } },
         transactions: { orderBy: { createdAt: 'desc' }, take: 50 },
         recoveryReminders: { orderBy: { sentAt: 'desc' }, take: 20 },
+        // Inclure les overrides de l'élève pour cette année (section Personnalisations)
+        // via la relation inverse — FeeOverride.studentId pointe vers Student.id
       },
     });
     if (!account) throw new NotFoundException('StudentAccount not found');
-    return account;
+
+    // Charger les overrides séparément (FeeOverride n'a pas de relation directe avec StudentAccount)
+    const overrides = await this.prisma.feeOverride.findMany({
+      where: {
+        studentId: account.studentId,
+        feeStructure: { academicYearId: account.academicYearId, tenantId },
+      },
+      include: {
+        feeStructure: { include: { class: true, level: true } },
+        creator: { select: { id: true, firstName: true, lastName: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return { ...account, overrides };
   }
 
   /**
@@ -245,6 +348,8 @@ export class StudentAccountService {
     if (!account) throw new NotFoundException('StudentAccount not found');
     if (!account.isBlocked) return account;
 
+    // Active le flag SQL pour autoriser la mise à jour de isBlocked
+    await this.allowBlockUpdate();
     return this.prisma.studentAccount.update({
       where: { id: accountId },
       data: {

@@ -1,12 +1,13 @@
 /**
  * SOUS-MODULE 6 — Clôture & Trésorerie (FinanceDailyClosure)
  * Calcul auto, type MANUAL/AUTO, rapprochement caisse, anomalie.
+ * + Ventilation : transfert des caisses secondaires vers le coffre-fort.
  */
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
-import { CheckCircle, Eye } from 'lucide-react';
+import { CheckCircle, Eye, ArrowLeftRight, Gem, Loader2, Wallet } from 'lucide-react';
 import { ModuleHeader, SubModuleNavigation, ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
@@ -16,9 +17,11 @@ import { Badge } from '@/components/ui/badge';
 import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
 import { financeService } from '@/services/finance.service';
 import { formatCurrency } from '@/lib/utils';
+import { useToast } from '@/components/ui/use-toast';
 
 export default function TreasuryPage() {
   const confirmDialog = useConfirmDialog();
+  const { toast } = useToast();
   const { academicYear } = useModuleContext();
   const [closures, setClosures] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,6 +30,10 @@ export default function TreasuryPage() {
   const [closureDate, setClosureDate] = useState(new Date().toISOString().split('T')[0]);
   const [physicalAmount, setPhysicalAmount] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Ventilation
+  const [cashRegisters, setCashRegisters] = useState<any[]>([]);
+  const [ventilating, setVentilating] = useState(false);
+  const [ventilatingId, setVentilatingId] = useState<string | null>(null);
 
   const loadClosures = async () => {
     if (!academicYear?.id) return;
@@ -39,9 +46,96 @@ export default function TreasuryPage() {
     }
   };
 
+  // Charger les caisses pour la ventilation
+  const loadCashRegisters = async () => {
+    try {
+      const data = await financeService.getCashRegisters({ isActive: true });
+      setCashRegisters(Array.isArray(data) ? data : []);
+    } catch {
+      setCashRegisters([]);
+    }
+  };
+
   useEffect(() => {
     loadClosures();
+    loadCashRegisters();
   }, [academicYear?.id]);
+
+  // Caisse principale (coffre-fort) = code MAIN ou première
+  const mainRegister = useMemo(() => {
+    return cashRegisters.find((r) => r.code?.toUpperCase() === 'MAIN') || cashRegisters[0] || null;
+  }, [cashRegisters]);
+
+  // Caisses secondaires ouvertes avec solde > 0 (candidates à la ventilation)
+  const ventilableRegisters = useMemo(() => {
+    if (!mainRegister) return [];
+    return cashRegisters.filter((r) => r.id !== mainRegister.id && r.isOpen && Number(r.currentBalance || 0) > 0);
+  }, [cashRegisters, mainRegister]);
+
+  // Total à ventiler
+  const totalToVentilate = useMemo(() => {
+    return ventilableRegisters.reduce((sum, r) => sum + Number(r.currentBalance || 0), 0);
+  }, [ventilableRegisters]);
+
+  // Ventiler une caisse individuelle vers le coffre-fort
+  const handleVentilateOne = async (reg: any) => {
+    if (!mainRegister) return;
+    const amount = Number(reg.currentBalance || 0);
+    if (amount <= 0) return;
+    const ok = await confirmDialog.warning(
+      `Transférer ${formatCurrency(amount)} XOF de "${reg.code} — ${reg.name}" vers le coffre-fort "${mainRegister.code} — ${mainRegister.name}" ?`,
+      'Transférer',
+    );
+    if (!ok) return;
+    setVentilatingId(reg.id);
+    try {
+      await financeService.transferCashRegister({
+        fromId: reg.id,
+        toId: mainRegister.id,
+        amount,
+        note: `Ventilation clôture — ${reg.name} → Coffre-fort`,
+      });
+      toast({ title: '✅ Transfert réussi', description: `${formatCurrency(amount)} XOF transférés vers le coffre-fort.` });
+      await loadCashRegisters();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e?.message || 'Erreur réseau', variant: 'destructive' });
+    } finally {
+      setVentilatingId(null);
+    }
+  };
+
+  // Ventiler TOUTES les caisses secondaires vers le coffre-fort
+  const handleVentilateAll = async () => {
+    if (!mainRegister || ventilableRegisters.length === 0) return;
+    const ok = await confirmDialog.warning(
+      `Consolider ${ventilableRegisters.length} caisse(s) vers le coffre-fort ? Total : ${formatCurrency(totalToVentilate)} XOF.`,
+      'Tout consolider',
+    );
+    if (!ok) return;
+    setVentilating(true);
+    let successCount = 0;
+    let failCount = 0;
+    for (const reg of ventilableRegisters) {
+      try {
+        await financeService.transferCashRegister({
+          fromId: reg.id,
+          toId: mainRegister.id,
+          amount: Number(reg.currentBalance || 0),
+          note: `Ventilation clôture — ${reg.name} → Coffre-fort`,
+        });
+        successCount++;
+      } catch {
+        failCount++;
+      }
+    }
+    setVentilating(false);
+    if (failCount === 0) {
+      toast({ title: '✅ Consolidation réussie', description: `${successCount} caisse(s) consolidée(s) vers le coffre-fort.` });
+    } else {
+      toast({ title: 'Partiellement réussi', description: `${successCount} réussis, ${failCount} échecs.`, variant: 'destructive' });
+    }
+    await loadCashRegisters();
+  };
 
   const handleCreateClosure = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -96,6 +190,84 @@ export default function TreasuryPage() {
         actions={<Button onClick={() => setModalClosure(true)}>Clôturer la journée</Button>}
       />
       <SubModuleNavigation tabs={subModuleTabs} currentPath="/app/finance/treasury" />
+
+      {/* === SECTION VENTILATION === */}
+      {cashRegisters.length > 0 && mainRegister && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-slate-800 flex items-center gap-2">
+              <ArrowLeftRight className="w-5 h-5 text-indigo-600" />
+              Ventilation vers le coffre-fort
+            </h3>
+            {ventilableRegisters.length > 0 && (
+              <Button
+                onClick={handleVentilateAll}
+                disabled={ventilating}
+                className="bg-indigo-600 hover:bg-indigo-700"
+              >
+                {ventilating ? (
+                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Consolidation...</>
+                ) : (
+                  <><ArrowLeftRight className="w-4 h-4 mr-2" />Tout consolider ({formatCurrency(totalToVentilate)})</>
+                )}
+              </Button>
+            )}
+          </div>
+
+          {ventilableRegisters.length === 0 ? (
+            <p className="text-sm text-slate-500 italic py-4 text-center">
+              ✅ Aucune caisse secondaire à ventiler. Toutes les caisses sont vides ou fermées.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {/* Coffre-fort (destination) */}
+              <div className="flex items-center justify-between p-3 bg-gradient-to-r from-slate-900 to-indigo-900 text-white rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Gem className="w-5 h-5" />
+                  <div>
+                    <p className="text-sm font-semibold">{mainRegister.code} — {mainRegister.name}</p>
+                    <p className="text-xs text-slate-400">Coffre-fort (destination)</p>
+                  </div>
+                </div>
+                <p className="text-lg font-bold">{formatCurrency(Number(mainRegister.currentBalance || 0))}</p>
+              </div>
+
+              {/* Caisses à ventiler */}
+              {ventilableRegisters.map((reg) => (
+                <div key={reg.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <div className="flex items-center gap-2">
+                    <Wallet className="w-4 h-4 text-slate-500" />
+                    <div>
+                      <p className="text-sm font-medium text-slate-800">{reg.code} — {reg.name}</p>
+                      <p className="text-xs text-slate-500">{reg.location || '—'}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-semibold text-slate-700">{formatCurrency(Number(reg.currentBalance || 0))}</span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleVentilateOne(reg)}
+                      disabled={ventilatingId === reg.id || ventilating}
+                      className="text-indigo-600 hover:bg-indigo-50"
+                    >
+                      {ventilatingId === reg.id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <><ArrowLeftRight className="w-3.5 h-3.5 mr-1" />Transférer</>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+
+              <p className="text-xs text-slate-400 mt-2">
+                💡 La ventilation transfère l'intégralité du solde de chaque caisse secondaire vers le coffre-fort. Vous pouvez ventiler individuellement ou tout consolider en une fois.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {modalClosure && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">

@@ -389,6 +389,7 @@ export default function SettingsPage() {
           postalCode: (id.postalCode as string) || '',
           phonePrimary: (id.phonePrimary as string) || '',
           phoneSecondary: (id.phoneSecondary as string) || '',
+          whatsapp: (id.whatsapp as string) || '',
           email: (id.email as string) || '',
           website: (id.website as string) || '',
           currency: (id.currency as string) || 'XOF',
@@ -645,6 +646,7 @@ export default function SettingsPage() {
         country: restored.country || 'BJ',
         phonePrimary: restored.phonePrimary || '',
         phoneSecondary: restored.phoneSecondary || '',
+        whatsapp: restored.whatsapp || '',
         email: restored.email || '',
         website: restored.website || '',
         currency: restored.currency || 'XOF',
@@ -2023,6 +2025,10 @@ export default function SettingsPage() {
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Tél. secondaire</label>
                   <input type="tel" className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.phoneSecondary || ''} onChange={(e) => setIdentityForm({ ...identityForm, phoneSecondary: e.target.value })} placeholder="01 XX XX XX XX" maxLength={14} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">WhatsApp (E.164)</label>
+                  <input type="tel" className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.whatsapp || ''} onChange={(e) => setIdentityForm({ ...identityForm, whatsapp: e.target.value })} placeholder="+229 97 12 34 56" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Email officiel</label>

@@ -256,7 +256,7 @@ export class AuthService {
           firstName: user.firstName,
           lastName: user.lastName,
           role: this.jwtRole(user),
-          tenantId: loginDto.tenant_id || null,
+          tenantId: loginDto.tenant_id || user.tenantId || null,
           isPlatformOwner: this.isPlatformOwner(user),
         },
         ...tokens,
@@ -332,7 +332,8 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: this.jwtRole(user),
-      // ❌ PAS de tenantId ici - sera ajouté après sélection
+      // ✅ Inclure le tenantId si l'utilisateur en a un (évite le select-tenant obligatoire)
+      ...(user.tenantId ? { tenantId: user.tenantId } : {}),
     };
 
     return {

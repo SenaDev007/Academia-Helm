@@ -11,7 +11,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Camera, Upload, X, CheckCircle, AlertCircle, Info, Calendar, Link2, Trash2, Users, FileText, BookOpen } from 'lucide-react';
+import { Camera, Upload, X, CheckCircle, AlertCircle, Info, Calendar, Link2, Trash2, Users, FileText, BookOpen, Loader2 } from 'lucide-react';
 import { studentsService } from '@/services/students.service';
 import { financeService } from '@/services/finance.service';
 import { classesService } from '@/services/classes.service';
@@ -57,6 +57,70 @@ interface StudentEnrollmentFormProps {
   }) => Promise<void>;
   onCancel: () => void;
   initialData?: any;
+}
+
+// ─── Composant DocumentUpload (inline) ───────────────────────────────
+// Zone d'upload simple pour les documents de l'étape 4
+function DocumentUpload({
+  label,
+  description,
+  accept,
+  onFileSelect,
+  uploadedFile,
+  optional,
+}: {
+  label: string;
+  description: string;
+  accept: string;
+  onFileSelect: (file: File | null) => void;
+  uploadedFile?: { fileName: string; fileSize: number } | null;
+  optional?: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  return (
+    <div className="border border-gray-200 rounded-lg p-4">
+      <div className="flex items-center justify-between mb-2">
+        <label className="text-sm font-medium text-gray-700">
+          {label}
+          {optional && <span className="text-gray-400 font-normal ml-1">(optionnel)</span>}
+        </label>
+        {uploadedFile && (
+          <span className="text-xs text-emerald-600 font-medium flex items-center gap-1">
+            <CheckCircle className="w-3.5 h-3.5" />
+            {uploadedFile.fileName} ({Math.round(uploadedFile.fileSize / 1024)} Ko)
+          </span>
+        )}
+      </div>
+      <p className="text-xs text-gray-500 mb-3">{description}</p>
+      <div className="flex gap-2">
+        <input
+          ref={inputRef}
+          type="file"
+          accept={accept}
+          className="sr-only"
+          onChange={(e) => onFileSelect(e.target.files?.[0] || null)}
+        />
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className="px-3 py-2 text-sm font-medium text-blue-600 border border-blue-300 rounded-lg hover:bg-blue-50 inline-flex items-center gap-2"
+        >
+          <Upload className="w-4 h-4" />
+          {uploadedFile ? 'Remplacer' : 'Télécharger'}
+        </button>
+        {uploadedFile && (
+          <button
+            type="button"
+            onClick={() => { onFileSelect(null); if (inputRef.current) inputRef.current.value = ''; }}
+            className="px-3 py-2 text-sm font-medium text-red-500 border border-red-200 rounded-lg hover:bg-red-50 inline-flex items-center gap-2"
+          >
+            <X className="w-4 h-4" />
+            Retirer
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function StudentEnrollmentForm({
@@ -106,7 +170,47 @@ export default function StudentEnrollmentForm({
       email?: string;
       isPrimary?: boolean;
     }>
-  >([]);
+  >(initialData?.guardians || []);
+
+  // Documents uploadés (étape 4)
+  const [uploadedDocs, setUploadedDocs] = useState<{
+    birthCertificate?: { fileName: string; fileDataUrl: string; mimeType: string; fileSize: number } | null;
+    npi?: { fileName: string; fileDataUrl: string; mimeType: string; fileSize: number } | null;
+    lastReportCard?: { fileName: string; fileDataUrl: string; mimeType: string; fileSize: number } | null;
+  }>({});
+
+  // Convertir un File en data URL (base64) pour stockage
+  const fileToDataUrl = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleDocumentUpload = async (docType: 'birthCertificate' | 'npi' | 'lastReportCard', file: File | null) => {
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Le fichier dépasse 5 Mo.');
+      return;
+    }
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      setUploadedDocs(prev => ({
+        ...prev,
+        [docType]: {
+          fileName: file.name,
+          fileDataUrl: dataUrl,
+          mimeType: file.type,
+          fileSize: file.size,
+        },
+      }));
+      setError(null);
+    } catch (e: any) {
+      setError('Erreur lors de la lecture du fichier: ' + e.message);
+    }
+  };
 
   // Régimes disponibles
   const [regimes, setRegimes] = useState<FeeRegime[]>([]);
@@ -114,7 +218,7 @@ export default function StudentEnrollmentForm({
   const [isLoadingRegimes, setIsLoadingRegimes] = useState(false);
 
   // Classes (chargées depuis la BDD, filtrées par niveau scolaire)
-  const [classesList, setClassesList] = useState<{ id: string; name: string }[]>([]);
+  const [classesList, setClassesList] = useState<{ id: string; name: string; schoolLevelId?: string; schoolLevel?: { id: string; name: string; code?: string } }[]>([]);
   const [isLoadingClasses, setIsLoadingClasses] = useState(false);
 
   // Charger les régimes tarifaires
@@ -122,19 +226,24 @@ export default function StudentEnrollmentForm({
     loadRegimes();
   }, [academicYearId, schoolLevelId]);
 
-  // Charger les classes depuis le backend (config Paramètres), filtrées par niveau
+  // Charger les classes depuis le backend (route BFF /api/all-classes qui contourne
+  // le filtre schoolLevelId du contexte admin). On inclut schoolLevel pour le groupage.
   useEffect(() => {
     if (!academicYearId) {
       setClassesList([]);
       return;
     }
     setIsLoadingClasses(true);
-    const params = new URLSearchParams({ academicYearId });
-    if (schoolLevelId && schoolLevelId !== 'ALL') params.set('schoolLevelId', schoolLevelId);
-    classesService.getAll(Object.fromEntries(params.entries()))
+    fetch('/api/all-classes', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
       .then((data: any) => {
-        const list = Array.isArray(data) ? data : data?.data ?? data?.classes ?? [];
-        setClassesList(list.map((c: any) => ({ id: c.id, name: c.name || c.code || c.id })));
+        const list = Array.isArray(data) ? data : [];
+        setClassesList(list.map((c: any) => ({
+          id: c.id,
+          name: c.name || c.code || c.id,
+          schoolLevelId: c.schoolLevelId,
+          schoolLevel: c.schoolLevel,
+        })));
       })
       .catch(() => setClassesList([]))
       .finally(() => setIsLoadingClasses(false));
@@ -274,21 +383,44 @@ export default function StudentEnrollmentForm({
   const startCamera = async () => {
     try {
       setCameraError(null);
+
+      // Vérifier que le navigateur supporte getUserMedia
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setCameraError('Votre navigateur ne supporte pas l\'accès à la caméra. Utilisez "Importer depuis galerie" à la place.');
+        return;
+      }
+
+      // Demander l'accès à la caméra (caméra frontale par défaut)
+      // ⚠️ facingMode: 'user' = caméra frontale (webcam du PC)
+      // Sur desktop, Chrome peut proposer de scanner un QR code pour utiliser
+      // la caméra du téléphone — c'est un comportement navigateur, pas du code.
+      // L'utilisateur peut choisir "Autoriser" pour utiliser la webcam du PC.
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user' },
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+        audio: false,
       });
       const video = videoRef.current;
       if (video) {
         video.srcObject = stream;
-        await video.play();
+        // play() peut échouer si le navigateur bloque l'autoplay
+        try {
+          await video.play();
+        } catch (playErr) {
+          // Retry : attendre 100ms et réessayer
+          await new Promise(r => setTimeout(r, 100));
+          try { await video.play(); } catch {}
+        }
         setIsCameraActive(true);
       } else {
         stream.getTracks().forEach((t) => t.stop());
       }
     } catch (err: any) {
-      setCameraError(
-        err?.message || 'Impossible d’accéder à la caméra. Vérifiez les permissions du navigateur.',
-      );
+      const msg = err?.name === 'NotAllowedError'
+        ? 'Accès à la caméra refusé. Autorisez la caméra dans les paramètres du navigateur, ou utilisez "Importer depuis galerie".'
+        : err?.name === 'NotFoundError'
+        ? 'Aucune caméra trouvée. Utilisez "Importer depuis galerie" à la place.'
+        : err?.message || 'Impossible d\'accéder à la caméra. Vérifiez les permissions du navigateur.';
+      setCameraError(msg);
       setIsCameraActive(false);
     }
   };
@@ -391,13 +523,70 @@ export default function StudentEnrollmentForm({
     return true;
   };
 
-  const handleNext = () => {
+  // ID de l'élève créé/mis à jour lors de la sauvegarde automatique
+  const [autoSavedStudentId, setAutoSavedStudentId] = useState<string | null>(initialData?.studentId || null);
+  // Message de confirmation visuel après chaque étape
+  const [stepSavedMessage, setStepSavedMessage] = useState<string | null>(null);
+
+  const handleNext = async () => {
     if (step === 1 && !validateStep1()) {
       return;
     }
     if (step === 5 && !validateRegimeStep()) {
       return;
     }
+
+    // ── Bouton "Valider & Suivant" : sauvegarder avant de passer ──────
+    let saved = false;
+    setIsSubmitting(true);
+    try {
+      if (autoSavedStudentId) {
+        // Édition : mettre à jour à chaque étape (avec photoUrl inclus)
+        await onSubmit({
+          operation,
+          student: {
+            firstName: formData.firstName,
+            lastName: formData.lastName,
+            dateOfBirth: formData.dateOfBirth || undefined,
+            gender: formData.gender || undefined,
+            nationality: formData.nationality || undefined,
+            placeOfBirth: formData.placeOfBirth || undefined,
+            npi: formData.npi || undefined,
+            photoUrl: formData.photoUrl || undefined,
+          },
+          feeProfile: { feeRegimeId: '', justification: undefined },
+          guardians: [],
+          classId: formData.classId || undefined,
+          documents: {},
+        });
+        saved = true;
+
+        // Upload photo via endpoint dédié (non bloquant)
+        if (step === 2 && formData.photoUrl && formData.photoUrl.startsWith('data:')) {
+          await studentsService.uploadPhoto(autoSavedStudentId, formData.photoUrl)
+            .catch((e: any) => console.warn('[AutoSave] Upload photo:', e?.message));
+        }
+      }
+    } catch (e: any) {
+      console.warn('[AutoSave] Étape', step, 'échec:', e?.message);
+      setStepSavedMessage(null);
+    } finally {
+      setIsSubmitting(false);
+    }
+
+    // Message visuel de confirmation
+    const stepLabels: Record<number, string> = {
+      1: 'Identité',
+      2: 'Photo',
+      3: 'Parents',
+      4: 'Documents',
+      5: 'Classe & Régime',
+    };
+    if (saved) {
+      setStepSavedMessage(`✅ Étape "${stepLabels[step]}" sauvegardée`);
+      setTimeout(() => setStepSavedMessage(null), 3000);
+    }
+
     setStep((prev) => Math.min(6, prev + 1));
   };
 
@@ -450,6 +639,9 @@ export default function StudentEnrollmentForm({
         },
         guardians,
         classId: formData.classId || undefined,
+        // Documents uploadés à l'étape 4
+        documents: uploadedDocs,
+        _isFinalSubmit: true, // ← indique au onSubmit parent que c'est le bouton "Enregistrer"
       });
     } catch (err: any) {
       setError(err.message || 'Erreur lors de l\'inscription');
@@ -600,19 +792,6 @@ export default function StudentEnrollmentForm({
                 placeholder="Ex: Béninoise"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Langue principale
-              </label>
-              <select
-                value={formData.primaryLanguage}
-                onChange={(e) => handleInputChange('primaryLanguage', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="FR">Français</option>
-                <option value="EN">Anglais</option>
-              </select>
-            </div>
           </div>
 
           <div>
@@ -655,7 +834,7 @@ export default function StudentEnrollmentForm({
 
           {/* Aperçu caméra ou photo capturée */}
           <div className="flex flex-col items-center">
-            <div className="relative w-full max-w-sm aspect-[3/4] bg-gray-100 rounded-xl overflow-hidden border-2 border-gray-200 flex items-center justify-center">
+            <div className="relative w-full max-w-[200px] aspect-[3/4] bg-gray-100 rounded-xl overflow-hidden border-2 border-gray-200 flex items-center justify-center">
               
               <div className={`absolute inset-0 w-full h-full ${isCameraActive ? 'block' : 'hidden'}`}>
                 <video
@@ -691,7 +870,7 @@ export default function StudentEnrollmentForm({
               <p className="mt-2 text-sm text-red-600 text-center">{cameraError}</p>
             )}
 
-            <div className="flex flex-wrap gap-2 justify-center mt-4 w-full max-w-sm">
+            <div className="flex flex-wrap gap-2 justify-center mt-4 w-full max-w-[200px]">
               {!isCameraActive && !photoPreviewUrl && (
                 <button
                   type="button"
@@ -900,7 +1079,7 @@ export default function StudentEnrollmentForm({
         </div>
       )}
 
-      {/* Étape 4 : Documents */}
+      {/* Étape 4 : Documents (upload acte de naissance + NPI) */}
       {step === 4 && (
         <div className="space-y-4">
           <div className="bg-blue-50 border border-blue-200 rounded-md p-4 flex items-start space-x-3">
@@ -910,14 +1089,42 @@ export default function StudentEnrollmentForm({
                 Documents officiels
               </p>
               <p className="text-sm text-blue-700">
-                Vérifiez que vous disposez des documents obligatoires (acte de naissance, photo, pièces d&apos;identité, etc.).
-                Leur numérisation et dépôt se font ensuite dans l&apos;onglet <strong>Documents</strong> du dossier élève.
+                Téléchargez les documents nécessaires. Ils seront stockés dans le dossier de l&apos;élève
+                et accessibles depuis l&apos;onglet <strong>Dossiers Élèves</strong>.
+                Les documents peuvent être ajoutés ultérieurement si non disponibles maintenant.
               </p>
             </div>
           </div>
-          <p className="text-sm text-gray-700">
-            Cette étape sert de rappel. Aucune pièce n&apos;est téléchargée ici, pour garder l&apos;inscription rapide.
-          </p>
+
+          {/* Upload Acte de naissance sécurisé */}
+          <DocumentUpload
+            label="Acte de naissance sécurisé"
+            description="PDF ou image (JPG, PNG). Max 5 Mo."
+            accept=".pdf,.jpg,.jpeg,.png,.webp"
+            onFileSelect={(file) => handleDocumentUpload('birthCertificate', file)}
+            uploadedFile={uploadedDocs.birthCertificate}
+            optional
+          />
+
+          {/* Upload Carte NPI */}
+          <DocumentUpload
+            label="Carte NPI (Numéro Personnel d'Identification)"
+            description="PDF ou image (JPG, PNG). Max 5 Mo."
+            accept=".pdf,.jpg,.jpeg,.png,.webp"
+            onFileSelect={(file) => handleDocumentUpload('npi', file)}
+            uploadedFile={uploadedDocs.npi}
+            optional
+          />
+
+          {/* Upload Bulletin (optionnel) */}
+          <DocumentUpload
+            label="Bulletin de la classe précédente (optionnel)"
+            description="PDF. Max 5 Mo."
+            accept=".pdf"
+            onFileSelect={(file) => handleDocumentUpload('lastReportCard', file)}
+            uploadedFile={uploadedDocs.lastReportCard}
+            optional
+          />
         </div>
       )}
 
@@ -951,11 +1158,61 @@ export default function StudentEnrollmentForm({
               {isLoadingClasses ? (
                 <option value="" disabled>Chargement des classes...</option>
               ) : (
-                classesList.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {formatGradeLabel(c.name) || c.name}
-                  </option>
-                ))
+                // Groupage par niveau scolaire (Maternelle, Primaire, Secondaire)
+                // avec tri pédagogique à l'intérieur de chaque groupe
+                (() => {
+                  // Fonction de tri pédagogique
+                  const classOrder = (name: string): number => {
+                    const n = (name || '').trim().toUpperCase();
+                    if (n === 'MATERNELLE 1' || n === 'M1' || n === 'MAT1') return 0;
+                    if (n === 'MATERNELLE 2' || n === 'M2' || n === 'MAT2') return 1;
+                    if (n === 'CI') return 10;
+                    if (n === 'CP') return 11;
+                    if (n === 'CE1') return 12;
+                    if (n === 'CE2') return 13;
+                    if (n === 'CM1') return 14;
+                    if (n === 'CM2') return 15;
+                    if (n.startsWith('6E') || n.startsWith('6ÈME')) return 20;
+                    if (n.startsWith('5E') || n.startsWith('5ÈME')) return 21;
+                    if (n.startsWith('4E') || n.startsWith('4ÈME')) return 22;
+                    if (n.startsWith('3E') || n.startsWith('3ÈME')) return 23;
+                    if (n.startsWith('2NDE')) return 24;
+                    if (n.startsWith('1ERE') || n.startsWith('1ÈRE')) return 25;
+                    if (n.startsWith('TERMINALE') || n.startsWith('TLE')) return 26;
+                    return 100 + name.charCodeAt(0);
+                  };
+
+                  // Grouper par niveau
+                  const levelOrder = (name: string) => {
+                    const n = (name || '').toUpperCase();
+                    if (n.includes('MATERNELLE')) return 0;
+                    if (n.includes('PRIMAIRE')) return 1;
+                    if (n.includes('SECONDAIRE')) return 2;
+                    return 3;
+                  };
+
+                  const groups = new Map<string, { levelName: string; classes: typeof classesList }>();
+                  for (const c of classesList) {
+                    const levelName = c.schoolLevel?.name || 'Autre';
+                    const key = c.schoolLevelId || 'autre';
+                    if (!groups.has(key)) groups.set(key, { levelName, classes: [] });
+                    groups.get(key)!.classes.push(c);
+                  }
+
+                  return Array.from(groups.values())
+                    .sort((a, b) => levelOrder(a.levelName) - levelOrder(b.levelName))
+                    .map((g) => (
+                      <optgroup key={g.levelName} label={g.levelName}>
+                        {g.classes
+                          .sort((a, b) => classOrder(a.name) - classOrder(b.name))
+                          .map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {formatGradeLabel(c.name) || c.name}
+                            </option>
+                          ))}
+                      </optgroup>
+                    ));
+                })()
               )}
             </select>
             <p className="mt-1 text-xs text-gray-500">
@@ -1196,6 +1453,11 @@ export default function StudentEnrollmentForm({
           )}
         </div>
         <div className="flex items-center space-x-3">
+          {stepSavedMessage && (
+            <span className="text-xs font-medium text-emerald-600 animate-in fade-in duration-300">
+              {stepSavedMessage}
+            </span>
+          )}
           <button
             type="button"
             onClick={onCancel}
@@ -1211,9 +1473,10 @@ export default function StudentEnrollmentForm({
               disabled={isSubmitting}
               whileHover={{ y: -1 }}
               whileTap={{ scale: 0.99 }}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
+              className="px-4 py-2 text-sm font-bold text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1.5"
             >
-              Suivant
+              {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {isSubmitting ? 'Sauvegarde...' : 'Valider & Suivant'}
             </motion.button>
           ) : (
             <motion.button

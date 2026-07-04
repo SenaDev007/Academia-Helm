@@ -175,8 +175,10 @@ $$ LANGUAGE plpgsql`,
       `CREATE OR REPLACE FUNCTION update_account_balance_after_tx()
 RETURNS TRIGGER AS $$
 BEGIN
+  -- Permet la mise à jour légitime du solde par ce trigger (bypass prevent_balance_update)
+  PERFORM set_config('app.allow_balance_update', 'true', true);
   UPDATE "student_accounts"
-  SET 
+  SET
     "totalPaid" = "totalPaid" + NEW.amount,
     "balance" = "balance" - NEW.amount,
     "updatedAt" = NOW()
@@ -193,7 +195,7 @@ RETURNS TRIGGER AS $$
 BEGIN
   IF OLD."isBlocked" IS DISTINCT FROM NEW."isBlocked" THEN
     INSERT INTO "financial_audit_logs" ("id", "tenantId", "academicYearId", "entityType", "entityId", "action", "details", "performedAt")
-    VALUES (gen_random_uuid(), NEW."tenantId", NEW."academicYearId", 'StudentAccount', NEW."id", 
+    VALUES (gen_random_uuid(), NEW."tenantId", NEW."academicYearId", 'StudentAccount', NEW."id",
             CASE WHEN NEW."isBlocked" THEN 'BLOCK' ELSE 'UNBLOCK' END,
             jsonb_build_object('old_status', OLD."status", 'new_status', NEW."status", 'balance', NEW."balance"),
             NOW());
@@ -203,6 +205,93 @@ END;
 $$ LANGUAGE plpgsql`,
       `DROP TRIGGER IF EXISTS trg_audit_account_blocking ON "student_accounts"`,
       `CREATE TRIGGER trg_audit_account_blocking AFTER UPDATE ON "student_accounts" FOR EACH ROW EXECUTE FUNCTION audit_account_blocking()`,
+
+      // 4. prevent_balance_update — block direct modification of balance fields
+      // (only the AFTER INSERT trigger update_account_balance_after_tx is allowed via app.allow_balance_update flag)
+      `CREATE OR REPLACE FUNCTION prevent_balance_update()
+RETURNS TRIGGER AS $$
+DECLARE
+  allow_update text;
+BEGIN
+  allow_update := current_setting('app.allow_balance_update', true);
+  IF allow_update IS NULL OR allow_update <> 'true' THEN
+    IF (NEW."totalDue"   IS DISTINCT FROM OLD."totalDue") OR
+       (NEW."totalPaid"  IS DISTINCT FROM OLD."totalPaid") OR
+       (NEW."balance"    IS DISTINCT FROM OLD."balance") OR
+       (NEW."arrearsAmount" IS DISTINCT FROM OLD."arrearsAmount") THEN
+      RAISE EXCEPTION 'Direct modification of balance fields is forbidden. Use FinanceTransactionService.';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql`,
+      `DROP TRIGGER IF EXISTS prevent_balance_update_trigger ON "student_accounts"`,
+      `CREATE TRIGGER prevent_balance_update_trigger BEFORE UPDATE OF "totalDue", "totalPaid", "balance", "arrearsAmount" ON "student_accounts" FOR EACH ROW EXECUTE FUNCTION prevent_balance_update()`,
+
+      // 5. prevent_manual_block_update — STRICT block on isBlocked
+      `CREATE OR REPLACE FUNCTION prevent_manual_block_update()
+RETURNS TRIGGER AS $$
+DECLARE
+  allow_update text;
+BEGIN
+  allow_update := current_setting('app.allow_block_update', true);
+  IF allow_update IS NULL OR allow_update <> 'true' THEN
+    IF (NEW."isBlocked" IS DISTINCT FROM OLD."isBlocked") THEN
+      RAISE EXCEPTION 'Direct modification of isBlocked is forbidden. Use StudentAccountService.unblock() or block().';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql`,
+      `DROP TRIGGER IF EXISTS prevent_manual_block_update_trigger ON "student_accounts"`,
+      `CREATE TRIGGER prevent_manual_block_update_trigger BEFORE UPDATE OF "isBlocked" ON "student_accounts" FOR EACH ROW EXECUTE FUNCTION prevent_manual_block_update()`,
+
+      // 6. verify_integrity_hash — BEFORE UPDATE on finance_transactions
+      `CREATE EXTENSION IF NOT EXISTS pgcrypto`,
+      `CREATE OR REPLACE FUNCTION verify_integrity_hash()
+RETURNS TRIGGER AS $$
+DECLARE
+  expected_hash text;
+  stored_hash text;
+BEGIN
+  stored_hash := NEW."integrityHash";
+  IF (NEW."amount"            IS DISTINCT FROM OLD."amount") OR
+     (NEW."type"              IS DISTINCT FROM OLD."type") OR
+     (NEW."studentAccountId"  IS DISTINCT FROM OLD."studentAccountId") OR
+     (NEW."tenantId"          IS DISTINCT FROM OLD."tenantId") THEN
+    expected_hash := encode(
+      digest(
+        NEW."tenantId" || '|' ||
+        NEW."studentAccountId" || '|' ||
+        NEW."amount"::text || '|' ||
+        NEW."type" || '|' ||
+        NEW."createdAt"::timestamptz::text,
+        'sha256'
+      ),
+      'hex'
+    );
+    IF stored_hash IS NOT NULL AND stored_hash <> expected_hash THEN
+      RAISE EXCEPTION 'Integrity hash mismatch on finance_transaction %. Tampering detected.', NEW."id";
+    END IF;
+    IF stored_hash IS NOT NULL THEN
+      NEW."integrityHash" := expected_hash;
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql`,
+      `DROP TRIGGER IF EXISTS verify_integrity_hash_trigger ON "finance_transactions"`,
+      `CREATE TRIGGER verify_integrity_hash_trigger BEFORE UPDATE ON "finance_transactions" FOR EACH ROW EXECUTE FUNCTION verify_integrity_hash()`,
+
+      // 7. prevent_fee_override_delete — BEFORE DELETE on fee_overrides
+      `CREATE OR REPLACE FUNCTION prevent_fee_override_delete()
+RETURNS TRIGGER AS $$
+BEGIN
+  RAISE EXCEPTION 'Deletion of fee overrides is forbidden. Override history must be preserved.';
+END;
+$$ LANGUAGE plpgsql`,
+      `DROP TRIGGER IF EXISTS prevent_fee_override_delete_trigger ON "fee_overrides"`,
+      `CREATE TRIGGER prevent_fee_override_delete_trigger BEFORE DELETE ON "fee_overrides" FOR EACH ROW EXECUTE FUNCTION prevent_fee_override_delete()`,
     ];
   }
 }

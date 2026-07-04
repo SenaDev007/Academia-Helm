@@ -4,11 +4,8 @@ import { useState, useEffect } from 'react';
 import { Send, Play } from 'lucide-react';
 import { motion } from 'framer-motion';
 import {
-  ModuleHeader,
-  SubModuleNavigation,
   ModuleContentArea,
 } from '@/components/modules/blueprint';
-import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -16,13 +13,10 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/components/ui/use-toast';
 import { financeService } from '@/services/finance.service';
-import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
-import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
 import { formatCurrency } from '@/lib/utils';
 
 export default function RecoveryRemindersContent() {
-  const { academicYear, tenantId } = useModuleContext();
-  const syncStatuses = useEntitySyncStatusBatch('PAYMENT', tenantId ?? undefined);
+  const { academicYear } = useModuleContext();
   const { toast } = useToast();
   const [reminders, setReminders] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -81,73 +75,71 @@ export default function RecoveryRemindersContent() {
     }
   };
 
-  const subModuleTabs = FINANCE_SUBMODULE_TABS.map((t) => ({ id: t.id, label: t.label, path: t.path, icon: <t.icon className="w-4 h-4" /> }));
   const levelBadge = (level: string) => {
     const v = level === 'FINAL_NOTICE' ? 'destructive' : level === 'URGENT' ? 'default' : 'secondary';
     return <Badge variant={v}>{level}</Badge>;
   };
 
-  // Fix: missing Table import inline - use basic table markup
   return (
-    <div className="space-y-6">
-      <ModuleHeader
-        title="Recouvrement"
-        description="Relances automatiques (WARNING J+3, URGENT J+7, FINAL_NOTICE J+15) et blocage selon seuil."
-        icon="finance"
-        actions={
-          <>
-            <Button variant="outline" onClick={() => setManualModal(true)}>
-              <Send className="w-4 h-4 mr-2" />
-              Envoyer rappel manuel
-            </Button>
-            <Button variant="outline" onClick={handleRunNightly} disabled={runNightlyLoading}>
-              <Play className="w-4 h-4 mr-2" />
-              {runNightlyLoading ? 'Traitement...' : 'Lancer détection'}
-            </Button>
-          </>
+    <div className="space-y-4">
+      <ModuleContentArea
+        layout="custom"
+        toolbar={
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-slate-600">
+              Relances automatiques (WARNING J+3, URGENT J+7, FINAL_NOTICE J+15) et blocage selon seuil.
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setManualModal(true)}>
+                <Send className="w-4 h-4 mr-2" />
+                Envoyer rappel manuel
+              </Button>
+              <Button variant="outline" onClick={handleRunNightly} disabled={runNightlyLoading}>
+                <Play className="w-4 h-4 mr-2" />
+                {runNightlyLoading ? 'Traitement...' : 'Lancer détection'}
+              </Button>
+            </div>
+          </div>
         }
-      />
-      <SubModuleNavigation tabs={subModuleTabs} currentPath="/app/finance/collection" />
-
-      <ModuleContentArea layout="custom">
+      >
         <div className="mb-4 flex flex-wrap gap-4 items-center">
           <span className="text-sm text-gray-600">Année : {academicYear?.label ?? '—'}</span>
         </div>
 
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow>
+            <TableRow className="bg-gray-50">
               <TableHead>Élève</TableHead>
-              <TableHead>Solde</TableHead>
+              <TableHead className="text-right">Solde dû</TableHead>
               <TableHead>Niveau</TableHead>
               <TableHead>Canal</TableHead>
               <TableHead>Date</TableHead>
-              <TableHead>Sync</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={5} className="text-center text-gray-500">Chargement...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={5} className="text-center text-gray-500 py-8">Chargement...</TableCell></TableRow>
             ) : reminders.length === 0 ? (
-              <TableRow><TableCell colSpan={5} className="text-center text-gray-500">Aucune relance.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={5} className="text-center text-gray-500 py-12">Aucune relance envoyée.</TableCell></TableRow>
             ) : (
               reminders.map((r) => (
-                <TableRow key={r.id}>
-                  <TableCell>
+                <TableRow key={r.id} className="hover:bg-slate-50">
+                  <TableCell className="font-medium">
                     {r.studentAccount?.student ? `${r.studentAccount.student.lastName} ${r.studentAccount.student.firstName}` : r.studentAccountId}
                   </TableCell>
-                  <TableCell>{formatCurrency(r.amountDue)}</TableCell>
+                  <TableCell className="text-right font-semibold">{formatCurrency(r.amountDue)}</TableCell>
                   <TableCell>{levelBadge(r.reminderLevel)}</TableCell>
-                  <TableCell>{r.sentVia}</TableCell>
-                  <TableCell>{r.sentAt ? new Date(r.sentAt).toLocaleDateString('fr-FR') : '—'}</TableCell>
-                  <TableCell className="text-center">
-                    <EntitySyncIndicator variant="dot" status={syncStatuses[r.id] ?? 'UNKNOWN'} />
+                  <TableCell>
+                    <Badge variant="outline">{r.sentVia}</Badge>
                   </TableCell>
+                  <TableCell className="text-sm text-gray-600">{r.sentAt ? new Date(r.sentAt).toLocaleDateString('fr-FR') : '—'}</TableCell>
                 </TableRow>
               ))
             )}
           </TableBody>
         </Table>
+        </div>
       </ModuleContentArea>
 
       {manualModal && (

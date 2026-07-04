@@ -10,7 +10,7 @@ export async function GET(
 ) {
   const { studentId } = await params;
   try {
-    const url = new URL(`${API_URL}/api/students/${studentId}/documents`);
+    const url = new URL(`${API_URL}/students/${studentId}/documents`);
     request.nextUrl.searchParams.forEach((value, key) => url.searchParams.append(key, value));
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(normalizeApiUrl(url.toString()), { headers });
@@ -31,7 +31,7 @@ export async function POST(
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(
-      normalizeApiUrl(`${API_URL}/api/students/${studentId}/documents`),
+      normalizeApiUrl(`${API_URL}/students/${studentId}/documents`),
       { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
     );
     const data = await response.json().catch(() => ({}));

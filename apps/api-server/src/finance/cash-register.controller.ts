@@ -78,6 +78,31 @@ export class CashRegisterController {
     });
   }
 
+  // ⚠️ ORDRE DES ROUTES IMPORTANT : les routes statiques (transfers) DOIVENT
+  // être déclarées AVANT les routes dynamiques (:id), sinon NestJS matche
+  // GET /transfers sur @Get(':id') avec id="transfers" → "Caisse non trouvée".
+
+  /**
+   * GET /finance/cash-registers/transfers?cashRegisterId=&dateFrom=&dateTo=&limit=
+   * Historique des transferts inter-caisses d'un tenant.
+   * Peut être filtré par caisse (source ou cible) et par période.
+   */
+  @Get('transfers')
+  async getTransfers(
+    @TenantId() tenantId: string,
+    @Query('cashRegisterId') cashRegisterId?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.service.getTransfers(tenantId, {
+      cashRegisterId,
+      dateFrom: dateFrom ? new Date(dateFrom) : undefined,
+      dateTo: dateTo ? new Date(dateTo) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
+  }
+
   /**
    * GET /finance/cash-registers/:id
    * Détail d'une caisse (inclut les 50 dernières transactions).
@@ -166,27 +191,6 @@ export class CashRegisterController {
       dateFrom ? new Date(dateFrom) : undefined,
       dateTo ? new Date(dateTo) : undefined,
     );
-  }
-
-  /**
-   * GET /finance/cash-registers/transfers?cashRegisterId=&dateFrom=&dateTo=&limit=
-   * Historique des transferts inter-caisses d'un tenant.
-   * Peut être filtré par caisse (source ou cible) et par période.
-   */
-  @Get('transfers')
-  async getTransfers(
-    @TenantId() tenantId: string,
-    @Query('cashRegisterId') cashRegisterId?: string,
-    @Query('dateFrom') dateFrom?: string,
-    @Query('dateTo') dateTo?: string,
-    @Query('limit') limit?: string,
-  ) {
-    return this.service.getTransfers(tenantId, {
-      cashRegisterId,
-      dateFrom: dateFrom ? new Date(dateFrom) : undefined,
-      dateTo: dateTo ? new Date(dateTo) : undefined,
-      limit: limit ? parseInt(limit, 10) : undefined,
-    });
   }
 
   /**

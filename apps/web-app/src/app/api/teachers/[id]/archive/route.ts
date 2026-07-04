@@ -11,7 +11,7 @@ export async function POST(
   const { id } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(`${API_URL}/api/teachers/${id}/archive`, {
+    const response = await fetch(`${API_URL}/teachers/${id}/archive`, {
       method: 'POST',
       headers,
     });

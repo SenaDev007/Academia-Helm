@@ -11,7 +11,7 @@ export async function GET(
   const { studentId } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(normalizeApiUrl(`${API_URL}/api/students/${studentId}`), { headers });
+    const response = await fetch(normalizeApiUrl(`${API_URL}/students/${studentId}`), { headers });
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (e) {
@@ -27,7 +27,7 @@ export async function PUT(
   try {
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(normalizeApiUrl(`${API_URL}/api/students/${studentId}`), {
+    const response = await fetch(normalizeApiUrl(`${API_URL}/students/${studentId}`), {
       method: 'PUT',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -48,7 +48,7 @@ export async function PATCH(
   try {
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(normalizeApiUrl(`${API_URL}/api/students/${studentId}`), {
+    const response = await fetch(normalizeApiUrl(`${API_URL}/students/${studentId}`), {
       method: 'PATCH',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

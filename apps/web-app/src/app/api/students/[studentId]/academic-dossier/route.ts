@@ -12,7 +12,7 @@ export async function GET(
   try {
     const academicYearId = request.nextUrl.searchParams.get('academicYearId') || '';
     const url = normalizeApiUrl(
-      `${API_URL}/api/students/${studentId}/academic-dossier${academicYearId ? `?academicYearId=${academicYearId}` : ''}`
+      `${API_URL}/students/${studentId}/academic-dossier${academicYearId ? `?academicYearId=${academicYearId}` : ''}`
     );
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(url, { headers });

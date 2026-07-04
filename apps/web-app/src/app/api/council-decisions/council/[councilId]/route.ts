@@ -15,7 +15,7 @@ export async function GET(
 ) {
   const { councilId } = await params;
   try {
-    const response = await fetch(`${API_URL}/api/council-decisions/council/${councilId}`, {
+    const response = await fetch(`${API_URL}/council-decisions/council/${councilId}`, {
       headers: {
         'Content-Type': 'application/json',
       },

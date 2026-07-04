@@ -16,7 +16,7 @@ export async function GET(
     }
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(
-      normalizeApiUrl(`${API_URL}/api/students/${studentId}/verification-qr?academicYearId=${encodeURIComponent(academicYearId)}`),
+      normalizeApiUrl(`${API_URL}/students/${studentId}/verification-qr?academicYearId=${encodeURIComponent(academicYearId)}`),
       { headers }
     );
     const data = await response.json().catch(() => ({}));

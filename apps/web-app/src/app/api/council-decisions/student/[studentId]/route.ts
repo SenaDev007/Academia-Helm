@@ -16,7 +16,7 @@ export async function GET(
   const { studentId } = await params;
   try {
     const searchParams = request.nextUrl.searchParams;
-    const url = new URL(`${API_URL}/api/council-decisions/student/${studentId}`);
+    const url = new URL(`${API_URL}/council-decisions/student/${studentId}`);
     searchParams.forEach((value, key) => {
       url.searchParams.append(key, value);
     });

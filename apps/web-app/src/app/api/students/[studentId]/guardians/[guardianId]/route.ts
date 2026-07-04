@@ -13,7 +13,7 @@ export async function PUT(
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(
-      normalizeApiUrl(`${API_URL}/api/students/${studentId}/guardians/${guardianId}`),
+      normalizeApiUrl(`${API_URL}/students/${studentId}/guardians/${guardianId}`),
       { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
     );
     const data = await response.json().catch(() => ({}));
@@ -32,7 +32,7 @@ export async function DELETE(
     const { studentId, guardianId } = await params;
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(
-      normalizeApiUrl(`${API_URL}/api/students/${studentId}/guardians/${guardianId}`),
+      normalizeApiUrl(`${API_URL}/students/${studentId}/guardians/${guardianId}`),
       { method: 'DELETE', headers }
     );
     if (response.status === 204) return new NextResponse(null, { status: 204 });

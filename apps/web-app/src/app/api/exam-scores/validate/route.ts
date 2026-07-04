@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    const response = await fetch(`${API_URL}/api/exam-scores/validate`, {
+    const response = await fetch(`${API_URL}/exam-scores/validate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

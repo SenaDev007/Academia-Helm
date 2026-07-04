@@ -12,7 +12,7 @@ export async function POST(
   try {
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(
-      normalizeApiUrl(`${API_URL}/api/students/${studentId}/export-educmaster`),
+      normalizeApiUrl(`${API_URL}/students/${studentId}/export-educmaster`),
       { method: 'POST', headers }
     );
     const data = await response.json().catch(() => ({}));

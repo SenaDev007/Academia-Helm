@@ -12,7 +12,7 @@ const API_URL = getApiBaseUrlForRoutes();
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const url = new URL(`${API_URL}/api/exams`);
+    const url = new URL(`${API_URL}/exams`);
     searchParams.forEach((value, key) => {
       url.searchParams.append(key, value);
     });
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    const response = await fetch(`${API_URL}/api/exams`, {
+    const response = await fetch(`${API_URL}/exams`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

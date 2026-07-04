@@ -12,7 +12,7 @@ export async function GET(
   try {
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(
-      normalizeApiUrl(`${API_URL}/api/students/id-cards/${cardId}/download`),
+      normalizeApiUrl(`${API_URL}/students/id-cards/${cardId}/download`),
       { headers }
     );
     if (!response.ok) {

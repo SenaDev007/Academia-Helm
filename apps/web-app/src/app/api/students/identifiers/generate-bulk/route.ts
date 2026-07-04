@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
     const countryCode = request.nextUrl.searchParams.get('countryCode') || 'BJ';
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(
-      normalizeApiUrl(`${API_URL}/api/students/identifiers/generate-bulk?countryCode=${countryCode}`),
+      normalizeApiUrl(`${API_URL}/students/identifiers/generate-bulk?countryCode=${countryCode}`),
       { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
     );
     const data = await response.json().catch(() => ({}));

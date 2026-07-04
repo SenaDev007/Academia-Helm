@@ -23,7 +23,7 @@ export async function DELETE(
   if (cookie) headers['cookie'] = cookie;
 
   try {
-    const res = await fetch(`${API_URL}/api/auth/otp/devices/${encodeURIComponent(deviceId)}`, {
+    const res = await fetch(`${API_URL}/auth/otp/devices/${encodeURIComponent(deviceId)}`, {
       method: 'DELETE',
       headers,
     });

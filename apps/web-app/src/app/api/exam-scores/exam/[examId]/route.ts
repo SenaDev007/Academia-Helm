@@ -16,7 +16,7 @@ export async function GET(
   const { examId } = await params;
   try {
     const searchParams = request.nextUrl.searchParams;
-    const url = new URL(`${API_URL}/api/exam-scores/exam/${examId}`);
+    const url = new URL(`${API_URL}/exam-scores/exam/${examId}`);
     searchParams.forEach((value, key) => {
       url.searchParams.append(key, value);
     });

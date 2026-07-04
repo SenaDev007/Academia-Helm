@@ -12,7 +12,7 @@ export async function DELETE(
     const { studentId, documentId } = await params;
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(
-      normalizeApiUrl(`${API_URL}/api/students/${studentId}/documents/${documentId}`),
+      normalizeApiUrl(`${API_URL}/students/${studentId}/documents/${documentId}`),
       { method: 'DELETE', headers }
     );
     if (response.status === 204) return new NextResponse(null, { status: 204 });

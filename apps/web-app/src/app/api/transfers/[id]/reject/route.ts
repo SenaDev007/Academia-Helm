@@ -12,7 +12,7 @@ export async function POST(
   try {
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(normalizeApiUrl(`${API_URL}/api/transfers/${id}/reject`), {
+    const response = await fetch(normalizeApiUrl(`${API_URL}/transfers/${id}/reject`), {
       method: 'POST',
       headers,
       body: JSON.stringify(body),

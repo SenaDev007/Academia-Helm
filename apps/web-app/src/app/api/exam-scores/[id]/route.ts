@@ -15,7 +15,7 @@ export async function DELETE(
 ) {
   const { id } = await params;
   try {
-    const response = await fetch(`${API_URL}/api/exam-scores/${id}`, {
+    const response = await fetch(`${API_URL}/exam-scores/${id}`, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',

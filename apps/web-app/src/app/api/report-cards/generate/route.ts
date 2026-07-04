@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    const response = await fetch(`${API_URL}/api/report-cards/generate`, {
+    const response = await fetch(`${API_URL}/report-cards/generate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -13,7 +13,7 @@ export async function POST(
     const countryCode = request.nextUrl.searchParams.get('countryCode') || 'BJ';
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(
-      normalizeApiUrl(`${API_URL}/api/students/identifiers/${studentId}/generate?countryCode=${countryCode}`),
+      normalizeApiUrl(`${API_URL}/students/identifiers/${studentId}/generate?countryCode=${countryCode}`),
       { method: 'POST', headers }
     );
     const data = await response.json().catch(() => ({}));

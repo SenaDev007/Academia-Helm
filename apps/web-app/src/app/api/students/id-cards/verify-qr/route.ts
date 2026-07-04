@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
       );
     }
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(normalizeApiUrl(`${API_URL}/api/students/id-cards/verify-qr`), {
+    const response = await fetch(normalizeApiUrl(`${API_URL}/students/id-cards/verify-qr`), {
       method: 'POST',
       headers,
       body: JSON.stringify(body),

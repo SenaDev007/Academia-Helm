@@ -12,7 +12,7 @@ const API_URL = getApiBaseUrlForRoutes();
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const url = new URL(`${API_URL}/api/council-decisions/statistics`);
+    const url = new URL(`${API_URL}/council-decisions/statistics`);
     searchParams.forEach((value, key) => {
       url.searchParams.append(key, value);
     });

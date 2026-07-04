@@ -15,7 +15,7 @@ export async function GET(
 ) {
   const { id } = await params;
   try {
-    const response = await fetch(`${API_URL}/api/exams/${id}/statistics`, {
+    const response = await fetch(`${API_URL}/exams/${id}/statistics`, {
       headers: {
         'Content-Type': 'application/json',
       },

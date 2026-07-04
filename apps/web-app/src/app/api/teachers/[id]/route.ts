@@ -17,7 +17,7 @@ export async function GET(
   const { id } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(`${API_URL}/api/teachers/${id}`, { headers, cache: 'no-store' });
+    const response = await fetch(`${API_URL}/teachers/${id}`, { headers, cache: 'no-store' });
 
     if (!response.ok) {
       return NextResponse.json({ error: 'Failed to fetch teacher' }, { status: response.status });
@@ -37,7 +37,7 @@ export async function PUT(
   try {
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(`${API_URL}/api/teachers/${id}`, {
+    const response = await fetch(`${API_URL}/teachers/${id}`, {
       method: 'PUT',
       headers,
       body: JSON.stringify(body),

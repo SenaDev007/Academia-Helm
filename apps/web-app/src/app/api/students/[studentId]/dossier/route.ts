@@ -10,7 +10,7 @@ export async function GET(
 ) {
   const { studentId } = await params;
   try {
-    const url = new URL(`${API_URL}/api/students/${studentId}/dossier`);
+    const url = new URL(`${API_URL}/students/${studentId}/dossier`);
     request.nextUrl.searchParams.forEach((value, key) => url.searchParams.append(key, value));
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(normalizeApiUrl(url.toString()), { headers });

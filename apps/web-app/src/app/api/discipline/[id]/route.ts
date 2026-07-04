@@ -12,7 +12,7 @@ export async function PUT(
   try {
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(normalizeApiUrl(`${API_URL}/api/discipline/${id}`), {
+    const response = await fetch(normalizeApiUrl(`${API_URL}/discipline/${id}`), {
       method: 'PUT',
       headers,
       body: JSON.stringify(body),

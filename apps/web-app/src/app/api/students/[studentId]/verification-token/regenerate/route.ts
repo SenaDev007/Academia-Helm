@@ -16,7 +16,7 @@ export async function POST(
     }
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(
-      normalizeApiUrl(`${API_URL}/api/students/${studentId}/verification-token/regenerate`),
+      normalizeApiUrl(`${API_URL}/students/${studentId}/verification-token/regenerate`),
       { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ academicYearId: body.academicYearId }) }
     );
     const data = await response.json().catch(() => ({}));

@@ -17,7 +17,7 @@ export async function POST(
   try {
     const body = await request.json();
 
-    const response = await fetch(`${API_URL}/api/report-cards/${id}/publish`, {
+    const response = await fetch(`${API_URL}/report-cards/${id}/publish`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

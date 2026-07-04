@@ -5053,7 +5053,7 @@ model CashRegister {
   code               String                                // Code court unique (ex: CAISSE-01, MAIN, SECONDARY)
   name               String                                // Nom affiché (ex: "Caisse principale", "Caisse mobile")
   description        String?
-  responsibleUserId  String?                               // User responsable de la caisse (caissier attitré)
+  responsibleUserId  String?                               // ID du staff responsable (Staff.id, pas User.id — pas de FK)
   location           String?                               // Emplacement physique (ex: "Bureau d'accueil", "Cantine")
   openingBalance     Decimal              @default(0) @db.Decimal(12, 2)  // Solde d'ouverture
   currentBalance     Decimal              @default(0) @db.Decimal(12, 2)  // Solde courant (mise à jour après chaque transaction)
@@ -5070,8 +5070,6 @@ model CashRegister {
   bankBranch         String?                               // Agence / succursale
   bankAccountType    String?                               // Type de compte: COURANT, EPARGNE
   bankContact        String?                               // Contact du gestionnaire de compte
-  /// ID du staff responsable (Stock.id, pas User.id — pas de FK pour permettre staff sans compte user)
-  responsibleUserId  String?
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
   tenant             Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)

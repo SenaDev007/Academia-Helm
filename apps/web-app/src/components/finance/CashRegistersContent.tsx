@@ -456,16 +456,29 @@ export default function CashRegistersContent() {
   };
 
   // Position des caisses secondaires en cercle autour du coffre-fort
+  // Le rayon et la hauteur de la zone s'adaptent dynamiquement au nombre de caisses
+  // pour éviter la compression visuelle.
   const getPosition = (index: number, total: number) => {
     if (total <= 0) return { x: 0, y: 0 };
     const angle = (index / total) * 2 * Math.PI - Math.PI / 2; // Commence en haut
-    // Rayon dynamique : plus il y a de caisses, plus le cercle est grand
-    const radius = Math.max(180, Math.min(320, 120 + total * 30));
+    // Rayon dynamique : croît avec le nombre de caisses, sans plafond arbitraire
+    // 160px pour 1 caisse, +40px par caisse supplémentaire (sans limite haute)
+    const radius = Math.max(180, 140 + total * 45);
     return {
       x: Math.cos(angle) * radius,
       y: Math.sin(angle) * radius,
     };
   };
+
+  // Hauteur dynamique de la zone de constellation.
+  // Doit accommoder le diamètre du cercle + la taille des cartes (~200px) + padding.
+  const constellationHeight = useMemo(() => {
+    const total = secondaryRegisters.length;
+    const radius = Math.max(180, 140 + total * 45);
+    const diameter = radius * 2;
+    // 320 = cartes (200) + padding haut/bas (120)
+    return Math.max(640, diameter + 320);
+  }, [secondaryRegisters.length]);
 
   return (
     <>
@@ -560,7 +573,10 @@ export default function CashRegistersContent() {
             </div>
 
             {/* === CONSTELLATION COFFRE-FORT + CAISSES === */}
-            <div className="relative bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl border border-slate-200 overflow-hidden" style={{ minHeight: '720px' }}>
+            <div
+              className="relative bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl border border-slate-200 overflow-hidden transition-all duration-500 ease-out"
+              style={{ minHeight: `${constellationHeight}px`, height: `${constellationHeight}px` }}
+            >
 
               {/* Décor : grille subtile en fond */}
               <div className="absolute inset-0 opacity-[0.03]" style={{

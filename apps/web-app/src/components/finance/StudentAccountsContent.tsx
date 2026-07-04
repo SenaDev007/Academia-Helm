@@ -337,13 +337,13 @@ export default function StudentAccountsContent() {
                       const tuition = getAmounts('TUITION');
                       const hasReinscription = reinscription.due > 0;
 
-                      // Helper pour afficher un détail de frais
-                      const FeeDetail = ({ label, due, paid, remaining }: { label: string; due: number; paid: number; remaining: number }) => {
+                      // Helper pour afficher un détail de frais — Total dû figé (jamais de calcul)
+                      const FeeDetail = ({ label, due }: { label: string; due: number; paid?: number; remaining?: number }) => {
                         if (due <= 0) return null;
                         return (
                           <div className="flex justify-between text-[10px] text-slate-500">
                             <span>{label} :</span>
-                            <span>{formatCurrency(remaining <= 0 ? 0 : remaining)}</span>
+                            <span>{formatCurrency(due)}</span>
                           </div>
                         );
                       };

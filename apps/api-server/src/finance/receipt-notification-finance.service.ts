@@ -76,6 +76,11 @@ export class ReceiptNotificationFinanceService {
     const contacts = await this.receiptFinanceService.getParentContacts(tx.studentAccount.studentId);
     const branding = await this.getTenantBranding(tenantId);
 
+    // Solde restant à payer (après ce paiement) — depuis studentAccount
+    const totalDue = Number(tx.studentAccount?.totalDue ?? 0);
+    const totalPaidAfter = Number(tx.studentAccount?.totalPaid ?? 0);
+    const balanceAfter = Number(tx.studentAccount?.balance ?? 0);
+
     // 2. Générer (ou récupérer) le PDF
     let pdfBuffer: Buffer | null = null;
     try {
@@ -101,6 +106,9 @@ export class ReceiptNotificationFinanceService {
             pdfBuffer,
             tenantId,
             transactionId,
+            totalDue,
+            totalPaidAfter,
+            balanceAfter,
           });
         } else if (channel === 'whatsapp') {
           results.whatsapp = await this.sendByWhatsApp({
@@ -113,6 +121,7 @@ export class ReceiptNotificationFinanceService {
             branding,
             tenantId,
             transactionId,
+            balanceAfter,
           });
         } else if (channel === 'sms') {
           results.sms = await this.sendBySMS({
@@ -121,6 +130,7 @@ export class ReceiptNotificationFinanceService {
             receiptNumber: tx.receiptNumber,
             amount: Number(tx.amount),
             branding,
+            balanceAfter,
           });
         }
       } catch (err: any) {
@@ -148,6 +158,9 @@ export class ReceiptNotificationFinanceService {
     pdfBuffer: Buffer | null;
     tenantId: string;
     transactionId: string;
+    totalDue?: number;
+    totalPaidAfter?: number;
+    balanceAfter?: number;
   }): Promise<{ status: 'sent' | 'failed' | 'skipped'; to?: string; error?: string }> {
     if (!params.to) {
       return { status: 'skipped', error: 'Aucun email parent disponible' };
@@ -159,6 +172,25 @@ export class ReceiptNotificationFinanceService {
       year: 'numeric',
     });
     const amountStr = params.amount.toLocaleString('fr-FR');
+    const balanceStr = params.balanceAfter != null ? params.balanceAfter.toLocaleString('fr-FR') : null;
+    const totalDueStr = params.totalDue != null ? params.totalDue.toLocaleString('fr-FR') : null;
+    const totalPaidStr = params.totalPaidAfter != null ? params.totalPaidAfter.toLocaleString('fr-FR') : null;
+
+    // Section solde restant (si données dispo)
+    const balanceSection = balanceStr != null
+      ? (params.balanceAfter > 0
+        ? `<div style="margin-top: 16px; padding: 16px; background: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px; text-align: center;">
+            <p style="margin: 0; font-size: 13px; color: #92400e; font-weight: 600;">💡 Solde restant à payer</p>
+            <p style="margin: 8px 0 0; font-size: 22px; font-weight: 700; color: #92400e;">${balanceStr} FCFA</p>
+            ${totalDueStr && totalPaidStr ? `<p style="margin: 4px 0 0; font-size: 11px; color: #92400e;">Total dû : ${totalDueStr} FCFA · Total payé : ${totalPaidStr} FCFA</p>` : ''}
+            <p style="margin: 8px 0 0; font-size: 11px; color: #92400e;">Merci de régulariser ce montant auprès de l'établissement.</p>
+          </div>`
+        : `<div style="margin-top: 16px; padding: 16px; background: #d1fae5; border: 2px solid #10b981; border-radius: 8px; text-align: center;">
+            <p style="margin: 0; font-size: 13px; color: #065f46; font-weight: 600;">✅ Compte soldé</p>
+            <p style="margin: 8px 0 0; font-size: 14px; font-weight: 600; color: #065f46;">Aucun solde restant à payer</p>
+            <p style="margin: 4px 0 0; font-size: 11px; color: #065f46;">Tous les frais de l'année ont été réglés. Merci !</p>
+          </div>`)
+      : '';
 
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b;">
@@ -176,6 +208,7 @@ export class ReceiptNotificationFinanceService {
             <tr><td style="padding: 8px; font-weight: 600;">Date :</td><td style="padding: 8px;">${dateStr}</td></tr>
           </table>
           <p>Le reçu détaillé est joint à cet email au format PDF.</p>
+          ${balanceSection}
           <p style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #64748b;">
             ${params.branding.schoolName || ''}<br>
             ${params.branding.schoolAddress || ''} ${params.branding.schoolPhone ? '· Tél : ' + params.branding.schoolPhone : ''}
@@ -224,6 +257,7 @@ export class ReceiptNotificationFinanceService {
     branding: any;
     tenantId: string;
     transactionId: string;
+    balanceAfter?: number;
   }): Promise<{ status: 'sent' | 'failed' | 'skipped'; to?: string; error?: string }> {
     if (!params.to) {
       return { status: 'skipped', error: 'Aucun téléphone parent disponible' };
@@ -237,12 +271,20 @@ export class ReceiptNotificationFinanceService {
     const amountStr = params.amount.toLocaleString('fr-FR');
     const schoolName = params.branding.schoolName || 'l\'établissement';
 
+    // Section solde restant
+    const balanceLine = params.balanceAfter != null
+      ? (params.balanceAfter > 0
+        ? `\n⚠️ Solde restant à payer : ${params.balanceAfter.toLocaleString('fr-FR')} FCFA\n`
+        : `\n✅ Compte soldé — aucun solde restant.\n`)
+      : '';
+
     const message = `Bonjour${params.parentName ? ` ${params.parentName}` : ''},\n\n` +
       `Nous confirmons la réception du paiement pour ${params.studentName}.\n\n` +
       `🧾 N° reçu : ${params.receiptNumber}\n` +
       `💰 Montant : ${amountStr} FCFA\n` +
-      `📅 Date : ${dateStr}\n\n` +
-      `Le reçu PDF détaillé est disponible auprès de ${schoolName}.\n\n` +
+      `📅 Date : ${dateStr}\n` +
+      balanceLine +
+      `\nLe reçu PDF détaillé est disponible auprès de ${schoolName}.\n\n` +
       `Merci pour votre confiance.`;
 
     const result = await this.whatsappService.sendCategorized({
@@ -273,16 +315,25 @@ export class ReceiptNotificationFinanceService {
     receiptNumber: string;
     amount: number;
     branding: any;
+    balanceAfter?: number;
   }): Promise<{ status: 'sent' | 'failed' | 'skipped'; to?: string; error?: string }> {
     if (!params.to) {
       return { status: 'skipped', error: 'Aucun téléphone parent disponible' };
     }
 
     const amountStr = params.amount.toLocaleString('fr-FR');
-    const schoolName = (params.branding.schoolName || 'Établissement').substring(0, 30);
+    const schoolName = (params.branding.schoolName || 'Établissement').substring(0, 25);
+    const studentShort = params.studentName.substring(0, 18);
 
-    // SMS court (< 160 caractères si possible)
-    const message = `${schoolName}: Recu ${params.receiptNumber} - ${amountStr} FCFA pour ${params.studentName.substring(0, 20)}. Recu PDF dispo a l'ecole.`;
+    // SMS court avec solde restant si dispo
+    const balancePart = params.balanceAfter != null
+      ? (params.balanceAfter > 0
+        ? ` Solde restant: ${params.balanceAfter.toLocaleString('fr-FR')}F.`
+        : ' Compte solde.')
+      : '';
+
+    // SMS peut être un peu plus long si solde (jusqu'à 200 car)
+    const message = `${schoolName}: Recu ${params.receiptNumber} - ${amountStr}F pour ${studentShort}.${balancePart} Recu PDF a l'ecole.`;
 
     const result = await this.smsService.sendSMS(params.to, message);
     if (result.success) {

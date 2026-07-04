@@ -87,8 +87,26 @@ export class ReceiptFinanceService {
       throw new Error(`Transaction ${transactionId} introuvable`);
     }
 
-    // 2. Récupérer le branding de l'école
+    // 2. Récupérer le branding de l'école + logo pour filigrane
     const branding = await this.getTenantBranding(tenantId);
+
+    // 3. Calculer le solde restant à payer (totalDue - totalPaid APRES ce paiement)
+    // tx.studentAccount.totalPaid et balance sont déjà mis à jour par le trigger SQL
+    const totalDue = Number(tx.studentAccount?.totalDue ?? 0);
+    const totalPaidAfter = Number(tx.studentAccount?.totalPaid ?? 0);
+    const balanceAfter = Number(tx.studentAccount?.balance ?? 0);
+
+    // Solde restant par frais (depuis les breakdowns)
+    const breakdownsByType: Record<string, { due: number; paid: number; remaining: number; name?: string }> = {};
+    for (const b of tx.studentAccount?.breakdowns ?? []) {
+      const feeType = b.feeStructure?.feeType || 'OTHER';
+      breakdownsByType[feeType] = {
+        due: Number(b.initialAmount ?? 0),
+        paid: Number(b.paidAmount ?? 0),
+        remaining: Number(b.remainingAmount ?? 0),
+        name: b.feeStructure?.name,
+      };
+    }
 
     // 3. Générer le token de vérification (pour QR code)
     const verificationToken = this.generateVerificationToken(tx.id, tx.receiptNumber);
@@ -104,6 +122,10 @@ export class ReceiptFinanceService {
       branding,
       qrCodeDataUrl,
       verificationToken,
+      totalDue,
+      totalPaidAfter,
+      balanceAfter,
+      breakdownsByType,
     });
 
     // 6. Convertir en PDF via Puppeteer
@@ -151,8 +173,12 @@ export class ReceiptFinanceService {
     branding: any;
     qrCodeDataUrl: string;
     verificationToken: string;
+    totalDue: number;
+    totalPaidAfter: number;
+    balanceAfter: number;
+    breakdownsByType: Record<string, { due: number; paid: number; remaining: number; name?: string }>;
   }): string {
-    const { tx, branding, qrCodeDataUrl, verificationToken } = params;
+    const { tx, branding, qrCodeDataUrl, verificationToken, totalDue, totalPaidAfter, balanceAfter, breakdownsByType } = params;
     const student = tx.studentAccount?.student;
     const studentName = student ? `${student.lastName} ${student.firstName}` : '—';
     const matricule = student?.matricule || '—';
@@ -188,6 +214,49 @@ export class ReceiptFinanceService {
       FEDAPAY: 'Fedapay',
     };
 
+    // Libellés des types de frais
+    const feeTypeLabels: Record<string, string> = {
+      INSCRIPTION: 'Inscription',
+      REINSCRIPTION: 'Réinscription',
+      TUITION: 'Scolarité',
+      CANTEEN: 'Cantine',
+      EXAMEN: 'Frais d\'examen',
+      OTHER: 'Autre',
+    };
+
+    // Lignes de solde par frais (pour la section "Solde restant à payer")
+    const balanceRows = Object.entries(breakdownsByType)
+      .filter(([, v]) => v.due > 0)
+      .map(([type, v]) => {
+        const label = feeTypeLabels[type] || v.name || type;
+        const remaining = Math.max(0, v.remaining);
+        const statusColor = remaining <= 0 ? '#16a34a' : '#dc2626';
+        const statusText = remaining <= 0 ? 'Soldé' : 'À payer';
+        return `
+        <tr>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #e5e7eb;">${label}</td>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;">${v.due.toLocaleString('fr-FR')} FCFA</td>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;">${v.paid.toLocaleString('fr-FR')} FCFA</td>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #e5e7eb; text-align: right; color: ${statusColor}; font-weight: 700;">
+            ${remaining.toLocaleString('fr-FR')} FCFA
+            <span style="font-size: 9px; font-weight: 400; display: block;">(${statusText})</span>
+          </td>
+        </tr>`;
+      })
+      .join('');
+
+    // Logo filigrane (si disponible)
+    const logoWatermark = branding.logoUrl
+      ? `<div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); z-index: 0; opacity: 0.06; pointer-events: none;">
+           <img src="${branding.logoUrl}" alt="logo" style="width: 350px; height: auto;" />
+         </div>`
+      : '';
+
+    // Logo en header (si disponible)
+    const logoHeader = branding.logoUrl
+      ? `<img src="${branding.logoUrl}" alt="logo" style="width: 60px; height: 60px; object-fit: contain; margin-right: 12px;" />`
+      : '';
+
     return `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -222,15 +291,24 @@ export class ReceiptFinanceService {
     .stamp { text-align: right; font-size: 11px; color: #64748b; }
     .stamp-line { margin-top: 24px; border-top: 1px dashed #cbd5e1; padding-top: 8px; }
     .verification-info { margin-top: 16px; padding: 8px; background: #f8fafc; border-radius: 4px; font-size: 9px; color: #64748b; text-align: center; }
+    .balance-summary { margin-top: 18px; padding: 12px; border-radius: 8px; background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: 2px solid #f59e0b; }
+    .balance-summary-title { font-size: 12px; font-weight: 700; color: #92400e; text-transform: uppercase; margin-bottom: 8px; }
+    .balance-total { font-size: 18px; font-weight: 700; color: #92400e; text-align: center; padding: 8px 0; }
+    .content { position: relative; z-index: 1; }
   </style>
 </head>
 <body>
+  ${logoWatermark}
+  <div class="content">
   <div class="header">
-    <div class="school-block">
-      <div class="school-name">${branding.schoolName || 'Établissement'}</div>
-      <div class="school-info">
-        ${branding.schoolAddress || ''}<br>
-        ${branding.schoolPhone ? 'Tél : ' + branding.schoolPhone : ''} ${branding.schoolEmail ? ' · ' + branding.schoolEmail : ''}
+    <div style="display: flex; align-items: center;">
+      ${logoHeader}
+      <div class="school-block">
+        <div class="school-name">${branding.schoolName || 'Établissement'}</div>
+        <div class="school-info">
+          ${branding.schoolAddress || ''}<br>
+          ${branding.schoolPhone ? 'Tél : ' + branding.schoolPhone : ''} ${branding.schoolEmail ? ' · ' + branding.schoolEmail : ''}
+        </div>
       </div>
     </div>
     <div class="receipt-meta">
@@ -275,6 +353,52 @@ export class ReceiptFinanceService {
     </div>
   </div>
 
+  <!-- Section Solde restant à payer -->
+  ${balanceRows ? `
+  <div class="section">
+    <div class="section-title">Situation du compte — Solde restant à payer</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Frais</th>
+          <th style="text-align: right;">Dû</th>
+          <th style="text-align: right;">Payé</th>
+          <th style="text-align: right;">Reste à payer</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${balanceRows}
+        <tr class="total-row">
+          <td>TOTAL</td>
+          <td style="text-align: right;">${totalDue.toLocaleString('fr-FR')} FCFA</td>
+          <td style="text-align: right;">${totalPaidAfter.toLocaleString('fr-FR')} FCFA</td>
+          <td class="amount" style="color: ${balanceAfter <= 0 ? '#16a34a' : '#dc2626'};">
+            ${Math.max(0, balanceAfter).toLocaleString('fr-FR')} FCFA
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  ${balanceAfter > 0 ? `
+  <div class="balance-summary">
+    <div class="balance-summary-title">💡 Solde restant à payer</div>
+    <div class="balance-total">${balanceAfter.toLocaleString('fr-FR')} FCFA</div>
+    <p style="text-align: center; font-size: 11px; color: #92400e; margin-top: 4px;">
+      Merci de régulariser ce montant auprès de l'établissement.
+    </p>
+  </div>
+  ` : `
+  <div class="balance-summary" style="background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%); border-color: #10b981;">
+    <div class="balance-summary-title" style="color: #065f46;">✅ Compte soldé</div>
+    <div class="balance-total" style="color: #065f46;">Aucun solde restant</div>
+    <p style="text-align: center; font-size: 11px; color: #065f46; margin-top: 4px;">
+      Toutes les frais de l'année ont été réglés. Merci !
+    </p>
+  </div>
+  `}
+  ` : ''}
+
   <div class="footer">
     <div class="qr-block">
       <img src="${qrCodeDataUrl}" alt="QR vérification" />
@@ -290,6 +414,7 @@ export class ReceiptFinanceService {
     Token de vérification : ${verificationToken.substring(0, 32)}... ·
     Reçu généré électroniquement le ${dateOp} à ${heureOp} ·
     Ce document est authentique et ne peut être modifié.
+  </div>
   </div>
 </body>
 </html>`;

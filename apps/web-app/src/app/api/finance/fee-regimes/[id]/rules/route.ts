@@ -1,0 +1,16 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
+
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const body = await request.json();
+  const headers = await getProxyAuthHeaders(request);
+  const res = await fetch(normalizeApiUrl(`${getApiBaseUrlForRoutes()}/finance/fee-regimes/${id}/rules`), {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  return NextResponse.json(data, { status: res.status });
+}

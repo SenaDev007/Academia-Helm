@@ -275,6 +275,22 @@ class FinanceService {
     return financeFetch(`/api/finance/fee-regimes${qs ? `?${qs}` : ''}`);
   }
 
+  async createFeeRegime(data: any): Promise<any> {
+    return financeFetch('/api/finance/fee-regimes', { method: 'POST', body: data });
+  }
+
+  async updateFeeRegime(id: string, data: any): Promise<any> {
+    return financeFetch(`/api/finance/fee-regimes/${encodeURIComponent(id)}`, { method: 'PUT', body: data });
+  }
+
+  async deleteFeeRegime(id: string): Promise<any> {
+    return financeFetch(`/api/finance/fee-regimes/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
+  async addFeeRegimeRule(regimeId: string, data: any): Promise<any> {
+    return financeFetch(`/api/finance/fee-regimes/${encodeURIComponent(regimeId)}/rules`, { method: 'POST', body: data });
+  }
+
   async createStudentFeeProfile(data: any): Promise<any> {
     return financeFetch('/api/finance/student-fee-profiles', { method: 'POST', body: data });
   }

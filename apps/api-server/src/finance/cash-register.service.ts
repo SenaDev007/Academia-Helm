@@ -47,6 +47,9 @@ export interface UpdateCashRegisterDto {
   responsibleUserId?: string;
   location?: string;
   isActive?: boolean;
+  // Soldes — modifiables depuis le modal d'édition (utile pour correction manuelle)
+  openingBalance?: number;
+  currentBalance?: number;
   // Champs bancaires
   bankName?: string;
   bankAccountNumber?: string;
@@ -193,14 +196,14 @@ export class CashRegisterService {
   }
 
   /**
-   * Met à jour une caisse (nom, description, responsable, emplacement, isActive).
+   * Met à jour une caisse (nom, description, responsable, emplacement, isActive, soldes).
    * Le code n'est PAS modifiable (identifiant stable).
    */
   async update(id: string, tenantId: string, dto: UpdateCashRegisterDto) {
     const existing = await this.findOne(id, tenantId);
 
     // responsibleUserId stocke directement le Staff ID (pas de FK, pas de résolution)
-    return this.prisma.cashRegister.update({
+    const updated = await this.prisma.cashRegister.update({
       where: { id },
       data: {
         name: dto.name ?? existing.name,
@@ -208,6 +211,13 @@ export class CashRegisterService {
         responsibleUserId: dto.responsibleUserId !== undefined ? (dto.responsibleUserId || null) : existing.responsibleUserId,
         location: dto.location ?? existing.location,
         isActive: dto.isActive ?? existing.isActive,
+        // Soldes — modifiables manuellement (utile pour correction sans passer par open/close)
+        ...(dto.openingBalance !== undefined && {
+          openingBalance: new Prisma.Decimal(Number(dto.openingBalance) || 0),
+        }),
+        ...(dto.currentBalance !== undefined && {
+          currentBalance: new Prisma.Decimal(Number(dto.currentBalance) || 0),
+        }),
         // Champs bancaires (mis à jour si fournis)
         ...(dto.bankName !== undefined && { bankName: dto.bankName || null }),
         ...(dto.bankAccountNumber !== undefined && { bankAccountNumber: dto.bankAccountNumber || null }),

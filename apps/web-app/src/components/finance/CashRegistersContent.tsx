@@ -307,6 +307,9 @@ export default function CashRegistersContent() {
         description: editModal.description,
         location: editModal.location,
         responsibleUserId: editModal.responsibleUserId || undefined,
+        // Soldes — modifiables depuis le modal d'édition
+        openingBalance: Number(editModal.openingBalance) || 0,
+        currentBalance: Number(editModal.currentBalance) || 0,
         // Champs bancaires
         bankName: editModal.bankName || undefined,
         bankAccountNumber: editModal.bankAccountNumber || undefined,
@@ -315,11 +318,12 @@ export default function CashRegistersContent() {
         bankAccountType: editModal.bankAccountType || undefined,
         bankContact: editModal.bankContact || undefined,
       });
-      toast({ title: '✅ Caisse mise à jour' });
+      toast({ title: '✅ Caisse mise à jour', description: 'Les modifications ont été enregistrées.' });
       setEditModal(null);
       loadRegisters();
     } catch (e: any) {
-      toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+      console.error('Erreur update caisse:', e);
+      toast({ title: 'Erreur', description: e.message || 'Une erreur est survenue.', variant: 'destructive' });
     }
   };
 
@@ -461,13 +465,13 @@ export default function CashRegistersContent() {
               Gestion des caisses — coffre-fort central et caisses secondaires.
             </p>
             <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={() => openTransfer()} disabled={registers.filter((r) => r.isOpen).length < 2}>
-                <ArrowLeftRight className="h-4 w-4 mr-2" />
-                Transférer
-              </Button>
               <Button onClick={() => setCreateModal(true)}>
                 <Plus className="h-4 w-4 mr-2" />
                 Nouvelle caisse
+              </Button>
+              <Button variant="outline" onClick={() => openTransfer()} disabled={registers.filter((r) => r.isOpen).length < 2}>
+                <ArrowLeftRight className="h-4 w-4 mr-2" />
+                Transférer
               </Button>
             </div>
           </div>

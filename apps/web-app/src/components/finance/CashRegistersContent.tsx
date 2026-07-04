@@ -730,7 +730,15 @@ export default function CashRegistersContent() {
 
             {/* === PANNEAU DÉTAILS (au clic sur une caisse) === */}
             <AnimatePresence mode="wait">
-              {selectedRegister && (
+              {selectedRegister && (() => {
+                // Calculer la couleur de la caisse sélectionnée
+                const isMain = selectedRegister.code?.toUpperCase() === 'MAIN' || selectedRegister === mainRegister;
+                const secondaryIdx = secondaryRegisters.findIndex((r) => r.id === selectedRegister.id);
+                const color = isMain ? null : CAISSE_COLORS[secondaryIdx % CAISSE_COLORS.length];
+                const headerBg = isMain
+                  ? 'from-slate-900 via-indigo-900 to-slate-900'
+                  : color?.bg ?? 'from-slate-700 to-slate-900';
+                return (
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -738,34 +746,38 @@ export default function CashRegistersContent() {
                   transition={{ duration: 0.3 }}
                   className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden"
                 >
-                  {/* En-tête du panneau */}
-                  <div className={`bg-gradient-to-r ${selectedRegister.code?.toUpperCase() === 'MAIN' || selectedRegister === mainRegister ? 'from-slate-900 to-indigo-900' : 'from-slate-700 to-slate-900'} text-white p-5`}>
+                  {/* En-tête du panneau — couleur de la caisse */}
+                  <div className={`bg-gradient-to-r ${headerBg} text-white p-5`}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center backdrop-blur-sm">
+                        <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center backdrop-blur-sm">
                           {(() => {
                             const Icon = getCaisseIcon(selectedRegister);
                             return <Icon className="w-6 h-6 text-white" />;
                           })()}
                         </div>
                         <div>
-                          <p className="text-xs text-slate-400 uppercase tracking-wide">{selectedRegister.code}</p>
+                          <p className="text-xs text-white/70 uppercase tracking-wide">{selectedRegister.code}</p>
                           <h3 className="text-lg font-bold text-white">{selectedRegister.name}</h3>
-                          <p className="text-xs text-slate-400">{selectedRegister.location || '—'}</p>
+                          <p className="text-xs text-white/70">{selectedRegister.location || '—'}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
                         {selectedRegister.isOpen ? (
-                          <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          <Badge className="bg-emerald-500/20 text-emerald-200 border border-emerald-500/30">
                             <motion.div className="w-2 h-2 rounded-full bg-emerald-400 mr-1.5" animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.5, repeat: Infinity }} />
                             Ouverte
                           </Badge>
                         ) : selectedRegister.isActive ? (
-                          <Badge className="bg-slate-600/50 text-slate-300"><Lock className="w-3 h-3 mr-1" />Fermée</Badge>
+                          <Badge className="bg-white/20 text-white/80">
+                            <Lock className="w-3 h-3 mr-1" />Fermée
+                          </Badge>
                         ) : (
-                          <Badge className="bg-slate-600/50 text-slate-300"><Archive className="w-3 h-3 mr-1" />Archivée</Badge>
+                          <Badge className="bg-white/20 text-white/60">
+                            <Archive className="w-3 h-3 mr-1" />Archivée
+                          </Badge>
                         )}
-                        <button onClick={() => setSelectedRegister(null)} className="text-slate-400 hover:text-white p-1">
+                        <button onClick={() => setSelectedRegister(null)} className="text-white/60 hover:text-white p-1">
                           <X className="w-5 h-5" />
                         </button>
                       </div>
@@ -900,7 +912,8 @@ export default function CashRegistersContent() {
                     </div>
                   </div>
                 </motion.div>
-              )}
+              );
+              })()}
             </AnimatePresence>
           </div>
         )}

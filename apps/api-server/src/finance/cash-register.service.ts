@@ -217,10 +217,20 @@ export class CashRegisterService {
         ...(dto.bankContact !== undefined && { bankContact: dto.bankContact || null }),
       },
       include: {
-        responsibleUser: { select: { id: true, firstName: true, lastName: true, email: true } },
         _count: { select: { transactions: true } },
       },
     });
+
+    // Enrichir avec le staff responsable
+    if (updated.responsibleUserId) {
+      const staff = await this.prisma.staff.findFirst({
+        where: { id: updated.responsibleUserId },
+        select: { id: true, firstName: true, lastName: true, position: true, email: true, employeeNumber: true },
+      });
+      (updated as any).responsibleUser = staff;
+    }
+
+    return updated;
   }
 
   /**
@@ -264,7 +274,6 @@ export class CashRegisterService {
         currentBalance: new Prisma.Decimal(openingBalance),
       },
       include: {
-        responsibleUser: { select: { id: true, firstName: true, lastName: true } },
         openedBy: { select: { id: true, firstName: true, lastName: true } },
       },
     });
@@ -295,7 +304,6 @@ export class CashRegisterService {
         closedByUserId: dto.userId,
       },
       include: {
-        responsibleUser: { select: { id: true, firstName: true, lastName: true } },
         closedBy: { select: { id: true, firstName: true, lastName: true } },
       },
     });

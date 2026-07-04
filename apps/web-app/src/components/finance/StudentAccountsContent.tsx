@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { Eye, Unlock, UserCog, Search, Download, Receipt, Clock } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -29,6 +30,8 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function StudentAccountsContent() {
   const { academicYear } = useModuleContext();
+  const searchParams = useSearchParams();
+  const preselectStudentId = searchParams.get('studentId');
   const { toast } = useToast();
   const [accounts, setAccounts] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
@@ -77,6 +80,19 @@ export default function StudentAccountsContent() {
       .then((d) => setAcademicYears(Array.isArray(d) ? d : (d.data ?? [])))
       .catch(() => setAcademicYears([]));
   }, []);
+
+  // Pré-sélectionner un élève si l'URL contient ?studentId=X
+  // (depuis le bouton "Régime & Finance" dans le module Élève)
+  useEffect(() => {
+    if (preselectStudentId && accounts.length > 0) {
+      // Trouver le compte de cet élève
+      const account = accounts.find((a) => a.studentId === preselectStudentId);
+      if (account) {
+        setSelectedAccountId(account.id);
+        loadPaymentHistory(account.id);
+      }
+    }
+  }, [preselectStudentId, accounts]);
 
   const loadDetail = async (id: string) => {
     try {

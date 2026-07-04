@@ -27,7 +27,9 @@ import {
   FileText, Download, UserCheck, GraduationCap, BookOpen, Baby,
   RotateCcw, CheckCircle, XCircle, Clock, AlertCircle, Upload,
   ShieldAlert, Info, BrainCircuit, ChevronUp, EyeOff, Eye, FileDown, Pencil,
+  DollarSign,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { FormModal } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -171,6 +173,7 @@ const getLevelDisplayName = (name: string) => {
 
 export default function EnrollmentsContent() {
   const { academicYear, schoolLevel, tenantId } = useModuleContext();
+  const router = useRouter();
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [classes, setClasses] = useState<ClassInfo[]>([]);
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
@@ -913,6 +916,11 @@ export default function EnrollmentsContent() {
                                                 ><FileText className="w-4 h-4" /></button>
                                               )}
                                               <button onClick={() => handleReEnroll(enr)} className="p-1 hover:bg-indigo-100 rounded text-indigo-600" title="Réinscrire"><RotateCcw className="w-4 h-4" /></button>
+                                              <button
+                                                onClick={() => router.push(`/app/finance/accounts?studentId=${enr.student.id}`)}
+                                                className="p-1 hover:bg-emerald-100 rounded text-emerald-600"
+                                                title="Régime & Finance"
+                                              ><DollarSign className="w-4 h-4" /></button>
                                             </div>
                                           </div>
                                         );
@@ -1082,6 +1090,11 @@ export default function EnrollmentsContent() {
                                                       ) : null}
                                                       <button onClick={() => setEditEnrollment(enr)} className="p-1 hover:bg-amber-100 rounded text-amber-600" title="Éditer / Compléter"><Pencil className="w-4 h-4" /></button>
                                                       <button onClick={() => handleReEnroll(enr)} className="p-1 hover:bg-indigo-100 rounded text-indigo-600" title="Réinscrire"><RotateCcw className="w-4 h-4" /></button>
+                                                      <button
+                                                        onClick={() => router.push(`/app/finance/accounts?studentId=${enr.student.id}`)}
+                                                        className="p-1 hover:bg-emerald-100 rounded text-emerald-600"
+                                                        title="Régime & Finance"
+                                                      ><DollarSign className="w-4 h-4" /></button>
                                                     </div>
                                                   </div>
                                                 );

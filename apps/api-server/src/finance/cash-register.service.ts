@@ -445,32 +445,51 @@ export class CashRegisterService {
    * Récupère l'historique des transferts d'un tenant (toutes caisses confondues
    * ou filtré par caisse source/cible).
    * Utilisé par l'onglet "Historique" du module Multi-caisses.
+   *
+   * ⚠️ Sécurité : on utilise Prisma.$queryRaw avec paramètres ($1, $2...) au lieu
+   * de $queryRawUnsafe avec interpolation, pour éviter les injections SQL et
+   * les bugs de parsing (UUID sans quotes = soustraction mathématique).
    */
   async getTransfers(
     tenantId: string,
     filters?: { cashRegisterId?: string; dateFrom?: Date; dateTo?: Date; limit?: number },
   ) {
-    const where: string[] = [`t."tenantId" = ${tenantId}`];
+    const params: any[] = [tenantId];
+    let paramIdx = 2;
+    let whereClause = `t."tenantId" = $1`;
+
     if (filters?.cashRegisterId) {
-      where.push(`(t."fromCashRegisterId" = ${filters.cashRegisterId} OR t."toCashRegisterId" = ${filters.cashRegisterId})`);
+      whereClause += ` AND (t."fromCashRegisterId" = $${paramIdx} OR t."toCashRegisterId" = $${paramIdx})`;
+      params.push(filters.cashRegisterId);
+      paramIdx++;
     }
-    if (filters?.dateFrom) where.push(`t."createdAt" >= '${new Date(filters.dateFrom).toISOString()}'`);
-    if (filters?.dateTo) where.push(`t."createdAt" <= '${new Date(filters.dateTo).toISOString()}'`);
+    if (filters?.dateFrom) {
+      whereClause += ` AND t."createdAt" >= $${paramIdx}`;
+      params.push(new Date(filters.dateFrom));
+      paramIdx++;
+    }
+    if (filters?.dateTo) {
+      whereClause += ` AND t."createdAt" <= $${paramIdx}`;
+      params.push(new Date(filters.dateTo));
+      paramIdx++;
+    }
 
     const limit = filters?.limit || 100;
+    params.push(limit);
 
-    const transfers = await this.prisma.$queryRawUnsafe(`
-      SELECT
-        t.*,
-        fr."code" AS "fromCode", fr."name" AS "fromName",
-        tr."code" AS "toCode", tr."name" AS "toName"
-      FROM "cash_register_transfers" t
-      LEFT JOIN "cash_registers" fr ON fr."id" = t."fromCashRegisterId"
-      LEFT JOIN "cash_registers" tr ON tr."id" = t."toCashRegisterId"
-      WHERE ${where.join(' AND ')}
-      ORDER BY t."createdAt" DESC
-      LIMIT ${limit}
-    `);
+    const transfers = await this.prisma.$queryRawUnsafe(
+      `SELECT
+         t.*,
+         fr."code" AS "fromCode", fr."name" AS "fromName",
+         tr."code" AS "toCode", tr."name" AS "toName"
+       FROM "cash_register_transfers" t
+       LEFT JOIN "cash_registers" fr ON fr."id" = t."fromCashRegisterId"
+       LEFT JOIN "cash_registers" tr ON tr."id" = t."toCashRegisterId"
+       WHERE ${whereClause}
+       ORDER BY t."createdAt" DESC
+       LIMIT $${paramIdx}`,
+      ...params,
+    );
 
     return transfers;
   }
@@ -484,18 +503,31 @@ export class CashRegisterService {
     tenantId: string,
     filters?: { dateFrom?: Date; dateTo?: Date; limit?: number },
   ) {
-    const where: string[] = [`"cashRegisterId" = ${id}`, `"tenantId" = ${tenantId}`];
-    if (filters?.dateFrom) where.push(`"createdAt" >= '${new Date(filters.dateFrom).toISOString()}'`);
-    if (filters?.dateTo) where.push(`"createdAt" <= '${new Date(filters.dateTo).toISOString()}'`);
+    const params: any[] = [id, tenantId];
+    let paramIdx = 3;
+    let whereClause = `"cashRegisterId" = $1 AND "tenantId" = $2`;
+
+    if (filters?.dateFrom) {
+      whereClause += ` AND "createdAt" >= $${paramIdx}`;
+      params.push(new Date(filters.dateFrom));
+      paramIdx++;
+    }
+    if (filters?.dateTo) {
+      whereClause += ` AND "createdAt" <= $${paramIdx}`;
+      params.push(new Date(filters.dateTo));
+      paramIdx++;
+    }
 
     const limit = filters?.limit || 100;
+    params.push(limit);
 
-    const transactions = await this.prisma.$queryRawUnsafe(`
-      SELECT * FROM "cash_register_transactions"
-      WHERE ${where.join(' AND ')}
-      ORDER BY "createdAt" DESC
-      LIMIT ${limit}
-    `);
+    const transactions = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "cash_register_transactions"
+       WHERE ${whereClause}
+       ORDER BY "createdAt" DESC
+       LIMIT $${paramIdx}`,
+      ...params,
+    );
 
     return transactions;
   }

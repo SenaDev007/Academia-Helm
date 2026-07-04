@@ -466,6 +466,9 @@ export default function CashRegistersContent() {
       });
       setTransferModal(false);
       loadRegisters();
+      // Recharger aussi l'historique des transferts (au cas où l'utilisateur
+      // est sur l'onglet Historique, il verra le nouveau transfert immédiatement)
+      loadTransfers();
       if (selectedRegister) {
         // Mettre à jour le solde affiché dans le panneau de détails
         const updated = result.from.id === selectedRegister.id ? result.from : result.to.id === selectedRegister.id ? result.to : null;
@@ -608,8 +611,8 @@ export default function CashRegistersContent() {
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <Gem className="w-4 h-4" />
-                  Constellation
+                  <Wallet className="w-4 h-4" />
+                  Caisses
                 </div>
               </button>
               <button

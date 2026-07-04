@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Eye, Unlock, UserCog, Search, Download, Receipt, Clock } from 'lucide-react';
+import { Eye, Unlock, UserCog, Search, Download, Receipt, Clock, Mail, MessageCircle, Smartphone } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -471,6 +471,7 @@ export default function StudentAccountsContent() {
                       <TableHead className="whitespace-nowrap">Date</TableHead>
                       <TableHead className="whitespace-nowrap">Heure</TableHead>
                       <TableHead className="whitespace-nowrap">Référence</TableHead>
+                      <TableHead className="whitespace-nowrap text-center">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -493,6 +494,67 @@ export default function StudentAccountsContent() {
                         </TableCell>
                         <TableCell className="text-xs text-slate-500 whitespace-nowrap" title={t.reference || ''}>
                           {t.reference || '—'}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          <div className="flex items-center gap-1 justify-center">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => window.open(financeService.getReceiptPdfUrl(t.id), '_blank')}
+                              title="Télécharger le reçu PDF"
+                            >
+                              <Download className="w-3.5 h-3.5 text-slate-600" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={async () => {
+                                try {
+                                  const r = await financeService.resendReceipt(t.id, ['email']);
+                                  const s = r?.channels?.email;
+                                  if (s?.status === 'skipped') toast({ title: 'Contact manquant', description: s.reason, variant: 'destructive' });
+                                  else toast({ title: 'Reçu envoyé', description: `Email envoyé${s?.to ? ` à ${s.to}` : ''}` });
+                                } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
+                              }}
+                              title="Envoyer par email"
+                            >
+                              <Mail className="w-3.5 h-3.5 text-blue-600" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={async () => {
+                                try {
+                                  const r = await financeService.resendReceipt(t.id, ['whatsapp']);
+                                  const s = r?.channels?.whatsapp;
+                                  if (s?.status === 'skipped') toast({ title: 'Contact manquant', description: s.reason, variant: 'destructive' });
+                                  else toast({ title: 'Reçu envoyé', description: `WhatsApp envoyé${s?.to ? ` à ${s.to}` : ''}` });
+                                } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
+                              }}
+                              title="Envoyer par WhatsApp"
+                            >
+                              <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={async () => {
+                                try {
+                                  const r = await financeService.resendReceipt(t.id, ['sms']);
+                                  const s = r?.channels?.sms;
+                                  if (s?.status === 'skipped') toast({ title: 'Contact manquant', description: s.reason, variant: 'destructive' });
+                                  else toast({ title: 'Reçu envoyé', description: `SMS envoyé${s?.to ? ` à ${s.to}` : ''}` });
+                                } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
+                              }}
+                              title="Envoyer par SMS"
+                            >
+                              <Smartphone className="w-3.5 h-3.5 text-violet-600" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}

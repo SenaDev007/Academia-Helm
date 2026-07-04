@@ -1,0 +1,371 @@
+/**
+ * ============================================================================
+ * RECEIPT FINANCE SERVICE — Génération PDF de reçus pour FinanceTransaction
+ * ============================================================================
+ *
+ * Génère un PDF de reçu pour chaque encaissement (FinanceTransaction) :
+ *   - Numéro de reçu format local : CSPEB-R-25-00001 (via MatriculeGeneratorService)
+ *   - Date/heure automatiques (récupérées de la transaction)
+ *   - PDF via PuppeteerPoolService (HTML inline → PDF A4)
+ *   - Stockage : uploads/receipts/{tenantId}/{yearId}/receipt-{num}.pdf
+ *   - Mise à jour de FinanceTransaction.receiptUrl
+ *   - Notifications fire-and-forget : email (PDF en PJ), WhatsApp, SMS
+ *
+ * Pattern identique à receipt-generation.service.ts (Payment) mais adapté
+ * pour FinanceTransaction (sous-module 3).
+ * ============================================================================
+ */
+
+import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as QRCode from 'qrcode';
+import { PrismaService } from '../database/prisma.service';
+import { PuppeteerPoolService } from '../common/services/puppeteer-pool.service';
+import { MatriculeGeneratorService } from '../common/services/matricule-generator.service';
+
+@Injectable()
+export class ReceiptFinanceService {
+  private readonly logger = new Logger(ReceiptFinanceService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly puppeteerPool: PuppeteerPoolService,
+    private readonly matriculeGenerator: MatriculeGeneratorService,
+    private readonly configService: ConfigService,
+  ) {}
+
+  /**
+   * Génère le numéro de reçu au format local : CSPEB-R-25-00001
+   * (R = REC dans MatriculeGeneratorService)
+   */
+  async generateReceiptNumber(
+    tenantId: string,
+    academicYearId: string,
+  ): Promise<{ local: string; global: string }> {
+    const result = await this.matriculeGenerator.generate('REC', tenantId, academicYearId);
+    return { local: result.local, global: result.global };
+  }
+
+  /**
+   * Pipeline complet de génération de reçu PDF pour une FinanceTransaction.
+   * 1. Récupère la transaction + élève + compte + allocations
+   * 2. Génère le HTML du reçu
+   * 3. Convertit en PDF via Puppeteer
+   * 4. Stocke le fichier et met à jour receiptUrl
+   * 5. Retourne le chemin + buffer pour notifications
+   */
+  async generateForTransaction(
+    transactionId: string,
+    tenantId: string,
+  ): Promise<{ filePath: string; receiptUrl: string; pdfBuffer: Buffer }> {
+    // 1. Charger la transaction avec toutes les infos nécessaires
+    const tx = await this.prisma.financeTransaction.findUnique({
+      where: { id: transactionId },
+      include: {
+        studentAccount: {
+          include: {
+            student: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                matricule: true,
+                studentGuardians: { include: { guardian: true } },
+              },
+            },
+            breakdowns: { include: { feeStructure: true } },
+          },
+        },
+        allocations: { include: { accountBreakdown: { include: { feeStructure: true } } } },
+        cashRegister: { select: { code: true, name: true } },
+      },
+    });
+
+    if (!tx) {
+      throw new Error(`Transaction ${transactionId} introuvable`);
+    }
+
+    // 2. Récupérer le branding de l'école
+    const branding = await this.getTenantBranding(tenantId);
+
+    // 3. Générer le token de vérification (pour QR code)
+    const verificationToken = this.generateVerificationToken(tx.id, tx.receiptNumber);
+
+    // 4. Générer le QR code en data URL
+    const publicUrl = this.configService.get<string>('APP_PUBLIC_URL') || 'https://api.academiahelm.com';
+    const verifyUrl = `${publicUrl}/api/receipt/verify?token=${verificationToken}`;
+    const qrCodeDataUrl = await QRCode.toDataURL(verifyUrl, { width: 120, margin: 1 });
+
+    // 5. Construire le HTML du reçu
+    const html = this.buildReceiptHTML({
+      tx,
+      branding,
+      qrCodeDataUrl,
+      verificationToken,
+    });
+
+    // 6. Convertir en PDF via Puppeteer
+    const { page } = await this.puppeteerPool.acquirePage();
+    try {
+      await page.setContent(html, { waitUntil: 'networkidle0' });
+      const pdfBuffer: Buffer = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        margin: { top: '10mm', bottom: '10mm', left: '10mm', right: '10mm' },
+      });
+      // Puppeteer v25 retourne Uint8Array — convertir en Buffer
+      const buf = Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer);
+
+      // 7. Stocker le fichier
+      const yearDir = tx.academicYearId;
+      const dir = path.join(process.cwd(), 'uploads', 'receipts', tenantId, yearDir);
+      fs.mkdirSync(dir, { recursive: true });
+      const fileName = `receipt-${tx.receiptNumber.replace(/[/\\?%*:|"<>]/g, '-')}.pdf`;
+      const filePath = path.join(dir, fileName);
+      fs.writeFileSync(filePath, buf);
+
+      // 8. URL publique (servie par /api/receipts/{filename})
+      const receiptUrl = `${publicUrl}/api/finance/transactions/${tx.id}/receipt.pdf`;
+
+      // 9. Mettre à jour la transaction avec receiptUrl
+      await this.prisma.financeTransaction.update({
+        where: { id: tx.id },
+        data: { receiptUrl },
+      });
+
+      this.logger.log(`Reçu généré: ${tx.receiptNumber} → ${filePath}`);
+
+      return { filePath, receiptUrl, pdfBuffer: buf };
+    } finally {
+      await this.puppeteerPool.releasePage(page);
+    }
+  }
+
+  /**
+   * Construit le HTML du reçu (style institutionnel, A4).
+   */
+  private buildReceiptHTML(params: {
+    tx: any;
+    branding: any;
+    qrCodeDataUrl: string;
+    verificationToken: string;
+  }): string {
+    const { tx, branding, qrCodeDataUrl, verificationToken } = params;
+    const student = tx.studentAccount?.student;
+    const studentName = student ? `${student.lastName} ${student.firstName}` : '—';
+    const matricule = student?.matricule || '—';
+    const dateOp = new Date(tx.createdAt).toLocaleDateString('fr-FR', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+    });
+    const heureOp = new Date(tx.createdAt).toLocaleTimeString('fr-FR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    // Détail des allocations (par frais)
+    const allocationsRows = (tx.allocations || [])
+      .map(
+        (a: any) => `
+        <tr>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #e5e7eb;">
+            ${a.accountBreakdown?.feeStructure?.name || a.accountBreakdown?.feeStructure?.feeType || '—'}
+          </td>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;">
+            ${Number(a.amount).toLocaleString('fr-FR')} FCFA
+          </td>
+        </tr>`,
+      )
+      .join('');
+
+    const methodLabels: Record<string, string> = {
+      CASH: 'Espèces',
+      MOBILE_MONEY: 'Mobile Money',
+      WIRE: 'Virement bancaire',
+      FEDAPAY: 'Fedapay',
+    };
+
+    return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Reçu ${tx.receiptNumber}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; color: #1e293b; padding: 20px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #4f46e5; padding-bottom: 16px; margin-bottom: 20px; }
+    .school-block { flex: 1; }
+    .school-name { font-size: 20px; font-weight: 700; color: #1e293b; }
+    .school-info { font-size: 11px; color: #64748b; margin-top: 4px; line-height: 1.5; }
+    .receipt-meta { text-align: right; }
+    .receipt-title { font-size: 18px; font-weight: 700; color: #4f46e5; text-transform: uppercase; letter-spacing: 1px; }
+    .receipt-number { font-size: 14px; font-weight: 600; color: #1e293b; margin-top: 4px; font-family: 'Courier New', monospace; }
+    .receipt-date { font-size: 11px; color: #64748b; margin-top: 2px; }
+    .section { margin-bottom: 18px; }
+    .section-title { font-size: 11px; font-weight: 700; color: #4f46e5; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid #e5e7eb; }
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; font-size: 12px; }
+    .info-item { display: flex; }
+    .info-label { color: #64748b; min-width: 110px; }
+    .info-value { font-weight: 600; color: #1e293b; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { background: #f1f5f9; padding: 8px; text-align: left; font-weight: 600; color: #475569; border-bottom: 2px solid #cbd5e1; }
+    .total-row { background: #f8fafc; font-weight: 700; }
+    .total-row td { padding: 10px 8px; border-top: 2px solid #4f46e5; font-size: 14px; }
+    .total-row .amount { color: #4f46e5; text-align: right; }
+    .footer { margin-top: 30px; display: flex; justify-content: space-between; align-items: flex-end; }
+    .qr-block { text-align: center; }
+    .qr-block img { width: 90px; height: 90px; }
+    .qr-label { font-size: 9px; color: #64748b; margin-top: 4px; }
+    .stamp { text-align: right; font-size: 11px; color: #64748b; }
+    .stamp-line { margin-top: 24px; border-top: 1px dashed #cbd5e1; padding-top: 8px; }
+    .verification-info { margin-top: 16px; padding: 8px; background: #f8fafc; border-radius: 4px; font-size: 9px; color: #64748b; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="school-block">
+      <div class="school-name">${branding.schoolName || 'Établissement'}</div>
+      <div class="school-info">
+        ${branding.schoolAddress || ''}<br>
+        ${branding.schoolPhone ? 'Tél : ' + branding.schoolPhone : ''} ${branding.schoolEmail ? ' · ' + branding.schoolEmail : ''}
+      </div>
+    </div>
+    <div class="receipt-meta">
+      <div class="receipt-title">Reçu de paiement</div>
+      <div class="receipt-number">N° ${tx.receiptNumber}</div>
+      <div class="receipt-date">${dateOp} à ${heureOp}</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Élève</div>
+    <div class="info-grid">
+      <div class="info-item"><span class="info-label">Nom :</span><span class="info-value">${studentName}</span></div>
+      <div class="info-item"><span class="info-label">Matricule :</span><span class="info-value">${matricule}</span></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Détail du paiement</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Frais</th>
+          <th style="text-align: right;">Montant</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${allocationsRows || `<tr><td colspan="2" style="padding: 8px; text-align: center; color: #94a3b8;">Paiement global (non imputé par frais)</td></tr>`}
+        <tr class="total-row">
+          <td>TOTAL</td>
+          <td class="amount">${Number(tx.amount).toLocaleString('fr-FR')} FCFA</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="info-grid">
+      <div class="info-item"><span class="info-label">Mode de paiement :</span><span class="info-value">${methodLabels[tx.paymentMethod] || tx.paymentMethod}</span></div>
+      <div class="info-item"><span class="info-label">Référence :</span><span class="info-value">${tx.reference || '—'}</span></div>
+      ${tx.cashRegister ? `<div class="info-item"><span class="info-label">Caisse :</span><span class="info-value">${tx.cashRegister.code} — ${tx.cashRegister.name}</span></div>` : ''}
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="qr-block">
+      <img src="${qrCodeDataUrl}" alt="QR vérification" />
+      <div class="qr-label">Scannez pour vérifier l'authenticité</div>
+    </div>
+    <div class="stamp">
+      <div>Le comptable</div>
+      <div class="stamp-line">Signature & cachet</div>
+    </div>
+  </div>
+
+  <div class="verification-info">
+    Token de vérification : ${verificationToken.substring(0, 32)}... ·
+    Reçu généré électroniquement le ${dateOp} à ${heureOp} ·
+    Ce document est authentique et ne peut être modifié.
+  </div>
+</body>
+</html>`;
+  }
+
+  /**
+   * Génère un token de vérification HMAC-SHA256 (pour QR code public).
+   */
+  private generateVerificationToken(transactionId: string, receiptNumber: string): string {
+    const crypto = require('crypto');
+    const secret = this.configService.get<string>('RECEIPT_VERIFICATION_SECRET') || 'academia-helm-receipt-secret-2026';
+    const data = `${transactionId}|${receiptNumber}`;
+    return crypto.createHmac('sha256', secret).update(data).digest('base64url');
+  }
+
+  /**
+   * Récupère le branding de l'école (réutilise le pattern admission-notification).
+   */
+  private async getTenantBranding(tenantId: string) {
+    try {
+      const profile = await this.prisma.tenantIdentityProfile.findFirst({
+        where: { tenantId, isActive: true },
+        select: {
+          schoolName: true,
+          logoUrl: true,
+          address: true,
+          phonePrimary: true,
+          email: true,
+        },
+      });
+      if (profile?.schoolName) {
+        return {
+          schoolName: profile.schoolName,
+          logoUrl: profile.logoUrl,
+          schoolAddress: profile.address,
+          schoolPhone: profile.phonePrimary,
+          schoolEmail: profile.email,
+        };
+      }
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { name: true },
+      });
+      return { schoolName: tenant?.name || 'Établissement' };
+    } catch {
+      return { schoolName: 'Établissement' };
+    }
+  }
+
+  /**
+   * Récupère les contacts (email/téléphone) du parent principal d'un élève.
+   */
+  async getParentContacts(studentId: string): Promise<{ email?: string; phone?: string; name?: string }> {
+    const sgs = await this.prisma.studentGuardian.findMany({
+      where: { studentId, isPrimary: true },
+      include: { guardian: true },
+      take: 1,
+    });
+    if (sgs.length === 0) {
+      // Fallback : n'importe quel guardian
+      const anySg = await this.prisma.studentGuardian.findFirst({
+        where: { studentId },
+        include: { guardian: true },
+      });
+      if (!anySg) return {};
+      return {
+        email: anySg.guardian?.email || undefined,
+        phone: anySg.guardian?.phone || undefined,
+        name: anySg.guardian ? `${anySg.guardian.firstName} ${anySg.guardian.lastName}` : undefined,
+      };
+    }
+    const g = sgs[0].guardian;
+    return {
+      email: g?.email || undefined,
+      phone: g?.phone || undefined,
+      name: g ? `${g.firstName} ${g.lastName}` : undefined,
+    };
+  }
+}

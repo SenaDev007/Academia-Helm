@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Smartphone } from 'lucide-react';
+import { Plus, Smartphone, Download, Mail, MessageCircle } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/components/ui/use-toast';
 import NewPaymentModal from './NewPaymentModal';
 import { SchoolFeePaymentDialog } from './SchoolFeePaymentDialog';
 import { financeService } from '@/services/finance.service';
@@ -21,6 +22,7 @@ const METHOD_LABELS: Record<string, string> = {
 
 export default function TransactionsContent() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const [transactions, setTransactions] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -101,16 +103,17 @@ export default function TransactionsContent() {
                 <TableHead>Méthode</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Date</TableHead>
+                <TableHead className="text-center">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-gray-500 py-8">Chargement...</TableCell>
+                  <TableCell colSpan={7} className="text-center text-gray-500 py-8">Chargement...</TableCell>
                 </TableRow>
               ) : transactions.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-gray-500 py-12">
+                  <TableCell colSpan={7} className="text-center text-gray-500 py-12">
                     Aucune transaction enregistrée.
                   </TableCell>
                 </TableRow>
@@ -134,6 +137,51 @@ export default function TransactionsContent() {
                     </TableCell>
                     <TableCell className="text-sm text-gray-600">
                       {t.createdAt ? new Date(t.createdAt).toLocaleDateString('fr-FR') : '—'}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1 justify-center">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => window.open(financeService.getReceiptPdfUrl(t.id), '_blank')}
+                          title="Télécharger le reçu PDF"
+                        >
+                          <Download className="w-3.5 h-3.5 text-slate-600" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={async () => {
+                            try {
+                              const r = await financeService.resendReceipt(t.id, ['email']);
+                              const s = r?.channels?.email;
+                              if (s?.status === 'skipped') toast({ title: 'Contact manquant', description: s.reason, variant: 'destructive' });
+                              else toast({ title: 'Reçu envoyé', description: `Email envoyé${s?.to ? ` à ${s.to}` : ''}` });
+                            } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
+                          }}
+                          title="Envoyer par email"
+                        >
+                          <Mail className="w-3.5 h-3.5 text-blue-600" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={async () => {
+                            try {
+                              const r = await financeService.resendReceipt(t.id, ['whatsapp']);
+                              const s = r?.channels?.whatsapp;
+                              if (s?.status === 'skipped') toast({ title: 'Contact manquant', description: s.reason, variant: 'destructive' });
+                              else toast({ title: 'Reçu envoyé', description: `WhatsApp envoyé${s?.to ? ` à ${s.to}` : ''}` });
+                            } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
+                          }}
+                          title="Envoyer par WhatsApp"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, Download, Mail, MessageCircle, Smartphone, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -48,6 +48,9 @@ export default function NewPaymentModal({
   const [openCashRegisters, setOpenCashRegisters] = useState<any[]>([]);
   const [preview, setPreview] = useState<{ totalPay: number; lines: { name: string; pay: number; feeType: string; personalized: boolean; originalAmount?: number }[] } | null>(null);
   const [loading, setLoading] = useState(false);
+  // Reçu généré après succès — affiché en bandeau lecture seule
+  const [receipt, setReceipt] = useState<{ id: string; receiptNumber: string; createdAt: string } | null>(null);
+  const [sendingChannel, setSendingChannel] = useState<string | null>(null);
   const { toast } = useToast();
 
   // Charge les caisses ouvertes
@@ -110,7 +113,7 @@ export default function NewPaymentModal({
 
     setLoading(true);
     try {
-      await financeService.createTransaction({
+      const result = await financeService.createTransaction({
         academicYearId,
         studentAccountId,
         amount: amountNum,
@@ -118,13 +121,57 @@ export default function NewPaymentModal({
         reference: reference.trim() || undefined,
         cashRegisterId: cashRegisterId || undefined,
       });
-      toast({ title: 'Paiement enregistré', description: 'Le reçu a été généré avec succès.' });
-      onSuccess();
+      // Le backend renvoie la transaction avec receiptNumber + createdAt
+      // + déclenche la génération PDF en fire-and-forget
+      if (result?.id) {
+        setReceipt({
+          id: result.id,
+          receiptNumber: result.receiptNumber || '—',
+          createdAt: result.createdAt || new Date().toISOString(),
+        });
+        toast({ title: 'Paiement enregistré', description: `Reçu ${result.receiptNumber} généré.` });
+      } else {
+        toast({ title: 'Paiement enregistré', description: 'Le reçu est en cours de génération.' });
+        onSuccess();
+      }
     } catch (error: any) {
       toast({ title: 'Erreur', description: error?.message || 'Impossible d\'enregistrer le paiement', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
+  };
+
+  // Actions sur le reçu (depuis le bandeau de succès)
+  const handleDownloadReceipt = () => {
+    if (!receipt) return;
+    window.open(financeService.getReceiptPdfUrl(receipt.id), '_blank');
+  };
+
+  const handleResendReceipt = async (channel: 'email' | 'whatsapp' | 'sms') => {
+    if (!receipt) return;
+    setSendingChannel(channel);
+    try {
+      const result = await financeService.resendReceipt(receipt.id, [channel]);
+      const status = result?.channels?.[channel];
+      if (status?.status === 'skipped') {
+        toast({ title: 'Contact manquant', description: status.reason || `Aucun contact pour ${channel}.`, variant: 'destructive' });
+      } else {
+        toast({ title: 'Reçu envoyé', description: `Reçu envoyé par ${channel}${status?.to ? ` à ${status.to}` : ''}.` });
+      }
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e?.message || `Échec envoi par ${channel}.`, variant: 'destructive' });
+    } finally {
+      setSendingChannel(null);
+    }
+  };
+
+  const handleNewPayment = () => {
+    setReceipt(null);
+    setStudentAccountId('');
+    setAmount('');
+    setReference('');
+    setCashRegisterId('');
+    setPreview(null);
   };
 
   return (
@@ -136,7 +183,71 @@ export default function NewPaymentModal({
         className="bg-white rounded-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto border border-blue-100 shadow-2xl"
       >
         <h3 className="text-lg font-semibold mb-4">Nouveau paiement</h3>
-        <form onSubmit={handleSubmit} className="space-y-4">
+
+        {/* Bandeau reçu — affiché après succès, en lecture seule */}
+        {receipt && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-4 p-4 rounded-lg bg-emerald-50 border border-emerald-200"
+          >
+            <div className="flex items-start gap-3 mb-3">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-emerald-900">Paiement enregistré avec succès</p>
+                <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
+                  <div>
+                    <span className="text-emerald-700">N° reçu : </span>
+                    <span className="font-mono font-bold text-emerald-900">{receipt.receiptNumber}</span>
+                  </div>
+                  <div>
+                    <span className="text-emerald-700">Date/heure : </span>
+                    <span className="font-medium text-emerald-900">
+                      {new Date(receipt.createdAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 pt-2 border-t border-emerald-200">
+              <Button size="sm" onClick={handleDownloadReceipt} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                <Download className="w-3.5 h-3.5 mr-1.5" /> Télécharger PDF
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleResendReceipt('email')}
+                disabled={sendingChannel === 'email'}
+              >
+                <Mail className="w-3.5 h-3.5 mr-1.5" />
+                {sendingChannel === 'email' ? 'Envoi...' : 'Email'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleResendReceipt('whatsapp')}
+                disabled={sendingChannel === 'whatsapp'}
+              >
+                <MessageCircle className="w-3.5 h-3.5 mr-1.5" />
+                {sendingChannel === 'whatsapp' ? 'Envoi...' : 'WhatsApp'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleResendReceipt('sms')}
+                disabled={sendingChannel === 'sms'}
+              >
+                <Smartphone className="w-3.5 h-3.5 mr-1.5" />
+                {sendingChannel === 'sms' ? 'Envoi...' : 'SMS'}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={handleNewPayment} className="ml-auto">
+                Nouveau paiement
+              </Button>
+            </div>
+          </motion.div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4" style={{ display: receipt ? 'none' : undefined }}>
           <div>
             <Label>Élève / Compte</Label>
             <Select value={studentAccountId} onValueChange={setStudentAccountId}>

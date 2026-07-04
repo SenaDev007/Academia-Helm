@@ -11,6 +11,7 @@ import * as crypto from 'crypto';
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { TransactionType, PaymentMethod } from '@prisma/client';
+import { ReceiptFinanceService } from './receipt-finance.service';
 
 const PRIORITY_ORDER = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'OTHER'];
 const PAYMENT_METHODS: PaymentMethod[] = ['CASH', 'MOBILE_MONEY', 'WIRE', 'FEDAPAY'];
@@ -19,7 +20,15 @@ const PAYMENT_METHODS: PaymentMethod[] = ['CASH', 'MOBILE_MONEY', 'WIRE', 'FEDAP
 export class FinanceTransactionService {
   private readonly logger = new Logger(FinanceTransactionService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly receiptFinanceService: ReceiptFinanceService,
+  ) {}
+
+  /** Expose prisma pour le controller (downloadReceipt, resendReceipt) */
+  get prismaClient() {
+    return this.prisma;
+  }
 
   private async nextReceiptNumber(tenantId: string): Promise<string> {
     const year = new Date().getFullYear();
@@ -106,7 +115,12 @@ export class FinanceTransactionService {
       remaining -= pay;
     }
 
-    const receiptNumber = await this.nextReceiptNumber(tenantId);
+    const receiptNumber = await this.receiptFinanceService.generateReceiptNumber(tenantId, data.academicYearId)
+      .then((r) => r.local)
+      .catch((err) => {
+        this.logger.warn(`MatriculeGeneratorService failed, fallback to AH-YYYY-NNNNNN: ${err.message}`);
+        return this.nextReceiptNumber(tenantId);
+      });
 
     const tx = await this.prisma.financeTransaction.create({
       data: {
@@ -163,6 +177,17 @@ export class FinanceTransactionService {
     // Note: totalPaid, balance and status are now updated via the DB Trigger 'update_balance_after_transaction'
     // on the finance_transactions table to ensure atomicity.
 
+    // ─── Génération du reçu PDF (fire-and-forget) ─────────────────────────
+    // Le PDF est généré en arrière-plan pour ne pas bloquer la réponse API.
+    // Le receiptUrl sera mis à jour sur la transaction une fois le PDF prêt.
+    this.receiptFinanceService
+      .generateForTransaction(tx.id, tenantId)
+      .then(({ receiptUrl }) => {
+        this.logger.log(`Reçu PDF généré pour transaction ${tx.receiptNumber}: ${receiptUrl}`);
+      })
+      .catch((err) => {
+        this.logger.error(`Échec génération reçu PDF pour ${tx.receiptNumber}: ${err.message}`);
+      });
 
     return this.prisma.financeTransaction.findUnique({
       where: { id: tx.id },

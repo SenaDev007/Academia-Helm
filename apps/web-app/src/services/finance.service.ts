@@ -89,6 +89,24 @@ class FinanceService {
     return financeFetch('/api/finance/transactions', { method: 'POST', body: data });
   }
 
+  /**
+   * URL de téléchargement du reçu PDF d'une transaction.
+   * À utiliser avec window.open() ou <a href download>.
+   */
+  getReceiptPdfUrl(transactionId: string): string {
+    return `/api/finance/transactions/${encodeURIComponent(transactionId)}/receipt.pdf`;
+  }
+
+  /**
+   * Renvoie le reçu par email/WhatsApp/SMS au parent de l'élève.
+   */
+  async resendReceipt(transactionId: string, channels: ('email' | 'whatsapp' | 'sms')[]): Promise<any> {
+    return financeFetch(`/api/finance/transactions/${encodeURIComponent(transactionId)}/resend`, {
+      method: 'POST',
+      body: { channels },
+    });
+  }
+
   async reverseTransaction(id: string, data: { reason: string }): Promise<any> {
     return financeFetch(`/api/finance/transactions/${encodeURIComponent(id)}/reverse`, { method: 'POST', body: data });
   }

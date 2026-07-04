@@ -199,7 +199,15 @@ export default function CashRegistersContent() {
     try {
       setLoading(true);
       const data = await financeService.getCashRegisters();
-      setRegisters(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      setRegisters(list);
+      // Synchroniser la caisse sélectionnée avec les données fraîches
+      // (sinon le panneau de détails garde l'ancien solde jusqu'à un rechargement)
+      setSelectedRegister((prev) => {
+        if (!prev) return prev;
+        const updated = list.find((r: any) => r.id === prev.id);
+        return updated || prev;
+      });
     } catch (e: any) {
       toast({
         title: 'Erreur',
@@ -302,7 +310,7 @@ export default function CashRegistersContent() {
   const handleUpdate = async () => {
     if (!editModal) return;
     try {
-      await financeService.updateCashRegister(editModal.id, {
+      const updated = await financeService.updateCashRegister(editModal.id, {
         name: editModal.name,
         description: editModal.description,
         location: editModal.location,
@@ -320,7 +328,12 @@ export default function CashRegistersContent() {
       });
       toast({ title: '✅ Caisse mise à jour', description: 'Les modifications ont été enregistrées.' });
       setEditModal(null);
-      loadRegisters();
+      // Mise à jour immédiate du panneau de détails si la caisse éditée est sélectionnée
+      if (selectedRegister && selectedRegister.id === editModal.id) {
+        setSelectedRegister({ ...selectedRegister, ...editModal });
+      }
+      // Recharger la liste pour propager les changements
+      await loadRegisters();
     } catch (e: any) {
       console.error('Erreur update caisse:', e);
       toast({ title: 'Erreur', description: e.message || 'Une erreur est survenue.', variant: 'destructive' });

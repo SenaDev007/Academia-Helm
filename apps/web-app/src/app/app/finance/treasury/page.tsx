@@ -7,15 +7,15 @@
 import { useState, useEffect } from 'react';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { CheckCircle, Eye } from 'lucide-react';
-import { ModuleHeader, SubModuleNavigation, ModuleContentArea } from '@/components/modules/blueprint';
+import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
 import { financeService } from '@/services/finance.service';
 import { formatCurrency } from '@/lib/utils';
+import { useToast } from '@/components/ui/use-toast';
 
 export default function TreasuryPage() {
   const confirmDialog = useConfirmDialog();
@@ -71,31 +71,13 @@ export default function TreasuryPage() {
     }
   };
 
-  const subModuleTabs = FINANCE_SUBMODULE_TABS.map((t) => ({
-    id: t.id,
-    label: t.label,
-    path: t.path,
-    icon: <t.icon className="w-4 h-4" />,
-  }));
-
   const totalNet = closures.reduce((s, c) => s + Number(c.netBalance ?? 0), 0);
 
   return (
     <>
     {confirmDialog.dialog}
     <div className="space-y-6">
-      <ModuleHeader
-        title="Clôture & Trésorerie"
-        description="Clôture journalière (calcul auto), rapprochement caisse, type Manuel/Auto, anomalie."
-        icon="finance"
-        kpis={[
-          { label: 'Solde cumulé', value: formatCurrency(totalNet) },
-          { label: 'Clôtures', value: String(closures.length) },
-          { label: 'Année', value: academicYear?.label ?? '—' },
-        ]}
-        actions={<Button onClick={() => setModalClosure(true)}>Clôturer la journée</Button>}
-      />
-      <SubModuleNavigation tabs={subModuleTabs} currentPath="/app/finance/treasury" />
+
 
       {modalClosure && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">

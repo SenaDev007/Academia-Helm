@@ -2,10 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
 import { financeService } from '@/services/finance.service';
 import { networkDetectionService } from '@/lib/offline/network-detection.service';
@@ -17,6 +19,15 @@ const METHODS = [
   { value: 'WIRE', label: 'Virement' },
   { value: 'FEDAPAY', label: 'Fedapay' },
 ];
+
+const FEE_TYPE_LABELS: Record<string, string> = {
+  INSCRIPTION: 'Inscription',
+  REINSCRIPTION: 'Réinscription',
+  TUITION: 'Scolarité',
+  CANTEEN: 'Cantine',
+  EXAMEN: "Frais d'examen",
+  OTHER: 'Autre',
+};
 
 export default function NewPaymentModal({
   academicYearId,
@@ -33,13 +44,23 @@ export default function NewPaymentModal({
   const [amount, setAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [reference, setReference] = useState('');
-  const [preview, setPreview] = useState<{ totalPay: number; lines: { name: string; pay: number }[] } | null>(null);
+  const [cashRegisterId, setCashRegisterId] = useState('');
+  const [openCashRegisters, setOpenCashRegisters] = useState<any[]>([]);
+  const [preview, setPreview] = useState<{ totalPay: number; lines: { name: string; pay: number; feeType: string; personalized: boolean; originalAmount?: number }[] } | null>(null);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
+
+  // Charge les caisses ouvertes
+  useEffect(() => {
+    financeService.getCashRegisters({ isActive: true, isOpen: true })
+      .then((data) => setOpenCashRegisters(Array.isArray(data) ? data : []))
+      .catch(() => setOpenCashRegisters([]));
+  }, []);
 
   const selectedAccount = accounts.find((a) => a.id === studentAccountId);
   const amountNum = parseFloat(amount);
 
+  // Aperçu d'imputation — détecte les personnalisations (initialAmount != feeStructure.totalAmount)
   useEffect(() => {
     if (!selectedAccount || !amountNum || amountNum <= 0) {
       setPreview(null);
@@ -49,15 +70,24 @@ export default function NewPaymentModal({
     const pay = Math.min(amountNum, balance);
     const breakdowns = selectedAccount.breakdowns ?? [];
     let remaining = pay;
-    const lines: { name: string; pay: number }[] = [];
-    const order = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'ANNEX', 'EXCEPTIONAL'];
+    const lines: { name: string; pay: number; feeType: string; personalized: boolean; originalAmount?: number }[] = [];
+    const order = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'OTHER'];
     const sorted = [...breakdowns].sort((a, b) => order.indexOf(a.feeStructure?.feeType ?? '') - order.indexOf(b.feeStructure?.feeType ?? ''));
     for (const b of sorted) {
       if (remaining <= 0) break;
       const rem = Number(b.remainingAmount ?? 0);
       if (rem <= 0) continue;
       const delta = Math.min(remaining, rem);
-      lines.push({ name: b.feeStructure?.name ?? b.feeStructureId, pay: delta });
+      const fsTotal = Number(b.feeStructure?.totalAmount ?? 0);
+      const initial = Number(b.initialAmount ?? 0);
+      const isPersonalized = Math.abs(fsTotal - initial) > 0.01;
+      lines.push({
+        name: b.feeStructure?.name ?? b.feeStructureId,
+        pay: delta,
+        feeType: b.feeStructure?.feeType ?? 'OTHER',
+        personalized: isPersonalized,
+        originalAmount: isPersonalized ? fsTotal : undefined,
+      });
       remaining -= delta;
     }
     setPreview({ totalPay: pay, lines });
@@ -66,15 +96,28 @@ export default function NewPaymentModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!studentAccountId || !amountNum || amountNum <= 0) return;
-    
+
     if (!networkDetectionService.isConnected()) {
       toast({ title: 'Hors Ligne', description: 'Les transactions financières nécessitent une connexion internet.', variant: 'destructive' });
       return;
     }
 
+    // Caisse obligatoire pour les espèces
+    if (paymentMethod === 'CASH' && !cashRegisterId) {
+      toast({ title: 'Caisse requise', description: 'Sélectionnez une caisse ouverte pour les paiements en espèces.', variant: 'destructive' });
+      return;
+    }
+
     setLoading(true);
     try {
-      await financeService.createTransaction({ academicYearId, studentAccountId, amount: amountNum, paymentMethod, reference: reference.trim() || undefined });
+      await financeService.createTransaction({
+        academicYearId,
+        studentAccountId,
+        amount: amountNum,
+        paymentMethod,
+        reference: reference.trim() || undefined,
+        cashRegisterId: cashRegisterId || undefined,
+      });
       toast({ title: 'Paiement enregistré', description: 'Le reçu a été généré avec succès.' });
       onSuccess();
     } catch (error: any) {
@@ -112,7 +155,7 @@ export default function NewPaymentModal({
             <Input type="number" min={0} value={amount} onChange={(e) => setAmount(e.target.value)} required />
           </div>
           <div>
-            <Label>Méthode</Label>
+            <Label>Méthode de paiement</Label>
             <Select value={paymentMethod} onValueChange={setPaymentMethod}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -123,19 +166,51 @@ export default function NewPaymentModal({
             </Select>
           </div>
           <div>
+            <Label>Caisse {paymentMethod === 'CASH' ? '*' : '(optionnel)'}</Label>
+            <Select value={cashRegisterId || '_none'} onValueChange={(v) => setCashRegisterId(v === '_none' ? '' : v)}>
+              <SelectTrigger><SelectValue placeholder="Sélectionner une caisse ouverte" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_none">— Aucune caisse —</SelectItem>
+                {openCashRegisters.map((reg) => (
+                  <SelectItem key={reg.id} value={reg.id}>
+                    {reg.code} — {reg.name} (Solde : {formatCurrency(reg.currentBalance)})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {paymentMethod === 'CASH' && openCashRegisters.length === 0 && (
+              <p className="text-xs text-rose-600 mt-1">
+                ⚠️ Aucune caisse ouverte. Ouvrez une caisse dans l'onglet Multi-caisses.
+              </p>
+            )}
+          </div>
+          <div>
             <Label>Observation / Référence</Label>
             <Input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Optionnel" />
           </div>
           {preview && (
-            <div className="rounded border p-3 bg-gray-50 text-sm">
-              <p className="font-medium mb-2">Aperçu imputation</p>
+            <div className="rounded-lg border border-slate-200 p-3 bg-slate-50 text-sm">
+              <p className="font-medium mb-2 text-slate-700">Aperçu de l'imputation</p>
               {preview.lines.map((l, i) => (
-                <div key={i} className="flex justify-between">
-                  <span>{l.name}</span>
-                  <span>{formatCurrency(l.pay)}</span>
+                <div key={i} className="flex justify-between items-center py-1">
+                  <span className="flex items-center gap-1.5 flex-1 min-w-0">
+                    <span className="truncate">{l.name}</span>
+                    <Badge variant="outline" className="text-[10px] flex-shrink-0">{FEE_TYPE_LABELS[l.feeType] || l.feeType}</Badge>
+                    {l.personalized && (
+                      <Badge variant="outline" className="text-[10px] flex-shrink-0 text-purple-700 border-purple-300 bg-purple-50">
+                        <Sparkles className="w-2.5 h-2.5 mr-0.5" />Pers.
+                      </Badge>
+                    )}
+                  </span>
+                  <span className="font-medium whitespace-nowrap ml-2">
+                    {l.personalized && l.originalAmount != null && (
+                      <span className="text-xs text-slate-400 line-through mr-1">{formatCurrency(l.originalAmount)}</span>
+                    )}
+                    {formatCurrency(l.pay)}
+                  </span>
                 </div>
               ))}
-              <div className="flex justify-between font-medium mt-2 pt-2 border-t">
+              <div className="flex justify-between font-semibold mt-2 pt-2 border-t border-slate-300">
                 <span>Total imputé</span>
                 <span>{formatCurrency(preview.totalPay)}</span>
               </div>
@@ -143,7 +218,9 @@ export default function NewPaymentModal({
           )}
           <div className="flex gap-2 justify-end pt-4">
             <Button type="button" variant="outline" onClick={onClose}>Annuler</Button>
-            <Button type="submit" disabled={loading}>{loading ? 'Enregistrement...' : 'Valider paiement'}</Button>
+            <Button type="submit" disabled={loading || (paymentMethod === 'CASH' && !cashRegisterId)}>
+              {loading ? 'Enregistrement...' : 'Valider paiement'}
+            </Button>
           </div>
         </form>
       </motion.div>

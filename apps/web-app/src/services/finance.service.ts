@@ -76,64 +76,49 @@ class FinanceService {
   // --- Expenses ---
   async getExpenses(params?: Record<string, string>): Promise<any> {
     const qs = params ? new URLSearchParams(params).toString() : '';
-    if (!networkDetectionService.isConnected()) {
-      return LocalSearchService.search("expenses", { tenantId: getTenantId() });
-    }
-    try {
-      return await apiFetch(`${BASE_URL}/expenses-v2${qs ? `?${qs}` : ''}`);
-    } catch (e) {
-      return LocalSearchService.search("expenses", { tenantId: getTenantId() });
-    }
+    return financeFetch(`/api/finance/expenses${qs ? `?${qs}` : ''}`);
   }
 
   async getExpenseBudgets(academicYearId: string): Promise<any> {
-    return apiFetch(`${BASE_URL}/expenses-v2/budgets?academicYearId=${academicYearId}`);
+    return financeFetch(`/api/finance/expenses/budgets?academicYearId=${academicYearId}`);
   }
 
   async getExpenseCategories(): Promise<any> {
-    return apiFetch(`${BASE_URL}/expenses/categories`);
+    return financeFetch('/api/finance/expenses/categories');
   }
 
   async createExpense(data: any): Promise<any> {
-    const tenantId = getTenantId();
-    if (tenantId) {
-      return createEntityOffline(tenantId, 'EXPENSE', data);
-    }
-    return apiFetch(`${BASE_URL}/expenses-v2`, { method: 'POST', body: data });
+    return financeFetch('/api/finance/expenses', { method: 'POST', body: data });
   }
 
   async approveExpense(id: string): Promise<any> {
-    return apiFetch(`${BASE_URL}/expenses-v2/${id}/approve`, { method: 'PATCH' });
+    return financeFetch(`/api/finance/expenses/${encodeURIComponent(id)}/approve`, { method: 'PATCH' });
   }
 
   async rejectExpense(id: string): Promise<any> {
-    return apiFetch(`${BASE_URL}/expenses-v2/${id}/reject`, { method: 'PATCH' });
+    return financeFetch(`/api/finance/expenses/${encodeURIComponent(id)}/reject`, { method: 'PATCH' });
   }
 
   // --- Settings ---
   async getSettings(): Promise<any> {
-    return apiFetch(`${BASE_URL}/settings`);
+    return financeFetch('/api/finance/settings');
   }
 
   async updateSettings(data: any): Promise<any> {
-    const tenantId = getTenantId();
-    if (tenantId) {
-      return updateEntityOffline(tenantId, 'FINANCE_SETTING', 'settings', data);
-    }
-    return apiFetch(`${BASE_URL}/settings`, { method: 'POST', body: data });
+    return financeFetch('/api/finance/settings', { method: 'PATCH', body: data });
   }
 
   // --- Treasury ---
   async getTreasuryClosures(academicYearId: string): Promise<any> {
-    return apiFetch(`${BASE_URL}/treasury/daily-closures?academicYearId=${academicYearId}`);
+    return financeFetch(`/api/finance/treasury/daily-closures?academicYearId=${academicYearId}`);
   }
 
   async createTreasuryClosure(data: any): Promise<any> {
-    return apiFetch(`${BASE_URL}/treasury/daily-closures`, { method: 'POST', body: data });
+    return financeFetch('/api/finance/treasury/daily-closures', { method: 'POST', body: data });
   }
 
   async validateTreasuryClosure(id: string): Promise<any> {
-    return apiFetch(`${BASE_URL}/treasury/daily-closures/${id}/validate`, { method: 'PATCH' });
+    return financeFetch(`/api/finance/treasury/daily-closures/${encodeURIComponent(id)}/validate`, { method: 'PATCH' });
   }
 
   // --- Student Accounts ---

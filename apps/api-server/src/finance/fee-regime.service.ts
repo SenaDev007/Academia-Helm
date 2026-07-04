@@ -68,14 +68,17 @@ export class FeeRegimeService {
   }
 
   /**
-   * Récupère tous les régimes d'un niveau pour une année
+   * Récupère tous les régimes d'un niveau pour une année.
+   * Si aucun régime n'existe pour cette année + niveau, crée automatiquement
+   * un régime STANDARD par défaut. Ainsi, l'inscription d'élèves n'est jamais bloquée,
+   * même pour une nouvelle année scolaire sans configuration préalable.
    */
   async getRegimes(
     tenantId: string,
     academicYearId: string,
     schoolLevelId: string,
   ) {
-    return this.prisma.feeRegime.findMany({
+    let regimes = await this.prisma.feeRegime.findMany({
       where: {
         tenantId,
         academicYearId,
@@ -89,6 +92,38 @@ export class FeeRegimeService {
         { code: 'asc' },
       ],
     });
+
+    // Auto-création d'un régime STANDARD si aucun n'existe
+    if (regimes.length === 0) {
+      this.logger.log(
+        `Aucun régime trouvé pour tenant=${tenantId} year=${academicYearId} level=${schoolLevelId} → auto-création STANDARD`,
+      );
+      try {
+        const autoRegime = await this.prisma.feeRegime.create({
+          data: {
+            tenantId,
+            academicYearId,
+            schoolLevelId,
+            code: 'STANDARD',
+            label: 'Régime Standard',
+            isDefault: true,
+          },
+          include: { rules: true },
+        });
+        regimes = [autoRegime];
+        this.logger.log(`Régime STANDARD auto-créé: ${autoRegime.id}`);
+      } catch (err: any) {
+        // Si la création échoue (ex: contrainte unique), on retente un findMany
+        this.logger.warn(`Auto-création régime échouée: ${err.message} → retry findMany`);
+        regimes = await this.prisma.feeRegime.findMany({
+          where: { tenantId, academicYearId, schoolLevelId },
+          include: { rules: true },
+          orderBy: [{ isDefault: 'desc' }, { code: 'asc' }],
+        });
+      }
+    }
+
+    return regimes;
   }
 
   /**

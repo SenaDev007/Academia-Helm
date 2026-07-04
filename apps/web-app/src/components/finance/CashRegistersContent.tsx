@@ -6,7 +6,7 @@ import {
   Wallet, Plus, Lock, Unlock, Archive, Edit, Trash2, BarChart3, X,
   Gem, Smartphone, Building2, Store, Banknote, TrendingUp, Clock,
   ArrowUpRight, ArrowDownRight, Receipt, ChevronRight, Sparkles,
-  ArrowLeftRight, Send,
+  ArrowLeftRight, Send, Loader2,
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';

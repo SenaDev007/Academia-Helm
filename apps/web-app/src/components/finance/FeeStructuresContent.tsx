@@ -358,9 +358,11 @@ export default function FeeStructuresContent() {
     e.preventDefault();
     if (!academicYear?.id || !regimeForm.schoolLevelId || !regimeForm.label) return;
     try {
+      // Convertir education_levels UUID → school_levels UUID
+      const schoolLevelId = eduToSchoolLevelMap[regimeForm.schoolLevelId] || regimeForm.schoolLevelId;
       await financeService.createFeeRegime({
         academicYearId: academicYear.id,
-        schoolLevelId: regimeForm.schoolLevelId,
+        schoolLevelId,
         code: regimeForm.code,
         label: regimeForm.label,
         description: regimeForm.description || undefined,
@@ -369,7 +371,10 @@ export default function FeeStructuresContent() {
       setRegimeModal(false);
       setRegimeForm({ schoolLevelId: '', code: 'STANDARD', label: '', description: '', isDefault: false });
       loadRegimes();
-    } catch (e: any) { console.error(e); }
+    } catch (err: any) {
+      console.error('Erreur création régime:', err);
+      alert(err?.message || 'Erreur lors de la création du régime');
+    }
   };
 
   const handleUpdateRegime = async (e: React.FormEvent) => {
@@ -660,8 +665,8 @@ export default function FeeStructuresContent() {
           {/* Sélecteur de niveau pour les régimes */}
           <div className="mb-3">
             <Select value={regimeLevelId || 'ALL'} onValueChange={(v) => { setRegimeLevelId(v === 'ALL' ? '' : v); }}>
-              <SelectTrigger className="w-[260px]"><SelectValue placeholder="Sélectionner un niveau" /></SelectTrigger>
-              <SelectContent className="w-[260px]">
+              <SelectTrigger className="w-[200px]"><SelectValue placeholder="Sélectionner un niveau" /></SelectTrigger>
+              <SelectContent style={{ width: '200px' }}>
                 <SelectItem value="ALL">Tous les niveaux</SelectItem>
                 {levels.map((l) => (<SelectItem key={l.id} value={l.id}>{l.label ?? l.code ?? l.name}</SelectItem>))}
               </SelectContent>

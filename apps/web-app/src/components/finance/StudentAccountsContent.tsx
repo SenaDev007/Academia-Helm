@@ -268,17 +268,16 @@ export default function StudentAccountsContent() {
                     <TableHead className="text-right">Payé</TableHead>
                     <TableHead className="text-right">Solde</TableHead>
                     <TableHead>Statut</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-gray-500 py-8">Chargement...</TableCell>
+                      <TableCell colSpan={5} className="text-center text-gray-500 py-8">Chargement...</TableCell>
                     </TableRow>
                   ) : filteredAccounts.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-gray-500 py-12">
+                      <TableCell colSpan={5} className="text-center text-gray-500 py-12">
                         {searchQuery ? `Aucun élève trouvé pour « ${searchQuery} ».` : 'Aucun compte élève.'}
                       </TableCell>
                     </TableRow>
@@ -410,16 +409,6 @@ export default function StudentAccountsContent() {
                           </TableCell>
                           <TableCell>
                             <Badge className={STATUS_COLORS[a.status] ?? 'bg-gray-100 text-gray-800'}>{a.status}</Badge>
-                          </TableCell>
-                          <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                            <Button variant="ghost" size="icon" onClick={() => loadDetail(a.id)} title="Détails">
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            {a.isBlocked && (
-                              <Button variant="ghost" size="icon" onClick={() => setUnblockModal(a.id)} title="Débloquer">
-                                <Unlock className="h-4 w-4" />
-                              </Button>
-                            )}
                           </TableCell>
                         </TableRow>
                       );

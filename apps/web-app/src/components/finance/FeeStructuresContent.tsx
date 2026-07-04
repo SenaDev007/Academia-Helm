@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Plus, Copy, UserCog, Pencil, Trash2, X, ChevronDown, Calendar, Clock, CalendarClock, Users } from 'lucide-react';
+import { Plus, Copy, UserCog, Pencil, Trash2, X, ChevronDown, Calendar, Clock, CalendarClock, Users, Loader2, Sparkles, Tag } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { financeService } from '@/services/finance.service';
@@ -77,6 +78,8 @@ export default function FeeStructuresContent() {
   const [regimeForm, setRegimeForm] = useState({ schoolLevelId: '', code: 'STANDARD', label: '', description: '', isDefault: false });
   const [newRuleFeeType, setNewRuleFeeType] = useState('TUITION');
   const [newRuleValue, setNewRuleValue] = useState('');
+  const [regimeSubmitting, setRegimeSubmitting] = useState(false);
+  const [regimeEditSubmitting, setRegimeEditSubmitting] = useState(false);
 
   // Mapping education_levels UUID → school_levels UUID
   // levels vient de /api/school-levels (education_levels UUID + code MATERNELLE/PRIMAIRE)
@@ -356,7 +359,19 @@ export default function FeeStructuresContent() {
 
   const handleCreateRegime = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!academicYear?.id || !regimeForm.schoolLevelId || !regimeForm.label) return;
+    if (!academicYear?.id) {
+      toast({ title: 'Erreur', description: 'Aucune année académique sélectionnée.', variant: 'destructive' });
+      return;
+    }
+    if (!regimeForm.schoolLevelId) {
+      toast({ title: 'Champ requis', description: 'Veuillez sélectionner un niveau scolaire.', variant: 'destructive' });
+      return;
+    }
+    if (!regimeForm.label.trim()) {
+      toast({ title: 'Champ requis', description: 'Veuillez saisir un libellé pour le régime.', variant: 'destructive' });
+      return;
+    }
+    setRegimeSubmitting(true);
     try {
       // Convertir education_levels UUID → school_levels UUID
       const schoolLevelId = eduToSchoolLevelMap[regimeForm.schoolLevelId] || regimeForm.schoolLevelId;
@@ -364,31 +379,45 @@ export default function FeeStructuresContent() {
         academicYearId: academicYear.id,
         schoolLevelId,
         code: regimeForm.code,
-        label: regimeForm.label,
-        description: regimeForm.description || undefined,
+        label: regimeForm.label.trim(),
+        description: regimeForm.description?.trim() || undefined,
         isDefault: regimeForm.isDefault,
       });
+      toast({ title: 'Régime créé', description: `Le régime « ${regimeForm.label.trim()} » a été créé avec succès.`, variant: 'default' });
       setRegimeModal(false);
       setRegimeForm({ schoolLevelId: '', code: 'STANDARD', label: '', description: '', isDefault: false });
       loadRegimes();
     } catch (err: any) {
       console.error('Erreur création régime:', err);
-      alert(err?.message || 'Erreur lors de la création du régime');
+      toast({ title: 'Erreur lors de la création', description: err?.message || 'Une erreur est survenue. Veuillez réessayer.', variant: 'destructive' });
+    } finally {
+      setRegimeSubmitting(false);
     }
   };
 
   const handleUpdateRegime = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingRegime?.id) return;
+    if (!editingRegime.label?.trim()) {
+      toast({ title: 'Champ requis', description: 'Le libellé ne peut pas être vide.', variant: 'destructive' });
+      return;
+    }
+    setRegimeEditSubmitting(true);
     try {
       await financeService.updateFeeRegime(editingRegime.id, {
-        label: editingRegime.label,
-        description: editingRegime.description,
+        label: editingRegime.label.trim(),
+        description: editingRegime.description?.trim() || undefined,
         isDefault: editingRegime.isDefault,
       });
+      toast({ title: 'Régime mis à jour', description: `Le régime « ${editingRegime.label.trim()} » a été mis à jour.`, variant: 'default' });
       setEditingRegime(null);
       loadRegimes();
-    } catch (e: any) { console.error(e); }
+    } catch (err: any) {
+      console.error('Erreur mise à jour régime:', err);
+      toast({ title: 'Erreur lors de la mise à jour', description: err?.message || 'Une erreur est survenue.', variant: 'destructive' });
+    } finally {
+      setRegimeEditSubmitting(false);
+    }
   };
 
   const handleDeleteRegime = async (id: string) => {
@@ -723,108 +752,236 @@ export default function FeeStructuresContent() {
           )}
         </div>
 
-        {/* Modal création régime */}
-        {regimeModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 max-w-md w-full">
-              <h3 className="text-lg font-semibold mb-4">Nouveau régime tarifaire</h3>
-              <form onSubmit={handleCreateRegime} className="space-y-3">
-                <div>
-                  <Label className="text-xs">Niveau scolaire</Label>
-                  <Select value={regimeForm.schoolLevelId} onValueChange={(v) => setRegimeForm({ ...regimeForm, schoolLevelId: v })} required>
-                    <SelectTrigger><SelectValue placeholder="Sélectionner" /></SelectTrigger>
-                    <SelectContent>{levels.map((l) => (<SelectItem key={l.id} value={l.id}>{l.label ?? l.code ?? l.name}</SelectItem>))}</SelectContent>
-                  </Select>
+        {/* Modal création régime — design moderne */}
+        <Dialog open={regimeModal} onOpenChange={(open) => { if (!regimeSubmitting) setRegimeModal(open); }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader className="pb-2">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
+                  <Sparkles className="w-5 h-5" />
                 </div>
                 <div>
-                  <Label className="text-xs">Code</Label>
-                  <Select value={regimeForm.code} onValueChange={(v) => setRegimeForm({ ...regimeForm, code: v })} required>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                  <DialogTitle className="text-base">Nouveau régime tarifaire</DialogTitle>
+                  <DialogDescription className="text-xs">
+                    Configurez un régime de tarification spécifique pour une catégorie d'élèves.
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+            <form onSubmit={handleCreateRegime} className="space-y-3 pt-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-700">Niveau scolaire <span className="text-red-500">*</span></Label>
+                <Select value={regimeForm.schoolLevelId} onValueChange={(v) => setRegimeForm({ ...regimeForm, schoolLevelId: v })}>
+                  <SelectTrigger className={!regimeForm.schoolLevelId ? 'border-red-300' : ''}>
+                    <SelectValue placeholder="Sélectionner un niveau" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {levels.map((l) => (<SelectItem key={l.id} value={l.id}>{l.label ?? l.code ?? l.name}</SelectItem>))}
+                  </SelectContent>
+                </Select>
+                {!regimeForm.schoolLevelId && (
+                  <p className="text-[10px] text-red-500">Le niveau est obligatoire</p>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-700">Code du régime <span className="text-red-500">*</span></Label>
+                <Select value={regimeForm.code} onValueChange={(v) => setRegimeForm({ ...regimeForm, code: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="STANDARD">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-[9px] font-mono">STANDARD</Badge>
+                        <span className="text-xs text-slate-600">Tarif normal</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="ENFANT_ENSEIGNANT">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-[9px] font-mono">ENFANT_ENSEIGNANT</Badge>
+                        <span className="text-xs text-slate-600">Personnel</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="REDUCTION">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-[9px] font-mono">REDUCTION</Badge>
+                        <span className="text-xs text-slate-600">Réduction</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="BOURSE">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-[9px] font-mono">BOURSE</Badge>
+                        <span className="text-xs text-slate-600">Boursier</span>
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-700">Libellé <span className="text-red-500">*</span></Label>
+                <Input
+                  value={regimeForm.label}
+                  onChange={(e) => setRegimeForm({ ...regimeForm, label: e.target.value })}
+                  placeholder="ex: Régime Enfant d'enseignant"
+                  className={!regimeForm.label.trim() ? 'border-red-300' : ''}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-700">Description <span className="text-slate-400 font-normal">(optionnel)</span></Label>
+                <Input
+                  value={regimeForm.description}
+                  onChange={(e) => setRegimeForm({ ...regimeForm, description: e.target.value })}
+                  placeholder="ex: Réduction de 50% sur la scolarité"
+                />
+              </div>
+
+              <label htmlFor="isDefault" className="flex items-start gap-2.5 p-3 rounded-lg bg-slate-50 border border-slate-200 cursor-pointer hover:bg-slate-100 transition-colors">
+                <input
+                  type="checkbox"
+                  id="isDefault"
+                  checked={regimeForm.isDefault}
+                  onChange={(e) => setRegimeForm({ ...regimeForm, isDefault: e.target.checked })}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <div>
+                  <span className="text-xs font-semibold text-slate-700 block">Régime par défaut</span>
+                  <span className="text-[10px] text-slate-500 block">Si activé, ce régime sera appliqué automatiquement aux nouvelles inscriptions de ce niveau.</span>
+                </div>
+              </label>
+
+              <DialogFooter className="gap-2 pt-2">
+                <Button type="button" variant="outline" onClick={() => setRegimeModal(false)} disabled={regimeSubmitting}>
+                  Annuler
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={regimeSubmitting || !regimeForm.schoolLevelId || !regimeForm.label.trim()}
+                  className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 min-w-[120px]"
+                >
+                  {regimeSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Création...
+                    </>
+                  ) : (
+                    <>
+                      <Tag className="w-4 h-4 mr-2" />
+                      Créer le régime
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Modal édition régime — design moderne */}
+        <Dialog open={!!editingRegime} onOpenChange={(open) => { if (!regimeEditSubmitting && !open) setEditingRegime(null); }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader className="pb-2">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center text-white shadow-lg shadow-amber-500/30">
+                  <Pencil className="w-5 h-5" />
+                </div>
+                <div>
+                  <DialogTitle className="text-base">Modifier le régime</DialogTitle>
+                  <DialogDescription className="text-xs">
+                    Ajustez le libellé, la description ou le statut par défaut.
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+            <form onSubmit={handleUpdateRegime} className="space-y-3 pt-2">
+              {editingRegime && (
+                <div className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 border border-slate-200">
+                  <Badge variant="outline" className="text-[10px] font-mono">{editingRegime.code}</Badge>
+                  <span className="text-xs text-slate-500">Code non modifiable</span>
+                </div>
+              )}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-700">Libellé <span className="text-red-500">*</span></Label>
+                <Input
+                  value={editingRegime?.label || ''}
+                  onChange={(e) => setEditingRegime({ ...editingRegime, label: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-700">Description <span className="text-slate-400 font-normal">(optionnel)</span></Label>
+                <Input
+                  value={editingRegime?.description || ''}
+                  onChange={(e) => setEditingRegime({ ...editingRegime, description: e.target.value })}
+                />
+              </div>
+              <label htmlFor="editIsDefault" className="flex items-start gap-2.5 p-3 rounded-lg bg-slate-50 border border-slate-200 cursor-pointer hover:bg-slate-100 transition-colors">
+                <input
+                  type="checkbox"
+                  id="editIsDefault"
+                  checked={editingRegime?.isDefault || false}
+                  onChange={(e) => setEditingRegime({ ...editingRegime, isDefault: e.target.checked })}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <div>
+                  <span className="text-xs font-semibold text-slate-700 block">Régime par défaut</span>
+                  <span className="text-[10px] text-slate-500 block">Si activé, ce régime sera appliqué automatiquement aux nouvelles inscriptions.</span>
+                </div>
+              </label>
+
+              {/* Règles de réduction */}
+              <div className="border-t pt-3">
+                <p className="text-xs font-semibold text-slate-600 mb-2 flex items-center gap-1.5">
+                  <Sparkles className="w-3 h-3 text-amber-500" />
+                  Règles de réduction
+                </p>
+                {editingRegime?.rules?.length > 0 && (
+                  <div className="space-y-1 mb-2">
+                    {editingRegime.rules.map((rule: any, idx: number) => (
+                      <div key={idx} className="flex justify-between text-xs bg-slate-50 px-2 py-1 rounded">
+                        <span>{rule.feeType}</span>
+                        <span className="font-medium">{rule.discountType === 'PERCENT' ? `−${rule.discountValue}%` : `−${formatCurrency(rule.discountValue)}`}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <Select value={newRuleFeeType} onValueChange={setNewRuleFeeType}>
+                    <SelectTrigger className="w-[120px]"><SelectValue placeholder="Type" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="STANDARD">STANDARD</SelectItem>
-                      <SelectItem value="ENFANT_ENSEIGNANT">ENFANT_ENSEIGNANT</SelectItem>
-                      <SelectItem value="REDUCTION">REDUCTION</SelectItem>
-                      <SelectItem value="BOURSE">BOURSE</SelectItem>
+                      <SelectItem value="INSCRIPTION">Inscription</SelectItem>
+                      <SelectItem value="REINSCRIPTION">Réinscription</SelectItem>
+                      <SelectItem value="TUITION">Scolarité</SelectItem>
+                      <SelectItem value="CANTEEN">Cantine</SelectItem>
+                      <SelectItem value="EXAMEN">Examen</SelectItem>
                     </SelectContent>
                   </Select>
+                  <Input type="number" placeholder="% ou montant" value={newRuleValue} onChange={(e) => setNewRuleValue(e.target.value)} className="w-[100px]" />
+                  <Button type="button" size="sm" variant="outline" onClick={() => handleAddRule(editingRegime.id)}>Ajouter</Button>
                 </div>
-                <div>
-                  <Label className="text-xs">Libellé</Label>
-                  <Input value={regimeForm.label} onChange={(e) => setRegimeForm({ ...regimeForm, label: e.target.value })} placeholder="ex: Régime Enfant d'enseignant" required />
-                </div>
-                <div>
-                  <Label className="text-xs">Description (optionnel)</Label>
-                  <Input value={regimeForm.description} onChange={(e) => setRegimeForm({ ...regimeForm, description: e.target.value })} placeholder="ex: Réduction de 50% sur la scolarité" />
-                </div>
-                <div className="flex items-center gap-2">
-                  <input type="checkbox" id="isDefault" checked={regimeForm.isDefault} onChange={(e) => setRegimeForm({ ...regimeForm, isDefault: e.target.checked })} />
-                  <Label htmlFor="isDefault" className="text-xs">Régime par défaut</Label>
-                </div>
-                <div className="flex gap-2 justify-end pt-2">
-                  <Button type="button" variant="outline" onClick={() => setRegimeModal(false)}>Annuler</Button>
-                  <Button type="submit">Créer</Button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
+              </div>
 
-        {/* Modal édition régime */}
-        {editingRegime && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 max-w-md w-full">
-              <h3 className="text-lg font-semibold mb-4">Modifier le régime</h3>
-              <form onSubmit={handleUpdateRegime} className="space-y-3">
-                <div>
-                  <Label className="text-xs">Libellé</Label>
-                  <Input value={editingRegime.label} onChange={(e) => setEditingRegime({ ...editingRegime, label: e.target.value })} required />
-                </div>
-                <div>
-                  <Label className="text-xs">Description</Label>
-                  <Input value={editingRegime.description || ''} onChange={(e) => setEditingRegime({ ...editingRegime, description: e.target.value })} />
-                </div>
-                <div className="flex items-center gap-2">
-                  <input type="checkbox" id="editIsDefault" checked={editingRegime.isDefault || false} onChange={(e) => setEditingRegime({ ...editingRegime, isDefault: e.target.checked })} />
-                  <Label htmlFor="editIsDefault" className="text-xs">Régime par défaut</Label>
-                </div>
-
-                {/* Règles de réduction */}
-                <div className="border-t pt-3">
-                  <p className="text-xs font-semibold text-slate-600 mb-2">Règles de réduction</p>
-                  {editingRegime.rules?.length > 0 && (
-                    <div className="space-y-1 mb-2">
-                      {editingRegime.rules.map((rule: any, idx: number) => (
-                        <div key={idx} className="flex justify-between text-xs bg-slate-50 px-2 py-1 rounded">
-                          <span>{rule.feeType}</span>
-                          <span className="font-medium">{rule.discountType === 'PERCENT' ? `−${rule.discountValue}%` : `−${formatCurrency(rule.discountValue)}`}</span>
-                        </div>
-                      ))}
-                    </div>
+              <DialogFooter className="gap-2 pt-2">
+                <Button type="button" variant="outline" onClick={() => setEditingRegime(null)} disabled={regimeEditSubmitting}>
+                  Annuler
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={regimeEditSubmitting || !editingRegime?.label?.trim()}
+                  className="min-w-[120px]"
+                >
+                  {regimeEditSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Enregistrement...
+                    </>
+                  ) : (
+                    'Enregistrer'
                   )}
-                  <div className="flex gap-2">
-                    <Select value={newRuleFeeType} onValueChange={setNewRuleFeeType}>
-                      <SelectTrigger className="w-[120px]"><SelectValue placeholder="Type" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="INSCRIPTION">Inscription</SelectItem>
-                        <SelectItem value="REINSCRIPTION">Réinscription</SelectItem>
-                        <SelectItem value="TUITION">Scolarité</SelectItem>
-                        <SelectItem value="CANTEEN">Cantine</SelectItem>
-                        <SelectItem value="EXAMEN">Examen</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Input type="number" placeholder="% ou montant" value={newRuleValue} onChange={(e) => setNewRuleValue(e.target.value)} className="w-[100px]" />
-                    <Button type="button" size="sm" variant="outline" onClick={() => handleAddRule(editingRegime.id)}>Ajouter</Button>
-                  </div>
-                </div>
-
-                <div className="flex gap-2 justify-end pt-2">
-                  <Button type="button" variant="outline" onClick={() => setEditingRegime(null)}>Annuler</Button>
-                  <Button type="submit">Enregistrer</Button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
     </>
   );

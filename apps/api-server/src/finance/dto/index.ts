@@ -412,7 +412,7 @@ export class CreateFeeRegimeDto {
   @IsString()
   schoolLevelId: string;
 
-  @IsIn(['STANDARD', 'ENFANT_ENSEIGNANT', 'REDUCTION'])
+  @IsIn(['STANDARD', 'ENFANT_ENSEIGNANT', 'REDUCTION', 'BOURSE'])
   code: string;
 
   @IsString()

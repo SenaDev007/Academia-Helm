@@ -375,6 +375,10 @@ export class FeeStructureService {
       include: { student: true, feeStructure: true },
     });
     await this.audit(tenantId, userId, 'FEE_OVERRIDE_CREATE', 'FeeOverride', override.id, undefined, { feeStructureId: data.feeStructureId, studentId: data.studentId, customAmount: data.customAmount, reason: data.reason });
+
+    // Recalculer le compte élève pour appliquer la personnalisation
+    await this.recalculateStudentAccount(tenantId, data.studentId, override.feeStructure.academicYearId);
+
     return override;
   }
 
@@ -443,6 +447,10 @@ export class FeeStructureService {
     }
     await this.audit(tenantId, undefined, 'FEE_OVERRIDE_DELETE', 'FeeOverride', id, { customAmount: override.customAmount, reason: override.reason }, undefined);
     await this.prisma.feeOverride.delete({ where: { id } });
+
+    // Recalculer le compte élève pour retirer la personnalisation
+    await this.recalculateStudentAccount(tenantId, override.studentId, override.feeStructure.academicYearId);
+
     return { id, deleted: true };
   }
 
@@ -473,7 +481,122 @@ export class FeeStructureService {
       },
     });
     await this.audit(tenantId, undefined, 'FEE_OVERRIDE_UPDATE', 'FeeOverride', id, { customAmount: override.customAmount, reason: override.reason }, { customAmount: updated.customAmount, reason: updated.reason });
+
+    // Recalculer le compte élève pour appliquer la modification
+    await this.recalculateStudentAccount(tenantId, updated.student.id, updated.feeStructure.academicYearId);
+
     return updated;
+  }
+
+  /**
+   * Recalcule le compte élève après création/modification/suppression d'un override.
+   * Met à jour les breakdowns + totalDue + balance.
+   */
+  private async recalculateStudentAccount(tenantId: string, studentId: string, academicYearId: string) {
+    try {
+      const account = await this.prisma.studentAccount.findUnique({
+        where: { studentId_academicYearId: { studentId, academicYearId } },
+        include: { breakdowns: true },
+      });
+      if (!account) return; // Pas de compte → rien à recalculer
+
+      const student = await this.prisma.student.findFirst({
+        where: { id: studentId, tenantId },
+        include: { studentEnrollments: { where: { academicYearId }, include: { class: true } } },
+      });
+      if (!student) return;
+
+      const classId = student.studentEnrollments?.[0]?.classId ?? null;
+      const levelId = student.schoolLevelId;
+
+      const allStructures = await this.prisma.feeStructure.findMany({
+        where: { tenantId, academicYearId, isActive: true },
+        include: { overrides: { where: { studentId } } },
+      });
+
+      // Priorité Classe > Niveau > Global
+      const structuresByType = new Map<string, any>();
+      allStructures.forEach((fs) => {
+        const isClassMatch = fs.classId && fs.classId === classId;
+        const isLevelMatch = fs.levelId === levelId && !fs.classId;
+        const isGlobalMatch = !fs.levelId && !fs.classId;
+        if (isClassMatch || isLevelMatch || isGlobalMatch) {
+          const existing = structuresByType.get(fs.feeType);
+          if (!existing) {
+            structuresByType.set(fs.feeType, fs);
+          } else {
+            const existingIsClass = existing.classId;
+            const existingIsLevel = existing.levelId && !existing.classId;
+            if (isClassMatch || (isLevelMatch && !existingIsClass)) {
+              structuresByType.set(fs.feeType, fs);
+            }
+          }
+        }
+      });
+
+      const feeStructures = Array.from(structuresByType.values());
+
+      // Mettre à jour les breakdowns existants
+      for (const b of account.breakdowns) {
+        const fs = feeStructures.find((f) => f.id === b.feeStructureId);
+        if (fs) {
+          const override = fs.overrides[0];
+          const newAmount = override ? Number(override.customAmount) : Number(fs.totalAmount);
+          if (Number(b.initialAmount) !== newAmount) {
+            await this.prisma.accountBreakdown.update({
+              where: { id: b.id },
+              data: {
+                initialAmount: newAmount,
+                adjustedAmount: newAmount,
+                remainingAmount: newAmount - Number(b.paidAmount),
+              },
+            });
+          }
+        }
+      }
+
+      // Créer les nouveaux breakdowns manquants
+      const existingFeeStructureIds = new Set(account.breakdowns.map((b) => b.feeStructureId));
+      const newBreakdowns = feeStructures.filter((fs) => !existingFeeStructureIds.has(fs.id));
+      if (newBreakdowns.length > 0) {
+        await this.prisma.accountBreakdown.createMany({
+          data: newBreakdowns.map((fs) => {
+            const override = fs.overrides[0];
+            const initialAmount = override ? Number(override.customAmount) : Number(fs.totalAmount);
+            return {
+              studentAccountId: account.id,
+              feeStructureId: fs.id,
+              initialAmount,
+              adjustedAmount: initialAmount,
+              paidAmount: 0,
+              remainingAmount: initialAmount,
+            };
+          }),
+        });
+      }
+
+      // Recalculer totalDue + balance
+      const allBreakdowns = await this.prisma.accountBreakdown.findMany({
+        where: { studentAccountId: account.id },
+      });
+      const newTotalDue = allBreakdowns.reduce((sum, b) => sum + Number(b.initialAmount), 0);
+      const totalPaid = allBreakdowns.reduce((sum, b) => sum + Number(b.paidAmount), 0);
+
+      await this.prisma.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
+      await this.prisma.studentAccount.update({
+        where: { id: account.id },
+        data: {
+          totalDue: newTotalDue,
+          totalPaid,
+          balance: newTotalDue - totalPaid,
+          updatedAt: new Date(),
+        },
+      });
+
+      this.logger.log(`Compte élève recalculé: student=${studentId}, totalDue=${newTotalDue}, balance=${newTotalDue - totalPaid}`);
+    } catch (err: any) {
+      this.logger.warn(`recalculateStudentAccount failed (non-blocking): ${err.message}`);
+    }
   }
 
   /** Copie les FeeStructures d'une année vers une nouvelle année (sans overrides). */

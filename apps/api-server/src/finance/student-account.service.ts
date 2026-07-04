@@ -130,7 +130,9 @@ export class StudentAccountService {
       }
     });
 
-    const feeStructures = Array.from(structuresByType.values()).filter((fs) => fs.isMandatory);
+    // Prendre TOUS les frais (obligatoires ET facultatifs) — pas seulement isMandatory
+    // L'élève doit payer INSCRIPTION + TUITION + CANTEEN + etc.
+    const feeStructures = Array.from(structuresByType.values());
 
     const totalDue = feeStructures.reduce((sum, fs) => {
       const override = fs.overrides[0];
@@ -168,6 +170,140 @@ export class StudentAccountService {
     });
 
     return { account, created: true };
+  }
+
+  /**
+   * Recalcule le compte élève : recrée les breakdowns à partir des FeeStructures
+   * actuelles + FeeOverrides. Utilisé après création/modification d'une personnalisation.
+   */
+  async recalculate(studentId: string, tenantId: string, academicYearId: string) {
+    let account = await this.prisma.studentAccount.findUnique({
+      where: { studentId_academicYearId: { studentId, academicYearId } },
+      include: { breakdowns: true },
+    });
+
+    if (!account) {
+      const result = await this.getOrCreate(tenantId, studentId, academicYearId);
+      return result.account;
+    }
+
+    const student = await this.prisma.student.findFirst({
+      where: { id: studentId, tenantId },
+      include: { studentEnrollments: { where: { academicYearId }, include: { class: true } } },
+    });
+    if (!student) throw new NotFoundException('Student not found');
+
+    const classId = student.studentEnrollments?.[0]?.classId ?? null;
+    const levelId = student.schoolLevelId;
+
+    const allStructures = await this.prisma.feeStructure.findMany({
+      where: { tenantId, academicYearId, isActive: true },
+      include: { structureInstallments: true, overrides: { where: { studentId } } },
+    });
+
+    // Priorité Classe > Niveau > Global
+    const structuresByType = new Map<string, any>();
+    allStructures.forEach((fs) => {
+      const isClassMatch = fs.classId && fs.classId === classId;
+      const isLevelMatch = fs.levelId === levelId && !fs.classId;
+      const isGlobalMatch = !fs.levelId && !fs.classId;
+
+      if (isClassMatch || isLevelMatch || isGlobalMatch) {
+        const existing = structuresByType.get(fs.feeType);
+        if (!existing) {
+          structuresByType.set(fs.feeType, fs);
+        } else {
+          const existingIsClass = existing.classId;
+          const existingIsLevel = existing.levelId && !existing.classId;
+          if (isClassMatch) {
+            structuresByType.set(fs.feeType, fs);
+          } else if (isLevelMatch && !existingIsClass) {
+            structuresByType.set(fs.feeType, fs);
+          }
+        }
+      }
+    });
+
+    // Prendre TOUS les frais (obligatoires ET facultatifs) — pas seulement isMandatory
+    const feeStructures = Array.from(structuresByType.values());
+
+    const totalDue = feeStructures.reduce((sum, fs) => {
+      const override = fs.overrides[0];
+      const amount = override ? Number(override.customAmount) : Number(fs.totalAmount);
+      return sum + amount;
+    }, 0);
+
+    // Supprimer les anciens breakdowns (non payés)
+    await this.prisma.accountBreakdown.deleteMany({
+      where: { studentAccountId: account.id, paidAmount: 0 },
+    });
+
+    // Récupérer les breakdowns restants (ceux avec paiements)
+    const existingBreakdowns = await this.prisma.accountBreakdown.findMany({
+      where: { studentAccountId: account.id },
+    });
+    const existingFeeStructureIds = new Set(existingBreakdowns.map((b) => b.feeStructureId));
+
+    // Créer les nouveaux breakdowns (seulement pour les frais pas déjà présents)
+    const newBreakdowns = feeStructures.filter((fs) => !existingFeeStructureIds.has(fs.id));
+
+    // Mettre à jour les breakdowns existants avec les overrides
+    for (const b of existingBreakdowns) {
+      const fs = feeStructures.find((f) => f.id === b.feeStructureId);
+      if (fs) {
+        const override = fs.overrides[0];
+        const newAmount = override ? Number(override.customAmount) : Number(fs.totalAmount);
+        if (Number(b.initialAmount) !== newAmount) {
+          await this.prisma.accountBreakdown.update({
+            where: { id: b.id },
+            data: {
+              initialAmount: newAmount,
+              adjustedAmount: newAmount,
+              remainingAmount: newAmount - Number(b.paidAmount),
+            },
+          });
+        }
+      }
+    }
+
+    // Créer les nouveaux breakdowns
+    if (newBreakdowns.length > 0) {
+      await this.prisma.accountBreakdown.createMany({
+        data: newBreakdowns.map((fs) => {
+          const override = fs.overrides[0];
+          const initialAmount = override ? Number(override.customAmount) : Number(fs.totalAmount);
+          return {
+            studentAccountId: account.id,
+            feeStructureId: fs.id,
+            initialAmount,
+            adjustedAmount: initialAmount,
+            paidAmount: 0,
+            remainingAmount: initialAmount,
+          };
+        }),
+      });
+    }
+
+    // Recalculer totalDue et balance
+    const allBreakdowns = await this.prisma.accountBreakdown.findMany({
+      where: { studentAccountId: account.id },
+    });
+    const newTotalDue = allBreakdowns.reduce((sum, b) => sum + Number(b.initialAmount), 0);
+    const totalPaid = allBreakdowns.reduce((sum, b) => sum + Number(b.paidAmount), 0);
+
+    await this.allowBalanceUpdate();
+    account = await this.prisma.studentAccount.update({
+      where: { id: account.id },
+      data: {
+        totalDue: newTotalDue,
+        totalPaid,
+        balance: newTotalDue - totalPaid,
+        updatedAt: new Date(),
+      },
+      include: { breakdowns: { include: { feeStructure: true } } },
+    });
+
+    return account;
   }
 
   /**

@@ -1125,7 +1125,7 @@ export default function EnrollmentsContent() {
         {academicYear && schoolLevel ? (
           <StudentEnrollmentForm
             academicYearId={academicYear.id}
-            schoolLevelId={schoolLevel.id}
+            schoolLevelId={schoolLevel.schoolLevelId || schoolLevel.id}
             onSubmit={async (data) => {
               try {
                 let student: any;
@@ -1287,7 +1287,7 @@ export default function EnrollmentsContent() {
         >
           <StudentEnrollmentForm
             academicYearId={academicYear.id}
-            schoolLevelId={schoolLevel.id}
+            schoolLevelId={schoolLevel.schoolLevelId || schoolLevel.id}
             initialData={{
               studentId: editEnrollment.student.id,
               firstName: editEnrollment.student.firstName || '',

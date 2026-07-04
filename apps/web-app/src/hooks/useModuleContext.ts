@@ -28,6 +28,8 @@ export interface ModuleContext {
     id: string;
     code: string;
     label: string;
+    /** UUID de school_levels (pour les appels finance/fee-regimes/fee-structures) */
+    schoolLevelId?: string | null;
   } | null;
   /** Track académique actif (FR/EN) */
   academicTrack: {
@@ -73,7 +75,12 @@ export function useModuleContext(): ModuleContext {
   const schoolLevel = useMemo(
     () =>
       currentLevel
-        ? { id: currentLevel.id, code: currentLevel.code, label: currentLevel.label || currentLevel.code }
+        ? {
+            id: currentLevel.id,
+            code: currentLevel.code,
+            label: currentLevel.label || currentLevel.code,
+            schoolLevelId: currentLevel.schoolLevelId,
+          }
         : null,
     [currentLevel],
   );

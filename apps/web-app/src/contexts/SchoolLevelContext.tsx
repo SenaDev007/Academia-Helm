@@ -19,6 +19,13 @@ export interface SchoolLevel {
   code: string;
   label: string;
   isActive: boolean;
+  /**
+   * UUID de school_levels (table SQL school_levels).
+   * Différent de `id` qui est l'UUID de education_levels.
+   * Nécessaire pour les appels API finance/fee-structures/fee-regimes
+   * qui ont une FK vers school_levels.id.
+   */
+  schoolLevelId?: string | null;
 }
 
 /**

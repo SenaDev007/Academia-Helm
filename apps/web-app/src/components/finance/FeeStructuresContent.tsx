@@ -349,11 +349,15 @@ export default function FeeStructuresContent() {
     if (!academicYear?.id || !regimeLevelId) { setRegimes([]); return; }
     setRegimeLoading(true);
     try {
-      const data = await financeService.getFeeRegimes({ academicYearId: academicYear.id, schoolLevelId: regimeLevelId });
+      // ⚠️ Convertir education_levels UUID → school_levels UUID
+      // Le backend filtre par schoolLevelId (FK vers school_levels.id)
+      // Si on envoie l'education_levels UUID, la FK empêche l'auto-création et le findMany ne match rien
+      const schoolLevelId = levels.find((l) => l.id === regimeLevelId)?.schoolLevelId || regimeLevelId;
+      const data = await financeService.getFeeRegimes({ academicYearId: academicYear.id, schoolLevelId });
       setRegimes(Array.isArray(data) ? data : []);
     } catch { setRegimes([]); }
     finally { setRegimeLoading(false); }
-  }, [academicYear?.id, regimeLevelId]);
+  }, [academicYear?.id, regimeLevelId, levels]);
 
   useEffect(() => { loadRegimes(); }, [loadRegimes]);
 

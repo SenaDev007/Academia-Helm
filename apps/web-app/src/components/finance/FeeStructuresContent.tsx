@@ -435,12 +435,16 @@ export default function FeeStructuresContent() {
   };
 
   const handleDeleteRegime = async (id: string) => {
-    const ok = await confirmDialog.danger('Ce régime tarifaire sera supprimé.', 'Supprimer');
+    const ok = await confirmDialog.danger('Ce régime tarifaire sera supprimé. Cette action est irréversible.', 'Supprimer');
     if (!ok) return;
     try {
       await financeService.deleteFeeRegime(id);
+      toast({ title: 'Régime supprimé', description: 'Le régime tarifaire a été supprimé avec succès.' });
       loadRegimes();
-    } catch (e: any) { console.error(e); }
+    } catch (e: any) {
+      console.error('Erreur suppression régime:', e);
+      toast({ title: 'Erreur', description: e?.message || 'Impossible de supprimer ce régime.', variant: 'destructive' });
+    }
   };
 
   const handleAddRule = async (regimeId: string) => {
@@ -742,11 +746,9 @@ export default function FeeStructuresContent() {
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditingRegime(regime)} title="Modifier">
                         <Pencil className="w-3 h-3" />
                       </Button>
-                      {!regime.isDefault && (
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDeleteRegime(regime.id)} title="Supprimer">
-                          <Trash2 className="w-3 h-3 text-red-500" />
-                        </Button>
-                      )}
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDeleteRegime(regime.id)} title="Supprimer">
+                        <Trash2 className="w-3 h-3 text-red-500" />
+                      </Button>
                     </div>
                   </div>
                   {regime.description && <p className="text-xs text-slate-500 mb-2">{regime.description}</p>}

@@ -76,13 +76,13 @@ export class FeeRegimeService {
   async getRegimes(
     tenantId: string,
     academicYearId: string,
-    schoolLevelId: string,
+    schoolLevelId?: string,
   ) {
     let regimes = await this.prisma.feeRegime.findMany({
       where: {
         tenantId,
         academicYearId,
-        schoolLevelId,
+        ...(schoolLevelId ? { schoolLevelId } : {}),
       },
       include: {
         rules: true,
@@ -93,8 +93,10 @@ export class FeeRegimeService {
       ],
     });
 
-    // Auto-création d'un régime STANDARD si aucun n'existe
-    if (regimes.length === 0) {
+    // Auto-création d'un régime STANDARD si aucun n'existe ET qu'un schoolLevelId
+    // précis est fourni. Si schoolLevelId est absent (vue "Tous les niveaux"),
+    // on ne crée rien — on retourne juste la liste (potentiellement vide).
+    if (regimes.length === 0 && schoolLevelId) {
       this.logger.log(
         `Aucun régime trouvé pour tenant=${tenantId} year=${academicYearId} level=${schoolLevelId} → auto-création STANDARD`,
       );

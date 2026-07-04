@@ -345,18 +345,28 @@ export default function FeeStructuresContent() {
   const modalClasses = useMemo(() => [...classes].sort((a, b) => classOrder(a.name) - classOrder(b.name)), [classes]);
 
   // === Régimes tarifaires ===
+  // Pattern identique à FeeOverridesContent.loadOverrides :
+  //   - déclenche au montage dès que academicYear.id est disponible
+  //   - filtre côté frontend si un niveau spécifique est sélectionné
+  //   - schoolLevelId optionnel : "Tous" = sans filtre = tous les régimes du tenant pour l'année
   const loadRegimes = useCallback(async () => {
-    if (!academicYear?.id || !regimeLevelId) { setRegimes([]); return; }
+    if (!academicYear?.id) { setRegimes([]); return; }
     setRegimeLoading(true);
     try {
-      // ⚠️ Convertir education_levels UUID → school_levels UUID
-      // Le backend filtre par schoolLevelId (FK vers school_levels.id)
-      // Si on envoie l'education_levels UUID, la FK empêche l'auto-création et le findMany ne match rien
-      const schoolLevelId = levels.find((l) => l.id === regimeLevelId)?.schoolLevelId || regimeLevelId;
-      const data = await financeService.getFeeRegimes({ academicYearId: academicYear.id, schoolLevelId });
+      // Convertir education_levels UUID → school_levels UUID (si niveau spécifique sélectionné)
+      // Si regimeLevelId est vide (Tous), on n'envoie pas schoolLevelId → backend renvoie tout
+      let schoolLevelId: string | undefined;
+      if (regimeLevelId) {
+        schoolLevelId = levels.find((l) => l.id === regimeLevelId)?.schoolLevelId || regimeLevelId;
+      }
+      const params: Record<string, string> = { academicYearId: academicYear.id };
+      if (schoolLevelId) params.schoolLevelId = schoolLevelId;
+      const data = await financeService.getFeeRegimes(params);
       setRegimes(Array.isArray(data) ? data : []);
-    } catch { setRegimes([]); }
-    finally { setRegimeLoading(false); }
+    } catch (e) {
+      console.error('loadRegimes error:', e);
+      setRegimes([]);
+    } finally { setRegimeLoading(false); }
   }, [academicYear?.id, regimeLevelId, levels]);
 
   useEffect(() => { loadRegimes(); }, [loadRegimes]);
@@ -710,7 +720,11 @@ export default function FeeStructuresContent() {
             <p className="text-sm text-slate-500 py-4 text-center">Chargement des régimes...</p>
           ) : regimes.length === 0 ? (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
-              <p className="text-sm text-blue-800">Aucun régime configuré. Un régime STANDARD sera créé automatiquement lors de la première inscription.</p>
+              <p className="text-sm text-blue-800">
+                {regimeLevelId
+                  ? "Aucun régime configuré pour ce niveau. Un régime STANDARD sera créé automatiquement lors de la première inscription."
+                  : "Aucun régime configuré pour cette année. Sélectionnez un niveau pour créer un régime, ou le système créera automatiquement un régime STANDARD lors de la première inscription."}
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">

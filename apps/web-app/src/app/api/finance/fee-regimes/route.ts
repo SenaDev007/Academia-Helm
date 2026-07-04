@@ -9,12 +9,17 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const academicYearId = searchParams.get('academicYearId');
     const schoolLevelId = searchParams.get('schoolLevelId');
-    if (!academicYearId || !schoolLevelId) {
-      return NextResponse.json({ error: 'academicYearId and schoolLevelId are required' }, { status: 400 });
+    if (!academicYearId) {
+      return NextResponse.json({ error: 'academicYearId is required' }, { status: 400 });
     }
     const headers = await getProxyAuthHeaders(request);
+    // schoolLevelId est optionnel : si absent, le backend renvoie tous les
+    // régimes du tenant pour l'année (vue "Tous les niveaux")
+    const query = schoolLevelId
+      ? `academicYearId=${academicYearId}&schoolLevelId=${schoolLevelId}`
+      : `academicYearId=${academicYearId}`;
     const response = await fetch(
-      normalizeApiUrl(`${API_URL}/finance/fee-regimes?academicYearId=${academicYearId}&schoolLevelId=${schoolLevelId}`),
+      normalizeApiUrl(`${API_URL}/finance/fee-regimes?${query}`),
       { headers }
     );
     const data = await response.json().catch(() => ({}));

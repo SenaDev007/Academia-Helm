@@ -30,13 +30,13 @@ export class FeeRegimeController {
   @Get()
   async getRegimes(
     @Query('academicYearId') academicYearId: string,
-    @Query('schoolLevelId') schoolLevelId: string,
+    @Query('schoolLevelId') schoolLevelId: string | undefined,
     @CurrentUser() user: User,
   ) {
     return this.regimeService.getRegimes(
       user.tenantId || '',
       academicYearId,
-      schoolLevelId,
+      schoolLevelId || undefined,
     );
   }
 

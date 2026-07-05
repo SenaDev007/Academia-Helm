@@ -741,14 +741,14 @@ La Direction pedagogique`,
     useCase: 'Payment receipt notification',
     module: 'finance',
     header: 'Recu de paiement',
-    body: `Bonjour {{parent_name}},
+    body: `Bonjour {{1}},
 
-Nous confirmons la reception du paiement pour {{student_name}} aupres de {{school_name}}.
+Nous confirmons la reception du paiement pour {{2}} aupres de {{3}}.
 
-Recu n° : {{receipt_number}}
-Montant : {{amount}} FCFA
-Date : {{payment_date}}
-{{balance_line}}
+Recu n° : {{4}}
+Montant : {{5}} FCFA
+Date : {{6}}
+{{7}}
 Le recu PDF detaille est disponible aupres de l'etablissement.
 
 Cordialement,
@@ -757,10 +757,9 @@ La Direction`,
     language: 'fr',
     bodyVariables: ["parent_name", "student_name", "school_name", "receipt_number", "amount", "payment_date", "balance_line"],
     bodyPlaceholderCount: 7,
-    callerParamCount: 6,  // bodyVariables sans school_name (auto-injecté)
+    callerParamCount: 7,
     sampleBody: '[M. ADANDE],[Aicha ADANDE],[CSPEB],[CSPEBE-R-26-00002],[10000],[05/07/2026],[Solde restant a payer : 21000 FCFA]',
-    buttons: BUTTONS_URL,
-    buttonParamCount: 3,
+    // Pas de boutons pour le moment (seront ajoutés ultérieurement)
   },
 ];
 

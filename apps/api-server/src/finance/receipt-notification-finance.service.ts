@@ -279,7 +279,8 @@ export class ReceiptNotificationFinanceService {
       : '';
 
     // Utiliser le template Meta/Gupshup 'recu_paiement' (pré-approuvé)
-    // Variables dans l'ordre : parent_name, student_name, school_name, receipt_number, amount, payment_date, balance_line
+    // Les variables doivent être passées par NOM (clé du bodyVariables du registry)
+    // Le Gupshup sender les récupère par nom puis les envoie en tableau ordonné
     const result = await this.whatsappService.sendCategorized({
       tenantId: params.tenantId,
       category: 'FINANCE',
@@ -287,16 +288,16 @@ export class ReceiptNotificationFinanceService {
       to: params.to,
       toName: params.parentName,
       recipientType: 'PARENT',
-      message: `Reçu ${params.receiptNumber} - ${amountStr} FCFA pour ${params.studentName}`, // fallback texte si template indisponible
+      message: `Reçu ${params.receiptNumber} - ${amountStr} FCFA pour ${params.studentName}`, // fallback texte
       templateName: 'recu_paiement',
       templateVariables: {
-        '1': params.parentName || 'Parent',
-        '2': params.studentName,
-        '3': schoolName,
-        '4': params.receiptNumber,
-        '5': amountStr,
-        '6': dateStr,
-        '7': balanceLine,
+        parent_name: params.parentName || 'Parent',
+        student_name: params.studentName,
+        school_name: schoolName,
+        receipt_number: params.receiptNumber,
+        amount: amountStr,
+        payment_date: dateStr,
+        balance_line: balanceLine,
       },
       triggeredBy: 'SYSTEM',
       relatedEntityId: params.transactionId,

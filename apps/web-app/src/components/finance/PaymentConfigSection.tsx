@@ -167,7 +167,36 @@ export default function PaymentConfigSection({ tenantId }: { tenantId: string })
               />
             </div>
           </div>
-          <p className="text-xs text-orange-700">
+          {/* URL Webhook FeexPay */}
+          <div className="mt-3 p-3 bg-orange-100/50 border border-orange-200 rounded-lg">
+            <Label className="text-xs font-semibold text-orange-800 mb-1 block">
+              🔗 URL Webhook à configurer chez FeexPay
+            </Label>
+            <p className="text-[11px] text-orange-700 mb-2">
+              Copiez cette URL dans votre dashboard FeexPay → Paramètres → Webhook.
+              Remplacez <code className="bg-white px-1 rounded">VOTRE_TENANT_ID</code> par l'identifiant
+              de votre école (fourni par Academia Helm). FeexPay notifiera cette URL quand un paiement
+              est confirmé, ce qui met à jour automatiquement le compte de l'élève.
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 px-3 py-2 bg-white rounded border border-orange-200 text-xs font-mono text-orange-900 break-all">
+                {typeof window !== 'undefined' ? `${window.location.origin}/api/finance/payments/feexpay/webhook?tenantId=VOTRE_TENANT_ID` : '/api/finance/payments/feexpay/webhook?tenantId=VOTRE_TENANT_ID'}
+              </code>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const url = `${window.location.origin}/api/finance/payments/feexpay/webhook?tenantId=VOTRE_TENANT_ID`;
+                  navigator.clipboard.writeText(url);
+                  toast({ title: '✅ URL copiée', description: 'Collez-la dans votre dashboard FeexPay.' });
+                }}
+              >
+                Copier
+              </Button>
+            </div>
+          </div>
+          <p className="text-xs text-orange-700 mt-3">
             Récupérez ces clés sur <a href="https://feexpay.me" target="_blank" className="underline">feexpay.me</a> → Dashboard → API.
             Créez un compte marchand (gratuit), complétez le KYC (RCCM, IFU, compte bancaire).
             <br />
@@ -208,8 +237,37 @@ export default function PaymentConfigSection({ tenantId }: { tenantId: string })
               </p>
             </div>
           </div>
-          <p className="text-xs text-violet-700">
-            Récupérez ces clés sur <a href="https://fedapay.com" target="_blank" className="underline">fedapay.com</a> → Dashboard → Settings → API Keys.
+          {/* URL Webhook Fedapay */}
+          <div className="mt-3 p-3 bg-violet-100/50 border border-violet-200 rounded-lg">
+            <Label className="text-xs font-semibold text-violet-800 mb-1 block">
+              🔗 URL Webhook à configurer chez Fedapay
+            </Label>
+            <p className="text-[11px] text-violet-700 mb-2">
+              Copiez cette URL dans votre dashboard Fedapay → Settings → Webhooks.
+              Remplacez <code className="bg-white px-1 rounded">VOTRE_TENANT_ID</code> par l'identifiant
+              de votre école (fourni par Academia Helm). Fedapay notifiera cette URL quand un paiement
+              est confirmé, ce qui met à jour automatiquement le compte de l'élève.
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 px-3 py-2 bg-white rounded border border-violet-200 text-xs font-mono text-violet-900 break-all">
+                {typeof window !== 'undefined' ? `${window.location.origin}/api/finance/payments/fedapay/webhook?tenantId=VOTRE_TENANT_ID` : '/api/finance/payments/fedapay/webhook?tenantId=VOTRE_TENANT_ID'}
+              </code>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const url = `${window.location.origin}/api/finance/payments/fedapay/webhook?tenantId=VOTRE_TENANT_ID`;
+                  navigator.clipboard.writeText(url);
+                  toast({ title: '✅ URL copiée', description: 'Collez-la dans votre dashboard Fedapay.' });
+                }}
+              >
+                Copier
+              </Button>
+            </div>
+          </div>
+          <p className="text-xs text-violet-700 mt-3">
+            Récupérez vos clés sur <a href="https://fedapay.com" target="_blank" className="underline">fedapay.com</a> → Dashboard → Settings → API Keys.
           </p>
         </div>
       )}

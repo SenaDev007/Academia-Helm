@@ -635,8 +635,11 @@ export default function NewPaymentModal({
                 <SmsIcon className="w-3.5 h-3.5 mr-1.5" />
                 {sendingChannel === 'sms' ? 'Envoi...' : 'SMS'}
               </Button>
-              <Button size="sm" variant="ghost" onClick={handleNewPayment} className="ml-auto">
+              <Button size="sm" variant="ghost" onClick={handleNewPayment}>
                 Nouveau paiement
+              </Button>
+              <Button size="sm" variant="outline" onClick={onClose}>
+                Fermer
               </Button>
             </div>
           </motion.div>

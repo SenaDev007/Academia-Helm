@@ -3,7 +3,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Plus, Download, Eye, Smartphone, Calendar, FileSpreadsheet, FileText, Loader2 } from 'lucide-react';
 import { WhatsAppIcon, GmailIcon, SmsIcon } from './OfficialIcons';
-import ReceiptImageCopy from './ReceiptImageCopy';
 import DocumentPreviewModal from '@/components/students/DocumentPreviewModal';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -27,7 +26,7 @@ const METHOD_LABELS: Record<string, string> = {
 };
 
 export default function TransactionsContent() {
-  const { academicYear } = useModuleContext();
+  const { academicYear, schoolLevel } = useModuleContext();
   const { tenant } = useAppSession();
   const [whatsappMenuId, setWhatsappMenuId] = useState<string | null>(null);
   const [previewDoc, setPreviewDoc] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
@@ -93,7 +92,11 @@ export default function TransactionsContent() {
     name: tenant?.name || 'Établissement',
     logoUrl: tenant?.logoUrl || null,
     academicYear: academicYear?.name || '',
-  }), [tenant, academicYear]);
+    schoolLevel: schoolLevel?.code || undefined,
+    schoolAddress: tenant?.address || null,
+    schoolPhone: tenant?.phone || null,
+    schoolEmail: tenant?.email || null,
+  }), [tenant, academicYear, schoolLevel]);
 
   const handleExportExcel = async () => {
     setExporting('excel');
@@ -104,6 +107,10 @@ export default function TransactionsContent() {
         academicYear: schoolInfo.academicYear,
         dateFrom,
         dateTo,
+        schoolLevel: schoolInfo.schoolLevel,
+        schoolAddress: schoolInfo.schoolAddress,
+        schoolPhone: schoolInfo.schoolPhone,
+        schoolEmail: schoolInfo.schoolEmail,
       });
       toast({ title: '✅ Export Excel généré', description: `${filteredTransactions.length} transaction(s) exportée(s).` });
     } catch (e: any) {
@@ -122,6 +129,10 @@ export default function TransactionsContent() {
         academicYear: schoolInfo.academicYear,
         dateFrom,
         dateTo,
+        schoolLevel: schoolInfo.schoolLevel,
+        schoolAddress: schoolInfo.schoolAddress,
+        schoolPhone: schoolInfo.schoolPhone,
+        schoolEmail: schoolInfo.schoolEmail,
       });
       // Ouvrir dans le visualiseur
       setPreviewDoc({
@@ -340,16 +351,6 @@ export default function TransactionsContent() {
                                 <WhatsAppIcon className="w-3.5 h-3.5 opacity-60" />
                                 Envoi auto (API)
                               </button>
-                              <div className="border-t border-slate-100 my-1" />
-                              <div className="px-3 py-1.5">
-                                <ReceiptImageCopy
-                                  transactionId={t.id}
-                                  receiptNumber={t.receiptNumber || '—'}
-                                  amount={t.amount}
-                                  studentName={t.studentAccount?.student ? `${t.studentAccount.student.lastName} ${t.studentAccount.student.firstName}` : undefined}
-                                  compact={false}
-                                />
-                              </div>
                             </div>
                           )}
                         </div>

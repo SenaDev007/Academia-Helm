@@ -164,6 +164,12 @@ export class FinanceTransactionController {
       ? `Solde restant à payer : ${balanceAfter.toLocaleString('fr-FR')} FCFA`
       : `Compte soldé — aucun solde restant.`;
 
+    // Construire le lien public de téléchargement du reçu (via verificationToken HMAC)
+    // Le token est régénéré déterministiquement à partir de transactionId + receiptNumber
+    const verificationToken = this.generateReceiptToken(tx.id, tx.receiptNumber);
+    const publicBaseUrl = process.env.APP_PUBLIC_URL || process.env.PUBLIC_URL || 'https://academia-helm-api.fly.dev';
+    const receiptLink = `${publicBaseUrl}/api/receipt/verify?token=${verificationToken}`;
+
     // Construire le message WhatsApp (avec accents — le lien wa.me les supporte)
     const message = `Bonjour${contacts.name ? ` ${contacts.name}` : ''},\n\n` +
       `Nous confirmons la réception du paiement pour ${studentName} auprès de ${schoolName}.\n\n` +
@@ -171,7 +177,7 @@ export class FinanceTransactionController {
       `Montant : ${amountStr} FCFA\n` +
       `Date : ${dateStr}\n` +
       `${balanceLine}\n\n` +
-      `Le reçu PDF détaillé est disponible auprès de l'établissement.\n\n` +
+      `📄 Téléchargez le reçu PDF détaillé ici :\n${receiptLink}\n\n` +
       `Cordialement,\nLa Direction`;
 
     // Normaliser le numéro pour wa.me (format international sans +)
@@ -219,5 +225,17 @@ export class FinanceTransactionController {
       body?.reason ?? 'Non précisé',
       user?.id ?? '',
     );
+  }
+
+  /**
+   * Génère le token de vérification HMAC d'un reçu (déterministe).
+   * Doit correspondre à ReceiptFinanceService.generateVerificationToken().
+   */
+  private generateReceiptToken(transactionId: string, receiptNumber: string): string {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const crypto = require('crypto');
+    const secret = process.env.RECEIPT_VERIFICATION_SECRET || 'academia-helm-receipt-secret-2026';
+    const data = `${transactionId}|${receiptNumber}`;
+    return crypto.createHmac('sha256', secret).update(data).digest('base64url');
   }
 }

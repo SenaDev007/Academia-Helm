@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Eye, Unlock, UserCog, Search, Download, Receipt, Clock, FileSpreadsheet, FileText, Loader2 } from 'lucide-react';
 import { WhatsAppIcon, GmailIcon, SmsIcon } from './OfficialIcons';
-import ReceiptImageCopy from './ReceiptImageCopy';
 import DocumentPreviewModal from '@/components/students/DocumentPreviewModal';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -38,7 +37,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function StudentAccountsContent() {
-  const { academicYear } = useModuleContext();
+  const { academicYear, schoolLevel } = useModuleContext();
   const { tenant } = useAppSession();
   const searchParams = useSearchParams();
   const preselectStudentId = searchParams.get('studentId');
@@ -218,6 +217,10 @@ export default function StudentAccountsContent() {
         schoolLogoUrl: tenant?.logoUrl || null,
         academicYear: yearLabel,
         classFilter: classLabel,
+        schoolLevel: schoolLevel?.code || undefined,
+        schoolAddress: tenant?.address || null,
+        schoolPhone: tenant?.phone || null,
+        schoolEmail: tenant?.email || null,
       });
       toast({ title: '✅ Export Excel généré', description: `${filteredAccounts.length} compte(s) exporté(s).` });
     } catch (e: any) {
@@ -244,6 +247,10 @@ export default function StudentAccountsContent() {
         schoolLogoUrl: tenant?.logoUrl || null,
         academicYear: yearLabel,
         classFilter: classLabel,
+        schoolLevel: schoolLevel?.code || undefined,
+        schoolAddress: tenant?.address || null,
+        schoolPhone: tenant?.phone || null,
+        schoolEmail: tenant?.email || null,
       });
       setPreviewDoc({
         filePath: url,
@@ -281,6 +288,10 @@ export default function StudentAccountsContent() {
         studentName,
         studentMatricule,
         className,
+        schoolLevel: schoolLevel?.code || undefined,
+        schoolAddress: tenant?.address || null,
+        schoolPhone: tenant?.phone || null,
+        schoolEmail: tenant?.email || null,
       });
       setPreviewDoc({
         filePath: url,
@@ -304,9 +315,6 @@ export default function StudentAccountsContent() {
               Solde, total dû, payé et statut par élève et par année.
             </p>
             <div className="flex gap-2 flex-wrap">
-              <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={filteredAccounts.length === 0}>
-                <Download className="w-4 h-4 mr-2" />CSV
-              </Button>
               <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={filteredAccounts.length === 0 || exporting !== null}>
                 {exporting === 'excel' ? (
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -747,16 +755,6 @@ export default function StudentAccountsContent() {
                                     <WhatsAppIcon className="w-3.5 h-3.5 opacity-60" />
                                     Envoi auto (API)
                                   </button>
-                                  <div className="border-t border-slate-100 my-1" />
-                                  <div className="px-3 py-1.5">
-                                    <ReceiptImageCopy
-                                      transactionId={t.id}
-                                      receiptNumber={t.receiptNumber || '—'}
-                                      amount={t.amount}
-                                      studentName={t.studentAccount?.student ? `${t.studentAccount.student.lastName} ${t.studentAccount.student.firstName}` : undefined}
-                                      compact={false}
-                                    />
-                                  </div>
                                 </div>
                               )}
                             </div>

@@ -17,8 +17,8 @@ import { useModuleContext } from '@/hooks/useModuleContext';
 
 const METHODS = [
   { value: 'CASH', label: 'Espèces' },
-  { value: 'MOBILE_MONEY', label: 'Mobile Money' },
-  { value: 'WIRE', label: 'Virement' },
+  { value: 'FEEXPAY', label: 'FeexPay (Mobile Money — MTN, Moov, Celtiis)' },
+  { value: 'WIRE', label: 'Virement bancaire' },
   { value: 'FEDAPAY', label: 'Fedapay' },
 ];
 
@@ -36,15 +36,17 @@ export default function NewPaymentModal({
   accounts,
   onClose,
   onSuccess,
+  defaultPaymentMethod,
 }: {
   academicYearId: string;
   accounts: any[];
   onClose: () => void;
   onSuccess: () => void;
+  defaultPaymentMethod?: string;
 }) {
   const [studentAccountId, setStudentAccountId] = useState('');
   const [amount, setAmount] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('CASH');
+  const [paymentMethod, setPaymentMethod] = useState(defaultPaymentMethod || 'CASH');
   const [reference, setReference] = useState('');
   const [cashRegisterId, setCashRegisterId] = useState('');
   const [openCashRegisters, setOpenCashRegisters] = useState<any[]>([]);
@@ -205,6 +207,65 @@ export default function NewPaymentModal({
     // Caisse obligatoire pour les espèces
     if (paymentMethod === 'CASH' && !cashRegisterId) {
       toast({ title: 'Caisse requise', description: 'Sélectionnez une caisse ouverte pour les paiements en espèces.', variant: 'destructive' });
+      return;
+    }
+
+    // ── FeexPay : initier le paiement en ligne ──
+    if (paymentMethod === 'FEEXPAY') {
+      if (!selectedAccount?.student) {
+        toast({ title: 'Erreur', description: 'Élève introuvable.', variant: 'destructive' });
+        return;
+      }
+      // Récupérer le téléphone du parent
+      const enrollments = selectedAccount.student?.studentEnrollments ?? [];
+      setLoading(true);
+      try {
+        // Récupérer le téléphone du parent depuis le backend
+        const phoneRes = await fetch(`/api/finance/transactions/${selectedAccount.id}/whatsapp-link`, { credentials: 'include' });
+        const phoneData = await phoneRes.json();
+        const parentPhone = phoneData?.phone;
+        if (!parentPhone) {
+          toast({ title: 'Téléphone manquant', description: 'Aucun numéro de téléphone pour le parent de cet élève.', variant: 'destructive' });
+          setLoading(false);
+          return;
+        }
+
+        const studentName = selectedAccount.student
+          ? `${selectedAccount.student.lastName} ${selectedAccount.student.firstName}`
+          : 'Élève';
+
+        const res = await fetch('/api/finance/payments/feexpay/initiate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            studentAccountId,
+            studentName,
+            amount: amountNum,
+            phone: parentPhone,
+            academicYearId,
+          }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          toast({
+            title: '📱 Paiement initié',
+            description: `Le parent va recevoir une notification sur le ${parentPhone} pour confirmer le paiement de ${formatCurrency(amountNum)} FCFA.`,
+          });
+          // Afficher le bandeau avec la référence FeexPay
+          setReceipt({
+            id: data.reference || 'feexpay-pending',
+            receiptNumber: data.reference || '—',
+            createdAt: new Date().toISOString(),
+          });
+        } else {
+          toast({ title: 'Erreur FeexPay', description: data.message || 'Échec de l\'initiation du paiement.', variant: 'destructive' });
+        }
+      } catch (e: any) {
+        toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+      } finally {
+        setLoading(false);
+      }
       return;
     }
 

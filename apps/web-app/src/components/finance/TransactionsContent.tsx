@@ -257,12 +257,12 @@ export default function TransactionsContent() {
         />
       )}
       {onlineModalOpen && (
-        <SchoolFeePaymentDialog
-          isOpen={onlineModalOpen}
+        <NewPaymentModal
+          academicYearId={academicYear?.id ?? ''}
+          accounts={accounts}
           onClose={() => setOnlineModalOpen(false)}
-          onSuccess={handleOnlineSuccess}
-          students={studentList}
-          academicYearId={academicYear?.id}
+          onSuccess={handleSuccess}
+          defaultPaymentMethod="FEEXPAY"
         />
       )}
     </div>

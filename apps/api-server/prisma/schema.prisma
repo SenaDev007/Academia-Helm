@@ -14022,6 +14022,7 @@ enum TransactionType {
 enum PaymentMethod {
   CASH
   MOBILE_MONEY
+  FEEXPAY
   WIRE
   FEDAPAY
 }

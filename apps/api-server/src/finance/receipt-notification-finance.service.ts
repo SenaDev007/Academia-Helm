@@ -228,6 +228,8 @@ export class ReceiptNotificationFinanceService {
       subject: `Reçu de Paiement | ${params.branding.schoolName || 'Établissement'}`,
       html,
       text: `Reçu ${params.receiptNumber} - ${amountStr} FCFA pour ${params.studentName} - ${dateStr}`,
+      fromName: params.branding.schoolName || 'Academia Helm',
+      fromEmail: params.branding.schoolEmail,
       triggeredBy: 'SYSTEM',
       relatedEntityId: params.transactionId,
       relatedEntityType: 'FinanceTransaction',

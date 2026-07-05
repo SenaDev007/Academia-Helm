@@ -280,6 +280,28 @@ export default function NewPaymentModal({
           document.head.appendChild(script);
         });
 
+        // Générer une référence unique côté client (Fedapay n'en génère pas avant le widget)
+        const fedapayReference = `FEDAPAY-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+
+        // ✅ Stocker les métadonnées côté backend AVANT d'ouvrir le widget
+        // Le webhook Fedapay utilisera cette référence pour créer la FinanceTransaction
+        try {
+          await fetch('/api/finance/payments/fedapay/initiate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              reference: fedapayReference,
+              studentAccountId,
+              academicYearId,
+              studentName,
+              amount: amountNum,
+            }),
+          });
+        } catch (initErr: any) {
+          console.warn('PaymentInitiation create failed (non bloquant):', initErr);
+        }
+
         // Ouvrir le checkout Fedapay — le client saisit lui-même ses infos
         const FedaPay = (window as any).FedaPay;
         const widget = FedaPay.init({
@@ -287,6 +309,7 @@ export default function NewPaymentModal({
           transaction: {
             amount: amountNum,
             description: `Scolarité ${studentName}`.substring(0, 100),
+            reference: fedapayReference, // ← Référence pour le webhook
           },
           customer: {
             firstname: selectedAccount.student?.firstName || '',
@@ -299,48 +322,19 @@ export default function NewPaymentModal({
               return;
             }
 
-            // ✅ Succès Fedapay — créer la FinanceTransaction côté backend
-            // pour que le reçu soit généré et le solde mis à jour.
-            const fedapayReference = response?.reference || '';
-            try {
-              const result = await financeService.createTransaction({
-                academicYearId,
-                studentAccountId,
-                amount: amountNum,
-                paymentMethod: 'FEDAPAY',
-                reference: fedapayReference || undefined,
-              });
-              if (result?.id) {
-                setReceipt({
-                  id: result.id,
-                  receiptNumber: result.receiptNumber || fedapayReference || 'FEDAPAY',
-                  createdAt: result.createdAt || new Date().toISOString(),
-                });
-                toast({
-                  title: 'Paiement confirmé',
-                  description: `Reçu ${result.receiptNumber} généré. Référence Fedapay : ${fedapayReference}.`,
-                });
-              } else {
-                toast({
-                  title: 'Paiement initié',
-                  description: `Référence Fedapay : ${fedapayReference}. Le reçu sera généré après confirmation.`,
-                });
-                setReceipt({
-                  id: fedapayReference || 'fedapay-pending',
-                  receiptNumber: fedapayReference || 'FEDAPAY',
-                  createdAt: new Date().toISOString(),
-                });
-              }
-            } catch (err: any) {
-              console.error('createTransaction after Fedapay failed:', err);
-              toast({
-                title: 'Paiement reçu mais transaction non enregistrée',
-                description: `Référence Fedapay : ${fedapayReference}. Contactez l'administrateur pour synchroniser la transaction.`,
-                variant: 'destructive',
-              });
-            } finally {
-              setLoading(false);
-            }
+            // ✅ Le widget Fedapay est complété, mais la transaction n'est pas encore confirmée.
+            // Le webhook Fedapay créera la FinanceTransaction quand le paiement sera confirmé.
+            // On affiche un message "en attente de confirmation" — pas de création de transaction ici.
+            toast({
+              title: 'Paiement initié',
+              description: `Référence : ${fedapayReference}. Le reçu sera généré automatiquement après confirmation du paiement par Fedapay (via webhook).`,
+            });
+            setReceipt({
+              id: fedapayReference,
+              receiptNumber: fedapayReference,
+              createdAt: new Date().toISOString(),
+            });
+            setLoading(false);
           },
         });
         widget.open();
@@ -494,50 +488,20 @@ export default function NewPaymentModal({
         return;
       }
 
-      // 2. Succès FeexPay — créer la FinanceTransaction côté backend
+      // 2. ✅ Succès FeexPay — les métadonnées sont déjà stockées dans PaymentInitiation
+      // (côté backend, lors de l'appel /api/finance/payments/feexpay/initiate).
+      // Le webhook FeexPay créera la FinanceTransaction quand le paiement sera confirmé.
+      // On affiche un message "en attente de confirmation" — pas de création de transaction ici.
       const feexpayReference = data.reference || '';
-      try {
-        const result = await financeService.createTransaction({
-          academicYearId,
-          studentAccountId,
-          amount: amountNum,
-          paymentMethod: 'FEEXPAY',
-          reference: feexpayReference || undefined,
-        });
-        if (result?.id) {
-          setReceipt({
-            id: result.id,
-            receiptNumber: result.receiptNumber || feexpayReference || '—',
-            createdAt: result.createdAt || new Date().toISOString(),
-          });
-          toast({
-            title: '📱 Paiement initié',
-            description: `Le client va recevoir une notification sur le ${formatPhoneDisplay(cleanedPhone)} pour confirmer. Reçu ${result.receiptNumber} généré.`,
-          });
-        } else {
-          setReceipt({
-            id: feexpayReference || 'feexpay-pending',
-            receiptNumber: feexpayReference || '—',
-            createdAt: new Date().toISOString(),
-          });
-          toast({
-            title: '📱 Paiement initié',
-            description: `Notification envoyée sur le ${formatPhoneDisplay(cleanedPhone)}. Référence : ${feexpayReference}.`,
-          });
-        }
-      } catch (err: any) {
-        console.error('createTransaction after FeexPay failed:', err);
-        setReceipt({
-          id: feexpayReference || 'feexpay-pending',
-          receiptNumber: feexpayReference || '—',
-          createdAt: new Date().toISOString(),
-        });
-        toast({
-          title: 'Paiement initié mais transaction non enregistrée',
-          description: `Référence FeexPay : ${feexpayReference}. Contactez l'administrateur pour synchroniser.`,
-          variant: 'destructive',
-        });
-      }
+      setReceipt({
+        id: feexpayReference,
+        receiptNumber: feexpayReference || '—',
+        createdAt: new Date().toISOString(),
+      });
+      toast({
+        title: '📱 Paiement initié',
+        description: `Le client va recevoir une notification sur le ${formatPhoneDisplay(cleanedPhone)} pour confirmer. Référence : ${feexpayReference}. Le reçu sera généré automatiquement après confirmation (via webhook).`,
+      });
     } catch (e: any) {
       setFeexpayError(e.message || 'Erreur réseau');
     } finally {

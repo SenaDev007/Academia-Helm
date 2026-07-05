@@ -256,6 +256,7 @@ model Tenant {
   paymentPlans                     PaymentPlan[]
   paymentSummaries                 PaymentSummary[]
   paymentConfig                    TenantPaymentConfig?
+  paymentInitiations               PaymentInitiation[]
   payments                         Payment[]
   payrollItems                     PayrollItem[]
   payrolls                         Payroll[]
@@ -10564,6 +10565,45 @@ model CollectionAction {
   @@index([actionType])
   @@index([performedAt])
   @@map("collection_actions")
+}
+
+/// Initiation de paiement en ligne (FeexPay / Fedapay).
+/// Stocke les métadonnées (studentAccountId, academicYearId, etc.) au moment
+/// de l'initiation, pour que le webhook puisse créer la FinanceTransaction
+/// quand le paiement est confirmé.
+model PaymentInitiation {
+  id              String   @id @default(uuid())
+  tenantId        String
+  /// Référence renvoyée par le fournisseur (FeexPay ou Fedapay)
+  reference       String   @unique
+  /// Fournisseur : 'feexpay' | 'fedapay'
+  provider        String
+  /// Métadonnées pour créer la FinanceTransaction après confirmation
+  studentAccountId String
+  academicYearId   String
+  studentName      String
+  amount          Decimal  @db.Decimal(10, 2)
+  phone           String?
+  operator        String?
+  /// Statut : PENDING | CONFIRMED | FAILED | EXPIRED
+  status          String   @default("PENDING")
+  /// ID de la FinanceTransaction créée après confirmation (nullable tant que non confirmée)
+  transactionId   String?
+  /// Réponse brute du fournisseur (JSON)
+  rawResponse     Json?
+  /// Message d'erreur si FAILED
+  errorMessage    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  confirmedAt     DateTime?
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([reference])
+  @@index([status])
+  @@index([studentAccountId])
+  @@map("payment_initiations")
 }
 
 model CollectionCase {

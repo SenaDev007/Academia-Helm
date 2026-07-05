@@ -24,6 +24,8 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
 import { TenantPaymentConfigService } from './tenant-payment-config.service';
+import { PaymentInitiationService } from './payment-initiation.service';
+import { FinanceTransactionService } from './finance-transaction.service';
 
 const FEEXPAY_API_URL = 'https://api-v2.feexpay.me';
 
@@ -49,6 +51,8 @@ export class FeexPayService {
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
     private readonly paymentConfigService: TenantPaymentConfigService,
+    private readonly paymentInitiationService: PaymentInitiationService,
+    private readonly financeTransactionService: FinanceTransactionService,
   ) {}
 
   /**
@@ -134,7 +138,26 @@ export class FeexPayService {
       );
 
       if (response.ok && result.reference) {
-        // Succès — le paiement est initié, le parent reçoit un push sur son téléphone
+        // ✅ Succès — stocker les métadonnées dans PaymentInitiation
+        // pour que le webhook puisse créer la FinanceTransaction après confirmation
+        try {
+          await this.paymentInitiationService.create({
+            tenantId: params.tenantId,
+            reference: result.reference,
+            provider: 'feexpay',
+            studentAccountId: params.studentAccountId,
+            academicYearId: params.academicYearId,
+            studentName: params.studentName,
+            amount: params.amount,
+            phone: params.phone,
+            operator: params.operator,
+            rawResponse: result,
+          });
+        } catch (initErr: any) {
+          // Non bloquant — on log mais on ne fait pas échouer l'initiation
+          this.logger.warn(`PaymentInitiation create failed (non bloquant): ${initErr.message}`);
+        }
+
         return {
           success: true,
           reference: result.reference,
@@ -231,35 +254,63 @@ export class FeexPayService {
     // Si le statut n'est pas SUCCESSFUL, on log et on retourne
     if (status !== 'SUCCESSFUL' && status !== 'SUCCESS') {
       this.logger.log(`FeexPay webhook: paiement ${reference} statut=${status} (non confirmé)`);
+      // Si FAILED, marquer l'initiation comme échouée
+      if (status === 'FAILED' || status === 'FAIL') {
+        try {
+          await this.paymentInitiationService.markFailed(reference, `Paiement échoué (statut ${status})`);
+        } catch { /* ignore */ }
+      }
       return { success: true, message: `Statut ${status} — paiement non confirmé` };
     }
 
-    // Paiement confirmé !
-    // Récupérer les métadonnées depuis callback_info si disponible
-    let callbackInfo: any = null;
-    try {
-      if (body?.callback_info) {
-        callbackInfo = typeof body.callback_info === 'string'
-          ? JSON.parse(body.callback_info)
-          : body.callback_info;
-      }
-    } catch { /* ignore */ }
-
-    if (callbackInfo?.studentAccountId && callbackInfo?.academicYearId) {
-      // Créer la FinanceTransaction pour mettre à jour le compte élève
-      try {
-        const { FinanceTransactionService } = await import('./finance-transaction.service');
-        // Note : on ne peut pas instancier directement, il faut passer par le module
-        // Pour l'instant, on log — la transaction sera créée par un job de vérification
-        this.logger.log(
-          `FeexPay webhook CONFIRMÉ: ref=${reference} | amount=${body.amount} | student=${callbackInfo.studentAccountId}`,
-        );
-      } catch (err: any) {
-        this.logger.error(`FeexPay webhook: erreur création transaction: ${err.message}`);
-      }
+    // ✅ Paiement confirmé !
+    // 1. Vérifier l'idempotence — une FinanceTransaction existe-t-elle déjà avec cette référence ?
+    const existingTx = await this.prisma.financeTransaction.findFirst({
+      where: { reference, tenantId },
+    });
+    if (existingTx) {
+      this.logger.log(`FeexPay webhook: transaction ${existingTx.id} déjà existante pour ref=${reference}`);
+      return { success: true, message: 'Transaction déjà enregistrée' };
     }
 
-    return { success: true, message: 'Webhook traité — paiement confirmé' };
+    // 2. Récupérer les métadonnées depuis PaymentInitiation
+    const initiation = await this.paymentInitiationService.getForTransactionCreation(reference);
+    if (!initiation) {
+      this.logger.log(`FeexPay webhook: initiation ${reference} déjà confirmée ou introuvable`);
+      return { success: true, message: 'Initiation déjà confirmée ou introuvable' };
+    }
+
+    // 3. Créer la FinanceTransaction
+    try {
+      const tx = await this.financeTransactionService.create(tenantId, {
+        academicYearId: initiation.academicYearId,
+        studentAccountId: initiation.studentAccountId,
+        amount: Number(initiation.amount),
+        paymentMethod: 'FEEXPAY',
+        reference,
+        cashierId: 'feexpay-webhook', // Le webhook agit comme caissier automatique
+      });
+
+      // 4. Marquer l'initiation comme confirmée
+      await this.paymentInitiationService.markConfirmed(reference, tx.id);
+
+      this.logger.log(
+        `FeexPay webhook: FinanceTransaction ${tx.id} créée pour ref=${reference} | ` +
+        `élève=${initiation.studentName} | montant=${initiation.amount}`,
+      );
+
+      return {
+        success: true,
+        message: `Transaction créée et confirmée — reçu ${tx.receiptNumber}`,
+        transactionId: tx.id,
+      };
+    } catch (txErr: any) {
+      this.logger.error(
+        `FeexPay webhook: erreur création FinanceTransaction pour ref=${reference}: ${txErr.message}`,
+      );
+      await this.paymentInitiationService.markFailed(reference, `Erreur création transaction: ${txErr.message}`);
+      return { success: false, message: `Erreur: ${txErr.message}` };
+    }
   }
 
   /**

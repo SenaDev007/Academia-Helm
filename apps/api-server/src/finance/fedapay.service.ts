@@ -23,6 +23,8 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
 import { TenantPaymentConfigService } from './tenant-payment-config.service';
+import { PaymentInitiationService } from './payment-initiation.service';
+import { FinanceTransactionService } from './finance-transaction.service';
 
 const FEDAPAY_API_URL = 'https://api.fedapay.com/v1';
 
@@ -34,6 +36,8 @@ export class FedapayService {
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
     private readonly paymentConfigService: TenantPaymentConfigService,
+    private readonly paymentInitiationService: PaymentInitiationService,
+    private readonly financeTransactionService: FinanceTransactionService,
   ) {}
 
   /**
@@ -108,8 +112,8 @@ export class FedapayService {
    * Webhook handler — appelé par Fedapay quand le paiement est confirmé.
    * Fedapay envoie un événement dans le body.
    *
-   * Si la transaction n'existe pas encore (cas où le webhook arrive avant
-   * le callback onComplete du widget), on la crée ici.
+   * Crée la FinanceTransaction via les métadonnées stockées dans PaymentInitiation.
+   * Idempotent : si la transaction existe déjà, ne crée pas de doublon.
    */
   async handleWebhook(body: any, tenantId: string): Promise<{ success: boolean; message: string }> {
     this.logger.log(`Fedapay webhook reçu: tenant=${tenantId}`);
@@ -126,32 +130,65 @@ export class FedapayService {
 
       this.logger.log(`Fedapay webhook CONFIRMÉ: ref=${ref} | amount=${amount}`);
 
-      // Vérifier si une FinanceTransaction existe déjà avec cette référence
+      // 1. Vérifier si une FinanceTransaction existe déjà avec cette référence (idempotence)
       const existingTx = await this.prisma.financeTransaction.findFirst({
         where: { reference: ref, tenantId },
       });
-
       if (existingTx) {
         this.logger.log(`Fedapay webhook: transaction ${existingTx.id} déjà existante pour ref=${ref}`);
         return { success: true, message: 'Transaction déjà enregistrée' };
       }
 
-      // La transaction n'existe pas — essayer de la créer depuis les métadonnées
-      // Pour l'instant, on log car on n'a pas les métadonnées studentAccountId/academicYearId
-      // (Fedapay ne les transmet pas automatiquement)
-      this.logger.warn(
-        `Fedapay webhook: transaction NON créée pour ref=${ref} — métadonnées manquantes. ` +
-        `Le paiement sera à synchroniser manuellement. Montant: ${amount} FCFA.`,
-      );
+      // 2. Récupérer les métadonnées depuis PaymentInitiation
+      const initiation = await this.paymentInitiationService.getForTransactionCreation(ref);
+      if (!initiation) {
+        // Déjà confirmée (initiation.statut === CONFIRMED) ou introuvable
+        this.logger.log(`Fedapay webhook: initiation ${ref} déjà confirmée ou introuvable`);
+        return { success: true, message: 'Initiation déjà confirmée ou introuvable' };
+      }
 
-      // TODO futur : stocker les métadonnées dans une table `payment_initiations`
-      // lors de l'initiation, et les récupérer ici via la référence.
+      // 3. Créer la FinanceTransaction
+      try {
+        const tx = await this.financeTransactionService.create(tenantId, {
+          academicYearId: initiation.academicYearId,
+          studentAccountId: initiation.studentAccountId,
+          amount: Number(initiation.amount),
+          paymentMethod: 'FEDAPAY',
+          reference: ref,
+          cashierId: 'fedapay-webhook', // Le webhook agit comme caissier automatique
+        });
 
-      return { success: true, message: 'Paiement confirmé via Fedapay — transaction à synchroniser' };
+        // 4. Marquer l'initiation comme confirmée
+        await this.paymentInitiationService.markConfirmed(ref, tx.id);
+
+        this.logger.log(
+          `Fedapay webhook: FinanceTransaction ${tx.id} créée pour ref=${ref} | ` +
+          `élève=${initiation.studentName} | montant=${initiation.amount}`,
+        );
+
+        return {
+          success: true,
+          message: `Transaction créée et confirmée — reçu ${tx.receiptNumber}`,
+          transactionId: tx.id,
+        };
+      } catch (txErr: any) {
+        this.logger.error(
+          `Fedapay webhook: erreur création FinanceTransaction pour ref=${ref}: ${txErr.message}`,
+        );
+        await this.paymentInitiationService.markFailed(ref, `Erreur création transaction: ${txErr.message}`);
+        return { success: false, message: `Erreur: ${txErr.message}` };
+      }
     }
 
     if (eventType.includes('transaction') && eventType.includes('declined')) {
       this.logger.log(`Fedapay webhook: paiement DECLINED ref=${transaction.reference}`);
+      // Marquer l'initiation comme échouée
+      const ref = transaction.reference || transaction.id;
+      if (ref) {
+        try {
+          await this.paymentInitiationService.markFailed(ref, 'Paiement refusé par Fedapay');
+        } catch { /* ignore si initiation introuvable */ }
+      }
       return { success: true, message: 'Paiement refusé' };
     }
 

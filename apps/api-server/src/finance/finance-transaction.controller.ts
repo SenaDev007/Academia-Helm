@@ -161,17 +161,17 @@ export class FinanceTransactionController {
     const totalDue = Number(tx.studentAccount?.totalDue ?? 0);
     const balanceAfter = Number(tx.studentAccount?.balance ?? 0);
     const balanceLine = balanceAfter > 0
-      ? `Solde restant a payer : ${balanceAfter.toLocaleString('fr-FR')} FCFA`
-      : `Compte solde - aucun solde restant.`;
+      ? `Solde restant à payer : ${balanceAfter.toLocaleString('fr-FR')} FCFA`
+      : `Compte soldé — aucun solde restant.`;
 
-    // Construire le message WhatsApp
+    // Construire le message WhatsApp (avec accents — le lien wa.me les supporte)
     const message = `Bonjour${contacts.name ? ` ${contacts.name}` : ''},\n\n` +
-      `Nous confirmons la reception du paiement pour ${studentName} aupres de ${schoolName}.\n\n` +
-      `Recu n° : ${tx.receiptNumber}\n` +
+      `Nous confirmons la réception du paiement pour ${studentName} auprès de ${schoolName}.\n\n` +
+      `Reçu n° : ${tx.receiptNumber}\n` +
       `Montant : ${amountStr} FCFA\n` +
       `Date : ${dateStr}\n` +
       `${balanceLine}\n\n` +
-      `Le recu PDF detaille est disponible aupres de l'etablissement.\n\n` +
+      `Le reçu PDF détaillé est disponible auprès de l'établissement.\n\n` +
       `Cordialement,\nLa Direction`;
 
     // Normaliser le numéro pour wa.me (format international sans +)

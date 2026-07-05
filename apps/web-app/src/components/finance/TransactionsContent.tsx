@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Smartphone, Download, Mail, MessageCircle } from 'lucide-react';
+import { Plus, Download } from 'lucide-react';
+import { WhatsAppIcon, GmailIcon } from './OfficialIcons';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
@@ -163,7 +164,7 @@ export default function TransactionsContent() {
                           }}
                           title="Envoyer par email"
                         >
-                          <Mail className="w-3.5 h-3.5 text-blue-600" />
+                          <GmailIcon className="w-3.5 h-3.5" />
                         </Button>
                         <Button
                           variant="ghost"
@@ -179,7 +180,7 @@ export default function TransactionsContent() {
                           }}
                           title="Envoyer par WhatsApp"
                         >
-                          <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                          <WhatsAppIcon className="w-3.5 h-3.5" />
                         </Button>
                       </div>
                     </TableCell>

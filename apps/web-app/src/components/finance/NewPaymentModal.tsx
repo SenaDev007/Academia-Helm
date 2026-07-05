@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, Download, Mail, MessageCircle, Smartphone, CheckCircle2 } from 'lucide-react';
+import { Sparkles, Download, CheckCircle2 } from 'lucide-react';
+import { WhatsAppIcon, GmailIcon, SmsIcon } from './OfficialIcons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -219,7 +220,7 @@ export default function NewPaymentModal({
                 onClick={() => handleResendReceipt('email')}
                 disabled={sendingChannel === 'email'}
               >
-                <Mail className="w-3.5 h-3.5 mr-1.5" />
+                <GmailIcon className="w-3.5 h-3.5 mr-1.5" />
                 {sendingChannel === 'email' ? 'Envoi...' : 'Email'}
               </Button>
               <Button
@@ -228,7 +229,7 @@ export default function NewPaymentModal({
                 onClick={() => handleResendReceipt('whatsapp')}
                 disabled={sendingChannel === 'whatsapp'}
               >
-                <MessageCircle className="w-3.5 h-3.5 mr-1.5" />
+                <WhatsAppIcon className="w-3.5 h-3.5 mr-1.5" />
                 {sendingChannel === 'whatsapp' ? 'Envoi...' : 'WhatsApp'}
               </Button>
               <Button
@@ -237,7 +238,7 @@ export default function NewPaymentModal({
                 onClick={() => handleResendReceipt('sms')}
                 disabled={sendingChannel === 'sms'}
               >
-                <Smartphone className="w-3.5 h-3.5 mr-1.5" />
+                <SmsIcon className="w-3.5 h-3.5 mr-1.5" />
                 {sendingChannel === 'sms' ? 'Envoi...' : 'SMS'}
               </Button>
               <Button size="sm" variant="ghost" onClick={handleNewPayment} className="ml-auto">

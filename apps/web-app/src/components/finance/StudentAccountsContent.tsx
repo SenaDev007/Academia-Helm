@@ -3,7 +3,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Eye, Unlock, UserCog, Search, Download, Receipt, Clock, Mail, MessageCircle, Smartphone } from 'lucide-react';
+import { Eye, Unlock, UserCog, Search, Download, Receipt, Clock } from 'lucide-react';
+import { WhatsAppIcon, GmailIcon, SmsIcon } from './OfficialIcons';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -520,7 +521,7 @@ export default function StudentAccountsContent() {
                               }}
                               title="Envoyer par email"
                             >
-                              <Mail className="w-3.5 h-3.5 text-blue-600" />
+                              <GmailIcon className="w-3.5 h-3.5" />
                             </Button>
                             <Button
                               variant="ghost"
@@ -536,7 +537,7 @@ export default function StudentAccountsContent() {
                               }}
                               title="Envoyer par WhatsApp"
                             >
-                              <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                              <WhatsAppIcon className="w-3.5 h-3.5" />
                             </Button>
                             <Button
                               variant="ghost"
@@ -552,7 +553,7 @@ export default function StudentAccountsContent() {
                               }}
                               title="Envoyer par SMS"
                             >
-                              <Smartphone className="w-3.5 h-3.5 text-violet-600" />
+                              <SmsIcon className="w-3.5 h-3.5" />
                             </Button>
                           </div>
                         </TableCell>

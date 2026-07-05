@@ -47,7 +47,7 @@ export interface MetaTemplate {
   /** Cas d'usage court (2-3 mots) pour labellisation Meta. */
   useCase: string;
   /** Module d'origine (hr, students, pedagogy). */
-  module: 'hr' | 'students' | 'pedagogy';
+  module: 'hr' | 'students' | 'pedagogy' | 'finance';
   /** Header TEXT court (≤ 60 caractères). */
   header: string;
   /** Corps du message avec placeholders nommés {{var_name}}. */
@@ -729,6 +729,36 @@ La Direction pedagogique`,
     callerParamCount: 7,  // bodyVariables sans school_name (auto-injecté)
     sampleBody: '[Erhel DEGBE],[2025-2026],[CSPEB],[MAT001],[Primaire],[18],[24],[Sous-charge]',
     // 3 boutons URL dynamiques (subdomain, whatsapp_number, phone_number)
+    buttons: BUTTONS_URL,
+    buttonParamCount: 3,
+  },
+
+  // ─── 21. Reçu de paiement (Finance) ───────────────────────────────────────
+  {
+    elementName: 'recu_paiement',
+    category: 'UTILITY',
+    templateType: 'TEXT',
+    useCase: 'Payment receipt notification',
+    module: 'finance',
+    header: 'Recu de paiement',
+    body: `Bonjour {{parent_name}},
+
+Nous confirmons la reception du paiement pour {{student_name}} aupres de {{school_name}}.
+
+Recu n° : {{receipt_number}}
+Montant : {{amount}} FCFA
+Date : {{payment_date}}
+{{balance_line}}
+Le recu PDF detaille est disponible aupres de l'etablissement.
+
+Cordialement,
+La Direction`,
+    footer: FOOTER,
+    language: 'fr',
+    bodyVariables: ["parent_name", "student_name", "school_name", "receipt_number", "amount", "payment_date", "balance_line"],
+    bodyPlaceholderCount: 7,
+    callerParamCount: 6,  // bodyVariables sans school_name (auto-injecté)
+    sampleBody: '[M. ADANDE],[Aicha ADANDE],[CSPEB],[CSPEBE-R-26-00002],[10000],[05/07/2026],[Solde restant a payer : 21000 FCFA]',
     buttons: BUTTONS_URL,
     buttonParamCount: 3,
   },

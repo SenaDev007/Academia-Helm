@@ -274,19 +274,12 @@ export class ReceiptNotificationFinanceService {
     // Section solde restant
     const balanceLine = params.balanceAfter != null
       ? (params.balanceAfter > 0
-        ? `\n⚠️ Solde restant à payer : ${params.balanceAfter.toLocaleString('fr-FR')} FCFA\n`
-        : `\n✅ Compte soldé — aucun solde restant.\n`)
+        ? `Solde restant a payer : ${params.balanceAfter.toLocaleString('fr-FR')} FCFA`
+        : `Compte solde - aucun solde restant.`)
       : '';
 
-    const message = `Bonjour${params.parentName ? ` ${params.parentName}` : ''},\n\n` +
-      `Nous confirmons la réception du paiement pour ${params.studentName}.\n\n` +
-      `🧾 N° reçu : ${params.receiptNumber}\n` +
-      `💰 Montant : ${amountStr} FCFA\n` +
-      `📅 Date : ${dateStr}\n` +
-      balanceLine +
-      `\nLe reçu PDF détaillé est disponible auprès de ${schoolName}.\n\n` +
-      `Merci pour votre confiance.`;
-
+    // Utiliser le template Meta/Gupshup 'recu_paiement' (pré-approuvé)
+    // Variables dans l'ordre : parent_name, student_name, school_name, receipt_number, amount, payment_date, balance_line
     const result = await this.whatsappService.sendCategorized({
       tenantId: params.tenantId,
       category: 'FINANCE',
@@ -294,7 +287,17 @@ export class ReceiptNotificationFinanceService {
       to: params.to,
       toName: params.parentName,
       recipientType: 'PARENT',
-      message,
+      message: `Reçu ${params.receiptNumber} - ${amountStr} FCFA pour ${params.studentName}`, // fallback texte si template indisponible
+      templateName: 'recu_paiement',
+      templateVariables: {
+        '1': params.parentName || 'Parent',
+        '2': params.studentName,
+        '3': schoolName,
+        '4': params.receiptNumber,
+        '5': amountStr,
+        '6': dateStr,
+        '7': balanceLine,
+      },
       triggeredBy: 'SYSTEM',
       relatedEntityId: params.transactionId,
       relatedEntityType: 'FinanceTransaction',

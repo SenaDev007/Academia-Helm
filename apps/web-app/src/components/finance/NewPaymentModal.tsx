@@ -24,11 +24,11 @@ import {
   type FeexPayOperator,
 } from '@/lib/feexpay/detect-operator';
 
-// Logos opérateurs Mobile Money
+// Logos opérateurs Mobile Money (officiels dans /public/images/)
 const OPERATOR_LOGOS = {
   mtn: '/logos/mtn.png',
   moov: '/logos/moov.png',
-  celtiis: '/logos/celtiis.png',
+  celtiis: '/images/celtiis-cash.png',
 } as const;
 
 const OPERATOR_META: Record<FeexPayOperator, { label: string; shortLabel: string; color: string; bg: string; border: string; ring: string }> = {

@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Plus, Download, Eye, Smartphone } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Plus, Download, Eye, Smartphone, Calendar, FileSpreadsheet, FileText, Loader2 } from 'lucide-react';
 import { WhatsAppIcon, GmailIcon, SmsIcon } from './OfficialIcons';
 import ReceiptImageCopy from './ReceiptImageCopy';
 import DocumentPreviewModal from '@/components/students/DocumentPreviewModal';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { useAppSession } from '@/contexts/AppSessionContext';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -15,16 +16,19 @@ import NewPaymentModal from './NewPaymentModal';
 import { SchoolFeePaymentDialog } from './SchoolFeePaymentDialog';
 import { financeService } from '@/services/finance.service';
 import { formatCurrency } from '@/lib/utils';
+import { exportTransactionsToExcel, exportTransactionsToPdf } from '@/lib/exports/finance-exports';
 
 const METHOD_LABELS: Record<string, string> = {
   CASH: 'Espèces',
   MOBILE_MONEY: 'Mobile Money',
   WIRE: 'Virement',
   FEDAPAY: 'Fedapay',
+  FEEXPAY: 'FeexPay',
 };
 
 export default function TransactionsContent() {
   const { academicYear } = useModuleContext();
+  const { tenant } = useAppSession();
   const [whatsappMenuId, setWhatsappMenuId] = useState<string | null>(null);
   const [previewDoc, setPreviewDoc] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
   const { toast } = useToast();
@@ -32,7 +36,10 @@ export default function TransactionsContent() {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
-  const [onlineModalOpen, setOnlineModalOpen] = useState(false);
+  // Filtre par période
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [exporting, setExporting] = useState<'excel' | 'pdf' | null>(null);
 
   const loadTransactions = async () => {
     if (!academicYear?.id) return;
@@ -63,9 +70,70 @@ export default function TransactionsContent() {
     loadTransactions();
   };
 
-  const handleOnlineSuccess = () => {
-    setOnlineModalOpen(false);
-    loadTransactions();
+  // Filtrage par période (date de création de la transaction)
+  const filteredTransactions = useMemo(() => {
+    if (!dateFrom && !dateTo) return transactions;
+    return transactions.filter((t) => {
+      const txDate = new Date(t.createdAt || t.date || '').getTime();
+      if (Number.isNaN(txDate)) return false;
+      if (dateFrom) {
+        const fromTime = new Date(dateFrom + 'T00:00:00').getTime();
+        if (txDate < fromTime) return false;
+      }
+      if (dateTo) {
+        const toTime = new Date(dateTo + 'T23:59:59').getTime();
+        if (txDate > toTime) return false;
+      }
+      return true;
+    });
+  }, [transactions, dateFrom, dateTo]);
+
+  // Récupération des infos école pour l'entête des exports
+  const schoolInfo = useMemo(() => ({
+    name: tenant?.name || 'Établissement',
+    logoUrl: tenant?.logoUrl || null,
+    academicYear: academicYear?.name || '',
+  }), [tenant, academicYear]);
+
+  const handleExportExcel = async () => {
+    setExporting('excel');
+    try {
+      await exportTransactionsToExcel(filteredTransactions, {
+        schoolName: schoolInfo.name,
+        schoolLogoUrl: schoolInfo.logoUrl,
+        academicYear: schoolInfo.academicYear,
+        dateFrom,
+        dateTo,
+      });
+      toast({ title: '✅ Export Excel généré', description: `${filteredTransactions.length} transaction(s) exportée(s).` });
+    } catch (e: any) {
+      toast({ title: 'Erreur export Excel', description: e.message, variant: 'destructive' });
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    setExporting('pdf');
+    try {
+      const { blob, url } = await exportTransactionsToPdf(filteredTransactions, {
+        schoolName: schoolInfo.name,
+        schoolLogoUrl: schoolInfo.logoUrl,
+        academicYear: schoolInfo.academicYear,
+        dateFrom,
+        dateTo,
+      });
+      // Ouvrir dans le visualiseur
+      setPreviewDoc({
+        filePath: url,
+        fileName: `encaissements-${dateFrom || 'debut'}-${dateTo || 'fin'}.pdf`,
+        mimeType: 'application/pdf',
+      });
+    } catch (e: any) {
+      toast({ title: 'Erreur export PDF', description: e.message, variant: 'destructive' });
+    } finally {
+      setExporting(null);
+    }
   };
 
   const studentList = accounts
@@ -81,18 +149,58 @@ export default function TransactionsContent() {
       <ModuleContentArea
         layout="custom"
         toolbar={
-          <div className="flex items-center justify-between">
-            <div></div>
-            <div className="flex gap-2">
-              <Button onClick={() => setModalOpen(true)}>
-                <Plus className="w-4 h-4 mr-2" />
-                Nouveau paiement
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Filtre par période */}
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5">
+                <Calendar className="w-4 h-4 text-slate-500" />
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="text-sm bg-transparent border-none focus:outline-none focus:ring-0 px-1 py-0.5"
+                  title="Date de début"
+                />
+                <span className="text-slate-400 text-xs">→</span>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="text-sm bg-transparent border-none focus:outline-none focus:ring-0 px-1 py-0.5"
+                  title="Date de fin"
+                />
+                {(dateFrom || dateTo) && (
+                  <button
+                    onClick={() => { setDateFrom(''); setDateTo(''); }}
+                    className="text-xs text-slate-500 hover:text-rose-600 ml-1"
+                    title="Effacer le filtre"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              {/* Boutons export */}
+              <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={exporting !== null}>
+                {exporting === 'excel' ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                )}
+                Excel
               </Button>
-              <Button variant="outline" onClick={() => setOnlineModalOpen(true)}>
-                <Smartphone className="w-4 h-4 mr-2" />
-                Encaisser en ligne
+              <Button variant="outline" size="sm" onClick={handleExportPdf} disabled={exporting !== null}>
+                {exporting === 'pdf' ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <FileText className="w-4 h-4 mr-2" />
+                )}
+                PDF
               </Button>
             </div>
+            <Button onClick={() => setModalOpen(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              Nouveau paiement
+            </Button>
           </div>
         }
       >
@@ -121,7 +229,7 @@ export default function TransactionsContent() {
                   </TableCell>
                 </TableRow>
               ) : (
-                transactions.map((t) => (
+                filteredTransactions.map((t) => (
                   <TableRow key={t.id} className="hover:bg-slate-50">
                     <TableCell className="font-mono text-xs">{t.receiptNumber}</TableCell>
                     <TableCell className="font-medium">
@@ -278,17 +386,8 @@ export default function TransactionsContent() {
           onSuccess={handleSuccess}
         />
       )}
-      {onlineModalOpen && (
-        <NewPaymentModal
-          academicYearId={academicYear?.id ?? ''}
-          accounts={accounts}
-          onClose={() => setOnlineModalOpen(false)}
-          onSuccess={handleSuccess}
-          defaultPaymentMethod="FEEXPAY"
-        />
-      )}
 
-      {/* Modal de visualisation du reçu PDF */}
+      {/* Modal de visualisation du reçu PDF ou du rapport PDF */}
       {previewDoc && (
         <DocumentPreviewModal
           doc={previewDoc}

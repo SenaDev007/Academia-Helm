@@ -3,12 +3,13 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Eye, Unlock, UserCog, Search, Download, Receipt, Clock } from 'lucide-react';
+import { Eye, Unlock, UserCog, Search, Download, Receipt, Clock, FileSpreadsheet, FileText, Loader2 } from 'lucide-react';
 import { WhatsAppIcon, GmailIcon, SmsIcon } from './OfficialIcons';
 import ReceiptImageCopy from './ReceiptImageCopy';
 import DocumentPreviewModal from '@/components/students/DocumentPreviewModal';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { useAppSession } from '@/contexts/AppSessionContext';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -21,6 +22,11 @@ import { getAcademicYears } from '@/services/settings.service';
 import { formatCurrency } from '@/lib/utils';
 import { filterAndSortClasses } from '@/lib/finance/class-sort';
 import { Label } from '@/components/ui/label';
+import {
+  exportStudentAccountsToExcel,
+  exportStudentAccountsToPdf,
+  exportStudentHistoryToPdf,
+} from '@/lib/exports/finance-exports';
 
 const STATUS_COLORS: Record<string, string> = {
   PAID: 'bg-green-100 text-green-800',
@@ -33,6 +39,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function StudentAccountsContent() {
   const { academicYear } = useModuleContext();
+  const { tenant } = useAppSession();
   const searchParams = useSearchParams();
   const preselectStudentId = searchParams.get('studentId');
   const { toast } = useToast();
@@ -40,6 +47,7 @@ export default function StudentAccountsContent() {
   const [classes, setClasses] = useState<any[]>([]);
   const [academicYears, setAcademicYears] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState<'excel' | 'pdf' | 'student-pdf' | null>(null);
   // Filtre année : par défaut l'année courante du module context, mais l'utilisateur peut changer
   const [filterYearId, setFilterYearId] = useState('');
   const [filterClassId, setFilterClassId] = useState('');
@@ -193,6 +201,99 @@ export default function StudentAccountsContent() {
     toast({ title: 'Export réussi', description: `${filteredAccounts.length} compte(s) exporté(s).` });
   };
 
+  // Export Excel de tous les comptes élèves filtrés
+  const handleExportExcel = async () => {
+    if (filteredAccounts.length === 0) {
+      toast({ title: 'Aucune donnée', description: 'Rien à exporter.', variant: 'destructive' });
+      return;
+    }
+    setExporting('excel');
+    try {
+      const yearLabel = academicYears.find((y) => y.id === effectiveYearId)?.name || '';
+      const classLabel = filterClassId
+        ? classes.find((c) => c.id === filterClassId)?.name || ''
+        : '';
+      await exportStudentAccountsToExcel(filteredAccounts, {
+        schoolName: tenant?.name || 'Établissement',
+        schoolLogoUrl: tenant?.logoUrl || null,
+        academicYear: yearLabel,
+        classFilter: classLabel,
+      });
+      toast({ title: '✅ Export Excel généré', description: `${filteredAccounts.length} compte(s) exporté(s).` });
+    } catch (e: any) {
+      toast({ title: 'Erreur export Excel', description: e.message, variant: 'destructive' });
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  // Export PDF de tous les comptes élèves filtrés
+  const handleExportPdf = async () => {
+    if (filteredAccounts.length === 0) {
+      toast({ title: 'Aucune donnée', description: 'Rien à exporter.', variant: 'destructive' });
+      return;
+    }
+    setExporting('pdf');
+    try {
+      const yearLabel = academicYears.find((y) => y.id === effectiveYearId)?.name || '';
+      const classLabel = filterClassId
+        ? classes.find((c) => c.id === filterClassId)?.name || ''
+        : '';
+      const { url } = await exportStudentAccountsToPdf(filteredAccounts, {
+        schoolName: tenant?.name || 'Établissement',
+        schoolLogoUrl: tenant?.logoUrl || null,
+        academicYear: yearLabel,
+        classFilter: classLabel,
+      });
+      setPreviewDoc({
+        filePath: url,
+        fileName: `comptes-eleves-${new Date().toISOString().slice(0, 10)}.pdf`,
+        mimeType: 'application/pdf',
+      });
+    } catch (e: any) {
+      toast({ title: 'Erreur export PDF', description: e.message, variant: 'destructive' });
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  // Export PDF de l'historique d'un élève spécifique
+  const handleExportStudentHistory = async (account: any) => {
+    setExporting('student-pdf');
+    try {
+      const yearLabel = academicYears.find((y) => y.id === effectiveYearId)?.name || '';
+      // Récupérer les transactions de cet élève
+      const txs = await financeService.getTransactions({
+        academicYearId: effectiveYearId,
+        studentAccountId: account.id,
+      });
+      const transactions = Array.isArray(txs) ? txs : [];
+      const studentName = account.student
+        ? `${account.student.lastName} ${account.student.firstName}`
+        : 'Élève';
+      const studentMatricule = account.student?.studentCode || account.student?.matricule || '—';
+      const className = account.studentEnrollments?.[0]?.class?.name || '';
+
+      const { url } = await exportStudentHistoryToPdf(transactions, {
+        schoolName: tenant?.name || 'Établissement',
+        schoolLogoUrl: tenant?.logoUrl || null,
+        academicYear: yearLabel,
+        studentName,
+        studentMatricule,
+        className,
+      });
+      setPreviewDoc({
+        filePath: url,
+        fileName: `historique-${studentName.replace(/\s+/g, '-').toLowerCase()}.pdf`,
+        mimeType: 'application/pdf',
+      });
+    } catch (e: any) {
+      toast({ title: 'Erreur export historique', description: e.message, variant: 'destructive' });
+    } finally {
+      setExporting(null);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <ModuleContentArea
@@ -202,9 +303,27 @@ export default function StudentAccountsContent() {
             <p className="text-sm text-slate-600">
               Solde, total dû, payé et statut par élève et par année.
             </p>
-            <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={filteredAccounts.length === 0}>
-              <Download className="w-4 h-4 mr-2" />Exporter CSV
-            </Button>
+            <div className="flex gap-2 flex-wrap">
+              <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={filteredAccounts.length === 0}>
+                <Download className="w-4 h-4 mr-2" />CSV
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={filteredAccounts.length === 0 || exporting !== null}>
+                {exporting === 'excel' ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                )}
+                Excel
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleExportPdf} disabled={filteredAccounts.length === 0 || exporting !== null}>
+                {exporting === 'pdf' ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <FileText className="w-4 h-4 mr-2" />
+                )}
+                PDF
+              </Button>
+            </div>
           </div>
         }
       >
@@ -290,16 +409,17 @@ export default function StudentAccountsContent() {
                     <TableHead className="text-right">Payé</TableHead>
                     <TableHead className="text-right">Solde</TableHead>
                     <TableHead>Statut</TableHead>
+                    <TableHead className="text-center">Historique</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-gray-500 py-8">Chargement...</TableCell>
+                      <TableCell colSpan={6} className="text-center text-gray-500 py-8">Chargement...</TableCell>
                     </TableRow>
                   ) : filteredAccounts.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-gray-500 py-12">
+                      <TableCell colSpan={6} className="text-center text-gray-500 py-12">
                         {searchQuery ? `Aucun élève trouvé pour « ${searchQuery} ».` : 'Aucun compte élève.'}
                       </TableCell>
                     </TableRow>
@@ -435,6 +555,22 @@ export default function StudentAccountsContent() {
                           </TableCell>
                           <TableCell>
                             <Badge className={STATUS_COLORS[a.status] ?? 'bg-gray-100 text-gray-800'}>{a.status}</Badge>
+                          </TableCell>
+                          <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150"
+                              onClick={() => handleExportStudentHistory(a)}
+                              disabled={exporting !== null}
+                              title="Générer l'historique PDF de cet élève"
+                            >
+                              {exporting === 'student-pdf' ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <FileText className="w-3.5 h-3.5 text-slate-600" />
+                              )}
+                            </Button>
                           </TableCell>
                         </TableRow>
                       );

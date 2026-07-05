@@ -174,20 +174,23 @@ export default function PaymentConfigSection({ tenantId }: { tenantId: string })
             </Label>
             <p className="text-[11px] text-orange-700 mb-2">
               Copiez cette URL dans votre dashboard FeexPay → Paramètres → Webhook.
-              Remplacez <code className="bg-white px-1 rounded">VOTRE_TENANT_ID</code> par l'identifiant
-              de votre école (fourni par Academia Helm). FeexPay notifiera cette URL quand un paiement
-              est confirmé, ce qui met à jour automatiquement le compte de l'élève.
+              Elle contient votre identifiant d'école (tenantId) pour que le système
+              puisse identifier vos paiements. FeexPay notifiera cette URL quand un
+              paiement est confirmé, ce qui met à jour automatiquement le compte de l'élève.
             </p>
             <div className="flex items-center gap-2">
               <code className="flex-1 px-3 py-2 bg-white rounded border border-orange-200 text-xs font-mono text-orange-900 break-all">
-                {typeof window !== 'undefined' ? `${window.location.origin}/api/finance/payments/feexpay/webhook?tenantId=VOTRE_TENANT_ID` : '/api/finance/payments/feexpay/webhook?tenantId=VOTRE_TENANT_ID'}
+                {typeof window !== 'undefined' && tenantId
+                  ? `${window.location.origin}/api/finance/payments/feexpay/webhook?tenantId=${tenantId}`
+                  : '/api/finance/payments/feexpay/webhook?tenantId=...'}
               </code>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
+                disabled={!tenantId}
                 onClick={() => {
-                  const url = `${window.location.origin}/api/finance/payments/feexpay/webhook?tenantId=VOTRE_TENANT_ID`;
+                  const url = `${window.location.origin}/api/finance/payments/feexpay/webhook?tenantId=${tenantId}`;
                   navigator.clipboard.writeText(url);
                   toast({ title: '✅ URL copiée', description: 'Collez-la dans votre dashboard FeexPay.' });
                 }}
@@ -195,6 +198,11 @@ export default function PaymentConfigSection({ tenantId }: { tenantId: string })
                 Copier
               </Button>
             </div>
+            {!tenantId && (
+              <p className="text-[10px] text-orange-600 mt-1.5">
+                ⚠️ Identifiant d'école non disponible — rechargez la page.
+              </p>
+            )}
           </div>
           <p className="text-xs text-orange-700 mt-3">
             Récupérez ces clés sur <a href="https://feexpay.me" target="_blank" className="underline">feexpay.me</a> → Dashboard → API.
@@ -244,20 +252,23 @@ export default function PaymentConfigSection({ tenantId }: { tenantId: string })
             </Label>
             <p className="text-[11px] text-violet-700 mb-2">
               Copiez cette URL dans votre dashboard Fedapay → Settings → Webhooks.
-              Remplacez <code className="bg-white px-1 rounded">VOTRE_TENANT_ID</code> par l'identifiant
-              de votre école (fourni par Academia Helm). Fedapay notifiera cette URL quand un paiement
-              est confirmé, ce qui met à jour automatiquement le compte de l'élève.
+              Elle contient votre identifiant d'école (tenantId) pour que le système
+              puisse identifier vos paiements. Fedapay notifiera cette URL quand un
+              paiement est confirmé, ce qui met à jour automatiquement le compte de l'élève.
             </p>
             <div className="flex items-center gap-2">
               <code className="flex-1 px-3 py-2 bg-white rounded border border-violet-200 text-xs font-mono text-violet-900 break-all">
-                {typeof window !== 'undefined' ? `${window.location.origin}/api/finance/payments/fedapay/webhook?tenantId=VOTRE_TENANT_ID` : '/api/finance/payments/fedapay/webhook?tenantId=VOTRE_TENANT_ID'}
+                {typeof window !== 'undefined' && tenantId
+                  ? `${window.location.origin}/api/finance/payments/fedapay/webhook?tenantId=${tenantId}`
+                  : '/api/finance/payments/fedapay/webhook?tenantId=...'}
               </code>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
+                disabled={!tenantId}
                 onClick={() => {
-                  const url = `${window.location.origin}/api/finance/payments/fedapay/webhook?tenantId=VOTRE_TENANT_ID`;
+                  const url = `${window.location.origin}/api/finance/payments/fedapay/webhook?tenantId=${tenantId}`;
                   navigator.clipboard.writeText(url);
                   toast({ title: '✅ URL copiée', description: 'Collez-la dans votre dashboard Fedapay.' });
                 }}
@@ -265,6 +276,11 @@ export default function PaymentConfigSection({ tenantId }: { tenantId: string })
                 Copier
               </Button>
             </div>
+            {!tenantId && (
+              <p className="text-[10px] text-violet-600 mt-1.5">
+                ⚠️ Identifiant d'école non disponible — rechargez la page.
+              </p>
+            )}
           </div>
           <p className="text-xs text-violet-700 mt-3">
             Récupérez vos clés sur <a href="https://fedapay.com" target="_blank" className="underline">fedapay.com</a> → Dashboard → Settings → API Keys.

@@ -41,6 +41,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { financeService } from '@/services/finance.service';
 import { useToast } from '@/components/ui/use-toast';
+import { useAppSession } from '@/contexts/AppSessionContext';
 import { cn } from '@/lib/utils';
 import PaymentConfigSection from './PaymentConfigSection';
 
@@ -222,6 +223,7 @@ function FormField({
 
 export default function FinanceSettingsContent() {
   const { toast } = useToast();
+  const { tenant } = useAppSession();
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     blockingThreshold: '',
@@ -771,7 +773,7 @@ export default function FinanceSettingsContent() {
                 </div>
               </header>
               <div className="p-5">
-                <PaymentConfigSection tenantId="" />
+                <PaymentConfigSection tenantId={tenant?.id || ''} />
               </div>
             </div>
 

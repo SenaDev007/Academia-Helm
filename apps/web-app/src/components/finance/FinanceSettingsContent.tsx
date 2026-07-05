@@ -17,7 +17,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ShieldCheck, AlertTriangle, AlertCircle, Info, History, CreditCard } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, AlertCircle, Info, History, CreditCard, Lock, Clock, TrendingUp } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -145,12 +145,15 @@ export default function FinanceSettingsContent() {
       <ModuleContentArea
         layout="custom"
         toolbar={
-          <p className="text-sm text-slate-600">
-            Seuil blocage, relances, clôture auto, budget, Fedapay.
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-slate-600">Configuration générale des paramètres financiers</p>
+            <Button onClick={handleSave} disabled={saving} className="bg-indigo-600 hover:bg-indigo-700 text-white">
+              {saving ? 'Enregistrement...' : 'Enregistrer'}
+            </Button>
+          </div>
         }
       >
-        <div className="max-w-2xl space-y-6">
+        <div className="max-w-3xl space-y-6">
           {/* 🧠 ORION — Surveillance des changements critiques */}
           {orionAlerts && (
             <div className={`rounded-lg border p-5 ${orionStatus.bg} ${orionStatus.border}`}>
@@ -207,8 +210,8 @@ export default function FinanceSettingsContent() {
           )}
 
           {/* 🔒 Blocage & Recouvrement */}
-          <div className="bg-white rounded-lg border p-5">
-            <h3 className="font-semibold mb-3 text-slate-900">Blocage & Recouvrement</h3>
+          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+            <h3 className="font-semibold mb-4 text-slate-900 flex items-center gap-2"><Lock className="w-4 h-4 text-rose-500" />Blocage & Recouvrement</h3>
             <div className="space-y-3">
               <div>
                 <Label>Seuil blocage (XOF)</Label>
@@ -259,8 +262,8 @@ export default function FinanceSettingsContent() {
           </div>
 
           {/* Clôture */}
-          <div className="bg-white rounded-lg border p-5">
-            <h3 className="font-semibold mb-3 text-slate-900">Clôture journalière</h3>
+          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+            <h3 className="font-semibold mb-4 text-slate-900 flex items-center gap-2"><Clock className="w-4 h-4 text-amber-500" />Clôture journalière</h3>
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <input
@@ -284,8 +287,8 @@ export default function FinanceSettingsContent() {
           </div>
 
           {/* Budget */}
-          <div className="bg-white rounded-lg border p-5">
-            <h3 className="font-semibold mb-3 text-slate-900">Budget</h3>
+          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+            <h3 className="font-semibold mb-4 text-slate-900 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-blue-500" />Budget</h3>
             <div>
               <Label>Seuil alerte budget (%)</Label>
               <Input
@@ -303,8 +306,8 @@ export default function FinanceSettingsContent() {
           </div>
 
           {/* Paiement */}
-          <div className="bg-white rounded-lg border p-5">
-            <h3 className="font-semibold mb-3 text-slate-900">Paiement</h3>
+          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+            <h3 className="font-semibold mb-4 text-slate-900 flex items-center gap-2"><CreditCard className="w-4 h-4 text-indigo-500" />Paiement</h3>
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <input
@@ -333,8 +336,8 @@ export default function FinanceSettingsContent() {
           </div>
 
           {/* Annulation */}
-          <div className="bg-white rounded-lg border p-5">
-            <h3 className="font-semibold mb-3 text-slate-900">Annulation</h3>
+          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+            <h3 className="font-semibold mb-4 text-slate-900 flex items-center gap-2"><AlertCircle className="w-4 h-4 text-orange-500" />Annulation</h3>
             <div>
               <Label>Délai d'annulation (heures)</Label>
               <Input
@@ -351,8 +354,8 @@ export default function FinanceSettingsContent() {
           </div>
 
           {/* Fedapay */}
-          <div className="bg-white rounded-lg border p-5">
-            <h3 className="font-semibold mb-3 text-slate-900">Paiement en ligne (Fedapay)</h3>
+          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+            <h3 className="font-semibold mb-4 text-slate-900 flex items-center gap-2"><CreditCard className="w-4 h-4 text-violet-500" />Paiement en ligne (Fedapay)</h3>
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <input
@@ -399,7 +402,7 @@ export default function FinanceSettingsContent() {
           </div>
 
           {/* 📜 Historique des modifications */}
-          <div className="bg-white rounded-lg border p-5">
+          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
             <h3 className="font-semibold mb-3 text-slate-900 flex items-center gap-2">
               <History className="w-5 h-5 text-slate-600" />
               Historique des modifications

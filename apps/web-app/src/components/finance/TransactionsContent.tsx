@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Download, Eye, Smartphone } from 'lucide-react';
 import { WhatsAppIcon, GmailIcon, SmsIcon } from './OfficialIcons';
+import DocumentPreviewModal from '@/components/students/DocumentPreviewModal';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
@@ -24,6 +25,7 @@ const METHOD_LABELS: Record<string, string> = {
 export default function TransactionsContent() {
   const { academicYear } = useModuleContext();
   const [whatsappMenuId, setWhatsappMenuId] = useState<string | null>(null);
+  const [previewDoc, setPreviewDoc] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
   const { toast } = useToast();
   const [transactions, setTransactions] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -144,7 +146,16 @@ export default function TransactionsContent() {
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150"
-                          onClick={() => window.open(financeService.getReceiptPdfUrl(t.id), '_blank')}
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(financeService.getReceiptPdfUrl(t.id));
+                              const blob = await res.blob();
+                              const url = URL.createObjectURL(blob);
+                              setPreviewDoc({ filePath: url, fileName: `recu-${t.receiptNumber || t.id}.pdf`, mimeType: 'application/pdf' });
+                            } catch (e: any) {
+                              toast({ title: 'Erreur', description: 'Impossible de charger le reçu', variant: 'destructive' });
+                            }
+                          }}
                           title="Visualiser le reçu"
                         >
                           <Eye className="w-3.5 h-3.5 text-slate-600" />
@@ -263,6 +274,17 @@ export default function TransactionsContent() {
           onClose={() => setOnlineModalOpen(false)}
           onSuccess={handleSuccess}
           defaultPaymentMethod="FEEXPAY"
+        />
+      )}
+
+      {/* Modal de visualisation du reçu PDF */}
+      {previewDoc && (
+        <DocumentPreviewModal
+          doc={previewDoc}
+          onClose={() => {
+            if (previewDoc.filePath.startsWith('blob:')) URL.revokeObjectURL(previewDoc.filePath);
+            setPreviewDoc(null);
+          }}
         />
       )}
     </div>

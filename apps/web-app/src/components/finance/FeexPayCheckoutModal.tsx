@@ -34,9 +34,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { formatCurrency } from '@/lib/utils';
-import { FeexPayService } from '../../../../../api-server/src/finance/feexpay.service';
+import {
+  detectFeexPayOperator,
+  isValidBeninPhone,
+  formatPhoneDisplay,
+  type FeexPayOperator,
+} from '@/lib/feexpay/detect-operator';
 
-type Operator = 'mtn' | 'moov' | 'celtiis_bj';
+type Operator = FeexPayOperator;
 
 interface FeexPayCheckoutModalProps {
   open: boolean;
@@ -120,7 +125,7 @@ export default function FeexPayCheckoutModal({
   // Auto-detect operator from phone number
   const detectedOperator = useMemo(() => {
     if (phone.replace(/\D/g, '').length < 5) return null;
-    return FeexPayService.detectOperator(phone);
+    return detectFeexPayOperator(phone);
   }, [phone]);
 
   // Update operator if detected and user hasn't manually chosen
@@ -133,25 +138,12 @@ export default function FeexPayCheckoutModal({
 
   if (!open) return null;
 
-  const formatPhoneForDisplay = (value: string) => {
-    // Format : 01 95 72 22 34
-    const digits = value.replace(/\D/g, '');
-    if (digits.length <= 2) return digits;
-    if (digits.length <= 4) return `${digits.slice(0, 2)} ${digits.slice(2)}`;
-    if (digits.length <= 6) return `${digits.slice(0, 2)} ${digits.slice(2, 4)} ${digits.slice(4)}`;
-    if (digits.length <= 8) return `${digits.slice(0, 2)} ${digits.slice(2, 4)} ${digits.slice(4, 6)} ${digits.slice(6)}`;
-    return `${digits.slice(0, 2)} ${digits.slice(2, 4)} ${digits.slice(4, 6)} ${digits.slice(6, 8)} ${digits.slice(8, 10)}`;
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanedPhone = phone.replace(/\D/g, '');
 
-    // Validation : formats acceptés 0XXXXXXXX (10), 229XXXXXXXXX (13), +229XXXXXXXXX (14)
-    const isValid = /^(01\d{8}|22901\d{8}|\+?22901\d{8})$/.test(
-      phone.replace(/[\s\-()+]/g, ''),
-    );
-    if (!isValid) {
+    // Validation via utilitaire frontend (formats béninois)
+    if (!isValidBeninPhone(phone)) {
       setErrorMessage('Numéro invalide. Format attendu : 01 95 72 22 34 ou +229 01 95 72 22 34.');
       return;
     }
@@ -181,7 +173,7 @@ export default function FeexPayCheckoutModal({
         setStep('pending');
         toast({
           title: '📱 Paiement initié',
-          description: `Le parent va recevoir une notification sur le ${formatPhoneForDisplay(cleanedPhone)} pour confirmer.`,
+          description: `Le parent va recevoir une notification sur le ${formatPhoneDisplay(cleanedPhone)} pour confirmer.`,
         });
         // Start polling (optional — FeexPay webhook will handle the actual confirmation)
         // We poll once after 30 seconds to update UI, but the webhook is the source of truth
@@ -264,7 +256,7 @@ export default function FeexPayCheckoutModal({
                   <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <Input
                     type="tel"
-                    value={formatPhoneForDisplay(phone)}
+                    value={formatPhoneDisplay(phone)}
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="01 95 72 22 34"
                     className="pl-10 text-lg font-medium tracking-wide"

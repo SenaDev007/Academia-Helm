@@ -255,6 +255,7 @@ model Tenant {
   paymentFlows                     PaymentFlow[]
   paymentPlans                     PaymentPlan[]
   paymentSummaries                 PaymentSummary[]
+  paymentConfig                    TenantPaymentConfig?
   payments                         Payment[]
   payrollItems                     PayrollItem[]
   payrolls                         Payroll[]

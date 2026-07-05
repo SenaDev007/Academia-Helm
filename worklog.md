@@ -2346,3 +2346,34 @@ Stage Summary:
 - Design modernisé : cartes à header gradient, badges icônes colorés, toggles animés, barre de visualisation
 - Tous les appels backend (financeService.*) préservés à l'identique
 - Aucune erreur TypeScript introduite
+
+---
+Task ID: recovery-analysis
+Agent: Explore
+Task: Analyser backend recouvrement pour refactor frontend
+
+Work Log:
+- Lu /home/z/my-project/worklog.md pour comprendre le contexte Academia Helm (ERP SaaS éducatif Next.js 16 + NestJS + Prisma + Neon).
+- Lu apps/api-server/src/finance/collection-prisma.controller.ts (102 lignes) : 6 endpoints sous /api/finance/collection (detect-arrears, arrears, reminders, promises, actions, statistics). Aucun @Roles (sécurité faible).
+- Lu apps/api-server/src/finance/collection-prisma.service.ts (385 lignes) : méthodes detectArrears (batch 200 anti-OOM), calculateArrearsLevel (LOW/MEDIUM/HIGH/CRITICAL basé sur lastPaymentDate — bug: paramètre balance ignoré), findAllArrears (limit 500, pas de pagination), createReminder (status='SENT' forcé mais aucun envoi réel), createPaymentPromise (validation montant ≤ balanceDue), createCollectionAction, getCollectionStatistics (4 requêtes agrégées //).
+- Lu apps/api-server/src/finance/collection-case.controller.ts (101 lignes) : 4 endpoints sous /api/collection (cases list, case par studentId+year, sync, trigger-reminders). @Roles correct (DIRECTOR/ADMIN/ACCOUNTANT).
+- Lu apps/api-server/src/finance/collection-case.service.ts (385 lignes) : upsertCollectionCase (calcul totalDue/Paid/outstanding + status ON_TIME/LATE/CRITICAL/BLOCKED), checkOverdueInstallments, triggerAutomaticReminders (escalade niveau 1-4 : INTERNAL/SMS+WA/INTERNAL/BLOCK), applyAdministrativeBlock (30 jours). Bug: escalation LATE ne fait que croître (jamais reset).
+- Analysé apps/api-server/prisma/schema.prisma lignes 10431-10593 : 6 modèles (RecoveryReminder OLD + FeeArrear/CollectionReminder/PaymentPromise/CollectionAction/CollectionCase NEW). Enums ReminderLevel (WARNING/URGENT/FINAL_NOTICE) et ReminderChannel (SMS/WHATSAPP/EMAIL) utilisés seulement par l'OLD system.
+- Analysé FinancialSettings (schema.prisma 5014-5038) : blockingThreshold (utilisé dans student-account.service:338), reminderWarningDays/urgentDays/finalDays (stockés mais NON consommés — hardcodage J+3/J+7/J+15 dans recovery-reminder.service). Incohérence: RECOVERY_BLOCK_THRESHOLD (env var) vs blockingThreshold (DB).
+- Lu recovery-reminder.controller.ts et recovery-reminder.service.ts (système OLD, 221 lignes) : @Cron('0 2 * * *') nightly, envoie emails parents via RecoveryReminderEmailService (fire-and-forget).
+- Lu apps/web-app/src/components/finance/RecoveryRemindersContent.tsx (189 lignes) : tableau simple + modal rappel manuel + bouton détection nightly. BUG CRITIQUE: appelle financeService.sendManualRecoveryReminder() et runNightlyRecoveryReminders() qui N'EXISTENT PAS dans finance.service.ts (vraies méthodes: sendManualReminder et runNightlyDetection).
+- Lu apps/web-app/src/services/finance.service.ts (386 lignes) : 3 méthodes recovery (getRecoveryReminders, sendManualReminder, runNightlyDetection) + 1 méthode getArrears. Manquent: detectArrears, createCollectionReminder, createPaymentPromise, createCollectionAction, getCollectionStatistics, getCollectionCases, getCollectionCase, syncCollectionCase, triggerCaseReminders.
+- Lu apps/api-server/src/finance/finance.module.ts : CollectionPrismaController ET CollectionCaseController SONT bien enregistrés (lignes 88 et 95). Services aussi (118, 135).
+- Lu apps/api-server/src/finance/dto/index.ts lignes 370-413 : DTOs CreateCollectionReminderDto (level ∈ WARNING/URGENT/FINAL_NOTICE, channel ∈ SMS/WHATSAPP/EMAIL), CreatePaymentPromiseDto, CreateCollectionActionDto.
+- Identifié 3 emplacements du label "Recouvrement": apps/web-app/src/app/app/finance/layout.tsx:50, apps/web-app/src/components/finance/finance-tabs.tsx:23, apps/web-app/src/components/pilotage/modules/FinanceModulePage.tsx:136. Page rendue: apps/web-app/src/app/app/finance/collection/page.tsx qui importe RecoveryRemindersContent.
+- Rédigé rapport markdown structuré (~3000 mots) sauvegardé dans /home/z/my-project/scratch/recovery-analysis.md avec 12 sections : modèles Prisma, enums, endpoints REST, méthodes service, état frontend, configuration, gaps fintech, architecture proposée (8 composants), renommage onglet, plan d'action, vigilances, conclusion.
+
+Stage Summary:
+- Rapport sauvegardé à /home/z/my-project/scratch/recovery-analysis.md
+- Points clés du rapport:
+  1. DEUX SYSTÈMES parallèles coexistent côté backend : OLD (RecoveryReminder avec enums, cron nightly + envoi emails réels) et NEW (FeeArrear/CollectionReminder/PaymentPromise/CollectionAction/CollectionCase, plus complet mais aucun envoi réel). Le front est câblé sur OLD.
+  2. BUG CRITIQUE frontend : RecoveryRemindersContent.tsx appelle financeService.sendManualRecoveryReminder() et runNightlyRecoveryReminders() qui n'existent pas. Le composant est cassé à l'exécution.
+  3. Backend NEW est COMPLET côté endpoints (10 endpoints au total : 6 sur /api/finance/collection + 4 sur /api/collection) — mais manque GET /reminders, GET /promises, GET /actions, PATCH /promises/:id, PATCH /cases/:id, @Roles sur CollectionPrismaController, cron quotidien escalade.
+  4. Renommage "Recouvrement" → "Recouvrement & Arriérés" : 3 fichiers à modifier (layout.tsx:50, finance-tabs.tsx:23, FinanceModulePage.tsx:136) + page.tsx à remplacer.
+  5. Architecture frontend recommandée : 8 composants sous apps/web-app/src/components/finance/recovery/ (RecoveryContent shell + 6 onglets + 2 drawers) + 9 nouvelles méthodes financeService.
+  6. Incohérence config : blockingThreshold (DB, utilisé par student-account.service) vs RECOVERY_BLOCK_THRESHOLD (env var, utilisé par recovery-reminder.service) — à unifier. reminderWarningDays/urgentDays/finalDays stockés mais jamais consommés.

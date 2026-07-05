@@ -1,7 +1,7 @@
 'use client';
 
-import RecoveryRemindersContent from '@/components/finance/RecoveryRemindersContent';
+import RecoveryContent from '@/components/finance/recovery/RecoveryContent';
 
 export default function CollectionPage() {
-  return <RecoveryRemindersContent />;
+  return <RecoveryContent />;
 }

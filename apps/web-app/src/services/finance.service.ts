@@ -196,6 +196,47 @@ class FinanceService {
     return financeFetch(`/api/finance/collection/arrears${qs ? `?${qs}` : ''}`);
   }
 
+  // --- Collection (système NEW : arrears + reminders + promises + actions + cases) ---
+  async detectArrears(academicYearId: string): Promise<any> {
+    return financeFetch('/api/finance/collection/detect-arrears', {
+      method: 'POST',
+      body: { academicYearId },
+    });
+  }
+
+  async getCollectionStatistics(academicYearId: string): Promise<any> {
+    return financeFetch(`/api/finance/collection/statistics?academicYearId=${academicYearId}`);
+  }
+
+  async createCollectionReminder(data: any): Promise<any> {
+    return financeFetch('/api/finance/collection/reminders', { method: 'POST', body: data });
+  }
+
+  async createPaymentPromise(data: any): Promise<any> {
+    return financeFetch('/api/finance/collection/promises', { method: 'POST', body: data });
+  }
+
+  async createCollectionAction(data: any): Promise<any> {
+    return financeFetch('/api/finance/collection/actions', { method: 'POST', body: data });
+  }
+
+  async getCollectionCases(params?: Record<string, string>): Promise<any> {
+    const qs = params ? new URLSearchParams(params).toString() : '';
+    return financeFetch(`/api/finance/collection/cases${qs ? `?${qs}` : ''}`);
+  }
+
+  async getCollectionCase(studentId: string, academicYearId: string): Promise<any> {
+    return financeFetch(`/api/finance/collection/cases/${studentId}/${academicYearId}`);
+  }
+
+  async syncCollectionCase(studentId: string, academicYearId: string): Promise<any> {
+    return financeFetch(`/api/finance/collection/cases/${studentId}/${academicYearId}/sync`, { method: 'POST' });
+  }
+
+  async triggerCaseReminders(studentId: string, academicYearId: string): Promise<any> {
+    return financeFetch(`/api/finance/collection/cases/${studentId}/${academicYearId}/trigger-reminders`, { method: 'POST' });
+  }
+
   // --- Nouveaux rapports (Phase 6) ---
   async getComparativeYear(academicYearId: string): Promise<any> {
     return financeFetch(`/api/finance/reports/comparative-year?academicYearId=${academicYearId}`);

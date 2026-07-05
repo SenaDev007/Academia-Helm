@@ -771,23 +771,30 @@ export default function NewPaymentModal({
         </form>
 
         {/* ─────────────────────────────────────────────────────────────── */}
-        {/* WIDGET FEEXPAY INLINE — Même UX que Fedapay mais inline         */}
-        {/* (pas de modal séparé, palette FeexPay orange/jaune/noir)       */}
+        {/* WIDGET FEEXPAY INLINE — Schéma Fedapay (container inline)      */}
+        {/* Palette FeexPay : orange #F79E1B, jaune #FFCB05, noir #1A1A1A  */}
         {/* ─────────────────────────────────────────────────────────────── */}
         {feexpayInlineOpen && !receipt && (
-          <div className="rounded-2xl overflow-hidden border border-amber-200 shadow-lg">
-            {/* Header FeexPay (palette officielle) */}
-            <div className="bg-gradient-to-r from-[#F79E1B] via-[#FFCB05] to-[#F79E1B] px-5 py-3 flex items-center gap-3">
-              <div className="bg-white rounded-lg px-2.5 py-1 shadow-sm">
-                <span className="font-bold text-[#1A1A1A] text-base">FeexPay</span>
-              </div>
-              <div className="flex-1">
-                <h3 className="font-bold text-[#1A1A1A] text-sm leading-tight">
-                  Paiement Mobile Money
-                </h3>
-                <p className="text-[10px] text-[#1A1A1A]/70">
-                  Transaction sécurisée · Bénin
-                </p>
+          <div
+            id="feexpay-checkout-container"
+            className="w-full bg-slate-50 rounded-2xl border-2 border-amber-200 shadow-lg overflow-hidden"
+            style={{ minHeight: '520px' }}
+          >
+            {/* Bandeau branding FeexPay (haut du container, comme Fedapay) */}
+            <div className="bg-gradient-to-r from-[#F79E1B] via-[#FFCB05] to-[#F79E1B] px-5 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="bg-white rounded-lg px-3 py-1.5 shadow-sm flex items-center gap-2">
+                  {/* eslint-disable-next-line @next/next/no-img-label */}
+                  <img src="/logos/feexpay.png" alt="FeexPay" className="h-6 w-auto" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-[#1A1A1A] text-sm leading-tight">
+                    Paiement Mobile Money
+                  </h3>
+                  <p className="text-[10px] text-[#1A1A1A]/70">
+                    Transaction sécurisée · FeexPay API v2 · Bénin
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
@@ -803,71 +810,105 @@ export default function NewPaymentModal({
               </button>
             </div>
 
-            {/* Body — layout 2 colonnes (récap + form) */}
-            <div className="grid grid-cols-1 md:grid-cols-[1fr_1.4fr]">
-              {/* Colonne gauche : récap (fond noir) */}
-              <div className="bg-gradient-to-br from-[#1A1A1A] to-[#2D2D2D] text-white p-4">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <Shield className="w-3.5 h-3.5 text-[#FFCB05]" />
+            {/* Corps du widget — même structure que Fedapay checkout */}
+            <div className="bg-white p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Colonne gauche : récapitulatif transaction (fond noir, comme Fedapay) */}
+              <aside className="bg-gradient-to-br from-[#1A1A1A] to-[#2D2D2D] rounded-xl p-5 text-white flex flex-col">
+                <div className="flex items-center gap-2 mb-1">
+                  <Shield className="w-4 h-4 text-[#FFCB05]" />
                   <p className="text-[10px] uppercase tracking-wider text-[#FFCB05] font-semibold">
                     Récapitulatif
                   </p>
                 </div>
-                <p className="text-xs text-white/60 mb-3">Vérifiez avant de confirmer</p>
+                <p className="text-xs text-white/60 mb-5">Vérifiez les détails avant de confirmer</p>
 
-                <p className="text-[9px] uppercase tracking-wider text-white/40 font-semibold mb-0.5">Bénéficiaire</p>
-                <p className="text-sm font-semibold mb-3 leading-tight">
+                <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold mb-1">Bénéficiaire</p>
+                <p className="text-base font-semibold mb-5 leading-tight">
                   {selectedAccount?.student
                     ? `${selectedAccount.student.lastName} ${selectedAccount.student.firstName}`
                     : 'Élève'}
                 </p>
 
-                <p className="text-[9px] uppercase tracking-wider text-white/40 font-semibold mb-0.5">Montant à payer</p>
-                <p className="text-2xl font-bold text-[#FFCB05] leading-none">
+                <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold mb-1">Montant à payer</p>
+                <p className="text-3xl font-bold text-[#FFCB05] leading-none mb-1">
                   {amountNum.toLocaleString('fr-FR')}
-                  <span className="text-sm font-medium text-white/60 ml-1.5">FCFA</span>
+                  <span className="text-base font-medium text-white/60 ml-2">FCFA</span>
                 </p>
+                <p className="text-xs text-white/40">≈ {(amountNum / 655.957).toFixed(2)} EUR</p>
 
-                <div className="mt-4 pt-3 border-t border-white/10 flex items-start gap-1.5">
-                  <Lock className="w-3 h-3 text-[#FFCB05] flex-shrink-0 mt-0.5" />
-                  <p className="text-[10px] text-white/60 leading-tight">
-                    Paiement chiffré SSL. FeexPay est agréé BCEAO.
+                {/* Opérateur sélectionné */}
+                <div className="mt-5 mb-5">
+                  <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold mb-2">Opérateur sélectionné</p>
+                  <div className="bg-white/10 backdrop-blur-sm rounded-lg p-2.5 border border-white/20 flex items-center gap-3">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={feexpayOperator === 'mtn' ? OPERATOR_LOGOS.mtn : feexpayOperator === 'moov' ? OPERATOR_LOGOS.moov : OPERATOR_LOGOS.celtiis}
+                      alt={OPERATOR_META[feexpayOperator].label}
+                      className="h-9 w-9 object-contain rounded bg-white p-1"
+                    />
+                    <div>
+                      <p className="text-sm font-semibold">{OPERATOR_META[feexpayOperator].label}</p>
+                      {detectedOperator && (
+                        <p className="text-[10px] text-[#FFCB05] flex items-center gap-1">
+                          <CheckCircle className="w-3 h-3" /> Détecté automatiquement
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sécurité */}
+                <div className="mt-auto pt-4 border-t border-white/10">
+                  <div className="flex items-start gap-2 text-[10px] text-white/60">
+                    <Lock className="w-3.5 h-3.5 text-[#FFCB05] flex-shrink-0 mt-0.5" />
+                    <p>
+                      Paiement chiffré SSL. Vos informations ne sont jamais stockées.
+                      FeexPay est agréé BCEAO.
+                    </p>
+                  </div>
+                </div>
+              </aside>
+
+              {/* Colonne droite : formulaire (comme Fedapay form) */}
+              <div className="flex flex-col gap-4">
+                <div>
+                  <h4 className="font-bold text-slate-900 text-sm mb-1">Coordonnées de paiement</h4>
+                  <p className="text-xs text-slate-500">
+                    Le client recevra une notification sur son téléphone pour confirmer.
                   </p>
                 </div>
-              </div>
 
-              {/* Colonne droite : formulaire */}
-              <div className="p-4 space-y-3">
                 {/* Téléphone */}
-                <div>
-                  <Label className="text-[10px] font-semibold text-slate-700 uppercase tracking-wide mb-1 block">
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] font-semibold text-slate-700 uppercase tracking-wide">
                     Numéro Mobile Money
                   </Label>
                   <div className="relative">
-                    <Phone className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 z-10" />
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 z-10" />
                     <Input
                       type="tel"
                       value={formatPhoneDisplay(feexpayPhone)}
                       onChange={(e) => setFeexpayPhone(e.target.value)}
                       placeholder="Ex : 01 54 12 34 56"
-                      className="pl-9 text-sm font-medium tracking-wide h-10"
+                      className="pl-10 text-base font-medium tracking-wide h-11"
                       autoFocus
+                      required
                     />
                   </div>
                   {detectedOperator && (
-                    <p className="text-[10px] text-emerald-700 flex items-center gap-1 mt-1 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                      <CheckCircle className="w-3 h-3" />
+                    <p className="text-[11px] text-emerald-700 flex items-center gap-1 bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
+                      <CheckCircle className="w-3.5 h-3.5" />
                       Opérateur détecté : <strong>{OPERATOR_META[detectedOperator].label}</strong>
                     </p>
                   )}
                 </div>
 
-                {/* Sélecteur opérateur */}
-                <div>
-                  <Label className="text-[10px] font-semibold text-slate-700 uppercase tracking-wide mb-1 block">
+                {/* Sélecteur opérateur manuel */}
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] font-semibold text-slate-700 uppercase tracking-wide">
                     Ou choisissez manuellement
                   </Label>
-                  <div className="grid grid-cols-3 gap-1.5">
+                  <div className="grid grid-cols-3 gap-2">
                     {(Object.keys(OPERATOR_META) as FeexPayOperator[]).map((op) => {
                       const meta = OPERATOR_META[op];
                       const isSelected = feexpayOperator === op;
@@ -876,7 +917,7 @@ export default function NewPaymentModal({
                           key={op}
                           type="button"
                           onClick={() => setFeexpayOperator(op)}
-                          className={`relative px-1.5 py-2 rounded-lg border-2 transition-all flex flex-col items-center gap-1 ${
+                          className={`relative px-2 py-2.5 rounded-lg border-2 transition-all flex flex-col items-center gap-1 ${
                             isSelected
                               ? `${meta.bg} ${meta.border} ring-2 ${meta.ring} ring-offset-1`
                               : 'bg-white border-slate-200 hover:border-slate-300'
@@ -886,13 +927,13 @@ export default function NewPaymentModal({
                           <img
                             src={op === 'mtn' ? OPERATOR_LOGOS.mtn : op === 'moov' ? OPERATOR_LOGOS.moov : OPERATOR_LOGOS.celtiis}
                             alt={meta.label}
-                            className="h-6 w-6 object-contain"
+                            className="h-7 w-7 object-contain"
                           />
                           <span className={`text-[10px] font-semibold ${isSelected ? meta.color : 'text-slate-600'}`}>
                             {meta.shortLabel}
                           </span>
                           {isSelected && (
-                            <CheckCircle className="absolute -top-1 -right-1 w-3.5 h-3.5 text-emerald-500 bg-white rounded-full border border-emerald-200" />
+                            <CheckCircle className="absolute -top-1.5 -right-1.5 w-4 h-4 text-emerald-500 bg-white rounded-full border border-emerald-200" />
                           )}
                         </button>
                       );
@@ -901,31 +942,31 @@ export default function NewPaymentModal({
                 </div>
 
                 {/* Info */}
-                <div className="bg-amber-50 border border-amber-200 rounded-md p-2 flex items-start gap-1.5">
-                  <AlertCircle className="w-3 h-3 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <p className="text-[10px] text-amber-900 leading-tight">
+                <div className="bg-amber-50 border border-amber-200 rounded-md p-2.5 flex items-start gap-2">
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-amber-900 leading-tight">
                     Une notification sera envoyée. Le client saisit son code PIN Mobile Money pour confirmer.
                   </p>
                 </div>
 
                 {/* Error */}
                 {feexpayError && (
-                  <div className="bg-red-50 border border-red-200 rounded-md p-2 flex items-start gap-1.5">
-                    <AlertCircle className="w-3 h-3 text-red-600 flex-shrink-0 mt-0.5" />
-                    <p className="text-[10px] text-red-800">{feexpayError}</p>
+                  <div className="bg-red-50 border border-red-200 rounded-md p-2.5 flex items-start gap-2">
+                    <AlertCircle className="w-3.5 h-3.5 text-red-600 flex-shrink-0 mt-0.5" />
+                    <p className="text-[11px] text-red-800">{feexpayError}</p>
                   </div>
                 )}
 
-                {/* Bouton Payer */}
+                {/* Bouton Payer — pleine largeur comme Fedapay */}
                 <button
                   type="button"
                   onClick={handleFeexPaySubmit}
                   disabled={feexpaySubmitting}
-                  className="w-full bg-gradient-to-r from-[#F79E1B] to-[#FFCB05] hover:from-[#E68A0E] hover:to-[#F0BE04] text-[#1A1A1A] font-bold shadow-md h-10 text-sm rounded-lg flex items-center justify-center gap-2 transition-all disabled:opacity-60"
+                  className="w-full bg-gradient-to-r from-[#F79E1B] to-[#FFCB05] hover:from-[#E68A0E] hover:to-[#F0BE04] text-[#1A1A1A] font-bold shadow-md h-12 text-sm rounded-lg flex items-center justify-center gap-2 transition-all disabled:opacity-60 mt-auto"
                 >
                   {feexpaySubmitting ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <Loader2 className="w-5 h-5 animate-spin" />
                       Initialisation…
                     </>
                   ) : (
@@ -936,8 +977,8 @@ export default function NewPaymentModal({
                   )}
                 </button>
 
-                <p className="text-[9px] text-center text-slate-400 flex items-center justify-center gap-1">
-                  <Lock className="w-2.5 h-2.5" />
+                <p className="text-[10px] text-center text-slate-400 flex items-center justify-center gap-1">
+                  <Lock className="w-3 h-3" />
                   Transaction sécurisée · FeexPay API v2
                 </p>
               </div>

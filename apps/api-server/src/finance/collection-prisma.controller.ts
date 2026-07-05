@@ -8,24 +8,32 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Body,
   Param,
   Query,
   UseGuards,
 } from '@nestjs/common';
 import { CollectionPrismaService } from './collection-prisma.service';
+import { CollectionCaseService } from './collection-case.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { SchoolLevelId } from '../common/decorators/school-level-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CreateCollectionReminderDto, CreatePaymentPromiseDto, CreateCollectionActionDto } from './dto';
 
 @Controller('finance/collection')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class CollectionPrismaController {
-  constructor(private readonly collectionService: CollectionPrismaService) {}
+  constructor(
+    private readonly collectionService: CollectionPrismaService,
+    private readonly collectionCaseService: CollectionCaseService,
+  ) {}
 
   @Post('detect-arrears')
+  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
   async detectArrears(
     @TenantId() tenantId: string,
     @Body() body: { academicYearId: string },
@@ -52,6 +60,7 @@ export class CollectionPrismaController {
   }
 
   @Post('reminders')
+  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
   async createReminder(
     @TenantId() tenantId: string,
     @Body() createDto: CreateCollectionReminderDto,
@@ -65,7 +74,22 @@ export class CollectionPrismaController {
     });
   }
 
+  @Get('reminders')
+  async findAllReminders(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId?: string,
+    @Query('feeArrearId') feeArrearId?: string,
+    @Query('status') status?: string,
+  ) {
+    return this.collectionService.findAllCollectionReminders(tenantId, {
+      academicYearId,
+      feeArrearId,
+      status,
+    });
+  }
+
   @Post('promises')
+  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
   async createPaymentPromise(
     @CurrentUser() user: any,
     @Body() createDto: CreatePaymentPromiseDto,
@@ -79,7 +103,31 @@ export class CollectionPrismaController {
     });
   }
 
+  @Get('promises')
+  async findAllPromises(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId?: string,
+    @Query('status') status?: string,
+    @Query('feeArrearId') feeArrearId?: string,
+  ) {
+    return this.collectionService.findAllPaymentPromises(tenantId, {
+      academicYearId,
+      status,
+      feeArrearId,
+    });
+  }
+
+  @Patch('promises/:id/status')
+  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
+  async updatePromiseStatus(
+    @Param('id') promiseId: string,
+    @Body() body: { status: 'HONORED' | 'BROKEN' | 'PENDING' },
+  ) {
+    return this.collectionService.updatePaymentPromiseStatus(promiseId, body.status);
+  }
+
   @Post('actions')
+  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
   async createCollectionAction(
     @CurrentUser() user: any,
     @Body() createDto: CreateCollectionActionDto,
@@ -92,12 +140,113 @@ export class CollectionPrismaController {
     });
   }
 
+  @Get('actions')
+  async findAllActions(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId?: string,
+    @Query('actionType') actionType?: string,
+    @Query('feeArrearId') feeArrearId?: string,
+  ) {
+    return this.collectionService.findAllCollectionActions(tenantId, {
+      academicYearId,
+      actionType,
+      feeArrearId,
+    });
+  }
+
   @Get('statistics')
   async getStatistics(
     @TenantId() tenantId: string,
     @Query('academicYearId') academicYearId?: string,
   ) {
     return this.collectionService.getCollectionStatistics(tenantId, academicYearId);
+  }
+
+  @Get('cases')
+  async findAllCases(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId?: string,
+    @Query('status') status?: string,
+    @Query('minOutstanding') minOutstanding?: string,
+  ) {
+    return this.collectionCaseService.findAllCollectionCases(tenantId, {
+      academicYearId,
+      status,
+      minOutstanding: minOutstanding ? Number(minOutstanding) : undefined,
+    });
+  }
+
+  @Get('cases/:studentId/:academicYearId')
+  async getCase(
+    @TenantId() tenantId: string,
+    @Param('studentId') studentId: string,
+    @Param('academicYearId') academicYearId: string,
+  ) {
+    return this.collectionCaseService.getCollectionCase(tenantId, studentId, academicYearId);
+  }
+
+  @Post('cases/:studentId/:academicYearId/sync')
+  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
+  async syncCase(
+    @TenantId() tenantId: string,
+    @Param('studentId') studentId: string,
+    @Param('academicYearId') academicYearId: string,
+  ) {
+    return this.collectionCaseService.upsertCollectionCase(tenantId, studentId, academicYearId);
+  }
+
+  @Post('cases/:studentId/:academicYearId/trigger-reminders')
+  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
+  async triggerReminders(
+    @TenantId() tenantId: string,
+    @Param('studentId') studentId: string,
+    @Param('academicYearId') academicYearId: string,
+  ) {
+    return this.collectionCaseService.triggerAutomaticReminders(tenantId, studentId, academicYearId);
+  }
+
+  /**
+   * Workflow d'escalade automatique : parcourt tous les cas de l'année et
+   * déclenche les relances selon le niveau d'escalade calculé.
+   *
+   * Niveaux :
+   *   1 → Rappel interne (notification système)
+   *   2 → SMS + WhatsApp (rappel ferme)
+   *   3 → Notification direction (critique)
+   *   4 → Blocage administratif
+   */
+  @Post('run-escalation')
+  @Roles('DIRECTOR', 'ADMIN', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
+  async runEscalation(
+    @TenantId() tenantId: string,
+    @Body() body: { academicYearId: string },
+  ) {
+    // Récupérer tous les cas avec solde impayé
+    const cases = await this.collectionCaseService.findAllCollectionCases(tenantId, {
+      academicYearId: body.academicYearId,
+    });
+
+    const results: any[] = [];
+    for (const c of cases) {
+      if (c.status === 'ON_TIME') continue;
+      try {
+        const r = await this.collectionCaseService.triggerAutomaticReminders(
+          tenantId,
+          c.studentId,
+          body.academicYearId,
+        );
+        results.push({ studentId: c.studentId, ...r });
+      } catch (err: any) {
+        results.push({ studentId: c.studentId, error: err.message });
+      }
+    }
+
+    return {
+      totalCases: cases.length,
+      processed: results.length,
+      triggered: results.filter((r) => r.triggered).length,
+      results,
+    };
   }
 }
 

@@ -32,6 +32,7 @@ import {
   AlertCircle, TrendingDown, Users, Wallet, Target, RefreshCw,
   Send, Play, Loader2, ChevronRight, Filter, Search,
   Phone, Mail, FileText, UserCheck, Clock, AlertTriangle,
+  Zap, CheckCircle2, XCircle, Calendar, Plus, Eye,
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -75,33 +76,54 @@ export default function RecoveryContent() {
   const [activeTab, setActiveTab] = useState<TabId>('dashboard');
   const [loading, setLoading] = useState(true);
   const [detecting, setDetecting] = useState(false);
+  const [escalating, setEscalating] = useState(false);
 
   // Données
   const [arrears, setArrears] = useState<any[]>([]);
   const [reminders, setReminders] = useState<any[]>([]);
   const [statistics, setStatistics] = useState<any>(null);
+  const [promises, setPromises] = useState<any[]>([]);
+  const [actions, setActions] = useState<any[]>([]);
+  const [cases, setCases] = useState<any[]>([]);
 
   // Filtres arriérés
   const [arrearLevelFilter, setArrearLevelFilter] = useState<string>('ALL');
   const [arrearSearch, setArrearSearch] = useState('');
+
+  // Filtres promesses
+  const [promiseStatusFilter, setPromiseStatusFilter] = useState<string>('ALL');
+
+  // Filtres actions
+  const [actionTypeFilter, setActionTypeFilter] = useState<string>('ALL');
 
   // Modal relance manuelle (système OLD)
   const [manualModal, setManualModal] = useState(false);
   const [manualAccountId, setManualAccountId] = useState('');
   const [manualLevel, setManualLevel] = useState('WARNING');
 
+  // Modals Phase 2
+  const [promiseModal, setPromiseModal] = useState<{ arrearId: string; studentName: string; balanceDue: number } | null>(null);
+  const [actionModal, setActionModal] = useState<{ arrearId: string; studentName: string } | null>(null);
+  const [caseDetailModal, setCaseDetailModal] = useState<any | null>(null);
+
   const loadAll = useCallback(async () => {
     if (!academicYear?.id) return;
     setLoading(true);
     try {
-      const [arrearsData, remindersData, statsData] = await Promise.all([
+      const [arrearsData, remindersData, statsData, promisesData, actionsData, casesData] = await Promise.all([
         financeService.getArrears({ academicYearId: academicYear.id }).catch(() => []),
         financeService.getRecoveryReminders({ academicYearId: academicYear.id }).catch(() => []),
         financeService.getCollectionStatistics(academicYear.id).catch(() => null),
+        financeService.getCollectionPromises({ academicYearId: academicYear.id }).catch(() => []),
+        financeService.getCollectionActions({ academicYearId: academicYear.id }).catch(() => []),
+        financeService.getCollectionCases({ academicYearId: academicYear.id }).catch(() => []),
       ]);
       setArrears(Array.isArray(arrearsData) ? arrearsData : []);
       setReminders(Array.isArray(remindersData) ? remindersData : []);
       setStatistics(statsData);
+      setPromises(Array.isArray(promisesData) ? promisesData : []);
+      setActions(Array.isArray(actionsData) ? actionsData : []);
+      setCases(Array.isArray(casesData) ? casesData : []);
     } catch (e) {
       console.error('Failed to load recovery data', e);
     } finally {
@@ -154,6 +176,88 @@ export default function RecoveryContent() {
     }
   };
 
+  /**
+   * Workflow d'escalade automatique : parcourt tous les cas de l'année et
+   * déclenche les relances selon le niveau (1=rappel, 2=SMS+WhatsApp,
+   * 3=notification direction, 4=blocage administratif).
+   */
+  const handleRunEscalation = async () => {
+    if (!academicYear?.id) return;
+    setEscalating(true);
+    try {
+      const result = await financeService.runEscalation(academicYear.id);
+      toast({
+        title: '✅ Escalade terminée',
+        description: `${result.processed} cas traités, ${result.triggered} relances déclenchées.`,
+      });
+      loadAll();
+    } catch (e: any) {
+      toast({
+        title: 'Erreur escalade',
+        description: e?.message || 'Erreur lors du workflow',
+        variant: 'destructive',
+      });
+    } finally {
+      setEscalating(false);
+    }
+  };
+
+  // Marquer une promesse comme honorée ou rompue
+  const handleUpdatePromiseStatus = async (promiseId: string, status: 'HONORED' | 'BROKEN') => {
+    try {
+      await financeService.updatePromiseStatus(promiseId, status);
+      toast({
+        title: status === 'HONORED' ? '✅ Promesse honorée' : '❌ Promesse rompue',
+        description: status === 'HONORED'
+          ? 'La promesse a été marquée comme honorée.'
+          : 'La promesse a été marquée comme rompue. Une escalade est recommandée.',
+      });
+      loadAll();
+    } catch (e: any) {
+      toast({
+        title: 'Erreur',
+        description: e?.message || 'Erreur réseau',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Créer une promesse de paiement
+  const handleCreatePromise = async (data: { arrearId: string; promisedAmount: number; promiseDate: string; notes?: string }) => {
+    try {
+      await financeService.createPaymentPromise(data);
+      toast({ title: '✅ Promesse enregistrée', description: 'La promesse de paiement a été créée.' });
+      setPromiseModal(null);
+      loadAll();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e?.message || 'Erreur', variant: 'destructive' });
+    }
+  };
+
+  // Créer une action de recouvrement
+  const handleCreateAction = async (data: { arrearId: string; actionType: string; description?: string }) => {
+    try {
+      await financeService.createCollectionAction(data);
+      toast({ title: '✅ Action enregistrée', description: "L'action de recouvrement a été journalisée." });
+      setActionModal(null);
+      loadAll();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e?.message || 'Erreur', variant: 'destructive' });
+    }
+  };
+
+  // Filtrage des promesses
+  const filteredPromises = useMemo(() => {
+    if (promiseStatusFilter === 'ALL') return promises;
+    return promises.filter((p) => p.status === promiseStatusFilter);
+  }, [promises, promiseStatusFilter]);
+
+  // Filtrage des actions
+  const filteredActions = useMemo(() => {
+    if (actionTypeFilter === 'ALL') return actions;
+    return actions.filter((a) => a.actionType === actionTypeFilter);
+  }, [actions, actionTypeFilter]);
+
   // Filtrage des arriérés
   const filteredArrears = useMemo(() => {
     let result = arrears;
@@ -193,7 +297,7 @@ export default function RecoveryContent() {
                 Pilotez le recouvrement des impayés et suivez les arriérés de l'année {academicYear?.name || '—'}.
               </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <Button variant="outline" size="sm" onClick={() => setManualModal(true)}>
                 <Send className="w-4 h-4 mr-2" />
                 Relance manuelle
@@ -205,6 +309,19 @@ export default function RecoveryContent() {
                   <RefreshCw className="w-4 h-4 mr-2" />
                 )}
                 {detecting ? 'Détection...' : 'Détecter arriérés'}
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleRunEscalation}
+                disabled={escalating}
+                className="bg-gradient-to-r from-orange-500 to-rose-600 hover:from-orange-600 hover:to-rose-700 text-white"
+              >
+                {escalating ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Zap className="w-4 h-4 mr-2" />
+                )}
+                {escalating ? 'Escalade...' : 'Lancer escalade auto'}
               </Button>
             </div>
           </div>
@@ -260,25 +377,58 @@ export default function RecoveryContent() {
         ) : activeTab === 'reminders' ? (
           <RemindersTab reminders={reminders} />
         ) : activeTab === 'promises' ? (
-          <PlaceholderTab
-            icon={Target}
-            title="Promesses de paiement"
-            description="Suivi des promesses de paiement (montant + date promise + statut PENDING/HONORED/BROKEN). Cette vue sera implémentée dans la phase 2."
+          <PromisesTab
+            promises={filteredPromises}
+            totalCount={promises.length}
+            statusFilter={promiseStatusFilter}
+            setStatusFilter={setPromiseStatusFilter}
+            onUpdateStatus={handleUpdatePromiseStatus}
+            onNewPromise={(arrear) => setPromiseModal({
+              arrearId: arrear.id,
+              studentName: arrear.student ? `${arrear.student.lastName} ${arrear.student.firstName}` : 'Élève',
+              balanceDue: Number(arrear.balanceDue) || 0,
+            })}
+            arrears={arrears}
           />
         ) : activeTab === 'actions' ? (
-          <PlaceholderTab
-            icon={Phone}
-            title="Actions de recouvrement"
-            description="Historique des actions (appels, emails, visites, courriers). Cette vue sera implémentée dans la phase 2."
+          <ActionsTab
+            actions={filteredActions}
+            totalCount={actions.length}
+            typeFilter={actionTypeFilter}
+            setTypeFilter={setActionTypeFilter}
+            onNewAction={(arrear) => setActionModal({
+              arrearId: arrear.id,
+              studentName: arrear.student ? `${arrear.student.lastName} ${arrear.student.firstName}` : 'Élève',
+            })}
+            arrears={arrears}
           />
         ) : (
-          <PlaceholderTab
-            icon={FileText}
-            title="Dossiers de recouvrement"
-            description="Dossiers consolidés par élève avec timeline complète. Cette vue sera implémentée dans la phase 2."
-          />
+          <CasesTab cases={cases} onViewCase={(c) => setCaseDetailModal(c)} />
         )}
       </ModuleContentArea>
+
+      {/* Modal nouvelle promesse */}
+      {promiseModal && (
+        <PromiseModal
+          data={promiseModal}
+          onClose={() => setPromiseModal(null)}
+          onSubmit={handleCreatePromise}
+        />
+      )}
+
+      {/* Modal nouvelle action */}
+      {actionModal && (
+        <ActionModal
+          data={actionModal}
+          onClose={() => setActionModal(null)}
+          onSubmit={handleCreateAction}
+        />
+      )}
+
+      {/* Modal détail dossiers */}
+      {caseDetailModal && (
+        <CaseDetailModal caseData={caseDetailModal} onClose={() => setCaseDetailModal(null)} />
+      )}
 
       {/* Modal relance manuelle (système OLD) */}
       {manualModal && (
@@ -611,34 +761,6 @@ function RemindersTab({ reminders }: { reminders: any[] }) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Placeholder pour onglets phase 2                                   */
-/* ------------------------------------------------------------------ */
-
-function PlaceholderTab({
-  icon: Icon,
-  title,
-  description,
-}: {
-  icon: any;
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 text-center">
-      <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
-        <Icon className="w-8 h-8 text-slate-400" />
-      </div>
-      <h3 className="font-bold text-slate-900 text-lg mb-2">{title}</h3>
-      <p className="text-sm text-slate-500 max-w-md mx-auto leading-relaxed">{description}</p>
-      <div className="mt-4 inline-flex items-center gap-1 text-xs text-amber-600 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-full">
-        <Clock className="w-3 h-3" />
-        Phase 2 — à implémenter
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
 /*  Carte KPI                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -748,6 +870,679 @@ function ManualReminderModal({
           <div className="flex gap-2 justify-end pt-2">
             <Button variant="outline" onClick={onClose}>Annuler</Button>
             <Button onClick={onSubmit} disabled={!accountId}>Envoyer la relance</Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  PHASE 2 — Vue Promesses de paiement                                */
+/* ------------------------------------------------------------------ */
+
+const PROMISE_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; border: string; icon: any }> = {
+  PENDING: { label: 'En attente', color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200', icon: Clock },
+  HONORED: { label: 'Honorée', color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', icon: CheckCircle2 },
+  BROKEN: { label: 'Rompu', color: 'text-rose-700', bg: 'bg-rose-50', border: 'border-rose-200', icon: XCircle },
+};
+
+function PromisesTab({
+  promises,
+  totalCount,
+  statusFilter,
+  setStatusFilter,
+  onUpdateStatus,
+  onNewPromise,
+  arrears,
+}: {
+  promises: any[];
+  totalCount: number;
+  statusFilter: string;
+  setStatusFilter: (v: string) => void;
+  onUpdateStatus: (id: string, status: 'HONORED' | 'BROKEN') => void;
+  onNewPromise: (arrear: any) => void;
+  arrears: any[];
+}) {
+  const [showNewModal, setShowNewModal] = useState(false);
+  const [selectedArrear, setSelectedArrear] = useState<any | null>(null);
+
+  return (
+    <div className="space-y-4">
+      {/* Filtres + bouton nouvelle promesse */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-wrap gap-3 items-end">
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Statut</Label>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Tous les statuts</SelectItem>
+              <SelectItem value="PENDING">En attente</SelectItem>
+              <SelectItem value="HONORED">Honorée</SelectItem>
+              <SelectItem value="BROKEN">Rompu</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="text-xs text-slate-500 ml-auto">
+          {promises.length} affiché(s) sur {totalCount} total
+        </div>
+        <Button
+          size="sm"
+          onClick={() => setShowNewModal(true)}
+          className="bg-emerald-600 hover:bg-emerald-700 text-white"
+        >
+          <Plus className="w-4 h-4 mr-2" />
+          Nouvelle promesse
+        </Button>
+      </div>
+
+      {/* Tableau */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-gray-50">
+              <TableHead>Élève</TableHead>
+              <TableHead>Frais</TableHead>
+              <TableHead className="text-right">Montant promis</TableHead>
+              <TableHead>Date promise</TableHead>
+              <TableHead>Statut</TableHead>
+              <TableHead>Créé par</TableHead>
+              <TableHead className="text-center">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {promises.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center text-gray-500 py-12">
+                  Aucune promesse de paiement enregistrée.
+                </TableCell>
+              </TableRow>
+            ) : (
+              promises.map((p) => {
+                const config = PROMISE_STATUS_CONFIG[p.status || 'PENDING'] || PROMISE_STATUS_CONFIG.PENDING;
+                const StatusIcon = config.icon;
+                const isOverdue = p.status === 'PENDING' && new Date(p.promisedDate) < new Date();
+                return (
+                  <TableRow key={p.id} className="hover:bg-slate-50">
+                    <TableCell className="font-medium">
+                      {p.feeArrear?.student
+                        ? `${p.feeArrear.student.lastName} ${p.feeArrear.student.firstName}`
+                        : '—'}
+                    </TableCell>
+                    <TableCell className="text-sm text-slate-600">
+                      {p.feeArrear?.studentFee?.feeDefinition?.label || '—'}
+                    </TableCell>
+                    <TableCell className="text-right font-mono font-semibold text-emerald-700">
+                      {formatCurrency(p.promisedAmount)}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      <span className={isOverdue ? 'text-rose-600 font-semibold' : 'text-slate-700'}>
+                        {new Date(p.promisedDate).toLocaleDateString('fr-FR')}
+                      </span>
+                      {isOverdue && (
+                        <Badge variant="outline" className="ml-2 text-[10px] text-rose-700 border-rose-300 bg-rose-50">
+                          En retard
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={`${config.color} ${config.bg} ${config.border} border`}>
+                        <StatusIcon className="w-3 h-3 mr-1" />
+                        {config.label}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-slate-500">
+                      {p.creator ? `${p.creator.firstName} ${p.creator.lastName}` : 'Système'}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {p.status === 'PENDING' && (
+                        <div className="flex gap-1 justify-center">
+                          <button
+                            onClick={() => onUpdateStatus(p.id, 'HONORED')}
+                            className="p-1.5 hover:bg-emerald-100 rounded text-emerald-700"
+                            title="Marquer honorée"
+                          >
+                            <CheckCircle2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => onUpdateStatus(p.id, 'BROKEN')}
+                            className="p-1.5 hover:bg-rose-100 rounded text-rose-700"
+                            title="Marquer rompu"
+                          >
+                            <XCircle className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Modal sélection d'arrieré pour nouvelle promesse */}
+      {showNewModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50" onClick={() => setShowNewModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-slate-900 mb-4">Sélectionner un arrieré</h3>
+            <p className="text-xs text-slate-500 mb-3">Choisissez l'arriéré pour lequel créer une promesse de paiement.</p>
+            {arrears.length === 0 ? (
+              <p className="text-sm text-slate-500 italic py-4 text-center">Aucun arriéré disponible.</p>
+            ) : (
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {arrears.slice(0, 50).map((a) => (
+                  <button
+                    key={a.id}
+                    onClick={() => {
+                      setSelectedArrear(a);
+                      setShowNewModal(false);
+                      onNewPromise(a);
+                    }}
+                    className="w-full text-left p-3 rounded-lg border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 transition-colors"
+                  >
+                    <p className="font-semibold text-sm">
+                      {a.student ? `${a.student.lastName} ${a.student.firstName}` : '—'}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {a.studentFee?.feeDefinition?.label || 'Frais'} · Solde : {formatCurrency(a.balanceDue)} FCFA
+                    </p>
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex justify-end mt-4">
+              <Button variant="outline" onClick={() => setShowNewModal(false)}>Annuler</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  PHASE 2 — Vue Actions de recouvrement                              */
+/* ------------------------------------------------------------------ */
+
+const ACTION_TYPE_CONFIG: Record<string, { label: string; icon: any; color: string }> = {
+  CALL: { label: 'Appel téléphonique', icon: Phone, color: 'text-blue-600' },
+  EMAIL: { label: 'Email', icon: Mail, color: 'text-indigo-600' },
+  MEETING: { label: 'Réunion / Visite', icon: Users, color: 'text-purple-600' },
+  LETTER: { label: 'Courrier / Mise en demeure', icon: FileText, color: 'text-rose-600' },
+  SUSPENSION: { label: 'Suspension', icon: AlertTriangle, color: 'text-orange-600' },
+  OTHER: { label: 'Autre', icon: AlertCircle, color: 'text-slate-600' },
+  REMINDER: { label: 'Rappel automatique', icon: Zap, color: 'text-amber-600' },
+  WARNING: { label: 'Avertissement', icon: AlertTriangle, color: 'text-amber-600' },
+  BLOCK: { label: 'Blocage', icon: AlertCircle, color: 'text-rose-600' },
+};
+
+function ActionsTab({
+  actions,
+  totalCount,
+  typeFilter,
+  setTypeFilter,
+  onNewAction,
+  arrears,
+}: {
+  actions: any[];
+  totalCount: number;
+  typeFilter: string;
+  setTypeFilter: (v: string) => void;
+  onNewAction: (arrear: any) => void;
+  arrears: any[];
+}) {
+  const [showNewModal, setShowNewModal] = useState(false);
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-wrap gap-3 items-end">
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Type d'action</Label>
+          <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <SelectTrigger className="w-[220px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Tous les types</SelectItem>
+              {Object.entries(ACTION_TYPE_CONFIG).map(([key, cfg]) => (
+                <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="text-xs text-slate-500 ml-auto">
+          {actions.length} affiché(s) sur {totalCount} total
+        </div>
+        <Button
+          size="sm"
+          onClick={() => setShowNewModal(true)}
+          className="bg-indigo-600 hover:bg-indigo-700 text-white"
+        >
+          <Plus className="w-4 h-4 mr-2" />
+          Nouvelle action
+        </Button>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-gray-50">
+              <TableHead>Date</TableHead>
+              <TableHead>Élève</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>Description</TableHead>
+              <TableHead>Effectué par</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {actions.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center text-gray-500 py-12">
+                  Aucune action de recouvrement enregistrée.
+                </TableCell>
+              </TableRow>
+            ) : (
+              actions.map((a) => {
+                const cfg = ACTION_TYPE_CONFIG[a.actionType] || ACTION_TYPE_CONFIG.OTHER;
+                const Icon = cfg.icon;
+                return (
+                  <TableRow key={a.id} className="hover:bg-slate-50">
+                    <TableCell className="text-sm text-slate-600 whitespace-nowrap">
+                      {new Date(a.performedAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      <span className="text-xs text-slate-400 ml-1">
+                        {new Date(a.performedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {a.feeArrear?.student
+                        ? `${a.feeArrear.student.lastName} ${a.feeArrear.student.firstName}`
+                        : '—'}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={`${cfg.color} border-current`}>
+                        <Icon className="w-3 h-3 mr-1" />
+                        {cfg.label}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-sm text-slate-600 max-w-md">
+                      {a.notes || '—'}
+                    </TableCell>
+                    <TableCell className="text-xs text-slate-500">
+                      {a.performer ? `${a.performer.firstName} ${a.performer.lastName}` : 'Système'}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {showNewModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50" onClick={() => setShowNewModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-slate-900 mb-4">Sélectionner un arrieré</h3>
+            <p className="text-xs text-slate-500 mb-3">Choisissez l'arriéré pour lequel journaliser une action.</p>
+            {arrears.length === 0 ? (
+              <p className="text-sm text-slate-500 italic py-4 text-center">Aucun arriéré disponible.</p>
+            ) : (
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {arrears.slice(0, 50).map((a) => (
+                  <button
+                    key={a.id}
+                    onClick={() => {
+                      setShowNewModal(false);
+                      onNewAction(a);
+                    }}
+                    className="w-full text-left p-3 rounded-lg border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 transition-colors"
+                  >
+                    <p className="font-semibold text-sm">
+                      {a.student ? `${a.student.lastName} ${a.student.firstName}` : '—'}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {a.studentFee?.feeDefinition?.label || 'Frais'} · Solde : {formatCurrency(a.balanceDue)} FCFA
+                    </p>
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex justify-end mt-4">
+              <Button variant="outline" onClick={() => setShowNewModal(false)}>Annuler</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  PHASE 2 — Vue Dossiers (cas consolidés par élève)                  */
+/* ------------------------------------------------------------------ */
+
+const CASE_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; border: string }> = {
+  ON_TIME: { label: 'À jour', color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' },
+  LATE: { label: 'En retard', color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200' },
+  CRITICAL: { label: 'Critique', color: 'text-orange-700', bg: 'bg-orange-50', border: 'border-orange-200' },
+  BLOCKED: { label: 'Bloqué', color: 'text-rose-700', bg: 'bg-rose-50', border: 'border-rose-200' },
+};
+
+const ESCALATION_LABELS: Record<number, { label: string; color: string }> = {
+  0: { label: 'Aucune', color: 'text-slate-500' },
+  1: { label: 'Niveau 1 — Rappel', color: 'text-blue-600' },
+  2: { label: 'Niveau 2 — SMS + WhatsApp', color: 'text-amber-600' },
+  3: { label: 'Niveau 3 — Direction', color: 'text-orange-600' },
+  4: { label: 'Niveau 4 — Blocage', color: 'text-rose-600' },
+};
+
+function CasesTab({
+  cases,
+  onViewCase,
+}: {
+  cases: any[];
+  onViewCase: (c: any) => void;
+}) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-gray-50">
+            <TableHead>Élève</TableHead>
+            <TableHead className="text-right">Total dû</TableHead>
+            <TableHead className="text-right">Payé</TableHead>
+            <TableHead className="text-right">Reste à payer</TableHead>
+            <TableHead>Statut</TableHead>
+            <TableHead>Niveau escalade</TableHead>
+            <TableHead>Dernière action</TableHead>
+            <TableHead className="text-center">Détails</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {cases.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={8} className="text-center text-gray-500 py-12">
+                Aucun dossier de recouvrement. Lancez la détection des arriérés puis synchronisez les dossiers.
+              </TableCell>
+            </TableRow>
+          ) : (
+            cases.map((c) => {
+              const config = CASE_STATUS_CONFIG[c.status] || CASE_STATUS_CONFIG.ON_TIME;
+              const escalation = ESCALATION_LABELS[c.escalationLevel || 0] || ESCALATION_LABELS[0];
+              return (
+                <TableRow key={c.id} className="hover:bg-slate-50">
+                  <TableCell className="font-medium">
+                    {c.student
+                      ? `${c.student.lastName} ${c.student.firstName}`
+                      : c.studentId}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-sm">{formatCurrency(c.totalDue)}</TableCell>
+                  <TableCell className="text-right font-mono text-sm text-emerald-700">{formatCurrency(c.totalPaid)}</TableCell>
+                  <TableCell className="text-right font-mono text-sm font-bold text-rose-700">{formatCurrency(c.outstandingAmount)}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={`${config.color} ${config.bg} ${config.border} border`}>
+                      {config.label}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <span className={`text-xs font-semibold ${escalation.color}`}>
+                      {escalation.label}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-xs text-slate-500">
+                    {c.lastActionAt ? new Date(c.lastActionAt).toLocaleDateString('fr-FR') : '—'}
+                    {c.blockedUntil && (
+                      <span className="block text-[10px] text-rose-600">
+                        Bloqué jusqu'au {new Date(c.blockedUntil).toLocaleDateString('fr-FR')}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => onViewCase(c)}
+                      title="Voir le dossier"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              );
+            })
+          )}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Modal — Nouvelle promesse de paiement                              */
+/* ------------------------------------------------------------------ */
+
+function PromiseModal({
+  data,
+  onClose,
+  onSubmit,
+}: {
+  data: { arrearId: string; studentName: string; balanceDue: number };
+  onClose: () => void;
+  onSubmit: (data: { arrearId: string; promisedAmount: number; promiseDate: string; notes?: string }) => void;
+}) {
+  const [amount, setAmount] = useState(String(data.balanceDue || ''));
+  const [date, setDate] = useState('');
+  const [notes, setNotes] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const amt = Number(amount);
+    if (!amt || amt <= 0) return;
+    if (!date) return;
+    onSubmit({ arrearId: data.arrearId, promisedAmount: amt, promiseDate: date, notes: notes.trim() || undefined });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
+          <Target className="w-5 h-5 text-emerald-600" />
+          Nouvelle promesse de paiement
+        </h3>
+        <p className="text-xs text-slate-500 mb-4">Élève : <strong>{data.studentName}</strong> · Solde dû : {formatCurrency(data.balanceDue)} FCFA</p>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Montant promis (FCFA)</Label>
+            <Input
+              type="number"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              max={data.balanceDue}
+              min={1}
+              required
+            />
+            <p className="text-[10px] text-slate-500 mt-1">Ne peut pas dépasser le solde dû ({formatCurrency(data.balanceDue)} FCFA).</p>
+          </div>
+          <div>
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Date promise</Label>
+            <Input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              min={new Date().toISOString().slice(0, 10)}
+              required
+            />
+          </div>
+          <div>
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Notes (optionnel)</Label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-emerald-500"
+              rows={2}
+              placeholder="Conditions, modalités..."
+            />
+          </div>
+          <div className="flex gap-2 justify-end pt-2">
+            <Button type="button" variant="outline" onClick={onClose}>Annuler</Button>
+            <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white">Enregistrer</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Modal — Nouvelle action de recouvrement                            */
+/* ------------------------------------------------------------------ */
+
+function ActionModal({
+  data,
+  onClose,
+  onSubmit,
+}: {
+  data: { arrearId: string; studentName: string };
+  onClose: () => void;
+  onSubmit: (data: { arrearId: string; actionType: string; description?: string }) => void;
+}) {
+  const [actionType, setActionType] = useState('CALL');
+  const [description, setDescription] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSubmit({ arrearId: data.arrearId, actionType, description: description.trim() || undefined });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
+          <Phone className="w-5 h-5 text-indigo-600" />
+          Journaliser une action
+        </h3>
+        <p className="text-xs text-slate-500 mb-4">Élève : <strong>{data.studentName}</strong></p>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Type d'action</Label>
+            <Select value={actionType} onValueChange={setActionType}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {Object.entries(ACTION_TYPE_CONFIG).filter(([k]) => !['REMINDER', 'WARNING', 'BLOCK'].includes(k)).map(([key, cfg]) => (
+                  <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Description / Notes</Label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500"
+              rows={3}
+              placeholder="Ex : Appel passé au père, promet de payer vendredi. Ou : Visite à domicile, parent absent..."
+            />
+          </div>
+          <div className="flex gap-2 justify-end pt-2">
+            <Button type="button" variant="outline" onClick={onClose}>Annuler</Button>
+            <Button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white">Journaliser</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Modal — Détail d'un dossier                                        */
+/* ------------------------------------------------------------------ */
+
+function CaseDetailModal({ caseData, onClose }: { caseData: any; onClose: () => void }) {
+  const config = CASE_STATUS_CONFIG[caseData.status] || CASE_STATUS_CONFIG.ON_TIME;
+  const escalation = ESCALATION_LABELS[caseData.escalationLevel || 0] || ESCALATION_LABELS[0];
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">
+              Dossier de recouvrement
+            </h3>
+            <p className="text-sm text-slate-500">
+              {caseData.student ? `${caseData.student.lastName} ${caseData.student.firstName}` : 'Élève'}
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded">
+            <XCircle className="w-5 h-5 text-slate-400" />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          {/* Statut + escalade */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+              <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-1">Statut</p>
+              <Badge variant="outline" className={`${config.color} ${config.bg} ${config.border} border`}>
+                {config.label}
+              </Badge>
+            </div>
+            <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+              <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-1">Niveau d'escalade</p>
+              <p className={`text-sm font-semibold ${escalation.color}`}>{escalation.label}</p>
+            </div>
+          </div>
+
+          {/* Montants */}
+          <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Total dû</p>
+                <p className="text-base font-bold text-slate-900">{formatCurrency(caseData.totalDue)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Payé</p>
+                <p className="text-base font-bold text-emerald-700">{formatCurrency(caseData.totalPaid)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Reste</p>
+                <p className="text-base font-bold text-rose-700">{formatCurrency(caseData.outstandingAmount)}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Dates */}
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Dernière action</p>
+              <p className="text-slate-700">
+                {caseData.lastActionAt ? new Date(caseData.lastActionAt).toLocaleDateString('fr-FR') : '—'}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Bloqué jusqu'au</p>
+              <p className="text-slate-700">
+                {caseData.blockedUntil ? new Date(caseData.blockedUntil).toLocaleDateString('fr-FR') : '—'}
+              </p>
+            </div>
+          </div>
+
+          {/* Workflow d'escalade — explication */}
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+            <p className="text-xs font-semibold text-amber-900 mb-2 flex items-center gap-1">
+              <Zap className="w-3.5 h-3.5" />
+              Workflow d'escalade automatique
+            </p>
+            <ul className="text-[11px] text-amber-800 space-y-1">
+              <li><strong>Niveau 1</strong> — Rappel interne (notification système)</li>
+              <li><strong>Niveau 2</strong> — SMS + WhatsApp (rappel ferme)</li>
+              <li><strong>Niveau 3</strong> — Notification direction (critique)</li>
+              <li><strong>Niveau 4</strong> — Blocage administratif</li>
+            </ul>
+            <p className="text-[10px] text-amber-700 mt-2">
+              Cliquez sur « Lancer escalade auto » en haut pour déclencher le workflow sur tous les cas.
+            </p>
           </div>
         </div>
       </div>

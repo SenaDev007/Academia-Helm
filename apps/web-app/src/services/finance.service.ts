@@ -237,6 +237,36 @@ class FinanceService {
     return financeFetch(`/api/finance/collection/cases/${studentId}/${academicYearId}/trigger-reminders`, { method: 'POST' });
   }
 
+  // --- Phase 2 : Promesses, Actions, Escalade ---
+  async getCollectionPromises(params?: Record<string, string>): Promise<any> {
+    const qs = params ? new URLSearchParams(params).toString() : '';
+    return financeFetch(`/api/finance/collection/promises${qs ? `?${qs}` : ''}`);
+  }
+
+  async updatePromiseStatus(promiseId: string, status: 'HONORED' | 'BROKEN' | 'PENDING'): Promise<any> {
+    return financeFetch(`/api/finance/collection/promises/${promiseId}/status`, {
+      method: 'PATCH',
+      body: { status },
+    });
+  }
+
+  async getCollectionActions(params?: Record<string, string>): Promise<any> {
+    const qs = params ? new URLSearchParams(params).toString() : '';
+    return financeFetch(`/api/finance/collection/actions${qs ? `?${qs}` : ''}`);
+  }
+
+  async getCollectionReminders(params?: Record<string, string>): Promise<any> {
+    const qs = params ? new URLSearchParams(params).toString() : '';
+    return financeFetch(`/api/finance/collection/reminders${qs ? `?${qs}` : ''}`);
+  }
+
+  async runEscalation(academicYearId: string): Promise<any> {
+    return financeFetch('/api/finance/collection/run-escalation', {
+      method: 'POST',
+      body: { academicYearId },
+    });
+  }
+
   // --- Nouveaux rapports (Phase 6) ---
   async getComparativeYear(academicYearId: string): Promise<any> {
     return financeFetch(`/api/finance/reports/comparative-year?academicYearId=${academicYearId}`);

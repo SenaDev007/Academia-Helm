@@ -381,5 +381,128 @@ export class CollectionPrismaService {
       },
     };
   }
+
+  /**
+   * Liste toutes les promesses de paiement d'un tenant (avec filtres).
+   */
+  async findAllPaymentPromises(
+    tenantId: string,
+    filters?: {
+      academicYearId?: string;
+      status?: string;
+      feeArrearId?: string;
+    },
+  ) {
+    const where: any = {};
+    if (filters?.status) where.status = filters.status;
+    if (filters?.feeArrearId) where.feeArrearId = filters.feeArrearId;
+    if (filters?.academicYearId) {
+      where.feeArrear = { academicYearId: filters.academicYearId, tenantId };
+    } else {
+      where.feeArrear = { tenantId };
+    }
+
+    return this.prisma.paymentPromise.findMany({
+      where,
+      include: {
+        feeArrear: {
+          include: {
+            student: { select: { id: true, firstName: true, lastName: true } },
+            studentFee: { include: { feeDefinition: { select: { id: true, label: true } } } },
+          },
+        },
+        creator: { select: { id: true, firstName: true, lastName: true } },
+      },
+      orderBy: { promisedDate: 'asc' },
+    });
+  }
+
+  /**
+   * Marque une promesse comme honorée ou rompue.
+   */
+  async updatePaymentPromiseStatus(
+    promiseId: string,
+    status: 'HONORED' | 'BROKEN' | 'PENDING',
+  ) {
+    return this.prisma.paymentPromise.update({
+      where: { id: promiseId },
+      data: { status },
+      include: {
+        feeArrear: {
+          include: {
+            student: { select: { id: true, firstName: true, lastName: true } },
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Liste toutes les actions de recouvrement d'un tenant (avec filtres).
+   */
+  async findAllCollectionActions(
+    tenantId: string,
+    filters?: {
+      academicYearId?: string;
+      actionType?: string;
+      feeArrearId?: string;
+    },
+  ) {
+    const where: any = {};
+    if (filters?.actionType) where.actionType = filters.actionType;
+    if (filters?.feeArrearId) where.feeArrearId = filters.feeArrearId;
+    if (filters?.academicYearId) {
+      where.feeArrear = { academicYearId: filters.academicYearId, tenantId };
+    } else {
+      where.feeArrear = { tenantId };
+    }
+
+    return this.prisma.collectionAction.findMany({
+      where,
+      include: {
+        feeArrear: {
+          include: {
+            student: { select: { id: true, firstName: true, lastName: true } },
+            studentFee: { include: { feeDefinition: { select: { id: true, label: true } } } },
+          },
+        },
+        performer: { select: { id: true, firstName: true, lastName: true } },
+      },
+      orderBy: { performedAt: 'desc' },
+    });
+  }
+
+  /**
+   * Liste toutes les relances (CollectionReminder) d'un tenant.
+   */
+  async findAllCollectionReminders(
+    tenantId: string,
+    filters?: {
+      academicYearId?: string;
+      feeArrearId?: string;
+      status?: string;
+    },
+  ) {
+    const where: any = {};
+    if (filters?.status) where.status = filters.status;
+    if (filters?.feeArrearId) where.feeArrearId = filters.feeArrearId;
+    if (filters?.academicYearId) {
+      where.feeArrear = { academicYearId: filters.academicYearId, tenantId };
+    } else {
+      where.feeArrear = { tenantId };
+    }
+
+    return this.prisma.collectionReminder.findMany({
+      where,
+      include: {
+        feeArrear: {
+          include: {
+            student: { select: { id: true, firstName: true, lastName: true } },
+          },
+        },
+      },
+      orderBy: { sentAt: 'desc' },
+    });
+  }
 }
 

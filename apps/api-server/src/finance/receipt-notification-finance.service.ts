@@ -225,7 +225,7 @@ export class ReceiptNotificationFinanceService {
       to: params.to,
       toName: params.parentName,
       recipientType: 'PARENT',
-      subject: `Reçu de paiement - ${params.receiptNumber} - ${params.studentName}`,
+      subject: `Reçu de Paiement | ${params.branding.schoolName || 'Établissement'}`,
       html,
       text: `Reçu ${params.receiptNumber} - ${amountStr} FCFA pour ${params.studentName} - ${dateStr}`,
       triggeredBy: 'SYSTEM',
@@ -305,6 +305,7 @@ export class ReceiptNotificationFinanceService {
     } as any);
 
     if (result.success) {
+      console.log(`[ReceiptNotif] WhatsApp envoyé pour ${params.receiptNumber} à ${params.to}`);
       return { status: 'sent', to: params.to };
     }
     return { status: 'failed', to: params.to, error: result.error };

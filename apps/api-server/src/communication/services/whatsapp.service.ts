@@ -570,6 +570,9 @@ export class WhatsAppService {
       }
 
       // Gupshup retourne 202 + { status: "submitted", messageId: "..." } en cas de succès
+      this.logger.log(
+        `Gupshup response: HTTP ${response.status} | body: ${JSON.stringify(result).substring(0, 500)}`,
+      );
       if (
         (response.status === 200 || response.status === 202) &&
         (result.status === 'submitted' || result.status === 'success' || result.messageId)

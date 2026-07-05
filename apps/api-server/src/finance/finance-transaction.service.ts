@@ -12,6 +12,7 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { PrismaService } from '../database/prisma.service';
 import { TransactionType, PaymentMethod } from '@prisma/client';
 import { ReceiptFinanceService } from './receipt-finance.service';
+import { ReceiptNotificationFinanceService } from './receipt-notification-finance.service';
 
 const PRIORITY_ORDER = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'OTHER'];
 const PAYMENT_METHODS: PaymentMethod[] = ['CASH', 'MOBILE_MONEY', 'WIRE', 'FEDAPAY'];
@@ -23,6 +24,7 @@ export class FinanceTransactionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly receiptFinanceService: ReceiptFinanceService,
+    private readonly receiptNotificationService: ReceiptNotificationFinanceService,
   ) {}
 
   /** Expose prisma pour le controller (downloadReceipt, resendReceipt) */
@@ -195,16 +197,34 @@ export class FinanceTransactionService {
     // Note: totalPaid, balance and status are now updated via the DB Trigger 'update_balance_after_transaction'
     // on the finance_transactions table to ensure atomicity.
 
-    // ─── Génération du reçu PDF (fire-and-forget) ─────────────────────────
-    // Le PDF est généré en arrière-plan pour ne pas bloquer la réponse API.
-    // Le receiptUrl sera mis à jour sur la transaction une fois le PDF prêt.
+    // ─── Génération du reçu PDF + notifications automatiques (fire-and-forget) ─
+    // Le PDF est généré en arrière-plan, puis les notifications (email, WhatsApp,
+    // SMS) sont envoyées automatiquement au parent de l'élève.
     this.receiptFinanceService
       .generateForTransaction(tx.id, tenantId)
       .then(({ receiptUrl }) => {
         this.logger.log(`Reçu PDF généré pour transaction ${tx.receiptNumber}: ${receiptUrl}`);
+        // Envoyer automatiquement les notifications (email + WhatsApp + SMS)
+        // Fire-and-forget — ne bloque jamais la réponse API
+        return this.receiptNotificationService.sendReceiptNotifications(
+          tx.id,
+          tenantId,
+          ['email', 'whatsapp', 'sms'],
+        );
+      })
+      .then((results) => {
+        const sent = Object.entries(results)
+          .filter(([, v]: any) => v.status === 'sent')
+          .map(([k]) => k);
+        const skipped = Object.entries(results)
+          .filter(([, v]: any) => v.status === 'skipped')
+          .map(([k]) => k);
+        this.logger.log(
+          `Notifications auto pour ${tx.receiptNumber}: envoyées=[${sent.join(',')}] skip=[${skipped.join(',')}]`,
+        );
       })
       .catch((err) => {
-        this.logger.error(`Échec génération reçu PDF pour ${tx.receiptNumber}: ${err.message}`);
+        this.logger.error(`Échec génération reçu/notifications pour ${tx.receiptNumber}: ${err.message}`);
       });
 
     return this.prisma.financeTransaction.findUnique({

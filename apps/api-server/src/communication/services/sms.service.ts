@@ -27,6 +27,7 @@ export class SmsService {
 
   constructor(private readonly configService: ConfigService) {
     this.provider = (this.configService.get<string>('SMS_PROVIDER', 'mock') as SmsProvider) || 'mock';
+    this.logger.log(`📱 SmsService initialisé (provider: ${this.provider})`);
   }
 
   /**

@@ -223,6 +223,8 @@ export default function NewPaymentModal({
       const status = result?.channels?.[channel];
       if (status?.status === 'skipped') {
         toast({ title: 'Contact manquant', description: status.reason || `Aucun contact pour ${channel}.`, variant: 'destructive' });
+      } else if (status?.status === 'failed') {
+        toast({ title: 'Échec d\'envoi', description: status.error || `Échec de l'envoi par ${channel}.`, variant: 'destructive' });
       } else {
         toast({ title: 'Reçu envoyé', description: `Reçu envoyé par ${channel}${status?.to ? ` à ${status.to}` : ''}.` });
       }

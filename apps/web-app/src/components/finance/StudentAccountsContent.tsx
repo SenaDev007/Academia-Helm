@@ -552,7 +552,7 @@ export default function StudentAccountsContent() {
                                 try {
                                   const r = await financeService.resendReceipt(t.id, ['email']);
                                   const s = r?.channels?.email;
-                                  if (s?.status === 'skipped') toast({ title: 'Contact manquant', description: s.reason, variant: 'destructive' });
+                                  if (s?.status === 'skipped') toast({ title: 'Contact manquant', description: s.reason, variant: 'destructive' }); else if (s?.status === 'failed') toast({ title: 'Échec d envoi', description: s.error || 'Échec de l envoi', variant: 'destructive' });
                                   else toast({ title: 'Reçu envoyé', description: `Email envoyé${s?.to ? ` à ${s.to}` : ''}` });
                                 } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
                               }}
@@ -568,7 +568,7 @@ export default function StudentAccountsContent() {
                                 try {
                                   const r = await financeService.resendReceipt(t.id, ['whatsapp']);
                                   const s = r?.channels?.whatsapp;
-                                  if (s?.status === 'skipped') toast({ title: 'Contact manquant', description: s.reason, variant: 'destructive' });
+                                  if (s?.status === 'skipped') toast({ title: 'Contact manquant', description: s.reason, variant: 'destructive' }); else if (s?.status === 'failed') toast({ title: 'Échec d envoi', description: s.error || 'Échec de l envoi', variant: 'destructive' });
                                   else toast({ title: 'Reçu envoyé', description: `WhatsApp envoyé${s?.to ? ` à ${s.to}` : ''}` });
                                 } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
                               }}
@@ -584,7 +584,7 @@ export default function StudentAccountsContent() {
                                 try {
                                   const r = await financeService.resendReceipt(t.id, ['sms']);
                                   const s = r?.channels?.sms;
-                                  if (s?.status === 'skipped') toast({ title: 'Contact manquant', description: s.reason, variant: 'destructive' });
+                                  if (s?.status === 'skipped') toast({ title: 'Contact manquant', description: s.reason, variant: 'destructive' }); else if (s?.status === 'failed') toast({ title: 'Échec d envoi', description: s.error || 'Échec de l envoi', variant: 'destructive' });
                                   else toast({ title: 'Reçu envoyé', description: `SMS envoyé${s?.to ? ` à ${s.to}` : ''}` });
                                 } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
                               }}

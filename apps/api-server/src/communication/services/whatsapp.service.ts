@@ -504,6 +504,10 @@ export class WhatsAppService {
     // Destination: numéro destinataire sans "+"
     const destination = toGupshupDestination(request.to);
 
+    this.logger.log(
+      `Gupshup envoi: source=${source} | dest=${destination} | template=${request.template || 'N/A'} | rawTo=${request.to}`,
+    );
+
     // ─── Cas 1: envoi via template ───
     if (request.template) {
       // Valider que le template existe dans le registry
@@ -538,6 +542,10 @@ export class WhatsAppService {
         id: request.template,
         params: orderedParams,
       };
+
+      this.logger.log(
+        `Gupshup template payload: ${JSON.stringify(templatePayload)}`,
+      );
 
       // Construction du body form-urlencoded
       const formData = new URLSearchParams();

@@ -507,8 +507,8 @@ export default function StudentAccountsContent() {
                         <TableCell className="text-sm whitespace-nowrap">
                           {t.createdAt ? new Date(t.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—'}
                         </TableCell>
-                        <TableCell className="text-xs text-slate-500 whitespace-nowrap" title={t.reference || t.receiptNumber || ''}>
-                          {t.reference || t.receiptNumber || '—'}
+                        <TableCell className="text-xs text-slate-500 whitespace-nowrap" title={t.reference || ''}>
+                          {t.reference || '—'}
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
                           <div className="flex items-center gap-1 justify-center">

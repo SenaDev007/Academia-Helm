@@ -142,6 +142,27 @@ export class FinanceTransactionService {
       receiptNumber = parts.join('-');
     }
 
+    // Génération de la référence de transaction (si non fournie par l'utilisateur)
+    // Format : TX-{YY}{MM}-{SEQ}  ex: TX-2607-001
+    let transactionReference = data.reference ?? null;
+    if (!transactionReference) {
+      const now = new Date();
+      const ym = `${now.getFullYear().toString().slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const prefix = `TX-${ym}-`;
+      const lastRef = await this.prisma.financeTransaction.findFirst({
+        where: { tenantId, reference: { startsWith: prefix } },
+        select: { reference: true },
+        orderBy: { reference: 'desc' },
+      });
+      let refSeq = 1;
+      if (lastRef?.reference) {
+        const part = lastRef.reference.replace(prefix, '');
+        const n = parseInt(part, 10);
+        if (!isNaN(n)) refSeq = n + 1;
+      }
+      transactionReference = `${prefix}${String(refSeq).padStart(3, '0')}`;
+    }
+
     const tx = await this.prisma.financeTransaction.create({
       data: {
         tenantId,
@@ -150,7 +171,7 @@ export class FinanceTransactionService {
         type: TransactionType.PAYMENT,
         amount: data.amount,
         paymentMethod,
-        reference: data.reference ?? null,
+        reference: transactionReference,
         cashierId: data.cashierId,
         deviceId: data.deviceId ?? null,
         receiptNumber,

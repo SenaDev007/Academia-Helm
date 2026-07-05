@@ -60,6 +60,10 @@ export interface WhatsAppRequest {
   variables?: Record<string, string>; // Variables pour le template (clé = nom de variable Meta v3)
   contentSid?: string; // Content SID pour Twilio WhatsApp
   contentVariables?: Record<string, string>; // Variables pour Content SID Twilio
+  /** Document PDF à envoyer (Buffer + filename) */
+  document?: { content: Buffer; filename: string };
+  /** Caption du document (texte descriptif sous le PDF) */
+  documentCaption?: string;
 }
 
 export type WhatsAppProvider =
@@ -220,6 +224,8 @@ export class WhatsAppService {
       message: request.message,
       template: request.templateName,
       variables: request.templateVariables,
+      document: (request as any).document,
+      documentCaption: (request as any).documentCaption,
     };
 
     // 3. Envoi via le provider
@@ -596,8 +602,28 @@ export class WhatsAppService {
           result.response?.id ||
           `gupshup-${Date.now()}`;
         this.logger.log(
-          `✅ WhatsApp envoyé via Gupshup (template "${request.template}") à ${destination}: ${messageId}`,
+          `✅ WhatsApp template envoyé via Gupshup à ${destination}: ${messageId}`,
         );
+
+        // Si un document PDF est fourni, l'uploader et l'envoyer
+        if (request.document?.content) {
+          try {
+            const docResult = await this.sendDocumentViaGupshup(
+              source,
+              destination,
+              appName,
+              apiKey,
+              apiUrl,
+              request.document.content,
+              request.document.filename,
+              request.documentCaption || `Reçu ${request.template || ''}`,
+            );
+            this.logger.log(`✅ WhatsApp document envoyé via Gupshup à ${destination}: ${docResult.messageId}`);
+          } catch (docErr: any) {
+            this.logger.warn(`⚠️ Échec envoi document WhatsApp (non bloquant): ${docErr.message}`);
+          }
+        }
+
         return { success: true, messageId };
       }
 
@@ -668,6 +694,80 @@ export class WhatsAppService {
       `❌ Gupshup API error (text) to ${destination}: ${errMsg}`,
     );
     throw new Error(`Gupshup: ${errMsg}`);
+  }
+
+  /**
+   * Upload et envoie un document PDF via Gupshup.
+   * 1. Upload du PDF via POST /media/upload (multipart/form-data)
+   * 2. Envoi du document via POST /msg avec type=document
+   */
+  private async sendDocumentViaGupshup(
+    source: string,
+    destination: string,
+    appName: string,
+    apiKey: string,
+    apiUrl: string,
+    pdfBuffer: Buffer,
+    filename: string,
+    caption: string,
+  ): Promise<{ success: boolean; messageId?: string }> {
+    // 1. Upload du PDF
+    const uploadUrl = `${apiUrl.replace('/wa/api/v1', '')}/sm/api/v1/media/upload`;
+    const formData = new FormData();
+    const blob = new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' });
+    formData.append('file', blob, filename);
+
+    this.logger.log(`Gupshup media upload: POST ${uploadUrl} | filename=${filename} | size=${pdfBuffer.length} bytes`);
+
+    const uploadResponse = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: { 'apikey': apiKey },
+      body: formData,
+    });
+
+    const uploadText = await uploadResponse.text();
+    let uploadResult: any;
+    try { uploadResult = JSON.parse(uploadText); } catch { uploadResult = { raw: uploadText }; }
+
+    this.logger.log(`Gupshup upload response: HTTP ${uploadResponse.status} | body: ${JSON.stringify(uploadResult).substring(0, 300)}`);
+
+    if (!uploadResponse.ok) {
+      throw new Error(`Gupshup media upload failed: HTTP ${uploadResponse.status} - ${uploadText.substring(0, 200)}`);
+    }
+
+    const mediaUrl = uploadResult.handles?.[0] || uploadResult.url || uploadResult.mediaUrl;
+    if (!mediaUrl) {
+      throw new Error(`Gupshup media upload: URL introuvable: ${JSON.stringify(uploadResult)}`);
+    }
+
+    // 2. Envoi du document
+    const msgData = new URLSearchParams();
+    msgData.append('channel', 'whatsapp');
+    msgData.append('source', source);
+    msgData.append('destination', destination);
+    msgData.append('src.name', appName);
+    msgData.append('message', caption);
+    msgData.append('isTemplate', 'false');
+    msgData.append('type', 'document');
+    msgData.append('url', mediaUrl);
+    msgData.append('fileName', filename);
+
+    const msgResponse = await fetch(`${apiUrl}/msg`, {
+      method: 'POST',
+      headers: { 'apikey': apiKey, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: msgData.toString(),
+    });
+
+    const msgText = await msgResponse.text();
+    let msgResult: any;
+    try { msgResult = JSON.parse(msgText); } catch { msgResult = { raw: msgText }; }
+
+    if ((msgResponse.status === 200 || msgResponse.status === 202) &&
+        (msgResult.status === 'submitted' || msgResult.status === 'success' || msgResult.messageId)) {
+      return { success: true, messageId: msgResult.messageId || `gupshup-doc-${Date.now()}` };
+    }
+
+    throw new Error(`Gupshup document send failed: ${JSON.stringify(msgResult).substring(0, 200)}`);
   }
 
   // ========================================================================

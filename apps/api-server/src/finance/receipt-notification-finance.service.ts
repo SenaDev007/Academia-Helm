@@ -150,6 +150,7 @@ export class ReceiptNotificationFinanceService {
             transactionId,
             balanceAfter,
             personalizationNote,
+            pdfBuffer,
           });
         } else if (channel === 'sms') {
           results.sms = await this.sendBySMS({
@@ -262,6 +263,7 @@ export class ReceiptNotificationFinanceService {
     transactionId: string;
     balanceAfter?: number;
     personalizationNote?: string;
+    pdfBuffer?: Buffer | null;
   }): Promise<{ status: 'sent' | 'failed' | 'skipped'; to?: string; error?: string }> {
     if (!params.to) {
       return { status: 'skipped', error: 'Aucun téléphone parent disponible' };
@@ -311,6 +313,10 @@ export class ReceiptNotificationFinanceService {
       triggeredBy: 'SYSTEM',
       relatedEntityId: params.transactionId,
       relatedEntityType: 'FinanceTransaction',
+      document: params.pdfBuffer
+        ? { content: params.pdfBuffer, filename: `recu-${params.receiptNumber}.pdf` }
+        : undefined,
+      documentCaption: `Reçu de paiement - ${params.receiptNumber} - ${params.studentName}`,
     } as any);
 
     if (result.success) {

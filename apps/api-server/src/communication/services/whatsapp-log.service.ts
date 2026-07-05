@@ -78,6 +78,10 @@ export interface CategorizedWhatsAppRequest {
   triggeredByUserId?: string;
   relatedEntityId?: string; // ex: Admission.id, HrApplication.id
   relatedEntityType?: string; // ex: 'Admission' | 'HrApplication'
+
+  // Document (PDF) à joindre
+  document?: { content: Buffer; filename: string };
+  documentCaption?: string;
 }
 
 export interface WhatsAppLogListFilters {

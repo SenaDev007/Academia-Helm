@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Download } from 'lucide-react';
-import { WhatsAppIcon, GmailIcon } from './OfficialIcons';
+import { Plus, Download, Eye } from 'lucide-react';
+import { WhatsAppIcon, GmailIcon, SmsIcon } from './OfficialIcons';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
@@ -78,9 +78,7 @@ export default function TransactionsContent() {
         layout="custom"
         toolbar={
           <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-600">
-              Paiements avec reçu AH-YYYY-NNNNNN et imputation prioritaire.
-            </p>
+            <div></div>
             <div className="flex gap-2">
               <Button onClick={() => setModalOpen(true)}>
                 <Plus className="w-4 h-4 mr-2" />
@@ -146,10 +144,18 @@ export default function TransactionsContent() {
                           size="icon"
                           className="h-7 w-7"
                           onClick={() => window.open(financeService.getReceiptPdfUrl(t.id), '_blank')}
+                          title="Visualiser le reçu"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-slate-600" />
+                        </Button>
+                        <a
+                          href={financeService.getReceiptPdfUrl(t.id)}
+                          download={`recu-${t.receiptNumber || t.id}.pdf`}
                           title="Télécharger le reçu PDF"
+                          className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-slate-100 cursor-pointer"
                         >
                           <Download className="w-3.5 h-3.5 text-slate-600" />
-                        </Button>
+                        </a>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -181,6 +187,22 @@ export default function TransactionsContent() {
                           title="Envoyer par WhatsApp"
                         >
                           <WhatsAppIcon className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={async () => {
+                            try {
+                              const r = await financeService.resendReceipt(t.id, ['sms']);
+                              const s = r?.channels?.sms;
+                              if (s?.status === 'skipped') toast({ title: 'Contact manquant', description: s.reason, variant: 'destructive' });
+                              else toast({ title: 'Reçu envoyé', description: `SMS envoyé${s?.to ? ` à ${s.to}` : ''}` });
+                            } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
+                          }}
+                          title="Envoyer par SMS"
+                        >
+                          <SmsIcon className="w-3.5 h-3.5" />
                         </Button>
                       </div>
                     </TableCell>

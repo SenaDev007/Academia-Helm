@@ -352,7 +352,11 @@ export default function StudentAccountsContent() {
                       return (
                         <TableRow
                           key={a.id}
-                          className={`cursor-pointer transition-colors ${rowBorder} ${rowBg} ${isSelected ? 'ring-2 ring-blue-400' : 'hover:bg-slate-100'}`}
+                          className={`cursor-pointer transition-all duration-150 ${rowBorder} ${rowBg} ${
+                            isSelected
+                              ? 'ring-2 ring-blue-500 ring-inset bg-blue-50 shadow-sm'
+                              : 'hover:bg-indigo-50 hover:shadow-sm'
+                          }`}
                           onClick={() => selectStudent(a.id)}
                         >
                           <TableCell className="font-medium">
@@ -485,7 +489,17 @@ export default function StudentAccountsContent() {
                           {formatCurrency(t.amount)}
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
-                          <Badge variant="outline">{t.paymentMethod || '—'}</Badge>
+                          <Badge variant="outline">
+                            {(() => {
+                              const labels: Record<string, string> = {
+                                CASH: 'Espèces',
+                                MOBILE_MONEY: 'Mobile Money',
+                                WIRE: 'Virement',
+                                FEDAPAY: 'Fedapay',
+                              };
+                              return labels[t.paymentMethod] || t.paymentMethod || '—';
+                            })()}
+                          </Badge>
                         </TableCell>
                         <TableCell className="text-sm whitespace-nowrap">
                           {t.createdAt ? new Date(t.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'}
@@ -493,8 +507,8 @@ export default function StudentAccountsContent() {
                         <TableCell className="text-sm whitespace-nowrap">
                           {t.createdAt ? new Date(t.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—'}
                         </TableCell>
-                        <TableCell className="text-xs text-slate-500 whitespace-nowrap" title={t.reference || ''}>
-                          {t.reference || '—'}
+                        <TableCell className="text-xs text-slate-500 whitespace-nowrap" title={t.reference || t.receiptNumber || ''}>
+                          {t.reference || t.receiptNumber || '—'}
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
                           <div className="flex items-center gap-1 justify-center">
@@ -503,10 +517,18 @@ export default function StudentAccountsContent() {
                               size="icon"
                               className="h-7 w-7"
                               onClick={() => window.open(financeService.getReceiptPdfUrl(t.id), '_blank')}
+                              title="Visualiser le reçu"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-slate-600" />
+                            </Button>
+                            <a
+                              href={financeService.getReceiptPdfUrl(t.id)}
+                              download={`recu-${t.receiptNumber || t.id}.pdf`}
                               title="Télécharger le reçu PDF"
+                              className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-slate-100 cursor-pointer"
                             >
                               <Download className="w-3.5 h-3.5 text-slate-600" />
-                            </Button>
+                            </a>
                             <Button
                               variant="ghost"
                               size="icon"

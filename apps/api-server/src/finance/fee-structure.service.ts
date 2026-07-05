@@ -575,27 +575,31 @@ export class FeeStructureService {
         });
       }
 
-      // Recalculer totalDue + balance
+      // Recalculer totalDue + balance — utiliser $transaction pour que
+      // SET LOCAL app.allow_balance_update persiste pendant l'UPDATE
+      // (sinon prevent_balance_update_trigger bloque la mise à jour)
       const allBreakdowns = await this.prisma.accountBreakdown.findMany({
         where: { studentAccountId: account.id },
       });
       const newTotalDue = allBreakdowns.reduce((sum, b) => sum + Number(b.initialAmount), 0);
       const totalPaid = allBreakdowns.reduce((sum, b) => sum + Number(b.paidAmount), 0);
 
-      await this.prisma.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
-      await this.prisma.studentAccount.update({
-        where: { id: account.id },
-        data: {
-          totalDue: newTotalDue,
-          totalPaid,
-          balance: newTotalDue - totalPaid,
-          updatedAt: new Date(),
-        },
+      await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
+        await tx.studentAccount.update({
+          where: { id: account.id },
+          data: {
+            totalDue: newTotalDue,
+            totalPaid,
+            balance: newTotalDue - totalPaid,
+            updatedAt: new Date(),
+          },
+        });
       });
 
-      this.logger.log(`Compte élève recalculé: student=${studentId}, totalDue=${newTotalDue}, balance=${newTotalDue - totalPaid}`);
+      console.log(`[FeeStructure] Compte élève recalculé: student=${studentId}, totalDue=${newTotalDue}, balance=${newTotalDue - totalPaid}`);
     } catch (err: any) {
-      this.logger.warn(`recalculateStudentAccount failed (non-blocking): ${err.message}`);
+      console.warn(`[FeeStructure] recalculateStudentAccount failed (non-blocking): ${err.message}`);
     }
   }
 

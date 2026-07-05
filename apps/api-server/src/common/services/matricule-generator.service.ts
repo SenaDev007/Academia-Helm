@@ -185,7 +185,9 @@ export class MatriculeGeneratorService {
         }).catch(() => 0);
         break;
       case 'REC':
-        count = await this.prisma.payment.count({
+        // ⚠️ Compter sur finance_transactions (pas payments) car les reçus
+        // FinanceTransaction utilisent ce générateur maintenant.
+        count = await this.prisma.financeTransaction.count({
           where: { tenantId, receiptNumber: { startsWith: prefix } },
         }).catch(() => 0);
         break;

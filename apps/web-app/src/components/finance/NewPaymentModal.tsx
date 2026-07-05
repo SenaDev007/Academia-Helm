@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, Download, CheckCircle2 } from 'lucide-react';
+import { Sparkles, Download, CheckCircle2, Search } from 'lucide-react';
 import { WhatsAppIcon, GmailIcon, SmsIcon } from './OfficialIcons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { financeService } from '@/services/finance.service';
 import { networkDetectionService } from '@/lib/offline/network-detection.service';
 import { formatCurrency } from '@/lib/utils';
+import { useModuleContext } from '@/hooks/useModuleContext';
 
 const METHODS = [
   { value: 'CASH', label: 'Espèces' },
@@ -53,6 +54,14 @@ export default function NewPaymentModal({
   const [receipt, setReceipt] = useState<{ id: string; receiptNumber: string; createdAt: string } | null>(null);
   const [sendingChannel, setSendingChannel] = useState<string | null>(null);
   const { toast } = useToast();
+  const { schoolLevel } = useModuleContext();
+
+  // Sélecteurs niveau + classe + recherche élève
+  const [levels, setLevels] = useState<any[]>([]);
+  const [classes, setClasses] = useState<any[]>([]);
+  const [selectedLevelId, setSelectedLevelId] = useState('');
+  const [selectedClassId, setSelectedClassId] = useState('');
+  const [studentSearch, setStudentSearch] = useState('');
 
   // Charge les caisses ouvertes
   useEffect(() => {
@@ -60,6 +69,64 @@ export default function NewPaymentModal({
       .then((data) => setOpenCashRegisters(Array.isArray(data) ? data : []))
       .catch(() => setOpenCashRegisters([]));
   }, []);
+
+  // Charge les niveaux scolaires activés
+  useEffect(() => {
+    fetch('/api/school-levels')
+      .then((r) => r.json())
+      .then((d) => setLevels(Array.isArray(d) ? d.filter((l: any) => l.id !== 'ALL') : []))
+      .catch(() => setLevels([]));
+  }, []);
+
+  // Charge les classes (filtrées par niveau si sélectionné)
+  useEffect(() => {
+    fetch('/api/all-classes', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => {
+        const list = Array.isArray(d) ? d : (d.data ?? []);
+        setClasses(list);
+      })
+      .catch(() => setClasses([]));
+  }, []);
+
+  // Classes filtrées par niveau sélectionné
+  const filteredClasses = useMemo(() => {
+    if (!selectedLevelId) return classes;
+    // Filtrer par schoolLevelId (UUID school_levels) ou par code de niveau
+    const selectedLevel = levels.find((l) => l.id === selectedLevelId);
+    const schoolLevelId = selectedLevel?.schoolLevelId || selectedLevelId;
+    return classes.filter((c: any) => {
+      // Match par schoolLevelId (UUID) ou par schoolLevel.code
+      return c.schoolLevelId === schoolLevelId ||
+             c.schoolLevel?.code === selectedLevel?.code ||
+             c.schoolLevel?.id === schoolLevelId;
+    });
+  }, [classes, selectedLevelId, levels]);
+
+  // Élèves filtrés par classe + recherche
+  const filteredAccounts = useMemo(() => {
+    let result = accounts.filter((a) => Number(a.balance) > 0);
+
+    // Filtrer par classe si sélectionnée
+    if (selectedClassId) {
+      result = result.filter((a) => {
+        // L'élève peut avoir un enrollment avec classId
+        const enrollments = a.student?.studentEnrollments ?? [];
+        return enrollments.some((e: any) => e.classId === selectedClassId);
+      });
+    }
+
+    // Filtrer par recherche (nom/prénom/matricule)
+    if (studentSearch.trim()) {
+      const q = studentSearch.toLowerCase().trim();
+      result = result.filter((a) => {
+        const name = `${a.student?.lastName || ''} ${a.student?.firstName || ''} ${a.student?.matricule || ''}`.toLowerCase();
+        return name.includes(q);
+      });
+    }
+
+    return result;
+  }, [accounts, selectedClassId, studentSearch]);
 
   const selectedAccount = accounts.find((a) => a.id === studentAccountId);
   const amountNum = parseFloat(amount);
@@ -249,18 +316,56 @@ export default function NewPaymentModal({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4" style={{ display: receipt ? 'none' : undefined }}>
+          {/* Sélecteurs Niveau + Classe (filtrage en cascade) */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Niveau scolaire</Label>
+              <Select value={selectedLevelId || 'ALL'} onValueChange={(v) => { setSelectedLevelId(v === 'ALL' ? '' : v); setSelectedClassId(''); }}>
+                <SelectTrigger><SelectValue placeholder="Tous les niveaux" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Tous les niveaux</SelectItem>
+                  {levels.map((l) => (<SelectItem key={l.id} value={l.id}>{l.label ?? l.code ?? l.name}</SelectItem>))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Classe</Label>
+              <Select value={selectedClassId || 'ALL'} onValueChange={(v) => setSelectedClassId(v === 'ALL' ? '' : v)}>
+                <SelectTrigger><SelectValue placeholder="Toutes les classes" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Toutes les classes</SelectItem>
+                  {filteredClasses.map((c: any) => (<SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Recherche élève + sélecteur */}
           <div>
             <Label>Élève / Compte</Label>
+            <div className="relative mb-2">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Input
+                type="text"
+                placeholder="Rechercher par nom, prénom ou matricule..."
+                value={studentSearch}
+                onChange={(e) => setStudentSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
             <Select value={studentAccountId} onValueChange={setStudentAccountId}>
-              <SelectTrigger><SelectValue placeholder="Sélectionner un compte" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={filteredAccounts.length === 0 ? 'Aucun élève trouvé' : `Sélectionner (${filteredAccounts.length} élève${filteredAccounts.length > 1 ? 's' : ''})`} /></SelectTrigger>
               <SelectContent>
-                {accounts.filter((a) => Number(a.balance) > 0).map((a) => (
+                {filteredAccounts.map((a) => (
                   <SelectItem key={a.id} value={a.id}>
                     {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.studentId} — Solde {formatCurrency(a.balance)}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {filteredAccounts.length === 0 && (selectedClassId || studentSearch) && (
+              <p className="text-xs text-slate-400 mt-1">Aucun élève ne correspond aux critères. Ajustez le filtre ou la recherche.</p>
+            )}
           </div>
           <div>
             <Label>Montant (XOF)</Label>

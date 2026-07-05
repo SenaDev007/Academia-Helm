@@ -211,8 +211,88 @@ export default function NewPaymentModal({
       return;
     }
 
-    // ── FeexPay : initier le paiement en ligne ──
-    if (paymentMethod === 'FEEXPAY' || paymentMethod === 'FEDAPAY') {
+    // ── Fedapay : widget checkout modal (ne nécessite PAS le téléphone parent) ──
+    // Le widget Fedapay est un overlay professionnel qui demande au client son propre
+    // numéro Mobile Money / carte et ses coordonnées. Aucune récupération préalable
+    // du téléphone parent n'est nécessaire.
+    if (paymentMethod === 'FEDAPAY') {
+      if (!selectedAccount?.student) {
+        toast({ title: 'Erreur', description: 'Élève introuvable.', variant: 'destructive' });
+        return;
+      }
+      setLoading(true);
+      try {
+        const studentName = selectedAccount.student
+          ? `${selectedAccount.student.lastName} ${selectedAccount.student.firstName}`
+          : 'Élève';
+
+        // Récupérer la clé publique Fedapay configurée par l'école
+        const keyRes = await fetch('/api/finance/payments/fedapay/public-key', { credentials: 'include' });
+        const keyData = await keyRes.json();
+        if (!keyData.publicKey) {
+          toast({
+            title: 'Fedapay non configuré',
+            description: "L'école n'a pas configuré Fedapay. Allez dans Paramètres → Paiements pour configurer.",
+            variant: 'destructive',
+          });
+          setLoading(false);
+          return;
+        }
+
+        // Charger le script Fedapay checkout dynamiquement
+        await new Promise((resolve, reject) => {
+          if ((window as any).FedaPay) return resolve(null);
+          const script = document.createElement('script');
+          script.src = 'https://cdn.fedapay.com/checkout.js?v=1.1.7';
+          script.onload = () => resolve(null);
+          script.onerror = () => reject(new Error('Impossible de charger Fedapay'));
+          document.head.appendChild(script);
+        });
+
+        // Ouvrir le checkout Fedapay — le client saisit lui-même ses infos
+        const FedaPay = (window as any).FedaPay;
+        const widget = FedaPay.init({
+          public_key: keyData.publicKey,
+          transaction: {
+            amount: amountNum,
+            description: `Scolarité ${studentName}`.substring(0, 100),
+          },
+          customer: {
+            firstname: selectedAccount.student?.firstName || '',
+            lastname: selectedAccount.student?.lastName || '',
+            // email + phone_number volontairement omis : le client les saisit dans le widget
+          },
+          onComplete: (response: any) => {
+            if (response?.reason === 'DIALOG DISMISSED') {
+              toast({ title: 'Paiement annulé', description: 'Le checkout Fedapay a été fermé.' });
+              setLoading(false);
+            } else {
+              toast({
+                title: 'Paiement initié',
+                description: `Référence Fedapay : ${response?.reference || '—'}. Le client finalise dans le widget.`,
+              });
+              setReceipt({
+                id: response?.reference || 'fedapay-pending',
+                receiptNumber: response?.reference || 'FEDAPAY',
+                createdAt: new Date().toISOString(),
+              });
+            }
+          },
+        });
+        widget.open();
+      } catch (e: any) {
+        toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // ── FeexPay : push USSD au téléphone du parent (téléphone requis) ──
+    // FeexPay ne propose pas de widget checkout : le parent reçoit une notification
+    // sur son téléphone (push USSD) pour confirmer le paiement Mobile Money.
+    // Le téléphone parent est donc OBLIGATOIRE pour FeexPay.
+    if (paymentMethod === 'FEEXPAY') {
       if (!selectedAccount?.student) {
         toast({ title: 'Erreur', description: 'Élève introuvable.', variant: 'destructive' });
         return;
@@ -224,7 +304,11 @@ export default function NewPaymentModal({
         const phoneData = await phoneRes.json();
         const parentPhone = phoneData?.phone;
         if (!parentPhone) {
-          toast({ title: 'Téléphone manquant', description: 'Aucun numéro de téléphone pour le parent de cet élève.', variant: 'destructive' });
+          toast({
+            title: 'Téléphone parent manquant',
+            description: "Aucun numéro de téléphone enregistré pour le parent de cet élève. Ajoutez-le dans la fiche élève, ou utilisez Fedapay (le parent saisit son numéro lui-même dans le widget).",
+            variant: 'destructive',
+          });
           setLoading(false);
           return;
         }
@@ -233,82 +317,33 @@ export default function NewPaymentModal({
           ? `${selectedAccount.student.lastName} ${selectedAccount.student.firstName}`
           : 'Élève';
 
-        if (paymentMethod === 'FEEXPAY') {
-          // FeexPay : appel backend → push USSD au parent
-          const res = await fetch('/api/finance/payments/feexpay/initiate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({
-              studentAccountId,
-              studentName,
-              amount: amountNum,
-              phone: parentPhone,
-              operator: feexpayOperator,
-              academicYearId,
-            }),
+        // FeexPay : appel backend → push USSD au parent
+        const res = await fetch('/api/finance/payments/feexpay/initiate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            studentAccountId,
+            studentName,
+            amount: amountNum,
+            phone: parentPhone,
+            operator: feexpayOperator,
+            academicYearId,
+          }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          toast({
+            title: '📱 Paiement initié',
+            description: `Le parent va recevoir une notification sur le ${parentPhone} pour confirmer le paiement de ${formatCurrency(amountNum)} FCFA.`,
           });
-          const data = await res.json();
-          if (data.success) {
-            toast({
-              title: '📱 Paiement initié',
-              description: `Le parent va recevoir une notification sur le ${parentPhone} pour confirmer le paiement de ${formatCurrency(amountNum)} FCFA.`,
-            });
-            setReceipt({
-              id: data.reference || 'feexpay-pending',
-              receiptNumber: data.reference || '—',
-              createdAt: new Date().toISOString(),
-            });
-          } else {
-            toast({ title: 'Erreur FeexPay', description: data.message || 'Échec de l\'initiation du paiement.', variant: 'destructive' });
-          }
-        } else if (paymentMethod === 'FEDAPAY') {
-          // Fedapay : checkout côté client avec la clé publique
-          const keyRes = await fetch('/api/finance/payments/fedapay/public-key', { credentials: 'include' });
-          const keyData = await keyRes.json();
-          if (!keyData.publicKey) {
-            toast({ title: 'Fedapay non configuré', description: 'L\'école n\'a pas configuré Fedapay. Contactez l\'administrateur.', variant: 'destructive' });
-            setLoading(false);
-            return;
-          }
-
-          // Charger le script Fedapay checkout dynamiquement
-          await new Promise((resolve, reject) => {
-            if ((window as any).FedaPay) return resolve(null);
-            const script = document.createElement('script');
-            script.src = 'https://cdn.fedapay.com/checkout.js?v=1.1.7';
-            script.onload = () => resolve(null);
-            script.onerror = () => reject(new Error('Impossible de charger Fedapay'));
-            document.head.appendChild(script);
+          setReceipt({
+            id: data.reference || 'feexpay-pending',
+            receiptNumber: data.reference || '—',
+            createdAt: new Date().toISOString(),
           });
-
-          // Ouvrir le checkout Fedapay
-          const FedaPay = (window as any).FedaPay;
-          const widget = FedaPay.init({
-            public_key: keyData.publicKey,
-            transaction: {
-              amount: amountNum,
-              description: `Scolarite ${studentName}`.substring(0, 100),
-            },
-            customer: {
-              firstname: selectedAccount.student?.firstName || '',
-              lastname: selectedAccount.student?.lastName || '',
-            },
-            onComplete: (response: any) => {
-              if (response?.reason === 'DIALOG DISMISSED') {
-                toast({ title: 'Paiement annulé', description: 'Le checkout Fedapay a été fermé.' });
-                setLoading(false);
-              } else {
-                toast({ title: 'Paiement initié', description: `Référence Fedapay: ${response?.reference || '—'}` });
-                setReceipt({
-                  id: response?.reference || 'fedapay-pending',
-                  receiptNumber: response?.reference || 'FEDAPAY',
-                  createdAt: new Date().toISOString(),
-                });
-              }
-            },
-          });
-          widget.open();
+        } else {
+          toast({ title: 'Erreur FeexPay', description: data.message || "Échec de l'initiation du paiement.", variant: 'destructive' });
         }
       } catch (e: any) {
         toast({ title: 'Erreur', description: e.message, variant: 'destructive' });

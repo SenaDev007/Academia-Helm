@@ -22,6 +22,7 @@ import { EmailService } from '../communication/services/email.service';
 import { WhatsAppService } from '../communication/services/whatsapp.service';
 import { SmsService } from '../communication/services/sms.service';
 import { ReceiptFinanceService } from './receipt-finance.service';
+import { renderReceiptEmail } from './receipt-email-templates';
 
 @Injectable()
 export class ReceiptNotificationFinanceService {
@@ -172,50 +173,21 @@ export class ReceiptNotificationFinanceService {
       year: 'numeric',
     });
     const amountStr = params.amount.toLocaleString('fr-FR');
-    const balanceStr = params.balanceAfter != null ? params.balanceAfter.toLocaleString('fr-FR') : null;
-    const totalDueStr = params.totalDue != null ? params.totalDue.toLocaleString('fr-FR') : null;
-    const totalPaidStr = params.totalPaidAfter != null ? params.totalPaidAfter.toLocaleString('fr-FR') : null;
 
-    // Section solde restant (si données dispo)
-    const balanceSection = balanceStr != null
-      ? (params.balanceAfter > 0
-        ? `<div style="margin-top: 16px; padding: 16px; background: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px; text-align: center;">
-            <p style="margin: 0; font-size: 13px; color: #92400e; font-weight: 600;">💡 Solde restant à payer</p>
-            <p style="margin: 8px 0 0; font-size: 22px; font-weight: 700; color: #92400e;">${balanceStr} FCFA</p>
-            ${totalDueStr && totalPaidStr ? `<p style="margin: 4px 0 0; font-size: 11px; color: #92400e;">Total dû : ${totalDueStr} FCFA · Total payé : ${totalPaidStr} FCFA</p>` : ''}
-            <p style="margin: 8px 0 0; font-size: 11px; color: #92400e;">Merci de régulariser ce montant auprès de l'établissement.</p>
-          </div>`
-        : `<div style="margin-top: 16px; padding: 16px; background: #d1fae5; border: 2px solid #10b981; border-radius: 8px; text-align: center;">
-            <p style="margin: 0; font-size: 13px; color: #065f46; font-weight: 600;">✅ Compte soldé</p>
-            <p style="margin: 8px 0 0; font-size: 14px; font-weight: 600; color: #065f46;">Aucun solde restant à payer</p>
-            <p style="margin: 4px 0 0; font-size: 11px; color: #065f46;">Tous les frais de l'année ont été réglés. Merci !</p>
-          </div>`)
-      : '';
-
-    const html = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b;">
-        <div style="background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); padding: 24px; border-radius: 12px 12px 0 0; text-align: center;">
-          <h1 style="color: white; margin: 0; font-size: 22px;">Reçu de paiement</h1>
-          <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0; font-size: 14px;">${params.branding.schoolName || 'Établissement'}</p>
-        </div>
-        <div style="padding: 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 12px 12px;">
-          <p>Bonjour${params.parentName ? ` ${params.parentName}` : ''},</p>
-          <p>Nous vous confirmons la réception du paiement suivant pour <strong>${params.studentName}</strong> :</p>
-          <table style="width: 100%; margin: 16px 0; border-collapse: collapse;">
-            <tr><td style="padding: 8px; background: #f8fafc; font-weight: 600;">N° reçu :</td><td style="padding: 8px; background: #f8fafc; font-family: monospace;">${params.receiptNumber}</td></tr>
-            <tr><td style="padding: 8px; font-weight: 600;">Montant :</td><td style="padding: 8px;">${amountStr} FCFA</td></tr>
-            <tr><td style="padding: 8px; background: #f8fafc; font-weight: 600;">Mode de paiement :</td><td style="padding: 8px; background: #f8fafc;">${params.paymentMethod}</td></tr>
-            <tr><td style="padding: 8px; font-weight: 600;">Date :</td><td style="padding: 8px;">${dateStr}</td></tr>
-          </table>
-          <p>Le reçu détaillé est joint à cet email au format PDF.</p>
-          ${balanceSection}
-          <p style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #64748b;">
-            ${params.branding.schoolName || ''}<br>
-            ${params.branding.schoolAddress || ''} ${params.branding.schoolPhone ? '· Tél : ' + params.branding.schoolPhone : ''}
-          </p>
-        </div>
-      </div>
-    `;
+    // Générer l'email HTML avec le même design que le module RH
+    // (header logo + nom école, corps, footer Academia Helm)
+    const { subject, html } = renderReceiptEmail({
+      branding: params.branding,
+      parentName: params.parentName,
+      studentName: params.studentName,
+      receiptNumber: params.receiptNumber,
+      amount: params.amount,
+      paymentMethod: params.paymentMethod,
+      dateLabel: dateStr,
+      totalDue: params.totalDue,
+      totalPaidAfter: params.totalPaidAfter,
+      balanceAfter: params.balanceAfter,
+    });
 
     const result = await this.emailService.sendCategorized({
       tenantId: params.tenantId,
@@ -225,7 +197,7 @@ export class ReceiptNotificationFinanceService {
       to: params.to,
       toName: params.parentName,
       recipientType: 'PARENT',
-      subject: `Reçu de paiement - ${params.receiptNumber} - ${params.studentName}`,
+      subject,
       html,
       text: `Reçu ${params.receiptNumber} - ${amountStr} FCFA pour ${params.studentName} - ${dateStr}`,
       fromName: params.branding.schoolName || 'Academia Helm',

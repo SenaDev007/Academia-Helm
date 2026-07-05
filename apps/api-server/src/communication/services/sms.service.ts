@@ -55,75 +55,35 @@ export class SmsService {
   }
 
   /**
-   * Envoie via Twilio
-   * Supporte deux méthodes :
-   * 1. MessagingServiceSid (recommandé) : Utilise un service de messagerie Twilio
-   * 2. From : Utilise directement un numéro de téléphone
+   * Envoie via Twilio — même pattern que auth/services/sms.service.ts (OTP)
+   * Utilise TWILIO_PHONE_NUMBER directement comme 'from' (simplicité + fiabilité)
    */
   private async sendViaTwilio(request: SmsRequest): Promise<{ success: boolean; messageId?: string }> {
     const accountSid = this.configService.get<string>('TWILIO_ACCOUNT_SID');
     const authToken = this.configService.get<string>('TWILIO_AUTH_TOKEN');
-    const messagingServiceSid = this.configService.get<string>('TWILIO_MESSAGING_SERVICE_SID');
     const fromNumber = this.configService.get<string>('TWILIO_PHONE_NUMBER');
 
-    if (!accountSid || !authToken) {
+    if (!accountSid || !authToken || !fromNumber) {
       throw new Error(
-        'Configuration Twilio incomplète. Vérifiez TWILIO_ACCOUNT_SID et TWILIO_AUTH_TOKEN'
+        'Configuration Twilio incomplète. Vérifiez TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER'
       );
     }
 
-    // Vérifier qu'au moins une méthode d'envoi est configurée
-    if (!messagingServiceSid && !fromNumber) {
-      throw new Error(
-        'Configuration Twilio incomplète. Configurez soit TWILIO_MESSAGING_SERVICE_SID (recommandé) soit TWILIO_PHONE_NUMBER'
-      );
-    }
-
-    // Client Twilio
+    // Client Twilio — même pattern que auth/services/sms.service.ts (OTP)
     const client = twilio(accountSid, authToken);
 
-    try {
-      // Préparer les paramètres selon la méthode disponible
-      const messageParams: any = {
-        body: request.message,
-        to: request.to,
-      };
+    const result = await client.messages.create({
+      body: request.message,
+      from: fromNumber,
+      to: request.to,
+    });
 
-      // Priorité : MessagingServiceSid (recommandé par Twilio)
-      if (messagingServiceSid) {
-        messageParams.messagingServiceSid = messagingServiceSid;
-        this.logger.debug(`📱 Using MessagingServiceSid: ${messagingServiceSid}`);
-      } else {
-        // Fallback : utiliser le numéro direct
-        messageParams.from = fromNumber;
-        this.logger.debug(`📱 Using From number: ${fromNumber}`);
-      }
+    this.logger.log(`✅ SMS sent via Twilio to ${request.to}: ${result.sid}`);
 
-      const result = await client.messages.create(messageParams);
-
-      this.logger.log(`✅ SMS sent via Twilio to ${request.to}: ${result.sid}`);
-      this.logger.debug(`📱 Twilio Message SID: ${result.sid}, Status: ${result.status}, Account SID: ${result.accountSid}`);
-
-      return {
-        success: true,
-        messageId: result.sid,
-      };
-    } catch (error: any) {
-      this.logger.error(`❌ Failed to send SMS via Twilio to ${request.to}:`, error);
-      
-      // Gestion des erreurs spécifiques Twilio
-      if (error.code === 21211) {
-        throw new Error('Numéro de téléphone invalide. Vérifiez le format (ex: +22961234567)');
-      } else if (error.code === 21614) {
-        throw new Error('Numéro Twilio invalide. Vérifiez TWILIO_PHONE_NUMBER ou TWILIO_MESSAGING_SERVICE_SID');
-      } else if (error.code === 20003) {
-        throw new Error('Identifiants Twilio invalides. Vérifiez TWILIO_ACCOUNT_SID et TWILIO_AUTH_TOKEN');
-      } else if (error.code === 21608) {
-        throw new Error('MessagingServiceSid invalide. Vérifiez TWILIO_MESSAGING_SERVICE_SID');
-      }
-      
-      throw new Error(`Erreur Twilio: ${error.message || 'Échec d\'envoi SMS'}`);
-    }
+    return {
+      success: true,
+      messageId: result.sid,
+    };
   }
 
   /**

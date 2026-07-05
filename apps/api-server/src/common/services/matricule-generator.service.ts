@@ -59,7 +59,7 @@ const LOCAL_TYPE_CODE: Record<MatriculeType, string> = {
   STU: 'E',    // Élève
   STF: 'P',    // Personnel
   INV: 'F',    // Facture
-  REC: 'R',    // Reçu
+  REC: 'REC',  // Reçu
   ADM: 'A',    // Admission
   PAY: 'PAY',  // Paiement
 };
@@ -97,10 +97,12 @@ export class MatriculeGeneratorService {
     const year2 = year.toString().slice(-2);
 
     // 1. Générer le numéro LOCAL (par tenant + type)
-    // Format: <CODE>-<LOCAL_TYPE>-<YY>-<XXXXX>  ex: CSPEB-E-25-00001
+    // Format: <CODE>-<LOCAL_TYPE>-<YY>-<XXX>  ex: CSPEB-E-25-00001 (élève), CSPEB-REC-26-001 (reçu)
     const localType = LOCAL_TYPE_CODE[type] || type;
     const localSeq = await this.getNextLocalSequence(tenantId, type);
-    const local = `${schoolCode}-${localType}-${year2}-${String(localSeq).padStart(LOCAL_PAD, '0')}`;
+    // Padding : 3 chiffres pour les reçus (REC), 5 pour les autres types
+    const pad = type === 'REC' ? 3 : LOCAL_PAD;
+    const local = `${schoolCode}-${localType}-${year2}-${String(localSeq).padStart(pad, '0')}`;
 
     // 2. Générer le numéro GLOBAL (plateforme entière, par type + année)
     const globalSeq = await this.getNextGlobalSequence(type, year2);

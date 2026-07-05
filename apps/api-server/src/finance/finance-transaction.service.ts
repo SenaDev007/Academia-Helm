@@ -115,12 +115,30 @@ export class FinanceTransactionService {
       remaining -= pay;
     }
 
-    const receiptNumber = await this.receiptFinanceService.generateReceiptNumber(tenantId, data.academicYearId)
+    // Génération du numéro de reçu avec vérification d'unicité + retry
+    // (évite l'erreur "champ unique existe déjà" en cas de race condition)
+    let receiptNumber = await this.receiptFinanceService.generateReceiptNumber(tenantId, data.academicYearId)
       .then((r) => r.local)
       .catch((err) => {
         this.logger.warn(`MatriculeGeneratorService failed, fallback to AH-YYYY-NNNNNN: ${err.message}`);
         return this.nextReceiptNumber(tenantId);
       });
+
+    // Vérifier l'unicité — si le numéro existe déjà, incrémenter jusqu'à trouver un numéro libre
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const existing = await this.prisma.financeTransaction.findFirst({
+        where: { receiptNumber },
+        select: { id: true },
+      });
+      if (!existing) break; // Numéro libre
+      // Numéro déjà pris — incrémenter la séquence
+      this.logger.warn(`Receipt number ${receiptNumber} already exists, trying next (attempt ${attempt + 1})`);
+      const parts = receiptNumber.split('-');
+      const seq = parseInt(parts[parts.length - 1], 10);
+      const nextSeq = (isNaN(seq) ? 0 : seq) + 1;
+      parts[parts.length - 1] = String(nextSeq).padStart(5, '0');
+      receiptNumber = parts.join('-');
+    }
 
     const tx = await this.prisma.financeTransaction.create({
       data: {

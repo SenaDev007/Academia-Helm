@@ -185,11 +185,23 @@ export class MatriculeGeneratorService {
         }).catch(() => 0);
         break;
       case 'REC':
-        // ⚠️ Compter sur finance_transactions (pas payments) car les reçus
-        // FinanceTransaction utilisent ce générateur maintenant.
-        count = await this.prisma.financeTransaction.count({
-          where: { tenantId, receiptNumber: { startsWith: prefix } },
-        }).catch(() => 0);
+        // ⚠️ Les reçus sont au format {schoolCode}-R-{year2}-{seq} (ex: CSPEBE-R-26-00001)
+        // Le préfixe 'REC-26-' ne correspond PAS au format réel.
+        // On trouve le max seq existant pour ce tenant en extrayant le dernier
+        // segment numérique du receiptNumber le plus récent.
+        const lastTx = await this.prisma.financeTransaction.findFirst({
+          where: { tenantId },
+          select: { receiptNumber: true },
+          orderBy: { receiptNumber: 'desc' },
+        });
+        if (lastTx?.receiptNumber) {
+          // Extraire le dernier segment après le dernier '-'
+          const parts = lastTx.receiptNumber.split('-');
+          const lastSeq = parseInt(parts[parts.length - 1], 10);
+          count = isNaN(lastSeq) ? 0 : lastSeq;
+        } else {
+          count = 0;
+        }
         break;
       default:
         count = 0;

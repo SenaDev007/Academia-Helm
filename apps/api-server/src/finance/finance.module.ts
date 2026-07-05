@@ -45,6 +45,8 @@ import { TenantPaymentConfigService } from './tenant-payment-config.service';
 import { TenantPaymentConfigController } from './tenant-payment-config.controller';
 import { FeexPayService } from './feexpay.service';
 import { FeexPayController } from './feexpay.controller';
+import { FedapayService } from './fedapay.service';
+import { FedapayController } from './fedapay.controller';
 import { ReceiptNotificationService } from './receipt-notification.service';
 import { FinanceOrionService } from './finance-orion.service';
 import { CollectionCaseController } from './collection-case.controller';
@@ -107,6 +109,7 @@ import { CommunicationModule } from '../communication/communication.module';
     CashRegisterController,
     TenantPaymentConfigController,
     FeexPayController,
+    FedapayController,
   ],
   providers: [
     FeesPrismaService,
@@ -123,6 +126,7 @@ import { CommunicationModule } from '../communication/communication.module';
     ReceiptNotificationFinanceService,
     TenantPaymentConfigService,
     FeexPayService,
+    FedapayService,
     // Module 4 - Frais & Priorité de Paiement
     PaymentAllocationService,
     FeeInstallmentService,

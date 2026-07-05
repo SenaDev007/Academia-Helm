@@ -4981,6 +4981,34 @@ model FinancialReportExport {
   @@map("financial_report_exports")
 }
 
+/// Configuration des paiements en ligne (FeexPay / Fedapay) par école.
+/// Chaque école configure son PROPRE compte — l'argent va directement sur
+/// le compte de l'école, jamais sur le nôtre (SaaS orchestrator).
+model TenantPaymentConfig {
+  id              String   @id @default(uuid())
+  tenantId        String   @unique
+  provider        String   @default("feexpay") // 'feexpay' | 'fedapay'
+  isActive        Boolean  @default(false)
+
+  // FeexPay
+  feexpayApiKey   String?
+  feexpayShopId   String?
+  feexpaySecretKey String?
+
+  // Fedapay (alternative)
+  fedapayPublicKey String?
+  fedapaySecretKey String?
+
+  // Webhook
+  webhookSecret   String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_payment_config")
+}
+
 /// Sous-module 8 â€” ParamÃ©trage financier (seuils, relances, clÃ´ture auto, Fedapay).
 model FinancialSettings {
   id                       String   @id @default(uuid())

@@ -41,6 +41,8 @@ import { CollectionCaseService } from './collection-case.service';
 import { ReceiptGenerationService } from './receipt-generation.service';
 import { ReceiptFinanceService } from './receipt-finance.service';
 import { ReceiptNotificationFinanceService } from './receipt-notification-finance.service';
+import { TenantPaymentConfigService } from './tenant-payment-config.service';
+import { TenantPaymentConfigController } from './tenant-payment-config.controller';
 import { ReceiptNotificationService } from './receipt-notification.service';
 import { FinanceOrionService } from './finance-orion.service';
 import { CollectionCaseController } from './collection-case.controller';
@@ -101,6 +103,7 @@ import { CommunicationModule } from '../communication/communication.module';
     FinanceReportsController,
     FinanceAuditController,
     CashRegisterController,
+    TenantPaymentConfigController,
   ],
   providers: [
     FeesPrismaService,
@@ -115,6 +118,7 @@ import { CommunicationModule } from '../communication/communication.module';
     RecoveryReminderEmailService,
     ReceiptFinanceService,
     ReceiptNotificationFinanceService,
+    TenantPaymentConfigService,
     // Module 4 - Frais & Priorité de Paiement
     PaymentAllocationService,
     FeeInstallmentService,

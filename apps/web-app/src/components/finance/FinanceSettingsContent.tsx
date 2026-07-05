@@ -17,7 +17,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ShieldCheck, AlertTriangle, AlertCircle, Info, History } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, AlertCircle, Info, History, CreditCard } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,6 +26,7 @@ import { Badge } from '@/components/ui/badge';
 import { financeService } from '@/services/finance.service';
 import { useToast } from '@/components/ui/use-toast';
 import { formatCurrency } from '@/lib/utils';
+import PaymentConfigSection from './PaymentConfigSection';
 
 const SEVERITY_CONFIG = {
   CRITICAL: { icon: AlertCircle, color: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-200', label: 'Critique' },
@@ -452,6 +453,11 @@ export default function FinanceSettingsContent() {
               </ul>
             )}
           </div>
+        </div>
+
+        {/* === SECTION PAIEMENTS EN LIGNE === */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+          <PaymentConfigSection tenantId="" />
         </div>
       </ModuleContentArea>
     </div>

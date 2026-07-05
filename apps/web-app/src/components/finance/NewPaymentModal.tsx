@@ -321,14 +321,25 @@ export default function NewPaymentModal({
                 <GmailIcon className="w-3.5 h-3.5 mr-1.5" />
                 {sendingChannel === 'email' ? 'Envoi...' : 'Email'}
               </Button>
+              {/* WhatsApp : 2 options (lien + API) */}
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => handleResendReceipt('whatsapp')}
-                disabled={sendingChannel === 'whatsapp'}
+                onClick={async () => {
+                  if (!receipt) return;
+                  try {
+                    const data = await financeService.getWhatsAppLink(receipt.id);
+                    if (data?.url) {
+                      window.open(data.url, '_blank');
+                      toast({ title: 'WhatsApp ouvert', description: 'Cliquez sur Envoyer dans WhatsApp.' });
+                    } else {
+                      toast({ title: 'Pas de téléphone', description: 'Aucun numéro de parent trouvé.', variant: 'destructive' });
+                    }
+                  } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
+                }}
               >
                 <WhatsAppIcon className="w-3.5 h-3.5 mr-1.5" />
-                {sendingChannel === 'whatsapp' ? 'Envoi...' : 'WhatsApp'}
+                WhatsApp
               </Button>
               <Button
                 size="sm"

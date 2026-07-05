@@ -107,6 +107,14 @@ class FinanceService {
     });
   }
 
+  /**
+   * Génère un lien wa.me pour envoi WhatsApp manuel (sans API Gupshup).
+   * Retourne { url, phone, message, hasPhone }.
+   */
+  async getWhatsAppLink(transactionId: string): Promise<any> {
+    return financeFetch(`/api/finance/transactions/${encodeURIComponent(transactionId)}/whatsapp-link`);
+  }
+
   async reverseTransaction(id: string, data: { reason: string }): Promise<any> {
     return financeFetch(`/api/finance/transactions/${encodeURIComponent(id)}/reverse`, { method: 'POST', body: data });
   }

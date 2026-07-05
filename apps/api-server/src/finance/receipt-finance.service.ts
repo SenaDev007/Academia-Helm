@@ -433,7 +433,7 @@ export class ReceiptFinanceService {
   /**
    * Récupère le branding de l'école (réutilise le pattern admission-notification).
    */
-  private async getTenantBranding(tenantId: string) {
+  async getTenantBranding(tenantId: string) {
     try {
       const profile = await this.prisma.tenantIdentityProfile.findFirst({
         where: { tenantId, isActive: true },

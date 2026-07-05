@@ -116,6 +116,96 @@ export class FinanceTransactionController {
     };
   }
 
+  /**
+   * GET /finance/transactions/:id/whatsapp-link
+   * Génère un lien wa.me avec le message pré-rempli pour envoi manuel
+   * (contourne l'API Gupshup — gratuit, pas d'opt-in requis).
+   */
+  @Get(':id/whatsapp-link')
+  async getWhatsAppLink(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    // Charger la transaction + élève + guardian + branding
+    const tx = await this.service.prismaClient.financeTransaction.findUnique({
+      where: { id },
+      include: {
+        studentAccount: {
+          include: {
+            student: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                matricule: true,
+                studentGuardians: { include: { guardian: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!tx) throw new NotFoundException('Transaction introuvable');
+
+    // Récupérer le téléphone du parent
+    const contacts = await this.receiptFinanceService.getParentContacts(tx.studentAccount.studentId);
+
+    // Récupérer le branding
+    const branding = await this.receiptFinanceService.getTenantBranding(tenantId);
+
+    const studentName = `${tx.studentAccount?.student?.lastName || ''} ${tx.studentAccount?.student?.firstName || ''}`.trim();
+    const schoolName = branding.schoolName || 'l\'établissement';
+    const amountStr = Number(tx.amount).toLocaleString('fr-FR');
+    const dateStr = new Date(tx.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+    const totalDue = Number(tx.studentAccount?.totalDue ?? 0);
+    const balanceAfter = Number(tx.studentAccount?.balance ?? 0);
+    const balanceLine = balanceAfter > 0
+      ? `Solde restant a payer : ${balanceAfter.toLocaleString('fr-FR')} FCFA`
+      : `Compte solde - aucun solde restant.`;
+
+    // Construire le message WhatsApp
+    const message = `Bonjour${contacts.name ? ` ${contacts.name}` : ''},\n\n` +
+      `Nous confirmons la reception du paiement pour ${studentName} aupres de ${schoolName}.\n\n` +
+      `Recu n° : ${tx.receiptNumber}\n` +
+      `Montant : ${amountStr} FCFA\n` +
+      `Date : ${dateStr}\n` +
+      `${balanceLine}\n\n` +
+      `Le recu PDF detaille est disponible aupres de l'etablissement.\n\n` +
+      `Cordialement,\nLa Direction`;
+
+    // Normaliser le numéro pour wa.me (format international sans +)
+    let phoneForWaMe = '';
+    if (contacts.phone) {
+      // Nettoyer le numéro : retirer espaces, tirets, points
+      let cleaned = contacts.phone.replace(/[\s\-().]/g, '').trim();
+      // Convertir 0195722234 → 22995722234
+      if (/^01\d{8}$/.test(cleaned)) {
+        cleaned = '229' + cleaned.substring(2);
+      } else if (/^\d{8}$/.test(cleaned) && !cleaned.startsWith('00')) {
+        cleaned = '229' + cleaned;
+      } else if (cleaned.startsWith('+')) {
+        cleaned = cleaned.substring(1);
+      } else if (cleaned.startsWith('00')) {
+        cleaned = cleaned.substring(2);
+      }
+      phoneForWaMe = cleaned;
+    }
+
+    const waMeUrl = phoneForWaMe
+      ? `https://wa.me/${phoneForWaMe}?text=${encodeURIComponent(message)}`
+      : '';
+
+    return {
+      url: waMeUrl,
+      phone: contacts.phone || null,
+      message,
+      receiptNumber: tx.receiptNumber,
+      hasPhone: !!contacts.phone,
+    };
+  }
+
+
   @Post(':id/reverse')
   async reverse(
     @Param('id') id: string,

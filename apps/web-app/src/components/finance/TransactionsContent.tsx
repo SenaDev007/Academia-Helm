@@ -23,6 +23,7 @@ const METHOD_LABELS: Record<string, string> = {
 
 export default function TransactionsContent() {
   const { academicYear } = useModuleContext();
+  const [whatsappMenuId, setWhatsappMenuId] = useState<string | null>(null);
   const { toast } = useToast();
   const [transactions, setTransactions] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -172,22 +173,56 @@ export default function TransactionsContent() {
                         >
                           <GmailIcon className="w-3.5 h-3.5" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150"
-                          onClick={async () => {
-                            try {
-                              const r = await financeService.resendReceipt(t.id, ['whatsapp']);
-                              const s = r?.channels?.whatsapp;
-                              if (s?.status === 'skipped') toast({ title: 'Contact manquant', description: s.reason, variant: 'destructive' }); else if (s?.status === 'failed') toast({ title: 'Échec d envoi', description: s.error || 'Échec de l envoi', variant: 'destructive' });
-                              else toast({ title: 'Reçu envoyé', description: `WhatsApp envoyé${s?.to ? ` à ${s.to}` : ''}` });
-                            } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
-                          }}
-                          title="Envoyer par WhatsApp"
-                        >
-                          <WhatsAppIcon className="w-3.5 h-3.5" />
-                        </Button>
+                        {/* WhatsApp : dropdown avec 2 options */}
+                        <div className="relative">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150"
+                            onClick={() => setWhatsappMenuId(whatsappMenuId === t.id ? null : t.id)}
+                            title="Envoyer par WhatsApp"
+                          >
+                            <WhatsAppIcon className="w-3.5 h-3.5" />
+                          </Button>
+                          {whatsappMenuId === t.id && (
+                            <div className="absolute right-0 top-8 z-50 bg-white rounded-lg shadow-xl border border-slate-200 py-1 min-w-[180px]">
+                              <button
+                                className="w-full text-left px-3 py-2 text-xs hover:bg-emerald-50 flex items-center gap-2"
+                                onClick={async () => {
+                                  setWhatsappMenuId(null);
+                                  try {
+                                    const data = await financeService.getWhatsAppLink(t.id);
+                                    if (data?.url) {
+                                      window.open(data.url, '_blank');
+                                      toast({ title: 'WhatsApp ouvert', description: 'Cliquez sur Envoyer dans WhatsApp.' });
+                                    } else {
+                                      toast({ title: 'Pas de téléphone', description: 'Aucun numéro de parent trouvé.', variant: 'destructive' });
+                                    }
+                                  } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
+                                }}
+                              >
+                                <WhatsAppIcon className="w-3.5 h-3.5" />
+                                Envoi rapide (lien)
+                              </button>
+                              <button
+                                className="w-full text-left px-3 py-2 text-xs hover:bg-indigo-50 flex items-center gap-2"
+                                onClick={async () => {
+                                  setWhatsappMenuId(null);
+                                  try {
+                                    const r = await financeService.resendReceipt(t.id, ['whatsapp']);
+                                    const s = r?.channels?.whatsapp;
+                                    if (s?.status === 'skipped') toast({ title: 'Contact manquant', description: s.reason, variant: 'destructive' });
+                                    else if (s?.status === 'failed') toast({ title: 'Échec d envoi', description: s.error || 'Échec de l envoi', variant: 'destructive' });
+                                    else toast({ title: 'Reçu envoyé', description: `WhatsApp envoyé${s?.to ? ` à ${s.to}` : ''}` });
+                                  } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
+                                }}
+                              >
+                                <WhatsAppIcon className="w-3.5 h-3.5 opacity-60" />
+                                Envoi auto (API)
+                              </button>
+                            </div>
+                          )}
+                        </div>
                         <Button
                           variant="ghost"
                           size="icon"

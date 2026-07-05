@@ -136,6 +136,7 @@ export class WhatsAppService {
     try {
       // Normalisation du numéro destinataire
       const normalizedTo = normalizePhoneE164(request.to);
+      this.logger.log(`WhatsApp normalisation: raw="${request.to}" → normalized="${normalizedTo}"`);
       if (!isValidPhoneE164(normalizedTo)) {
         throw new Error(
           `Numéro WhatsApp invalide: "${request.to}" → normalisé: "${normalizedTo}". ` +
@@ -233,6 +234,7 @@ export class WhatsAppService {
             result.messageId,
           );
         }
+        this.logger.log(`✅ WhatsApp sendCategorized réussi: messageId=${result.messageId}`);
         return {
           success: true,
           logId,
@@ -240,6 +242,7 @@ export class WhatsAppService {
         };
       } else {
         const errorMsg = 'Provider returned success=false';
+        this.logger.error(`❌ WhatsApp sendCategorized: provider returned success=false`);
         if (logId && this._whatsappLogService) {
           await this._whatsappLogService.markAsFailed(logId, errorMsg);
         }

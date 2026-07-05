@@ -2,7 +2,10 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, Download, CheckCircle2, Search } from 'lucide-react';
+import {
+  Sparkles, Download, CheckCircle2, Search, Phone, ArrowRight, Loader2,
+  AlertCircle, CheckCircle, Shield, Lock, Smartphone,
+} from 'lucide-react';
 import { WhatsAppIcon, GmailIcon, SmsIcon } from './OfficialIcons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,7 +17,25 @@ import { financeService } from '@/services/finance.service';
 import { networkDetectionService } from '@/lib/offline/network-detection.service';
 import { formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import FeexPayCheckoutModal from './FeexPayCheckoutModal';
+import {
+  detectFeexPayOperator,
+  isValidBeninPhone,
+  formatPhoneDisplay,
+  type FeexPayOperator,
+} from '@/lib/feexpay/detect-operator';
+
+// Logos opérateurs Mobile Money
+const OPERATOR_LOGOS = {
+  mtn: '/logos/mtn.png',
+  moov: '/logos/moov.png',
+  celtiis: '/logos/celtiis.png',
+} as const;
+
+const OPERATOR_META: Record<FeexPayOperator, { label: string; shortLabel: string; color: string; bg: string; border: string; ring: string }> = {
+  mtn: { label: 'MTN Mobile Money', shortLabel: 'MTN', color: 'text-yellow-700', bg: 'bg-yellow-50', border: 'border-yellow-300', ring: 'ring-yellow-400' },
+  moov: { label: 'Moov Money', shortLabel: 'Moov', color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-300', ring: 'ring-blue-400' },
+  celtiis_bj: { label: 'Celtiis Cash', shortLabel: 'Celtiis', color: 'text-orange-700', bg: 'bg-orange-50', border: 'border-orange-300', ring: 'ring-orange-400' },
+};
 
 const METHODS = [
   { value: 'CASH', label: 'Espèces' },
@@ -65,9 +86,12 @@ export default function NewPaymentModal({
   const [selectedLevelId, setSelectedLevelId] = useState('');
   const [selectedClassId, setSelectedClassId] = useState('');
   const [studentSearch, setStudentSearch] = useState('');
-  const [feexpayOperator, setFeexpayOperator] = useState<'mtn' | 'moov' | 'celtiis_bj'>('mtn');
-  // Modal FeexPay — widget personnalisé (style Fedapay)
-  const [feexpayModalOpen, setFeexpayModalOpen] = useState(false);
+  const [feexpayOperator, setFeexpayOperator] = useState<FeexPayOperator>('mtn');
+  // FeexPay inline widget (pas de modal séparé — meme UX que Fedapay widget)
+  const [feexpayInlineOpen, setFeexpayInlineOpen] = useState(false);
+  const [feexpayPhone, setFeexpayPhone] = useState('');
+  const [feexpaySubmitting, setFeexpaySubmitting] = useState(false);
+  const [feexpayError, setFeexpayError] = useState<string | null>(null);
   const [feexpayPrefillPhone, setFeexpayPrefillPhone] = useState<string>('');
 
   // Charge les caisses ouvertes
@@ -215,10 +239,13 @@ export default function NewPaymentModal({
       return;
     }
 
-    // ── Fedapay : widget checkout modal (ne nécessite PAS le téléphone parent) ──
+    // ── Fedapay : widget checkout modal + création transaction après succès ──
     // Le widget Fedapay est un overlay professionnel qui demande au client son propre
     // numéro Mobile Money / carte et ses coordonnées. Aucune récupération préalable
     // du téléphone parent n'est nécessaire.
+    // ⚠️ Important : après confirmation du paiement dans le widget, on appelle
+    // createTransaction côté backend pour créer la FinanceTransaction (sinon le
+    // reçu est introuvable et le solde n'est pas mis à jour).
     if (paymentMethod === 'FEDAPAY') {
       if (!selectedAccount?.student) {
         toast({ title: 'Erreur', description: 'Élève introuvable.', variant: 'destructive' });
@@ -264,40 +291,71 @@ export default function NewPaymentModal({
           customer: {
             firstname: selectedAccount.student?.firstName || '',
             lastname: selectedAccount.student?.lastName || '',
-            // email + phone_number volontairement omis : le client les saisit dans le widget
           },
-          onComplete: (response: any) => {
+          onComplete: async (response: any) => {
             if (response?.reason === 'DIALOG DISMISSED') {
               toast({ title: 'Paiement annulé', description: 'Le checkout Fedapay a été fermé.' });
               setLoading(false);
-            } else {
+              return;
+            }
+
+            // ✅ Succès Fedapay — créer la FinanceTransaction côté backend
+            // pour que le reçu soit généré et le solde mis à jour.
+            const fedapayReference = response?.reference || '';
+            try {
+              const result = await financeService.createTransaction({
+                academicYearId,
+                studentAccountId,
+                amount: amountNum,
+                paymentMethod: 'FEDAPAY',
+                reference: fedapayReference || undefined,
+              });
+              if (result?.id) {
+                setReceipt({
+                  id: result.id,
+                  receiptNumber: result.receiptNumber || fedapayReference || 'FEDAPAY',
+                  createdAt: result.createdAt || new Date().toISOString(),
+                });
+                toast({
+                  title: 'Paiement confirmé',
+                  description: `Reçu ${result.receiptNumber} généré. Référence Fedapay : ${fedapayReference}.`,
+                });
+              } else {
+                toast({
+                  title: 'Paiement initié',
+                  description: `Référence Fedapay : ${fedapayReference}. Le reçu sera généré après confirmation.`,
+                });
+                setReceipt({
+                  id: fedapayReference || 'fedapay-pending',
+                  receiptNumber: fedapayReference || 'FEDAPAY',
+                  createdAt: new Date().toISOString(),
+                });
+              }
+            } catch (err: any) {
+              console.error('createTransaction after Fedapay failed:', err);
               toast({
-                title: 'Paiement initié',
-                description: `Référence Fedapay : ${response?.reference || '—'}. Le client finalise dans le widget.`,
+                title: 'Paiement reçu mais transaction non enregistrée',
+                description: `Référence Fedapay : ${fedapayReference}. Contactez l'administrateur pour synchroniser la transaction.`,
+                variant: 'destructive',
               });
-              setReceipt({
-                id: response?.reference || 'fedapay-pending',
-                receiptNumber: response?.reference || 'FEDAPAY',
-                createdAt: new Date().toISOString(),
-              });
+            } finally {
+              setLoading(false);
             }
           },
         });
         widget.open();
       } catch (e: any) {
         toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
-      } finally {
         setLoading(false);
       }
       return;
     }
 
-    // ── FeexPay : ouvrir le widget modal personnalisé (style Fedapay) ──
-    // FeexPay ne fournit pas de widget officiel — nous avons créé un widget
-    // personnalisé (FeexPayCheckoutModal) qui reproduit l'UX du widget Fedapay :
-    // choix opérateur + saisie téléphone + confirmation push USSD.
-    // Le téléphone parent est pré-rempli si disponible dans la fiche élève,
-    // mais reste modifiable par le client dans le widget.
+    // ── FeexPay : widget inline (pas de modal séparé) ──
+    // FeexPay ne fournit pas de widget officiel. Au lieu d'ouvrir un modal
+    // séparé, on bascule le formulaire en mode "widget FeexPay inline" qui
+    // remplace les champs habituels par : numéro Mobile Money + sélecteur
+    // opérateur + bouton Payer. Même UX que le widget Fedapay mais inline.
     if (paymentMethod === 'FEEXPAY') {
       if (!selectedAccount?.student) {
         toast({ title: 'Erreur', description: 'Élève introuvable.', variant: 'destructive' });
@@ -305,20 +363,24 @@ export default function NewPaymentModal({
       }
 
       // Tenter de pré-remplir avec le téléphone parent (best-effort, non bloquant)
-      let prefillPhone = '';
       try {
         const phoneRes = await fetch(
           `/api/finance/transactions/${selectedAccount.id}/whatsapp-link`,
           { credentials: 'include' },
         );
         const phoneData = await phoneRes.json();
-        if (phoneData?.phone) prefillPhone = phoneData.phone;
+        if (phoneData?.phone) {
+          setFeexpayPhone(phoneData.phone);
+          // Auto-detect operator
+          const detected = detectFeexPayOperator(phoneData.phone);
+          if (detected) setFeexpayOperator(detected);
+        }
       } catch {
-        // non bloquant — le client saisira le numéro dans le widget
+        // non bloquant — le client saisira le numéro
       }
 
-      setFeexpayPrefillPhone(prefillPhone);
-      setFeexpayModalOpen(true);
+      setFeexpayError(null);
+      setFeexpayInlineOpen(true);
       return;
     }
 
@@ -385,7 +447,116 @@ export default function NewPaymentModal({
     setReference('');
     setCashRegisterId('');
     setPreview(null);
+    setFeexpayInlineOpen(false);
+    setFeexpayPhone('');
+    setFeexpayError(null);
   };
+
+  /**
+   * Handler du widget FeexPay inline — appelé quand le client clique sur
+   * "Payer X FCFA" dans le widget inline. Déclenche le push USSD via
+   * /api/finance/payments/feexpay/initiate puis crée la FinanceTransaction
+   * côté backend (pour que le reçu soit généré et le solde mis à jour).
+   */
+  const handleFeexPaySubmit = async () => {
+    if (!selectedAccount?.student || !studentAccountId || !amountNum) return;
+    if (!isValidBeninPhone(feexpayPhone)) {
+      setFeexpayError('Numéro invalide. Format attendu : 01 95 72 22 34 ou +229 01 95 72 22 34.');
+      return;
+    }
+    setFeexpaySubmitting(true);
+    setFeexpayError(null);
+    try {
+      const studentName = selectedAccount.student
+        ? `${selectedAccount.student.lastName} ${selectedAccount.student.firstName}`
+        : 'Élève';
+      const cleanedPhone = feexpayPhone.replace(/\D/g, '');
+
+      // 1. Initier le paiement FeexPay (push USSD au téléphone du client)
+      const res = await fetch('/api/finance/payments/feexpay/initiate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          studentAccountId,
+          studentName,
+          amount: amountNum,
+          phone: cleanedPhone,
+          operator: feexpayOperator,
+          academicYearId,
+        }),
+      });
+      const data = await res.json();
+
+      if (!data.success) {
+        setFeexpayError(data.message || "Échec de l'initiation du paiement.");
+        setFeexpaySubmitting(false);
+        return;
+      }
+
+      // 2. Succès FeexPay — créer la FinanceTransaction côté backend
+      const feexpayReference = data.reference || '';
+      try {
+        const result = await financeService.createTransaction({
+          academicYearId,
+          studentAccountId,
+          amount: amountNum,
+          paymentMethod: 'FEEXPAY',
+          reference: feexpayReference || undefined,
+        });
+        if (result?.id) {
+          setReceipt({
+            id: result.id,
+            receiptNumber: result.receiptNumber || feexpayReference || '—',
+            createdAt: result.createdAt || new Date().toISOString(),
+          });
+          toast({
+            title: '📱 Paiement initié',
+            description: `Le client va recevoir une notification sur le ${formatPhoneDisplay(cleanedPhone)} pour confirmer. Reçu ${result.receiptNumber} généré.`,
+          });
+        } else {
+          setReceipt({
+            id: feexpayReference || 'feexpay-pending',
+            receiptNumber: feexpayReference || '—',
+            createdAt: new Date().toISOString(),
+          });
+          toast({
+            title: '📱 Paiement initié',
+            description: `Notification envoyée sur le ${formatPhoneDisplay(cleanedPhone)}. Référence : ${feexpayReference}.`,
+          });
+        }
+      } catch (err: any) {
+        console.error('createTransaction after FeexPay failed:', err);
+        setReceipt({
+          id: feexpayReference || 'feexpay-pending',
+          receiptNumber: feexpayReference || '—',
+          createdAt: new Date().toISOString(),
+        });
+        toast({
+          title: 'Paiement initié mais transaction non enregistrée',
+          description: `Référence FeexPay : ${feexpayReference}. Contactez l'administrateur pour synchroniser.`,
+          variant: 'destructive',
+        });
+      }
+    } catch (e: any) {
+      setFeexpayError(e.message || 'Erreur réseau');
+    } finally {
+      setFeexpaySubmitting(false);
+    }
+  };
+
+  // Auto-detect operator from phone number for inline widget
+  const detectedOperator = useMemo(() => {
+    if (feexpayPhone.replace(/\D/g, '').length < 5) return null;
+    return detectFeexPayOperator(feexpayPhone);
+  }, [feexpayPhone]);
+
+  useEffect(() => {
+    if (detectedOperator && detectedOperator !== feexpayOperator) {
+      setFeexpayOperator(detectedOperator);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detectedOperator]);
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50">
@@ -471,7 +642,7 @@ export default function NewPaymentModal({
           </motion.div>
         )}
 
-        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4" style={{ display: receipt ? 'none' : undefined }}>
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4" style={{ display: (receipt || feexpayInlineOpen) ? 'none' : undefined }}>
           {/* Sélecteurs Niveau + Classe (filtrage en cascade) */}
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -538,8 +709,8 @@ export default function NewPaymentModal({
               </SelectContent>
             </Select>
           </div>
-          {/* Note : le sélecteur opérateur Mobile Money pour FeexPay est désormais
-              intégré au widget FeexPayCheckoutModal (modal overlay style Fedapay). */}
+          {/* Note : le sélecteur opérateur Mobile Money pour FeexPay est
+              intégré au widget FeexPay inline (palette orange/jaune/noir). */}
           <div>
             <Label>Caisse {paymentMethod === 'CASH' ? '*' : '(optionnel)'}</Label>
             <Select value={cashRegisterId || '_none'} onValueChange={(v) => setCashRegisterId(v === '_none' ? '' : v)}>
@@ -598,29 +769,182 @@ export default function NewPaymentModal({
             </Button>
           </div>
         </form>
-      </motion.div>
 
-      {/* Widget FeexPay personnalisé — modal overlay style Fedapay */}
-      <FeexPayCheckoutModal
-        open={feexpayModalOpen}
-        onClose={() => setFeexpayModalOpen(false)}
-        onSuccess={(ref) => {
-          setReceipt({
-            id: ref || 'feexpay-pending',
-            receiptNumber: ref || '—',
-            createdAt: new Date().toISOString(),
-          });
-        }}
-        data={{
-          studentAccountId,
-          studentName: selectedAccount?.student
-            ? `${selectedAccount.student.lastName} ${selectedAccount.student.firstName}`
-            : 'Élève',
-          amount: amountNum,
-          academicYearId,
-          prefillPhone: feexpayPrefillPhone,
-        }}
-      />
+        {/* ─────────────────────────────────────────────────────────────── */}
+        {/* WIDGET FEEXPAY INLINE — Même UX que Fedapay mais inline         */}
+        {/* (pas de modal séparé, palette FeexPay orange/jaune/noir)       */}
+        {/* ─────────────────────────────────────────────────────────────── */}
+        {feexpayInlineOpen && !receipt && (
+          <div className="rounded-2xl overflow-hidden border border-amber-200 shadow-lg">
+            {/* Header FeexPay (palette officielle) */}
+            <div className="bg-gradient-to-r from-[#F79E1B] via-[#FFCB05] to-[#F79E1B] px-5 py-3 flex items-center gap-3">
+              <div className="bg-white rounded-lg px-2.5 py-1 shadow-sm">
+                <span className="font-bold text-[#1A1A1A] text-base">FeexPay</span>
+              </div>
+              <div className="flex-1">
+                <h3 className="font-bold text-[#1A1A1A] text-sm leading-tight">
+                  Paiement Mobile Money
+                </h3>
+                <p className="text-[10px] text-[#1A1A1A]/70">
+                  Transaction sécurisée · Bénin
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setFeexpayInlineOpen(false);
+                  setFeexpayPhone('');
+                  setFeexpayError(null);
+                }}
+                className="p-1.5 hover:bg-black/10 rounded-lg transition-colors"
+                aria-label="Fermer"
+              >
+                <svg className="w-4 h-4 text-[#1A1A1A]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+
+            {/* Body — layout 2 colonnes (récap + form) */}
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_1.4fr]">
+              {/* Colonne gauche : récap (fond noir) */}
+              <div className="bg-gradient-to-br from-[#1A1A1A] to-[#2D2D2D] text-white p-4">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Shield className="w-3.5 h-3.5 text-[#FFCB05]" />
+                  <p className="text-[10px] uppercase tracking-wider text-[#FFCB05] font-semibold">
+                    Récapitulatif
+                  </p>
+                </div>
+                <p className="text-xs text-white/60 mb-3">Vérifiez avant de confirmer</p>
+
+                <p className="text-[9px] uppercase tracking-wider text-white/40 font-semibold mb-0.5">Bénéficiaire</p>
+                <p className="text-sm font-semibold mb-3 leading-tight">
+                  {selectedAccount?.student
+                    ? `${selectedAccount.student.lastName} ${selectedAccount.student.firstName}`
+                    : 'Élève'}
+                </p>
+
+                <p className="text-[9px] uppercase tracking-wider text-white/40 font-semibold mb-0.5">Montant à payer</p>
+                <p className="text-2xl font-bold text-[#FFCB05] leading-none">
+                  {amountNum.toLocaleString('fr-FR')}
+                  <span className="text-sm font-medium text-white/60 ml-1.5">FCFA</span>
+                </p>
+
+                <div className="mt-4 pt-3 border-t border-white/10 flex items-start gap-1.5">
+                  <Lock className="w-3 h-3 text-[#FFCB05] flex-shrink-0 mt-0.5" />
+                  <p className="text-[10px] text-white/60 leading-tight">
+                    Paiement chiffré SSL. FeexPay est agréé BCEAO.
+                  </p>
+                </div>
+              </div>
+
+              {/* Colonne droite : formulaire */}
+              <div className="p-4 space-y-3">
+                {/* Téléphone */}
+                <div>
+                  <Label className="text-[10px] font-semibold text-slate-700 uppercase tracking-wide mb-1 block">
+                    Numéro Mobile Money
+                  </Label>
+                  <div className="relative">
+                    <Phone className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 z-10" />
+                    <Input
+                      type="tel"
+                      value={formatPhoneDisplay(feexpayPhone)}
+                      onChange={(e) => setFeexpayPhone(e.target.value)}
+                      placeholder="Ex : 01 54 12 34 56"
+                      className="pl-9 text-sm font-medium tracking-wide h-10"
+                      autoFocus
+                    />
+                  </div>
+                  {detectedOperator && (
+                    <p className="text-[10px] text-emerald-700 flex items-center gap-1 mt-1 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                      <CheckCircle className="w-3 h-3" />
+                      Opérateur détecté : <strong>{OPERATOR_META[detectedOperator].label}</strong>
+                    </p>
+                  )}
+                </div>
+
+                {/* Sélecteur opérateur */}
+                <div>
+                  <Label className="text-[10px] font-semibold text-slate-700 uppercase tracking-wide mb-1 block">
+                    Ou choisissez manuellement
+                  </Label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {(Object.keys(OPERATOR_META) as FeexPayOperator[]).map((op) => {
+                      const meta = OPERATOR_META[op];
+                      const isSelected = feexpayOperator === op;
+                      return (
+                        <button
+                          key={op}
+                          type="button"
+                          onClick={() => setFeexpayOperator(op)}
+                          className={`relative px-1.5 py-2 rounded-lg border-2 transition-all flex flex-col items-center gap-1 ${
+                            isSelected
+                              ? `${meta.bg} ${meta.border} ring-2 ${meta.ring} ring-offset-1`
+                              : 'bg-white border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={op === 'mtn' ? OPERATOR_LOGOS.mtn : op === 'moov' ? OPERATOR_LOGOS.moov : OPERATOR_LOGOS.celtiis}
+                            alt={meta.label}
+                            className="h-6 w-6 object-contain"
+                          />
+                          <span className={`text-[10px] font-semibold ${isSelected ? meta.color : 'text-slate-600'}`}>
+                            {meta.shortLabel}
+                          </span>
+                          {isSelected && (
+                            <CheckCircle className="absolute -top-1 -right-1 w-3.5 h-3.5 text-emerald-500 bg-white rounded-full border border-emerald-200" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Info */}
+                <div className="bg-amber-50 border border-amber-200 rounded-md p-2 flex items-start gap-1.5">
+                  <AlertCircle className="w-3 h-3 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-[10px] text-amber-900 leading-tight">
+                    Une notification sera envoyée. Le client saisit son code PIN Mobile Money pour confirmer.
+                  </p>
+                </div>
+
+                {/* Error */}
+                {feexpayError && (
+                  <div className="bg-red-50 border border-red-200 rounded-md p-2 flex items-start gap-1.5">
+                    <AlertCircle className="w-3 h-3 text-red-600 flex-shrink-0 mt-0.5" />
+                    <p className="text-[10px] text-red-800">{feexpayError}</p>
+                  </div>
+                )}
+
+                {/* Bouton Payer */}
+                <button
+                  type="button"
+                  onClick={handleFeexPaySubmit}
+                  disabled={feexpaySubmitting}
+                  className="w-full bg-gradient-to-r from-[#F79E1B] to-[#FFCB05] hover:from-[#E68A0E] hover:to-[#F0BE04] text-[#1A1A1A] font-bold shadow-md h-10 text-sm rounded-lg flex items-center justify-center gap-2 transition-all disabled:opacity-60"
+                >
+                  {feexpaySubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Initialisation…
+                    </>
+                  ) : (
+                    <>
+                      Payer {formatCurrency(amountNum)} FCFA
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+
+                <p className="text-[9px] text-center text-slate-400 flex items-center justify-center gap-1">
+                  <Lock className="w-2.5 h-2.5" />
+                  Transaction sécurisée · FeexPay API v2
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </motion.div>
     </div>
   );
 }

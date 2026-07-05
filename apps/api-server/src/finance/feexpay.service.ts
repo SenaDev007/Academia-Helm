@@ -68,13 +68,16 @@ export class FeexPayService {
     }
 
     // 2. Récupérer la config complète (avec clés)
+    // Note : on ne vérifie plus config.provider === 'feexpay' — l'école peut
+    // configurer BOTH FeexPay et Fedapay. On vérifie juste que les clés
+    // FeexPay sont présentes.
     const config = await this.paymentConfigService.getFullConfig(params.tenantId);
-    if (!config || config.provider !== 'feexpay') {
-      throw new BadRequestException('Le fournisseur de paiement n\'est pas FeexPay');
+    if (!config) {
+      throw new BadRequestException('Aucune configuration de paiement trouvée. Configurez vos clés API dans Paramètres → Paiements.');
     }
 
     if (!config.feexpayApiKey || !config.feexpayShopId) {
-      throw new BadRequestException('Clés FeexPay manquantes (API Key + Shop ID requis)');
+      throw new BadRequestException('Clés FeexPay manquantes (API Key + Shop ID requis). Configurez-les dans Paramètres → Paiements.');
     }
 
     // 3. Normaliser le numéro de téléphone pour FeexPay

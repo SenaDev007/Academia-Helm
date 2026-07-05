@@ -41,7 +41,10 @@ export class FedapayService {
    */
   async getPublicKey(tenantId: string): Promise<{ publicKey: string | null; enabled: boolean }> {
     const config = await this.paymentConfigService.getFullConfig(tenantId);
-    if (!config || config.provider !== 'fedapay' || !config.isActive) {
+    // Note : on ne vérifie plus config.provider === 'fedapay' — l'école peut
+    // configurer BOTH FeexPay et Fedapay. On vérifie juste que la clé publique
+    // Fedapay est présente et que isActive est vrai.
+    if (!config || !config.isActive) {
       return { publicKey: null, enabled: false };
     }
     return {

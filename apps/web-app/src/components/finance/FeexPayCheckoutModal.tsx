@@ -39,10 +39,14 @@ import {
   formatPhoneDisplay,
   type FeexPayOperator,
 } from '@/lib/feexpay/detect-operator';
-import FeexPayLogo from '/public/logos/feexpay.png';
-import MtnLogo from '/public/logos/mtn.png';
-import MoovLogo from '/public/logos/moov.png';
-import CeltiisLogo from '/public/logos/celtiis.png';
+
+// Logos servis depuis /public/logos/ (URLs statiques, pas d'import ES module)
+const LOGOS = {
+  feexpay: '/logos/feexpay.png',
+  mtn: '/logos/mtn.png',
+  moov: '/logos/moov.png',
+  celtiis: '/logos/celtiis.png',
+} as const;
 
 type Operator = FeexPayOperator;
 
@@ -80,7 +84,7 @@ const OPERATOR_META: Record<
     bg: 'bg-yellow-50',
     border: 'border-yellow-300',
     ring: 'ring-yellow-400',
-    logo: MtnLogo.src,
+    logo: LOGOS.mtn,
   },
   moov: {
     label: 'Moov Money',
@@ -89,7 +93,7 @@ const OPERATOR_META: Record<
     bg: 'bg-blue-50',
     border: 'border-blue-300',
     ring: 'ring-blue-400',
-    logo: MoovLogo.src,
+    logo: LOGOS.moov,
   },
   celtiis_bj: {
     label: 'Celtiis Cash',
@@ -98,7 +102,7 @@ const OPERATOR_META: Record<
     bg: 'bg-orange-50',
     border: 'border-orange-300',
     ring: 'ring-orange-400',
-    logo: CeltiisLogo.src,
+    logo: LOGOS.celtiis,
   },
 };
 
@@ -226,7 +230,7 @@ export default function FeexPayCheckoutModal({
             <div className="bg-white rounded-lg px-3 py-1.5 shadow-sm flex items-center">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={FeexPayLogo.src}
+                src={LOGOS.feexpay}
                 alt="FeexPay"
                 className="h-7 w-auto object-contain"
               />

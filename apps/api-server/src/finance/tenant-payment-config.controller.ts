@@ -29,7 +29,12 @@ export class TenantPaymentConfigController {
    * Body: { provider, isActive, feexpayApiKey, feexpayShopId, ... }
    */
   @Post()
-  @Roles('SUPER_DIRECTOR', 'DIRECTOR', 'ADMIN', 'SUPER_ADMIN', 'PLATFORM_OWNER')
+  @Roles(
+    'SUPER_DIRECTOR', 'DIRECTOR', 'ADMIN', 'SUPER_ADMIN',
+    'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN',
+    'PROMOTEUR', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
+    'DIRECTOR_GENERAL', 'DIRECTEUR', 'DIRECTEUR_GENERAL',
+  )
   async upsertConfig(
     @TenantId() tenantId: string,
     @Body() body: {

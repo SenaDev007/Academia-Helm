@@ -131,7 +131,7 @@ export default function PaymentConfigSection({ tenantId }: { tenantId: string })
         </div>
       </label>
 
-      {/* Champs FeexPay */}
+      {/* Champs FeexPay — uniquement API Key + Shop ID */}
       {config.provider === 'feexpay' && (
         <div className="space-y-4 p-4 bg-orange-50 border border-orange-200 rounded-lg">
           <div className="flex items-center gap-2">
@@ -146,6 +146,7 @@ export default function PaymentConfigSection({ tenantId }: { tenantId: string })
                 onChange={(e) => setConfig({ ...config, feexpayApiKey: e.target.value })}
                 placeholder="sk_xxxxxxxxxxxx"
               />
+              <p className="text-[10px] text-slate-500 mt-1">La clé secrète d'authentification API.</p>
             </div>
             <div>
               <Label className="text-xs">Shop ID</Label>
@@ -154,29 +155,23 @@ export default function PaymentConfigSection({ tenantId }: { tenantId: string })
                 onChange={(e) => setConfig({ ...config, feexpayShopId: e.target.value })}
                 placeholder="ex: 123456"
               />
+              <p className="text-[10px] text-slate-500 mt-1">Identifiant de votre boutique FeexPay.</p>
             </div>
-            <div>
-              <Label className="text-xs">Secret Key</Label>
-              <Input
-                type="password"
-                value={config.feexpaySecretKey}
-                onChange={(e) => setConfig({ ...config, feexpaySecretKey: e.target.value })}
-                placeholder="sk_secret_xxxxxxxx"
-              />
-            </div>
-            <div>
+            <div className="md:col-span-2">
               <Label className="text-xs">Webhook Secret (optionnel)</Label>
               <Input
                 type="password"
                 value={config.webhookSecret}
                 onChange={(e) => setConfig({ ...config, webhookSecret: e.target.value })}
-                placeholder="Pour vérifier les webhooks"
+                placeholder="Pour vérifier l'authenticité des webhooks FeexPay"
               />
             </div>
           </div>
           <p className="text-xs text-orange-700">
             Récupérez ces clés sur <a href="https://feexpay.me" target="_blank" className="underline">feexpay.me</a> → Dashboard → API.
             Créez un compte marchand (gratuit), complétez le KYC (RCCM, IFU, compte bancaire).
+            <br />
+            <strong>Note :</strong> FeexPay ne nécessite que 2 clés (API Key + Shop ID). Pas de Secret Key.
           </p>
         </div>
       )}
@@ -191,10 +186,14 @@ export default function PaymentConfigSection({ tenantId }: { tenantId: string })
             <div>
               <Label className="text-xs">Public Key</Label>
               <Input
+                type="password"
                 value={config.fedapayPublicKey}
                 onChange={(e) => setConfig({ ...config, fedapayPublicKey: e.target.value })}
                 placeholder="pk_live_xxxxxxxx"
               />
+              <p className="text-[10px] text-slate-500 mt-1">
+                Utilisée côté client pour le checkout widget. Masquée pour des raisons de sécurité.
+              </p>
             </div>
             <div>
               <Label className="text-xs">Secret Key</Label>
@@ -204,6 +203,9 @@ export default function PaymentConfigSection({ tenantId }: { tenantId: string })
                 onChange={(e) => setConfig({ ...config, fedapaySecretKey: e.target.value })}
                 placeholder="sk_live_xxxxxxxx"
               />
+              <p className="text-[10px] text-slate-500 mt-1">
+                Utilisée côté serveur pour vérifier les transactions. Ne jamais exposer côté client.
+              </p>
             </div>
           </div>
           <p className="text-xs text-violet-700">

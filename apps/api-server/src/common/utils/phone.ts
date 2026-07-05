@@ -33,26 +33,27 @@ export function normalizePhoneE164(
   opts: { stripBenin01?: boolean } = {},
 ): string {
   if (!phone) return '';
-  const stripBenin01 = opts.stripBenin01 !== false; // default: true
+  // Default: do NOT strip 01 — Twilio expects +2290195722234 (with 01 prefix)
+  // Gupshup WhatsApp also works with this format
+  const stripBenin01 = opts.stripBenin01 === true; // default: false (keep 01)
 
   // Nettoyage : supprimer espaces, tirets, points, parenthèses
   let normalized = phone.replace(/[\s\-().]/g, '').trim();
 
   // Cas 1 : numéro local Bénin commençant par "01" (sans indicatif +229)
-  // Ex: "0197123456" ou "0197123456" → "+22997123456"
-  if (stripBenin01 && /^01\d{8}$/.test(normalized)) {
-    return '+229' + normalized.substring(2);
+  // Ex: "0195722234" → "+2290195722234" (garde le 01 pour Twilio)
+  if (/^01\d{8}$/.test(normalized)) {
+    return '+229' + normalized; // +2290195722234
   }
 
   // Cas 2 : numéro local Bénin à 8 chiffres (sans "01" ni +229)
-  // Ex: "97123456" → "+22997123456"
+  // Ex: "95722234" → "+22995722234"
   if (/^\d{8}$/.test(normalized) && !normalized.startsWith('00')) {
     return '+229' + normalized;
   }
 
   // Ajouter le + si manquant
   if (!normalized.startsWith('+')) {
-    // Si commence par "00" (préfixe international européen) → remplacer par +
     if (normalized.startsWith('00')) {
       normalized = '+' + normalized.substring(2);
     } else {
@@ -67,8 +68,8 @@ export function normalizePhoneE164(
       .replace(/^\+/, '')
       .replace(/[^\d]/g, '');
 
-  // Cas 3 : Bénin WhatsApp quirk +22901XXXXXXXX → +229XXXXXXXX (8 digits après +229)
-  // On strip les "01" qui suivent +229 (les opérateurs MTN/Moov Bénin utilisent 8 chiffres)
+  // Cas 3 : si stripBenin01 est explicitement demandé, stripper le 01
+  // (+22901XXXXXXXX → +229XXXXXXXX) — utile pour Gupshup qui peut préférer 8 digits
   if (stripBenin01 && normalized.startsWith('+22901')) {
     normalized = '+229' + normalized.substring(6);
   }

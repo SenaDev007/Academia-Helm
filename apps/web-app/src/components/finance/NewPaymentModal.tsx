@@ -103,14 +103,36 @@ export default function NewPaymentModal({
     });
   }, [classes, selectedLevelId, levels]);
 
-  // Élèves filtrés par classe + recherche
+  // Élèves filtrés par niveau + classe + recherche
   const filteredAccounts = useMemo(() => {
     let result = accounts.filter((a) => Number(a.balance) > 0);
+
+    // Filtrer par niveau si sélectionné (même sans classe spécifique)
+    if (selectedLevelId) {
+      const selectedLevel = levels.find((l) => l.id === selectedLevelId);
+      const schoolLevelId = selectedLevel?.schoolLevelId || selectedLevelId;
+      const levelCode = selectedLevel?.code;
+
+      // Les classes de ce niveau
+      const levelClassIds = new Set(
+        classes
+          .filter((c: any) =>
+            c.schoolLevelId === schoolLevelId ||
+            c.schoolLevel?.code === levelCode ||
+            c.schoolLevel?.id === schoolLevelId
+          )
+          .map((c: any) => c.id)
+      );
+
+      result = result.filter((a) => {
+        const enrollments = a.student?.studentEnrollments ?? [];
+        return enrollments.some((e: any) => levelClassIds.has(e.classId));
+      });
+    }
 
     // Filtrer par classe si sélectionnée
     if (selectedClassId) {
       result = result.filter((a) => {
-        // L'élève peut avoir un enrollment avec classId
         const enrollments = a.student?.studentEnrollments ?? [];
         return enrollments.some((e: any) => e.classId === selectedClassId);
       });
@@ -126,7 +148,14 @@ export default function NewPaymentModal({
     }
 
     return result;
-  }, [accounts, selectedClassId, studentSearch]);
+  }, [accounts, selectedLevelId, selectedClassId, studentSearch, levels, classes]);
+
+  // Auto-sélection si la recherche donne un seul résultat
+  useEffect(() => {
+    if (studentSearch.trim() && filteredAccounts.length === 1 && studentAccountId !== filteredAccounts[0].id) {
+      setStudentAccountId(filteredAccounts[0].id);
+    }
+  }, [studentSearch, filteredAccounts, studentAccountId]);
 
   const selectedAccount = accounts.find((a) => a.id === studentAccountId);
   const amountNum = parseFloat(amount);

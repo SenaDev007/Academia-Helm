@@ -64,6 +64,7 @@ export default function NewPaymentModal({
   const [selectedLevelId, setSelectedLevelId] = useState('');
   const [selectedClassId, setSelectedClassId] = useState('');
   const [studentSearch, setStudentSearch] = useState('');
+  const [feexpayOperator, setFeexpayOperator] = useState<'mtn' | 'moov' | 'celtiis_bj'>('mtn');
 
   // Charge les caisses ouvertes
   useEffect(() => {
@@ -243,6 +244,7 @@ export default function NewPaymentModal({
             studentName,
             amount: amountNum,
             phone: parentPhone,
+            operator: feexpayOperator,
             academicYearId,
           }),
         });
@@ -485,6 +487,20 @@ export default function NewPaymentModal({
               </SelectContent>
             </Select>
           </div>
+          {/* Sélecteur opérateur Mobile Money (visible seulement si FeexPay) */}
+          {paymentMethod === 'FEEXPAY' && (
+            <div>
+              <Label>Opérateur Mobile Money</Label>
+              <Select value={feexpayOperator} onValueChange={(v) => setFeexpayOperator(v as any)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mtn">MTN Mobile Money</SelectItem>
+                  <SelectItem value="moov">Moov Money</SelectItem>
+                  <SelectItem value="celtiis_bj">Celtiis Cash</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div>
             <Label>Caisse {paymentMethod === 'CASH' ? '*' : '(optionnel)'}</Label>
             <Select value={cashRegisterId || '_none'} onValueChange={(v) => setCashRegisterId(v === '_none' ? '' : v)}>

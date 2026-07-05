@@ -19,6 +19,7 @@ export default function ParentPayFeesPage() {
   const [selectedChildId, setSelectedChildId] = useState('');
   const [amount, setAmount] = useState('');
   const [phone, setPhone] = useState('');
+  const [operator, setOperator] = useState<'mtn' | 'moov' | 'celtiis_bj'>('mtn');
   const [paymentInitiated, setPaymentInitiated] = useState<{ reference: string; amount: number } | null>(null);
 
   useEffect(() => {
@@ -53,6 +54,7 @@ export default function ParentPayFeesPage() {
           studentName: selectedChild ? `${selectedChild.firstName} ${selectedChild.lastName}` : 'Élève',
           amount: amountNum,
           phone: phone.trim(),
+          operator,
           academicYearId: selectedChild?.academicYearId,
         }),
       });
@@ -192,8 +194,31 @@ export default function ParentPayFeesPage() {
           />
           <p className="text-xs text-slate-500 mt-1">
             Vous recevrez une notification sur ce numéro pour confirmer le paiement.
-            MTN, Moov, Celtiis sont supportés.
           </p>
+        </div>
+
+        {/* Sélecteur opérateur */}
+        <div>
+          <Label className="text-sm font-semibold">Opérateur Mobile Money</Label>
+          <div className="grid grid-cols-3 gap-2 mt-2">
+            {([
+              { value: 'mtn', label: 'MTN', color: 'border-yellow-400 bg-yellow-50' },
+              { value: 'moov', label: 'Moov', color: 'border-blue-400 bg-blue-50' },
+              { value: 'celtiis_bj', label: 'Celtiis', color: 'border-orange-400 bg-orange-50' },
+            ] as const).map((op) => (
+              <button
+                key={op.value}
+                onClick={() => setOperator(op.value)}
+                className={`p-3 rounded-lg border-2 font-semibold text-sm transition-all ${
+                  operator === op.value
+                    ? `${op.color} ring-2 ring-offset-1`
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                }`}
+              >
+                {op.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Info FeexPay */}

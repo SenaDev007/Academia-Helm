@@ -31,7 +31,10 @@ export class FeexPayController {
       studentName: string;
       amount: number;
       phone: string;
+      operator: 'mtn' | 'moov' | 'celtiis_bj';
       academicYearId: string;
+      firstName?: string;
+      lastName?: string;
     },
   ) {
     return this.feexpayService.initiatePayment({
@@ -40,7 +43,10 @@ export class FeexPayController {
       studentName: body.studentName,
       amount: Number(body.amount),
       phone: body.phone,
+      operator: body.operator || 'mtn',
       academicYearId: body.academicYearId,
+      firstName: body.firstName,
+      lastName: body.lastName,
     });
   }
 
@@ -67,11 +73,12 @@ export class FeexPayController {
   async webhook(
     @Req() req: Request,
     @Query('tenantId') tenantId: string,
+    @Query('ref') refQuery: string,
     @Body() body: any,
   ) {
     if (!tenantId) {
       return { success: false, message: 'tenantId manquant' };
     }
-    return this.feexpayService.handleWebhook(body, tenantId);
+    return this.feexpayService.handleWebhook(body, { ref: refQuery }, tenantId);
   }
 }

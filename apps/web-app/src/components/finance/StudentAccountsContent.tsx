@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Eye, Unlock, UserCog, Search, Download, Receipt, Clock } from 'lucide-react';
 import { WhatsAppIcon, GmailIcon, SmsIcon } from './OfficialIcons';
+import DocumentPreviewModal from '@/components/students/DocumentPreviewModal';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -49,6 +50,8 @@ export default function StudentAccountsContent() {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [unblockReason, setUnblockReason] = useState('');
   const [unblockModal, setUnblockModal] = useState<string | null>(null);
+  const [previewDoc, setPreviewDoc] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   // L'année effective = filtre utilisateur OU année du contexte
   const effectiveYearId = filterYearId || academicYear?.id || '';
@@ -515,8 +518,20 @@ export default function StudentAccountsContent() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7"
-                              onClick={() => window.open(financeService.getReceiptPdfUrl(t.id), '_blank')}
+                              className="h-7 w-7 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150"
+                              onClick={async () => {
+                                setPreviewLoading(true);
+                                try {
+                                  const res = await fetch(financeService.getReceiptPdfUrl(t.id));
+                                  const blob = await res.blob();
+                                  const url = URL.createObjectURL(blob);
+                                  setPreviewDoc({ filePath: url, fileName: `recu-${t.receiptNumber || t.id}.pdf`, mimeType: 'application/pdf' });
+                                } catch (e: any) {
+                                  toast({ title: 'Erreur', description: 'Impossible de charger le reçu', variant: 'destructive' });
+                                } finally {
+                                  setPreviewLoading(false);
+                                }
+                              }}
                               title="Visualiser le reçu"
                             >
                               <Eye className="w-3.5 h-3.5 text-slate-600" />
@@ -525,14 +540,14 @@ export default function StudentAccountsContent() {
                               href={financeService.getReceiptPdfUrl(t.id)}
                               download={`recu-${t.receiptNumber || t.id}.pdf`}
                               title="Télécharger le reçu PDF"
-                              className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-slate-100 cursor-pointer"
+                              className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-indigo-100 hover:shadow-sm cursor-pointer transition-all duration-150"
                             >
                               <Download className="w-3.5 h-3.5 text-slate-600" />
                             </a>
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7"
+                              className="h-7 w-7 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150"
                               onClick={async () => {
                                 try {
                                   const r = await financeService.resendReceipt(t.id, ['email']);
@@ -548,7 +563,7 @@ export default function StudentAccountsContent() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7"
+                              className="h-7 w-7 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150"
                               onClick={async () => {
                                 try {
                                   const r = await financeService.resendReceipt(t.id, ['whatsapp']);
@@ -564,7 +579,7 @@ export default function StudentAccountsContent() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7"
+                              className="h-7 w-7 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150"
                               onClick={async () => {
                                 try {
                                   const r = await financeService.resendReceipt(t.id, ['sms']);
@@ -723,6 +738,17 @@ export default function StudentAccountsContent() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal de visualisation du reçu PDF */}
+      {previewDoc && (
+        <DocumentPreviewModal
+          doc={previewDoc}
+          onClose={() => {
+            if (previewDoc.filePath.startsWith('blob:')) URL.revokeObjectURL(previewDoc.filePath);
+            setPreviewDoc(null);
+          }}
+        />
       )}
     </div>
   );

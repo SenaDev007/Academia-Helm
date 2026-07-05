@@ -429,7 +429,19 @@ export class StudentAccountService {
     return this.prisma.studentAccount.findMany({
       where,
       include: {
-        student: { select: { id: true, firstName: true, lastName: true, studentCode: true } },
+        student: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            studentCode: true,
+            matricule: true,
+            studentEnrollments: {
+              where: { academicYearId: filters.academicYearId },
+              select: { id: true, classId: true, class: { select: { id: true, name: true } } },
+            },
+          },
+        },
         breakdowns: {
           include: {
             feeStructure: {

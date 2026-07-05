@@ -17,6 +17,7 @@
  */
 
 import { Injectable, Logger, Optional, Inject, forwardRef } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
 import { EmailService } from '../communication/services/email.service';
 import { WhatsAppService } from '../communication/services/whatsapp.service';
@@ -34,6 +35,7 @@ export class ReceiptNotificationFinanceService {
     private readonly emailService: EmailService,
     private readonly whatsappService: WhatsAppService,
     private readonly smsService: SmsService,
+    private readonly configService: ConfigService,
   ) {}
 
   /**
@@ -82,6 +84,29 @@ export class ReceiptNotificationFinanceService {
     const totalPaidAfter = Number(tx.studentAccount?.totalPaid ?? 0);
     const balanceAfter = Number(tx.studentAccount?.balance ?? 0);
 
+    // Détecter les personnalisations (FeeOverride) pour cet élève
+    // et calculer la différence entre le montant normal et le montant personnalisé
+    const overrides = await this.prisma.feeOverride.findMany({
+      where: { studentId: tx.studentAccount.studentId },
+      include: { feeStructure: { select: { feeType: true, totalAmount: true, name: true } } },
+    });
+    let totalOriginalDue = totalDue;
+    let personalizationNote = '';
+    if (overrides.length > 0) {
+      totalOriginalDue = 0;
+      const breakdowns = tx.studentAccount?.breakdowns ?? [];
+      for (const bd of breakdowns) {
+        const fs = bd.feeStructure;
+        if (fs) {
+          totalOriginalDue += Number(fs.totalAmount ?? 0);
+        }
+      }
+      const reduction = totalOriginalDue - totalDue;
+      if (reduction > 0) {
+        personalizationNote = `Une réduction de ${reduction.toLocaleString('fr-FR')} FCFA a été appliquée. Le montant total dû est désormais de ${totalDue.toLocaleString('fr-FR')} FCFA (au lieu de ${totalOriginalDue.toLocaleString('fr-FR')} FCFA).`;
+      }
+    }
+
     // 2. Générer (ou récupérer) le PDF
     let pdfBuffer: Buffer | null = null;
     try {
@@ -110,6 +135,7 @@ export class ReceiptNotificationFinanceService {
             totalDue,
             totalPaidAfter,
             balanceAfter,
+            personalizationNote,
           });
         } else if (channel === 'whatsapp') {
           results.whatsapp = await this.sendByWhatsApp({
@@ -123,6 +149,7 @@ export class ReceiptNotificationFinanceService {
             tenantId,
             transactionId,
             balanceAfter,
+            personalizationNote,
           });
         } else if (channel === 'sms') {
           results.sms = await this.sendBySMS({
@@ -132,6 +159,7 @@ export class ReceiptNotificationFinanceService {
             amount: Number(tx.amount),
             branding,
             balanceAfter,
+            personalizationNote,
           });
         }
       } catch (err: any) {
@@ -162,6 +190,7 @@ export class ReceiptNotificationFinanceService {
     totalDue?: number;
     totalPaidAfter?: number;
     balanceAfter?: number;
+    personalizationNote?: string;
   }): Promise<{ status: 'sent' | 'failed' | 'skipped'; to?: string; error?: string }> {
     if (!params.to) {
       return { status: 'skipped', error: 'Aucun email parent disponible' };
@@ -187,6 +216,7 @@ export class ReceiptNotificationFinanceService {
       totalDue: params.totalDue,
       totalPaidAfter: params.totalPaidAfter,
       balanceAfter: params.balanceAfter,
+      personalizationNote: params.personalizationNote,
     });
 
     const result = await this.emailService.sendCategorized({
@@ -231,6 +261,7 @@ export class ReceiptNotificationFinanceService {
     tenantId: string;
     transactionId: string;
     balanceAfter?: number;
+    personalizationNote?: string;
   }): Promise<{ status: 'sent' | 'failed' | 'skipped'; to?: string; error?: string }> {
     if (!params.to) {
       return { status: 'skipped', error: 'Aucun téléphone parent disponible' };
@@ -251,6 +282,11 @@ export class ReceiptNotificationFinanceService {
         : `Compte solde - aucun solde restant.`)
       : '';
 
+    // Ajouter la note de personnalisation au balance_line (variable 7 du template)
+    const fullBalanceLine = params.personalizationNote
+      ? `${balanceLine}${balanceLine ? ' ' : ''}${params.personalizationNote}`
+      : balanceLine;
+
     // Utiliser le template Meta/Gupshup 'recu_paiement' (pré-approuvé)
     // Les variables doivent être passées par NOM (clé du bodyVariables du registry)
     // Le Gupshup sender les récupère par nom puis les envoie en tableau ordonné
@@ -270,7 +306,7 @@ export class ReceiptNotificationFinanceService {
         receipt_number: params.receiptNumber,
         amount: amountStr,
         payment_date: dateStr,
-        balance_line: balanceLine,
+        balance_line: fullBalanceLine,
       },
       triggeredBy: 'SYSTEM',
       relatedEntityId: params.transactionId,
@@ -294,6 +330,7 @@ export class ReceiptNotificationFinanceService {
     amount: number;
     branding: any;
     balanceAfter?: number;
+    personalizationNote?: string;
   }): Promise<{ status: 'sent' | 'failed' | 'skipped'; to?: string; error?: string }> {
     if (!params.to) {
       return { status: 'skipped', error: 'Aucun téléphone parent disponible' };
@@ -310,8 +347,13 @@ export class ReceiptNotificationFinanceService {
         : ' Compte solde.')
       : '';
 
+    // Note de personnalisation courte pour SMS (réduction appliquée)
+    const persoPart = params.personalizationNote
+      ? ' Reduction appliquee.'
+      : '';
+
     // SMS peut être un peu plus long si solde (jusqu'à 200 car)
-    const message = `${schoolName}: Recu ${params.receiptNumber} - ${amountStr}F pour ${studentShort}.${balancePart} Recu PDF a l'ecole.`;
+    const message = `${schoolName}: Recu ${params.receiptNumber} - ${amountStr}F pour ${studentShort}.${balancePart}${persoPart} Recu PDF a l'ecole.`;
 
     const result = await this.smsService.sendSMS(params.to, message);
     if (result.success) {
@@ -336,9 +378,18 @@ export class ReceiptNotificationFinanceService {
         },
       });
       if (profile?.schoolName) {
+        // Construire l'URL du logo comme le module RH
+        // (profile.logoUrl peut être base64 ou un chemin — on utilise l'endpoint
+        // /api/tenants/{tenantId}/logo qui sert toujours le bon logo)
+        const apiBaseUrl = this.configService.get<string>('APP_PUBLIC_URL')
+          || 'https://api.academiahelm.com';
+        const schoolLogo = profile.logoUrl
+          ? `${apiBaseUrl}/api/tenants/${tenantId}/logo`
+          : null;
+
         return {
           schoolName: profile.schoolName,
-          logoUrl: profile.logoUrl,
+          schoolLogo,
           schoolAddress: profile.address,
           schoolPhone: profile.phonePrimary,
           schoolEmail: profile.email,

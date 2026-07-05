@@ -446,9 +446,16 @@ export class ReceiptFinanceService {
         },
       });
       if (profile?.schoolName) {
+        // Construire l'URL du logo comme le module RH
+        const apiBaseUrl = this.configService.get<string>('APP_PUBLIC_URL')
+          || 'https://api.academiahelm.com';
+        const logoUrl = profile.logoUrl
+          ? `${apiBaseUrl}/api/tenants/${tenantId}/logo`
+          : null;
+
         return {
           schoolName: profile.schoolName,
-          logoUrl: profile.logoUrl,
+          logoUrl,
           schoolAddress: profile.address,
           schoolPhone: profile.phonePrimary,
           schoolEmail: profile.email,

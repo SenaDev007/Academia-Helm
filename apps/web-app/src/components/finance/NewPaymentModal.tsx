@@ -248,7 +248,7 @@ export default function NewPaymentModal({
         initial={{ opacity: 0, y: 16, scale: 0.99 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.22, ease: 'easeOut' }}
-        className="bg-white rounded-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto border border-blue-100 shadow-2xl"
+        className="bg-white rounded-xl p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-blue-100 shadow-2xl"
       >
         <h3 className="text-lg font-semibold mb-4">Nouveau paiement</h3>
 
@@ -315,7 +315,7 @@ export default function NewPaymentModal({
           </motion.div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4" style={{ display: receipt ? 'none' : undefined }}>
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4" style={{ display: receipt ? 'none' : undefined }}>
           {/* Sélecteurs Niveau + Classe (filtrage en cascade) */}
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -433,7 +433,7 @@ export default function NewPaymentModal({
               </div>
             </div>
           )}
-          <div className="flex gap-2 justify-end pt-4">
+          <div className="flex gap-2 justify-end pt-4 md:col-span-2">
             <Button type="button" variant="outline" onClick={onClose}>Annuler</Button>
             <Button type="submit" disabled={loading || (paymentMethod === 'CASH' && !cashRegisterId)}>
               {loading ? 'Enregistrement...' : 'Valider paiement'}

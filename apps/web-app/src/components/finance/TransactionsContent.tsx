@@ -142,7 +142,7 @@ export default function TransactionsContent() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7"
+                          className="h-7 w-7 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150"
                           onClick={() => window.open(financeService.getReceiptPdfUrl(t.id), '_blank')}
                           title="Visualiser le reçu"
                         >
@@ -152,14 +152,14 @@ export default function TransactionsContent() {
                           href={financeService.getReceiptPdfUrl(t.id)}
                           download={`recu-${t.receiptNumber || t.id}.pdf`}
                           title="Télécharger le reçu PDF"
-                          className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-slate-100 cursor-pointer"
+                          className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-indigo-100 hover:shadow-sm cursor-pointer transition-all duration-150"
                         >
                           <Download className="w-3.5 h-3.5 text-slate-600" />
                         </a>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7"
+                          className="h-7 w-7 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150"
                           onClick={async () => {
                             try {
                               const r = await financeService.resendReceipt(t.id, ['email']);
@@ -175,7 +175,7 @@ export default function TransactionsContent() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7"
+                          className="h-7 w-7 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150"
                           onClick={async () => {
                             try {
                               const r = await financeService.resendReceipt(t.id, ['whatsapp']);
@@ -191,7 +191,7 @@ export default function TransactionsContent() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7"
+                          className="h-7 w-7 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150"
                           onClick={async () => {
                             try {
                               const r = await financeService.resendReceipt(t.id, ['sms']);

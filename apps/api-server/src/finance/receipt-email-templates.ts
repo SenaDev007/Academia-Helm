@@ -41,6 +41,8 @@ export interface ReceiptEmailData {
   totalPaidAfter?: number;
   /** Solde restant à payer (après paiement) */
   balanceAfter?: number;
+  /** Note de personnalisation (réduction appliquée) */
+  personalizationNote?: string;
 }
 
 const METHOD_LABELS: Record<string, string> = {
@@ -135,6 +137,16 @@ export function renderReceiptEmail(data: ReceiptEmailData): { subject: string; h
     </table>
 
     ${balanceSection}
+
+    ${data.personalizationNote ? `
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#ede9fe;border:1px solid #8b5cf6;border-radius:8px;margin:16px 0;">
+      <tr>
+        <td style="padding:12px 16px;">
+          <div style="font-size:12px;font-weight:600;color:#5b21b6;margin-bottom:4px;">🎯 Personnalisation de frais</div>
+          <div style="font-size:12px;color:#5b21b6;line-height:1.5;">${escHtml(data.personalizationNote)}</div>
+        </td>
+      </tr>
+    </table>` : ''}
 
     <p style="margin:20px 0 0;font-size:13px;color:#475569;line-height:1.6;">
       Pour toute question concernant ce paiement, vous pouvez nous contacter

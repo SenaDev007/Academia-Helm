@@ -12,6 +12,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import twilio from 'twilio';
+import { normalizePhoneE164, isValidPhoneE164 } from '../../common/utils/phone';
 
 export interface SmsRequest {
   to: string; // Numéro au format international (ex: +22961234567)
@@ -31,10 +32,17 @@ export class SmsService {
   }
 
   /**
-   * Envoie un SMS
+   * Envoie un SMS — normalise le numéro avant l'envoi
    */
   async sendSMS(to: string, message: string): Promise<{ success: boolean; messageId?: string }> {
-    const request: SmsRequest = { to, message };
+    // Normalisation du numéro (ex: 0195722234 → +22995722234)
+    const normalizedTo = normalizePhoneE164(to);
+    this.logger.log(`SMS normalisation: raw="${to}" → normalized="${normalizedTo}"`);
+    if (!isValidPhoneE164(normalizedTo)) {
+      throw new Error(`Numéro SMS invalide: "${to}" → normalisé: "${normalizedTo}". Format attendu: +229XXXXXXXX (E.164)`);
+    }
+
+    const request: SmsRequest = { to: normalizedTo, message };
     
     try {
       switch (this.provider) {

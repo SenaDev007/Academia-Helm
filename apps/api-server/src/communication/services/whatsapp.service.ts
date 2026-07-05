@@ -250,6 +250,8 @@ export class WhatsAppService {
       }
     } catch (err: any) {
       const errorMsg = err.message || 'Unknown error';
+      this.logger.error(`❌ WhatsApp sendCategorized FAILED: ${errorMsg}`, err?.stack);
+      this.logger.error(`   Request: to=${request.to}, template=${request.templateName || 'N/A'}, provider=${this.provider}`);
       if (logId && this._whatsappLogService) {
         try {
           await this._whatsappLogService.markAsFailed(logId, errorMsg);

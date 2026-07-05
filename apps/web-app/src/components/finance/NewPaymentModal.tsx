@@ -14,6 +14,7 @@ import { financeService } from '@/services/finance.service';
 import { networkDetectionService } from '@/lib/offline/network-detection.service';
 import { formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import FeexPayCheckoutModal from './FeexPayCheckoutModal';
 
 const METHODS = [
   { value: 'CASH', label: 'Espèces' },
@@ -65,6 +66,9 @@ export default function NewPaymentModal({
   const [selectedClassId, setSelectedClassId] = useState('');
   const [studentSearch, setStudentSearch] = useState('');
   const [feexpayOperator, setFeexpayOperator] = useState<'mtn' | 'moov' | 'celtiis_bj'>('mtn');
+  // Modal FeexPay — widget personnalisé (style Fedapay)
+  const [feexpayModalOpen, setFeexpayModalOpen] = useState(false);
+  const [feexpayPrefillPhone, setFeexpayPrefillPhone] = useState<string>('');
 
   // Charge les caisses ouvertes
   useEffect(() => {
@@ -288,68 +292,33 @@ export default function NewPaymentModal({
       return;
     }
 
-    // ── FeexPay : push USSD au téléphone du parent (téléphone requis) ──
-    // FeexPay ne propose pas de widget checkout : le parent reçoit une notification
-    // sur son téléphone (push USSD) pour confirmer le paiement Mobile Money.
-    // Le téléphone parent est donc OBLIGATOIRE pour FeexPay.
+    // ── FeexPay : ouvrir le widget modal personnalisé (style Fedapay) ──
+    // FeexPay ne fournit pas de widget officiel — nous avons créé un widget
+    // personnalisé (FeexPayCheckoutModal) qui reproduit l'UX du widget Fedapay :
+    // choix opérateur + saisie téléphone + confirmation push USSD.
+    // Le téléphone parent est pré-rempli si disponible dans la fiche élève,
+    // mais reste modifiable par le client dans le widget.
     if (paymentMethod === 'FEEXPAY') {
       if (!selectedAccount?.student) {
         toast({ title: 'Erreur', description: 'Élève introuvable.', variant: 'destructive' });
         return;
       }
-      setLoading(true);
+
+      // Tenter de pré-remplir avec le téléphone parent (best-effort, non bloquant)
+      let prefillPhone = '';
       try {
-        // Récupérer le téléphone du parent depuis le backend
-        const phoneRes = await fetch(`/api/finance/transactions/${selectedAccount.id}/whatsapp-link`, { credentials: 'include' });
+        const phoneRes = await fetch(
+          `/api/finance/transactions/${selectedAccount.id}/whatsapp-link`,
+          { credentials: 'include' },
+        );
         const phoneData = await phoneRes.json();
-        const parentPhone = phoneData?.phone;
-        if (!parentPhone) {
-          toast({
-            title: 'Téléphone parent manquant',
-            description: "Aucun numéro de téléphone enregistré pour le parent de cet élève. Ajoutez-le dans la fiche élève, ou utilisez Fedapay (le parent saisit son numéro lui-même dans le widget).",
-            variant: 'destructive',
-          });
-          setLoading(false);
-          return;
-        }
-
-        const studentName = selectedAccount.student
-          ? `${selectedAccount.student.lastName} ${selectedAccount.student.firstName}`
-          : 'Élève';
-
-        // FeexPay : appel backend → push USSD au parent
-        const res = await fetch('/api/finance/payments/feexpay/initiate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            studentAccountId,
-            studentName,
-            amount: amountNum,
-            phone: parentPhone,
-            operator: feexpayOperator,
-            academicYearId,
-          }),
-        });
-        const data = await res.json();
-        if (data.success) {
-          toast({
-            title: '📱 Paiement initié',
-            description: `Le parent va recevoir une notification sur le ${parentPhone} pour confirmer le paiement de ${formatCurrency(amountNum)} FCFA.`,
-          });
-          setReceipt({
-            id: data.reference || 'feexpay-pending',
-            receiptNumber: data.reference || '—',
-            createdAt: new Date().toISOString(),
-          });
-        } else {
-          toast({ title: 'Erreur FeexPay', description: data.message || "Échec de l'initiation du paiement.", variant: 'destructive' });
-        }
-      } catch (e: any) {
-        toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
-      } finally {
-        setLoading(false);
+        if (phoneData?.phone) prefillPhone = phoneData.phone;
+      } catch {
+        // non bloquant — le client saisira le numéro dans le widget
       }
+
+      setFeexpayPrefillPhone(prefillPhone);
+      setFeexpayModalOpen(true);
       return;
     }
 
@@ -569,20 +538,8 @@ export default function NewPaymentModal({
               </SelectContent>
             </Select>
           </div>
-          {/* Sélecteur opérateur Mobile Money (visible seulement si FeexPay) */}
-          {paymentMethod === 'FEEXPAY' && (
-            <div>
-              <Label>Opérateur Mobile Money</Label>
-              <Select value={feexpayOperator} onValueChange={(v) => setFeexpayOperator(v as any)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="mtn">MTN Mobile Money</SelectItem>
-                  <SelectItem value="moov">Moov Money</SelectItem>
-                  <SelectItem value="celtiis_bj">Celtiis Cash</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+          {/* Note : le sélecteur opérateur Mobile Money pour FeexPay est désormais
+              intégré au widget FeexPayCheckoutModal (modal overlay style Fedapay). */}
           <div>
             <Label>Caisse {paymentMethod === 'CASH' ? '*' : '(optionnel)'}</Label>
             <Select value={cashRegisterId || '_none'} onValueChange={(v) => setCashRegisterId(v === '_none' ? '' : v)}>
@@ -642,6 +599,28 @@ export default function NewPaymentModal({
           </div>
         </form>
       </motion.div>
+
+      {/* Widget FeexPay personnalisé — modal overlay style Fedapay */}
+      <FeexPayCheckoutModal
+        open={feexpayModalOpen}
+        onClose={() => setFeexpayModalOpen(false)}
+        onSuccess={(ref) => {
+          setReceipt({
+            id: ref || 'feexpay-pending',
+            receiptNumber: ref || '—',
+            createdAt: new Date().toISOString(),
+          });
+        }}
+        data={{
+          studentAccountId,
+          studentName: selectedAccount?.student
+            ? `${selectedAccount.student.lastName} ${selectedAccount.student.firstName}`
+            : 'Élève',
+          amount: amountNum,
+          academicYearId,
+          prefillPhone: feexpayPrefillPhone,
+        }}
+      />
     </div>
   );
 }

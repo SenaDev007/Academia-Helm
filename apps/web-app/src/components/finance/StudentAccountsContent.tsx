@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Eye, Unlock, UserCog, Search, Download, Receipt, Clock } from 'lucide-react';
 import { WhatsAppIcon, GmailIcon, SmsIcon } from './OfficialIcons';
+import ReceiptImageCopy from './ReceiptImageCopy';
 import DocumentPreviewModal from '@/components/students/DocumentPreviewModal';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -610,6 +611,16 @@ export default function StudentAccountsContent() {
                                     <WhatsAppIcon className="w-3.5 h-3.5 opacity-60" />
                                     Envoi auto (API)
                                   </button>
+                                  <div className="border-t border-slate-100 my-1" />
+                                  <div className="px-3 py-1.5">
+                                    <ReceiptImageCopy
+                                      transactionId={t.id}
+                                      receiptNumber={t.receiptNumber || '—'}
+                                      amount={t.amount}
+                                      studentName={t.studentAccount?.student ? `${t.studentAccount.student.lastName} ${t.studentAccount.student.firstName}` : undefined}
+                                      compact={false}
+                                    />
+                                  </div>
                                 </div>
                               )}
                             </div>

@@ -603,6 +603,91 @@ export class FeeStructureService {
     }
   }
 
+  /**
+   * Recalcule dynamiquement TOUS les comptes élèves du tenant en appliquant
+   * les FeeOverrides existants. Pour chaque compte :
+   *   - Met à jour les breakdowns avec le customAmount si un override existe
+   *   - Recalcule totalDue = SUM(breakdowns.initialAmount)
+   *   - Recalcule totalPaid = SUM(breakdowns.paidAmount)
+   *   - Recalcule balance = totalDue - totalPaid
+   *   - Recalcule status (PAID/PARTIAL/ACTIVE)
+   *
+   * Utilise $transaction avec SET LOCAL app.allow_balance_update pour
+   * bypasser prevent_balance_update_trigger.
+   */
+  async recalculateAllAccounts(tenantId: string, academicYearId?: string) {
+    const where: any = { tenantId };
+    if (academicYearId) where.academicYearId = academicYearId;
+
+    const accounts = await this.prisma.studentAccount.findMany({
+      where,
+      include: { breakdowns: { include: { feeStructure: { include: { overrides: true } } } } },
+    });
+
+    let updatedAccounts = 0;
+    let updatedBreakdowns = 0;
+
+    for (const account of accounts) {
+      let newTotalDue = 0;
+      let newTotalPaid = 0;
+
+      // 1. Mettre à jour chaque breakdown
+      for (const bd of account.breakdowns) {
+        const fs = bd.feeStructure;
+        const override = fs?.overrides?.find((o: any) => o.studentId === account.studentId);
+        const originalAmount = Number(fs?.totalAmount ?? 0);
+        const newInitialAmount = override ? Number(override.customAmount) : originalAmount;
+        const paidAmount = Number(bd.paidAmount);
+        const newRemainingAmount = Math.max(0, newInitialAmount - paidAmount);
+
+        if (Number(bd.initialAmount) !== newInitialAmount) {
+          await this.prisma.accountBreakdown.update({
+            where: { id: bd.id },
+            data: {
+              initialAmount: newInitialAmount,
+              adjustedAmount: newInitialAmount,
+              remainingAmount: newRemainingAmount,
+            },
+          });
+          updatedBreakdowns++;
+        }
+
+        newTotalDue += newInitialAmount;
+        newTotalPaid += paidAmount;
+      }
+
+      // 2. Recalculer le compte avec $transaction + SET LOCAL
+      const newBalance = newTotalDue - newTotalPaid;
+      let newStatus = 'ACTIVE';
+      if (newBalance <= 0) newStatus = 'PAID';
+      else if (newTotalPaid > 0) newStatus = 'PARTIAL';
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
+        await tx.studentAccount.update({
+          where: { id: account.id },
+          data: {
+            totalDue: newTotalDue,
+            totalPaid: newTotalPaid,
+            balance: newBalance,
+            status: newStatus as any,
+            updatedAt: new Date(),
+          },
+        });
+      });
+
+      updatedAccounts++;
+    }
+
+    console.log(`[FeeStructure] Recalcul global: ${updatedAccounts} comptes, ${updatedBreakdowns} breakdowns mis à jour (tenant=${tenantId})`);
+
+    return {
+      success: true,
+      accountsRecalculated: updatedAccounts,
+      breakdownsUpdated: updatedBreakdowns,
+    };
+  }
+
   /** Copie les FeeStructures d'une année vers une nouvelle année (sans overrides). */
   async copyToNewYear(
     tenantId: string,

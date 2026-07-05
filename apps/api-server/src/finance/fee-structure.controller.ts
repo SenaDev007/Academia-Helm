@@ -90,6 +90,23 @@ export class FeeStructureController {
     }, user?.id);
   }
 
+  /**
+   * POST /finance/fee-structures/recalculate-accounts
+   * Recalcule dynamiquement TOUS les comptes élèves du tenant en appliquant
+   * les FeeOverrides existants. Utile pour rattraper les comptes créés avant
+   * un override, ou après une correction de bug.
+   *
+   * Body optionnel : { academicYearId? } — si fourni, ne recalcule que les
+   * comptes de cette année. Sinon, recalcule tous les comptes du tenant.
+   */
+  @Post('recalculate-accounts')
+  async recalculateAllAccounts(
+    @TenantId() tenantId: string,
+    @Body() body: { academicYearId?: string },
+  ) {
+    return this.service.recalculateAllAccounts(tenantId, body?.academicYearId);
+  }
+
   @Post('override')
   async createOverride(
     @TenantId() tenantId: string,

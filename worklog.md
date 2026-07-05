@@ -2289,3 +2289,60 @@ Stage Summary:
 - Bouton "Ajouter une tranche" déplacé en bas de la section (accès facile)
 - Affichage individuel dans le tableau (chaque classe = 1 ligne séparée)
 - Bouton submit adaptatif : "Créer" ou "Créer N frais"
+
+---
+Task ID: finance-settings-refactor
+Agent: main
+Task: Refactoriser l'onglet "Paramètres" du module Finance — layout pleine largeur, design moderne en grille 2 colonnes, préserver tous les appels backend.
+
+Work Log:
+- Identification du fichier cible : `apps/web-app/src/components/finance/FinanceSettingsContent.tsx` (468 lignes, layout `max-w-3xl` qui laissait le côté droit vide)
+- Sauvegarde de l'original dans `FinanceSettingsContent.tsx.bak`
+- Réécriture complète (~640 lignes) avec nouvelle architecture :
+  * Sous-composants UI réutilisables : `SettingsCard`, `ToggleSwitch`, `FormField`
+  * Layout `grid grid-cols-1 lg:grid-cols-2 gap-5` pour les cartes de config (rempli toute la largeur)
+  * Bandeau ORION full-width compact avec stats inline (4 cartes : critique/avertissement/info/total)
+  * 5 cartes de configuration en grille 2 colonnes :
+    - Blocage & Recouvrement (rouge)
+    - Paiement (indigo) avec toggle animé
+    - Clôture journalière (ambre) avec toggle animé
+    - Budget & Alertes (bleu) avec barre de visualisation
+    - Annulation (orange) full-width avec échelle des droits (comptable/directeur/promoteur)
+  * Section Paiements en ligne (FeexPay/Fedapay) pleine largeur avec `PaymentConfigSection`
+  * Section Historique pleine largeur avec badge count et chips pour les champs modifiés
+  * Toolbar persistante en haut avec bouton Save (icône Save + Loader animé)
+  * État loading initial avec spinner
+  * Promesses parallélisées au montage : `Promise.all([getSettings, getSettingsHistory, getSettingsOrionAlerts])`
+
+### Backend préservé (vérifié par `rg financeService\.`)
+- `financeService.getSettings()` — chargement initial
+- `financeService.getSettingsHistory()` — historique + refresh après save
+- `financeService.getSettingsOrionAlerts()` — alertes ORION + refresh après save
+- `financeService.updateSettings()` — sauvegarde (mêmes champs que l'original : blockingThreshold, reminderWarningDays, reminderUrgentDays, reminderFinalDays, autoClosureEnabled, autoClosureTime, budgetAlertThreshold, allowPartialPayment, minimumInstallmentAmount, cancellationDelayHours, fedapayEnabled/PublicKey/SecretKey legacy)
+- `PaymentConfigSection` toujours monté pour `/api/finance/payment-config` (FeexPay/Fedapay par tenant)
+
+### Améliorations UX
+- Toggles animés (switch on/off) au lieu de checkboxes basiques
+- Cards avec header gradient + badge icône coloré
+- Barre de visualisation du seuil budget (% animé)
+- Échelle visuelle des droits d'annulation (3 cartes colorées)
+- Badges inline pour les champs modifiés dans l'historique (font-mono)
+- Bouton Save dans la toolbar avec icône + état loading
+- Spinner de chargement initial au lieu de flash de formulaire vide
+- Responsive : grille 1 colonne mobile, 2 colonnes desktop
+
+### Vérifications
+- `npx tsc --noEmit` (depuis apps/web-app) : AUCUNE erreur sur le fichier refactorisé
+- Comparaison `rg financeService\.` original vs refactor : tous les appels préservés
+
+### Fichiers modifiés (1)
+1. `apps/web-app/src/components/finance/FinanceSettingsContent.tsx` (réécrit)
+- Sauvegarde : `apps/web-app/src/components/finance/FinanceSettingsContent.tsx.bak`
+
+Stage Summary:
+- Layout passe de `max-w-3xl` (768px, laissait le côté droit vide) à `grid lg:grid-cols-2` qui remplit toute la largeur
+- 5 cartes de config en grille 2 colonnes au lieu d'empilement vertical
+- Bandeau ORION compact full-width avec stats inline (au lieu de carte pleine largeur qui poussait tout vers le bas)
+- Design modernisé : cartes à header gradient, badges icônes colorés, toggles animés, barre de visualisation
+- Tous les appels backend (financeService.*) préservés à l'identique
+- Aucune erreur TypeScript introduite

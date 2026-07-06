@@ -27,6 +27,10 @@ import {
 import {
   exportStudentHistoryToPdf,
 } from '@/lib/exports/finance-exports';
+import {
+  studentAccountsFilename,
+  studentHistoryFilename,
+} from '@/lib/exports/filename-helpers';
 
 const STATUS_COLORS: Record<string, string> = {
   PAID: 'bg-green-100 text-green-800',
@@ -247,7 +251,7 @@ export default function StudentAccountsContent() {
       const url = URL.createObjectURL(blob);
       setPreviewDoc({
         filePath: url,
-        fileName: `comptes-eleves-${new Date().toISOString().slice(0, 10)}.pdf`,
+        fileName: studentAccountsFilename(classLabel, 'pdf'),
         mimeType: 'application/pdf',
       });
     } catch (e: any) {
@@ -288,7 +292,7 @@ export default function StudentAccountsContent() {
       });
       setPreviewDoc({
         filePath: url,
-        fileName: `historique-${studentName.replace(/\s+/g, '-').toLowerCase()}.pdf`,
+        fileName: studentHistoryFilename(studentName, 'pdf'),
         mimeType: 'application/pdf',
       });
     } catch (e: any) {

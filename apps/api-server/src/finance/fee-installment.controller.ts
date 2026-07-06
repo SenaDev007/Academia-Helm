@@ -24,6 +24,7 @@ import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/auth/guards/roles.guard';
 import { Roles } from '@/auth/decorators/roles.decorator';
 import { FeeInstallmentService } from './fee-installment.service';
+import { ALL_ADMIN_ROLES, ALL_READ_ROLES, CASHIER_ROLES } from './finance-roles.constants';
 
 @Controller('fees/installments')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -35,7 +36,7 @@ export class FeeInstallmentController {
    * Crée des tranches pour une définition de frais
    */
   @Post(':feeDefinitionId')
-  @Roles('DIRECTOR', 'ADMIN')
+  @Roles(...ALL_ADMIN_ROLES)
   async createInstallments(
     @Param('feeDefinitionId') feeDefinitionId: string,
     @Body() body: {
@@ -62,7 +63,7 @@ export class FeeInstallmentController {
    * Génère automatiquement des tranches
    */
   @Post(':feeDefinitionId/auto-generate')
-  @Roles('DIRECTOR', 'ADMIN')
+  @Roles(...ALL_ADMIN_ROLES)
   async autoGenerateInstallments(
     @Param('feeDefinitionId') feeDefinitionId: string,
     @Body() body: {
@@ -84,7 +85,7 @@ export class FeeInstallmentController {
    * Récupère les tranches d'une définition de frais
    */
   @Get(':feeDefinitionId')
-  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'TEACHER', 'PARENT', 'STUDENT')
+  @Roles(...ALL_ADMIN_ROLES)
   async getInstallments(@Param('feeDefinitionId') feeDefinitionId: string) {
     return this.installmentService.getInstallments(feeDefinitionId);
   }
@@ -94,7 +95,7 @@ export class FeeInstallmentController {
    * Met à jour une tranche
    */
   @Put(':installmentId')
-  @Roles('DIRECTOR', 'ADMIN')
+  @Roles(...ALL_ADMIN_ROLES)
   async updateInstallment(
     @Param('installmentId') installmentId: string,
     @Body() body: {
@@ -119,7 +120,7 @@ export class FeeInstallmentController {
    * Supprime une tranche
    */
   @Delete(':installmentId')
-  @Roles('DIRECTOR', 'ADMIN')
+  @Roles(...ALL_ADMIN_ROLES)
   async deleteInstallment(@Param('installmentId') installmentId: string) {
     return this.installmentService.deleteInstallment(installmentId);
   }

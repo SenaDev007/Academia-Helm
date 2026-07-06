@@ -23,6 +23,7 @@ import { Roles } from '@/auth/decorators/roles.decorator';
 import { PaymentAllocationService } from './payment-allocation.service';
 import { PrismaService } from '../database/prisma.service';
 import { NotFoundException, ForbiddenException } from '@nestjs/common';
+import { ALL_ADMIN_ROLES, ALL_READ_ROLES, CASHIER_ROLES } from './finance-roles.constants';
 
 @Controller('payments/allocation')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -37,7 +38,7 @@ export class PaymentAllocationController {
    * Alloue automatiquement un paiement selon les règles de priorité
    */
   @Post(':paymentId')
-  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT')
+  @Roles(...ALL_ADMIN_ROLES)
   async allocatePayment(
     @Param('paymentId') paymentId: string,
     @Request() req: any,
@@ -78,7 +79,7 @@ export class PaymentAllocationController {
    * Récupère les allocations d'un paiement
    */
   @Get(':paymentId')
-  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'TEACHER', 'PARENT', 'STUDENT')
+  @Roles(...ALL_ADMIN_ROLES)
   async getPaymentAllocations(@Param('paymentId') paymentId: string) {
     return this.allocationService.getPaymentAllocations(paymentId);
   }
@@ -88,7 +89,7 @@ export class PaymentAllocationController {
    * Récupère toutes les allocations pour un frais élève
    */
   @Get('student-fee/:studentFeeId')
-  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'TEACHER', 'PARENT', 'STUDENT')
+  @Roles(...ALL_ADMIN_ROLES)
   async getStudentFeeAllocations(@Param('studentFeeId') studentFeeId: string) {
     return this.allocationService.getStudentFeeAllocations(studentFeeId);
   }
@@ -98,7 +99,7 @@ export class PaymentAllocationController {
    * Vérifie si un paiement de scolarité est autorisé
    */
   @Get('check-tuition/:studentId')
-  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT')
+  @Roles(...ALL_ADMIN_ROLES)
   async checkTuitionPaymentAllowed(
     @Param('studentId') studentId: string,
     @Body() body: { academicYearId: string },

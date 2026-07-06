@@ -27,6 +27,10 @@ import {
   exportCashRegisterTransactionsToExcel,
   exportAllCashRegistersToExcel,
 } from '@/lib/exports/excel-exports';
+import {
+  cashRegisterFilename,
+  allCashRegistersFilename,
+} from '@/lib/exports/filename-helpers';
 
 interface CashRegister {
   id: string;

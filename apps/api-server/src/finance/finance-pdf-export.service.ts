@@ -274,7 +274,8 @@ export class FinancePdfExportService {
       </table>
     `;
 
-    await this.generatePdf(html, res, 'encaissements.pdf');
+    const dateStr = new Date().toISOString().slice(0, 10);
+    await this.generatePdf(html, res, `Encaissements_${dateStr}.pdf`);
   }
 
   /**
@@ -358,7 +359,8 @@ export class FinancePdfExportService {
       </table>
     `;
 
-    await this.generatePdf(html, res, 'comptes-eleves.pdf');
+    const dateStr = new Date().toISOString().slice(0, 10);
+    await this.generatePdf(html, res, `Comptes eleves_${dateStr}.pdf`);
   }
 
   /**
@@ -448,7 +450,8 @@ export class FinancePdfExportService {
       </table>
     `;
 
-    await this.generatePdf(html, res, `caisse-${register.code}.pdf`);
+    const dateStr = new Date().toISOString().slice(0, 10);
+    await this.generatePdf(html, res, `Caisse ${register.code} - ${register.name}_${dateStr}.pdf`);
   }
 
   /**
@@ -520,6 +523,7 @@ export class FinancePdfExportService {
       </table>
     `;
 
-    await this.generatePdf(html, res, 'multi-caisses-global.pdf');
+    const dateStr = new Date().toISOString().slice(0, 10);
+    await this.generatePdf(html, res, `Multi-caisses global_${dateStr}.pdf`);
   }
 }

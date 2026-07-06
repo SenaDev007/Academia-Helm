@@ -21,6 +21,12 @@
  */
 
 import { formatCurrency } from '@/lib/utils';
+import {
+  transactionsFilename,
+  studentAccountsFilename,
+  cashRegisterFilename,
+  allCashRegistersFilename,
+} from './filename-helpers';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -434,7 +440,7 @@ export async function exportTransactionsToExcel(
     { width: 20 }, { width: 22 }, { width: 16 }, { width: 30 }, { width: 16 }, { width: 14 }, { width: 22 },
   ];
 
-  await downloadExcel(workbook, `encaissements-${header.dateFrom || 'debut'}-au-${header.dateTo || 'fin'}.xlsx`);
+  await downloadExcel(workbook, transactionsFilename(header.dateFrom, header.dateTo, 'xlsx'));
 }
 
 /* ------------------------------------------------------------------ */
@@ -553,7 +559,7 @@ export async function exportStudentAccountsToExcel(
     { width: 14 }, { width: 14 }, { width: 16 }, { width: 12 },
   ];
 
-  await downloadExcel(workbook, `comptes-eleves-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  await downloadExcel(workbook, studentAccountsFilename(header.classFilter, 'xlsx'));
 }
 
 /* ------------------------------------------------------------------ */
@@ -738,7 +744,7 @@ export async function exportCashRegisterTransactionsToExcel(
     { width: 20 }, { width: 12 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 30 },
   ];
 
-  await downloadExcel(workbook, `caisse-${register.code}-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  await downloadExcel(workbook, cashRegisterFilename(register.code, register.name, 'xlsx'));
 }
 
 /* ------------------------------------------------------------------ */
@@ -891,5 +897,5 @@ export async function exportAllCashRegistersToExcel(
     { width: 14 }, { width: 28 }, { width: 22 }, { width: 16 }, { width: 16 }, { width: 14 }, { width: 12 },
   ];
 
-  await downloadExcel(workbook, `multi-caisses-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  await downloadExcel(workbook, allCashRegistersFilename('xlsx'));
 }

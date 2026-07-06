@@ -21,6 +21,7 @@ import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/auth/guards/roles.guard';
 import { Roles } from '@/auth/decorators/roles.decorator';
 import { PaymentsPrismaEnhancedService } from './payments-prisma-enhanced.service';
+import { ALL_ADMIN_ROLES, ALL_READ_ROLES, CASHIER_ROLES } from './finance-roles.constants';
 
 @Controller('payments/enhanced')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -32,7 +33,7 @@ export class PaymentsEnhancedController {
    * Crée un paiement avec allocation automatique selon priorité
    */
   @Post()
-  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT')
+  @Roles(...ALL_ADMIN_ROLES)
   async createPaymentWithAutoAllocation(
     @Body() body: {
       academicYearId: string;
@@ -68,7 +69,7 @@ export class PaymentsEnhancedController {
    * Récupère un paiement avec ses allocations
    */
   @Get(':paymentId')
-  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'TEACHER', 'PARENT', 'STUDENT')
+  @Roles(...ALL_ADMIN_ROLES)
   async getPaymentWithAllocations(@Param('paymentId') paymentId: string) {
     return this.paymentsService.getPaymentWithAllocations(paymentId);
   }
@@ -78,7 +79,7 @@ export class PaymentsEnhancedController {
    * Vérifie si un paiement de scolarité est autorisé
    */
   @Get('check-tuition/:studentId')
-  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT')
+  @Roles(...ALL_ADMIN_ROLES)
   async checkTuitionPaymentAllowed(
     @Param('studentId') studentId: string,
     @Body() body: { academicYearId: string },

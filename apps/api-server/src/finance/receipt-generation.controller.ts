@@ -26,6 +26,7 @@ import { PrismaService } from '../database/prisma.service';
 import { Response } from 'express';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { ALL_ADMIN_ROLES, ALL_READ_ROLES, CASHIER_ROLES } from './finance-roles.constants';
 
 @Controller('receipts')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -41,7 +42,7 @@ export class ReceiptGenerationController {
    */
   @Post('generate/:paymentId')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT')
+  @Roles(...ALL_ADMIN_ROLES)
   async generateReceipt(
     @Param('paymentId') paymentId: string,
     @Request() req: any,
@@ -55,7 +56,7 @@ export class ReceiptGenerationController {
    * Télécharge le PDF d'un reçu
    */
   @Get(':receiptId/download')
-  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'TEACHER', 'PARENT', 'STUDENT')
+  @Roles(...ALL_ADMIN_ROLES)
   async downloadReceipt(
     @Param('receiptId') receiptId: string,
     @Res() res: Response,
@@ -90,7 +91,7 @@ export class ReceiptGenerationController {
    * Génère un duplicata de reçu
    */
   @Post(':receiptId/duplicate')
-  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT')
+  @Roles(...ALL_ADMIN_ROLES)
   async generateDuplicate(
     @Param('receiptId') receiptId: string,
     @Request() req: any,

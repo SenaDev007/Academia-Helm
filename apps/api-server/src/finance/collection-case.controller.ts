@@ -22,6 +22,7 @@ import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/auth/guards/roles.guard';
 import { Roles } from '@/auth/decorators/roles.decorator';
 import { CollectionCaseService } from './collection-case.service';
+import { ALL_ADMIN_ROLES, ALL_READ_ROLES, CASHIER_ROLES } from './finance-roles.constants';
 
 @Controller('collection')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -33,7 +34,7 @@ export class CollectionCaseController {
    * Récupère tous les dossiers de recouvrement
    */
   @Get('cases')
-  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT')
+  @Roles(...ALL_ADMIN_ROLES)
   async findAllCollectionCases(
     @Query() query: {
       academicYearId?: string;
@@ -55,7 +56,7 @@ export class CollectionCaseController {
    * Récupère un dossier de recouvrement pour un élève
    */
   @Get('cases/:studentId/:academicYearId')
-  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'TEACHER', 'PARENT', 'STUDENT')
+  @Roles(...ALL_ADMIN_ROLES)
   async getCollectionCase(
     @Param('studentId') studentId: string,
     @Param('academicYearId') academicYearId: string,
@@ -70,7 +71,7 @@ export class CollectionCaseController {
    * Synchronise (crée ou met à jour) un dossier de recouvrement
    */
   @Post('cases/:studentId/:academicYearId/sync')
-  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT')
+  @Roles(...ALL_ADMIN_ROLES)
   async syncCollectionCase(
     @Param('studentId') studentId: string,
     @Param('academicYearId') academicYearId: string,
@@ -85,7 +86,7 @@ export class CollectionCaseController {
    * Déclenche les relances automatiques
    */
   @Post('cases/:studentId/:academicYearId/trigger-reminders')
-  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT')
+  @Roles(...ALL_ADMIN_ROLES)
   async triggerReminders(
     @Param('studentId') studentId: string,
     @Param('academicYearId') academicYearId: string,

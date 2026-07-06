@@ -16,6 +16,7 @@ import { SchoolFeePaymentDialog } from './SchoolFeePaymentDialog';
 import { financeService } from '@/services/finance.service';
 import { formatCurrency } from '@/lib/utils';
 import { exportTransactionsToExcel } from '@/lib/exports/excel-exports';
+import { transactionsFilename } from '@/lib/exports/filename-helpers';
 
 const METHOD_LABELS: Record<string, string> = {
   CASH: 'Espèces',
@@ -133,7 +134,7 @@ export default function TransactionsContent() {
       const url = URL.createObjectURL(blob);
       setPreviewDoc({
         filePath: url,
-        fileName: `encaissements-${dateFrom || 'debut'}-${dateTo || 'fin'}.pdf`,
+        fileName: transactionsFilename(dateFrom, dateTo, 'pdf'),
         mimeType: 'application/pdf',
       });
     } catch (e: any) {

@@ -1736,6 +1736,58 @@ export default function SettingsPage() {
     });
   }, [classSections]);
 
+  /** Sections par classe groupées par (niveau, cycle) pour l'affichage visuel séparé.
+   *  Structure : [{ key, levelLabel, cycleLabel?, groups: [{ officialClass, sections }] }]
+   *  - Maternelle (cycle fusionné)
+   *  - Primaire (cycle fusionné)
+   *  - Secondaire — 1er cycle
+   *  - Secondaire — 2nd cycle
+   *  L'ordre des groupes est canonique : Maternelle → Primaire → 1er cycle → 2nd cycle.
+   *  L'ordre des classes officielles au sein de chaque groupe suit CANONICAL_CLASS_ORDER
+   *  (déjà appliqué par sectionsByOfficialClass). */
+  const groupedSectionsByLevelCycle = useMemo(() => {
+    // Ordre canonique des groupes
+    const GROUP_ORDER: Record<string, number> = {
+      'MATERNELLE': 0,
+      'PRIMAIRE': 1,
+      'SECONDAIRE|1er cycle': 2,
+      'SECONDAIRE|2nd cycle': 3,
+    };
+    const groups: Record<string, { levelLabel: string; cycleLabel?: string; items: typeof sectionsByOfficialClass }> = {};
+    for (const item of sectionsByOfficialClass) {
+      const levelName = item.officialClass?.level?.name ?? 'AUTRE';
+      const cycleName = item.officialClass?.cycle?.name ?? '';
+      // Pour Maternelle et Primaire, on fusionne les cycles en un seul groupe
+      // (sinon on aurait un groupe par cycle "CI", "CP", etc. — trop fragmenté).
+      // Pour Secondaire, on sépare 1er cycle et 2nd cycle.
+      let groupKey: string;
+      let levelLabel: string;
+      let cycleLabel: string | undefined;
+      if (levelName === 'Maternelle' || levelName === 'MATERNELLE') {
+        groupKey = 'MATERNELLE';
+        levelLabel = 'Maternelle';
+      } else if (levelName === 'Primaire' || levelName === 'PRIMAIRE') {
+        groupKey = 'PRIMAIRE';
+        levelLabel = 'Primaire';
+      } else if (levelName === 'Secondaire' || levelName === 'SECONDAIRE') {
+        groupKey = `SECONDAIRE|${cycleName}`;
+        levelLabel = 'Secondaire';
+        cycleLabel = cycleName;
+      } else {
+        groupKey = levelName;
+        levelLabel = levelName;
+      }
+      if (!groups[groupKey]) {
+        groups[groupKey] = { levelLabel, cycleLabel, items: [] };
+      }
+      groups[groupKey].items.push(item);
+    }
+    // Retourner les groupes triés par ordre canonique
+    return Object.entries(groups)
+      .map(([key, val]) => ({ key, ...val }))
+      .sort((a, b) => (GROUP_ORDER[a.key] ?? 99) - (GROUP_ORDER[b.key] ?? 99));
+  }, [sectionsByOfficialClass]);
+
   // État d'édition inline d'une section (id de la section en cours d'édition)
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
   const [editingSectionName, setEditingSectionName] = useState('');
@@ -3723,7 +3775,11 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                {/* Liste des sections groupées par classe officielle (table avec édition) */}
+                {/* Liste des sections groupées par niveau/cycle puis par classe officielle
+                    (table avec édition). Répartition visuelle identique à celle des
+                    classes officielles : Maternelle / Primaire / Secondaire 1er cycle /
+                    Secondaire 2nd cycle, avec ordre canonique des classes au sein de
+                    chaque groupe. */}
                 {sectionsByOfficialClass.length === 0 ? (
                   <p className="text-sm text-gray-500 py-4">
                     {structureYearIdOrActive
@@ -3731,124 +3787,153 @@ export default function SettingsPage() {
                       : 'Sélectionnez une année scolaire.'}
                   </p>
                 ) : (
-                  <div className="space-y-3">
-                    {sectionsByOfficialClass.map(({ officialClass, sections }) => (
-                      <div key={officialClass?.id || 'none'} className="border border-gray-200 rounded-md overflow-hidden">
-                        <div className="bg-slate-50 px-3 py-2 border-b border-gray-200">
-                          <h5 className="text-sm font-semibold text-gray-800">
-                            {officialClass?.name || 'Classe inconnue'}
-                            <span className="ml-2 text-xs font-normal text-gray-500">
-                              {sections.length} section{sections.length > 1 ? 's' : ''}
+                  <div className="space-y-4">
+                    {groupedSectionsByLevelCycle.map((group: any) => {
+                      // Couleur du header selon le niveau (identique aux classes officielles)
+                      const headerColor =
+                        group.key === 'MATERNELLE' ? 'bg-pink-50 border-pink-200 text-pink-900' :
+                        group.key === 'PRIMAIRE' ? 'bg-blue-50 border-blue-200 text-blue-900' :
+                        group.key.startsWith('SECONDAIRE|1er') ? 'bg-purple-50 border-purple-200 text-purple-900' :
+                        group.key.startsWith('SECONDAIRE|2nd') ? 'bg-indigo-50 border-indigo-200 text-indigo-900' :
+                        'bg-gray-50 border-gray-200 text-gray-900';
+                      const totalSections = group.items.reduce((sum: number, it: any) => sum + it.sections.length, 0);
+                      return (
+                        <div key={group.key} className="border border-gray-200 rounded-lg overflow-hidden">
+                          {/* Header du groupe (niveau + cycle) */}
+                          <div className={`px-4 py-2 border-b font-semibold text-sm flex items-center justify-between ${headerColor}`}>
+                            <span>
+                              {group.levelLabel}
+                              {group.cycleLabel && (
+                                <span className="ml-2 text-xs font-normal opacity-80">— {group.cycleLabel}</span>
+                              )}
                             </span>
-                          </h5>
-                        </div>
-                        <table className="min-w-full text-sm">
-                          <thead>
-                            <tr className="bg-white text-left text-xs font-semibold uppercase tracking-wide text-gray-500 border-b border-gray-100">
-                              <th className="px-3 py-2 w-1/3">Nom</th>
-                              <th className="px-3 py-2 w-1/4">Code</th>
-                              <th className="px-3 py-2 w-1/6">Capacité</th>
-                              <th className="px-3 py-2 text-right w-1/6">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {sections.map((s: any) => (
-                              <tr key={s.id} className="border-b border-gray-50 last:border-0 hover:bg-slate-50/60">
-                                <td className="px-3 py-2">
-                                  {editingSectionId === s.id ? (
-                                    <input
-                                      type="text"
-                                      value={editingSectionName}
-                                      onChange={(e) => setEditingSectionName(e.target.value)}
-                                      className="rounded border border-gray-300 px-2 py-1 w-full text-sm"
-                                      autoFocus
-                                    />
-                                  ) : (
-                                    <span className="font-medium text-gray-800">{s.name}</span>
-                                  )}
-                                </td>
-                                <td className="px-3 py-2 text-gray-600">
-                                  {editingSectionId === s.id ? (
-                                    <input
-                                      type="text"
-                                      value={editingSectionCode}
-                                      onChange={(e) => setEditingSectionCode(e.target.value)}
-                                      className="rounded border border-gray-300 px-2 py-1 w-full text-sm"
-                                    />
-                                  ) : (
-                                    <span className="font-mono text-xs">{s.code || '—'}</span>
-                                  )}
-                                </td>
-                                <td className="px-3 py-2 text-gray-600">
-                                  {editingSectionId === s.id ? (
-                                    <input
-                                      type="number"
-                                      min={1}
-                                      value={editingSectionCapacity}
-                                      onChange={(e) => setEditingSectionCapacity(e.target.value === '' ? '' : parseInt(e.target.value, 10) || '')}
-                                      placeholder="—"
-                                      className="rounded border border-gray-300 px-2 py-1 w-20 text-sm"
-                                    />
-                                  ) : (
-                                    <span>{s.capacity != null ? s.capacity : '—'}</span>
-                                  )}
-                                </td>
-                                <td className="px-3 py-2 text-right">
-                                  {editingSectionId === s.id ? (
-                                    <span className="flex items-center justify-end gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={() => handleUpdateClassSection(s.id)}
-                                        disabled={sectionsBusy}
-                                        className="text-xs font-semibold text-blue-600 hover:underline disabled:opacity-50"
-                                      >
-                                        Enregistrer
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setEditingSectionId(null);
-                                          setEditingSectionName('');
-                                          setEditingSectionCode('');
-                                          setEditingSectionCapacity('');
-                                        }}
-                                        className="text-xs font-semibold text-gray-500 hover:underline"
-                                      >
-                                        Annuler
-                                      </button>
+                            <span className="text-[10px] font-normal opacity-70">
+                              {group.items.length} classe(s) · {totalSections} section(s)
+                            </span>
+                          </div>
+                          {/* Sous-groupes : une carte par classe officielle */}
+                          <div className="p-3 space-y-3 bg-gray-50/30">
+                            {group.items.map(({ officialClass, sections }: any) => (
+                              <div key={officialClass?.id || 'none'} className="border border-gray-200 rounded-md overflow-hidden bg-white">
+                                <div className="bg-slate-50 px-3 py-2 border-b border-gray-200">
+                                  <h5 className="text-sm font-semibold text-gray-800">
+                                    {officialClass?.name || 'Classe inconnue'}
+                                    <span className="ml-2 text-xs font-normal text-gray-500">
+                                      {sections.length} section{sections.length > 1 ? 's' : ''}
                                     </span>
-                                  ) : (
-                                    <span className="flex items-center justify-end gap-3">
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setEditingSectionId(s.id);
-                                          setEditingSectionName(s.name || '');
-                                          setEditingSectionCode(s.code || '');
-                                          setEditingSectionCapacity(s.capacity ?? '');
-                                        }}
-                                        disabled={sectionsBusy}
-                                        className="text-xs font-semibold text-blue-600 hover:underline disabled:opacity-50"
-                                      >
-                                        Modifier
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleDeleteClassSection(s.id, s.name)}
-                                        disabled={sectionsBusy}
-                                        className="text-xs font-semibold text-red-600 hover:underline disabled:opacity-50"
-                                      >
-                                        Supprimer
-                                      </button>
-                                    </span>
-                                  )}
-                                </td>
-                              </tr>
+                                  </h5>
+                                </div>
+                                <table className="min-w-full text-sm">
+                                  <thead>
+                                    <tr className="bg-white text-left text-xs font-semibold uppercase tracking-wide text-gray-500 border-b border-gray-100">
+                                      <th className="px-3 py-2 w-1/3">Nom</th>
+                                      <th className="px-3 py-2 w-1/4">Code</th>
+                                      <th className="px-3 py-2 w-1/6">Capacité</th>
+                                      <th className="px-3 py-2 text-right w-1/6">Actions</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {sections.map((s: any) => (
+                                      <tr key={s.id} className="border-b border-gray-50 last:border-0 hover:bg-slate-50/60">
+                                        <td className="px-3 py-2">
+                                          {editingSectionId === s.id ? (
+                                            <input
+                                              type="text"
+                                              value={editingSectionName}
+                                              onChange={(e) => setEditingSectionName(e.target.value)}
+                                              className="rounded border border-gray-300 px-2 py-1 w-full text-sm"
+                                              autoFocus
+                                            />
+                                          ) : (
+                                            <span className="font-medium text-gray-800">{s.name}</span>
+                                          )}
+                                        </td>
+                                        <td className="px-3 py-2 text-gray-600">
+                                          {editingSectionId === s.id ? (
+                                            <input
+                                              type="text"
+                                              value={editingSectionCode}
+                                              onChange={(e) => setEditingSectionCode(e.target.value)}
+                                              className="rounded border border-gray-300 px-2 py-1 w-full text-sm"
+                                            />
+                                          ) : (
+                                            <span className="font-mono text-xs">{s.code || '—'}</span>
+                                          )}
+                                        </td>
+                                        <td className="px-3 py-2 text-gray-600">
+                                          {editingSectionId === s.id ? (
+                                            <input
+                                              type="number"
+                                              min={1}
+                                              value={editingSectionCapacity}
+                                              onChange={(e) => setEditingSectionCapacity(e.target.value === '' ? '' : parseInt(e.target.value, 10) || '')}
+                                              placeholder="—"
+                                              className="rounded border border-gray-300 px-2 py-1 w-20 text-sm"
+                                            />
+                                          ) : (
+                                            <span>{s.capacity != null ? s.capacity : '—'}</span>
+                                          )}
+                                        </td>
+                                        <td className="px-3 py-2 text-right">
+                                          {editingSectionId === s.id ? (
+                                            <span className="flex items-center justify-end gap-2">
+                                              <button
+                                                type="button"
+                                                onClick={() => handleUpdateClassSection(s.id)}
+                                                disabled={sectionsBusy}
+                                                className="text-xs font-semibold text-blue-600 hover:underline disabled:opacity-50"
+                                              >
+                                                Enregistrer
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  setEditingSectionId(null);
+                                                  setEditingSectionName('');
+                                                  setEditingSectionCode('');
+                                                  setEditingSectionCapacity('');
+                                                }}
+                                                className="text-xs font-semibold text-gray-500 hover:underline"
+                                              >
+                                                Annuler
+                                              </button>
+                                            </span>
+                                          ) : (
+                                            <span className="flex items-center justify-end gap-3">
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  setEditingSectionId(s.id);
+                                                  setEditingSectionName(s.name || '');
+                                                  setEditingSectionCode(s.code || '');
+                                                  setEditingSectionCapacity(s.capacity ?? '');
+                                                }}
+                                                disabled={sectionsBusy}
+                                                className="text-xs font-semibold text-blue-600 hover:underline disabled:opacity-50"
+                                              >
+                                                Modifier
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleDeleteClassSection(s.id, s.name)}
+                                                disabled={sectionsBusy}
+                                                className="text-xs font-semibold text-red-600 hover:underline disabled:opacity-50"
+                                              >
+                                                Supprimer
+                                              </button>
+                                            </span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
                             ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ))}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

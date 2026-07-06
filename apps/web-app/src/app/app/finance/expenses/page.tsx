@@ -5,21 +5,22 @@
 
 import { useState, useEffect } from 'react';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Eye, CheckCircle, XCircle, Wallet } from 'lucide-react';
+import { Eye, CheckCircle, XCircle, Wallet, FileSpreadsheet, FileText } from 'lucide-react';
 import {
   ModuleHeader,
-  SubModuleNavigation,
   ModuleContentArea,
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
 import { financeService } from '@/services/finance.service';
 import { formatCurrency } from '@/lib/utils';
+import { exportExpensesToExcel } from '@/lib/exports/excel-exports';
+import { expensesFilename } from '@/lib/exports/filename-helpers';
 
 export default function ExpensesPage() {
   const confirmDialog = useConfirmDialog();
@@ -110,13 +111,6 @@ export default function ExpensesPage() {
     }
   };
 
-  const subModuleTabs = FINANCE_SUBMODULE_TABS.map((t) => ({
-    id: t.id,
-    label: t.label,
-    path: t.path,
-    icon: <t.icon className="w-4 h-4" />,
-  }));
-
   const getStatusBadge = (status: string) => {
     const v: Record<string, { variant: 'default' | 'outline' | 'destructive'; label: string }> = {
       APPROVED: { variant: 'default', label: 'Approuvé' },
@@ -127,9 +121,6 @@ export default function ExpensesPage() {
     return <Badge variant={c.variant}>{c.label}</Badge>;
   };
 
-  const pendingCount = expenses.filter((e) => e.status === 'PENDING').length;
-  const approvedSum = expenses.filter((e) => e.status === 'APPROVED').reduce((s, e) => s + Number(e.amount), 0);
-
   return (
     <>
     {confirmDialog.dialog}
@@ -138,14 +129,15 @@ export default function ExpensesPage() {
         title="Dépenses & Budget"
         description="Dépenses avec workflow d'approbation et budget annuel par catégorie."
         icon="finance"
-        kpis={[
-          { label: 'Dépenses approuvées', value: formatCurrency(approvedSum) },
-          { label: 'En attente', value: String(pendingCount) },
-          { label: 'Année', value: academicYear?.label ?? '—' },
-        ]}
-        actions={<Button onClick={() => setModalCreate(true)}>Nouvelle dépense</Button>}
+        actions={
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => exportExpensesToExcel(expenses, expensesFilename(academicYear?.label))}>
+              <FileSpreadsheet className="w-4 h-4 mr-1.5" /> Excel
+            </Button>
+            <Button onClick={() => setModalCreate(true)}>Nouvelle dépense</Button>
+          </div>
+        }
       />
-      <SubModuleNavigation tabs={subModuleTabs} currentPath="/app/finance/expenses" />
 
       <div className="flex gap-2 mb-4">
         <Button variant={tab === 'expenses' ? 'default' : 'outline'} size="sm" onClick={() => setTab('expenses')}>Dépenses</Button>
@@ -197,25 +189,37 @@ export default function ExpensesPage() {
 
       {tab === 'expenses' && (
         <ModuleContentArea layout="table" filters={
-          <div className="flex space-x-2">
-            <Select value={filterStatus || 'ALL'} onValueChange={(v) => setFilterStatus(v === 'ALL' ? '' : v)}>
-              <SelectTrigger className="w-[160px]"><SelectValue placeholder="Statut" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">Tous</SelectItem>
-                <SelectItem value="PENDING">En attente</SelectItem>
-                <SelectItem value="APPROVED">Approuvées</SelectItem>
-                <SelectItem value="REJECTED">Rejetées</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={filterCategory || 'ALL'} onValueChange={(v) => setFilterCategory(v === 'ALL' ? '' : v)}>
-              <SelectTrigger className="w-[180px]"><SelectValue placeholder="Catégorie" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">Toutes</SelectItem>
-                {categories.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Input type="date" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)} placeholder="Du" className="w-[140px]" />
-            <Input type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} placeholder="Au" className="w-[140px]" />
+          <div className="flex flex-wrap gap-3 items-end">
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Statut</Label>
+              <Select value={filterStatus || 'ALL'} onValueChange={(v) => setFilterStatus(v === 'ALL' ? '' : v)}>
+                <SelectTrigger className="w-[160px]"><SelectValue placeholder="Tous les statuts" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Tous</SelectItem>
+                  <SelectItem value="PENDING">En attente</SelectItem>
+                  <SelectItem value="APPROVED">Approuvées</SelectItem>
+                  <SelectItem value="REJECTED">Rejetées</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Catégorie</Label>
+              <Select value={filterCategory || 'ALL'} onValueChange={(v) => setFilterCategory(v === 'ALL' ? '' : v)}>
+                <SelectTrigger className="w-[180px]"><SelectValue placeholder="Toutes les catégories" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Toutes</SelectItem>
+                  {categories.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Du</Label>
+              <Input type="date" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)} className="w-[140px]" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Au</Label>
+              <Input type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} className="w-[140px]" />
+            </div>
           </div>
         }>
           <Table>

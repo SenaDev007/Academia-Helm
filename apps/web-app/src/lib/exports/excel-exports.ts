@@ -899,3 +899,138 @@ export async function exportAllCashRegistersToExcel(
 
   await downloadExcel(workbook, allCashRegistersFilename('xlsx'));
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+//  DÉPENSES — Export Excel
+// ═══════════════════════════════════════════════════════════════════════
+
+export async function exportExpensesToExcel(
+  expenses: any[],
+  filename: string,
+): Promise<void> {
+  const ExcelJS = await loadExcelJS();
+  const workbook = new ExcelJS.Workbook();
+  const ws = workbook.addWorksheet('Dépenses', {
+    properties: { defaultRowHeight: 18 },
+  });
+
+  const numCols = 7;
+
+  // Titre
+  ws.mergeCells(1, 1, 1, numCols);
+  const titleCell = ws.getCell(1, 1);
+  titleCell.value = 'Liste des dépenses';
+  titleCell.font = { bold: true, size: 14, color: { argb: 'FF1E3A8A' } };
+  titleCell.alignment = { horizontal: 'center' };
+  ws.getRow(1).height = 28;
+
+  // Date d'export
+  ws.mergeCells(2, 1, 2, numCols);
+  ws.getCell(2, 1).value = `Exporté le ${new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })} à ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+  ws.getCell(2, 1).font = { italic: true, size: 10, color: { argb: 'FF64748B' } };
+  ws.getCell(2, 1).alignment = { horizontal: 'center' };
+
+  let row = 4;
+
+  // En-têtes
+  const headers = ['Date', 'Catégorie', 'Description', 'Montant (FCFA)', 'Demandé par', 'Statut', 'Approuvé par'];
+  headers.forEach((h, i) => {
+    const cell = ws.getCell(row, i + 1);
+    cell.value = h;
+    cell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
+    cell.alignment = { horizontal: i === 3 ? 'right' : 'left', vertical: 'middle' };
+    cell.border = {
+      top: { style: 'thin' }, bottom: { style: 'thin' },
+      left: { style: 'thin' }, right: { style: 'thin' },
+    };
+  });
+  ws.getRow(row).height = 22;
+  row++;
+
+  // Données
+  let totalAmount = 0;
+  for (const e of expenses) {
+    const statusLabels: Record<string, string> = {
+      APPROVED: 'Approuvé',
+      PENDING: 'En attente',
+      REJECTED: 'Rejeté',
+    };
+    const status = statusLabels[e.status] || e.status;
+    const amount = Number(e.amount) || 0;
+    if (e.status === 'APPROVED') totalAmount += amount;
+
+    const dateStr = e.createdAt
+      ? new Date(e.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      : e.expenseDate
+        ? new Date(e.expenseDate).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        : '—';
+
+    const category = e.category?.name || e.category || '—';
+    const requester = e.requester
+      ? [e.requester.firstName, e.requester.lastName].filter(Boolean).join(' ')
+      : e.createdBy || '—';
+    const approver = e.approver
+      ? [e.approver.firstName, e.approver.lastName].filter(Boolean).join(' ')
+      : e.approvedBy || '—';
+
+    const values = [dateStr, category, e.description || '—', amount, requester, status, approver];
+    values.forEach((v, i) => {
+      const cell = ws.getCell(row, i + 1);
+      cell.value = v;
+      cell.font = { size: 10 };
+      cell.alignment = { horizontal: i === 3 ? 'right' : 'left', vertical: 'middle' };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+      };
+      if (i === 3) {
+        cell.numFmt = '#,##0';
+        cell.font = { size: 10, bold: true };
+      }
+    });
+
+    // Couleur statut
+    const statusCell = ws.getCell(row, 6);
+    if (e.status === 'APPROVED') {
+      statusCell.font = { size: 10, color: { argb: 'FF059669' }, bold: true };
+    } else if (e.status === 'PENDING') {
+      statusCell.font = { size: 10, color: { argb: 'FFD97706' }, bold: true };
+    } else if (e.status === 'REJECTED') {
+      statusCell.font = { size: 10, color: { argb: 'FFDC2626' }, bold: true };
+    }
+
+    row++;
+  }
+
+  // Ligne total
+  if (expenses.length > 0) {
+    ws.mergeCells(row, 1, row, 3);
+    const totalLabel = ws.getCell(row, 1);
+    totalLabel.value = 'TOTAL DÉPENSES APPROUVÉES';
+    totalLabel.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+    totalLabel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
+    totalLabel.alignment = { horizontal: 'right', vertical: 'middle' };
+
+    const totalCell = ws.getCell(row, 4);
+    totalCell.value = totalAmount;
+    totalCell.numFmt = '#,##0';
+    totalCell.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
+    totalCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
+    totalCell.alignment = { horizontal: 'right', vertical: 'middle' };
+
+    ws.mergeCells(row, 5, row, 7);
+    const emptyCell = ws.getCell(row, 5);
+    emptyCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
+    ws.getRow(row).height = 26;
+  }
+
+  // Largeurs colonnes
+  ws.columns = [
+    { width: 14 }, { width: 22 }, { width: 35 }, { width: 16 }, { width: 22 }, { width: 14 }, { width: 22 },
+  ];
+
+  await downloadExcel(workbook, filename);
+}

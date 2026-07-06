@@ -102,3 +102,13 @@ export function allCashRegistersFilename(ext: 'pdf' | 'xlsx' = 'xlsx'): string {
   const date = formatDateForFilename();
   return `Multi-caisses global_${date}.${ext}`;
 }
+
+/**
+ * Génère un nom de fichier pour les dépenses.
+ * Format : Depenses_{Année}_{Date}.xlsx
+ */
+export function expensesFilename(academicYear?: string, ext: 'pdf' | 'xlsx' = 'xlsx'): string {
+  const date = formatDateForFilename();
+  const year = academicYear ? sanitizeName(academicYear, 20) : 'toutes annees';
+  return `Depenses_${year}_${date}.${ext}`;
+}

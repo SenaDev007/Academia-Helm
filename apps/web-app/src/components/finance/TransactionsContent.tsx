@@ -66,7 +66,8 @@ export default function TransactionsContent() {
   }, [academicYear?.id]);
 
   const handleSuccess = () => {
-    setModalOpen(false);
+    // Recharger les transactions sans fermer le modal
+    // (le modal affiche le reçu, l'utilisateur le fermera manuellement)
     loadTransactions();
   };
 

@@ -39,7 +39,6 @@ const OPERATOR_META: Record<FeexPayOperator, { label: string; shortLabel: string
 
 const METHODS = [
   { value: 'CASH', label: 'Espèces' },
-  { value: 'FEEXPAY', label: 'FeexPay (Mobile Money — MTN, Moov, Celtiis)' },
   { value: 'WIRE', label: 'Virement bancaire' },
   { value: 'FEDAPAY', label: 'Fedapay' },
 ];
@@ -325,6 +324,7 @@ export default function NewPaymentModal({
                   title: '✅ Paiement confirmé',
                   description: `Reçu ${result.receiptNumber} généré. Référence Fedapay : ${fedapayReference}.`,
                 });
+                onSuccess();
               } else {
                 toast({
                   title: 'Paiement initié',
@@ -335,6 +335,7 @@ export default function NewPaymentModal({
                   receiptNumber: fedapayReference,
                   createdAt: new Date().toISOString(),
                 });
+                onSuccess();
               }
             } catch (err: any) {
               console.error('❌ createTransaction after Fedapay failed:', err);
@@ -362,80 +363,11 @@ export default function NewPaymentModal({
       return;
     }
 
-    // ── FeexPay : formulaire standard (téléphone + opérateur saisis dans le form) ──
-    if (paymentMethod === 'FEEXPAY') {
-      if (!selectedAccount?.student) {
-        toast({ title: 'Erreur', description: 'Élève introuvable.', variant: 'destructive' });
-        return;
-      }
-
-      if (!feexpayPhone.trim()) {
-        toast({ title: 'Téléphone requis', description: 'Saisissez le numéro Mobile Money du parent.', variant: 'destructive' });
-        return;
-      }
-
-      const cleanedPhone = feexpayPhone.replace(/\D/g, '');
-      const studentName = selectedAccount.student
-        ? `${selectedAccount.student.lastName} ${selectedAccount.student.firstName}`
-        : 'Élève';
-
-      setLoading(true);
-      try {
-        const res = await fetch('/api/finance/payments/feexpay/initiate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            studentAccountId, studentName, amount: amountNum,
-            phone: cleanedPhone, operator: feexpayOperator, academicYearId,
-          }),
-        });
-        const data = await res.json();
-
-        if (data.success) {
-          const feexpayReference = data.reference || '';
-          try {
-            const result = await financeService.createTransaction({
-              academicYearId, studentAccountId, amount: amountNum,
-              paymentMethod: 'FEEXPAY', reference: feexpayReference || undefined,
-            });
-            if (result?.id) {
-              setReceipt({
-                id: result.id,
-                receiptNumber: result.receiptNumber || feexpayReference || '—',
-                createdAt: result.createdAt || new Date().toISOString(),
-              });
-              toast({
-                title: '📱 Paiement initié',
-                description: `Notification envoyée au ${feexpayPhone}. Reçu ${result.receiptNumber} généré.`,
-              });
-            }
-          } catch (err: any) {
-            setReceipt({
-              id: feexpayReference || 'feexpay-pending',
-              receiptNumber: feexpayReference || '—',
-              createdAt: new Date().toISOString(),
-            });
-            toast({
-              title: 'Paiement initié mais transaction non enregistrée',
-              description: `Référence FeexPay : ${feexpayReference}.`,
-              variant: 'destructive',
-            });
-          }
-        } else {
-          toast({
-            title: 'Erreur FeexPay',
-            description: data.message || "Échec de l'initiation du paiement.",
-            variant: 'destructive',
-          });
-        }
-      } catch (e: any) {
-        toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
-      } finally {
-        setLoading(false);
-      }
-      return;
-    }
+    // ── FeexPay désactivé pour le moment — uniquement Fedapay pour les paiements en ligne ──
+    // Pour réactiver FeexPay plus tard, décommenter le bloc ci-dessous.
+    /*
+    if (paymentMethod === 'FEEXPAY') { ... }
+    */
 
     setLoading(true);
     try {
@@ -456,6 +388,7 @@ export default function NewPaymentModal({
           createdAt: result.createdAt || new Date().toISOString(),
         });
         toast({ title: 'Paiement enregistré', description: `Reçu ${result.receiptNumber} généré.` });
+        onSuccess();
       } else {
         toast({ title: 'Paiement enregistré', description: 'Le reçu est en cours de génération.' });
         onSuccess();
@@ -666,33 +599,7 @@ export default function NewPaymentModal({
               </SelectContent>
             </Select>
           </div>
-          {/* Note : champs FeexPay (téléphone + opérateur) intégrés au formulaire standard. */}
-          {/* Champs FeexPay : téléphone + opérateur */}
-          {paymentMethod === 'FEEXPAY' && (
-            <>
-              <div>
-                <Label>Téléphone Mobile Money *</Label>
-                <Input
-                  type="tel"
-                  value={feexpayPhone}
-                  onChange={(e) => setFeexpayPhone(e.target.value)}
-                  placeholder="01 XX XX XX XX"
-                  required
-                />
-              </div>
-              <div>
-                <Label>Opérateur</Label>
-                <Select value={feexpayOperator} onValueChange={(v) => setFeexpayOperator(v as any)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="mtn">MTN Mobile Money</SelectItem>
-                    <SelectItem value="moov">Moov Money</SelectItem>
-                    <SelectItem value="celtiis_bj">Celtiis Cash</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </>
-          )}
+          {/* FeexPay désactivé pour le moment — uniquement Fedapay */}
           <div>
             <Label>
               Caisse {paymentMethod === 'CASH' ? '*' : '(optionnel)'}

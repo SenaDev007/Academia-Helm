@@ -75,9 +75,19 @@ export class FinanceTransactionController {
 
     const tx = await this.service.prismaClient.financeTransaction.findUnique({
       where: { id },
-      select: { receiptNumber: true },
+      select: {
+        receiptNumber: true,
+        studentAccount: {
+          select: {
+            student: { select: { lastName: true, firstName: true } },
+          },
+        },
+      },
     });
-    const fileName = `recu-${tx?.receiptNumber || id}.pdf`;
+    const studentName = `${tx?.studentAccount?.student?.lastName || ''} ${tx?.studentAccount?.student?.firstName || ''}`.trim() || 'Eleve';
+    const safeName = studentName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9\s-]/g, '').trim();
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const fileName = `Recu de paiement_${safeName}_${tx?.receiptNumber || id}_${dateStr}.pdf`;
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);

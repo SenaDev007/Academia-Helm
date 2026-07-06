@@ -80,14 +80,14 @@ export default function AdmissionsContent() {
   useEffect(() => {
     fetch('/api/school-levels', { credentials: 'include' })
       .then(res => res.ok ? res.json() : [])
-      .then(data => setSchoolLevels(Array.isArray(data) ? data : []))
+      .then(data => {
+        const levels = Array.isArray(data) ? data : [];
+        console.log('[AdmissionsContent] School levels loaded:', levels.map(l => ({ id: l.id?.substring(0, 8), name: l.name, code: l.code })));
+        setSchoolLevels(levels);
+      })
       .catch(() => setSchoolLevels([]));
 
-    // Charger TOUTES les classes du tenant via la route BFF dédiée /api/all-classes
-    // ⚠️ On n'utilise PAS /api/classes?schoolLevelId=ALL car le PaginationDto du backend
-    // a forbidNonWhitelisted: true → rejette le param schoolLevelId (400 Bad Request).
-    // La route /api/all-classes contourne ce problème en forçant le header
-    // x-school-level-id=ALL côté BFF.
+    // Charger TOUTES les classes du tenant
     fetch('/api/all-classes', { credentials: 'include' })
       .then(res => {
         if (!res.ok) {
@@ -98,7 +98,12 @@ export default function AdmissionsContent() {
       })
       .then(data => {
         const classes = Array.isArray(data) ? data : [];
-        console.log('[AdmissionsContent] Loaded classes:', classes.length, classes.map(c => ({ id: c.id?.substring(0, 8), name: c.name })));
+        console.log('[AdmissionsContent] Classes loaded:', classes.length, classes.slice(0, 3).map(c => ({
+          id: c.id?.substring(0, 8),
+          name: c.name,
+          schoolLevelId: c.schoolLevelId?.substring(0, 8),
+          schoolLevel: c.schoolLevel ? { id: c.schoolLevel.id?.substring(0, 8), name: c.schoolLevel.name } : null,
+        })));
         setSchoolClasses(classes);
       })
       .catch((e) => {
@@ -696,7 +701,12 @@ export default function AdmissionsContent() {
     const matchesSearch = `${a.firstName} ${a.lastName}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           (a.admissionNumber?.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesFilter = activeFilter === 'ALL' || a.status === activeFilter;
-    const matchesLevel = !filterLevelId || a.schoolLevelId === filterLevelId || a.schoolLevel?.id === filterLevelId;
+    const matchesLevel = !filterLevelId ||
+      a.schoolLevelId === filterLevelId ||
+      a.schoolLevel?.id === filterLevelId ||
+      // Vérifier aussi avec schoolLevelId (UUID school_levels) si le filterLevelId
+      // est en réalité l'UUID education_levels (cas de /api/school-levels)
+      schoolLevels.find(l => l.id === filterLevelId)?.schoolLevelId === a.schoolLevelId;
     const matchesClass = !filterClassId || a.classId === filterClassId || a.requestedClassId === filterClassId;
     return matchesSearch && matchesFilter && matchesLevel && matchesClass;
   }).sort((a, b) => {
@@ -784,7 +794,7 @@ export default function AdmissionsContent() {
           >
             <option value="">Tous les niveaux</option>
             {schoolLevels.map(l => (
-              <option key={l.id} value={l.id}>{l.name || l.code}</option>
+              <option key={l.id} value={l.id}>{l.label || l.name || l.code}</option>
             ))}
           </select>
           <select
@@ -794,15 +804,22 @@ export default function AdmissionsContent() {
             className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all disabled:opacity-50"
           >
             <option value="">Toutes les classes</option>
-            {schoolClasses
-              .filter(c => {
-                if (!filterLevelId) return true;
-                // Matcher sur schoolLevelId ou schoolLevel.id (la structure peut varier)
-                return c.schoolLevelId === filterLevelId || c.schoolLevel?.id === filterLevelId;
-              })
-              .map(c => (
-                <option key={c.id} value={c.id}>{c.name || c.code}</option>
-              ))}
+            {(() => {
+              // Récupérer le schoolLevelId (UUID school_levels) correspondant au niveau sélectionné
+              const selectedLevel = schoolLevels.find(l => l.id === filterLevelId);
+              const effectiveSchoolLevelId = selectedLevel?.schoolLevelId || filterLevelId;
+              return schoolClasses
+                .filter(c => {
+                  if (!filterLevelId) return true;
+                  // Matcher sur schoolLevelId (UUID school_levels) ou schoolLevel.id
+                  return c.schoolLevelId === effectiveSchoolLevelId ||
+                         c.schoolLevel?.id === effectiveSchoolLevelId ||
+                         c.schoolLevel?.code === selectedLevel?.code;
+                })
+                .map(c => (
+                  <option key={c.id} value={c.id}>{c.name || c.code}</option>
+                ));
+            })()}
           </select>
         </div>
 

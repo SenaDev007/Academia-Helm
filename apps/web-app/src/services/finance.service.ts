@@ -292,7 +292,8 @@ class FinanceService {
    */
   async createManualArrear(data: {
     studentId: string;
-    academicYearId: string;
+    academicYearId?: string;
+    academicYearName?: string;
     amount: number;
     reason?: string;
   }): Promise<any> {

@@ -123,6 +123,7 @@ export default function RecoveryContent() {
   const [arrearStudentId, setArrearStudentId] = useState('');
   const [arrearAmount, setArrearAmount] = useState('');
   const [arrearReason, setArrearReason] = useState('');
+  const [arrearYearName, setArrearYearName] = useState('');
   const [arrearSaving, setArrearSaving] = useState(false);
 
   // Modals Phase 2
@@ -269,7 +270,13 @@ export default function RecoveryContent() {
    * existants (sur papier) dans le système.
    */
   const handleCreateManualArrear = async () => {
-    if (!arrearStudentId || !academicYear?.id || !arrearAmount) return;
+    if (!arrearStudentId || !arrearAmount) return;
+    // Si pas d'année saisie, on utilise l'année active par défaut
+    const yearName = arrearYearName.trim() || academicYear?.name || '';
+    if (!yearName) {
+      toast({ title: 'Erreur', description: 'Veuillez saisir une année scolaire.', variant: 'destructive' });
+      return;
+    }
     setArrearSaving(true);
     try {
       const amount = Number(arrearAmount);
@@ -277,20 +284,24 @@ export default function RecoveryContent() {
         toast({ title: 'Erreur', description: 'Le montant doit être un nombre positif.', variant: 'destructive' });
         return;
       }
+      // Utiliser academicYearName au lieu de academicYearId — le backend
+      // cherchera/créera l'année automatiquement si elle n'existe pas.
       const result = await financeService.createManualArrear({
         studentId: arrearStudentId,
-        academicYearId: academicYear.id,
+        academicYearName: yearName,
         amount,
         reason: arrearReason || undefined,
       });
       toast({
         title: '✅ Arriéré enregistré',
-        description: `${formatCurrency(amount)} FCFA ajouté aux arriérés de l'élève. Total arriérés : ${formatCurrency(result.newPreviousArrears)} FCFA.`,
+        description: `${formatCurrency(amount)} FCFA ajouté aux arriérés de l'élève pour l'année ${result.academicYearName || yearName}.` +
+          (result.yearCreated ? ' (année scolaire créée automatiquement)' : ''),
       });
       setManualArrearModal(false);
       setArrearStudentId('');
       setArrearAmount('');
       setArrearReason('');
+      setArrearYearName('');
       loadAll();
     } catch (e: any) {
       toast({ title: 'Erreur', description: e?.message || 'Erreur réseau', variant: 'destructive' });
@@ -599,6 +610,9 @@ export default function RecoveryContent() {
           onClose={() => setManualArrearModal(false)}
           onSubmit={handleCreateManualArrear}
           academicYearId={academicYear?.id ?? ''}
+          academicYearName={arrearYearName}
+          setAcademicYearName={setArrearYearName}
+          defaultYearName={academicYear?.name || ''}
           studentId={arrearStudentId}
           setStudentId={setArrearStudentId}
           amount={arrearAmount}
@@ -1442,6 +1456,9 @@ function ManualArrearModal({
   onClose,
   onSubmit,
   academicYearId,
+  academicYearName,
+  setAcademicYearName,
+  defaultYearName,
   studentId,
   setStudentId,
   amount,
@@ -1453,6 +1470,9 @@ function ManualArrearModal({
   onClose: () => void;
   onSubmit: () => void;
   academicYearId: string;
+  academicYearName: string;
+  setAcademicYearName: (v: string) => void;
+  defaultYearName: string;
   studentId: string;
   setStudentId: (v: string) => void;
   amount: string;
@@ -1504,6 +1524,21 @@ function ManualArrearModal({
             {accounts.length === 0 && (
               <p className="text-xs text-slate-500 mt-1">Aucun élève trouvé pour cette année.</p>
             )}
+          </div>
+          <div>
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
+              Année scolaire concernée
+            </Label>
+            <Input
+              type="text"
+              value={academicYearName}
+              onChange={(e) => setAcademicYearName(e.target.value)}
+              placeholder={defaultYearName || 'ex: 2024-2025'}
+            />
+            <p className="text-[11px] text-slate-500 mt-1">
+              💡 Saisissez l'année scolaire de l'arriéré. Si l'année n'existe pas encore
+              dans le système (année antérieure), elle sera créée automatiquement.
+            </p>
           </div>
           <div>
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">

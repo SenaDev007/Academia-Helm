@@ -273,7 +273,7 @@ export class CollectionPrismaController {
   async createManualArrear(
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
-    @Body() body: { studentId: string; academicYearId: string; amount: number; reason?: string },
+    @Body() body: { studentId: string; academicYearId?: string; academicYearName?: string; amount: number; reason?: string },
   ) {
     return this.collectionService.createManualArrear(tenantId, body, user?.id);
   }

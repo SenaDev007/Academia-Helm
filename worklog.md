@@ -2830,3 +2830,61 @@ Stage Summary:
 - Les classes physiques sont maintenant visuellement séparées par niveau (Maternelle/Primaire/Secondaire) et par cycle (1er/2nd)
 - Ordre canonique respecté : 6e→3e pour 1er cycle, 2nde→Terminale pour 2nd cycle
 - 1 commit poussé : `113d4494 feat(settings): CRUD séries 2nd cycle + séparation visuelle classes physiques par niveau/cycle`
+
+---
+Task ID: recovery-multi-canal-refonte
+Agent: main
+Task: Refonte complète du module Recouvrement — multi-canal + KPIs réels + sélecteurs niveau/classe/élève
+
+Work Log:
+
+## 1. Backend — RecoveryNotificationFinanceService (multi-canal)
+Nouveau service reproduisant le pattern ReceiptNotificationFinanceService.
+- Charge FeeArrear + Student.studentGuardians (isPrimary) + branding école
+- 3 niveaux français : PREMIERE_RELANCE (J+3), DEUXIEME_RELANCE (J+7), MISE_EN_DEMEURE (J+15)
+- Email HTML structuré (header coloré selon niveau, tableau récap solde)
+- WhatsApp message texte avec branding
+- SMS court avec solde restant
+- Retourne rapport par canal : { status: sent/failed/skipped, to?, error? }
+
+Endpoint : POST /finance/recovery-reminders/:arrearId/notify
+
+## 2. Frontend — Renommage 'Dashboard' → 'Tableau de bord'
+
+## 3. Fix KPIs Tableau de bord
+Bug : frontend lisait stats.totalCollected/stats.totalDue (inexistants) → KPIs toujours à 0.
+Fix : lire stats.totals.paid / stats.totals.balanceDue / stats.totals.collectionRate.
+
+## 4. Arriérés — libellé 'Niveau' → 'Niveau de gravité'
+
+## 5. Arriérés + Relances — colonne Actions avec 3 canaux
+3 boutons icônes par ligne (GmailIcon, WhatsAppIcon, SmsIcon).
+Reproduit le pattern TransactionsContent.tsx.
+
+## 6. Modal Relance manuelle — refonte complète
+- Sélecteur Niveau scolaire → Classe (filtrée) → Élève (filtré)
+- Niveau de relance en termes français (cartes cliquables avec emoji)
+- Envoi multi-canal automatique (email + WhatsApp + SMS)
+
+## 7. handleSendManual — envoi multi-canal
+Trouve l'arriéré correspondant, appelle sendRecoveryNotification avec 3 canaux.
+Toast détaillé avec rapport par canal.
+
+## 8. REMINDER_LEVEL_CONFIG — termes français
+WARNING → 'Avertissement', URGENT → 'Urgent', FINAL_NOTICE → 'Mise en demeure'
+
+## Fichiers modifiés (6)
+1. recovery-notification-finance.service.ts — NOUVEAU service multi-canal
+2. recovery-reminder.controller.ts — endpoint notify
+3. finance.module.ts — register service
+4. finance.service.ts — sendRecoveryNotification
+5. /api/finance/recovery-reminders/[arrearId]/notify/route.ts — NOUVEAU BFF
+6. RecoveryContent.tsx — refonte UI complète
+
+Stage Summary:
+- Tableau de bord avec KPIs réels (taux de recouvrement, total encaissé, total arriérés)
+- Arriérés avec colonne Actions (3 canaux email/whatsapp/sms par ligne)
+- Relances avec colonne Actions (3 canaux par ligne)
+- Modal Relance manuelle : sélecteurs niveau scolaire → classe → élève + termes français
+- Envoi multi-canal automatique (email + WhatsApp + SMS) au parent
+- 1 commit poussé : b74d91c8

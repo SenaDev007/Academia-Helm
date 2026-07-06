@@ -4357,6 +4357,18 @@ model Admission {
   previousLevel       String?
   changeReason        String?
 
+  // ─── Arriérés antérieurs (onboarding nouveaux clients) ──────────────────
+  // Permet aux nouveaux clients de saisir les arriérés existants (sur papier)
+  // au moment de l'admission. Sera injecté dans StudentEnrollment.previousArrears
+  // lors de la conversion en élève inscrit.
+  previousArrears     Float        @default(0)
+
+  // ─── Statut élève (nouveau vs ancien) ────────────────────────────────────
+  // Détermine le type de frais à appliquer :
+  //   isNewStudent = true  → frais d'INSCRIPTION (première inscription)
+  //   isNewStudent = false → frais de RÉINSCRIPTION (élève déjà dans l'école)
+  isNewStudent        Boolean      @default(true)
+
   // ─── Responsable légal (Phase 1) ─────────────────────────────────────────
   mainGuardianName    String?
   mainGuardianPhone   String?

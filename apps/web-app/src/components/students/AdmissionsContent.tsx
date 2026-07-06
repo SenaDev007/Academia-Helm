@@ -40,6 +40,8 @@ interface Admission {
   requestedSeriesId: string | null;
   wantsBilingual: boolean;
   previousSchool: string | null;
+  previousArrears?: number;
+  isNewStudent?: boolean;
   mainGuardianName: string | null;
   mainGuardianPhone: string | null;
   mainGuardianEmail: string | null;

@@ -35,6 +35,10 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
     previousSchool: initialData?.previousSchool || '',
     previousLevel: initialData?.previousLevel || '',
     changeReason: initialData?.changeReason || '',
+    // Arriérés antérieurs (onboarding nouveaux clients)
+    previousArrears: initialData?.previousArrears?.toString() || '0',
+    // Statut élève : nouveau (INSCRIPTION) vs ancien (REINSCRIPTION)
+    isNewStudent: initialData?.isNewStudent ?? true,
     mainGuardianName: initialData?.mainGuardianName || '',
     mainGuardianPhone: initialData?.mainGuardianPhone || '',
     mainGuardianEmail: initialData?.mainGuardianEmail || '',
@@ -169,6 +173,9 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
         previousSchool: formData.previousSchool || undefined,
         previousLevel: formData.previousLevel || undefined,
         changeReason: formData.changeReason || undefined,
+        // Arriérés antérieurs (onboarding nouveaux clients) + statut élève
+        previousArrears: Number(formData.previousArrears) || 0,
+        isNewStudent: formData.isNewStudent,
         mainGuardianName: formData.mainGuardianName || undefined,
         mainGuardianPhone: formData.mainGuardianPhone || undefined,
         mainGuardianEmail: formData.mainGuardianEmail || undefined,
@@ -380,6 +387,73 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
             className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-all"
             placeholder="Ex: Déménagement, recherche de meilleure qualité pédagogique..."
           />
+        </div>
+
+        {/* ─── Statut élève : Nouveau vs Ancien ───
+            Détermine le type de frais à appliquer :
+            - Nouvel élève → frais d'INSCRIPTION
+            - Ancien élève → frais de RÉINSCRIPTION */}
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="text-xs font-bold text-blue-700 uppercase">Statut de l'élève</div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setFormData({ ...formData, isNewStudent: true })}
+              className={`text-left p-3 rounded-lg border transition-all ${
+                formData.isNewStudent
+                  ? 'border-blue-500 bg-white ring-2 ring-blue-200'
+                  : 'border-slate-200 bg-white/50 hover:border-slate-300'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <div className={`w-4 h-4 rounded-full border-2 ${formData.isNewStudent ? 'border-blue-500 bg-blue-500' : 'border-slate-300'}`} />
+                <span className="text-sm font-semibold text-slate-900">Nouvel élève</span>
+              </div>
+              <p className="text-xs text-slate-500 ml-6">Première inscription dans l'école → Frais d'inscription</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => setFormData({ ...formData, isNewStudent: false })}
+              className={`text-left p-3 rounded-lg border transition-all ${
+                !formData.isNewStudent
+                  ? 'border-blue-500 bg-white ring-2 ring-blue-200'
+                  : 'border-slate-200 bg-white/50 hover:border-slate-300'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <div className={`w-4 h-4 rounded-full border-2 ${!formData.isNewStudent ? 'border-blue-500 bg-blue-500' : 'border-slate-300'}`} />
+                <span className="text-sm font-semibold text-slate-900">Ancien élève</span>
+              </div>
+              <p className="text-xs text-slate-500 ml-6">Déjà inscrit les années précédentes → Frais de réinscription</p>
+            </button>
+          </div>
+        </div>
+
+        {/* ─── Arriérés antérieurs (onboarding nouveaux clients) ───
+            Permet aux nouveaux clients de saisir les arriérés existants
+            (sur papier) au moment de l'admission. */}
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
+          <label className="text-xs font-bold text-amber-700 uppercase flex items-center gap-2">
+            <span>📒 Arriérés antérieurs (FCFA)</span>
+            <span className="text-[10px] font-normal text-amber-600 normal-case">— Saisie manuelle pour nouveaux clients</span>
+          </label>
+          <input
+            type="number"
+            min="0"
+            step="any"
+            name="previousArrears"
+            value={formData.previousArrears}
+            onChange={handleInputChange}
+            className="w-full px-4 py-2.5 bg-white border border-amber-200 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none text-sm font-mono font-semibold text-amber-900 transition-all"
+            placeholder="0"
+          />
+          <p className="text-[11px] text-amber-700">
+            💡 Saisissez le montant des arriérés de cet élève (issu des registres papier) si l'école
+            débute avec Academia Helm en cours d'année. Ce montant sera ajouté au total dû et visible
+            dans le compte financier de l'élève.
+          </p>
         </div>
       </div>
 

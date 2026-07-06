@@ -121,7 +121,9 @@ export class StudentsLifecycleService {
     this.logger.log(`[ORION] Analyse dÃ©clenchÃ©e pour l'Ã©lÃ¨ve ${studentId} (tenant: ${tenantId})`);
   }
 
-  /** Pré-inscription : dossier incomplet autorisé, statut PRE_REGISTERED */
+  /** Pré-inscription : dossier incomplet autorisé, statut PRE_REGISTERED.
+   *  previousArrears permet aux nouveaux clients de saisir les arriérés
+   *  antérieurs (sur papier) au moment de l'onboarding. */
   async preRegister(
     tenantId: string,
     data: {
@@ -137,6 +139,7 @@ export class StudentsLifecycleService {
       classId?: string;
       photoUrl?: string;
       npi?: string;
+      previousArrears?: number;
     },
     userId?: string,
   ) {
@@ -173,7 +176,7 @@ export class StudentsLifecycleService {
         enrollmentType: 'NEW',
         enrollmentDate,
         status: ENROLLMENT_STATUS.PRE_REGISTERED,
-        previousArrears: 0,
+        previousArrears: data.previousArrears ?? 0,
       },
     });
 

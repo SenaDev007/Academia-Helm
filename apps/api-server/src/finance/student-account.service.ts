@@ -96,8 +96,11 @@ export class StudentAccountService {
     });
     if (!student) throw new NotFoundException('Student not found');
 
-    const classId = student.studentEnrollments?.[0]?.classId ?? null;
+    const enrollment = student.studentEnrollments?.[0];
+    const classId = enrollment?.classId ?? null;
     const levelId = student.schoolLevelId;
+    const enrollmentType = enrollment?.enrollmentType ?? 'NEW';
+    const previousArrears = Number(enrollment?.previousArrears ?? 0);
 
     const allStructures = await this.prisma.feeStructure.findMany({
       where: { tenantId, academicYearId, isActive: true },
@@ -130,9 +133,21 @@ export class StudentAccountService {
       }
     });
 
-    // Prendre TOUS les frais (obligatoires ET facultatifs) — pas seulement isMandatory
-    // L'élève doit payer INSCRIPTION + TUITION + CANTEEN + etc.
-    const feeStructures = Array.from(structuresByType.values());
+    // ⚠️ RÈGLE MÉTIER : Nouvel élève vs ancien élève
+    //   - enrollmentType === 'NEW' → frais d'INSCRIPTION (pas de REINSCRIPTION)
+    //   - enrollmentType ∈ ['REPEAT', 'PROMOTION', 'TRANSFER'] → frais de REINSCRIPTION (pas d'INSCRIPTION)
+    //   Un élève ne doit JAMAIS payer à la fois INSCRIPTION et REINSCRIPTION.
+    const isNewStudent = enrollmentType === 'NEW';
+    const feeStructuresRaw = Array.from(structuresByType.values());
+    const feeStructures = feeStructuresRaw.filter((fs) => {
+      if (isNewStudent) {
+        // Nouvel élève : exclure REINSCRIPTION (il paie INSCRIPTION)
+        return fs.feeType !== 'REINSCRIPTION';
+      } else {
+        // Ancien élève : exclure INSCRIPTION (il paie REINSCRIPTION)
+        return fs.feeType !== 'INSCRIPTION';
+      }
+    });
 
     const totalDue = feeStructures.reduce((sum, fs) => {
       const override = fs.overrides[0];
@@ -140,16 +155,22 @@ export class StudentAccountService {
       return sum + amount;
     }, 0);
 
+    // ⚠️ previousArrears : arriérés antérieurs saisis manuellement à l'admission
+    // (nouveaux clients qui ont des arriérés sur papier). Injectés dans le
+    // StudentAccount pour être visibles dans le compte financier et inclus
+    // dans le total dû et le solde.
+    const totalDueWithArrears = totalDue + previousArrears;
+
     account = await this.prisma.studentAccount.create({
       data: {
         tenantId,
         studentId,
         academicYearId,
-        totalDue,
+        totalDue: totalDueWithArrears,
         totalPaid: 0,
-        balance: totalDue,
-        arrearsAmount: 0,
-        status: totalDue > 0 ? STATUS_ACTIVE : STATUS_PAID,
+        balance: totalDueWithArrears,
+        arrearsAmount: previousArrears,
+        status: totalDueWithArrears > 0 ? STATUS_ACTIVE : STATUS_PAID,
         isBlocked: false,
         updatedAt: new Date(),
         breakdowns: {
@@ -193,8 +214,10 @@ export class StudentAccountService {
     });
     if (!student) throw new NotFoundException('Student not found');
 
-    const classId = student.studentEnrollments?.[0]?.classId ?? null;
+    const enrollment = student.studentEnrollments?.[0];
+    const classId = enrollment?.classId ?? null;
     const levelId = student.schoolLevelId;
+    const enrollmentType = enrollment?.enrollmentType ?? 'NEW';
 
     const allStructures = await this.prisma.feeStructure.findMany({
       where: { tenantId, academicYearId, isActive: true },
@@ -224,8 +247,16 @@ export class StudentAccountService {
       }
     });
 
-    // Prendre TOUS les frais (obligatoires ET facultatifs) — pas seulement isMandatory
-    const feeStructures = Array.from(structuresByType.values());
+    // ⚠️ RÈGLE MÉTIER : Nouvel élève vs ancien élève (même logique que getOrCreate)
+    const isNewStudent = enrollmentType === 'NEW';
+    const feeStructuresRaw = Array.from(structuresByType.values());
+    const feeStructures = feeStructuresRaw.filter((fs) => {
+      if (isNewStudent) {
+        return fs.feeType !== 'REINSCRIPTION';
+      } else {
+        return fs.feeType !== 'INSCRIPTION';
+      }
+    });
 
     const totalDue = feeStructures.reduce((sum, fs) => {
       const override = fs.overrides[0];

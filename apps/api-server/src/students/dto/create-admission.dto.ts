@@ -60,6 +60,20 @@ export class CreateAdmissionDto {
   @IsOptional() @IsString()
   changeReason?: string;
 
+  // ─── Arriérés antérieurs (onboarding nouveaux clients) ──────────────────
+  /** Montant des arriérés antérieurs (sur papier) à injecter dans le
+   *  compte financier de l'élève. Permet aux nouveaux clients de saisir
+   *  les arriérés existants au moment de l'admission. */
+  @IsOptional() @IsNumber()
+  previousArrears?: number;
+
+  // ─── Statut élève (nouveau vs ancien) ────────────────────────────────────
+  /** true = nouvel élève (paie frais d'INSCRIPTION)
+   *  false = ancien élève (paie frais de RÉINSCRIPTION)
+   *  Détermine le type de frais à appliquer lors de la conversion. */
+  @IsOptional() @IsBoolean()
+  isNewStudent?: boolean;
+
   // ─── Responsable légal ───────────────────────────────────────────────────
   @IsOptional() @IsString()
   mainGuardianName?: string;

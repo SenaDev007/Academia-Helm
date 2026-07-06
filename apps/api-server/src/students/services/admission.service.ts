@@ -121,6 +121,10 @@ export class AdmissionService {
         previousLevel: data.previousLevel ?? null,
         changeReason: data.changeReason ?? null,
 
+        // Arriérés antérieurs + statut élève (nouveaux clients)
+        previousArrears: data.previousArrears ?? 0,
+        isNewStudent: data.isNewStudent ?? true,
+
         // Responsable légal
         mainGuardianName: data.mainGuardianName ?? null,
         mainGuardianPhone: data.mainGuardianPhone ?? null,
@@ -223,6 +227,10 @@ export class AdmissionService {
     if (data.previousSchool !== undefined) updateData.previousSchool = data.previousSchool;
     if (data.previousLevel !== undefined) updateData.previousLevel = data.previousLevel;
     if (data.changeReason !== undefined) updateData.changeReason = data.changeReason;
+
+    // Arriérés antérieurs + statut élève
+    if (data.previousArrears !== undefined) updateData.previousArrears = data.previousArrears;
+    if (data.isNewStudent !== undefined) updateData.isNewStudent = data.isNewStudent;
 
     // Responsable légal
     if (data.mainGuardianName !== undefined) updateData.mainGuardianName = data.mainGuardianName;
@@ -407,6 +415,10 @@ export class AdmissionService {
       }
 
       // 1. Pré-inscription (crée Student + StudentEnrollment PRE_REGISTERED)
+      //    ⚠️ previousArrears : permet aux nouveaux clients de saisir les
+      //    arriérés antérieurs (sur papier) au moment de l'admission.
+      //    Sera injecté dans StudentEnrollment.previousArrears puis dans
+      //    StudentAccount.arrearsAmount lors de admit().
       const student = await this.lifecycleService.preRegister(tenantId, {
         academicYearId: admission.academicYearId,
         schoolLevelId: studentSchoolLevelId,  // ← UUID de school_levels (pas education_levels)
@@ -417,6 +429,7 @@ export class AdmissionService {
         placeOfBirth: admission.birthPlace ?? undefined,
         nationality: admission.nationality ?? undefined,
         classId: validClassId ?? undefined,  // ← null si classe supprimée
+        previousArrears: admission.previousArrears ?? 0,
       }, userId);
 
       this.logger.log(`convertToStudent: preRegister OK, student.id=${student.id}`);

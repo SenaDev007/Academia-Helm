@@ -42,7 +42,7 @@ export class EnrollStudentDto {
   @IsUUID() academicYearId: string;
   @IsUUID() schoolLevelId: string;
   @IsUUID() classId: string;
-  @IsIn(['NEW', 'REPEAT', 'TRANSFER']) enrollmentType: string;
+  @IsIn(['NEW', 'REPEAT', 'PROMOTION', 'TRANSFER']) enrollmentType: string;
   @IsDateString() enrollmentDate: string;
   /** Frontend may send tenantId — ignored (resolved server-side) */
   @IsOptional() @IsString() tenantId?: string;

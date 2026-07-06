@@ -269,7 +269,7 @@ export class BulletinsService {
       studentId: student.studentCode || student.id.substring(0, 8),
       className: enrollment.class.name,
       classSize,
-      isRepeater: enrollment.enrollmentType === 'REPEATER' ? 'Oui' : 'Non',
+      isRepeater: enrollment.enrollmentType === 'REPEAT' ? 'Oui' : 'Non',
       totalCoefficient: periodAverage?.totalCoefficient || 0,
       totalWeighted: periodAverage?.totalWeighted || 0,
       generalAverage: periodAverage?.generalAverage || '0.00',

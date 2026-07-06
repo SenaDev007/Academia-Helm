@@ -157,6 +157,13 @@ export class FinanceTransactionController {
     });
     if (!tx) throw new NotFoundException('Transaction introuvable');
 
+    // Récupérer la classe de l'élève pour cette année
+    const enrollment = await this.service.prismaClient.studentEnrollment.findFirst({
+      where: { studentId: tx.studentAccount.studentId, academicYearId: tx.academicYearId },
+      include: { class: { select: { name: true, code: true } } },
+    });
+    const className = enrollment?.class?.name || '—';
+
     // Récupérer le téléphone du parent
     const contacts = await this.receiptFinanceService.getParentContacts(tx.studentAccount.studentId);
 
@@ -186,7 +193,7 @@ export class FinanceTransactionController {
 
     // Construire le message WhatsApp (avec accents — le lien wa.me les supporte)
     const message = `Bonjour${contacts.name ? ` ${contacts.name}` : ''},\n\n` +
-      `Nous confirmons la réception du paiement pour ${studentName} auprès de ${schoolName}.\n\n` +
+      `Nous confirmons la réception du paiement pour ${studentName} (Classe: ${className}) auprès de ${schoolName}.\n\n` +
       `Reçu n° : ${tx.receiptNumber}\n` +
       `Montant : ${amountStr} FCFA\n` +
       `Date : ${dateStr}\n` +

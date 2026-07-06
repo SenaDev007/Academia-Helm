@@ -32,7 +32,7 @@ import {
   AlertCircle, TrendingDown, Users, Wallet, Target, RefreshCw,
   Send, Play, Loader2, ChevronRight, Filter, Search,
   Phone, Mail, FileText, UserCheck, Clock, AlertTriangle,
-  Zap, CheckCircle2, XCircle, Calendar, Plus, Eye,
+  Zap, CheckCircle2, XCircle, Calendar, Plus, Eye, FileSpreadsheet,
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -102,6 +102,8 @@ export default function RecoveryContent() {
   // Filtres arriérés
   const [arrearLevelFilter, setArrearLevelFilter] = useState<string>('ALL');
   const [arrearSearch, setArrearSearch] = useState('');
+  const [arrearSchoolLevelId, setArrearSchoolLevelId] = useState<string>('ALL');
+  const [arrearClassId, setArrearClassId] = useState<string>('ALL');
 
   // Filtres promesses
   const [promiseStatusFilter, setPromiseStatusFilter] = useState<string>('ALL');
@@ -385,6 +387,19 @@ export default function RecoveryContent() {
     if (arrearLevelFilter !== 'ALL') {
       result = result.filter((a) => a.arrearsLevel === arrearLevelFilter);
     }
+    if (arrearSchoolLevelId !== 'ALL') {
+      result = result.filter((a) => {
+        // a.student.schoolLevelId = UUID de school_levels
+        // arrearSchoolLevelId peut être l'ID school-levels ou education-levels
+        return a.student?.schoolLevelId === arrearSchoolLevelId;
+      });
+    }
+    if (arrearClassId !== 'ALL') {
+      result = result.filter((a) => {
+        const enrollment = a.student?.studentEnrollments?.[0];
+        return enrollment?.classId === arrearClassId;
+      });
+    }
     if (arrearSearch.trim()) {
       const q = arrearSearch.toLowerCase().trim();
       result = result.filter((a) => {
@@ -393,7 +408,7 @@ export default function RecoveryContent() {
       });
     }
     return result;
-  }, [arrears, arrearLevelFilter, arrearSearch]);
+  }, [arrears, arrearLevelFilter, arrearSearch, arrearSchoolLevelId, arrearClassId]);
 
   // KPIs calculés
   const kpis = useMemo(() => {
@@ -498,6 +513,10 @@ export default function RecoveryContent() {
             setLevelFilter={setArrearLevelFilter}
             search={arrearSearch}
             setSearch={setArrearSearch}
+            schoolLevelId={arrearSchoolLevelId}
+            setSchoolLevelId={setArrearSchoolLevelId}
+            classId={arrearClassId}
+            setClassId={setArrearClassId}
             onSendChannel={(arrearId, channel) => handleSendChannelReminder(arrearId, channel, 'PREMIERE_RELANCE')}
           />
         ) : activeTab === 'reminders' ? (
@@ -753,6 +772,10 @@ function ArrearsTab({
   setLevelFilter,
   search,
   setSearch,
+  schoolLevelId,
+  setSchoolLevelId,
+  classId,
+  setClassId,
   onSendChannel,
 }: {
   arrears: any[];
@@ -761,38 +784,199 @@ function ArrearsTab({
   setLevelFilter: (v: string) => void;
   search: string;
   setSearch: (v: string) => void;
+  schoolLevelId: string;
+  setSchoolLevelId: (v: string) => void;
+  classId: string;
+  setClassId: (v: string) => void;
   onSendChannel: (arrearId: string, channel: 'email' | 'whatsapp' | 'sms') => void;
 }) {
+  const [schoolLevels, setSchoolLevels] = useState<any[]>([]);
+  const [classes, setClasses] = useState<any[]>([]);
+
+  // Charger les niveaux scolaires
+  useEffect(() => {
+    fetch('/api/school-levels', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setSchoolLevels(Array.isArray(d) ? d.filter((l: any) => l.id !== 'ALL') : []))
+      .catch(() => setSchoolLevels([]));
+  }, []);
+
+  // Charger les classes
+  useEffect(() => {
+    fetch('/api/all-classes', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setClasses(Array.isArray(d) ? d : (d?.data ?? [])))
+      .catch(() => setClasses([]));
+  }, []);
+
+  // Classes filtrées par niveau scolaire
+  const filteredClasses = useMemo(() => {
+    if (schoolLevelId === 'ALL') return classes;
+    const selectedLevel = schoolLevels.find((l) => l.id === schoolLevelId);
+    const slId = selectedLevel?.schoolLevelId || schoolLevelId;
+    return classes.filter((c: any) =>
+      c.schoolLevelId === slId ||
+      c.schoolLevel?.code === selectedLevel?.code ||
+      c.schoolLevel?.id === slId
+    );
+  }, [classes, schoolLevelId, schoolLevels]);
+
+  // Export PDF des arriérés (filtre appliqué) — génère le PDF côté frontend avec jsPDF
+  const handleExportPDF = async () => {
+    try {
+      // Charger jsPDF + autoTable depuis CDN (même pattern que finance-exports.ts)
+      const loadJsPdf = (): Promise<any> => new Promise((resolve) => {
+        if ((window as any).jspdf && (window as any).jspdf.jsPDF) {
+          resolve((window as any).jspdf.jsPDF);
+          return;
+        }
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+        script.onload = () => resolve((window as any).jspdf.jsPDF);
+        document.head.appendChild(script);
+      });
+      const loadAutoTable = (jsPDF: any): Promise<void> => new Promise((resolve) => {
+        if ((window as any).autoTable) { resolve(); return; }
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js';
+        script.onload = () => resolve();
+        document.head.appendChild(script);
+      });
+
+      const jsPDF = await loadJsPdf();
+      await loadAutoTable(jsPDF);
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+
+      // Titre
+      doc.setFont('times', 'bold');
+      doc.setFontSize(14);
+      doc.setTextColor(13, 31, 110);
+      doc.text('Liste des arriérés', pageWidth / 2, 20, { align: 'center' });
+
+      doc.setFont('times', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(100, 100, 100);
+      const dateStr = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+      doc.text(`Exporté le ${dateStr}`, pageWidth / 2, 26, { align: 'center' });
+
+      // Ligne séparatrice
+      doc.setDrawColor(13, 31, 110);
+      doc.setLineWidth(0.5);
+      doc.line(14, 30, pageWidth - 14, 30);
+
+      // Tableau
+      const levelLabels: Record<string, string> = {
+        LOW: 'Faible', MEDIUM: 'Moyen', HIGH: 'Élevé', CRITICAL: 'Critique',
+      };
+      const tableData = arrears.map((a) => [
+        a.student ? `${a.student.lastName} ${a.student.firstName}` : '—',
+        a.student?.studentEnrollments?.[0]?.class?.name || '—',
+        a.studentFee?.feeDefinition?.label || a.notes || '—',
+        a.totalDue != null ? Number(a.totalDue).toLocaleString('fr-FR') : '—',
+        a.totalPaid != null ? Number(a.totalPaid).toLocaleString('fr-FR') : '—',
+        a.balanceDue != null ? Number(a.balanceDue).toLocaleString('fr-FR') : '—',
+        levelLabels[a.arrearsLevel] || a.arrearsLevel || '—',
+      ]);
+
+      const totalBalance = arrears.reduce((s, a) => s + (Number(a.balanceDue) || 0), 0);
+      tableData.push(['', '', '', '', 'TOTAL', totalBalance.toLocaleString('fr-FR'), '']);
+
+      (doc as any).autoTable({
+        startY: 34,
+        head: [['Élève', 'Classe', 'Frais', 'Total dû', 'Payé', 'Solde', 'Niveau']],
+        body: tableData,
+        theme: 'striped',
+        headStyles: { fillColor: [13, 31, 110], fontSize: 9, fontStyle: 'bold' },
+        bodyStyles: { fontSize: 8 },
+        columnStyles: {
+          3: { halign: 'right' },
+          4: { halign: 'right' },
+          5: { halign: 'right', fontStyle: 'bold' },
+        },
+        didParseCell: (data: any) => {
+          if (data.row.index === tableData.length - 1 && data.column.index >= 4) {
+            data.cell.styles.fontStyle = 'bold';
+            data.cell.styles.fillColor = [220, 230, 250];
+          }
+        },
+      });
+
+      doc.save(`Arrieres_recouvrement_${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (e: any) {
+      console.error('Export PDF error:', e);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Filtres */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-wrap gap-3 items-end">
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Niveau de gravité</Label>
-          <Select value={levelFilter} onValueChange={setLevelFilter}>
-            <SelectTrigger className="w-[200px]"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">Tous les niveaux</SelectItem>
-              <SelectItem value="LOW">Faible</SelectItem>
-              <SelectItem value="MEDIUM">Moyen</SelectItem>
-              <SelectItem value="HIGH">Élevé</SelectItem>
-              <SelectItem value="CRITICAL">Critique</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex flex-col gap-1.5 flex-1 min-w-[200px]">
-          <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Rechercher un élève</Label>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Nom ou prénom..."
-              className="pl-9"
-            />
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-3">
+        <div className="flex flex-wrap gap-3 items-end">
+          {/* Niveau scolaire */}
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Niveau scolaire</Label>
+            <Select value={schoolLevelId} onValueChange={(v) => { setSchoolLevelId(v); setClassId('ALL'); }}>
+              <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Tous les niveaux</SelectItem>
+                {schoolLevels.map((l) => (
+                  <SelectItem key={l.id} value={l.id}>{l.label || l.code || l.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
+
+          {/* Classe (filtrée par niveau) */}
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Classe</Label>
+            <Select value={classId} onValueChange={setClassId}>
+              <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Toutes les classes</SelectItem>
+                {filteredClasses.map((c: any) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Niveau de gravité */}
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Niveau de gravité</Label>
+            <Select value={levelFilter} onValueChange={setLevelFilter}>
+              <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Tous</SelectItem>
+                <SelectItem value="LOW">Faible</SelectItem>
+                <SelectItem value="MEDIUM">Moyen</SelectItem>
+                <SelectItem value="HIGH">Élevé</SelectItem>
+                <SelectItem value="CRITICAL">Critique</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Recherche */}
+          <div className="flex flex-col gap-1.5 flex-1 min-w-[200px]">
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Rechercher</Label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Nom ou prénom..."
+                className="pl-9"
+              />
+            </div>
+          </div>
+
+          {/* Export PDF */}
+          <Button variant="outline" size="sm" onClick={handleExportPDF} className="border-rose-300 text-rose-700 hover:bg-rose-100">
+            <FileText className="w-4 h-4 mr-1.5" />
+            PDF
+          </Button>
         </div>
-        <div className="text-xs text-slate-500 ml-auto">
+        <div className="text-xs text-slate-500">
           {arrears.length} affiché(s) sur {totalCount} total
         </div>
       </div>
@@ -803,6 +987,7 @@ function ArrearsTab({
           <TableHeader>
             <TableRow className="bg-gray-50">
               <TableHead>Élève</TableHead>
+              <TableHead>Classe</TableHead>
               <TableHead>Frais</TableHead>
               <TableHead className="text-right">Total dû</TableHead>
               <TableHead className="text-right">Payé</TableHead>
@@ -815,7 +1000,7 @@ function ArrearsTab({
           <TableBody>
             {arrears.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-gray-500 py-12">
+                <TableCell colSpan={9} className="text-center text-gray-500 py-12">
                   Aucun arriéré trouvé. Lancez la détection pour identifier les impayés.
                 </TableCell>
               </TableRow>
@@ -828,7 +1013,10 @@ function ArrearsTab({
                       {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.studentId}
                     </TableCell>
                     <TableCell className="text-sm text-slate-600">
-                      {a.studentFee?.feeDefinition?.label || '—'}
+                      {a.student?.studentEnrollments?.[0]?.class?.name || '—'}
+                    </TableCell>
+                    <TableCell className="text-sm text-slate-600">
+                      {a.studentFee?.feeDefinition?.label || a.notes || '—'}
                     </TableCell>
                     <TableCell className="text-right font-mono text-sm">{formatCurrency(a.totalDue)}</TableCell>
                     <TableCell className="text-right font-mono text-sm text-emerald-700">{formatCurrency(a.totalPaid)}</TableCell>
@@ -1740,77 +1928,187 @@ function CasesTab({
   cases: any[];
   onViewCase: (c: any) => void;
 }) {
+  const [schoolLevels, setSchoolLevels] = useState<any[]>([]);
+  const [classes, setClasses] = useState<any[]>([]);
+  const [filterSchoolLevelId, setFilterSchoolLevelId] = useState<string>('ALL');
+  const [filterClassId, setFilterClassId] = useState<string>('ALL');
+  const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    fetch('/api/school-levels', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setSchoolLevels(Array.isArray(d) ? d.filter((l: any) => l.id !== 'ALL') : []))
+      .catch(() => setSchoolLevels([]));
+    fetch('/api/all-classes', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setClasses(Array.isArray(d) ? d : (d?.data ?? [])))
+      .catch(() => setClasses([]));
+  }, []);
+
+  const filteredClasses = useMemo(() => {
+    if (filterSchoolLevelId === 'ALL') return classes;
+    const selectedLevel = schoolLevels.find((l) => l.id === filterSchoolLevelId);
+    const slId = selectedLevel?.schoolLevelId || filterSchoolLevelId;
+    return classes.filter((c: any) =>
+      c.schoolLevelId === slId || c.schoolLevel?.code === selectedLevel?.code || c.schoolLevel?.id === slId
+    );
+  }, [classes, filterSchoolLevelId, schoolLevels]);
+
+  const filteredCases = useMemo(() => {
+    let result = cases;
+    if (filterSchoolLevelId !== 'ALL') {
+      result = result.filter((c) => c.student?.schoolLevelId === filterSchoolLevelId);
+    }
+    if (filterClassId !== 'ALL') {
+      result = result.filter((c) => {
+        const enrollment = c.student?.studentEnrollments?.[0];
+        return enrollment?.classId === filterClassId;
+      });
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase().trim();
+      result = result.filter((c) => {
+        const name = `${c.student?.lastName || ''} ${c.student?.firstName || ''}`.toLowerCase();
+        return name.includes(q);
+      });
+    }
+    return result;
+  }, [cases, filterSchoolLevelId, filterClassId, search]);
+
+  // Export Excel
+  const handleExportExcel = async () => {
+    const ExcelJS = (window as any).ExcelJS;
+    if (!ExcelJS) {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js';
+      script.onload = () => doExportExcel();
+      document.head.appendChild(script);
+    } else {
+      doExportExcel();
+    }
+  };
+  const doExportExcel = async () => {
+    const ExcelJS = (window as any).ExcelJS;
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Dossiers');
+    const headers = ['Élève', 'Total dû', 'Payé', 'Reste à payer', 'Statut', 'Niveau escalade', 'Dernière action'];
+    headers.forEach((h, i) => {
+      const cell = ws.getCell(1, i + 1);
+      cell.value = h; cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
+    });
+    filteredCases.forEach((c, i) => {
+      ws.getCell(i + 2, 1).value = c.student ? `${c.student.lastName} ${c.student.firstName}` : '—';
+      ws.getCell(i + 2, 2).value = Number(c.totalDue) || 0;
+      ws.getCell(i + 2, 3).value = Number(c.totalPaid) || 0;
+      ws.getCell(i + 2, 4).value = Number(c.outstandingAmount) || 0;
+      ws.getCell(i + 2, 5).value = c.status || '—';
+      ws.getCell(i + 2, 6).value = c.escalationLevel || 0;
+      ws.getCell(i + 2, 7).value = c.lastActionAt ? new Date(c.lastActionAt).toLocaleDateString('fr-FR') : '—';
+    });
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Dossiers_recouvrement_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-      <Table>
-        <TableHeader>
-          <TableRow className="bg-gray-50">
-            <TableHead>Élève</TableHead>
-            <TableHead className="text-right">Total dû</TableHead>
-            <TableHead className="text-right">Payé</TableHead>
-            <TableHead className="text-right">Reste à payer</TableHead>
-            <TableHead>Statut</TableHead>
-            <TableHead>Niveau escalade</TableHead>
-            <TableHead>Dernière action</TableHead>
-            <TableHead className="text-center">Détails</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {cases.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={8} className="text-center text-gray-500 py-12">
-                Aucun dossier de recouvrement. Lancez la détection des arriérés puis synchronisez les dossiers.
-              </TableCell>
+    <div className="space-y-4">
+      {/* Filtres */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+        <div className="flex flex-wrap gap-3 items-end">
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Niveau scolaire</Label>
+            <Select value={filterSchoolLevelId} onValueChange={(v) => { setFilterSchoolLevelId(v); setFilterClassId('ALL'); }}>
+              <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Tous les niveaux</SelectItem>
+                {schoolLevels.map((l) => (<SelectItem key={l.id} value={l.id}>{l.label || l.code || l.name}</SelectItem>))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Classe</Label>
+            <Select value={filterClassId} onValueChange={setFilterClassId}>
+              <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Toutes les classes</SelectItem>
+                {filteredClasses.map((c: any) => (<SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1.5 flex-1 min-w-[200px]">
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Rechercher</Label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nom ou prénom..." className="pl-9" />
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={handleExportExcel} className="border-emerald-300 text-emerald-700 hover:bg-emerald-100">
+            <FileSpreadsheet className="w-4 h-4 mr-1.5" /> Excel
+          </Button>
+        </div>
+        <div className="text-xs text-slate-500 mt-2">{filteredCases.length} affiché(s) sur {cases.length} total</div>
+      </div>
+
+      {/* Tableau */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-gray-50">
+              <TableHead>Élève</TableHead>
+              <TableHead className="text-right">Total dû</TableHead>
+              <TableHead className="text-right">Payé</TableHead>
+              <TableHead className="text-right">Reste à payer</TableHead>
+              <TableHead>Statut</TableHead>
+              <TableHead>Niveau escalade</TableHead>
+              <TableHead>Dernière action</TableHead>
+              <TableHead className="text-center">Détails</TableHead>
             </TableRow>
-          ) : (
-            cases.map((c) => {
-              const config = CASE_STATUS_CONFIG[c.status] || CASE_STATUS_CONFIG.ON_TIME;
-              const escalation = ESCALATION_LABELS[c.escalationLevel || 0] || ESCALATION_LABELS[0];
-              return (
-                <TableRow key={c.id} className="hover:bg-slate-50">
-                  <TableCell className="font-medium">
-                    {c.student
-                      ? `${c.student.lastName} ${c.student.firstName}`
-                      : c.studentId}
-                  </TableCell>
-                  <TableCell className="text-right font-mono text-sm">{formatCurrency(c.totalDue)}</TableCell>
-                  <TableCell className="text-right font-mono text-sm text-emerald-700">{formatCurrency(c.totalPaid)}</TableCell>
-                  <TableCell className="text-right font-mono text-sm font-bold text-rose-700">{formatCurrency(c.outstandingAmount)}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className={`${config.color} ${config.bg} ${config.border} border`}>
-                      {config.label}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <span className={`text-xs font-semibold ${escalation.color}`}>
-                      {escalation.label}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-xs text-slate-500">
-                    {c.lastActionAt ? new Date(c.lastActionAt).toLocaleDateString('fr-FR') : '—'}
-                    {c.blockedUntil && (
-                      <span className="block text-[10px] text-rose-600">
-                        Bloqué jusqu'au {new Date(c.blockedUntil).toLocaleDateString('fr-FR')}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => onViewCase(c)}
-                      title="Voir le dossier"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              );
-            })
-          )}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {filteredCases.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center text-gray-500 py-12">
+                  Aucun dossier de recouvrement. Lancez la détection des arriérés puis synchronisez les dossiers.
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredCases.map((c) => {
+                const config = CASE_STATUS_CONFIG[c.status] || CASE_STATUS_CONFIG.ON_TIME;
+                const escalation = ESCALATION_LABELS[c.escalationLevel || 0] || ESCALATION_LABELS[0];
+                return (
+                  <TableRow key={c.id} className="hover:bg-slate-50">
+                    <TableCell className="font-medium">
+                      {c.student ? `${c.student.lastName} ${c.student.firstName}` : c.studentId}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-sm">{formatCurrency(c.totalDue)}</TableCell>
+                    <TableCell className="text-right font-mono text-sm text-emerald-700">{formatCurrency(c.totalPaid)}</TableCell>
+                    <TableCell className="text-right font-mono text-sm font-bold text-rose-700">{formatCurrency(c.outstandingAmount)}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={`${config.color} ${config.bg} ${config.border} border`}>{config.label}</Badge>
+                    </TableCell>
+                    <TableCell><span className={`text-xs font-semibold ${escalation.color}`}>{escalation.label}</span></TableCell>
+                    <TableCell className="text-xs text-slate-500">
+                      {c.lastActionAt ? new Date(c.lastActionAt).toLocaleDateString('fr-FR') : '—'}
+                      {c.blockedUntil && (<span className="block text-[10px] text-rose-600">Bloqué jusqu'au {new Date(c.blockedUntil).toLocaleDateString('fr-FR')}</span>)}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onViewCase(c)} title="Voir le dossier">
+                        <Eye className="w-3.5 h-3.5" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }

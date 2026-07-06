@@ -190,7 +190,21 @@ export class CollectionPrismaService {
     return this.prisma.feeArrear.findMany({
       where,
       include: {
-        student: { select: { id: true, firstName: true, lastName: true, studentCode: true } },
+        student: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            studentCode: true,
+            schoolLevelId: true,
+            studentEnrollments: {
+              where: { academicYearId: filters?.academicYearId },
+              select: { id: true, classId: true, class: { select: { id: true, name: true } } },
+              take: 1,
+              orderBy: { enrollmentDate: 'desc' },
+            },
+          },
+        },
         studentFee: {
           include: {
             feeDefinition: {

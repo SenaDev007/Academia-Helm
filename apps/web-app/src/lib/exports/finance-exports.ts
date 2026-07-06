@@ -24,6 +24,37 @@
 /*  Chargement dynamique des bibliothèques via CDN                     */
 /* ------------------------------------------------------------------ */
 
+import { formatCurrency } from '@/lib/utils';
+
+/**
+ * Charge une image depuis une URL et la convertit en base64 data URL.
+ * Utilisé pour ajouter le logo de l'école dans les PDF jsPDF.
+ */
+async function loadImageAsBase64(url: string): Promise<string | null> {
+  try {
+    const response = await fetch(url, { mode: 'cors' });
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Précharge le logo de l'école depuis l'URL pour l'utiliser dans les PDF.
+ * Retourne une data URL base64 ou null si le logo n'est pas disponible.
+ */
+export async function preloadSchoolLogo(logoUrl?: string | null): Promise<string | null> {
+  if (!logoUrl) return null;
+  return loadImageAsBase64(logoUrl);
+}
+
 let xlsxPromise: Promise<any> | null = null;
 let jsPdfPromise: Promise<any> | null = null;
 let autoTablePromise: Promise<any> | null = null;
@@ -415,8 +446,11 @@ export async function exportTransactionsToPdf(
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
+  // Précharger le logo de l'école
+  const logoBase64 = await preloadSchoolLogo(header.schoolLogoUrl);
+
   // ─── En-tête officiel République du Bénin ───
-  drawOfficialHeader(doc, header, pageWidth);
+  drawOfficialHeader(doc, header, pageWidth, logoBase64);
 
   // ─── Titre du document ───
   let yPos = 50;
@@ -520,7 +554,7 @@ export async function exportTransactionsToPdf(
 /*  En-tête officiel République du Bénin (commun à tous les PDF)       */
 /* ------------------------------------------------------------------ */
 
-function drawOfficialHeader(doc: any, header: SchoolHeader, pageWidth: number) {
+function drawOfficialHeader(doc: any, header: SchoolHeader, pageWidth: number, logoBase64?: string | null) {
   const margin = 14;
   const headerWidth = pageWidth - 2 * margin;
   const colWidth = headerWidth / 3;
@@ -595,17 +629,31 @@ function drawOfficialHeader(doc: any, header: SchoolHeader, pageWidth: number) {
     });
   }
 
-  // ─── Colonne droite : Logo école (si URL fournie) ───
-  // Note : pas de logo pour l'instant (CORS potentiel), on laisse vide
-  // ou on dessine un placeholder
-  const logoX = pageWidth - margin - 30;
+  // ─── Colonne droite : Logo école (si base64 disponible) ───
+  const logoX = pageWidth - margin - 22;
   const logoY = 14;
-  doc.setDrawColor(200, 200, 200);
-  doc.setLineWidth(0.2);
-  doc.rect(logoX, logoY, 20, 20);
-  doc.setFontSize(7);
-  doc.setTextColor(150, 150, 150);
-  doc.text('LOGO', logoX + 10, logoY + 11, { align: 'center' });
+  const logoW = 20;
+  const logoH = 20;
+  if (logoBase64) {
+    try {
+      // Déterminer le format depuis le data URL
+      const format = logoBase64.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+      doc.addImage(logoBase64, format, logoX, logoY, logoW, logoH);
+    } catch {
+      // Si l'image ne peut pas être ajoutée, dessiner un placeholder
+      doc.setDrawColor(200, 200, 200);
+      doc.setLineWidth(0.2);
+      doc.rect(logoX, logoY, logoW, logoH);
+    }
+  } else {
+    // Pas de logo — dessiner un placeholder discret
+    doc.setDrawColor(200, 200, 200);
+    doc.setLineWidth(0.2);
+    doc.rect(logoX, logoY, logoW, logoH);
+    doc.setFontSize(6);
+    doc.setTextColor(180, 180, 180);
+    doc.text('LOGO', logoX + logoW / 2, logoY + logoH / 2 + 1, { align: 'center' });
+  }
 
   // ─── Ligne bordure basse de l'en-tête (double ligne) ───
   const headerBottomY = 44;
@@ -617,27 +665,29 @@ function drawOfficialHeader(doc: any, header: SchoolHeader, pageWidth: number) {
 }
 
 function drawDesignDivider(doc: any, centerX: number, y: number, totalWidth: number) {
-  const halfLine = (totalWidth - 4) / 2;
+  const halfLine = (totalWidth - 6) / 2;
   doc.setDrawColor(13, 31, 110);
-  doc.setLineWidth(0.3);
+  doc.setLineWidth(0.4);
   // Ligne gauche
-  doc.line(centerX - totalWidth / 2, y, centerX - 2, y);
-  // Losange
+  doc.line(centerX - totalWidth / 2, y, centerX - 1.5, y);
+  // Losange (carré pivoté à 45°) — comme le module élève (6x6px ≈ 2mm)
   doc.setFillColor(13, 31, 110);
+  const size = 1.5; // demi-côté du losange
+  // Dessiner un losange avec 4 points
   doc.triangle(
-    centerX - 1, y - 1,
-    centerX + 1, y,
-    centerX - 1, y + 1,
+    centerX, y - size,        // haut
+    centerX + size, y,        // droite
+    centerX, y + size,        // bas
     'F',
   );
   doc.triangle(
-    centerX - 1, y + 1,
-    centerX + 1, y,
-    centerX + 1, y + 1,
+    centerX, y - size,        // haut
+    centerX - size, y,        // gauche
+    centerX, y + size,        // bas
     'F',
   );
   // Ligne droite
-  doc.line(centerX + 2, y, centerX + totalWidth / 2, y);
+  doc.line(centerX + 1.5, y, centerX + totalWidth / 2, y);
 }
 
 function drawFooter(doc: any, pageWidth: number, pageHeight: number, pageNumber: number) {
@@ -819,8 +869,11 @@ export async function exportStudentAccountsToPdf(
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
+  // Précharger le logo de l'école
+  const logoBase64 = await preloadSchoolLogo(header.schoolLogoUrl);
+
   // En-tête officiel
-  drawOfficialHeader(doc, header, pageWidth);
+  drawOfficialHeader(doc, header, pageWidth, logoBase64);
 
   // Titre
   let yPos = 50;
@@ -960,8 +1013,11 @@ export async function exportStudentHistoryToPdf(
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
+  // Précharger le logo de l'école
+  const logoBase64 = await preloadSchoolLogo(header.schoolLogoUrl);
+
   // En-tête officiel
-  drawOfficialHeader(doc, header, pageWidth);
+  drawOfficialHeader(doc, header, pageWidth, logoBase64);
 
   // Titre
   let yPos = 50;
@@ -1172,7 +1228,10 @@ export async function exportCashRegisterTransactionsToPdf(
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
-  drawOfficialHeader(doc, header, pageWidth);
+  // Précharger le logo de l'école
+  const logoBase64 = await preloadSchoolLogo(header.schoolLogoUrl);
+
+  drawOfficialHeader(doc, header, pageWidth, logoBase64);
 
   let yPos = 50;
   doc.setFont('helvetica', 'bold');
@@ -1421,7 +1480,10 @@ export async function exportAllCashRegistersToPdf(
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
-  drawOfficialHeader(doc, header, pageWidth);
+  // Précharger le logo de l'école
+  const logoBase64 = await preloadSchoolLogo(header.schoolLogoUrl);
+
+  drawOfficialHeader(doc, header, pageWidth, logoBase64);
 
   let yPos = 50;
   doc.setFont('helvetica', 'bold');

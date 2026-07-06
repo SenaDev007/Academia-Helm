@@ -6,7 +6,7 @@ import {
   Wallet, Plus, Lock, Unlock, Archive, Edit, Trash2, BarChart3, X,
   Gem, Smartphone, Building2, Store, Banknote, TrendingUp, Clock,
   ArrowUpRight, ArrowDownRight, Receipt, ChevronRight, Sparkles,
-  ArrowLeftRight, Send, Loader2,
+  ArrowLeftRight, Send, Loader2, PiggyBank, ArrowDownCircle,
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
@@ -31,6 +31,7 @@ interface CashRegister {
   isActive: boolean;
   openedAt?: string;
   closedAt?: string;
+  createdAt?: string;
   responsibleUser?: { id: string; firstName: string; lastName: string; email: string };
   openedBy?: { id: string; firstName: string; lastName: string };
   closedBy?: { id: string; firstName: string; lastName: string };
@@ -163,6 +164,7 @@ const PREDEFINED_CAISSES = [
   { name: 'Caisse transport', code: 'TRANSPORT', location: 'Service transport', description: 'Caisse pour la collecte des frais de transport scolaire.' },
   { name: 'Caisse activités', code: 'ACTIVITES', location: 'Service activités parascolaires', description: 'Caisse pour les activités parascolaires, sorties et événements.' },
   { name: 'Caisse banque', code: 'BANQUE', location: 'Banque partenaire', description: 'Caisse de liaison avec le compte bancaire de l\'établissement.' },
+  { name: 'Caisse Tontine / Épargne', code: 'TONTINE', location: 'Coffre-fort / Banque', description: 'Caisse d\'épargne isolée pour constituer une réserve financière. Les cotisations (transferts entrants) augmentent l\'épargne, les retraits (transferts sortants) la diminuent. Le solde représente l\'épargne cumulée de l\'établissement.' },
   { name: 'Caisse Paiements en Ligne', code: 'ONLINE', location: 'En ligne', description: 'Caisse virtuelle pour les paiements Fedapay et FeexPay (Mobile Money, carte bancaire). Créée automatiquement au premier paiement en ligne.' },
 ];
 
@@ -1025,6 +1027,56 @@ export default function CashRegistersContent() {
                       </div>
                     </div>
 
+                    {/* Statistiques spéciales pour la caisse Tontine / Épargne */}
+                    {selectedRegister.code === 'TONTINE' && (() => {
+                      const tontineTransfers = transfers.filter((t: any) =>
+                        t.fromCashRegisterId === selectedRegister.id || t.toCashRegisterId === selectedRegister.id
+                      );
+                      const totalCotisations = tontineTransfers
+                        .filter((t: any) => t.toCashRegisterId === selectedRegister.id)
+                        .reduce((sum: number, t: any) => sum + (Number(t.amount) || 0), 0);
+                      const totalRetraits = tontineTransfers
+                        .filter((t: any) => t.fromCashRegisterId === selectedRegister.id)
+                        .reduce((sum: number, t: any) => sum + (Number(t.amount) || 0), 0);
+                      const nbCotisations = tontineTransfers.filter((t: any) => t.toCashRegisterId === selectedRegister.id).length;
+                      const nbRetraits = tontineTransfers.filter((t: any) => t.fromCashRegisterId === selectedRegister.id).length;
+                      const daysSinceCreation = selectedRegister.createdAt
+                        ? Math.max(1, Math.floor((Date.now() - new Date(selectedRegister.createdAt).getTime()) / (1000 * 60 * 60 * 24)))
+                        : 1;
+                      const croissanceMoyenne = totalCotisations / daysSinceCreation;
+
+                      return (
+                        <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-4 border border-emerald-200">
+                          <div className="flex items-center gap-2 mb-3">
+                            <PiggyBank className="w-4 h-4 text-emerald-600" />
+                            <p className="text-sm font-semibold text-emerald-800">Épargne Tontine — Suivi</p>
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <div className="bg-white rounded-lg p-2.5 border border-emerald-100">
+                              <p className="text-[10px] text-emerald-600 uppercase font-semibold">Total cotisations</p>
+                              <p className="text-base font-bold text-emerald-700">{formatCurrency(totalCotisations)}</p>
+                              <p className="text-[10px] text-slate-400">{nbCotisations} cotisation(s)</p>
+                            </div>
+                            <div className="bg-white rounded-lg p-2.5 border border-rose-100">
+                              <p className="text-[10px] text-rose-600 uppercase font-semibold">Total retraits</p>
+                              <p className="text-base font-bold text-rose-700">{formatCurrency(totalRetraits)}</p>
+                              <p className="text-[10px] text-slate-400">{nbRetraits} retrait(s)</p>
+                            </div>
+                            <div className="bg-white rounded-lg p-2.5 border border-slate-100">
+                              <p className="text-[10px] text-slate-500 uppercase font-semibold">Épargne nette</p>
+                              <p className="text-base font-bold text-slate-800">{formatCurrency(totalCotisations - totalRetraits)}</p>
+                              <p className="text-[10px] text-slate-400">Cotisations − Retraits</p>
+                            </div>
+                            <div className="bg-white rounded-lg p-2.5 border border-blue-100">
+                              <p className="text-[10px] text-blue-600 uppercase font-semibold">Croissance / jour</p>
+                              <p className="text-base font-bold text-blue-700">{formatCurrency(croissanceMoyenne)}</p>
+                              <p className="text-[10px] text-slate-400">{daysSinceCreation} jour(s) depuis création</p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     {/* Infos détaillées */}
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
@@ -1194,6 +1246,72 @@ export default function CashRegistersContent() {
                         <Button variant="outline" onClick={() => openTransfer(selectedRegister)} className="text-indigo-600 hover:bg-indigo-50">
                           <ArrowLeftRight className="h-4 w-4 mr-2" />Transférer
                         </Button>
+                      )}
+                      {/* Boutons Tontine / Épargne */}
+                      {selectedRegister.code === 'TONTINE' ? (
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            // Retrait depuis la tontine vers la caisse principale
+                            const mainReg = registers.find((r: any) => r.code === 'MAIN' && r.isOpen);
+                            if (!mainReg) {
+                              toast({ title: 'Erreur', description: 'Aucune caisse principale (MAIN) ouverte pour le retrait.', variant: 'destructive' });
+                              return;
+                            }
+                            setTransferForm({
+                              fromId: selectedRegister.id,
+                              toId: mainReg.id,
+                              amount: '',
+                              note: 'Retrait depuis l\'épargne tontine',
+                            });
+                            setTransferModal(true);
+                          }}
+                          className="text-rose-600 hover:bg-rose-50 border-rose-200"
+                        >
+                          <ArrowDownCircle className="h-4 w-4 mr-2" />Retirer de l'épargne
+                        </Button>
+                      ) : (
+                        selectedRegister.code !== 'ONLINE' && selectedRegister.isOpen && (
+                          <Button
+                            variant="outline"
+                            onClick={async () => {
+                              // Cotisation vers la tontine : créer ou récupérer la caisse TONTINE
+                              let tontineReg = registers.find((r: any) => r.code === 'TONTINE');
+                              if (!tontineReg) {
+                                // La caisse TONTINE n'existe pas encore — la créer
+                                try {
+                                  await financeService.createCashRegister({
+                                    code: 'TONTINE',
+                                    name: 'Caisse Tontine / Épargne',
+                                    description: 'Caisse d\'épargne isolée pour constituer une réserve financière.',
+                                    location: 'Coffre-fort / Banque',
+                                    openingBalance: 0,
+                                  });
+                                  await loadRegisters();
+                                  const refreshed = await financeService.getCashRegisters();
+                                  tontineReg = (Array.isArray(refreshed) ? refreshed : []).find((r: any) => r.code === 'TONTINE');
+                                } catch (e: any) {
+                                  toast({ title: 'Erreur', description: 'Impossible de créer la caisse Tontine: ' + e.message, variant: 'destructive' });
+                                  return;
+                                }
+                              }
+                              if (!tontineReg) {
+                                toast({ title: 'Erreur', description: 'Caisse Tontine introuvable.', variant: 'destructive' });
+                                return;
+                              }
+                              setTransferForm({
+                                fromId: selectedRegister.id,
+                                toId: tontineReg.id,
+                                amount: '',
+                                note: 'Cotisation vers l\'épargne tontine',
+                              });
+                              setTransferModal(true);
+                            }}
+                            className="text-emerald-600 hover:bg-emerald-50 border-emerald-200"
+                          >
+                            <PiggyBank className="h-4 w-4 mr-2" />Cotiser vers l'épargne
+                          </Button>
+                        )
                       )}
                       <Button variant="outline" onClick={() => setEditModal(selectedRegister)}>
                         <Edit className="h-4 w-4 mr-2" />Modifier

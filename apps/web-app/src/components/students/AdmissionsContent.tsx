@@ -384,42 +384,38 @@ export default function AdmissionsContent() {
   const handleBatchSubmit = async () => {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
-    showConfirm(
-      'Soumettre en lot',
-      `Soumettre ${ids.length} candidature(s) ? Les dossiers passeront en statut « Soumis » pour révision.`,
-      async () => {
-        setBatchActionPending(true);
-        try {
-          const result = await studentsService.batchSubmitAdmissions(ids);
-          toast({
-            title: '✅ Soumission en lot terminée',
-            description: `${result.succeeded} réussie(s), ${result.failed} échouée(s)`,
-            variant: result.failed > 0 ? 'destructive' : 'success',
-          });
-          clearSelection();
-          loadAdmissions();
-        } catch (e: any) {
-          toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
-        } finally {
-          setBatchActionPending(false);
-        }
-      },
-      'Soumettre',
-      'info',
-    );
+    // Même pattern que handleSubmit (single) : appel direct du service,
+    // pas de modal de confirmation. L'utilisateur a déjà fait la sélection
+    // multiple — le bouton "Soumettre en lot" est l'action explicite.
+    setBatchActionPending(true);
+    try {
+      const result = await studentsService.batchSubmitAdmissions(ids);
+      toast({
+        title: '✅ Soumission en lot terminée',
+        description: `${result.succeeded} réussie(s), ${result.failed} échouée(s)`,
+        variant: result.failed > 0 ? 'destructive' : 'success',
+      });
+      clearSelection();
+      loadAdmissions();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
+    } finally {
+      setBatchActionPending(false);
+    }
   };
 
   const handleBatchAcceptAndEnroll = async () => {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
+    // Même pattern que le bouton single "Accepter et inscrire directement"
+    // (qui utilise showConfirm avec type 'success') — mais en version batch
+    // avec appel au service batchAcceptAndEnrollAdmissions.
     showConfirm(
       'Accepter et inscrire en lot',
       `Accepter et inscrire ${ids.length} candidature(s) ? Cette action va créer les dossiers élèves, générer les matricules, comptes financiers et responsables légaux.`,
       async () => {
         setBatchActionPending(true);
         try {
-          // Utilisation de l'endpoint batch backend (beaucoup plus efficace
-          // qu'une boucle de fetch côté frontend, et évite les 404 BFF).
           const result = await studentsService.batchAcceptAndEnrollAdmissions(
             ids,
             'Acceptation en lot',
@@ -451,58 +447,44 @@ export default function AdmissionsContent() {
   const handleBatchAccept = async () => {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
-    showConfirm(
-      'Accepter en lot',
-      `Accepter ${ids.length} candidature(s) ? Les dossiers passeront en statut « Accepté » (sans inscription automatique).`,
-      async () => {
-        setBatchActionPending(true);
-        try {
-          const result = await studentsService.batchAcceptAdmissions(ids);
-          toast({
-            title: '✅ Acceptation en lot terminée',
-            description: `${result.succeeded} réussie(s), ${result.failed} échouée(s)`,
-            variant: result.failed > 0 ? 'destructive' : 'success',
-          });
-          clearSelection();
-          loadAdmissions();
-        } catch (e: any) {
-          toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
-        } finally {
-          setBatchActionPending(false);
-        }
-      },
-      'Accepter',
-      'success',
-    );
+    setBatchActionPending(true);
+    try {
+      const result = await studentsService.batchAcceptAdmissions(ids);
+      toast({
+        title: '✅ Acceptation en lot terminée',
+        description: `${result.succeeded} réussie(s), ${result.failed} échouée(s)`,
+        variant: result.failed > 0 ? 'destructive' : 'success',
+      });
+      clearSelection();
+      loadAdmissions();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
+    } finally {
+      setBatchActionPending(false);
+    }
   };
 
   const handleBatchConvert = async () => {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
-    showConfirm(
-      'Convertir en lot',
-      `Convertir ${ids.length} candidature(s) en élèves ? Cette action générera matricules, comptes financiers, dossiers académiques, tokens QR et responsables légaux.`,
-      async () => {
-        setBatchActionPending(true);
-        try {
-          const result = await studentsService.batchConvertAdmissions(ids);
-          const succeeded = result.results.filter((r: any) => r.success);
-          const matricules = succeeded.map((r: any) => r.matricule).filter(Boolean).join(', ');
-          toast({
-            title: '✅ Conversion en lot terminée',
-            description: `${result.succeeded} élève(s) créé(s)${matricules ? ` — Matricules: ${matricules}` : ''}${result.failed > 0 ? ` — ${result.failed} échouée(s)` : ''}`,
-          });
-          clearSelection();
-          loadAdmissions();
-        } catch (e: any) {
-          toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
-        } finally {
-          setBatchActionPending(false);
-        }
-      },
-      'Convertir',
-      'success',
-    );
+    // Même pattern direct que handleSubmit (single) — pas de modal.
+    setBatchActionPending(true);
+    try {
+      const result = await studentsService.batchConvertAdmissions(ids);
+      const succeeded = result.results.filter((r: any) => r.success);
+      const matricules = succeeded.map((r: any) => r.matricule).filter(Boolean).join(', ');
+      toast({
+        title: '✅ Conversion en lot terminée',
+        description: `${result.succeeded} élève(s) créé(s)${matricules ? ` — Matricules: ${matricules}` : ''}${result.failed > 0 ? ` — ${result.failed} échouée(s)` : ''}`,
+        variant: result.failed > 0 ? 'destructive' : 'success',
+      });
+      clearSelection();
+      loadAdmissions();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
+    } finally {
+      setBatchActionPending(false);
+    }
   };
 
   // ─── Documents & Interviews (detail modal) ────────────────────────────────

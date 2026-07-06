@@ -38,6 +38,7 @@ import PositionsManagement from '@/components/settings/PositionsManagement';
 import { PaymentsSettingsSection } from '@/components/settings/feexpay/PaymentsSettingsSection';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import * as settingsService from '@/services/settings.service';
+import { pedagogyService } from '@/services/pedagogy.service';
 import {
   SETTINGS_SCHOOL_LEVELS_UPDATED_EVENT,
   SETTINGS_BILINGUAL_UPDATED_EVENT,
@@ -207,6 +208,12 @@ export default function SettingsPage() {
   const [bulkCapacity, setBulkCapacity] = useState<number | ''>('');
   // ── Sections par classe (subdivisions A/B/C, table `classes`) ──
   const [classSections, setClassSections] = useState<any[]>([]);
+  // AcademicClasses (table `pedagogy_academic_classes`) chargées pour l'année
+  // active. Utilisées pour mapper Classroom.id → AcademicClass.id lors de la
+  // création de sections (la FK officialClassId référence pedagogy_academic_classes,
+  // pas classrooms). Sans ce mapping, la création échoue avec P2003
+  // "référence est valide, l'entité liée n'existe pas".
+  const [academicClasses, setAcademicClasses] = useState<any[]>([]);
   const [sectionsBusy, setSectionsBusy] = useState(false);
   const [newSectionAcademicClassId, setNewSectionAcademicClassId] = useState<string | null>(null);
   const [newSectionName, setNewSectionName] = useState('');
@@ -1288,9 +1295,29 @@ export default function SettingsPage() {
     }
   }, [structureYearIdOrActive]);
 
+  // Charger les AcademicClasses (pedagogy_academic_classes) pour l'année active.
+  // Ces classes sont nécessaires pour mapper Classroom.id → AcademicClass.id
+  // lors de la création de sections (la FK officialClassId pointe vers
+  // pedagogy_academic_classes, pas classrooms). Sans ce mapping, la création
+  // échoue avec P2003 "référence est valide, l'entité liée n'existe pas".
+  const loadAcademicClasses = useCallback(async () => {
+    if (!structureYearIdOrActive) {
+      setAcademicClasses([]);
+      return;
+    }
+    try {
+      const data = await pedagogyService.getAcademicClasses(structureYearIdOrActive);
+      setAcademicClasses(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to load academic classes:', err);
+      setAcademicClasses([]);
+    }
+  }, [structureYearIdOrActive]);
+
   useEffect(() => {
     loadClassSections();
-  }, [loadClassSections]);
+    loadAcademicClasses();
+  }, [loadClassSections, loadAcademicClasses]);
 
   const handleCreateClassSection = async () => {
     if (!newSectionAcademicClassId || !structureYearIdOrActive) {
@@ -1378,6 +1405,10 @@ export default function SettingsPage() {
       //                 AcademicClasses qui n'avaient aucune section.
       //   - existing  : nb d'AcademicClasses qui avaient déjà au moins une section.
       await loadClassSections();
+      // Recharger aussi les AcademicClasses car la sync peut en créer de nouvelles
+      // (Classroom → AcademicClass). Sans cela, le dropdown "Sections par classe"
+      // continue d'envoyer des Classroom.id au lieu des AcademicClass.id.
+      await loadAcademicClasses();
       const parts: string[] = [];
       if (result.synced > 0) {
         parts.push(`${result.synced} nouvelle(s) classe(s) officielle(s) détectée(s)`);
@@ -1481,7 +1512,11 @@ export default function SettingsPage() {
   // Liste des AcademicClass actives pour cette année (pour le <select> du formulaire)
   // On utilise les classrooms déjà chargés (ils sont liés aux AcademicClass via le sync auto)
   const academicClassesForSections = useMemo(() => {
-    // Les classrooms sont chargés pour cette année ; on en déduit les classes officielles uniques
+    // Les classrooms sont chargés pour cette année ; on en déduit les classes officielles uniques.
+    // ⚠️ IMPORTANT : On envoie l'AcademicClass.id (pas Classroom.id) si une AcademicClass
+    // correspondante existe (match par nom). Sans cela, la création de section échoue
+    // avec P2003 "référence est valide, l'entité liée n'existe pas" car la FK
+    // officialClassId référence pedagogy_academic_classes, pas classrooms.
     const seen = new Set<string>();
     return sortedClassrooms
       .filter((c: any) => {
@@ -1490,12 +1525,17 @@ export default function SettingsPage() {
         seen.add(key);
         return true;
       })
-      .map((c: any) => ({
-        id: c.id, // Classroom.id — sera mappé côté backend via l'AcademicClass correspondante
-        label: c.name,
-        code: c.code,
-      }));
-  }, [sortedClassrooms]);
+      .map((c: any) => {
+        // Chercher l'AcademicClass correspondante (par nom + tenant + année)
+        const matchingAc = academicClasses.find((ac: any) => ac.name === c.name);
+        return {
+          id: matchingAc?.id || c.id, // AcademicClass.id si trouvé, sinon Classroom.id (le backend fera le fallback)
+          label: c.name,
+          code: c.code,
+          isAcademicClass: !!matchingAc, // pour debug/UI
+        };
+      });
+  }, [sortedClassrooms, academicClasses]);
 
   // Ordre canonique d'affichage des classes officielles (par nom normalisé).
   // Maternelle → Primaire (CI, CP, CE1, CE2, CM1, CM2) → Secondaire 1er cycle (6e→3e) → 2nd cycle (2nde→Terminale).

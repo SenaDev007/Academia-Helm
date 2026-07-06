@@ -475,10 +475,21 @@ export default function EnrollmentsContent() {
 
   // ─── Stats ──────────────────────────────────────────────────────────
   const stats = useMemo(() => {
-    const active = enrollments.filter(e => ['ACTIVE', 'VALIDATED'].includes(e.status)).length;
+    // Inscrits = élèves dont le dossier est complet (matricule généré + classe assignée).
+    // Inclut ACTIVE (élève officiellement en classe), VALIDATED (dossier validé),
+    // et ADMITTED (élève admis via admission/convertToStudent — a déjà son matricule
+    // et sa classe via admit()). Avant, ADMITTED était compté comme "en attente"
+    // ce qui était faux : un élève ADMITTED est inscrit, pas en attente.
+    const active = enrollments.filter(e =>
+      ['ACTIVE', 'VALIDATED', 'ADMITTED', 'RE_ENROLLED'].includes(e.status)
+    ).length;
     const newCount = enrollments.filter(e => e.enrollmentType === 'NEW').length;
     const reEnrolled = enrollments.filter(e => ['REPEAT', 'PROMOTION'].includes(e.enrollmentType)).length;
-    const pending = enrollments.filter(e => ['PENDING', 'PRE_REGISTERED', 'ADMITTED'].includes(e.status)).length;
+    // En attente = élèves PAS encore admis (pré-inscrits sans matricule, ou en
+    // attente de validation). ADMITTED est exclu car l'élève est déjà inscrit.
+    const pending = enrollments.filter(e =>
+      ['PENDING', 'PRE_REGISTERED'].includes(e.status)
+    ).length;
     return { active, newCount, reEnrolled, pending, total: enrollments.length };
   }, [enrollments]);
 

@@ -740,13 +740,15 @@ export class AcademicStructurePrismaService {
 
     // ⚠️ Si l'academicClass vient d'un fallback Classroom, il faut créer
     // l'AcademicClass correspondante pour que la FK officialClassId fonctionne.
-    let effectiveOfficialClassId = data.academicClassId;
+    // Si on ne peut pas créer l'AcademicClass (grade/cycle/level manquant),
+    // on met officialClassId à null pour éviter la violation de FK.
+    let effectiveOfficialClassId: string | null = data.academicClassId;
     const isFromClassroom = !(await this.prisma.academicClass.findFirst({
       where: { id: data.academicClassId, tenantId: data.tenantId },
       select: { id: true },
     }));
     if (isFromClassroom) {
-      // Créer l'AcademicClass manquante depuis le Classroom
+      // L'ID vient d'un Classroom — il faut créer l'AcademicClass correspondante
       const classroom = await this.prisma.classroom.findFirst({
         where: { id: data.academicClassId, tenantId: data.tenantId },
         include: { grade: { include: { cycle: { include: { level: true } }, series: true } } },
@@ -756,6 +758,7 @@ export class AcademicStructurePrismaService {
         const cycle = grade?.cycle;
         const level = cycle?.level;
         if (level && cycle) {
+          // Créer l'AcademicClass manquante
           const newAcademicClass = await this.prisma.academicClass.create({
             data: {
               ...prismaCreateDefaults(),
@@ -772,7 +775,15 @@ export class AcademicStructurePrismaService {
           });
           effectiveOfficialClassId = newAcademicClass.id;
           this.logger?.log?.(`createClassSection: AcademicClass créée depuis Classroom: ${newAcademicClass.id} (${newAcademicClass.name})`);
+        } else {
+          // Impossible de créer l'AcademicClass (grade/cycle/level manquant)
+          // → officialClassId à null pour éviter la violation de FK
+          effectiveOfficialClassId = null;
+          this.logger?.warn?.(`createClassSection: Impossible de créer AcademicClass depuis Classroom (grade/cycle/level manquant). Section créée sans lien officialClassId.`);
         }
+      } else {
+        // Classroom introuvable aussi → null
+        effectiveOfficialClassId = null;
       }
     }
 

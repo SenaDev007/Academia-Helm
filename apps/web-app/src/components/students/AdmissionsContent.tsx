@@ -696,8 +696,8 @@ export default function AdmissionsContent() {
     const matchesSearch = `${a.firstName} ${a.lastName}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           (a.admissionNumber?.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesFilter = activeFilter === 'ALL' || a.status === activeFilter;
-    const matchesLevel = !filterLevelId || a.schoolLevelId === filterLevelId;
-    const matchesClass = !filterClassId || a.classId === filterClassId;
+    const matchesLevel = !filterLevelId || a.schoolLevelId === filterLevelId || a.schoolLevel?.id === filterLevelId;
+    const matchesClass = !filterClassId || a.classId === filterClassId || a.requestedClassId === filterClassId;
     return matchesSearch && matchesFilter && matchesLevel && matchesClass;
   }).sort((a, b) => {
     // Tri selon le mode sélectionné
@@ -795,7 +795,11 @@ export default function AdmissionsContent() {
           >
             <option value="">Toutes les classes</option>
             {schoolClasses
-              .filter(c => !filterLevelId || c.schoolLevelId === filterLevelId)
+              .filter(c => {
+                if (!filterLevelId) return true;
+                // Matcher sur schoolLevelId ou schoolLevel.id (la structure peut varier)
+                return c.schoolLevelId === filterLevelId || c.schoolLevel?.id === filterLevelId;
+              })
               .map(c => (
                 <option key={c.id} value={c.id}>{c.name || c.code}</option>
               ))}

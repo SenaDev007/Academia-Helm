@@ -138,8 +138,13 @@ export class FeexPayService {
         result = { raw: responseText };
       }
 
-      if (response.ok && result.reference) {
-        // ✅ Succès — stocker les métadonnées dans PaymentInitiation
+      // ⚠️ Moov Bénin peut retourner HTTP 200 avec status="FAILED" immédiatement
+      // (ex: solde insuffisant). Il faut vérifier le statut avant de considérer
+      // que c'est un succès.
+      const feexPayStatus = (result.status || '').toUpperCase();
+
+      if (response.ok && result.reference && feexPayStatus !== 'FAILED' && feexPayStatus !== 'FAIL') {
+        // ✅ Succès (PENDING ou SUCCESSFUL) — stocker les métadonnées dans PaymentInitiation
         // pour que le webhook puisse créer la FinanceTransaction après confirmation
         try {
           await this.paymentInitiationService.create({
@@ -155,7 +160,6 @@ export class FeexPayService {
             rawResponse: result,
           });
         } catch (initErr: any) {
-          // Non bloquant — on log mais on ne fait pas échouer l'initiation
           this.logger.warn(`PaymentInitiation create failed (non bloquant): ${initErr.message}`);
         }
 
@@ -164,6 +168,23 @@ export class FeexPayService {
           reference: result.reference,
           status: result.status || 'PENDING',
           message: result.message || 'Paiement initié. Le parent va recevoir une notification sur son téléphone.',
+        };
+      }
+
+      // ⚠️ Cas spécial Moov : HTTP 200 mais status=FAILED (solde insuffisant, etc.)
+      if (response.ok && result.reference && (feexPayStatus === 'FAILED' || feexPayStatus === 'FAIL')) {
+        // Extraire le message d'erreur de response_operator (spécifique Moov)
+        const operatorError = result.response_operator?.description?.[0]
+          || result.response_operator?.status?.[0]
+          || result.message
+          || 'Paiement échoué';
+        this.logger.warn(`FeexPay Moov immediate FAILED: ref=${result.reference} | reason=${operatorError}`);
+
+        return {
+          success: false,
+          reference: result.reference,
+          status: 'FAILED',
+          message: `Paiement refusé par l'opérateur : ${operatorError}`,
         };
       }
 

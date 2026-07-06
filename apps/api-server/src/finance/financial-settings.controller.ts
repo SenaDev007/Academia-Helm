@@ -38,7 +38,12 @@ export class FinancialSettingsController {
    */
   @Patch()
   @UseGuards(RolesGuard)
-  @Roles('SUPER_DIRECTOR', 'DIRECTOR', 'ADMIN', 'SUPER_ADMIN', 'PLATFORM_OWNER')
+  @Roles(
+    'SUPER_DIRECTOR', 'DIRECTOR', 'ADMIN', 'SUPER_ADMIN',
+    'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN',
+    'PROMOTEUR', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
+    'DIRECTOR_GENERAL', 'DIRECTEUR', 'DIRECTEUR_GENERAL',
+  )
   async update(
     @TenantId() tenantId: string,
     @CurrentUser() user: any,

@@ -1064,3 +1064,461 @@ export async function exportStudentHistoryToPdf(
   const url = URL.createObjectURL(blob);
   return { blob, url };
 }
+
+/* ------------------------------------------------------------------ */
+/*  Export EXCEL — Transactions d'une caisse                           */
+/* ------------------------------------------------------------------ */
+
+export async function exportCashRegisterTransactionsToExcel(
+  register: any,
+  transactions: any[],
+  transfers: any[],
+  header: SchoolHeader
+): Promise<void> {
+  const XLSX = await loadXlsx();
+
+  const totalIn = transactions.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+  const transfersIn = transfers.filter((t) => t.toCashRegisterId === register.id).reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+  const transfersOut = transfers.filter((t) => t.fromCashRegisterId === register.id).reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+  const data: any[][] = [
+    ['', 'République du Bénin', ''],
+    ['', getMinistryName(header.schoolLevel), ''],
+    ['', header.schoolName || 'Établissement', ''],
+    [header.schoolAddress || '', header.schoolPhone ? `Tél : ${header.schoolPhone}` : '', header.schoolEmail ? `Email : ${header.schoolEmail}` : ''],
+    ['', '', ''],
+    [`Caisse : ${register.code} — ${register.name}`, '', ''],
+    [`Solde courant : ${formatCurrency(Number(register.currentBalance || 0))} FCFA`, '', ''],
+    [header.academicYear ? `Année scolaire : ${header.academicYear}` : '', '', ''],
+    ['', '', ''],
+    ['Section 1 — Encaissements (paiements élèves)', '', ''],
+    ['Date', 'Reçu', 'Élève', 'Montant (FCFA)', 'Méthode', 'Référence'],
+  ];
+
+  transactions.forEach((t) => {
+    data.push([
+      formatDateTimeFr(t.createdAt),
+      t.receiptNumber || '—',
+      t.studentAccount?.student ? `${t.studentAccount.student.lastName} ${t.studentAccount.student.firstName}` : '—',
+      Number(t.amount) || 0,
+      METHOD_LABELS[t.paymentMethod] || t.paymentMethod || '—',
+      t.reference || '—',
+    ]);
+  });
+
+  data.push(['']);
+  data.push(['', '', 'TOTAL ENCAISSEMENTS', totalIn, '', '']);
+  data.push(['']);
+  data.push(['Section 2 — Transferts inter-caisses', '', '']);
+  data.push(['Date', 'Type', 'Caisse source', 'Caisse cible', 'Montant (FCFA)', 'Note']);
+
+  transfers.forEach((t) => {
+    const isTransferIn = t.toCashRegisterId === register.id;
+    data.push([
+      formatDateTimeFr(t.createdAt),
+      isTransferIn ? 'ENTRANT' : 'SORTANT',
+      t.fromCode || t.fromCashRegisterId || '—',
+      t.toCode || t.toCashRegisterId || '—',
+      Number(t.amount) || 0,
+      t.note || '—',
+    ]);
+  });
+
+  data.push(['']);
+  data.push(['', '', 'TOTAL TRANSFERTS ENTRANTS', transfersIn, '', '']);
+  data.push(['', '', 'TOTAL TRANSFERTS SORTANTS', transfersOut, '', '']);
+  data.push(['', '', 'SOLDE NET', totalIn + transfersIn - transfersOut, '', '']);
+
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = [
+    { wch: 20 }, { wch: 22 }, { wch: 30 }, { wch: 16 }, { wch: 14 }, { wch: 22 },
+  ];
+  ws['!merges'] = [
+    { s: { r: 0, c: 1 }, e: { r: 0, c: 2 } },
+    { s: { r: 1, c: 1 }, e: { r: 1, c: 2 } },
+    { s: { r: 2, c: 1 }, e: { r: 2, c: 2 } },
+    { s: { r: 5, c: 0 }, e: { r: 5, c: 2 } },
+    { s: { r: 6, c: 0 }, e: { r: 6, c: 2 } },
+    { s: { r: 7, c: 0 }, e: { r: 7, c: 2 } },
+    { s: { r: 9, c: 0 }, e: { r: 9, c: 2 } },
+    { s: { r: 9 + transactions.length + 4, c: 0 }, e: { r: 9 + transactions.length + 4, c: 2 } },
+  ];
+
+  // Styles
+  setCellStyle(ws, 'B1', { font: { bold: true, sz: 14 }, alignment: { horizontal: 'center' } });
+  setCellStyle(ws, 'B2', { font: { bold: true, sz: 11 }, alignment: { horizontal: 'center', wrapText: true } });
+  setCellStyle(ws, 'B3', { font: { bold: true, sz: 13 }, alignment: { horizontal: 'center' } });
+  setCellStyle(ws, 'A6', { font: { bold: true, sz: 12, color: { rgb: '0D1F6E' } }, alignment: { horizontal: 'center' } });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Caisse');
+  XLSX.writeFile(wb, `caisse-${register.code}-${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Export PDF — Transactions d'une caisse                             */
+/* ------------------------------------------------------------------ */
+
+export async function exportCashRegisterTransactionsToPdf(
+  register: any,
+  transactions: any[],
+  transfers: any[],
+  header: SchoolHeader
+): Promise<{ blob: Blob; url: string }> {
+  const jsPDF = await loadJsPdf();
+  await loadAutoTable(jsPDF);
+
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  drawOfficialHeader(doc, header, pageWidth);
+
+  let yPos = 50;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(13, 31, 110);
+  doc.text(`Caisse : ${register.code} — ${register.name}`, pageWidth / 2, yPos, { align: 'center' });
+  yPos += 6;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(100, 100, 100);
+  doc.text(`Solde courant : ${formatCurrency(Number(register.currentBalance || 0))} FCFA`, pageWidth / 2, yPos, { align: 'center' });
+  yPos += 5;
+
+  doc.setDrawColor(13, 31, 110);
+  doc.setLineWidth(0.5);
+  doc.line(14, yPos, pageWidth - 14, yPos);
+  yPos += 5;
+
+  // Section 1 : Encaissements
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(13, 31, 110);
+  doc.text('Section 1 — Encaissements (paiements élèves)', 14, yPos);
+  yPos += 4;
+
+  const totalIn = transactions.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+  const txData = transactions.map((t) => [
+    formatDateTimeFr(t.createdAt),
+    t.receiptNumber || '—',
+    t.studentAccount?.student ? `${t.studentAccount.student.lastName} ${t.studentAccount.student.firstName}` : '—',
+    (Number(t.amount) || 0).toLocaleString('fr-FR'),
+    METHOD_LABELS[t.paymentMethod] || t.paymentMethod || '—',
+    t.reference || '—',
+  ]);
+  txData.push(['', '', 'TOTAL', totalIn.toLocaleString('fr-FR') + ' FCFA', '', '']);
+
+  (doc as any).autoTable({
+    head: [['Date', 'Reçu', 'Élève', 'Montant (FCFA)', 'Méthode', 'Référence']],
+    body: txData,
+    startY: yPos,
+    theme: 'grid',
+    headStyles: { fillColor: [13, 31, 110], textColor: 255, fontStyle: 'bold', fontSize: 8, halign: 'center', cellPadding: 2 },
+    bodyStyles: { fontSize: 8, cellPadding: 1.5, valign: 'middle', halign: 'center' },
+    columnStyles: {
+      0: { cellWidth: 32, halign: 'center' },
+      1: { cellWidth: 35, halign: 'center' },
+      2: { cellWidth: 'auto', halign: 'left' },
+      3: { cellWidth: 28, halign: 'right' },
+      4: { cellWidth: 22, halign: 'center' },
+      5: { cellWidth: 'auto', halign: 'center' },
+    },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    didParseCell: (data: any) => {
+      if (data.row.index === txData.length - 1 && data.section === 'body') {
+        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.fillColor = [254, 243, 199];
+        data.cell.styles.textColor = [146, 64, 14];
+      }
+      if (data.section === 'body' && data.column.index === 3 && data.row.index < txData.length - 1) {
+        data.cell.styles.textColor = [6, 95, 70];
+        data.cell.styles.fontStyle = 'bold';
+      }
+    },
+    didDrawPage: (data: any) => drawFooter(doc, pageWidth, pageHeight, data.pageNumber),
+  });
+
+  // Section 2 : Transferts
+  let yPos2 = (doc as any).lastAutoTable.finalY + 8;
+  if (yPos2 > pageHeight - 60) {
+    doc.addPage();
+    yPos2 = 20;
+  }
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(13, 31, 110);
+  doc.text('Section 2 — Transferts inter-caisses', 14, yPos2);
+  yPos2 += 4;
+
+  const transfersIn = transfers.filter((t) => t.toCashRegisterId === register.id);
+  const transfersOut = transfers.filter((t) => t.fromCashRegisterId === register.id);
+  const totalTransfersIn = transfersIn.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+  const totalTransfersOut = transfersOut.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+  const trData = transfers.map((t) => {
+    const isTransferIn = t.toCashRegisterId === register.id;
+    return [
+      formatDateTimeFr(t.createdAt),
+      isTransferIn ? 'ENTRANT' : 'SORTANT',
+      t.fromCode || '—',
+      t.toCode || '—',
+      (Number(t.amount) || 0).toLocaleString('fr-FR'),
+      t.note || '—',
+    ];
+  });
+  trData.push(['', '', '', 'TOTAL ENTRANT', totalTransfersIn.toLocaleString('fr-FR') + ' FCFA', '']);
+  trData.push(['', '', '', 'TOTAL SORTANT', totalTransfersOut.toLocaleString('fr-FR') + ' FCFA', '']);
+  trData.push(['', '', '', 'SOLDE NET', (totalIn + totalTransfersIn - totalTransfersOut).toLocaleString('fr-FR') + ' FCFA', '']);
+
+  (doc as any).autoTable({
+    head: [['Date', 'Type', 'Source', 'Cible', 'Montant (FCFA)', 'Note']],
+    body: trData,
+    startY: yPos2,
+    theme: 'grid',
+    headStyles: { fillColor: [13, 31, 110], textColor: 255, fontStyle: 'bold', fontSize: 8, halign: 'center', cellPadding: 2 },
+    bodyStyles: { fontSize: 8, cellPadding: 1.5, valign: 'middle', halign: 'center' },
+    columnStyles: {
+      0: { cellWidth: 32, halign: 'center' },
+      1: { cellWidth: 22, halign: 'center' },
+      2: { cellWidth: 30, halign: 'center' },
+      3: { cellWidth: 30, halign: 'center' },
+      4: { cellWidth: 28, halign: 'right' },
+      5: { cellWidth: 'auto', halign: 'left' },
+    },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    didParseCell: (data: any) => {
+      const lastRows = trData.length - 3;
+      if (data.row.index >= lastRows && data.section === 'body') {
+        data.cell.styles.fontStyle = 'bold';
+        if (data.row.index === lastRows) {
+          data.cell.styles.fillColor = [209, 250, 229];
+          data.cell.styles.textColor = [6, 95, 70];
+        } else if (data.row.index === lastRows + 1) {
+          data.cell.styles.fillColor = [254, 226, 226];
+          data.cell.styles.textColor = [153, 27, 27];
+        } else {
+          data.cell.styles.fillColor = [254, 243, 199];
+          data.cell.styles.textColor = [146, 64, 14];
+        }
+      }
+      if (data.section === 'body' && data.column.index === 1 && data.row.index < lastRows) {
+        const type = data.cell.raw;
+        if (type === 'ENTRANT') {
+          data.cell.styles.textColor = [6, 95, 70];
+          data.cell.styles.fontStyle = 'bold';
+        } else if (type === 'SORTANT') {
+          data.cell.styles.textColor = [153, 27, 27];
+          data.cell.styles.fontStyle = 'bold';
+        }
+      }
+    },
+    didDrawPage: (data: any) => drawFooter(doc, pageWidth, pageHeight, data.pageNumber),
+  });
+
+  const blob = doc.output('blob');
+  const url = URL.createObjectURL(blob);
+  return { blob, url };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Export EXCEL — Vue globale (toutes les caisses)                    */
+/* ------------------------------------------------------------------ */
+
+export async function exportAllCashRegistersToExcel(
+  registers: any[],
+  transfers: any[],
+  header: SchoolHeader
+): Promise<void> {
+  const XLSX = await loadXlsx();
+
+  const data: any[][] = [
+    ['', 'République du Bénin', ''],
+    ['', getMinistryName(header.schoolLevel), ''],
+    ['', header.schoolName || 'Établissement', ''],
+    [header.schoolAddress || '', header.schoolPhone ? `Tél : ${header.schoolPhone}` : '', header.schoolEmail ? `Email : ${header.schoolEmail}` : ''],
+    ['', '', ''],
+    ['Vue globale — Toutes les caisses', '', ''],
+    [header.academicYear ? `Année scolaire : ${header.academicYear}` : '', '', ''],
+    ['', '', ''],
+    ['Code', 'Nom', 'Emplacement', 'Solde ouverture', 'Solde courant', 'Nb transactions', 'Statut'],
+  ];
+
+  registers.forEach((r) => {
+    data.push([
+      r.code,
+      r.name,
+      r.location || '—',
+      Number(r.openingBalance || 0),
+      Number(r.currentBalance || 0),
+      r._count?.transactions || 0,
+      r.isOpen ? 'Ouverte' : (r.isActive ? 'Fermée' : 'Archivée'),
+    ]);
+  });
+
+  const totalBalance = registers.reduce((sum, r) => sum + (Number(r.currentBalance) || 0), 0);
+  data.push(['']);
+  data.push(['', '', '', 'TOTAL', totalBalance, '', '']);
+
+  // Section transferts
+  data.push(['']);
+  data.push(['Transferts inter-caisses', '', '', '', '', '', '']);
+  data.push(['Date', 'Caisse source', 'Caisse cible', 'Montant (FCFA)', 'Note', 'Référence', '']);
+
+  transfers.forEach((t) => {
+    data.push([
+      formatDateTimeFr(t.createdAt),
+      t.fromCode || '—',
+      t.toCode || '—',
+      Number(t.amount) || 0,
+      t.note || '—',
+      t.reference || '—',
+      '',
+    ]);
+  });
+
+  const totalTransfers = transfers.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+  data.push(['']);
+  data.push(['', '', 'TOTAL', totalTransfers, '', '', '']);
+
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = [
+    { wch: 14 }, { wch: 28 }, { wch: 22 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 12 },
+  ];
+  ws['!merges'] = [
+    { s: { r: 0, c: 1 }, e: { r: 0, c: 2 } },
+    { s: { r: 1, c: 1 }, e: { r: 1, c: 2 } },
+    { s: { r: 2, c: 1 }, e: { r: 2, c: 2 } },
+    { s: { r: 5, c: 0 }, e: { r: 5, c: 2 } },
+    { s: { r: 6, c: 0 }, e: { r: 6, c: 2 } },
+  ];
+
+  setCellStyle(ws, 'B1', { font: { bold: true, sz: 14 }, alignment: { horizontal: 'center' } });
+  setCellStyle(ws, 'B2', { font: { bold: true, sz: 11 }, alignment: { horizontal: 'center', wrapText: true } });
+  setCellStyle(ws, 'B3', { font: { bold: true, sz: 13 }, alignment: { horizontal: 'center' } });
+  setCellStyle(ws, 'A6', { font: { bold: true, sz: 12, color: { rgb: '0D1F6E' } }, alignment: { horizontal: 'center' } });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Multi-caisses');
+  XLSX.writeFile(wb, `multi-caisses-${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Export PDF — Vue globale (toutes les caisses)                      */
+/* ------------------------------------------------------------------ */
+
+export async function exportAllCashRegistersToPdf(
+  registers: any[],
+  transfers: any[],
+  header: SchoolHeader
+): Promise<{ blob: Blob; url: string }> {
+  const jsPDF = await loadJsPdf();
+  await loadAutoTable(jsPDF);
+
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  drawOfficialHeader(doc, header, pageWidth);
+
+  let yPos = 50;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(13, 31, 110);
+  doc.text('Vue globale — Toutes les caisses', pageWidth / 2, yPos, { align: 'center' });
+  yPos += 8;
+
+  // Tableau des caisses
+  const totalBalance = registers.reduce((sum, r) => sum + (Number(r.currentBalance) || 0), 0);
+  const regData = registers.map((r) => [
+    r.code,
+    r.name,
+    r.location || '—',
+    (Number(r.openingBalance) || 0).toLocaleString('fr-FR'),
+    (Number(r.currentBalance) || 0).toLocaleString('fr-FR'),
+    String(r._count?.transactions || 0),
+    r.isOpen ? 'Ouverte' : (r.isActive ? 'Fermée' : 'Archivée'),
+  ]);
+  regData.push(['', '', '', 'TOTAL', totalBalance.toLocaleString('fr-FR') + ' FCFA', '', '']);
+
+  (doc as any).autoTable({
+    head: [['Code', 'Nom', 'Emplacement', 'Solde ouverture', 'Solde courant', 'Nb tx', 'Statut']],
+    body: regData,
+    startY: yPos,
+    theme: 'grid',
+    headStyles: { fillColor: [13, 31, 110], textColor: 255, fontStyle: 'bold', fontSize: 9, halign: 'center', cellPadding: 2 },
+    bodyStyles: { fontSize: 8, cellPadding: 1.5, valign: 'middle', halign: 'center' },
+    columnStyles: {
+      0: { cellWidth: 22, halign: 'center' },
+      1: { cellWidth: 'auto', halign: 'left' },
+      2: { cellWidth: 'auto', halign: 'left' },
+      3: { cellWidth: 28, halign: 'right' },
+      4: { cellWidth: 28, halign: 'right' },
+      5: { cellWidth: 16, halign: 'center' },
+      6: { cellWidth: 20, halign: 'center' },
+    },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    didParseCell: (data: any) => {
+      if (data.row.index === regData.length - 1 && data.section === 'body') {
+        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.fillColor = [254, 243, 199];
+        data.cell.styles.textColor = [146, 64, 14];
+      }
+    },
+    didDrawPage: (data: any) => drawFooter(doc, pageWidth, pageHeight, data.pageNumber),
+  });
+
+  // Section transferts
+  let yPos2 = (doc as any).lastAutoTable.finalY + 8;
+  if (yPos2 > pageHeight - 60) {
+    doc.addPage();
+    yPos2 = 20;
+  }
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(13, 31, 110);
+  doc.text('Transferts inter-caisses', 14, yPos2);
+  yPos2 += 4;
+
+  const totalTransfers = transfers.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+  const trData = transfers.map((t) => [
+    formatDateTimeFr(t.createdAt),
+    t.fromCode || '—',
+    t.toCode || '—',
+    (Number(t.amount) || 0).toLocaleString('fr-FR'),
+    t.note || '—',
+  ]);
+  trData.push(['', '', 'TOTAL', totalTransfers.toLocaleString('fr-FR') + ' FCFA', '']);
+
+  (doc as any).autoTable({
+    head: [['Date', 'Caisse source', 'Caisse cible', 'Montant (FCFA)', 'Note']],
+    body: trData,
+    startY: yPos2,
+    theme: 'grid',
+    headStyles: { fillColor: [13, 31, 110], textColor: 255, fontStyle: 'bold', fontSize: 9, halign: 'center', cellPadding: 2 },
+    bodyStyles: { fontSize: 8, cellPadding: 1.5, valign: 'middle', halign: 'center' },
+    columnStyles: {
+      0: { cellWidth: 32, halign: 'center' },
+      1: { cellWidth: 'auto', halign: 'center' },
+      2: { cellWidth: 'auto', halign: 'center' },
+      3: { cellWidth: 28, halign: 'right' },
+      4: { cellWidth: 'auto', halign: 'left' },
+    },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    didParseCell: (data: any) => {
+      if (data.row.index === trData.length - 1 && data.section === 'body') {
+        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.fillColor = [254, 243, 199];
+        data.cell.styles.textColor = [146, 64, 14];
+      }
+    },
+    didDrawPage: (data: any) => drawFooter(doc, pageWidth, pageHeight, data.pageNumber),
+  });
+
+  const blob = doc.output('blob');
+  const url = URL.createObjectURL(blob);
+  return { blob, url };
+}

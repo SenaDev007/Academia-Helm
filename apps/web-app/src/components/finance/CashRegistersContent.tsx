@@ -7,17 +7,26 @@ import {
   Gem, Smartphone, Building2, Store, Banknote, TrendingUp, Clock,
   ArrowUpRight, ArrowDownRight, Receipt, ChevronRight, Sparkles,
   ArrowLeftRight, Send, Loader2, PiggyBank, ArrowDownCircle,
+  FileSpreadsheet, FileText,
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useAppSession } from '@/contexts/AppSessionContext';
+import { useModuleContext } from '@/hooks/useModuleContext';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { financeService } from '@/services/finance.service';
 import { formatCurrency } from '@/lib/utils';
+import {
+  exportCashRegisterTransactionsToExcel,
+  exportCashRegisterTransactionsToPdf,
+  exportAllCashRegistersToExcel,
+  exportAllCashRegistersToPdf,
+} from '@/lib/exports/finance-exports';
 
 interface CashRegister {
   id: string;
@@ -171,6 +180,9 @@ const PREDEFINED_CAISSES = [
 export default function CashRegistersContent() {
   const confirmDialog = useConfirmDialog();
   const { toast } = useToast();
+  const { tenant } = useAppSession();
+  const { schoolLevel } = useModuleContext();
+  const [exporting, setExporting] = useState<'excel' | 'pdf' | 'global-excel' | 'global-pdf' | null>(null);
   const [registers, setRegisters] = useState<CashRegister[]>([]);
   const [loading, setLoading] = useState(true);
   const [createModal, setCreateModal] = useState(false);
@@ -284,6 +296,14 @@ export default function CashRegistersContent() {
       loadTransfers();
     }
   }, [activeTab, loadTransfers]);
+
+  // Charger les transferts quand on sélectionne une caisse (pour les stats tontine
+  // et la traçabilité des entrants/sortants)
+  useEffect(() => {
+    if (selectedRegister) {
+      loadTransfers();
+    }
+  }, [selectedRegister?.id, loadTransfers]);
 
   // Identifier la caisse principale (code MAIN ou première créée)
   const mainRegister = useMemo(() => {
@@ -427,6 +447,96 @@ export default function CashRegistersContent() {
     }
   };
 
+  // Export Excel d'une caisse spécifique
+  const handleExportRegisterExcel = async () => {
+    if (!selectedRegister) return;
+    setExporting('excel');
+    try {
+      await exportCashRegisterTransactionsToExcel(
+        selectedRegister,
+        selectedRegister.transactions || [],
+        transfers,
+        {
+          schoolName: tenant?.name || 'Établissement',
+          schoolLevel: schoolLevel?.code || undefined,
+          schoolAddress: tenant?.address || null,
+          schoolPhone: tenant?.phone || null,
+          schoolEmail: tenant?.email || null,
+        }
+      );
+      toast({ title: '✅ Export Excel généré', description: `Caisse ${selectedRegister.code}` });
+    } catch (e: any) {
+      toast({ title: 'Erreur export Excel', description: e.message, variant: 'destructive' });
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  // Export PDF d'une caisse spécifique
+  const handleExportRegisterPdf = async () => {
+    if (!selectedRegister) return;
+    setExporting('pdf');
+    try {
+      const { url } = await exportCashRegisterTransactionsToPdf(
+        selectedRegister,
+        selectedRegister.transactions || [],
+        transfers,
+        {
+          schoolName: tenant?.name || 'Établissement',
+          schoolLevel: schoolLevel?.code || undefined,
+          schoolAddress: tenant?.address || null,
+          schoolPhone: tenant?.phone || null,
+          schoolEmail: tenant?.email || null,
+        }
+      );
+      window.open(url, '_blank');
+      toast({ title: '✅ PDF généré', description: `Caisse ${selectedRegister.code}` });
+    } catch (e: any) {
+      toast({ title: 'Erreur export PDF', description: e.message, variant: 'destructive' });
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  // Export Excel global (toutes les caisses)
+  const handleExportGlobalExcel = async () => {
+    setExporting('global-excel');
+    try {
+      await exportAllCashRegistersToExcel(registers, transfers, {
+        schoolName: tenant?.name || 'Établissement',
+        schoolLevel: schoolLevel?.code || undefined,
+        schoolAddress: tenant?.address || null,
+        schoolPhone: tenant?.phone || null,
+        schoolEmail: tenant?.email || null,
+      });
+      toast({ title: '✅ Export Excel global généré', description: `${registers.length} caisse(s)` });
+    } catch (e: any) {
+      toast({ title: 'Erreur export Excel', description: e.message, variant: 'destructive' });
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  // Export PDF global (toutes les caisses)
+  const handleExportGlobalPdf = async () => {
+    setExporting('global-pdf');
+    try {
+      const { url } = await exportAllCashRegistersToPdf(registers, transfers, {
+        schoolName: tenant?.name || 'Établissement',
+        schoolLevel: schoolLevel?.code || undefined,
+        schoolAddress: tenant?.address || null,
+        schoolPhone: tenant?.phone || null,
+        schoolEmail: tenant?.email || null,
+      });
+      window.open(url, '_blank');
+      toast({ title: '✅ PDF global généré', description: `${registers.length} caisse(s)` });
+    } catch (e: any) {
+      toast({ title: 'Erreur export PDF', description: e.message, variant: 'destructive' });
+    } finally {
+      setExporting(null);
+    }
+  };
+
   const handleArchive = async (reg: CashRegister) => {
     const ok = await confirmDialog.danger(
       `La caisse "${reg.code} - ${reg.name}" sera archivée. Elle ne pourra plus être utilisée.`,
@@ -540,11 +650,27 @@ export default function CashRegistersContent() {
       <ModuleContentArea
         layout="custom"
         toolbar={
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-3">
             <p className="text-sm text-slate-600">
               Gestion des caisses — coffre-fort central et caisses secondaires.
             </p>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button variant="outline" size="sm" onClick={handleExportGlobalExcel} disabled={exporting !== null || registers.length === 0}>
+                {exporting === 'global-excel' ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <FileSpreadsheet className="h-4 w-4 mr-2" />
+                )}
+                Excel global
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleExportGlobalPdf} disabled={exporting !== null || registers.length === 0}>
+                {exporting === 'global-pdf' ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <FileText className="h-4 w-4 mr-2" />
+                )}
+                PDF global
+              </Button>
               <Button onClick={() => setCreateModal(true)}>
                 <Plus className="h-4 w-4 mr-2" />
                 Nouvelle caisse
@@ -1241,6 +1367,22 @@ export default function CashRegistersContent() {
                       )}
                       <Button variant="outline" onClick={() => handleStats(selectedRegister)}>
                         <BarChart3 className="h-4 w-4 mr-2" />Statistiques
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={handleExportRegisterExcel} disabled={exporting !== null}>
+                        {exporting === 'excel' ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <FileSpreadsheet className="h-4 w-4 mr-2" />
+                        )}
+                        Excel
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={handleExportRegisterPdf} disabled={exporting !== null}>
+                        {exporting === 'pdf' ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <FileText className="h-4 w-4 mr-2" />
+                        )}
+                        PDF
                       </Button>
                       {selectedRegister.isOpen && (
                         <Button variant="outline" onClick={() => openTransfer(selectedRegister)} className="text-indigo-600 hover:bg-indigo-50">

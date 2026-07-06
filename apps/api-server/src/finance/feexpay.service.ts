@@ -94,7 +94,7 @@ export class FeexPayService {
 
     // 5. Corps de la requête
     const body: any = {
-      phoneNumber: Number(phoneNumber),
+      phoneNumber: phoneNumber, // String, pas Number (comme le projet de référence)
       amount: params.amount,
       shop: config.feexpayShopId,
       description: `Scolarite ${params.studentName}`.replace(/[^\w\s]/g, ''), // Sans caractères spéciaux

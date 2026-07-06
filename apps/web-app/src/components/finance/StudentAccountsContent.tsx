@@ -216,7 +216,7 @@ export default function StudentAccountsContent() {
         : '';
       await exportStudentAccountsToExcel(filteredAccounts, {
         schoolName: tenant?.name || 'Établissement',
-        schoolLogoUrl: tenant?.logoUrl || null,
+        schoolLogoUrl: tenant?.id ? `/api/tenants/${tenant.id}/logo` : null,
         academicYear: yearLabel,
         classFilter: classLabel,
         schoolLevel: schoolLevel?.code || undefined,
@@ -246,7 +246,7 @@ export default function StudentAccountsContent() {
         : '';
       const { url } = await exportStudentAccountsToPdf(filteredAccounts, {
         schoolName: tenant?.name || 'Établissement',
-        schoolLogoUrl: tenant?.logoUrl || null,
+        schoolLogoUrl: tenant?.id ? `/api/tenants/${tenant.id}/logo` : null,
         academicYear: yearLabel,
         classFilter: classLabel,
         schoolLevel: schoolLevel?.code || undefined,
@@ -285,7 +285,7 @@ export default function StudentAccountsContent() {
 
       const { url } = await exportStudentHistoryToPdf(transactions, {
         schoolName: tenant?.name || 'Établissement',
-        schoolLogoUrl: tenant?.logoUrl || null,
+        schoolLogoUrl: tenant?.id ? `/api/tenants/${tenant.id}/logo` : null,
         academicYear: yearLabel,
         studentName,
         studentMatricule,

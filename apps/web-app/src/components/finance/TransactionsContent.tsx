@@ -91,7 +91,7 @@ export default function TransactionsContent() {
   // Récupération des infos école pour l'entête des exports
   const schoolInfo = useMemo(() => ({
     name: tenant?.name || 'Établissement',
-    logoUrl: tenant?.logoUrl || null,
+    logoUrl: tenant?.id ? `/api/tenants/${tenant.id}/logo` : null,
     academicYear: academicYear?.name || '',
     schoolLevel: schoolLevel?.code || undefined,
     schoolAddress: tenant?.address || null,

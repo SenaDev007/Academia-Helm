@@ -27,6 +27,27 @@
 import { formatCurrency } from '@/lib/utils';
 
 /**
+ * Formate un montant avec des espaces simples (pas insécables).
+ * Ex: 10000 → "10 000" (pas "10 000" avec U+00A0)
+ * jsPDF/Helvetica ne gère pas les espaces insécables → troncature.
+ */
+function formatAmount(value: number | string): string {
+  const num = typeof value === 'string' ? parseFloat(value) : value;
+  if (isNaN(num)) return '0';
+  // Formater manuellement avec espaces simples
+  const parts = num.toFixed(0).split('.');
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  return parts.join(',');
+}
+
+/**
+ * Formate un montant avec devise : "10 000 FCFA"
+ */
+function formatAmountFCFA(value: number | string): string {
+  return formatAmount(value) + ' FCFA';
+}
+
+/**
  * Charge une image depuis une URL et la convertit en base64 data URL.
  * Utilisé pour ajouter le logo de l'école dans les PDF jsPDF.
  */
@@ -454,13 +475,13 @@ export async function exportTransactionsToPdf(
 
   // ─── Titre du document ───
   let yPos = 50;
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('times', 'bold');
   doc.setFontSize(14);
   doc.setTextColor(13, 31, 110); // bleu marine
   doc.text('Historique des encaissements', pageWidth / 2, yPos, { align: 'center' });
-  yPos += 6;
+  yPos += 8;
 
-  doc.setFont('helvetica', 'normal');
+  doc.setFont('times', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(100, 100, 100);
   if (header.academicYear) {
@@ -482,7 +503,7 @@ export async function exportTransactionsToPdf(
     t.receiptNumber || '—',
     getStudentMatricule(t),
     getStudentName(t),
-    (Number(t.amount) || 0).toLocaleString("fr-FR").replace(/\u00A0/g, " "),
+    formatAmount(t.amount),
     METHOD_LABELS[t.paymentMethod || ''] || t.paymentMethod || '—',
     t.reference || '—',
   ]);
@@ -490,7 +511,7 @@ export async function exportTransactionsToPdf(
   const totalAmount = transactions.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
   tableData.push([
     '', '', '', 'TOTAL',
-    totalAmount.toLocaleString("fr-FR").replace(/\u00A0/g, " ") + ' FCFA',
+    formatAmountFCFA(totalAmount),
     '', '',
   ]);
 
@@ -580,7 +601,7 @@ function drawOfficialHeader(doc: any, header: SchoolHeader, pageWidth: number, l
   let yPos = 14;
 
   // République du Bénin
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('times', 'bold');
   doc.setFontSize(12);
   doc.setTextColor(20, 20, 20);
   doc.text('République du Bénin', centerX, yPos + 4, { align: 'center' });
@@ -590,7 +611,7 @@ function drawOfficialHeader(doc: any, header: SchoolHeader, pageWidth: number, l
   yPos += 11;
 
   // Ministère
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('times', 'bold');
   doc.setFontSize(8);
   doc.setTextColor(20, 20, 20);
   const ministry = getMinistryName(header.schoolLevel);
@@ -605,14 +626,14 @@ function drawOfficialHeader(doc: any, header: SchoolHeader, pageWidth: number, l
   yPos += 4;
 
   // Nom école
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('times', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(13, 31, 110);
   doc.text(header.schoolName || 'Établissement', centerX, yPos + 3, { align: 'center' });
   yPos += 6;
 
   // Contact (adresse, téléphone, email)
-  doc.setFont('helvetica', 'italic');
+  doc.setFont('times', 'italic');
   doc.setFontSize(7);
   doc.setTextColor(100, 100, 100);
   const contactParts = [
@@ -877,13 +898,13 @@ export async function exportStudentAccountsToPdf(
 
   // Titre
   let yPos = 50;
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('times', 'bold');
   doc.setFontSize(14);
   doc.setTextColor(13, 31, 110);
   doc.text('Comptes élèves', pageWidth / 2, yPos, { align: 'center' });
-  yPos += 6;
+  yPos += 8;
 
-  doc.setFont('helvetica', 'normal');
+  doc.setFont('times', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(100, 100, 100);
   if (header.academicYear) {
@@ -915,18 +936,18 @@ export async function exportStudentAccountsToPdf(
       a.student?.firstName || '—',
       a.studentEnrollments?.[0]?.class?.name || '—',
       a.student?.schoolLevel?.name || '—',
-      (Number(a.balance) || 0).toLocaleString("fr-FR").replace(/\u00A0/g, " "),
-      (Number(a.totalPaid) || 0).toLocaleString("fr-FR").replace(/\u00A0/g, " "),
-      (Number(a.totalDue) || 0).toLocaleString("fr-FR").replace(/\u00A0/g, " "),
+      formatAmount(a.balance),
+      formatAmount(a.totalPaid),
+      formatAmount(a.totalDue),
       STATUS_COLORS[status].label,
     ];
   });
 
   tableData.push([
     '', '', '', '', 'TOTAL',
-    totalBalance.toLocaleString("fr-FR").replace(/\u00A0/g, " "),
-    totalPaid.toLocaleString("fr-FR").replace(/\u00A0/g, " "),
-    totalDue.toLocaleString("fr-FR").replace(/\u00A0/g, " "),
+    formatAmount(totalBalance),
+    formatAmount(totalPaid),
+    formatAmount(totalDue),
     '',
   ]);
 
@@ -1021,13 +1042,13 @@ export async function exportStudentHistoryToPdf(
 
   // Titre
   let yPos = 50;
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('times', 'bold');
   doc.setFontSize(14);
   doc.setTextColor(13, 31, 110);
   doc.text('Historique des paiements', pageWidth / 2, yPos, { align: 'center' });
-  yPos += 6;
+  yPos += 8;
 
-  doc.setFont('helvetica', 'normal');
+  doc.setFont('times', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(100, 100, 100);
   if (header.academicYear) {
@@ -1037,13 +1058,13 @@ export async function exportStudentHistoryToPdf(
 
   // Infos élève
   yPos += 4;
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('times', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(30, 30, 30);
   doc.text(header.studentName, 14, yPos);
   yPos += 5;
 
-  doc.setFont('helvetica', 'normal');
+  doc.setFont('times', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(80, 80, 80);
   doc.text(`Matricule : ${header.studentMatricule}`, 14, yPos);
@@ -1064,12 +1085,12 @@ export async function exportStudentHistoryToPdf(
   const tableData = transactions.map((t) => [
     formatDateTimeFr(t.createdAt || t.date),
     t.receiptNumber || '—',
-    (Number(t.amount) || 0).toLocaleString("fr-FR").replace(/\u00A0/g, " "),
+    formatAmount(t.amount),
     METHOD_LABELS[t.paymentMethod || ''] || t.paymentMethod || '—',
     t.reference || '—',
   ]);
 
-  tableData.push(['', 'TOTAL', totalPaid.toLocaleString("fr-FR").replace(/\u00A0/g, " ") + ' FCFA', '', '']);
+  tableData.push(['', 'TOTAL', formatAmountFCFA(totalPaid), '', '']);
 
   (doc as any).autoTable({
     head: [['Date', 'Reçu', 'Montant (FCFA)', 'Méthode', 'Référence']],
@@ -1144,7 +1165,7 @@ export async function exportCashRegisterTransactionsToExcel(
     [header.schoolAddress || '', header.schoolPhone ? `Tél : ${header.schoolPhone}` : '', header.schoolEmail ? `Email : ${header.schoolEmail}` : ''],
     ['', '', ''],
     [`Caisse : ${register.code} — ${register.name}`, '', ''],
-    [`Solde courant : ${formatCurrency(Number(register.currentBalance || 0))} FCFA`, '', ''],
+    [`Solde courant : ${formatAmountFCFA(register.currentBalance || 0)} FCFA`, '', ''],
     [header.academicYear ? `Année scolaire : ${header.academicYear}` : '', '', ''],
     ['', '', ''],
     ['Section 1 — Encaissements (paiements élèves)', '', ''],
@@ -1234,16 +1255,16 @@ export async function exportCashRegisterTransactionsToPdf(
   drawOfficialHeader(doc, header, pageWidth, logoBase64);
 
   let yPos = 50;
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('times', 'bold');
   doc.setFontSize(14);
   doc.setTextColor(13, 31, 110);
   doc.text(`Caisse : ${register.code} — ${register.name}`, pageWidth / 2, yPos, { align: 'center' });
-  yPos += 6;
+  yPos += 8;
 
-  doc.setFont('helvetica', 'normal');
+  doc.setFont('times', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(100, 100, 100);
-  doc.text(`Solde courant : ${formatCurrency(Number(register.currentBalance || 0))} FCFA`, pageWidth / 2, yPos, { align: 'center' });
+  doc.text(`Solde courant : ${formatAmountFCFA(register.currentBalance || 0)} FCFA`, pageWidth / 2, yPos, { align: 'center' });
   yPos += 5;
 
   doc.setDrawColor(13, 31, 110);
@@ -1252,7 +1273,7 @@ export async function exportCashRegisterTransactionsToPdf(
   yPos += 5;
 
   // Section 1 : Encaissements
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('times', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(13, 31, 110);
   doc.text('Section 1 — Encaissements (paiements élèves)', 14, yPos);
@@ -1263,11 +1284,11 @@ export async function exportCashRegisterTransactionsToPdf(
     formatDateTimeFr(t.createdAt),
     t.receiptNumber || '—',
     t.studentAccount?.student ? `${t.studentAccount.student.lastName} ${t.studentAccount.student.firstName}` : '—',
-    (Number(t.amount) || 0).toLocaleString("fr-FR").replace(/\u00A0/g, " "),
+    formatAmount(t.amount),
     METHOD_LABELS[t.paymentMethod] || t.paymentMethod || '—',
     t.reference || '—',
   ]);
-  txData.push(['', '', 'TOTAL', totalIn.toLocaleString("fr-FR").replace(/\u00A0/g, " ") + ' FCFA', '', '']);
+  txData.push(['', '', 'TOTAL', formatAmountFCFA(totalIn), '', '']);
 
   (doc as any).autoTable({
     head: [['Date', 'Reçu', 'Élève', 'Montant (FCFA)', 'Méthode', 'Référence']],
@@ -1306,7 +1327,7 @@ export async function exportCashRegisterTransactionsToPdf(
     yPos2 = 20;
   }
 
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('times', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(13, 31, 110);
   doc.text('Section 2 — Transferts inter-caisses', 14, yPos2);
@@ -1324,13 +1345,13 @@ export async function exportCashRegisterTransactionsToPdf(
       isTransferIn ? 'ENTRANT' : 'SORTANT',
       t.fromCode || '—',
       t.toCode || '—',
-      (Number(t.amount) || 0).toLocaleString("fr-FR").replace(/\u00A0/g, " "),
+      formatAmount(t.amount),
       t.note || '—',
     ];
   });
-  trData.push(['', '', '', 'TOTAL ENTRANT', totalTransfersIn.toLocaleString("fr-FR").replace(/\u00A0/g, " ") + ' FCFA', '']);
-  trData.push(['', '', '', 'TOTAL SORTANT', totalTransfersOut.toLocaleString("fr-FR").replace(/\u00A0/g, " ") + ' FCFA', '']);
-  trData.push(['', '', '', 'SOLDE NET', (totalIn + totalTransfersIn - totalTransfersOut).toLocaleString("fr-FR").replace(/\u00A0/g, " ") + ' FCFA', '']);
+  trData.push(['', '', '', 'TOTAL ENTRANT', formatAmountFCFA(totalTransfersIn), '']);
+  trData.push(['', '', '', 'TOTAL SORTANT', formatAmountFCFA(totalTransfersOut), '']);
+  trData.push(['', '', '', 'SOLDE NET', formatAmountFCFA(totalIn + totalTransfersIn - totalTransfersOut), '']);
 
   (doc as any).autoTable({
     head: [['Date', 'Type', 'Source', 'Cible', 'Montant (FCFA)', 'Note']],
@@ -1486,11 +1507,11 @@ export async function exportAllCashRegistersToPdf(
   drawOfficialHeader(doc, header, pageWidth, logoBase64);
 
   let yPos = 50;
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('times', 'bold');
   doc.setFontSize(14);
   doc.setTextColor(13, 31, 110);
   doc.text('Vue globale — Toutes les caisses', pageWidth / 2, yPos, { align: 'center' });
-  yPos += 8;
+  yPos += 10;
 
   // Tableau des caisses
   const totalBalance = registers.reduce((sum, r) => sum + (Number(r.currentBalance) || 0), 0);
@@ -1498,12 +1519,12 @@ export async function exportAllCashRegistersToPdf(
     r.code,
     r.name,
     r.location || '—',
-    (Number(r.openingBalance) || 0).toLocaleString("fr-FR").replace(/\u00A0/g, " "),
-    (Number(r.currentBalance) || 0).toLocaleString("fr-FR").replace(/\u00A0/g, " "),
+    formatAmount(r.openingBalance),
+    formatAmount(r.currentBalance),
     String(r._count?.transactions || 0),
     r.isOpen ? 'Ouverte' : (r.isActive ? 'Fermée' : 'Archivée'),
   ]);
-  regData.push(['', '', '', 'TOTAL', totalBalance.toLocaleString("fr-FR").replace(/\u00A0/g, " ") + ' FCFA', '', '']);
+  regData.push(['', '', '', 'TOTAL', formatAmountFCFA(totalBalance), '', '']);
 
   (doc as any).autoTable({
     head: [['Code', 'Nom', 'Emplacement', 'Solde ouverture', 'Solde courant', 'Nb tx', 'Statut']],
@@ -1539,7 +1560,7 @@ export async function exportAllCashRegistersToPdf(
     yPos2 = 20;
   }
 
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('times', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(13, 31, 110);
   doc.text('Transferts inter-caisses', 14, yPos2);
@@ -1550,10 +1571,10 @@ export async function exportAllCashRegistersToPdf(
     formatDateTimeFr(t.createdAt),
     t.fromCode || '—',
     t.toCode || '—',
-    (Number(t.amount) || 0).toLocaleString("fr-FR").replace(/\u00A0/g, " "),
+    formatAmount(t.amount),
     t.note || '—',
   ]);
-  trData.push(['', '', 'TOTAL', totalTransfers.toLocaleString("fr-FR").replace(/\u00A0/g, " ") + ' FCFA', '']);
+  trData.push(['', '', 'TOTAL', formatAmountFCFA(totalTransfers), '']);
 
   (doc as any).autoTable({
     head: [['Date', 'Caisse source', 'Caisse cible', 'Montant (FCFA)', 'Note']],

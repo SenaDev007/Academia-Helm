@@ -460,6 +460,7 @@ export default function CashRegistersContent() {
         transfers,
         {
           schoolName: tenant?.name || 'Établissement',
+          schoolLogoUrl: tenant?.id ? `/api/tenants/${tenant.id}/logo` : null,
           schoolLevel: schoolLevel?.code || undefined,
           schoolAddress: tenant?.address || null,
           schoolPhone: tenant?.phone || null,
@@ -485,6 +486,7 @@ export default function CashRegistersContent() {
         transfers,
         {
           schoolName: tenant?.name || 'Établissement',
+          schoolLogoUrl: tenant?.id ? `/api/tenants/${tenant.id}/logo` : null,
           schoolLevel: schoolLevel?.code || undefined,
           schoolAddress: tenant?.address || null,
           schoolPhone: tenant?.phone || null,
@@ -506,6 +508,7 @@ export default function CashRegistersContent() {
     try {
       await exportAllCashRegistersToExcel(registers, transfers, {
         schoolName: tenant?.name || 'Établissement',
+        schoolLogoUrl: tenant?.id ? `/api/tenants/${tenant.id}/logo` : null,
         schoolLevel: schoolLevel?.code || undefined,
         schoolAddress: tenant?.address || null,
         schoolPhone: tenant?.phone || null,
@@ -525,6 +528,7 @@ export default function CashRegistersContent() {
     try {
       const { url } = await exportAllCashRegistersToPdf(registers, transfers, {
         schoolName: tenant?.name || 'Établissement',
+        schoolLogoUrl: tenant?.id ? `/api/tenants/${tenant.id}/logo` : null,
         schoolLevel: schoolLevel?.code || undefined,
         schoolAddress: tenant?.address || null,
         schoolPhone: tenant?.phone || null,

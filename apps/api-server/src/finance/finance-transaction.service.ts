@@ -32,6 +32,38 @@ export class FinanceTransactionService {
     return this.prisma;
   }
 
+  /**
+   * Récupère ou crée une caisse virtuelle pour les paiements en ligne
+   * (Fedapay / FeexPay). Cette caisse est automatiquement créée pour chaque
+   * tenant afin d'assurer la traçabilité des paiements en ligne dans
+   * l'onglet multi-caisses.
+   */
+  private async getOrCreateOnlinePaymentCashRegister(tenantId: string): Promise<string> {
+    // Chercher une caisse existante avec le code 'ONLINE' pour ce tenant
+    const existing = await this.prisma.cashRegister.findFirst({
+      where: { tenantId, code: 'ONLINE' },
+    });
+    if (existing) return existing.id;
+
+    // Créer la caisse virtuelle
+    const register = await this.prisma.cashRegister.create({
+      data: {
+        tenantId,
+        code: 'ONLINE',
+        name: 'Caisse Paiements en Ligne',
+        description: 'Caisse virtuelle pour les paiements Fedapay et FeexPay (Mobile Money, carte bancaire)',
+        location: 'En ligne',
+        openingBalance: 0,
+        currentBalance: 0,
+        isOpen: true, // Toujours ouverte (paiements 24/7)
+        isActive: true,
+        openedAt: new Date(),
+      },
+    });
+    this.logger.log(`Caisse virtuelle 'ONLINE' créée pour tenant ${tenantId}: ${register.id}`);
+    return register.id;
+  }
+
   private async nextReceiptNumber(tenantId: string): Promise<string> {
     const year = new Date().getFullYear();
     const prefix = `AH-${year}-`;
@@ -68,7 +100,21 @@ export class FinanceTransactionService {
     const paymentMethod = (typeof data.paymentMethod === 'string' && PAYMENT_METHODS.includes(data.paymentMethod as PaymentMethod))
       ? (data.paymentMethod as PaymentMethod) : 'CASH';
 
-    // Validation de la caisse si fournie
+    // ✅ Pour les paiements en ligne (Fedapay/FeexPay), rattacher automatiquement
+    // à la caisse virtuelle "Caisse Paiements en Ligne" si aucune caisse n'est fournie.
+    // Cela assure la traçabilité dans l'onglet multi-caisses.
+    let effectiveCashRegisterId = data.cashRegisterId;
+    if (!effectiveCashRegisterId && (paymentMethod === 'FEDAPAY' || paymentMethod === 'FEEXPAY')) {
+      try {
+        effectiveCashRegisterId = await this.getOrCreateOnlinePaymentCashRegister(tenantId);
+        this.logger.log(`Paiement ${paymentMethod} rattaché à la caisse virtuelle ONLINE: ${effectiveCashRegisterId}`);
+      } catch (err: any) {
+        this.logger.warn(`Impossible de créer/récupérer la caisse ONLINE (non bloquant): ${err.message}`);
+      }
+    }
+
+    // Validation de la caisse si fournie (uniquement pour les caisses physiques,
+    // pas pour la caisse virtuelle ONLINE qui est toujours ouverte)
     if (data.cashRegisterId) {
       const register = await this.prisma.cashRegister.findFirst({
         where: { id: data.cashRegisterId, tenantId },
@@ -188,7 +234,7 @@ export class FinanceTransactionService {
         deviceId: data.deviceId ?? null,
         receiptNumber,
         receiptUrl: data.receiptUrl ?? null,
-        cashRegisterId: data.cashRegisterId ?? null,
+        cashRegisterId: effectiveCashRegisterId ?? null,
         allocations: updates.length
           ? { create: updates.map((u) => ({ accountBreakdownId: u.breakdownId, amount: u.paidDelta })) }
           : undefined,
@@ -216,10 +262,10 @@ export class FinanceTransactionService {
     }
 
     // Mise à jour du solde de la caisse (multi-caisses)
-    if (data.cashRegisterId) {
+    if (effectiveCashRegisterId) {
       try {
         await this.prisma.cashRegister.update({
-          where: { id: data.cashRegisterId },
+          where: { id: effectiveCashRegisterId },
           data: { currentBalance: { increment: data.amount } },
         });
       } catch (err: any) {

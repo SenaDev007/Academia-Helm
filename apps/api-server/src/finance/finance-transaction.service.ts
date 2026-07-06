@@ -81,6 +81,99 @@ export class FinanceTransactionService {
   }
 
   /**
+   * Mapping feeType → code de la caisse de destination.
+   * Quand un paiement en ligne arrive dans la caisse ONLINE, le système
+   * crédite virtuellement la caisse de destination selon le type de frais.
+   */
+  private static readonly FEE_TYPE_TO_CAISSE: Record<string, string> = {
+    INSCRIPTION: 'ACCUEIL',
+    REINSCRIPTION: 'ACCUEIL',
+    TUITION: 'ACCUEIL',
+    CANTEEN: 'CANTEEN',
+    EXAMEN: 'EXAMEN',
+    TRANSPORT: 'TRANSPORT',
+    OTHER: 'MAIN',
+  };
+
+  /**
+   * Allocation intelligente : crédite virtuellement les caisses de destination
+   * selon le type de frais. La caisse ONLINE n'est JAMAIS débitée.
+   *
+   * @param tenantId - ID du tenant
+   * @param transactionId - ID de la transaction
+   * @param updates - Allocations par breakdown (avec feeType)
+   * @param onlineCaisseId - ID de la caisse ONLINE (source, non débitée)
+   */
+  private async allocateToDestinationCaisses(
+    tenantId: string,
+    transactionId: string,
+    updates: { breakdownId: string; paidDelta: number; feeType: string }[],
+    onlineCaisseId: string | null,
+  ): Promise<void> {
+    if (!updates.length || !onlineCaisseId) return;
+
+    // Regrouper les montants par type de frais
+    const allocationsByFeeType: Record<string, number> = {};
+    for (const u of updates) {
+      const feeType = u.feeType || 'OTHER';
+      allocationsByFeeType[feeType] = (allocationsByFeeType[feeType] || 0) + u.paidDelta;
+    }
+
+    // Récupérer toutes les caisses du tenant (pour trouver les destinations)
+    const allCaisses = await this.prisma.cashRegister.findMany({
+      where: { tenantId, isActive: true },
+      select: { id: true, code: true, name: true, currentBalance: true },
+    });
+
+    for (const [feeType, amount] of Object.entries(allocationsByFeeType)) {
+      if (amount <= 0) continue;
+
+      // Déterminer la caisse de destination
+      const destCaisseCode = FinanceTransactionService.FEE_TYPE_TO_CAISSE[feeType] || 'MAIN';
+      let destCaisse = allCaisses.find(c => c.code === destCaisseCode);
+
+      // Fallback : si la caisse de destination n'existe pas, utiliser MAIN
+      if (!destCaisse) {
+        destCaisse = allCaisses.find(c => c.code === 'MAIN');
+      }
+
+      // Si toujours pas de caisse, skip
+      if (!destCaisse) {
+        this.logger.warn(`Allocation: caisse de destination "${destCaisseCode}" introuvable pour feeType="${feeType}" — allocation ignorée.`);
+        continue;
+      }
+
+      // Ne pas s'auto-allouer (si la dest est la même que la source)
+      if (destCaisse.id === onlineCaisseId) continue;
+
+      try {
+        // 1. Créditer la caisse de destination (sans débiter la ONLINE)
+        await this.prisma.cashRegister.update({
+          where: { id: destCaisse.id },
+          data: { currentBalance: { increment: amount } },
+        });
+
+        // 2. Enregistrer le transfert d'allocation (pour traçabilité)
+        // Status 'AUTO_ALLOCATION' indique que la source n'est PAS débitée
+        await this.prisma.$executeRawUnsafe(`
+          INSERT INTO "cash_register_transfers" ("id", "tenantId", "fromCashRegisterId", "toCashRegisterId", "amount", "note", "reference", "userId", "status", "createdAt")
+          VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, NULL, 'AUTO_ALLOCATION', NOW())
+        `, tenantId, onlineCaisseId, destCaisse.id, amount,
+          `Allocation automatique — ${feeType} (transaction ${transactionId.substring(0, 8)})`,
+          `AUTO-${transactionId.substring(0, 8)}-${feeType}`
+        );
+
+        this.logger.log(
+          `Allocation automatique: ${amount} FCFA → caisse ${destCaisse.code} (${destCaisse.name}) ` +
+          `pour feeType=${feeType} (transaction ${transactionId.substring(0, 8)})`
+        );
+      } catch (err: any) {
+        this.logger.error(`Allocation failed for feeType=${feeType}: ${err.message}`);
+      }
+    }
+  }
+
+  /**
    * Enregistre un encaissement et impute automatiquement sur les breakdowns (priorité Inscription > Arriérés > Scolarité > Annexes).
    */
   async create(
@@ -154,7 +247,7 @@ export class FinanceTransactionService {
     }
 
     let remaining = data.amount;
-    const updates: { breakdownId: string; paidDelta: number; remainingDelta: number }[] = [];
+    const updates: { breakdownId: string; paidDelta: number; remainingDelta: number; feeType: string }[] = [];
 
     const sortedBreakdowns = [...account.breakdowns].sort((a, b) => {
       const ia = PRIORITY_ORDER.indexOf(a.feeStructure.feeType);
@@ -171,6 +264,7 @@ export class FinanceTransactionService {
         breakdownId: b.id,
         paidDelta: pay,
         remainingDelta: -pay,
+        feeType: b.feeStructure.feeType,
       });
       remaining -= pay;
     }
@@ -271,6 +365,16 @@ export class FinanceTransactionService {
       } catch (err: any) {
         this.logger.error(`Failed to update cash register balance: ${err.message}`);
       }
+    }
+
+    // ─── Allocation intelligente : caisse ONLINE → caisses de destination ───
+    // Quand un paiement arrive dans la caisse ONLINE (Fedapay/FeexPay),
+    // le système crédite virtuellement les caisses de destination selon le
+    // type de frais (scolarité → ACCUEIL, cantine → CANTEEN, etc.).
+    // La caisse ONLINE n'est JAMAIS débitée — son solde reste croissant
+    // (il représente le volume total des paiements en ligne).
+    if (paymentMethod === 'FEDAPAY' || paymentMethod === 'FEEXPAY') {
+      await this.allocateToDestinationCaisses(tenantId, tx.id, updates, effectiveCashRegisterId);
     }
 
     // Note: totalPaid, balance and status are now updated via the DB Trigger 'update_balance_after_transaction'

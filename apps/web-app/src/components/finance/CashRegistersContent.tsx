@@ -1090,14 +1090,21 @@ export default function CashRegistersContent() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {transfers.map((t: any, idx: number) => (
-                          <tr key={t.id || idx} className="hover:bg-slate-50">
+                        {transfers.map((t: any, idx: number) => {
+                          const isAutoAlloc = t.status === 'AUTO_ALLOCATION';
+                          return (
+                          <tr key={t.id || idx} className={`hover:bg-slate-50 ${isAutoAlloc ? 'bg-violet-50/30' : ''}`}>
                             <td className="px-4 py-3 text-xs text-slate-600">
                               {t.createdAt ? new Date(t.createdAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
+                              {isAutoAlloc && (
+                                <span className="ml-1 inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-100 text-violet-700">
+                                  AUTO
+                                </span>
+                              )}
                             </td>
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2">
-                                <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded bg-rose-50 text-rose-700">
+                                <span className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded ${isAutoAlloc ? 'bg-violet-50 text-violet-700' : 'bg-rose-50 text-rose-700'}`}>
                                   {t.fromCode || '—'}
                                 </span>
                                 <span className="text-xs text-slate-600">{t.fromName || ''}</span>
@@ -1105,7 +1112,7 @@ export default function CashRegistersContent() {
                             </td>
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2">
-                                <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded bg-emerald-50 text-emerald-700">
+                                <span className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded ${isAutoAlloc ? 'bg-emerald-50 text-emerald-700' : 'bg-emerald-50 text-emerald-700'}`}>
                                   {t.toCode || '—'}
                                 </span>
                                 <span className="text-xs text-slate-600">{t.toName || ''}</span>
@@ -1121,7 +1128,8 @@ export default function CashRegistersContent() {
                               {t.reference || '—'}
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

@@ -41,6 +41,7 @@ import { CollectionCaseService } from './collection-case.service';
 import { ReceiptGenerationService } from './receipt-generation.service';
 import { ReceiptFinanceService } from './receipt-finance.service';
 import { ReceiptNotificationFinanceService } from './receipt-notification-finance.service';
+import { RecoveryNotificationFinanceService } from './recovery-notification-finance.service';
 import { TenantPaymentConfigService } from './tenant-payment-config.service';
 import { TenantPaymentConfigController } from './tenant-payment-config.controller';
 import { FeexPayService } from './feexpay.service';
@@ -128,6 +129,7 @@ import { CommunicationModule } from '../communication/communication.module';
     RecoveryReminderEmailService,
     ReceiptFinanceService,
     ReceiptNotificationFinanceService,
+    RecoveryNotificationFinanceService,
     TenantPaymentConfigService,
     FeexPayService,
     FedapayService,

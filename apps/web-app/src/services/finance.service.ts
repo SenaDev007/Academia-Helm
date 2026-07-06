@@ -133,6 +133,25 @@ class FinanceService {
     return financeFetch('/api/finance/recovery-reminders/run-nightly', { method: 'POST' });
   }
 
+  /**
+   * Envoie une relance multi-canal (email + WhatsApp + SMS) au parent de
+   * l'élève ayant un arriéré. Reproduit le pattern des notifications de reçu.
+   *
+   * POST /api/finance/recovery-reminders/:arrearId/notify
+   * Body: { channels: ('email'|'whatsapp'|'sms')[], level: 'PREMIERE_RELANCE'|'DEUXIEME_RELANCE'|'MISE_EN_DEMEURE' }
+   * Response: { arrearId, level, channels: { email: {status,to?,error?}, whatsapp: {...}, sms: {...} } }
+   */
+  async sendRecoveryNotification(
+    arrearId: string,
+    channels: ('email' | 'whatsapp' | 'sms')[],
+    level: 'PREMIERE_RELANCE' | 'DEUXIEME_RELANCE' | 'MISE_EN_DEMEURE' = 'PREMIERE_RELANCE',
+  ): Promise<any> {
+    return financeFetch(`/api/finance/recovery-reminders/${encodeURIComponent(arrearId)}/notify`, {
+      method: 'POST',
+      body: { channels, level },
+    });
+  }
+
   // --- Expenses ---
   async getExpenses(params?: Record<string, string>): Promise<any> {
     const qs = params ? new URLSearchParams(params).toString() : '';

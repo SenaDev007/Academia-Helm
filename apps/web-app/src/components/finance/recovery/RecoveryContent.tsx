@@ -45,11 +45,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useToast } from '@/components/ui/use-toast';
 import { financeService } from '@/services/finance.service';
 import { formatCurrency } from '@/lib/utils';
+import { WhatsAppIcon, GmailIcon, SmsIcon } from '../OfficialIcons';
 
 type TabId = 'dashboard' | 'arrears' | 'reminders' | 'promises' | 'actions' | 'cases';
 
 const TABS: Array<{ id: TabId; label: string; icon: any }> = [
-  { id: 'dashboard', label: 'Dashboard', icon: TrendingDown },
+  { id: 'dashboard', label: 'Tableau de bord', icon: TrendingDown },
   { id: 'arrears', label: 'Arriérés', icon: AlertCircle },
   { id: 'reminders', label: 'Relances', icon: Send },
   { id: 'promises', label: 'Promesses', icon: Target },
@@ -65,10 +66,22 @@ const ARREARS_LEVEL_CONFIG: Record<string, { label: string; color: string; bg: s
 };
 
 const REMINDER_LEVEL_CONFIG: Record<string, { label: string; variant: any }> = {
-  WARNING: { label: 'Warning', variant: 'secondary' },
+  // OLD system (RecoveryReminder) — toujours utilisé pour l'historique
+  WARNING: { label: 'Avertissement', variant: 'secondary' },
   URGENT: { label: 'Urgent', variant: 'default' },
-  FINAL_NOTICE: { label: 'Final', variant: 'destructive' },
+  FINAL_NOTICE: { label: 'Mise en demeure', variant: 'destructive' },
+  // NEW system (RecoveryNotificationFinanceService) — termes français
+  PREMIERE_RELANCE: { label: 'Première relance', variant: 'secondary' },
+  DEUXIEME_RELANCE: { label: 'Deuxième relance', variant: 'default' },
+  MISE_EN_DEMEURE: { label: 'Mise en demeure', variant: 'destructive' },
 };
+
+// Configuration pour le modal de relance manuelle (NOUVEAU système multi-canal)
+const MANUAL_LEVEL_OPTIONS = [
+  { value: 'PREMIERE_RELANCE', label: 'Première relance (J+3)', emoji: '📧', description: 'Rappel de paiement' },
+  { value: 'DEUXIEME_RELANCE', label: 'Deuxième relance (J+7)', emoji: '⚠️', description: 'Rappel urgent' },
+  { value: 'MISE_EN_DEMEURE', label: 'Mise en demeure (J+15)', emoji: '🚨', description: 'Mise en demeure finale' },
+];
 
 export default function RecoveryContent() {
   const { academicYear } = useModuleContext();
@@ -96,10 +109,12 @@ export default function RecoveryContent() {
   // Filtres actions
   const [actionTypeFilter, setActionTypeFilter] = useState<string>('ALL');
 
-  // Modal relance manuelle (système OLD)
+  // Modal relance manuelle (NOUVEAU système multi-canal)
   const [manualModal, setManualModal] = useState(false);
   const [manualAccountId, setManualAccountId] = useState('');
-  const [manualLevel, setManualLevel] = useState('WARNING');
+  const [manualLevel, setManualLevel] = useState<'PREMIERE_RELANCE' | 'DEUXIEME_RELANCE' | 'MISE_EN_DEMEURE'>('PREMIERE_RELANCE');
+  // État pour l'envoi multi-canal
+  const [sendingMulti, setSendingMulti] = useState(false);
 
   // Modals Phase 2
   const [promiseModal, setPromiseModal] = useState<{ arrearId: string; studentName: string; balanceDue: number } | null>(null);
@@ -158,14 +173,46 @@ export default function RecoveryContent() {
 
   const handleSendManual = async () => {
     if (!manualAccountId) return;
+    setSendingMulti(true);
     try {
-      await financeService.sendManualReminder({
-        studentAccountId: manualAccountId,
-        level: manualLevel,
-        channel: 'SMS',
-      });
+      // Trouver l'arriéré correspondant au compte élève sélectionné
+      // (manualAccountId = studentAccountId)
+      const matchingArrear = arrears.find((a) => a.studentAccountId === manualAccountId);
+      if (!matchingArrear) {
+        // Fallback : si pas d'arriéré trouvé, on appelle l'ancien système
+        await financeService.sendManualReminder({
+          studentAccountId: manualAccountId,
+          level: 'WARNING',
+          channel: 'SMS',
+        });
+        toast({
+          title: '⚠️ Relance envoyée (ancien système)',
+          description: 'Aucun arriéré trouvé pour cet élève. Relance basique envoyée par email.',
+        });
+      } else {
+        // NOUVEAU système : envoi multi-canal (email + WhatsApp + SMS) au parent
+        const result = await financeService.sendRecoveryNotification(
+          matchingArrear.id,
+          ['email', 'whatsapp', 'sms'],
+          manualLevel,
+        );
+        const channels = result?.channels || {};
+        const sent = Object.entries(channels).filter(([, v]: any) => v.status === 'sent').map(([k]) => k);
+        const failed = Object.entries(channels).filter(([, v]: any) => v.status === 'failed').map(([k]) => k);
+        const skipped = Object.entries(channels).filter(([, v]: any) => v.status === 'skipped').map(([k]) => k);
+
+        const parts: string[] = [];
+        if (sent.length > 0) parts.push(`✅ Envoyé: ${sent.join(', ')}`);
+        if (skipped.length > 0) parts.push(`⏭️ Ignoré: ${skipped.join(', ')} (contact manquant)`);
+        if (failed.length > 0) parts.push(`❌ Échec: ${failed.join(', ')}`);
+
+        toast({
+          title: sent.length > 0 ? '✅ Relance envoyée' : (skipped.length > 0 ? '⚠️ Contact manquant' : '❌ Échec d\'envoi'),
+          description: parts.join(' — ') || 'Aucune notification envoyée.',
+          variant: sent.length > 0 ? 'default' : 'destructive',
+        });
+      }
       setManualModal(false);
-      toast({ title: '✅ Rappel envoyé', description: 'La relance a été envoyée avec succès.' });
       loadAll();
     } catch (error: any) {
       toast({
@@ -173,6 +220,37 @@ export default function RecoveryContent() {
         description: error?.message || 'Erreur réseau',
         variant: 'destructive',
       });
+    } finally {
+      setSendingMulti(false);
+    }
+  };
+
+  /**
+   * Envoie une relance multi-canal pour un arriéré spécifique (depuis les
+   * boutons d'action dans le tableau Relances ou Arriérés).
+   * Reproduit le pattern des notifications de reçu (3 boutons icônes).
+   */
+  const handleSendChannelReminder = async (
+    arrearId: string,
+    channel: 'email' | 'whatsapp' | 'sms',
+    level: 'PREMIERE_RELANCE' | 'DEUXIEME_RELANCE' | 'MISE_EN_DEMEURE' = 'PREMIERE_RELANCE',
+  ) => {
+    try {
+      const result = await financeService.sendRecoveryNotification(arrearId, [channel], level);
+      const s = result?.channels?.[channel];
+      if (s?.status === 'skipped') {
+        toast({ title: 'Contact manquant', description: s.error || `Aucun contact pour ${channel}`, variant: 'destructive' });
+      } else if (s?.status === 'failed') {
+        toast({ title: 'Échec d\'envoi', description: s.error || `Échec ${channel}`, variant: 'destructive' });
+      } else {
+        toast({
+          title: '✅ Relance envoyée',
+          description: `${channel.charAt(0).toUpperCase() + channel.slice(1)} envoyé${s?.to ? ` à ${s.to}` : ''}`,
+        });
+      }
+      loadAll();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
     }
   };
 
@@ -373,9 +451,14 @@ export default function RecoveryContent() {
             setLevelFilter={setArrearLevelFilter}
             search={arrearSearch}
             setSearch={setArrearSearch}
+            onSendChannel={(arrearId, channel) => handleSendChannelReminder(arrearId, channel, 'PREMIERE_RELANCE')}
           />
         ) : activeTab === 'reminders' ? (
-          <RemindersTab reminders={reminders} />
+          <RemindersTab
+            reminders={reminders}
+            arrears={arrears}
+            onSendChannel={(arrearId, channel) => handleSendChannelReminder(arrearId, channel, 'PREMIERE_RELANCE')}
+          />
         ) : activeTab === 'promises' ? (
           <PromisesTab
             promises={filteredPromises}
@@ -430,7 +513,7 @@ export default function RecoveryContent() {
         <CaseDetailModal caseData={caseDetailModal} onClose={() => setCaseDetailModal(null)} />
       )}
 
-      {/* Modal relance manuelle (système OLD) */}
+      {/* Modal relance manuelle (NOUVEAU système multi-canal) */}
       {manualModal && (
         <ManualReminderModal
           onClose={() => setManualModal(false)}
@@ -440,6 +523,7 @@ export default function RecoveryContent() {
           setAccountId={setManualAccountId}
           level={manualLevel}
           setLevel={setManualLevel}
+          sending={sendingMulti}
         />
       )}
     </div>
@@ -460,9 +544,11 @@ function DashboardTab({
   arrears: any[];
 }) {
   const stats = statistics || {};
-  const totalCollected = Number(stats.totalCollected ?? 0);
-  const totalDue = Number(stats.totalDue ?? kpis.totalArrears);
-  const recoveryRate = totalDue > 0 ? (totalCollected / (totalCollected + totalDue)) * 100 : 0;
+  // ⚠️ Fix : le backend getCollectionStatistics retourne { totals: { expected, paid, balanceDue, collectionRate } }
+  // et non pas { totalCollected, totalDue }. Avant, ces champs n'existaient pas → KPIs toujours à 0.
+  const totalCollected = Number(stats.totals?.paid ?? 0);
+  const totalDue = Number(stats.totals?.balanceDue ?? kpis.totalArrears);
+  const recoveryRate = Number(stats.totals?.collectionRate ?? 0);
 
   return (
     <div className="space-y-5">
@@ -604,6 +690,7 @@ function ArrearsTab({
   setLevelFilter,
   search,
   setSearch,
+  onSendChannel,
 }: {
   arrears: any[];
   totalCount: number;
@@ -611,15 +698,16 @@ function ArrearsTab({
   setLevelFilter: (v: string) => void;
   search: string;
   setSearch: (v: string) => void;
+  onSendChannel: (arrearId: string, channel: 'email' | 'whatsapp' | 'sms') => void;
 }) {
   return (
     <div className="space-y-4">
       {/* Filtres */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-wrap gap-3 items-end">
         <div className="flex flex-col gap-1.5">
-          <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Niveau</Label>
+          <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Niveau de gravité</Label>
           <Select value={levelFilter} onValueChange={setLevelFilter}>
-            <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-[200px]"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">Tous les niveaux</SelectItem>
               <SelectItem value="LOW">Faible</SelectItem>
@@ -658,12 +746,13 @@ function ArrearsTab({
               <TableHead className="text-right">Solde</TableHead>
               <TableHead>Niveau</TableHead>
               <TableHead>Dernier paiement</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {arrears.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-gray-500 py-12">
+                <TableCell colSpan={8} className="text-center text-gray-500 py-12">
                   Aucun arriéré trouvé. Lancez la détection pour identifier les impayés.
                 </TableCell>
               </TableRow>
@@ -689,6 +778,40 @@ function ArrearsTab({
                     <TableCell className="text-xs text-slate-500">
                       {a.lastPaymentDate ? new Date(a.lastPaymentDate).toLocaleDateString('fr-FR') : 'Jamais'}
                     </TableCell>
+                    <TableCell>
+                      <div className="flex items-center justify-end gap-1">
+                        {/* Email */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150"
+                          onClick={() => onSendChannel(a.id, 'email')}
+                          title="Envoyer relance par email"
+                        >
+                          <GmailIcon className="w-3.5 h-3.5" />
+                        </Button>
+                        {/* WhatsApp */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 hover:bg-emerald-100 hover:shadow-sm transition-all duration-150"
+                          onClick={() => onSendChannel(a.id, 'whatsapp')}
+                          title="Envoyer relance par WhatsApp"
+                        >
+                          <WhatsAppIcon className="w-3.5 h-3.5" />
+                        </Button>
+                        {/* SMS */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 hover:bg-blue-100 hover:shadow-sm transition-all duration-150"
+                          onClick={() => onSendChannel(a.id, 'sms')}
+                          title="Envoyer relance par SMS"
+                        >
+                          <SmsIcon className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
                   </TableRow>
                 );
               })
@@ -704,7 +827,15 @@ function ArrearsTab({
 /*  Onglet Relances (système OLD)                                      */
 /* ------------------------------------------------------------------ */
 
-function RemindersTab({ reminders }: { reminders: any[] }) {
+function RemindersTab({
+  reminders,
+  arrears,
+  onSendChannel,
+}: {
+  reminders: any[];
+  arrears: any[];
+  onSendChannel: (arrearId: string, channel: 'email' | 'whatsapp' | 'sms') => void;
+}) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
       <Table>
@@ -716,18 +847,21 @@ function RemindersTab({ reminders }: { reminders: any[] }) {
             <TableHead>Canal</TableHead>
             <TableHead>Date</TableHead>
             <TableHead>Origine</TableHead>
+            <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {reminders.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={6} className="text-center text-gray-500 py-12">
+              <TableCell colSpan={7} className="text-center text-gray-500 py-12">
                 Aucune relance envoyée pour cette année.
               </TableCell>
             </TableRow>
           ) : (
             reminders.map((r) => {
               const config = REMINDER_LEVEL_CONFIG[r.reminderLevel] || { label: r.reminderLevel, variant: 'secondary' };
+              // Trouver l'arriéré correspondant pour les boutons d'action
+              const matchingArrear = arrears.find((a) => a.studentAccountId === r.studentAccountId);
               return (
                 <TableRow key={r.id} className="hover:bg-slate-50">
                   <TableCell className="font-medium">
@@ -749,6 +883,46 @@ function RemindersTab({ reminders }: { reminders: any[] }) {
                     <Badge variant={r.createdBySystem ? 'secondary' : 'default'}>
                       {r.createdBySystem ? 'Auto' : 'Manuel'}
                     </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center justify-end gap-1">
+                      {matchingArrear ? (
+                        <>
+                          {/* Email */}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150"
+                            onClick={() => onSendChannel(matchingArrear.id, 'email')}
+                            title="Renvoyer par email"
+                          >
+                            <GmailIcon className="w-3.5 h-3.5" />
+                          </Button>
+                          {/* WhatsApp */}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 hover:bg-emerald-100 hover:shadow-sm transition-all duration-150"
+                            onClick={() => onSendChannel(matchingArrear.id, 'whatsapp')}
+                            title="Renvoyer par WhatsApp"
+                          >
+                            <WhatsAppIcon className="w-3.5 h-3.5" />
+                          </Button>
+                          {/* SMS */}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 hover:bg-blue-100 hover:shadow-sm transition-all duration-150"
+                            onClick={() => onSendChannel(matchingArrear.id, 'sms')}
+                            title="Renvoyer par SMS"
+                          >
+                            <SmsIcon className="w-3.5 h-3.5" />
+                          </Button>
+                        </>
+                      ) : (
+                        <span className="text-xs text-slate-400 italic">Aucun arriéré actif</span>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               );
@@ -805,18 +979,40 @@ function ManualReminderModal({
   setAccountId,
   level,
   setLevel,
+  sending,
 }: {
   onClose: () => void;
   onSubmit: () => void;
   academicYearId: string;
   accountId: string;
   setAccountId: (v: string) => void;
-  level: string;
-  setLevel: (v: string) => void;
+  level: 'PREMIERE_RELANCE' | 'DEUXIEME_RELANCE' | 'MISE_EN_DEMEURE';
+  setLevel: (v: 'PREMIERE_RELANCE' | 'DEUXIEME_RELANCE' | 'MISE_EN_DEMEURE') => void;
+  sending: boolean;
 }) {
   const [accounts, setAccounts] = useState<any[]>([]);
-  const { toast } = useToast();
+  const [schoolLevels, setSchoolLevels] = useState<any[]>([]);
+  const [classes, setClasses] = useState<any[]>([]);
+  const [selectedLevelId, setSelectedLevelId] = useState<string>('');
+  const [selectedClassId, setSelectedClassId] = useState<string>('');
 
+  // Charger les niveaux scolaires
+  useEffect(() => {
+    fetch('/api/school-levels', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setSchoolLevels(Array.isArray(d) ? d.filter((l: any) => l.id !== 'ALL' && l.isActive !== false) : []))
+      .catch(() => setSchoolLevels([]));
+  }, []);
+
+  // Charger les classes
+  useEffect(() => {
+    fetch('/api/all-classes', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setClasses(Array.isArray(d) ? d : (d?.data ?? [])))
+      .catch(() => setClasses([]));
+  }, []);
+
+  // Charger les comptes élèves avec solde dû
   useEffect(() => {
     if (!academicYearId) return;
     financeService
@@ -825,51 +1021,161 @@ function ManualReminderModal({
       .catch(() => setAccounts([]));
   }, [academicYearId]);
 
+  // Classes filtrées par niveau scolaire
+  const filteredClasses = useMemo(() => {
+    if (!selectedLevelId) return classes;
+    const selectedLevel = schoolLevels.find((l) => l.id === selectedLevelId);
+    const schoolLevelId = selectedLevel?.schoolLevelId || selectedLevelId;
+    return classes.filter((c) =>
+      c.schoolLevelId === schoolLevelId ||
+      c.schoolLevel?.code === selectedLevel?.code ||
+      c.schoolLevel?.id === schoolLevelId
+    );
+  }, [classes, selectedLevelId, schoolLevels]);
+
+  // Comptes filtrés par classe (via studentEnrollments)
+  const filteredAccounts = useMemo(() => {
+    if (!selectedClassId) return accounts;
+    return accounts.filter((a) =>
+      a.student?.studentEnrollments?.some((e: any) => e.classId === selectedClassId) ||
+      a.studentEnrollments?.some((e: any) => e.classId === selectedClassId)
+    );
+  }, [accounts, selectedClassId]);
+
+  // Reset accountId quand on change de classe
+  useEffect(() => {
+    setAccountId('');
+  }, [selectedClassId, setAccountId]);
+
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6"
+        className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+        <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
           <Send className="w-5 h-5 text-blue-600" />
           Relance manuelle
         </h3>
+        <p className="text-xs text-slate-500 mb-4">
+          Sélectionnez un élève par niveau scolaire et classe, puis choisissez le niveau de relance.
+          La relance sera envoyée automatiquement par <strong>email + WhatsApp + SMS</strong> au parent.
+        </p>
         <div className="space-y-4">
+          {/* Niveau scolaire */}
           <div>
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
-              Compte élève
+              Niveau scolaire
+            </Label>
+            <Select value={selectedLevelId} onValueChange={setSelectedLevelId}>
+              <SelectTrigger><SelectValue placeholder="Tous les niveaux" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Tous les niveaux</SelectItem>
+                {schoolLevels.map((l) => (
+                  <SelectItem key={l.id} value={l.id}>
+                    {l.label || l.code || l.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Classe (filtrée par niveau) */}
+          <div>
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
+              Classe {selectedLevelId && <span className="text-slate-400 normal-case font-normal">(filtrée par niveau)</span>}
+            </Label>
+            <Select value={selectedClassId} onValueChange={setSelectedClassId}>
+              <SelectTrigger><SelectValue placeholder="Toutes les classes" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Toutes les classes</SelectItem>
+                {filteredClasses.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name} {c.code ? `(${c.code})` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {selectedLevelId && filteredClasses.length === 0 && (
+              <p className="text-xs text-slate-500 mt-1">Aucune classe pour ce niveau.</p>
+            )}
+          </div>
+
+          {/* Élève (filtré par classe) */}
+          <div>
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
+              Élève {selectedClassId && <span className="text-slate-400 normal-case font-normal">(filtré par classe)</span>}
             </Label>
             <Select value={accountId} onValueChange={setAccountId}>
               <SelectTrigger><SelectValue placeholder="Sélectionner un élève avec solde dû" /></SelectTrigger>
               <SelectContent>
-                {accounts.map((a) => (
+                {filteredAccounts.map((a) => (
                   <SelectItem key={a.id} value={a.id}>
                     {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.id} — {formatCurrency(a.balance)} FCFA
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {accounts.length === 0 && (
-              <p className="text-xs text-slate-500 mt-1">Aucun élève avec solde dû pour cette année.</p>
+            {filteredAccounts.length === 0 && (
+              <p className="text-xs text-slate-500 mt-1">
+                Aucun élève avec solde dû{selectedClassId ? ' dans cette classe' : ''}.
+              </p>
             )}
           </div>
+
+          {/* Niveau de relance (termes français) */}
           <div>
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
               Niveau de relance
             </Label>
-            <Select value={level} onValueChange={setLevel}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="WARNING">Warning (J+3)</SelectItem>
-                <SelectItem value="URGENT">Urgent (J+7)</SelectItem>
-                <SelectItem value="FINAL_NOTICE">Final (J+15)</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="grid grid-cols-1 gap-2">
+              {MANUAL_LEVEL_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setLevel(opt.value as any)}
+                  className={`text-left p-3 rounded-lg border transition-all ${
+                    level === opt.value
+                      ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                      : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">{opt.emoji}</span>
+                    <div className="flex-1">
+                      <div className="text-sm font-semibold text-slate-900">{opt.label}</div>
+                      <div className="text-xs text-slate-500">{opt.description}</div>
+                    </div>
+                    {level === opt.value && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
+
+          {/* Info envoi multi-canal */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <p className="text-xs text-blue-800">
+              <strong>📧 ⚙️ 📱 Envoi automatique multi-canal :</strong> La relance sera envoyée au parent sur les 3 canaux
+              (email + WhatsApp + SMS) en arrière-plan. Vous recevrez un rapport détaillé.
+            </p>
+          </div>
+
           <div className="flex gap-2 justify-end pt-2">
-            <Button variant="outline" onClick={onClose}>Annuler</Button>
-            <Button onClick={onSubmit} disabled={!accountId}>Envoyer la relance</Button>
+            <Button variant="outline" onClick={onClose} disabled={sending}>Annuler</Button>
+            <Button onClick={onSubmit} disabled={!accountId || sending}>
+              {sending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Envoi en cours...
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4 mr-2" />
+                  Envoyer la relance
+                </>
+              )}
+            </Button>
           </div>
         </div>
       </div>

@@ -528,18 +528,62 @@ export class AcademicStructurePrismaService {
   async syncClassSectionsFromAcademicClasses(
     tenantId: string,
     academicYearId: string,
-  ): Promise<{ created: number; existing: number }> {
+  ): Promise<{ created: number; existing: number; synced: number }> {
     let created = 0;
     let existing = 0;
+    let synced = 0;
     try {
-      // Récupérer les AcademicClass actives pour cette année
+      // ⚠️ ÉTAPE 1 : Synchroniser les Classroom → AcademicClass
+      // Les Classroom créés via l'onglet Structure (settings) n'ont pas d'AcademicClass
+      // correspondante. On les crée ici pour que la sync des sections fonctionne.
+      const classrooms = await this.prisma.classroom.findMany({
+        where: { tenantId, academicYearId, isActive: true, isArchived: false },
+        include: { grade: { include: { cycle: { include: { level: true } }, series: true } } },
+      });
+      for (const cr of classrooms) {
+        // Vérifier si une AcademicClass avec le même nom existe déjà
+        const existingAC = await this.prisma.academicClass.findFirst({
+          where: { tenantId, academicYearId, name: cr.name, isActive: true },
+          select: { id: true },
+        });
+        if (existingAC) continue; // Déjà synchronisé
+
+        const grade = cr.grade;
+        const cycle = grade?.cycle;
+        const level = cycle?.level;
+        if (!level || !cycle) {
+          this.logger.warn(`syncClassSections: Classroom ${cr.name} sans grade/cycle/level — ignoré.`);
+          continue;
+        }
+
+        // Créer l'AcademicClass manquante
+        await this.prisma.academicClass.create({
+          data: {
+            ...prismaCreateDefaults(),
+            tenantId,
+            academicYearId,
+            levelId: level.id,
+            cycleId: cycle.id,
+            name: cr.name,
+            code: cr.code || cr.name.replace(/\s/g, '').toUpperCase(),
+            capacity: cr.capacity,
+            isActive: true,
+            ...(grade.seriesId ? { seriesId: grade.seriesId } : {}),
+          },
+        });
+        synced++;
+        this.logger.log(`syncClassSections: AcademicClass créée depuis Classroom: ${cr.name}`);
+      }
+
+      // ÉTAPE 2 : Synchroniser les sections depuis les AcademicClass
+      // (y compris celles nouvellement créées depuis les Classroom)
       const academicClasses = await this.prisma.academicClass.findMany({
         where: { tenantId, academicYearId, isActive: true },
         include: {
           level: { select: { id: true, name: true } },
         },
       });
-      if (academicClasses.length === 0) return { created, existing };
+      if (academicClasses.length === 0) return { created, existing, synced };
 
       // Charger tous les SchoolLevels du tenant pour résoudre level.name → schoolLevelId
       // (ex : « Maternelle » → SchoolLevel.code='MATERNELLE')
@@ -616,7 +660,7 @@ export class AcademicStructurePrismaService {
         `syncClassSectionsFromAcademicClasses: ${e instanceof Error ? e.message : String(e)}`,
       );
     }
-    return { created, existing };
+    return { created, existing, synced };
   }
 
   /**
@@ -694,13 +738,51 @@ export class AcademicStructurePrismaService {
       );
     }
 
+    // ⚠️ Si l'academicClass vient d'un fallback Classroom, il faut créer
+    // l'AcademicClass correspondante pour que la FK officialClassId fonctionne.
+    let effectiveOfficialClassId = data.academicClassId;
+    const isFromClassroom = !(await this.prisma.academicClass.findFirst({
+      where: { id: data.academicClassId, tenantId: data.tenantId },
+      select: { id: true },
+    }));
+    if (isFromClassroom) {
+      // Créer l'AcademicClass manquante depuis le Classroom
+      const classroom = await this.prisma.classroom.findFirst({
+        where: { id: data.academicClassId, tenantId: data.tenantId },
+        include: { grade: { include: { cycle: { include: { level: true } }, series: true } } },
+      });
+      if (classroom) {
+        const grade = classroom.grade;
+        const cycle = grade?.cycle;
+        const level = cycle?.level;
+        if (level && cycle) {
+          const newAcademicClass = await this.prisma.academicClass.create({
+            data: {
+              ...prismaCreateDefaults(),
+              tenantId: data.tenantId,
+              academicYearId: data.academicYearId,
+              levelId: level.id,
+              cycleId: cycle.id,
+              name: classroom.name,
+              code: classroom.code || classroom.name.replace(/\s/g, '').toUpperCase(),
+              capacity: classroom.capacity,
+              isActive: true,
+              ...(grade.seriesId ? { seriesId: grade.seriesId } : {}),
+            },
+          });
+          effectiveOfficialClassId = newAcademicClass.id;
+          this.logger?.log?.(`createClassSection: AcademicClass créée depuis Classroom: ${newAcademicClass.id} (${newAcademicClass.name})`);
+        }
+      }
+    }
+
     return this.prisma.class.create({
       data: {
         ...prismaCreateDefaults(),
         tenantId: data.tenantId,
         academicYearId: data.academicYearId,
         schoolLevelId,
-        officialClassId: data.academicClassId,
+        officialClassId: effectiveOfficialClassId,
         name: data.name,
         code: data.code,
         capacity: data.capacity ?? null,

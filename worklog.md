@@ -2672,3 +2672,74 @@ Stage Summary:
 - Bug Section par classe corrigé : `effectiveOfficialClassId` utilise désormais l'AcademicClass.id (créé ou trouvé via sync) au lieu du Classroom.id qui cassait la FK
 - Résolution `schoolLevelId` plus robuste : 5 stratégies en cascade (code, name, label, includes, includes inverse)
 - Toast "Synchroniser" affiche maintenant les 3 métriques : classes officielles détectées, sections créées, sections existantes
+
+---
+Task ID: batch-pattern-stats-sections-fix
+Agent: main
+Task: 
+  1. Refactoriser batch operations pour suivre le pattern des boutons single qui fonctionnent
+  2. Fix stats onglet Inscriptions (12 en attente au lieu de 12 inscrits)
+  3. Fix Section par classe creation (toujours erreur "l'entité liée n'existe pas")
+
+Work Log:
+
+## 1. Batch operations — pattern direct (sans showConfirm)
+**Fichier** : `apps/web-app/src/components/students/AdmissionsContent.tsx`
+
+L'utilisateur a confirme que les boutons single 'Soumettre pour examen' (handleSubmit) et 'Accepter et inscrire directement' fonctionnent parfaitement. handleSubmit est direct (pas de modal, juste appel service + toast + loadAdmissions).
+
+Refactor des 4 batch handlers :
+- `handleBatchSubmit` : pattern direct (sans showConfirm) — comme handleSubmit
+- `handleBatchConvert` : pattern direct (sans showConfirm)
+- `handleBatchAccept` : pattern direct (sans showConfirm)
+- `handleBatchAcceptAndEnroll` : conserve showConfirm type='success' (action irreversible avec creation eleve + matricule + compte financier + guardian — confirmation pertinente)
+
+## 2. Stats inscriptions — Fix "12 en attente au lieu de 12 inscrits"
+**Fichier** : `apps/web-app/src/components/students/EnrollmentsContent.tsx` (ligne 477)
+
+**Bug** : Le calcul des stats comptait `ADMITTED` comme "en attente" (statuts PENDING/PRE_REGISTERED/ADMITTED). Or, un eleve `ADMITTED` a DEJA son matricule + sa classe (genere par `admit()` dans `convertToStudent`). Il est inscrit, pas en attente.
+
+**Fix** :
+- `active` (Inscrits) = `['ACTIVE', 'VALIDATED', 'ADMITTED', 'RE_ENROLLED']` (avant : `['ACTIVE', 'VALIDATED']`)
+- `pending` (En attente) = `['PENDING', 'PRE_REGISTERED']` (avant : `['PENDING', 'PRE_REGISTERED', 'ADMITTED']`)
+
+**Resultat** : 12 eleves convertis via admission → `convertToStudent` → `admit()` (statut ADMITTED) seront maintenant affiches comme "12 inscrits, 0 en attente" au lieu de "0 inscrits, 12 en attente".
+
+## 3. Section par classe — Fix creation P2003 "l'entité liée n'existe pas"
+**Fichier** : `apps/web-app/src/app/app/settings/page.tsx`
+
+### Diagnostic
+L'utilisateur a note que `update` (PUT) d'une section fonctionne, mais `create` (POST) echoue avec P2003. Pourquoi ?
+- `update` (PUT) ne touche pas aux FK — il modifie seulement name/code/capacity
+- `create` (POST) doit resoudre 2 FK : `officialClassId` (→ pedagogy_academic_classes) et `schoolLevelId` (→ school_levels)
+- Le dropdown envoyait `Classroom.id` comme `academicClassId`, mais la FK `officialClassId` reference `pedagogy_academic_classes` (pas `classrooms`) → P2003
+
+### Approche : aligner sur le pattern de `update` (simple, par ID)
+Plutot que de faire une resolution complexe cote backend (qui pouvait echouer), on envoie DIRECTEMENT le bon `AcademicClass.id` depuis le frontend.
+
+### Implementation frontend
+1. **Import** : ajout de `pedagogyService` (deja existant dans `/services/pedagogy.service.ts`)
+2. **State** : ajout de `academicClasses` (tableau des AcademicClasses chargees pour l'annee active)
+3. **loadAcademicClasses()** : appele `pedagogyService.getAcademicClasses(structureYearIdOrActive)` (GET /pedagogy/academic-structure/classes)
+4. **useEffect** : `loadAcademicClasses()` appelee en parallele de `loadClassSections()` au montage et quand `structureYearIdOrActive` change
+5. **academicClassesForSections** : pour chaque Classroom, cherche l'AcademicClass correspondante par `name`. Si trouvee → envoie `AcademicClass.id`. Sinon → fallback `Classroom.id` (le backend fera le fallback)
+6. **Apres Synchroniser** : `loadAcademicClasses()` est rappele (la sync peut creer de nouvelles AcademicClasses depuis les Classrooms)
+
+### Pourquoi cette approche
+- L'utilisateur a dit "regarde comment l'enregistrement des autres fonctionne" → `update` (PUT) est simple car il ne touche pas aux FK
+- Avec ce fix, `create` (POST) envoie directement le bon `AcademicClass.id` → pas besoin de resolution complexe cote backend
+- Le backend `createClassSection` a deja la logique pour gerer `AcademicClass.id` direct (ligne 801-803 du service) — c'etait juste le frontend qui n'envoyait pas le bon ID
+
+## 4. Fichiers modifies
+1. `apps/web-app/src/components/students/AdmissionsContent.tsx` — 3 batch handlers simplifies (pattern direct)
+2. `apps/web-app/src/components/students/EnrollmentsContent.tsx` — stats calculation fix
+3. `apps/web-app/src/app/app/settings/page.tsx` — chargement AcademicClasses + mapping Classroom.id → AcademicClass.id
+
+## 5. Vérifications TypeScript
+- `tsc --noEmit -p tsconfig.json` : AUCUNE erreur sur les 3 fichiers modifies
+
+Stage Summary:
+- Batch operations alignees sur le pattern des boutons single qui fonctionnent (direct, sans modal superflu)
+- Stats inscriptions corrigees : ADMITTED est maintenant "Inscrit" (pas "En attente")
+- Section par classe : frontend envoie directement AcademicClass.id (pas Classroom.id) → evite la P2003 FK violation
+- 1 commit pousse : `c029e800 fix(admissions+enrollments+settings): Batch operations direct pattern + stats inscriptions + Section par classe FK fix`

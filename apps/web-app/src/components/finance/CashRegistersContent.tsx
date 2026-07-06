@@ -35,6 +35,17 @@ interface CashRegister {
   openedBy?: { id: string; firstName: string; lastName: string };
   closedBy?: { id: string; firstName: string; lastName: string };
   _count?: { transactions: number };
+  transactions?: Array<{
+    id: string;
+    amount: string | number;
+    paymentMethod: string;
+    receiptNumber?: string;
+    reference?: string;
+    createdAt: string;
+    studentAccount?: {
+      student?: { id: string; firstName: string; lastName: string };
+    };
+  }>;
   // Champs bancaires
   bankName?: string;
   bankAccountNumber?: string;
@@ -224,6 +235,18 @@ export default function CashRegistersContent() {
       setLoading(false);
     }
   }, [toast]);
+
+  // Charger les détails complets (avec transactions) quand on sélectionne une caisse
+  const loadRegisterDetails = useCallback(async (registerId: string) => {
+    try {
+      const details = await financeService.getCashRegister(registerId);
+      if (details) {
+        setSelectedRegister(details);
+      }
+    } catch (e: any) {
+      console.warn('Failed to load register details:', e?.message);
+    }
+  }, []);
 
   useEffect(() => {
     loadRegisters();
@@ -793,7 +816,7 @@ export default function CashRegistersContent() {
                       transition={{ delay: 0.3 + idx * 0.1, type: 'spring', stiffness: 200 }}
                       whileHover={{ scale: 1.08, y: -4 }}
                       whileTap={{ scale: 0.95 }}
-                      onClick={() => setSelectedRegister(reg)}
+                      onClick={() => loadRegisterDetails(reg.id)}
                       className="relative group"
                     >
                       {/* Halo si ouverte */}
@@ -1071,6 +1094,77 @@ export default function CashRegistersContent() {
                           {selectedRegister.bankContact && (
                             <div><span className="text-xs text-slate-500">Contact :</span> <span className="text-slate-800">{selectedRegister.bankContact}</span></div>
                           )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Transactions récentes de cette caisse */}
+                    {selectedRegister.transactions && selectedRegister.transactions.length > 0 && (
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-xs text-slate-500">Transactions récentes (encaissements)</p>
+                          <Badge variant="outline" className="text-[10px]">
+                            {selectedRegister._count?.transactions || selectedRegister.transactions.length} au total
+                          </Badge>
+                        </div>
+                        <div className="border border-slate-200 rounded-lg overflow-hidden">
+                          <div className="max-h-64 overflow-y-auto">
+                            <table className="w-full text-sm">
+                              <thead className="bg-slate-50 sticky top-0">
+                                <tr>
+                                  <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Date</th>
+                                  <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Élève</th>
+                                  <th className="px-3 py-2 text-right font-medium text-slate-600 text-xs">Montant</th>
+                                  <th className="px-3 py-2 text-center font-medium text-slate-600 text-xs">Méthode</th>
+                                  <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Reçu</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {selectedRegister.transactions.map((tx: any) => {
+                                  const methodLabels: Record<string, string> = {
+                                    CASH: '💵 Espèces',
+                                    FEDAPAY: '💳 Fedapay',
+                                    FEEXPAY: '📱 FeexPay',
+                                    WIRE: '🏦 Virement',
+                                    MOBILE_MONEY: '📱 Mobile Money',
+                                  };
+                                  const methodColors: Record<string, string> = {
+                                    CASH: 'bg-emerald-50 text-emerald-700',
+                                    FEDAPAY: 'bg-violet-50 text-violet-700',
+                                    FEEXPAY: 'bg-amber-50 text-amber-700',
+                                    WIRE: 'bg-blue-50 text-blue-700',
+                                    MOBILE_MONEY: 'bg-orange-50 text-orange-700',
+                                  };
+                                  return (
+                                    <tr key={tx.id} className="hover:bg-slate-50">
+                                      <td className="px-3 py-2 text-xs text-slate-600 whitespace-nowrap">
+                                        {tx.createdAt ? new Date(tx.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
+                                        <span className="text-slate-400 ml-1">
+                                          {tx.createdAt ? new Date(tx.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''}
+                                        </span>
+                                      </td>
+                                      <td className="px-3 py-2 text-xs font-medium text-slate-800">
+                                        {tx.studentAccount?.student
+                                          ? `${tx.studentAccount.student.lastName} ${tx.studentAccount.student.firstName}`
+                                          : '—'}
+                                      </td>
+                                      <td className="px-3 py-2 text-xs text-right font-mono font-semibold text-emerald-700">
+                                        +{formatCurrency(Number(tx.amount))}
+                                      </td>
+                                      <td className="px-3 py-2 text-center">
+                                        <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-medium ${methodColors[tx.paymentMethod] || 'bg-slate-50 text-slate-700'}`}>
+                                          {methodLabels[tx.paymentMethod] || tx.paymentMethod}
+                                        </span>
+                                      </td>
+                                      <td className="px-3 py-2 text-xs font-mono text-slate-500">
+                                        {tx.receiptNumber || '—'}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
                       </div>
                     )}

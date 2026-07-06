@@ -152,6 +152,7 @@ const PREDEFINED_CAISSES = [
   { name: 'Caisse transport', code: 'TRANSPORT', location: 'Service transport', description: 'Caisse pour la collecte des frais de transport scolaire.' },
   { name: 'Caisse activités', code: 'ACTIVITES', location: 'Service activités parascolaires', description: 'Caisse pour les activités parascolaires, sorties et événements.' },
   { name: 'Caisse banque', code: 'BANQUE', location: 'Banque partenaire', description: 'Caisse de liaison avec le compte bancaire de l\'établissement.' },
+  { name: 'Caisse Paiements en Ligne', code: 'ONLINE', location: 'En ligne', description: 'Caisse virtuelle pour les paiements Fedapay et FeexPay (Mobile Money, carte bancaire). Créée automatiquement au premier paiement en ligne.' },
 ];
 
 export default function CashRegistersContent() {

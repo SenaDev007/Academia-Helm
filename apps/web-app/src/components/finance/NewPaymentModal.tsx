@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import {
   Sparkles, Download, CheckCircle2, Search, Phone, ArrowRight, Loader2,
-  AlertCircle, CheckCircle, Shield, Lock, Smartphone,
+  AlertCircle, CheckCircle, Shield, Lock, Smartphone, CreditCard,
 } from 'lucide-react';
 import { WhatsAppIcon, GmailIcon, SmsIcon } from './OfficialIcons';
 import { Button } from '@/components/ui/button';
@@ -734,11 +734,24 @@ export default function NewPaymentModal({
           {/* Note : le sélecteur opérateur Mobile Money pour FeexPay est
               intégré au widget FeexPay inline (palette orange/jaune/noir). */}
           <div>
-            <Label>Caisse {paymentMethod === 'CASH' ? '*' : '(optionnel)'}</Label>
-            <Select value={cashRegisterId || '_none'} onValueChange={(v) => setCashRegisterId(v === '_none' ? '' : v)}>
+            <Label>
+              Caisse {paymentMethod === 'CASH' ? '*' : '(optionnel)'}
+              {(paymentMethod === 'FEDAPAY' || paymentMethod === 'FEEXPAY') && (
+                <span className="text-[10px] text-slate-500 ml-1">(auto : Caisse Paiements en Ligne)</span>
+              )}
+            </Label>
+            <Select
+              value={cashRegisterId || '_none'}
+              onValueChange={(v) => setCashRegisterId(v === '_none' ? '' : v)}
+              disabled={paymentMethod === 'FEDAPAY' || paymentMethod === 'FEEXPAY'}
+            >
               <SelectTrigger><SelectValue placeholder="Sélectionner une caisse ouverte" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="_none">— Aucune caisse —</SelectItem>
+                <SelectItem value="_none">
+                  {paymentMethod === 'FEDAPAY' || paymentMethod === 'FEEXPAY'
+                    ? 'Caisse Paiements en Ligne (automatique)'
+                    : '— Aucune caisse —'}
+                </SelectItem>
                 {openCashRegisters.map((reg) => (
                   <SelectItem key={reg.id} value={reg.id}>
                     {reg.code} — {reg.name} (Solde : {formatCurrency(reg.currentBalance)})
@@ -749,6 +762,14 @@ export default function NewPaymentModal({
             {paymentMethod === 'CASH' && openCashRegisters.length === 0 && (
               <p className="text-xs text-rose-600 mt-1">
                 ⚠️ Aucune caisse ouverte. Ouvrez une caisse dans l'onglet Multi-caisses.
+              </p>
+            )}
+            {(paymentMethod === 'FEDAPAY' || paymentMethod === 'FEEXPAY') && (
+              <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
+                <CreditCard className="w-3 h-3" />
+                Les paiements en ligne sont automatiquement rattachés à la
+                <strong className="mx-1">Caisse Paiements en Ligne</strong>
+                (créée automatiquement si elle n'existe pas).
               </p>
             )}
           </div>

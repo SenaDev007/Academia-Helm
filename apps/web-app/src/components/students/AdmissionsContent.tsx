@@ -56,6 +56,8 @@ export default function AdmissionsContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('ALL');
   const [sortBy, setSortBy] = useState<'name-asc' | 'name-desc' | 'date-recent' | 'date-old'>('name-asc');
+  const [filterLevelId, setFilterLevelId] = useState<string>('');
+  const [filterClassId, setFilterClassId] = useState<string>('');
 
   // Nettoyer la sélection quand on change de filtre
   useEffect(() => { setSelectedIds(new Set()); }, [activeFilter]);
@@ -694,7 +696,9 @@ export default function AdmissionsContent() {
     const matchesSearch = `${a.firstName} ${a.lastName}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           (a.admissionNumber?.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesFilter = activeFilter === 'ALL' || a.status === activeFilter;
-    return matchesSearch && matchesFilter;
+    const matchesLevel = !filterLevelId || a.schoolLevelId === filterLevelId;
+    const matchesClass = !filterClassId || a.classId === filterClassId;
+    return matchesSearch && matchesFilter && matchesLevel && matchesClass;
   }).sort((a, b) => {
     // Tri selon le mode sélectionné
     switch (sortBy) {
@@ -769,6 +773,33 @@ export default function AdmissionsContent() {
               className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm transition-all"
             />
           </div>
+        </div>
+
+        {/* Filtres niveau scolaire + classe */}
+        <div className="flex items-center gap-2">
+          <select
+            value={filterLevelId}
+            onChange={(e) => { setFilterLevelId(e.target.value); setFilterClassId(''); }}
+            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+          >
+            <option value="">Tous les niveaux</option>
+            {schoolLevels.map(l => (
+              <option key={l.id} value={l.id}>{l.name || l.code}</option>
+            ))}
+          </select>
+          <select
+            value={filterClassId}
+            onChange={(e) => setFilterClassId(e.target.value)}
+            disabled={!filterLevelId}
+            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all disabled:opacity-50"
+          >
+            <option value="">Toutes les classes</option>
+            {schoolClasses
+              .filter(c => !filterLevelId || c.schoolLevelId === filterLevelId)
+              .map(c => (
+                <option key={c.id} value={c.id}>{c.name || c.code}</option>
+              ))}
+          </select>
         </div>
 
         {/* Sélecteur de tri */}

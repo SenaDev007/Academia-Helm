@@ -195,11 +195,15 @@ export class AcademicStructurePrismaController {
       code: string;
       capacity?: number;
       language?: string;
+      tenantId?: string; // Override pour les rôles cross-tenant (ex: PROMOTEUR)
     },
   ) {
+    // Utiliser le tenantId du body s'il est fourni (pour les rôles cross-tenant)
+    const effectiveTenantId = body.tenantId || tenantId;
+    const { tenantId: _omit, ...sectionData } = body;
     return this.service.createClassSection({
-      ...body,
-      tenantId,
+      ...sectionData,
+      tenantId: effectiveTenantId,
     });
   }
 

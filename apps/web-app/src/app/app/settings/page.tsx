@@ -1316,6 +1316,7 @@ export default function SettingsPage() {
           name,
           code,
           capacity: newSectionCapacity === '' ? undefined : Number(newSectionCapacity),
+          tenantId: effectiveTenantId || undefined,
         }),
       });
       if (!res.ok) {

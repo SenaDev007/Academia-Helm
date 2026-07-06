@@ -769,6 +769,175 @@ export class StudentsLifecycleService {
   }
 
   /**
+   * Abandon / sortie définitive : marque l'élève comme WITHDRAWN.
+   * Contrairement au transfert (vers une autre école), l'abandon est une
+   * sortie définitive sans école de destination.
+   *
+   * États mis à jour :
+   *   - StudentEnrollment.status = WITHDRAWN, exitDate, exitReason
+   *   - Student.status = WITHDRAWN, isActive = false
+   *   - Désactivation des tokens de vérification publique
+   *
+   * @param exitReason — motif de l'abandon (ABANDON, EXPULSION, DECES, DIPLOME, AUTRE)
+   */
+  async withdraw(
+    tenantId: string,
+    data: {
+      studentId: string;
+      academicYearId: string;
+      exitReason?: string;
+      exitDate?: Date;
+    },
+    userId?: string,
+  ) {
+    const enrollment = await this.prisma.studentEnrollment.findFirst({
+      where: {
+        studentId: data.studentId,
+        tenantId,
+        academicYearId: data.academicYearId,
+      },
+      orderBy: { enrollmentDate: 'desc' },
+    });
+    if (!enrollment) throw new NotFoundException('Inscription non trouvée pour cette année');
+
+    const exitDate = data.exitDate ? new Date(data.exitDate) : new Date();
+    const reason = data.exitReason || 'Abandon';
+
+    const updatedEnrollment = await this.prisma.studentEnrollment.update({
+      where: { id: enrollment.id },
+      data: {
+        status: ENROLLMENT_STATUS.WITHDRAWN,
+        exitDate,
+        exitReason: reason,
+      },
+    });
+
+    await this.prisma.student.update({
+      where: { id: data.studentId },
+      data: {
+        status: 'WITHDRAWN',
+        isActive: false,
+      },
+    });
+
+    // Désactiver les tokens de vérification publique (cartes élève, etc.)
+    await this.publicVerificationService.deactivateTokensForStudent(data.studentId).catch(() => {});
+
+    // Journalisation institutionnelle (Sous-module C/A)
+    await this.prisma.studentAuditLog.create({
+      data: {
+        tenantId,
+        studentId: data.studentId,
+        userId: userId ?? null,
+        action: 'WITHDRAW',
+        beforeData: { status: enrollment.status },
+        afterData: {
+          reason,
+          exitDate: exitDate.toISOString(),
+          status: 'WITHDRAWN',
+        },
+      },
+    });
+
+    // Historique pédagogique
+    await this.logHistory(
+      tenantId,
+      data.studentId,
+      data.academicYearId,
+      enrollment.classId || '',
+      'WITHDRAWN',
+      `Abandon / sortie définitive : ${reason}`,
+      userId,
+    );
+
+    // Audit trail
+    await this.logAudit(tenantId, data.studentId, 'WITHDRAW', userId, {
+      enrollmentId: enrollment.id,
+      previousStatus: enrollment.status,
+    }, {
+      enrollmentId: updatedEnrollment.id,
+      status: updatedEnrollment.status,
+      exitDate: updatedEnrollment.exitDate,
+      exitReason: updatedEnrollment.exitReason,
+    });
+
+    // Alimentation ORION
+    await this.triggerOrion(tenantId, data.studentId, data.academicYearId);
+
+    return this.prisma.student.findUnique({
+      where: { id: data.studentId },
+      include: {
+        studentEnrollments: { include: { class: true, academicYear: true }, orderBy: { enrollmentDate: 'desc' } },
+      },
+    });
+  }
+
+  /**
+   * Réinscription d'un élève ayant abandonné (réintégration).
+   * Remet Student.status = ACTIVE, isActive = true, et crée une nouvelle
+   * inscription pour l'année courante.
+   */
+  async reintegrate(
+    tenantId: string,
+    data: {
+      studentId: string;
+      academicYearId: string;
+      schoolLevelId: string;
+      classId?: string;
+    },
+    userId?: string,
+  ) {
+    const student = await this.prisma.student.findFirst({
+      where: { id: data.studentId, tenantId },
+    });
+    if (!student) throw new NotFoundException('Élève non trouvé');
+    if (student.status !== 'WITHDRAWN') {
+      throw new BadRequestException('L\'élève n\'est pas en statut WITHDRAWN — réintégration impossible');
+    }
+
+    // Remettre l'élève en statut ACTIVE
+    await this.prisma.student.update({
+      where: { id: data.studentId },
+      data: {
+        status: 'ACTIVE',
+        isActive: true,
+        currentAcademicYearId: data.academicYearId,
+      },
+    });
+
+    // Créer une nouvelle inscription
+    const enrollment = await this.prisma.studentEnrollment.create({
+      data: {
+        tenantId,
+        studentId: data.studentId,
+        academicYearId: data.academicYearId,
+        schoolLevelId: data.schoolLevelId,
+        classId: data.classId ?? null,
+        enrollmentType: 'NEW',
+        enrollmentDate: new Date(),
+        status: ENROLLMENT_STATUS.ACTIVE,
+      },
+    });
+
+    await this.logHistory(
+      tenantId,
+      data.studentId,
+      data.academicYearId,
+      data.classId || '',
+      'ACTIVE',
+      'Réintégration après abandon',
+      userId,
+    );
+
+    return this.prisma.student.findUnique({
+      where: { id: data.studentId },
+      include: {
+        studentEnrollments: { include: { class: true, academicYear: true }, orderBy: { enrollmentDate: 'desc' } },
+      },
+    });
+  }
+
+  /**
    * Opérations batch : promotion et mise à jour de statut.
    */
   async batchPromote(

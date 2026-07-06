@@ -54,6 +54,26 @@ export class StudentsLifecycleController {
     return this.lifecycle.transfer(tenantId, body, user?.id);
   }
 
+  /**
+   * POST /students/lifecycle/withdraw
+   * Abandon / sortie définitive d'un élève.
+   * Body: { studentId, academicYearId, exitReason?, exitDate? }
+   */
+  @Post('withdraw')
+  async withdraw(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() body: any) {
+    return this.lifecycle.withdraw(tenantId, body, user?.id);
+  }
+
+  /**
+   * POST /students/lifecycle/reintegrate
+   * Réintégration d'un élève ayant abandonné.
+   * Body: { studentId, academicYearId, schoolLevelId, classId? }
+   */
+  @Post('reintegrate')
+  async reintegrate(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() body: any) {
+    return this.lifecycle.reintegrate(tenantId, body, user?.id);
+  }
+
   @Post('change-class')
   async changeClass(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() body: any) {
     return this.lifecycle.changeClass(tenantId, body, user?.id);

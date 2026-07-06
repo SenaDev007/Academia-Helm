@@ -63,8 +63,9 @@ import StudentAnalyticsContent from '@/components/students/StudentAnalyticsConte
 import StudentSettingsContent from '@/components/students/StudentSettingsContent';
 import StudentAuditContent from '@/components/students/StudentAuditContent';
 import StudentTransferContent from '@/components/students/StudentTransferContent';
+import AbsencesContent from '@/components/students/AbsencesContent';
 import StudentSaraAssistant from '@/components/students/StudentSaraAssistant';
-import { ArrowRightLeft, BarChart3 } from 'lucide-react';
+import { ArrowRightLeft, BarChart3, CalendarX } from 'lucide-react';
 import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
 import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
 
@@ -425,6 +426,7 @@ export default function StudentsModulePage() {
             { id: 'enrollments', label: 'Inscriptions', icon: <GraduationCap className="w-4 h-4" /> },
             { id: 'assignments', label: 'Affectations', icon: <Share2 className="w-4 h-4" /> },
             { id: 'movements', label: 'Mouvements', icon: <History className="w-4 h-4" /> },
+            { id: 'absences', label: 'Absences', icon: <CalendarX className="w-4 h-4" /> },
             { id: 'cards', label: 'Cartes Scolaires', icon: <IdCard className="w-4 h-4" /> },
             { id: 'dossiers', label: 'Dossiers Élèves', icon: <FileText className="w-4 h-4" /> },
             { id: 'families', label: 'Familles', icon: <User className="w-4 h-4" /> },
@@ -479,6 +481,11 @@ export default function StudentsModulePage() {
             ? {
                 layout: 'default',
                 children: <StudentMovementsContent />,
+              }
+            : activeSubModuleId === 'absences'
+            ? {
+                layout: 'default',
+                children: <AbsencesContent />,
               }
             : activeSubModuleId === 'history'
             ? {

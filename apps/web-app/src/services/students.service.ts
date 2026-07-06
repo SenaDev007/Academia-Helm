@@ -500,6 +500,38 @@ class StudentsService {
   }
 
   /**
+   * Abandon / sortie définitive d'un élève.
+   * Backend : POST /students/withdraw
+   */
+  async withdrawStudent(data: {
+    studentId: string;
+    academicYearId: string;
+    exitReason?: string;
+    exitDate?: string;
+  }): Promise<any> {
+    return apiFetch(`${BASE_URL}/withdraw`, {
+      method: "POST",
+      body: data,
+    });
+  }
+
+  /**
+   * Réintégration d'un élève ayant abandonné.
+   * Backend : POST /students/reintegrate
+   */
+  async reintegrateStudent(data: {
+    studentId: string;
+    academicYearId: string;
+    schoolLevelId: string;
+    classId?: string;
+  }): Promise<any> {
+    return apiFetch(`${BASE_URL}/reintegrate`, {
+      method: "POST",
+      body: data,
+    });
+  }
+
+  /**
    * Export des inscriptions en CSV.
    */
   async exportEnrollmentsCSV(params: {

@@ -39,6 +39,7 @@ interface Student {
   isActive: boolean;
   gender?: string | null;
   updatedAt?: string;
+  schoolLevelId?: string;
 }
 
 const STATUS_LABELS: Record<string, { label: string; color: string; icon: any }> = {
@@ -107,40 +108,38 @@ export default function StudentMovementsContent() {
   }), [students]);
 
   const handleAction = async () => {
-    if (!actionStudent || !actionType) return;
+    if (!actionStudent || !actionType || !academicYear) return;
     setIsProcessing(true);
     try {
       if (actionType === 'archive') {
         await apiFetch(`/students/${actionStudent.id}/archive`, { method: 'POST' });
         toast({ title: '✅ Élève archivé', description: `${actionStudent.firstName} ${actionStudent.lastName}`, variant: 'success' });
       } else if (actionType === 'withdraw') {
-        await apiFetch(`/students/${actionStudent.id}/archive`, {
-          method: 'POST',
-          body: JSON.stringify({ reason: actionReason || 'Retrait', status: 'WITHDRAWN' }),
+        // NOUVEAU : utilise l'endpoint dédié /students/withdraw
+        await studentsService.withdrawStudent({
+          studentId: actionStudent.id,
+          academicYearId: academicYear.id,
+          exitReason: actionReason || 'Abandon',
         });
-        toast({ title: '✅ Élève retiré', description: `${actionStudent.firstName} ${actionStudent.lastName}`, variant: 'success' });
+        toast({ title: '✅ Élève retiré', description: `${actionStudent.firstName} ${actionStudent.lastName} a été marqué comme abandon.`, variant: 'success' });
       } else if (actionType === 'reactivate') {
-        await apiFetch(`/students/${actionStudent.id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ status: 'ACTIVE', isActive: true }),
+        // NOUVEAU : utilise l'endpoint dédié /students/reintegrate
+        await studentsService.reintegrateStudent({
+          studentId: actionStudent.id,
+          academicYearId: academicYear.id,
+          schoolLevelId: schoolLevel?.id || actionStudent.schoolLevelId || '',
         });
-        toast({ title: '✅ Élève réintégré', description: `${actionStudent.firstName} ${actionStudent.lastName}`, variant: 'success' });
+        toast({ title: '✅ Élève réintégré', description: `${actionStudent.firstName} ${actionStudent.lastName} est de nouveau actif.`, variant: 'success' });
       } else if (actionType === 'transfer') {
         // Transfert inter-écoles
         if (transferSelectedSchool) {
-          // École sur Academia Helm → transfert réel
-          await apiFetch(`/students/${actionStudent.id}/transfer`, {
-            method: 'POST',
-            body: JSON.stringify({
-              academicYearId: academicYear?.id,
-              exitReason: actionReason || 'Transfert inter-écoles',
-              destinationTenantId: transferSelectedSchool.id,
-              destinationTenantName: transferSelectedSchool.name,
-            }),
+          await studentsService.transferStudent({
+            studentId: actionStudent.id,
+            academicYearId: academicYear.id,
+            exitReason: actionReason || 'Transfert inter-écoles',
           });
           toast({ title: '✅ Élève transféré', description: `Vers ${transferSelectedSchool.name}`, variant: 'success' });
         } else if (transferExternalSchoolName.trim()) {
-          // École externe (pas sur Academia Helm) → paperasse seulement
           await apiFetch(`/students/${actionStudent.id}/archive`, {
             method: 'POST',
             body: JSON.stringify({
@@ -160,7 +159,6 @@ export default function StudentMovementsContent() {
       setActionReason('');
       setTransferSelectedSchool(null);
       setTransferExternalSchoolName('');
-      setTransferSearchResults([]);
       loadData();
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message || 'Action échouée', variant: 'error' });

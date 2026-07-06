@@ -87,6 +87,7 @@ export default function NewPaymentModal({
   const [selectedClassId, setSelectedClassId] = useState('');
   const [studentSearch, setStudentSearch] = useState('');
   const [feexpayOperator, setFeexpayOperator] = useState<FeexPayOperator>('mtn');
+  const [feexpayPhone, setFeexpayPhone] = useState('');
 
   // Charge les caisses ouvertes
   useEffect(() => {
@@ -361,43 +362,22 @@ export default function NewPaymentModal({
       return;
     }
 
-    // ── FeexPay : appel API direct (pas de widget séparé) ──
-    // Le comptable clique "Valider paiement", le système récupère le téléphone
-    // parent, détecte l'opérateur, appelle l'API FeexPay qui envoie un push USSD,
-    // puis crée la FinanceTransaction.
+    // ── FeexPay : formulaire standard (téléphone + opérateur saisis dans le form) ──
     if (paymentMethod === 'FEEXPAY') {
       if (!selectedAccount?.student) {
         toast({ title: 'Erreur', description: 'Élève introuvable.', variant: 'destructive' });
         return;
       }
 
-      // Récupérer le téléphone parent
-      let parentPhone = '';
-      try {
-        const phoneRes = await fetch(
-          `/api/finance/transactions/${selectedAccount.id}/whatsapp-link`,
-          { credentials: 'include' },
-        );
-        const phoneData = await phoneRes.json();
-        if (phoneData?.phone) parentPhone = phoneData.phone;
-      } catch {
-        // non bloquant
-      }
-
-      if (!parentPhone) {
-        toast({
-          title: 'Téléphone parent manquant',
-          description: "Aucun numéro de téléphone enregistré pour le parent de cet élève. Ajoutez-le dans la fiche élève.",
-          variant: 'destructive',
-        });
+      if (!feexpayPhone.trim()) {
+        toast({ title: 'Téléphone requis', description: 'Saisissez le numéro Mobile Money du parent.', variant: 'destructive' });
         return;
       }
 
+      const cleanedPhone = feexpayPhone.replace(/\D/g, '');
       const studentName = selectedAccount.student
         ? `${selectedAccount.student.lastName} ${selectedAccount.student.firstName}`
         : 'Élève';
-      const detected = detectFeexPayOperator(parentPhone);
-      const operator = detected || 'mtn';
 
       setLoading(true);
       try {
@@ -407,7 +387,7 @@ export default function NewPaymentModal({
           credentials: 'include',
           body: JSON.stringify({
             studentAccountId, studentName, amount: amountNum,
-            phone: parentPhone, operator, academicYearId,
+            phone: cleanedPhone, operator: feexpayOperator, academicYearId,
           }),
         });
         const data = await res.json();
@@ -427,17 +407,7 @@ export default function NewPaymentModal({
               });
               toast({
                 title: '📱 Paiement initié',
-                description: `Notification envoyée au ${parentPhone}. Opérateur: ${operator.toUpperCase()}. Reçu ${result.receiptNumber} généré.`,
-              });
-            } else {
-              setReceipt({
-                id: feexpayReference || 'feexpay-pending',
-                receiptNumber: feexpayReference || '—',
-                createdAt: new Date().toISOString(),
-              });
-              toast({
-                title: '📱 Paiement initié',
-                description: `Notification envoyée au ${parentPhone}. Référence: ${feexpayReference}.`,
+                description: `Notification envoyée au ${feexpayPhone}. Reçu ${result.receiptNumber} généré.`,
               });
             }
           } catch (err: any) {
@@ -448,7 +418,7 @@ export default function NewPaymentModal({
             });
             toast({
               title: 'Paiement initié mais transaction non enregistrée',
-              description: `Référence FeexPay : ${feexpayReference}. Contactez l'administrateur.`,
+              description: `Référence FeexPay : ${feexpayReference}.`,
               variant: 'destructive',
             });
           }
@@ -696,8 +666,33 @@ export default function NewPaymentModal({
               </SelectContent>
             </Select>
           </div>
-          {/* Note : le sélecteur opérateur Mobile Money pour FeexPay est
-              intégré au widget FeexPay inline (palette orange/jaune/noir). */}
+          {/* Note : champs FeexPay (téléphone + opérateur) intégrés au formulaire standard. */}
+          {/* Champs FeexPay : téléphone + opérateur */}
+          {paymentMethod === 'FEEXPAY' && (
+            <>
+              <div>
+                <Label>Téléphone Mobile Money *</Label>
+                <Input
+                  type="tel"
+                  value={feexpayPhone}
+                  onChange={(e) => setFeexpayPhone(e.target.value)}
+                  placeholder="01 XX XX XX XX"
+                  required
+                />
+              </div>
+              <div>
+                <Label>Opérateur</Label>
+                <Select value={feexpayOperator} onValueChange={(v) => setFeexpayOperator(v as any)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="mtn">MTN Mobile Money</SelectItem>
+                    <SelectItem value="moov">Moov Money</SelectItem>
+                    <SelectItem value="celtiis_bj">Celtiis Cash</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
+          )}
           <div>
             <Label>
               Caisse {paymentMethod === 'CASH' ? '*' : '(optionnel)'}

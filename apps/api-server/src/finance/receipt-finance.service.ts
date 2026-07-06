@@ -83,6 +83,16 @@ export class ReceiptFinanceService {
       },
     });
 
+    // Récupérer la classe de l'élève pour cette année
+    let className = '—';
+    if (tx?.studentAccount?.studentId && tx?.academicYearId) {
+      const enrollment = await this.prisma.studentEnrollment.findFirst({
+        where: { studentId: tx.studentAccount.studentId, academicYearId: tx.academicYearId },
+        include: { class: { select: { name: true, code: true } } },
+      });
+      className = enrollment?.class?.name || '—';
+    }
+
     if (!tx) {
       throw new Error(`Transaction ${transactionId} introuvable`);
     }
@@ -126,6 +136,7 @@ export class ReceiptFinanceService {
       totalPaidAfter,
       balanceAfter,
       breakdownsByType,
+      className,
     });
 
     // 6. Convertir en PDF via Puppeteer
@@ -177,11 +188,13 @@ export class ReceiptFinanceService {
     totalPaidAfter: number;
     balanceAfter: number;
     breakdownsByType: Record<string, { due: number; paid: number; remaining: number; name?: string }>;
+    className?: string;
   }): string {
-    const { tx, branding, qrCodeDataUrl, verificationToken, totalDue, totalPaidAfter, balanceAfter, breakdownsByType } = params;
+    const { tx, branding, qrCodeDataUrl, verificationToken, totalDue, totalPaidAfter, balanceAfter, breakdownsByType, className } = params;
     const student = tx.studentAccount?.student;
     const studentName = student ? `${student.lastName} ${student.firstName}` : '—';
     const matricule = student?.matricule || '—';
+    const studentClass = className || '—';
     const dateOp = new Date(tx.createdAt).toLocaleDateString('fr-FR', {
       day: '2-digit',
       month: 'long',
@@ -323,6 +336,7 @@ export class ReceiptFinanceService {
     <div class="info-grid">
       <div class="info-item"><span class="info-label">Nom :</span><span class="info-value">${studentName}</span></div>
       <div class="info-item"><span class="info-label">Matricule :</span><span class="info-value">${matricule}</span></div>
+      <div class="info-item"><span class="info-label">Classe :</span><span class="info-value">${studentClass}</span></div>
     </div>
   </div>
 

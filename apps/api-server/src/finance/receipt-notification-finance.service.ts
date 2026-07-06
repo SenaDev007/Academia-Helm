@@ -79,6 +79,16 @@ export class ReceiptNotificationFinanceService {
     const contacts = await this.receiptFinanceService.getParentContacts(tx.studentAccount.studentId);
     const branding = await this.getTenantBranding(tenantId);
 
+    // Récupérer la classe de l'élève pour cette année
+    let className = '—';
+    if (tx.studentAccount?.studentId && tx.academicYearId) {
+      const enrollment = await this.prisma.studentEnrollment.findFirst({
+        where: { studentId: tx.studentAccount.studentId, academicYearId: tx.academicYearId },
+        include: { class: { select: { name: true } } },
+      });
+      className = enrollment?.class?.name || '—';
+    }
+
     // Solde restant à payer (après ce paiement) — depuis studentAccount
     const totalDue = Number(tx.studentAccount?.totalDue ?? 0);
     const totalPaidAfter = Number(tx.studentAccount?.totalPaid ?? 0);
@@ -136,6 +146,7 @@ export class ReceiptNotificationFinanceService {
             totalPaidAfter,
             balanceAfter,
             personalizationNote,
+            className,
           });
         } else if (channel === 'whatsapp') {
           results.whatsapp = await this.sendByWhatsApp({
@@ -161,6 +172,7 @@ export class ReceiptNotificationFinanceService {
             branding,
             balanceAfter,
             personalizationNote,
+            className,
           });
         }
       } catch (err: any) {
@@ -192,6 +204,7 @@ export class ReceiptNotificationFinanceService {
     totalPaidAfter?: number;
     balanceAfter?: number;
     personalizationNote?: string;
+    className?: string;
   }): Promise<{ status: 'sent' | 'failed' | 'skipped'; to?: string; error?: string }> {
     if (!params.to) {
       return { status: 'skipped', error: 'Aucun email parent disponible' };
@@ -218,6 +231,7 @@ export class ReceiptNotificationFinanceService {
       totalPaidAfter: params.totalPaidAfter,
       balanceAfter: params.balanceAfter,
       personalizationNote: params.personalizationNote,
+      className: params.className,
     });
 
     const result = await this.emailService.sendCategorized({
@@ -337,6 +351,7 @@ export class ReceiptNotificationFinanceService {
     branding: any;
     balanceAfter?: number;
     personalizationNote?: string;
+    className?: string;
   }): Promise<{ status: 'sent' | 'failed' | 'skipped'; to?: string; error?: string }> {
     if (!params.to) {
       return { status: 'skipped', error: 'Aucun téléphone parent disponible' };
@@ -345,6 +360,7 @@ export class ReceiptNotificationFinanceService {
     const amountStr = params.amount.toLocaleString('fr-FR');
     const schoolName = (params.branding.schoolName || 'Établissement').substring(0, 25);
     const studentShort = params.studentName.substring(0, 18);
+    const classPart = params.className && params.className !== '—' ? ` (${params.className.substring(0, 10)})` : '';
 
     // SMS court avec solde restant si dispo
     const balancePart = params.balanceAfter != null
@@ -359,7 +375,7 @@ export class ReceiptNotificationFinanceService {
       : '';
 
     // SMS peut être un peu plus long si solde (jusqu'à 200 car)
-    const message = `${schoolName}: Recu ${params.receiptNumber} - ${amountStr}F pour ${studentShort}.${balancePart}${persoPart} Recu PDF a l'ecole.`;
+    const message = `${schoolName}: Recu ${params.receiptNumber} - ${amountStr}F pour ${studentShort}${classPart}.${balancePart}${persoPart} Recu PDF a l'ecole.`;
 
     const result = await this.smsService.sendSMS(params.to, message);
     if (result.success) {

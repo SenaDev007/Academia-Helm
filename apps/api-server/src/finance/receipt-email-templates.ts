@@ -43,6 +43,8 @@ export interface ReceiptEmailData {
   balanceAfter?: number;
   /** Note de personnalisation (réduction appliquée) */
   personalizationNote?: string;
+  /** Classe de l'élève */
+  className?: string;
 }
 
 const METHOD_LABELS: Record<string, string> = {
@@ -113,7 +115,7 @@ export function renderReceiptEmail(data: ReceiptEmailData): { subject: string; h
             </tr>
             <tr>
               <td style="padding:4px 0;font-size:13px;color:#64748b;">Élève :</td>
-              <td style="padding:4px 0;font-size:13px;color:#0f172a;font-weight:600;">${escHtml(data.studentName)}</td>
+              <td style="padding:4px 0;font-size:13px;color:#0f172a;font-weight:600;">${escHtml(data.studentName)}${data.className && data.className !== '—' ? ` <span style="color:#64748b;font-weight:normal;">(${escHtml(data.className)})</span>` : ''}</td>
             </tr>
             <tr>
               <td style="padding:4px 0;font-size:13px;color:#64748b;">Montant payé :</td>

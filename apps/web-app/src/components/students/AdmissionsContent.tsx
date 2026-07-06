@@ -370,81 +370,122 @@ export default function AdmissionsContent() {
   const handleBatchSubmit = async () => {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
-    const ok = await setConfirmModal({
-      title: 'Soumettre en lot',
-      message: `Soumettre ${ids.length} candidature(s) ?`,
-      confirmText: 'Soumettre',
-    });
-    if (!ok) return;
-    setBatchActionPending(true);
-    try {
-      const result = await studentsService.batchSubmitAdmissions(ids);
-      toast({
-        title: '✅ Soumission en lot terminée',
-        description: `${result.succeeded} réussie(s), ${result.failed} échouée(s)`,
-      });
-      clearSelection();
-      loadAdmissions();
-    } catch (e: any) {
-      toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
-    } finally {
-      setBatchActionPending(false);
-      setConfirmModal(null);
-    }
+    showConfirm(
+      'Soumettre en lot',
+      `Soumettre ${ids.length} candidature(s) ?`,
+      async () => {
+        setBatchActionPending(true);
+        try {
+          const result = await studentsService.batchSubmitAdmissions(ids);
+          toast({
+            title: '✅ Soumission en lot terminée',
+            description: `${result.succeeded} réussie(s), ${result.failed} échouée(s)`,
+          });
+          clearSelection();
+          loadAdmissions();
+        } catch (e: any) {
+          toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
+        } finally {
+          setBatchActionPending(false);
+        }
+      },
+      'Soumettre',
+    );
+  };
+
+  const handleBatchAcceptAndEnroll = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    showConfirm(
+      'Accepter et inscrire en lot',
+      `Accepter et inscrire ${ids.length} candidature(s) ? Cette action va créer les dossiers élèves, générer les matricules, comptes financiers et responsables légaux.`,
+      async () => {
+        setBatchActionPending(true);
+        try {
+          let succeeded = 0;
+          let failed = 0;
+          for (const id of ids) {
+            try {
+              const res = await fetch(`/api/students/admissions/${id}/accept-and-enroll`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ comment: 'Acceptation en lot' }),
+              });
+              if (res.ok) succeeded++;
+              else failed++;
+            } catch {
+              failed++;
+            }
+          }
+          toast({
+            title: '✅ Acceptation en lot terminée',
+            description: `${succeeded} inscrit(s), ${failed} échouée(s)`,
+          });
+          clearSelection();
+          loadAdmissions();
+        } catch (e: any) {
+          toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
+        } finally {
+          setBatchActionPending(false);
+        }
+      },
+      'Accepter et inscrire',
+    );
   };
 
   const handleBatchAccept = async () => {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
-    const ok = await setConfirmModal({
-      title: 'Accepter en lot',
-      message: `Accepter ${ids.length} candidature(s) ?`,
-      confirmText: 'Accepter',
-    });
-    if (!ok) return;
-    setBatchActionPending(true);
-    try {
-      const result = await studentsService.batchAcceptAdmissions(ids);
-      toast({
-        title: '✅ Acceptation en lot terminée',
-        description: `${result.succeeded} réussie(s), ${result.failed} échouée(s)`,
-      });
-      clearSelection();
-      loadAdmissions();
-    } catch (e: any) {
-      toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
-    } finally {
-      setBatchActionPending(false);
-      setConfirmModal(null);
-    }
+    showConfirm(
+      'Accepter en lot',
+      `Accepter ${ids.length} candidature(s) ?`,
+      async () => {
+        setBatchActionPending(true);
+        try {
+          const result = await studentsService.batchAcceptAdmissions(ids);
+          toast({
+            title: '✅ Acceptation en lot terminée',
+            description: `${result.succeeded} réussie(s), ${result.failed} échouée(s)`,
+          });
+          clearSelection();
+          loadAdmissions();
+        } catch (e: any) {
+          toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
+        } finally {
+          setBatchActionPending(false);
+        }
+      },
+      'Accepter',
+    );
   };
 
   const handleBatchConvert = async () => {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
-    const ok = await setConfirmModal({
-      title: 'Convertir en lot',
-      message: `Convertir ${ids.length} candidature(s) en élèves ? Cette action générera matricules, comptes financiers, dossiers académiques, tokens QR et responsables légaux.`,
-      confirmText: 'Convertir',
-    });
-    if (!ok) return;
-    setBatchActionPending(true);
-    try {
-      const result = await studentsService.batchConvertAdmissions(ids);
-      const succeeded = result.results.filter((r: any) => r.success);
-      const matricules = succeeded.map((r: any) => r.matricule).filter(Boolean).join(', ');
-      toast({
-        title: '✅ Conversion en lot terminée',
-        description: `${result.succeeded} élève(s) créé(s)${matricules ? ` — Matricules: ${matricules}` : ''}${result.failed > 0 ? ` — ${result.failed} échouée(s)` : ''}`,
-      });
-      clearSelection();
-      loadAdmissions();
-    } catch (e: any) {
-      toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
-    } finally {
-      setBatchActionPending(false);
-      setConfirmModal(null);
-    }
+    showConfirm(
+      'Convertir en lot',
+      `Convertir ${ids.length} candidature(s) en élèves ? Cette action générera matricules, comptes financiers, dossiers académiques, tokens QR et responsables légaux.`,
+      async () => {
+        setBatchActionPending(true);
+        try {
+          const result = await studentsService.batchConvertAdmissions(ids);
+          const succeeded = result.results.filter((r: any) => r.success);
+          const matricules = succeeded.map((r: any) => r.matricule).filter(Boolean).join(', ');
+          toast({
+            title: '✅ Conversion en lot terminée',
+            description: `${result.succeeded} élève(s) créé(s)${matricules ? ` — Matricules: ${matricules}` : ''}${result.failed > 0 ? ` — ${result.failed} échouée(s)` : ''}`,
+          });
+          clearSelection();
+          loadAdmissions();
+        } catch (e: any) {
+          toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
+        } finally {
+          setBatchActionPending(false);
+        }
+      },
+      'Convertir',
+    );
   };
 
   // ─── Documents & Interviews (detail modal) ────────────────────────────────
@@ -925,6 +966,18 @@ export default function AdmissionsContent() {
               >
                 <CheckCircle className="w-3.5 h-3.5 mr-1.5" />
                 Accepter en lot
+              </Button>
+            )}
+            {/* Accepter et inscrire en lot — visible si au moins une PENDING/DRAFT/SUBMITTED */}
+            {filteredAdmissions.some(a => selectedIds.has(a.id) && ['PENDING', 'DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'MISSING_DOCUMENTS', 'WAITLISTED'].includes(a.status)) && (
+              <Button
+                size="sm"
+                onClick={handleBatchAcceptAndEnroll}
+                disabled={batchActionPending}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                <UserCheck className="w-3.5 h-3.5 mr-1.5" />
+                Accepter et inscrire en lot
               </Button>
             )}
             {/* Convert batch — visible si au moins une ACCEPTED */}

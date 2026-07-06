@@ -25,7 +25,6 @@ import {
   exportStudentAccountsToExcel,
 } from '@/lib/exports/excel-exports';
 import {
-  exportStudentAccountsToPdf,
   exportStudentHistoryToPdf,
 } from '@/lib/exports/finance-exports';
 
@@ -240,20 +239,12 @@ export default function StudentAccountsContent() {
     }
     setExporting('pdf');
     try {
-      const yearLabel = academicYears.find((y) => y.id === effectiveYearId)?.name || '';
-      const classLabel = filterClassId
-        ? classes.find((c) => c.id === filterClassId)?.name || ''
-        : '';
-      const { url } = await exportStudentAccountsToPdf(filteredAccounts, {
-        schoolName: tenant?.name || 'Établissement',
-        schoolLogoUrl: tenant?.id ? `/api/tenants/${tenant.id}/logo` : null,
-        academicYear: yearLabel,
-        classFilter: classLabel,
-        schoolLevel: schoolLevel?.code || undefined,
-        schoolAddress: tenant?.address || null,
-        schoolPhone: tenant?.phone || null,
-        schoolEmail: tenant?.email || null,
-      });
+      // Utiliser le backend Puppeteer pour un PDF professionnel
+      const params = new URLSearchParams({ academicYearId: effectiveYearId });
+      const res = await fetch(`/api/finance/exports/student-accounts/pdf?${params.toString()}`, { credentials: 'include' });
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
       setPreviewDoc({
         filePath: url,
         fileName: `comptes-eleves-${new Date().toISOString().slice(0, 10)}.pdf`,

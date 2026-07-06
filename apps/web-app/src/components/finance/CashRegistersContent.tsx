@@ -8,6 +8,8 @@ import {
   ArrowUpRight, ArrowDownRight, Receipt, ChevronRight, Sparkles,
   ArrowLeftRight, Send, Loader2, PiggyBank, ArrowDownCircle,
   FileSpreadsheet, FileText,
+  CreditCard, Calculator, Boxes, Truck, GraduationCap, BookOpen,
+  Users, Coffee, ShieldCheck,
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
@@ -25,10 +27,6 @@ import {
   exportCashRegisterTransactionsToExcel,
   exportAllCashRegistersToExcel,
 } from '@/lib/exports/excel-exports';
-import {
-  exportCashRegisterTransactionsToPdf,
-  exportAllCashRegistersToPdf,
-} from '@/lib/exports/finance-exports';
 
 interface CashRegister {
   id: string;
@@ -71,11 +69,64 @@ interface CashRegister {
 function getCaisseIcon(reg: CashRegister) {
   const code = (reg.code || '').toUpperCase();
   const name = (reg.name || '').toLowerCase();
-  if (code === 'MAIN' || name.includes('principal') || name.includes('coffre')) return Gem;
-  if (name.includes('mobile') || name.includes('cellulaire')) return Smartphone;
-  if (name.includes('cantine') || name.includes('shop') || name.includes('boutique')) return Store;
-  if (name.includes('accueil') || name.includes('bureau')) return Building2;
-  if (name.includes('banque') || name.includes('bank')) return Banknote;
+
+  // Caisse principale / coffre-fort
+  if (code === 'MAIN' || name.includes('principal') || name.includes('coffre'))
+    return Gem;
+
+  // Paiements en ligne (Fedapay / FeexPay)
+  if (code === 'ONLINE' || name.includes('en ligne') || name.includes('paiement en ligne'))
+    return CreditCard;
+
+  // Tontine / Épargne
+  if (code === 'TONTINE' || name.includes('tontine') || name.includes('épargne') || name.includes('epargne'))
+    return PiggyBank;
+
+  // Caisse d'accueil / secrétariat
+  if (code === 'ACCUEIL' || name.includes('accueil') || name.includes('secrétariat') || name.includes('secretariat'))
+    return Users;
+
+  // Caisse cantine
+  if (code === 'CANTEEN' || name.includes('cantine') || name.includes('réfectoire'))
+    return Coffee;
+
+  // Caisse mobile / terrain
+  if (code === 'MOBILE' || name.includes('mobile') || name.includes('cellulaire') || name.includes('terrain'))
+    return Smartphone;
+
+  // Caisse comptabilité
+  if (code === 'COMPTA' || name.includes('comptab') || name.includes('compte'))
+    return Calculator;
+
+  // Caisse économat / magasin
+  if (code === 'ECO' || name.includes('économ') || name.includes('economs') || name.includes('magasin'))
+    return Boxes;
+
+  // Caisse examen
+  if (code === 'EXAMEN' || name.includes('examen') || name.includes('concours'))
+    return GraduationCap;
+
+  // Caisse transport
+  if (code === 'TRANSPORT' || name.includes('transport'))
+    return Truck;
+
+  // Caisse activités parascolaires
+  if (code === 'ACTIVITES' || name.includes('activit') || name.includes('parascolaire'))
+    return BookOpen;
+
+  // Caisse banque
+  if (code === 'BANQUE' || name.includes('banque') || name.includes('bank'))
+    return Banknote;
+
+  // Caisse boutique / shop
+  if (name.includes('shop') || name.includes('boutique'))
+    return Store;
+
+  // Bureau générique
+  if (name.includes('bureau'))
+    return Building2;
+
+  // Icône par défaut
   return Wallet;
 }
 
@@ -480,19 +531,11 @@ export default function CashRegistersContent() {
     if (!selectedRegister) return;
     setExporting('pdf');
     try {
-      const { url } = await exportCashRegisterTransactionsToPdf(
-        selectedRegister,
-        selectedRegister.transactions || [],
-        transfers,
-        {
-          schoolName: tenant?.name || 'Établissement',
-          schoolLogoUrl: tenant?.id ? `/api/tenants/${tenant.id}/logo` : null,
-          schoolLevel: schoolLevel?.code || undefined,
-          schoolAddress: tenant?.address || null,
-          schoolPhone: tenant?.phone || null,
-          schoolEmail: tenant?.email || null,
-        }
-      );
+      // Utiliser le backend Puppeteer pour un PDF professionnel
+      const res = await fetch(`/api/finance/exports/cash-register/pdf?registerId=${selectedRegister.id}`, { credentials: 'include' });
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
       window.open(url, '_blank');
       toast({ title: '✅ PDF généré', description: `Caisse ${selectedRegister.code}` });
     } catch (e: any) {
@@ -526,14 +569,11 @@ export default function CashRegistersContent() {
   const handleExportGlobalPdf = async () => {
     setExporting('global-pdf');
     try {
-      const { url } = await exportAllCashRegistersToPdf(registers, transfers, {
-        schoolName: tenant?.name || 'Établissement',
-        schoolLogoUrl: tenant?.id ? `/api/tenants/${tenant.id}/logo` : null,
-        schoolLevel: schoolLevel?.code || undefined,
-        schoolAddress: tenant?.address || null,
-        schoolPhone: tenant?.phone || null,
-        schoolEmail: tenant?.email || null,
-      });
+      // Utiliser le backend Puppeteer pour un PDF professionnel
+      const res = await fetch(`/api/finance/exports/cash-registers/pdf`, { credentials: 'include' });
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
       window.open(url, '_blank');
       toast({ title: '✅ PDF global généré', description: `${registers.length} caisse(s)` });
     } catch (e: any) {
@@ -661,6 +701,14 @@ export default function CashRegistersContent() {
               Gestion des caisses — coffre-fort central et caisses secondaires.
             </p>
             <div className="flex items-center gap-2 flex-wrap">
+              <Button onClick={() => setCreateModal(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Nouvelle caisse
+              </Button>
+              <Button variant="outline" onClick={() => openTransfer()} disabled={registers.filter((r) => r.isOpen).length < 2}>
+                <ArrowLeftRight className="h-4 w-4 mr-2" />
+                Transférer
+              </Button>
               <Button variant="outline" size="sm" onClick={handleExportGlobalExcel} disabled={exporting !== null || registers.length === 0}>
                 {exporting === 'global-excel' ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -676,14 +724,6 @@ export default function CashRegistersContent() {
                   <FileText className="h-4 w-4 mr-2" />
                 )}
                 PDF global
-              </Button>
-              <Button onClick={() => setCreateModal(true)}>
-                <Plus className="h-4 w-4 mr-2" />
-                Nouvelle caisse
-              </Button>
-              <Button variant="outline" onClick={() => openTransfer()} disabled={registers.filter((r) => r.isOpen).length < 2}>
-                <ArrowLeftRight className="h-4 w-4 mr-2" />
-                Transférer
               </Button>
             </div>
           </div>

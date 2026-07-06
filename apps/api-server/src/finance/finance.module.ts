@@ -74,6 +74,8 @@ import { FinanceReportsController } from './finance-reports.controller';
 import { FinanceAuditController } from './finance-audit.controller';
 import { CashRegisterService } from './cash-register.service';
 import { CashRegisterController } from './cash-register.controller';
+import { FinancePdfExportService } from './finance-pdf-export.service';
+import { FinancePdfExportController } from './finance-pdf-export.controller';
 import { CommunicationModule } from '../communication/communication.module';
 
 @Module({
@@ -106,6 +108,7 @@ import { CommunicationModule } from '../communication/communication.module';
     FinanceDailyClosureController,
     FinancialSettingsController,
     FinanceReportsController,
+    FinancePdfExportController,
     FinanceAuditController,
     CashRegisterController,
     TenantPaymentConfigController,
@@ -147,6 +150,7 @@ import { CommunicationModule } from '../communication/communication.module';
     FinancialSettingsService,
     FinanceReportsService,
     CashRegisterService,
+    FinancePdfExportService,
   ],
   exports: [
     FeesPrismaService,

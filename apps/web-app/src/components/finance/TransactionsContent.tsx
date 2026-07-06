@@ -16,7 +16,6 @@ import { SchoolFeePaymentDialog } from './SchoolFeePaymentDialog';
 import { financeService } from '@/services/finance.service';
 import { formatCurrency } from '@/lib/utils';
 import { exportTransactionsToExcel } from '@/lib/exports/excel-exports';
-import { exportTransactionsToPdf } from '@/lib/exports/finance-exports';
 
 const METHOD_LABELS: Record<string, string> = {
   CASH: 'Espèces',
@@ -124,18 +123,14 @@ export default function TransactionsContent() {
   const handleExportPdf = async () => {
     setExporting('pdf');
     try {
-      const { blob, url } = await exportTransactionsToPdf(filteredTransactions, {
-        schoolName: schoolInfo.name,
-        schoolLogoUrl: schoolInfo.logoUrl,
-        academicYear: schoolInfo.academicYear,
-        dateFrom,
-        dateTo,
-        schoolLevel: schoolInfo.schoolLevel,
-        schoolAddress: schoolInfo.schoolAddress,
-        schoolPhone: schoolInfo.schoolPhone,
-        schoolEmail: schoolInfo.schoolEmail,
-      });
-      // Ouvrir dans le visualiseur
+      // Utiliser le backend Puppeteer pour un PDF professionnel (comme le module élève)
+      const params = new URLSearchParams({ academicYearId: academicYear?.id || '' });
+      if (dateFrom) params.set('dateFrom', dateFrom);
+      if (dateTo) params.set('dateTo', dateTo);
+      const res = await fetch(`/api/finance/exports/transactions/pdf?${params.toString()}`, { credentials: 'include' });
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
       setPreviewDoc({
         filePath: url,
         fileName: `encaissements-${dateFrom || 'debut'}-${dateTo || 'fin'}.pdf`,

@@ -2743,3 +2743,90 @@ Stage Summary:
 - Stats inscriptions corrigees : ADMITTED est maintenant "Inscrit" (pas "En attente")
 - Section par classe : frontend envoie directement AcademicClass.id (pas Classroom.id) → evite la P2003 FK violation
 - 1 commit pousse : `c029e800 fix(admissions+enrollments+settings): Batch operations direct pattern + stats inscriptions + Section par classe FK fix`
+
+---
+Task ID: series-crud-visual-separation
+Agent: main
+Task: 
+  1. Permettre à l'utilisateur d'ajouter des séries personnalisées (G1, G2, F1-F4) dans Structure pédagogique
+  2. Séparer visuellement Maternelle/Primaire/Secondaire + 1er cycle/2nd cycle dans Classe physique
+
+Work Log:
+
+## 1. Séries du 2nd cycle secondaire — CRUD complet
+
+### Backend
+**education-structure.service.ts** :
+- `DEFAULT_SERIES` étendu : 11 séries (A1, A2, B, C, D + G1, G2, F1, F2, F3, F4)
+- `SECOND_CYCLE_GRADE_TEMPLATES` : constant pour auto-création des 3 grades
+- `DEFAULT_CYCLES_AND_GRADES.SECONDAIRE[2nd cycle].grades` : généré dynamiquement
+  via `DEFAULT_SERIES.flatMap(...)` (33 grades au lieu de 15 codés en dur)
+- Nouvelles méthodes CRUD :
+  - `listSeries(tenantId)` : liste triée par order puis code
+  - `createSeries(tenantId, {code, name, order})` : crée série + auto-crée 3 grades
+    (2nde X, 1ère X, Terminale X) dans le cycle "2nd cycle"
+  - `deleteSeries(tenantId, seriesId)` : supprime série + grades (refuse si classes liées)
+
+**settings.controller.ts** :
+- `GET    /settings/education/series` → liste
+- `POST   /settings/education/series` → crée + auto-crée grades
+- `DELETE /settings/education/series/:id` → supprime + nettoie grades
+
+### Frontend
+**settings.service.ts** : `listEducationSeries`, `createEducationSeries`, `deleteEducationSeries`
+
+**BFF routes** (NOUVEAU) :
+- `/api/settings/education/series/route.ts` (GET + POST)
+- `/api/settings/education/series/[id]/route.ts` (DELETE)
+
+**settings/page.tsx** :
+- `SECOND_CYCLE_SERIES_FALLBACK` étendu avec G1, G2, F1-F4
+- Nouveau state : `educationSeriesList`, `newSeriesCode`, `newSeriesName`, `seriesBusy`
+- Nouveaux handlers : `loadEducationSeries`, `handleCreateSeries`, `handleDeleteSeries`
+- Nouveau panneau "Séries du 2nd cycle secondaire" dans Structure pédagogique :
+  - Visible si niveau SECONDAIRE activé
+  - Pills avec code + nom + bouton supprimer (X)
+  - Formulaire d'ajout (code majuscule + nom optionnel + bouton "Ajouter la série")
+  - Message explicatif : "La série sera créée dans le cycle 2nd cycle avec 3 grades"
+
+## 2. Séparation visuelle classes physiques par niveau/cycle
+
+**settings/page.tsx** :
+- Nouveau useMemo `groupedClassroomsByLevelCycle` :
+  - Groupe les classrooms par (niveau, cycle)
+  - 4 groupes canoniques : Maternelle / Primaire / Secondaire-1er / Secondaire-2nd
+  - Maternelle et Primaire : cycles fusionnés (sinon trop fragmenté)
+  - Secondaire : séparé 1er cycle vs 2nd cycle
+  - Tri des classes au sein de chaque groupe par ordre canonique :
+    - Maternelle 1 → Maternelle 2
+    - CI → CP → CE1 → CE2 → CM1 → CM2
+    - 6e → 5e → 4e → 3e (1er cycle)
+    - 2nde → 1ère → Terminale (2nd cycle)
+- Remplacement du tableau flat par 4 sous-tableaux :
+  - Chaque groupe a son propre header coloré :
+    - Maternelle → rose (bg-pink-50)
+    - Primaire → bleu (bg-blue-50)
+    - 1er cycle → violet (bg-purple-50)
+    - 2nd cycle → indigo (bg-indigo-50)
+  - Header affiche : niveau + cycle + count de classes
+  - Tableau identique à l'ancien (Nom / Classe pédagogique / Série / Actions)
+
+## 3. Vérifications TypeScript
+- Frontend : AUCUNE erreur sur settings/page.tsx, settings.service.ts
+- Backend : aucune NOUVELLE erreur sur education-structure.service.ts et settings.controller.ts
+  (erreurs préexistantes = Prisma client non généré dans le sandbox)
+
+## 4. Fichiers modifiés (6)
+1. `apps/api-server/src/settings/services/education-structure.service.ts` — DEFAULT_SERIES + CRUD
+2. `apps/api-server/src/settings/settings.controller.ts` — 3 nouveaux endpoints
+3. `apps/web-app/src/services/settings.service.ts` — 3 nouvelles fonctions
+4. `apps/web-app/src/app/api/settings/education/series/route.ts` — NOUVEAU BFF (GET+POST)
+5. `apps/web-app/src/app/api/settings/education/series/[id]/route.ts` — NOUVEAU BFF (DELETE)
+6. `apps/web-app/src/app/app/settings/page.tsx` — UI séries + grouped classrooms
+
+Stage Summary:
+- L'utilisateur peut maintenant ajouter/supprimer des séries (G1, G2, F1-F4, etc.) depuis Settings > Structure pédagogique
+- L'ajout crée automatiquement les 3 grades (2nde X, 1ère X, Terminale X) → disponibles pour créer des classes officielles
+- Les classes physiques sont maintenant visuellement séparées par niveau (Maternelle/Primaire/Secondaire) et par cycle (1er/2nd)
+- Ordre canonique respecté : 6e→3e pour 1er cycle, 2nde→Terminale pour 2nd cycle
+- 1 commit poussé : `113d4494 feat(settings): CRUD séries 2nd cycle + séparation visuelle classes physiques par niveau/cycle`

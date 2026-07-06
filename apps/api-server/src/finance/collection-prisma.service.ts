@@ -504,5 +504,91 @@ export class CollectionPrismaService {
       orderBy: { sentAt: 'desc' },
     });
   }
+
+  /**
+   * Saisie manuelle d'un arriéré pour un élève (onboarding nouveaux clients).
+   *
+   * Permet aux écoles qui débutent avec Academia Helm en cours d'année de
+   * saisir les arriérés existants (sur papier) dans le système.
+   *
+   * Étapes :
+   *   1. Met à jour StudentEnrollment.previousArrears (traçabilité)
+   *   2. Met à jour StudentAccount.arrearsAmount + ajuste totalDue et balance
+   *   3. Crée un FeeArrear pour que l'arriéré apparaisse dans le tableau de recouvrement
+   */
+  async createManualArrear(
+    tenantId: string,
+    data: { studentId: string; academicYearId: string; amount: number; reason?: string },
+    userId?: string,
+  ) {
+    const { studentId, academicYearId, amount, reason } = data;
+
+    if (!amount || amount <= 0) {
+      throw new BadRequestException('Le montant de l\'arriéré doit être positif.');
+    }
+
+    // 1. Charger l'inscription et le compte élève
+    const enrollment = await this.prisma.studentEnrollment.findFirst({
+      where: { studentId, tenantId, academicYearId },
+      orderBy: { enrollmentDate: 'desc' },
+    });
+    if (!enrollment) {
+      throw new NotFoundException('Inscription non trouvée pour cet élève et cette année.');
+    }
+
+    // 2. Mettre à jour previousArrears sur l'inscription
+    const currentPreviousArrears = Number(enrollment.previousArrears ?? 0);
+    const newPreviousArrears = currentPreviousArrears + amount;
+    await this.prisma.studentEnrollment.update({
+      where: { id: enrollment.id },
+      data: { previousArrears: newPreviousArrears },
+    });
+
+    // 3. Mettre à jour le StudentAccount (arrearsAmount + totalDue + balance)
+    const account = await this.prisma.studentAccount.findUnique({
+      where: { studentId_academicYearId: { studentId, academicYearId } },
+    });
+
+    if (account) {
+      const currentArrears = Number(account.arrearsAmount ?? 0);
+      const currentTotalDue = Number(account.totalDue ?? 0);
+      const currentBalance = Number(account.balance ?? 0);
+      await this.prisma.studentAccount.update({
+        where: { id: account.id },
+        data: {
+          arrearsAmount: currentArrears + amount,
+          totalDue: currentTotalDue + amount,
+          balance: currentBalance + amount,
+        },
+      });
+    }
+
+    // 4. Créer un FeeArrear pour visibilité dans le tableau de recouvrement
+    //    On cherche un StudentFee existant pour cet élève/année, sinon on crée
+    //    un FeeArrear sans StudentFee (juste sur le solde).
+    const arrear = await this.prisma.feeArrear.create({
+      data: {
+        tenantId,
+        academicYearId,
+        studentId,
+        studentFeeId: null, // pas lié à un StudentFee spécifique — arriéré global
+        totalDue: amount,
+        totalPaid: 0,
+        balanceDue: amount,
+        arrearsLevel: this.calculateArrearsLevel(amount, null),
+        lastPaymentDate: null,
+        notes: reason || 'Arriéré antérieur (saisie manuelle)',
+      },
+    });
+
+    return {
+      success: true,
+      arrearId: arrear.id,
+      studentId,
+      amount,
+      reason: reason || 'Arriéré antérieur (saisie manuelle)',
+      newPreviousArrears,
+    };
+  }
 }
 

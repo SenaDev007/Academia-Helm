@@ -248,5 +248,34 @@ export class CollectionPrismaController {
       results,
     };
   }
+
+  /**
+   * POST /finance/collection/arrears/manual
+   *
+   * Saisie manuelle d'un arriéré pour un élève (onboarding nouveaux clients).
+   * Permet aux écoles qui débutent avec Academia Helm en cours d'année de
+   * saisir les arriérés existants (sur papier) dans le système.
+   *
+   * Crée ou met à jour :
+   *   - StudentEnrollment.previousArrears (pour traçabilité)
+   *   - StudentAccount.arrearsAmount + ajuste totalDue et balance
+   *   - FeeArrear (pour que l'arriéré apparaisse dans le tableau de recouvrement)
+   *
+   * Body: {
+   *   studentId: string,
+   *   academicYearId: string,
+   *   amount: number,          // montant de l'arriéré en FCFA
+   *   reason?: string,         // motif (ex: "Arriéré année 2024-2025")
+   * }
+   */
+  @Post('arrears/manual')
+  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
+  async createManualArrear(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() body: { studentId: string; academicYearId: string; amount: number; reason?: string },
+  ) {
+    return this.collectionService.createManualArrear(tenantId, body, user?.id);
+  }
 }
 

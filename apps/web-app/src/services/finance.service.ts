@@ -286,6 +286,22 @@ class FinanceService {
     });
   }
 
+  /**
+   * Saisie manuelle d'un arriéré pour un élève (onboarding nouveaux clients).
+   * POST /api/finance/collection/arrears/manual
+   */
+  async createManualArrear(data: {
+    studentId: string;
+    academicYearId: string;
+    amount: number;
+    reason?: string;
+  }): Promise<any> {
+    return financeFetch('/api/finance/collection/arrears/manual', {
+      method: 'POST',
+      body: data,
+    });
+  }
+
   // --- Nouveaux rapports (Phase 6) ---
   async getComparativeYear(academicYearId: string): Promise<any> {
     return financeFetch(`/api/finance/reports/comparative-year?academicYearId=${academicYearId}`);

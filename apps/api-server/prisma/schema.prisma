@@ -10497,23 +10497,23 @@ model FeeArrear {
   tenantId        String
   academicYearId  String
   studentId       String
-  studentFeeId    String
+  studentFeeId    String?
   totalDue        Decimal              @db.Decimal(10, 2)
   totalPaid       Decimal              @default(0) @db.Decimal(10, 2)
   balanceDue      Decimal              @db.Decimal(10, 2)
   arrearsLevel    String               @default("LOW")
   lastPaymentDate DateTime?
+  notes           String?
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
   actions         CollectionAction[]
   reminders       CollectionReminder[]
   academicYear    AcademicYear         @relation(fields: [academicYearId], references: [id])
-  studentFee      StudentFee           @relation(fields: [studentFeeId], references: [id], onDelete: Cascade)
+  studentFee      StudentFee?          @relation(fields: [studentFeeId], references: [id], onDelete: Cascade)
   student         Student              @relation(fields: [studentId], references: [id], onDelete: Cascade)
   tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   promises        PaymentPromise[]
 
-  @@unique([studentId, studentFeeId, academicYearId])
   @@index([tenantId, academicYearId])
   @@index([studentId])
   @@index([arrearsLevel])

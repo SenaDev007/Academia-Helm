@@ -116,6 +116,13 @@ export default function RecoveryContent() {
   // État pour l'envoi multi-canal
   const [sendingMulti, setSendingMulti] = useState(false);
 
+  // Modal saisie manuelle d'arriéré (onboarding nouveaux clients)
+  const [manualArrearModal, setManualArrearModal] = useState(false);
+  const [arrearStudentId, setArrearStudentId] = useState('');
+  const [arrearAmount, setArrearAmount] = useState('');
+  const [arrearReason, setArrearReason] = useState('');
+  const [arrearSaving, setArrearSaving] = useState(false);
+
   // Modals Phase 2
   const [promiseModal, setPromiseModal] = useState<{ arrearId: string; studentName: string; balanceDue: number } | null>(null);
   const [actionModal, setActionModal] = useState<{ arrearId: string; studentName: string } | null>(null);
@@ -255,6 +262,42 @@ export default function RecoveryContent() {
   };
 
   /**
+   * Saisie manuelle d'un arriéré (onboarding nouveaux clients).
+   * Permet aux écoles qui débutent avec Academia Helm de saisir les arriérés
+   * existants (sur papier) dans le système.
+   */
+  const handleCreateManualArrear = async () => {
+    if (!arrearStudentId || !academicYear?.id || !arrearAmount) return;
+    setArrearSaving(true);
+    try {
+      const amount = Number(arrearAmount);
+      if (isNaN(amount) || amount <= 0) {
+        toast({ title: 'Erreur', description: 'Le montant doit être un nombre positif.', variant: 'destructive' });
+        return;
+      }
+      const result = await financeService.createManualArrear({
+        studentId: arrearStudentId,
+        academicYearId: academicYear.id,
+        amount,
+        reason: arrearReason || undefined,
+      });
+      toast({
+        title: '✅ Arriéré enregistré',
+        description: `${formatCurrency(amount)} FCFA ajouté aux arriérés de l'élève. Total arriérés : ${formatCurrency(result.newPreviousArrears)} FCFA.`,
+      });
+      setManualArrearModal(false);
+      setArrearStudentId('');
+      setArrearAmount('');
+      setArrearReason('');
+      loadAll();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e?.message || 'Erreur réseau', variant: 'destructive' });
+    } finally {
+      setArrearSaving(false);
+    }
+  };
+
+  /**
    * Workflow d'escalade automatique : parcourt tous les cas de l'année et
    * déclenche les relances selon le niveau (1=rappel, 2=SMS+WhatsApp,
    * 3=notification direction, 4=blocage administratif).
@@ -376,6 +419,10 @@ export default function RecoveryContent() {
               </p>
             </div>
             <div className="flex gap-2 flex-wrap">
+              <Button variant="outline" size="sm" onClick={() => setManualArrearModal(true)} className="border-amber-300 text-amber-700 hover:bg-amber-100">
+                <Plus className="w-4 h-4 mr-2" />
+                Saisir un arriéré
+              </Button>
               <Button variant="outline" size="sm" onClick={() => setManualModal(true)}>
                 <Send className="w-4 h-4 mr-2" />
                 Relance manuelle
@@ -524,6 +571,22 @@ export default function RecoveryContent() {
           level={manualLevel}
           setLevel={setManualLevel}
           sending={sendingMulti}
+        />
+      )}
+
+      {/* Modal saisie manuelle d'arriéré (onboarding nouveaux clients) */}
+      {manualArrearModal && (
+        <ManualArrearModal
+          onClose={() => setManualArrearModal(false)}
+          onSubmit={handleCreateManualArrear}
+          academicYearId={academicYear?.id ?? ''}
+          studentId={arrearStudentId}
+          setStudentId={setArrearStudentId}
+          amount={arrearAmount}
+          setAmount={setArrearAmount}
+          reason={arrearReason}
+          setReason={setArrearReason}
+          saving={arrearSaving}
         />
       )}
     </div>
@@ -1173,6 +1236,135 @@ function ManualReminderModal({
                 <>
                   <Send className="w-4 h-4 mr-2" />
                   Envoyer la relance
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Modal saisie manuelle d'arriéré (onboarding nouveaux clients)      */
+/* ------------------------------------------------------------------ */
+
+function ManualArrearModal({
+  onClose,
+  onSubmit,
+  academicYearId,
+  studentId,
+  setStudentId,
+  amount,
+  setAmount,
+  reason,
+  setReason,
+  saving,
+}: {
+  onClose: () => void;
+  onSubmit: () => void;
+  academicYearId: string;
+  studentId: string;
+  setStudentId: (v: string) => void;
+  amount: string;
+  setAmount: (v: string) => void;
+  reason: string;
+  setReason: (v: string) => void;
+  saving: boolean;
+}) {
+  const [accounts, setAccounts] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!academicYearId) return;
+    financeService
+      .getStudentAccounts({ academicYearId })
+      .then((d) => setAccounts(Array.isArray(d) ? d : []))
+      .catch(() => setAccounts([]));
+  }, [academicYearId]);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
+          <Plus className="w-5 h-5 text-amber-600" />
+          Saisir un arriéré
+        </h3>
+        <p className="text-xs text-slate-500 mb-4">
+          Saisissez manuellement un arriéré pour un élève (issu des registres papier).
+          Le montant sera ajouté au total dû et visible dans le tableau de recouvrement.
+        </p>
+        <div className="space-y-4">
+          <div>
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
+              Élève
+            </Label>
+            <Select value={studentId} onValueChange={setStudentId}>
+              <SelectTrigger><SelectValue placeholder="Sélectionner un élève" /></SelectTrigger>
+              <SelectContent>
+                {accounts.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.id}
+                    {a.student?.matricule ? ` · ${a.student.matricule}` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {accounts.length === 0 && (
+              <p className="text-xs text-slate-500 mt-1">Aucun élève trouvé pour cette année.</p>
+            )}
+          </div>
+          <div>
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
+              Montant de l'arriéré (FCFA)
+            </Label>
+            <Input
+              type="number"
+              min="0"
+              step="any"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="ex: 25000"
+              className="font-mono font-semibold"
+            />
+          </div>
+          <div>
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
+              Motif (optionnel)
+            </Label>
+            <Input
+              type="text"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="ex: Arriéré année 2024-2025"
+            />
+          </div>
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+            <p className="text-xs text-amber-800">
+              💡 Cet arriéré sera ajouté au compte financier de l'élève et apparaîtra
+              dans le tableau des arriérés. Il pourra faire l'objet de relances
+              (email + WhatsApp + SMS) via les boutons d'action.
+            </p>
+          </div>
+          <div className="flex gap-2 justify-end pt-2">
+            <Button variant="outline" onClick={onClose} disabled={saving}>Annuler</Button>
+            <Button
+              onClick={onSubmit}
+              disabled={!studentId || !amount || saving}
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Enregistrement...
+                </>
+              ) : (
+                <>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Enregistrer l'arriéré
                 </>
               )}
             </Button>

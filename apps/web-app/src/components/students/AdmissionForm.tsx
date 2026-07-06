@@ -35,8 +35,6 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
     previousSchool: initialData?.previousSchool || '',
     previousLevel: initialData?.previousLevel || '',
     changeReason: initialData?.changeReason || '',
-    // Arriérés antérieurs (onboarding nouveaux clients)
-    previousArrears: initialData?.previousArrears?.toString() || '0',
     // Statut élève : nouveau (INSCRIPTION) vs ancien (REINSCRIPTION)
     isNewStudent: initialData?.isNewStudent ?? true,
     mainGuardianName: initialData?.mainGuardianName || '',
@@ -173,8 +171,7 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
         previousSchool: formData.previousSchool || undefined,
         previousLevel: formData.previousLevel || undefined,
         changeReason: formData.changeReason || undefined,
-        // Arriérés antérieurs (onboarding nouveaux clients) + statut élève
-        previousArrears: Number(formData.previousArrears) || 0,
+        // Statut élève (nouveau vs ancien) — détermine INSCRIPTION vs REINSCRIPTION
         isNewStudent: formData.isNewStudent,
         mainGuardianName: formData.mainGuardianName || undefined,
         mainGuardianPhone: formData.mainGuardianPhone || undefined,
@@ -429,31 +426,6 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
               <p className="text-xs text-slate-500 ml-6">Déjà inscrit les années précédentes → Frais de réinscription</p>
             </button>
           </div>
-        </div>
-
-        {/* ─── Arriérés antérieurs (onboarding nouveaux clients) ───
-            Permet aux nouveaux clients de saisir les arriérés existants
-            (sur papier) au moment de l'admission. */}
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
-          <label className="text-xs font-bold text-amber-700 uppercase flex items-center gap-2">
-            <span>📒 Arriérés antérieurs (FCFA)</span>
-            <span className="text-[10px] font-normal text-amber-600 normal-case">— Saisie manuelle pour nouveaux clients</span>
-          </label>
-          <input
-            type="number"
-            min="0"
-            step="any"
-            name="previousArrears"
-            value={formData.previousArrears}
-            onChange={handleInputChange}
-            className="w-full px-4 py-2.5 bg-white border border-amber-200 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none text-sm font-mono font-semibold text-amber-900 transition-all"
-            placeholder="0"
-          />
-          <p className="text-[11px] text-amber-700">
-            💡 Saisissez le montant des arriérés de cet élève (issu des registres papier) si l'école
-            débute avec Academia Helm en cours d'année. Ce montant sera ajouté au total dû et visible
-            dans le compte financier de l'élève.
-          </p>
         </div>
       </div>
 

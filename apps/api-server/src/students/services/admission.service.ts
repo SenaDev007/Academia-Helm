@@ -415,10 +415,8 @@ export class AdmissionService {
       }
 
       // 1. Pré-inscription (crée Student + StudentEnrollment PRE_REGISTERED)
-      //    ⚠️ previousArrears : permet aux nouveaux clients de saisir les
-      //    arriérés antérieurs (sur papier) au moment de l'admission.
-      //    Sera injecté dans StudentEnrollment.previousArrears puis dans
-      //    StudentAccount.arrearsAmount lors de admit().
+      //    ⚠️ previousArrears n'est plus saisi à l'admission — il est géré
+      //    dans le module Finance > Recouvrement (saisie manuelle d'arriérés).
       const student = await this.lifecycleService.preRegister(tenantId, {
         academicYearId: admission.academicYearId,
         schoolLevelId: studentSchoolLevelId,  // ← UUID de school_levels (pas education_levels)
@@ -429,7 +427,6 @@ export class AdmissionService {
         placeOfBirth: admission.birthPlace ?? undefined,
         nationality: admission.nationality ?? undefined,
         classId: validClassId ?? undefined,  // ← null si classe supprimée
-        previousArrears: admission.previousArrears ?? 0,
       }, userId);
 
       this.logger.log(`convertToStudent: preRegister OK, student.id=${student.id}`);

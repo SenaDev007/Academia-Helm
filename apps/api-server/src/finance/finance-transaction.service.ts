@@ -95,6 +95,18 @@ export class FinanceTransactionService {
     });
     if (!account) throw new NotFoundException('StudentAccount not found');
 
+    // ✅ Idempotence : si une transaction existe déjà avec cette référence (Fedapay/FeexPay),
+    // on la retourne sans en créer une nouvelle (évite les doublons si le webhook
+    // arrive après le onComplete du widget, ou vice-versa).
+    if (data.reference) {
+      const existing = await this.prisma.financeTransaction.findFirst({
+        where: { reference: data.reference, tenantId },
+      });
+      if (existing) {
+        return existing;
+      }
+    }
+
     let remaining = data.amount;
     const updates: { breakdownId: string; paidDelta: number; remainingDelta: number }[] = [];
 

@@ -280,61 +280,77 @@ export default function NewPaymentModal({
           document.head.appendChild(script);
         });
 
-        // Générer une référence unique côté client (Fedapay n'en génère pas avant le widget)
-        const fedapayReference = `FEDAPAY-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
-
-        // ✅ Stocker les métadonnées côté backend AVANT d'ouvrir le widget
-        // Le webhook Fedapay utilisera cette référence pour créer la FinanceTransaction
-        try {
-          await fetch('/api/finance/payments/fedapay/initiate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({
-              reference: fedapayReference,
-              studentAccountId,
-              academicYearId,
-              studentName,
-              amount: amountNum,
-            }),
-          });
-        } catch (initErr: any) {
-          console.warn('PaymentInitiation create failed (non bloquant):', initErr);
-        }
-
         // Ouvrir le checkout Fedapay — le client saisit lui-même ses infos
+        // Note : on ne génère pas de référence côté client — Fedapay génère la sienne
+        // (comme dans le projet de référence Zohar Decor qui marche)
         const FedaPay = (window as any).FedaPay;
         const widget = FedaPay.init({
           public_key: keyData.publicKey,
           transaction: {
             amount: amountNum,
             description: `Scolarité ${studentName}`.substring(0, 100),
-            reference: fedapayReference, // ← Référence pour le webhook
           },
           customer: {
             firstname: selectedAccount.student?.firstName || '',
             lastname: selectedAccount.student?.lastName || '',
           },
           onComplete: async (response: any) => {
-            if (response?.reason === 'DIALOG DISMISSED') {
+            // Vérifier les raisons d'annulation (comme le projet de référence)
+            if (response?.reason === 'DIALOG DISMISSED' || response?.reason === 'USERCANCELLED') {
               toast({ title: 'Paiement annulé', description: 'Le checkout Fedapay a été fermé.' });
               setLoading(false);
               return;
             }
 
-            // ✅ Le widget Fedapay est complété, mais la transaction n'est pas encore confirmée.
-            // Le webhook Fedapay créera la FinanceTransaction quand le paiement sera confirmé.
-            // On affiche un message "en attente de confirmation" — pas de création de transaction ici.
-            toast({
-              title: 'Paiement initié',
-              description: `Référence : ${fedapayReference}. Le reçu sera généré automatiquement après confirmation du paiement par Fedapay (via webhook).`,
-            });
-            setReceipt({
-              id: fedapayReference,
-              receiptNumber: fedapayReference,
-              createdAt: new Date().toISOString(),
-            });
-            setLoading(false);
+            // ✅ Paiement réussi — créer la FinanceTransaction côté backend
+            // (approche du projet de référence Zohar Decor qui marche)
+            // Le webhook Fedapay reste comme sécurité (idempotence) mais ne doit
+            // pas être le seul mécanisme car il n'est pas toujours envoyé en test.
+            const fedapayReference = response?.reference || `FEDAPAY-${Date.now()}`;
+            try {
+              const result = await financeService.createTransaction({
+                academicYearId,
+                studentAccountId,
+                amount: amountNum,
+                paymentMethod: 'FEDAPAY',
+                reference: fedapayReference,
+              });
+              if (result?.id) {
+                setReceipt({
+                  id: result.id,
+                  receiptNumber: result.receiptNumber || fedapayReference,
+                  createdAt: result.createdAt || new Date().toISOString(),
+                });
+                toast({
+                  title: '✅ Paiement confirmé',
+                  description: `Reçu ${result.receiptNumber} généré. Référence Fedapay : ${fedapayReference}.`,
+                });
+              } else {
+                toast({
+                  title: 'Paiement initié',
+                  description: `Référence Fedapay : ${fedapayReference}. Le reçu est en cours de génération.`,
+                });
+                setReceipt({
+                  id: fedapayReference,
+                  receiptNumber: fedapayReference,
+                  createdAt: new Date().toISOString(),
+                });
+              }
+            } catch (err: any) {
+              console.error('createTransaction after Fedapay failed:', err);
+              toast({
+                title: 'Paiement reçu mais transaction non enregistrée',
+                description: `Référence Fedapay : ${fedapayReference}. Contactez l'administrateur.`,
+                variant: 'destructive',
+              });
+              setReceipt({
+                id: fedapayReference,
+                receiptNumber: fedapayReference,
+                createdAt: new Date().toISOString(),
+              });
+            } finally {
+              setLoading(false);
+            }
           },
         });
         widget.open();
@@ -488,20 +504,53 @@ export default function NewPaymentModal({
         return;
       }
 
-      // 2. ✅ Succès FeexPay — les métadonnées sont déjà stockées dans PaymentInitiation
-      // (côté backend, lors de l'appel /api/finance/payments/feexpay/initiate).
-      // Le webhook FeexPay créera la FinanceTransaction quand le paiement sera confirmé.
-      // On affiche un message "en attente de confirmation" — pas de création de transaction ici.
+      // 2. ✅ Succès FeexPay — créer la FinanceTransaction côté backend
+      // (approche du projet de référence Zohar Decor — ne pas attendre le webhook)
+      // Le webhook FeexPay reste comme sécurité (idempotence via référence unique)
+      // mais ne doit pas être le seul mécanisme.
       const feexpayReference = data.reference || '';
-      setReceipt({
-        id: feexpayReference,
-        receiptNumber: feexpayReference || '—',
-        createdAt: new Date().toISOString(),
-      });
-      toast({
-        title: '📱 Paiement initié',
-        description: `Le client va recevoir une notification sur le ${formatPhoneDisplay(cleanedPhone)} pour confirmer. Référence : ${feexpayReference}. Le reçu sera généré automatiquement après confirmation (via webhook).`,
-      });
+      try {
+        const result = await financeService.createTransaction({
+          academicYearId,
+          studentAccountId,
+          amount: amountNum,
+          paymentMethod: 'FEEXPAY',
+          reference: feexpayReference || undefined,
+        });
+        if (result?.id) {
+          setReceipt({
+            id: result.id,
+            receiptNumber: result.receiptNumber || feexpayReference || '—',
+            createdAt: result.createdAt || new Date().toISOString(),
+          });
+          toast({
+            title: '📱 Paiement initié',
+            description: `Notification envoyée sur le ${formatPhoneDisplay(cleanedPhone)}. Reçu ${result.receiptNumber} généré. Référence : ${feexpayReference}.`,
+          });
+        } else {
+          setReceipt({
+            id: feexpayReference || 'feexpay-pending',
+            receiptNumber: feexpayReference || '—',
+            createdAt: new Date().toISOString(),
+          });
+          toast({
+            title: '📱 Paiement initié',
+            description: `Notification envoyée sur le ${formatPhoneDisplay(cleanedPhone)}. Référence : ${feexpayReference}.`,
+          });
+        }
+      } catch (err: any) {
+        console.error('createTransaction after FeexPay failed:', err);
+        setReceipt({
+          id: feexpayReference || 'feexpay-pending',
+          receiptNumber: feexpayReference || '—',
+          createdAt: new Date().toISOString(),
+        });
+        toast({
+          title: 'Paiement initié mais transaction non enregistrée',
+          description: `Référence FeexPay : ${feexpayReference}. Contactez l'administrateur pour synchroniser.`,
+          variant: 'destructive',
+        });
+      }
     } catch (e: any) {
       setFeexpayError(e.message || 'Erreur réseau');
     } finally {

@@ -13,14 +13,31 @@ const DEFAULT_LEVELS: { name: string; order: number }[] = [
   { name: 'SECONDAIRE', order: 3 },
 ];
 
-/** Séries du 2nd cycle secondaire (Bénin). */
+/** Séries du 2nd cycle secondaire (Bénin).
+ *  Inclut les séries classiques (A1, A2, B, C, D) + séries techniques
+ *  (G1, G2 — génie civil/bâtiment ; F1, F2, F3, F4 — industriel).
+ *  L'utilisateur peut ajouter/supprimer des séries via l'UI Settings. */
 const DEFAULT_SERIES = [
   { code: 'A1', name: 'Série A1', order: 1 },
   { code: 'A2', name: 'Série A2', order: 2 },
   { code: 'B', name: 'Série B', order: 3 },
   { code: 'C', name: 'Série C', order: 4 },
   { code: 'D', name: 'Série D', order: 5 },
+  { code: 'G1', name: 'Série G1 (Génie Civil)', order: 6 },
+  { code: 'G2', name: 'Série G2 (Bâtiment)', order: 7 },
+  { code: 'F1', name: 'Série F1 (Électrotechnique)', order: 8 },
+  { code: 'F2', name: 'Série F2 (Mécanique)', order: 9 },
+  { code: 'F3', name: 'Série F3 (Électronique)', order: 10 },
+  { code: 'F4', name: 'Série F4 (Maintenance)', order: 11 },
 ] as const;
+
+/** Noms des 3 grades du 2nd cycle (2nde, 1ère, Terminale).
+ *  Utilisé pour auto-créer les 3 grades quand on ajoute une nouvelle série. */
+const SECOND_CYCLE_GRADE_TEMPLATES = [
+  { namePrefix: '2nde', codePrefix: '2NDE' },
+  { namePrefix: '1ère', codePrefix: '1ERE' },
+  { namePrefix: 'Terminale', codePrefix: 'TLE' },
+];
 
 /** Aligné plateforme nationale Bénin Educmaster : Maternelle 1 et Maternelle 2 (au lieu de PS, MS, GS). */
 const DEFAULT_CYCLES_AND_GRADES: Record<
@@ -55,27 +72,25 @@ const DEFAULT_CYCLES_AND_GRADES: Record<
           { name: '3ème', code: '3EME', order: 4 },
         ],
       },
-      // 2nd cycle : chaque grade est lié à une série (EducationSeries). Les classes physiques peuvent avoir un suffixe (ex. Terminale C 1).
+      // 2nd cycle : chaque grade est lié à une série (EducationSeries).
+      // Les grades sont générés dynamiquement à partir de DEFAULT_SERIES
+      // (3 grades par série : 2nde X, 1ère X, Terminale X).
+      // Cela permet d'avoir toutes les séries (A1, A2, B, C, D, G1, G2, F1-F4)
+      // et toute série ajoutée manuellement via createSeries().
       {
         name: '2nd cycle',
         order: 2,
-        grades: [
-          { name: '2nde A1', code: '2NDE_A1', order: 1, seriesCode: 'A1' },
-          { name: '2nde A2', code: '2NDE_A2', order: 2, seriesCode: 'A2' },
-          { name: '2nde B', code: '2NDE_B', order: 3, seriesCode: 'B' },
-          { name: '2nde C', code: '2NDE_C', order: 4, seriesCode: 'C' },
-          { name: '2nde D', code: '2NDE_D', order: 5, seriesCode: 'D' },
-          { name: '1ère A1', code: '1ERE_A1', order: 6, seriesCode: 'A1' },
-          { name: '1ère A2', code: '1ERE_A2', order: 7, seriesCode: 'A2' },
-          { name: '1ère B', code: '1ERE_B', order: 8, seriesCode: 'B' },
-          { name: '1ère C', code: '1ERE_C', order: 9, seriesCode: 'C' },
-          { name: '1ère D', code: '1ERE_D', order: 10, seriesCode: 'D' },
-          { name: 'Terminale A1', code: 'TLE_A1', order: 11, seriesCode: 'A1' },
-          { name: 'Terminale A2', code: 'TLE_A2', order: 12, seriesCode: 'A2' },
-          { name: 'Terminale B', code: 'TLE_B', order: 13, seriesCode: 'B' },
-          { name: 'Terminale C', code: 'TLE_C', order: 14, seriesCode: 'C' },
-          { name: 'Terminale D', code: 'TLE_D', order: 15, seriesCode: 'D' },
-        ],
+        grades: DEFAULT_SERIES.flatMap((series, seriesIdx) =>
+          SECOND_CYCLE_GRADE_TEMPLATES.map((tpl, tplIdx) => ({
+            name: `${tpl.namePrefix} ${series.code}`,
+            code: `${tpl.codePrefix}_${series.code}`,
+            // Ordre : 2nde A1 (1), 2nde A2 (2), ..., 2nde F4 (11),
+            //          1ère A1 (12), 1ère A2 (13), ..., 1ère F4 (22),
+            //          Terminale A1 (23), ..., Terminale F4 (33)
+            order: seriesIdx + 1 + tplIdx * DEFAULT_SERIES.length,
+            seriesCode: series.code,
+          })),
+        ),
       },
     ],
   },
@@ -375,5 +390,170 @@ export class EducationStructureService {
       where: { id: levelId },
       data: { ...prismaUpdateDefaults(), isEnabled },
     });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  SÉRIES DU 2ND CYCLE SECONDAIRE — CRUD
+  // ═══════════════════════════════════════════════════════════════════════
+  //
+  // Les séries (EducationSeries) sont des catalogues tenant-level (pas par année).
+  // Elles sont liées aux grades (EducationGrade.seriesId) du 2nd cycle secondaire.
+  //
+  // Flux quand on ajoute une série :
+  //   1. Crée la EducationSeries
+  //   2. Auto-crée les 3 grades (2nde X, 1ère X, Terminale X) dans le cycle
+  //      "2nd cycle" du niveau SECONDAIRE
+  //   3. La sync auto (syncAcademicSeriesFromEducationSettings + syncAcademicClassesFromEducationSettings)
+  //      propagera vers AcademicSeries + AcademicClass pour chaque année scolaire.
+  //
+  // Flux quand on supprime une série :
+  //   1. Vérifie qu'aucune Classroom n'est liée aux grades de cette série
+  //   2. Supprime les 3 grades (EducationGrade)
+  //   3. Supprime la EducationSeries
+  //   4. La sync auto nettoiera les AcademicSeries/AcademicClass orphelins
+  //      (à condition qu'aucun StudentEnrollment ne soit lié).
+
+  /**
+   * Liste toutes les séries du 2nd cycle secondaire pour ce tenant.
+   * Triées par `order` puis `code`.
+   */
+  async listSeries(tenantId: string) {
+    return this.prisma.educationSeries.findMany({
+      where: { tenantId },
+      orderBy: [{ order: 'asc' }, { code: 'asc' }],
+    });
+  }
+
+  /**
+   * Crée une nouvelle série + auto-crée les 3 grades (2nde X, 1ère X, Terminale X).
+   *
+   * @param tenantId - ID du tenant
+   * @param data - { code, name?, order? }
+   * @returns La série créée + les 3 grades créés
+   */
+  async createSeries(
+    tenantId: string,
+    data: { code: string; name?: string; order?: number },
+  ) {
+    const code = (data.code || '').trim().toUpperCase();
+    if (!code) throw new BadRequestException('Le code de la série est requis.');
+
+    // Vérifier l'unicité du code
+    const existing = await this.prisma.educationSeries.findFirst({
+      where: { tenantId, code },
+    });
+    if (existing) {
+      throw new BadRequestException(`Une série avec le code "${code}" existe déjà.`);
+    }
+
+    // Calculer l'order si non fourni (à la fin)
+    const order =
+      data.order ??
+      (await this.prisma.educationSeries.count({ where: { tenantId } })) + 1;
+
+    // 1. Créer la série
+    const series = await this.prisma.educationSeries.create({
+      data: {
+        ...prismaCreateDefaults(),
+        tenantId,
+        code,
+        name: data.name?.trim() || `Série ${code}`,
+        order,
+      },
+    });
+
+    // 2. Auto-créer les 3 grades (2nde X, 1ère X, Terminale X) dans le 2nd cycle
+    //    du niveau SECONDAIRE
+    const secondaryLevel = await this.prisma.educationLevel.findFirst({
+      where: { tenantId, name: 'SECONDAIRE' },
+    });
+    if (!secondaryLevel) {
+      // Si le niveau SECONDAIRE n'existe pas, on crée juste la série sans grades
+      return { series, gradesCreated: [] };
+    }
+
+    const secondCycle = await this.prisma.educationCycle.findFirst({
+      where: { levelId: secondaryLevel.id, name: '2nd cycle' },
+    });
+    if (!secondCycle) {
+      return { series, gradesCreated: [] };
+    }
+
+    // Calculer l'ordre initial (à la suite des grades existants)
+    const maxOrder = await this.prisma.educationGrade
+      .findFirst({
+        where: { cycleId: secondCycle.id },
+        orderBy: { order: 'desc' },
+        select: { order: true },
+      })
+      .then((g) => g?.order ?? 0);
+
+    const gradesCreated = [];
+    for (let i = 0; i < SECOND_CYCLE_GRADE_TEMPLATES.length; i++) {
+      const tpl = SECOND_CYCLE_GRADE_TEMPLATES[i];
+      const gradeName = `${tpl.namePrefix} ${code}`;
+      const gradeCode = `${tpl.codePrefix}_${code}`;
+      const gradeOrder = maxOrder + 1 + i;
+
+      // Vérifier l'unicité du code dans ce cycle
+      const existingGrade = await this.prisma.educationGrade.findFirst({
+        where: { cycleId: secondCycle.id, code: gradeCode },
+      });
+      if (existingGrade) continue; // Déjà existe — skip
+
+      const grade = await this.prisma.educationGrade.create({
+        data: {
+          ...prismaCreateDefaults(),
+          cycleId: secondCycle.id,
+          seriesId: series.id,
+          name: gradeName,
+          code: gradeCode,
+          order: gradeOrder,
+        },
+      });
+      gradesCreated.push(grade);
+    }
+
+    return { series, gradesCreated };
+  }
+
+  /**
+   * Supprime une série + ses 3 grades (si aucune classe physique n'y est liée).
+   *
+   * @param tenantId - ID du tenant
+   * @param seriesId - ID de la série à supprimer
+   * @returns { success: true, gradesDeleted: number }
+   */
+  async deleteSeries(tenantId: string, seriesId: string) {
+    const series = await this.prisma.educationSeries.findFirst({
+      where: { id: seriesId, tenantId },
+      include: { grades: { include: { classrooms: { select: { id: true } } } } },
+    });
+    if (!series) throw new NotFoundException('Série non trouvée.');
+
+    // Vérifier qu'aucune classe physique n'est liée aux grades de cette série
+    const classroomsCount = series.grades.reduce(
+      (sum, g) => sum + g.classrooms.length,
+      0,
+    );
+    if (classroomsCount > 0) {
+      throw new BadRequestException(
+        `Impossible de supprimer la série "${series.code}" : ${classroomsCount} classe(s) physique(s) y sont liées. ` +
+          'Archivez ou supprimez ces classes d\'abord.',
+      );
+    }
+
+    // Supprimer les grades
+    const gradesDeleted = series.grades.length;
+    if (gradesDeleted > 0) {
+      await this.prisma.educationGrade.deleteMany({
+        where: { seriesId: series.id },
+      });
+    }
+
+    // Supprimer la série
+    await this.prisma.educationSeries.delete({ where: { id: series.id } });
+
+    return { success: true, gradesDeleted };
   }
 }

@@ -540,6 +540,34 @@ export async function setEducationLevelEnabled(id: string, isEnabled: boolean, t
 }
 
 // ============================================================================
+// SÉRIES DU 2ND CYCLE SECONDAIRE — CRUD
+// Permet d'ajouter/supprimer des séries (A1, A2, B, C, D, G1, G2, F1-F4, etc.)
+// ============================================================================
+
+export async function listEducationSeries(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/education/series${qs}`);
+}
+
+export async function createEducationSeries(
+  data: { code: string; name?: string; order?: number },
+  tenantId?: string | null,
+) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/education/series${qs}`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteEducationSeries(id: string, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/education/series/${encodeURIComponent(id)}${qs}`, {
+    method: 'DELETE',
+  });
+}
+
+// ============================================================================
 // OPTION BILINGUE
 // ============================================================================
 

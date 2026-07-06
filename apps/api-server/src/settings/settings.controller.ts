@@ -1739,6 +1739,51 @@ export class SettingsController {
     return this.educationStructureService.setLevelEnabled(this.resolveTid(tenantId, user, req), id, data.isEnabled);
   }
 
+  // ═══════════════════════════════════════════════════════════════════════
+  //  SÉRIES DU 2ND CYCLE SECONDAIRE — CRUD
+  //  Permet à l'utilisateur d'ajouter/supprimer des séries (A1, A2, B, C, D,
+  //  G1, G2, F1-F4, ou toute série personnalisée). L'ajout crée
+  //  automatiquement les 3 grades (2nde X, 1ère X, Terminale X).
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /** GET /settings/education/series — Liste toutes les séries du tenant. */
+  @Get('education/series')
+  async listEducationSeries(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    return this.educationStructureService.listSeries(this.resolveTid(tenantId, user, req));
+  }
+
+  /** POST /settings/education/series — Crée une série + auto-crée les 3 grades. */
+  @Post('education/series')
+  async createEducationSeries(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Body() data: { code: string; name?: string; order?: number },
+  ) {
+    return this.educationStructureService.createSeries(
+      this.resolveTid(tenantId, user, req),
+      data,
+    );
+  }
+
+  /** DELETE /settings/education/series/:id — Supprime une série + ses 3 grades. */
+  @Delete('education/series/:id')
+  async deleteEducationSeries(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Param('id') id: string,
+  ) {
+    return this.educationStructureService.deleteSeries(
+      this.resolveTid(tenantId, user, req),
+      id,
+    );
+  }
+
   // ============================================================================
   // RÔLES & PERMISSIONS (RBAC multi-tenant — isolation stricte + audit)
   // Ordre guards : JWT → tenant → rôle → permission → feature flag (PermissionGuard)

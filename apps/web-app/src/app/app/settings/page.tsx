@@ -27,7 +27,7 @@ import {
   Bell, Users, Calendar, Save, Loader2, CheckCircle, AlertCircle,
   Mail, UserCog, Lock, Key, Smartphone, CreditCard, Receipt, RefreshCw,
   Upload, Image, CalendarDays, UserCircle, School, Archive, CalendarRange,
-  Pencil, CopyPlus, Layers, Building2, Wallet
+  Pencil, CopyPlus, Layers, Building2, Wallet, Plus, X
 } from 'lucide-react';
 import { ModuleHeader } from '@/components/modules/blueprint';
 import GeneratedStampsSignatures from '@/components/settings/GeneratedStampsSignatures';
@@ -228,6 +228,13 @@ export default function SettingsPage() {
   // Sélection multiple de grades pour création groupée de classes officielles
   const [selectedGradeIds, setSelectedGradeIds] = useState<Set<string>>(new Set());
   const [showBulkOfficialClasses, setShowBulkOfficialClasses] = useState(false);
+  // ── Séries du 2nd cycle secondaire (CRUD) ──
+  // Permet à l'utilisateur d'ajouter/supprimer des séries (G1, G2, F1-F4, etc.)
+  // L'ajout crée automatiquement les 3 grades (2nde X, 1ère X, Terminale X).
+  const [educationSeriesList, setEducationSeriesList] = useState<any[]>([]);
+  const [newSeriesCode, setNewSeriesCode] = useState('');
+  const [newSeriesName, setNewSeriesName] = useState('');
+  const [seriesBusy, setSeriesBusy] = useState(false);
   const [bilingualForm, setBilingualForm] = useState<any>({});
   const [bilingualBillingImpact, setBilingualBillingImpact] = useState<{ monthly?: number; annual?: number; currency?: string } | null>(null);
   const [bilingualMigrationNeeded, setBilingualMigrationNeeded] = useState<boolean | null>(null);
@@ -296,13 +303,101 @@ export default function SettingsPage() {
     return list;
   }, [educationClassrooms]);
 
-  /** Séries du 2nd cycle secondaire (A1, A2, B, C, D). Liste de secours si l'API ne renvoie pas les séries. */
+  /** Classes physiques groupées par (niveau, cycle) pour l'affichage visuel séparé.
+   *  Structure : [{ key, levelLabel, cycleLabel?, classrooms: [] }]
+   *  - Maternelle (cycle fusionné)
+   *  - Primaire (cycle fusionné)
+   *  - Secondaire — 1er cycle
+   *  - Secondaire — 2nd cycle
+   *  L'ordre des groupes est canonique : Maternelle → Primaire → 1er cycle → 2nd cycle.
+   *  L'ordre des classes au sein de chaque groupe suit CANONICAL_CLASS_ORDER
+   *  (6e → 5e → 4e → 3e pour le 1er cycle ; 2nde → 1ère → Terminale pour le 2nd). */
+  const groupedClassroomsByLevelCycle = useMemo(() => {
+    // Ordre canonique des groupes
+    const GROUP_ORDER: Record<string, number> = {
+      'MATERNELLE': 0,
+      'PRIMAIRE': 1,
+      'SECONDAIRE|1er cycle': 2,
+      'SECONDAIRE|2nd cycle': 3,
+    };
+    // Pour ordonner les classes au sein d'un groupe
+    const classOrder = (name: string): number => {
+      const lower = (name || '').toLowerCase().trim();
+      const ORDER = [
+        'maternelle 1', 'maternelle 2',
+        'ci', 'cp', 'ce1', 'ce2', 'cm1', 'cm2',
+        '6eme', '6e', '5eme', '5e', '4eme', '4e', '3eme', '3e',
+        '2nde', 'seconde', '1ere', '1ère', 'premiere', 'première',
+        'terminale', 'tle', 'terminal',
+      ];
+      const idx = ORDER.indexOf(lower);
+      if (idx >= 0) return idx;
+      for (let i = 0; i < ORDER.length; i++) {
+        if (lower.startsWith(ORDER[i])) return i;
+      }
+      return ORDER.length;
+    };
+
+    const groups: Record<string, { levelLabel: string; cycleLabel?: string; classrooms: any[] }> = {};
+    for (const c of sortedClassrooms) {
+      const levelName = c.grade?.cycle?.level?.name ?? 'AUTRE';
+      const cycleName = c.grade?.cycle?.name ?? '';
+      // Pour Maternelle et Primaire, on fusionne les cycles en un seul groupe
+      // (sinon on aurait un groupe par cycle "CI", "CP", etc. — trop fragmenté).
+      // Pour Secondaire, on sépare 1er cycle et 2nd cycle.
+      let groupKey: string;
+      let levelLabel: string;
+      let cycleLabel: string | undefined;
+      if (levelName === 'MATERNELLE') {
+        groupKey = 'MATERNELLE';
+        levelLabel = 'Maternelle';
+      } else if (levelName === 'PRIMAIRE') {
+        groupKey = 'PRIMAIRE';
+        levelLabel = 'Primaire';
+      } else if (levelName === 'SECONDAIRE') {
+        groupKey = `SECONDAIRE|${cycleName}`;
+        levelLabel = 'Secondaire';
+        cycleLabel = cycleName;
+      } else {
+        groupKey = levelName;
+        levelLabel = levelName;
+      }
+      if (!groups[groupKey]) {
+        groups[groupKey] = { levelLabel, cycleLabel, classrooms: [] };
+      }
+      groups[groupKey].classrooms.push(c);
+    }
+    // Trier les classes dans chaque groupe par ordre canonique
+    for (const k of Object.keys(groups)) {
+      groups[k].classrooms.sort((a: any, b: any) => {
+        const ordA = classOrder(a.name ?? '');
+        const ordB = classOrder(b.name ?? '');
+        if (ordA !== ordB) return ordA - ordB;
+        return (a.name ?? '').localeCompare(b.name ?? '', 'fr');
+      });
+    }
+    // Retourner les groupes triés par ordre canonique
+    return Object.entries(groups)
+      .map(([key, val]) => ({ key, ...val }))
+      .sort((a, b) => (GROUP_ORDER[a.key] ?? 99) - (GROUP_ORDER[b.key] ?? 99));
+  }, [sortedClassrooms]);
+
+  /** Séries du 2nd cycle secondaire. Liste de secours si l'API ne renvoie pas les séries.
+   *  Inclut les séries classiques (A1, A2, B, C, D) + séries techniques (G1, G2, F1-F4)
+   *  alignées sur le système éducatif béninois. L'utilisateur peut ajouter/supprimer
+   *  des séries via l'UI "Structure pédagogique > Séries du 2nd cycle". */
   const SECOND_CYCLE_SERIES_FALLBACK = [
     { code: 'A1', name: 'Série A1', order: 1 },
     { code: 'A2', name: 'Série A2', order: 2 },
     { code: 'B', name: 'Série B', order: 3 },
     { code: 'C', name: 'Série C', order: 4 },
     { code: 'D', name: 'Série D', order: 5 },
+    { code: 'G1', name: 'Série G1 (Génie Civil)', order: 6 },
+    { code: 'G2', name: 'Série G2 (Bâtiment)', order: 7 },
+    { code: 'F1', name: 'Série F1 (Électrotechnique)', order: 8 },
+    { code: 'F2', name: 'Série F2 (Mécanique)', order: 9 },
+    { code: 'F3', name: 'Série F3 (Électronique)', order: 10 },
+    { code: 'F4', name: 'Série F4 (Maintenance)', order: 11 },
   ];
   const secondCycleSeriesOptions = useMemo(() => {
     const grades = allGradesFromStructure.filter(
@@ -1004,6 +1099,66 @@ export default function SettingsPage() {
       showToast('error', error.message || 'Erreur');
     } finally {
       setStructureBusy(false);
+    }
+  };
+
+  // ── Séries du 2nd cycle secondaire (CRUD) ──
+  // Charger la liste des séries depuis le backend
+  const loadEducationSeries = useCallback(async () => {
+    try {
+      const data = await settingsService.listEducationSeries(effectiveTenantId ?? undefined);
+      setEducationSeriesList(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to load education series:', err);
+      setEducationSeriesList([]);
+    }
+  }, [effectiveTenantId]);
+
+  useEffect(() => {
+    loadEducationSeries();
+  }, [loadEducationSeries]);
+
+  // Ajouter une nouvelle série + auto-crée les 3 grades (2nde X, 1ère X, Terminale X)
+  const handleCreateSeries = async () => {
+    const code = (newSeriesCode || '').trim().toUpperCase();
+    if (!code) {
+      showToast('error', 'Le code de la série est requis (ex. G1, F2).');
+      return;
+    }
+    try {
+      setSeriesBusy(true);
+      await settingsService.createEducationSeries(
+        { code, name: newSeriesName.trim() || undefined },
+        effectiveTenantId ?? undefined,
+      );
+      // Recharger la liste des séries + la structure (nouveaux grades)
+      await loadEducationSeries();
+      const res = await settingsService.getEducationStructure(effectiveTenantId ?? undefined);
+      if (res?.levels) setEducationStructure(res);
+      setNewSeriesCode('');
+      setNewSeriesName('');
+      showToast('success', `Série ${code} créée. Les 3 grades (2nde ${code}, 1ère ${code}, Terminale ${code}) ont été générés automatiquement.`);
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur lors de la création de la série');
+    } finally {
+      setSeriesBusy(false);
+    }
+  };
+
+  // Supprimer une série + ses 3 grades (si aucune classe physique n'y est liée)
+  const handleDeleteSeries = async (seriesId: string, seriesCode: string) => {
+    if (!window.confirm(`Supprimer la série "${seriesCode}" ? Les 3 grades (2nde ${seriesCode}, 1ère ${seriesCode}, Terminale ${seriesCode}) seront supprimés. Action irréversible.`)) return;
+    try {
+      setSeriesBusy(true);
+      await settingsService.deleteEducationSeries(seriesId, effectiveTenantId ?? undefined);
+      await loadEducationSeries();
+      const res = await settingsService.getEducationStructure(effectiveTenantId ?? undefined);
+      if (res?.levels) setEducationStructure(res);
+      showToast('success', `Série ${seriesCode} supprimée.`);
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur lors de la suppression de la série');
+    } finally {
+      setSeriesBusy(false);
     }
   };
 
@@ -2991,6 +3146,96 @@ export default function SettingsPage() {
               )}
             </div>
 
+            {/* ─── Séries du 2nd cycle secondaire (CRUD) ───
+                Permet à l'utilisateur d'ajouter/supprimer des séries (G1, G2, F1-F4, etc.).
+                L'ajout crée automatiquement les 3 grades (2nde X, 1ère X, Terminale X).
+                Ces séries sont ensuite disponibles dans le dropdown "Série" de la section
+                "Classe officielle" ci-dessous. */}
+            {levels.length > 0 && levels.some((l: any) => l.name === 'SECONDAIRE' && l.isEnabled) && (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-lg font-semibold text-gray-900">Séries du 2nd cycle secondaire</h3>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                    {educationSeriesList.length} série(s)
+                  </span>
+                </div>
+                <p className="text-sm text-gray-600 mb-4">
+                  Catalogue des séries du 2nd cycle (A1, A2, B, C, D, G1, G2, F1–F4…). L'ajout d'une série crée automatiquement les 3 grades correspondants (2nde X, 1ère X, Terminale X) qui seront disponibles pour créer les classes officielles ci-dessous.
+                </p>
+
+                {/* Liste des séries existantes */}
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {educationSeriesList.length === 0 ? (
+                    <p className="text-sm text-gray-500 italic">Aucune série. Ajoutez-en ci-dessous.</p>
+                  ) : (
+                    educationSeriesList.map((s: any) => (
+                      <div
+                        key={s.id}
+                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-900"
+                        title={s.name || `Série ${s.code}`}
+                      >
+                        <span className="font-bold text-sm">{s.code}</span>
+                        {s.name && s.name !== `Série ${s.code}` && (
+                          <span className="text-xs text-amber-700 truncate max-w-[200px]">— {s.name.replace(/^Série\s+/, '')}</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteSeries(s.id, s.code)}
+                          disabled={seriesBusy}
+                          className="ml-1 text-amber-500 hover:text-red-600 disabled:opacity-50"
+                          title={`Supprimer la série ${s.code}`}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Formulaire d'ajout d'une série */}
+                <div className="border-t border-gray-100 pt-4">
+                  <div className="text-xs font-medium text-gray-700 mb-2 uppercase tracking-wide">Ajouter une série</div>
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Code *</label>
+                      <input
+                        type="text"
+                        value={newSeriesCode}
+                        onChange={(e) => setNewSeriesCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                        placeholder="ex. G1, F2"
+                        maxLength={6}
+                        className="rounded border border-gray-300 px-3 py-1.5 text-sm w-24 uppercase"
+                        disabled={seriesBusy}
+                      />
+                    </div>
+                    <div className="flex-1 min-w-[200px]">
+                      <label className="block text-xs text-gray-600 mb-1">Nom (optionnel)</label>
+                      <input
+                        type="text"
+                        value={newSeriesName}
+                        onChange={(e) => setNewSeriesName(e.target.value)}
+                        placeholder="ex. Série G1 (Génie Civil)"
+                        className="rounded border border-gray-300 px-3 py-1.5 text-sm w-full"
+                        disabled={seriesBusy}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleCreateSeries}
+                      disabled={seriesBusy || !newSeriesCode.trim()}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-600 text-white rounded-md text-sm font-medium hover:bg-amber-700 disabled:opacity-50"
+                    >
+                      {seriesBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                      Ajouter la série
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-gray-500 mt-2">
+                    💡 La série sera créée dans le cycle « 2nd cycle » du niveau SECONDAIRE, avec 3 grades (2nde {newSeriesCode || 'X'}, 1ère {newSeriesCode || 'X'}, Terminale {newSeriesCode || 'X'}). Elle sera ensuite disponible pour créer des classes officielles ci-dessous.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {levels.length > 0 && (
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">Classe officielle (par année)</h3>
@@ -3193,103 +3438,131 @@ export default function SettingsPage() {
                     {sortedClassrooms.length === 0 ? (
                       <p className="text-sm text-gray-500 py-4">Aucune classe officielle pour cette année. Ajoutez-en ci-dessus ou utilisez « Sélection multiple ».</p>
                     ) : (
-                      <div className="overflow-x-auto">
-                        <table className="min-w-full text-sm border border-gray-200 rounded-md overflow-hidden">
-                          <thead>
-                            <tr className="bg-gray-50 border-b border-gray-200">
-                              <th className="text-left py-2 px-3 font-medium text-gray-700">Nom</th>
-                              <th className="text-left py-2 px-3 font-medium text-gray-700">Classe pédagogique</th>
-                              <th className="text-left py-2 px-3 font-medium text-gray-700 w-20">Série</th>
-                              <th className="text-right py-2 px-3 font-medium text-gray-700">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {sortedClassrooms.map((c: any) => (
-                              <tr key={c.id} className="border-b border-gray-100 last:border-0">
-                                <td className="py-2 px-3">
-                                  {editingClassroomId === c.id ? (
-                                    <input
-                                      type="text"
-                                      value={editingClassroomName}
-                                      onChange={(e) => setEditingClassroomName(e.target.value)}
-                                      className="rounded border border-gray-300 px-2 py-1 w-full max-w-[140px]"
-                                      autoFocus
-                                    />
-                                  ) : (
-                                    <span className="font-medium">{formatGradeLabel(c.name)}</span>
+                      <div className="space-y-4">
+                        {groupedClassroomsByLevelCycle.map((group: any) => {
+                          // Couleur du header selon le niveau
+                          const headerColor =
+                            group.key === 'MATERNELLE' ? 'bg-pink-50 border-pink-200 text-pink-900' :
+                            group.key === 'PRIMAIRE' ? 'bg-blue-50 border-blue-200 text-blue-900' :
+                            group.key.startsWith('SECONDAIRE|1er') ? 'bg-purple-50 border-purple-200 text-purple-900' :
+                            group.key.startsWith('SECONDAIRE|2nd') ? 'bg-indigo-50 border-indigo-200 text-indigo-900' :
+                            'bg-gray-50 border-gray-200 text-gray-900';
+                          return (
+                            <div key={group.key} className="border border-gray-200 rounded-lg overflow-hidden">
+                              {/* Header du groupe (niveau + cycle) */}
+                              <div className={`px-4 py-2 border-b font-semibold text-sm flex items-center justify-between ${headerColor}`}>
+                                <span>
+                                  {group.levelLabel}
+                                  {group.cycleLabel && (
+                                    <span className="ml-2 text-xs font-normal opacity-80">— {group.cycleLabel}</span>
                                   )}
-                                </td>
-                                <td className="py-2 px-3 text-gray-600">{formatGradeLabel(c.grade?.name) || '—'}</td>
-                                <td className="py-2 px-3 text-gray-600">
-                                  {editingClassroomId === c.id &&
-                                  c.grade?.level?.name === 'SECONDAIRE' &&
-                                  c.grade?.cycle?.name === '2nd cycle' ? (
-                                    <select
-                                      value={editingClassroomSeriesCode}
-                                      onChange={(e) => setEditingClassroomSeriesCode(e.target.value)}
-                                      className="rounded border border-gray-300 px-2 py-1 text-sm min-w-[4rem] w-24 bg-white cursor-pointer focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                      aria-label="Série"
-                                    >
-                                      <option value="">—</option>
-                                      {(secondCycleSeriesOptions.length > 0 ? secondCycleSeriesOptions : SECOND_CYCLE_SERIES_FALLBACK).map((s: any) => (
-                                        <option key={s.code} value={s.code}>{s.code}</option>
-                                      ))}
-                                    </select>
-                                  ) : (
-                                    c.grade?.series?.code ?? '—'
-                                  )}
-                                </td>
-                                <td className="py-2 px-3 text-right">
-                                  {editingClassroomId === c.id ? (
-                                    <span className="flex items-center justify-end gap-1">
-                                      <button
-                                        type="button"
-                                        onClick={handleUpdateEducationClassroom}
-                                        disabled={structureBusy}
-                                        className="text-blue-600 hover:underline text-xs disabled:opacity-50"
-                                      >
-                                        Enregistrer
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => { setEditingClassroomId(null); setEditingClassroomName(''); setEditingClassroomCapacity(''); setEditingClassroomSeriesCode(''); }}
-                                        className="text-gray-500 hover:underline text-xs"
-                                      >
-                                        Annuler
-                                      </button>
-                                    </span>
-                                  ) : (
-                                    <span className="flex items-center justify-end gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setEditingClassroomId(c.id);
-                                          setEditingClassroomName(c.name ?? '');
-                                          setEditingClassroomCapacity(c.capacity ?? '');
-                                          setEditingClassroomSeriesCode(c.grade?.series?.code ?? '');
-                                        }}
-                                        disabled={structureBusy}
-                                        className="text-gray-500 hover:text-blue-600 disabled:opacity-50"
-                                        title="Modifier"
-                                      >
-                                        <Pencil className="w-3.5 h-3.5" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleArchiveEducationClassroom(c.id)}
-                                        disabled={structureBusy}
-                                        className="text-gray-500 hover:text-red-600 disabled:opacity-50"
-                                        title="Archiver"
-                                      >
-                                        Archiver
-                                      </button>
-                                    </span>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                                </span>
+                                <span className="text-[10px] font-normal opacity-70">
+                                  {group.classrooms.length} classe(s)
+                                </span>
+                              </div>
+                              {/* Tableau des classes de ce groupe */}
+                              <div className="overflow-x-auto">
+                                <table className="min-w-full text-sm">
+                                  <thead>
+                                    <tr className="bg-gray-50 border-b border-gray-200">
+                                      <th className="text-left py-2 px-3 font-medium text-gray-700">Nom</th>
+                                      <th className="text-left py-2 px-3 font-medium text-gray-700">Classe pédagogique</th>
+                                      <th className="text-left py-2 px-3 font-medium text-gray-700 w-20">Série</th>
+                                      <th className="text-right py-2 px-3 font-medium text-gray-700">Actions</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {group.classrooms.map((c: any) => (
+                                      <tr key={c.id} className="border-b border-gray-100 last:border-0">
+                                        <td className="py-2 px-3">
+                                          {editingClassroomId === c.id ? (
+                                            <input
+                                              type="text"
+                                              value={editingClassroomName}
+                                              onChange={(e) => setEditingClassroomName(e.target.value)}
+                                              className="rounded border border-gray-300 px-2 py-1 w-full max-w-[140px]"
+                                              autoFocus
+                                            />
+                                          ) : (
+                                            <span className="font-medium">{formatGradeLabel(c.name)}</span>
+                                          )}
+                                        </td>
+                                        <td className="py-2 px-3 text-gray-600">{formatGradeLabel(c.grade?.name) || '—'}</td>
+                                        <td className="py-2 px-3 text-gray-600">
+                                          {editingClassroomId === c.id &&
+                                          c.grade?.level?.name === 'SECONDAIRE' &&
+                                          c.grade?.cycle?.name === '2nd cycle' ? (
+                                            <select
+                                              value={editingClassroomSeriesCode}
+                                              onChange={(e) => setEditingClassroomSeriesCode(e.target.value)}
+                                              className="rounded border border-gray-300 px-2 py-1 text-sm min-w-[4rem] w-24 bg-white cursor-pointer focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                              aria-label="Série"
+                                            >
+                                              <option value="">—</option>
+                                              {(secondCycleSeriesOptions.length > 0 ? secondCycleSeriesOptions : SECOND_CYCLE_SERIES_FALLBACK).map((s: any) => (
+                                                <option key={s.code} value={s.code}>{s.code}</option>
+                                              ))}
+                                            </select>
+                                          ) : (
+                                            c.grade?.series?.code ?? '—'
+                                          )}
+                                        </td>
+                                        <td className="py-2 px-3 text-right">
+                                          {editingClassroomId === c.id ? (
+                                            <span className="flex items-center justify-end gap-1">
+                                              <button
+                                                type="button"
+                                                onClick={handleUpdateEducationClassroom}
+                                                disabled={structureBusy}
+                                                className="text-blue-600 hover:underline text-xs disabled:opacity-50"
+                                              >
+                                                Enregistrer
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => { setEditingClassroomId(null); setEditingClassroomName(''); setEditingClassroomCapacity(''); setEditingClassroomSeriesCode(''); }}
+                                                className="text-gray-500 hover:underline text-xs"
+                                              >
+                                                Annuler
+                                              </button>
+                                            </span>
+                                          ) : (
+                                            <span className="flex items-center justify-end gap-2">
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  setEditingClassroomId(c.id);
+                                                  setEditingClassroomName(c.name ?? '');
+                                                  setEditingClassroomCapacity(c.capacity ?? '');
+                                                  setEditingClassroomSeriesCode(c.grade?.series?.code ?? '');
+                                                }}
+                                                disabled={structureBusy}
+                                                className="text-gray-500 hover:text-blue-600 disabled:opacity-50"
+                                                title="Modifier"
+                                              >
+                                                <Pencil className="w-3.5 h-3.5" />
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleArchiveEducationClassroom(c.id)}
+                                                disabled={structureBusy}
+                                                className="text-gray-500 hover:text-red-600 disabled:opacity-50"
+                                                title="Archiver"
+                                              >
+                                                Archiver
+                                              </button>
+                                            </span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </>

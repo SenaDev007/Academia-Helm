@@ -448,7 +448,7 @@ export async function exportTransactionsToPdf(
     t.receiptNumber || '—',
     getStudentMatricule(t),
     getStudentName(t),
-    (Number(t.amount) || 0).toLocaleString('fr-FR'),
+    (Number(t.amount) || 0).toLocaleString("fr-FR").replace(/\u00A0/g, " "),
     METHOD_LABELS[t.paymentMethod || ''] || t.paymentMethod || '—',
     t.reference || '—',
   ]);
@@ -456,7 +456,7 @@ export async function exportTransactionsToPdf(
   const totalAmount = transactions.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
   tableData.push([
     '', '', '', 'TOTAL',
-    totalAmount.toLocaleString('fr-FR') + ' FCFA',
+    totalAmount.toLocaleString("fr-FR").replace(/\u00A0/g, " ") + ' FCFA',
     '', '',
   ]);
 
@@ -485,7 +485,7 @@ export async function exportTransactionsToPdf(
       1: { cellWidth: 35, halign: 'center' },    // Reçu
       2: { cellWidth: 25, halign: 'center' },    // Matricule
       3: { cellWidth: 'auto', halign: 'left' },  // Élève
-      4: { cellWidth: 28, halign: 'right' },     // Montant
+      4: { cellWidth: 32, halign: 'right' },     // Montant
       5: { cellWidth: 22, halign: 'center' },    // Méthode
       6: { cellWidth: 'auto', halign: 'center' },// Référence
     },
@@ -862,18 +862,18 @@ export async function exportStudentAccountsToPdf(
       a.student?.firstName || '—',
       a.studentEnrollments?.[0]?.class?.name || '—',
       a.student?.schoolLevel?.name || '—',
-      (Number(a.balance) || 0).toLocaleString('fr-FR'),
-      (Number(a.totalPaid) || 0).toLocaleString('fr-FR'),
-      (Number(a.totalDue) || 0).toLocaleString('fr-FR'),
+      (Number(a.balance) || 0).toLocaleString("fr-FR").replace(/\u00A0/g, " "),
+      (Number(a.totalPaid) || 0).toLocaleString("fr-FR").replace(/\u00A0/g, " "),
+      (Number(a.totalDue) || 0).toLocaleString("fr-FR").replace(/\u00A0/g, " "),
       STATUS_COLORS[status].label,
     ];
   });
 
   tableData.push([
     '', '', '', '', 'TOTAL',
-    totalBalance.toLocaleString('fr-FR'),
-    totalPaid.toLocaleString('fr-FR'),
-    totalDue.toLocaleString('fr-FR'),
+    totalBalance.toLocaleString("fr-FR").replace(/\u00A0/g, " "),
+    totalPaid.toLocaleString("fr-FR").replace(/\u00A0/g, " "),
+    totalDue.toLocaleString("fr-FR").replace(/\u00A0/g, " "),
     '',
   ]);
 
@@ -903,9 +903,9 @@ export async function exportStudentAccountsToPdf(
       2: { cellWidth: 'auto', halign: 'left' },
       3: { cellWidth: 22, halign: 'center' },
       4: { cellWidth: 20, halign: 'center' },
-      5: { cellWidth: 25, halign: 'right' },
-      6: { cellWidth: 25, halign: 'right' },
-      7: { cellWidth: 25, halign: 'right' },
+      5: { cellWidth: 30, halign: 'right' },
+      6: { cellWidth: 30, halign: 'right' },
+      7: { cellWidth: 30, halign: 'right' },
       8: { cellWidth: 20, halign: 'center' },
     },
     didParseCell: (data: any) => {
@@ -1008,12 +1008,12 @@ export async function exportStudentHistoryToPdf(
   const tableData = transactions.map((t) => [
     formatDateTimeFr(t.createdAt || t.date),
     t.receiptNumber || '—',
-    (Number(t.amount) || 0).toLocaleString('fr-FR'),
+    (Number(t.amount) || 0).toLocaleString("fr-FR").replace(/\u00A0/g, " "),
     METHOD_LABELS[t.paymentMethod || ''] || t.paymentMethod || '—',
     t.reference || '—',
   ]);
 
-  tableData.push(['', 'TOTAL', totalPaid.toLocaleString('fr-FR') + ' FCFA', '', '']);
+  tableData.push(['', 'TOTAL', totalPaid.toLocaleString("fr-FR").replace(/\u00A0/g, " ") + ' FCFA', '', '']);
 
   (doc as any).autoTable({
     head: [['Date', 'Reçu', 'Montant (FCFA)', 'Méthode', 'Référence']],
@@ -1204,11 +1204,11 @@ export async function exportCashRegisterTransactionsToPdf(
     formatDateTimeFr(t.createdAt),
     t.receiptNumber || '—',
     t.studentAccount?.student ? `${t.studentAccount.student.lastName} ${t.studentAccount.student.firstName}` : '—',
-    (Number(t.amount) || 0).toLocaleString('fr-FR'),
+    (Number(t.amount) || 0).toLocaleString("fr-FR").replace(/\u00A0/g, " "),
     METHOD_LABELS[t.paymentMethod] || t.paymentMethod || '—',
     t.reference || '—',
   ]);
-  txData.push(['', '', 'TOTAL', totalIn.toLocaleString('fr-FR') + ' FCFA', '', '']);
+  txData.push(['', '', 'TOTAL', totalIn.toLocaleString("fr-FR").replace(/\u00A0/g, " ") + ' FCFA', '', '']);
 
   (doc as any).autoTable({
     head: [['Date', 'Reçu', 'Élève', 'Montant (FCFA)', 'Méthode', 'Référence']],
@@ -1221,7 +1221,7 @@ export async function exportCashRegisterTransactionsToPdf(
       0: { cellWidth: 32, halign: 'center' },
       1: { cellWidth: 35, halign: 'center' },
       2: { cellWidth: 'auto', halign: 'left' },
-      3: { cellWidth: 28, halign: 'right' },
+      3: { cellWidth: 32, halign: 'right' },
       4: { cellWidth: 22, halign: 'center' },
       5: { cellWidth: 'auto', halign: 'center' },
     },
@@ -1265,13 +1265,13 @@ export async function exportCashRegisterTransactionsToPdf(
       isTransferIn ? 'ENTRANT' : 'SORTANT',
       t.fromCode || '—',
       t.toCode || '—',
-      (Number(t.amount) || 0).toLocaleString('fr-FR'),
+      (Number(t.amount) || 0).toLocaleString("fr-FR").replace(/\u00A0/g, " "),
       t.note || '—',
     ];
   });
-  trData.push(['', '', '', 'TOTAL ENTRANT', totalTransfersIn.toLocaleString('fr-FR') + ' FCFA', '']);
-  trData.push(['', '', '', 'TOTAL SORTANT', totalTransfersOut.toLocaleString('fr-FR') + ' FCFA', '']);
-  trData.push(['', '', '', 'SOLDE NET', (totalIn + totalTransfersIn - totalTransfersOut).toLocaleString('fr-FR') + ' FCFA', '']);
+  trData.push(['', '', '', 'TOTAL ENTRANT', totalTransfersIn.toLocaleString("fr-FR").replace(/\u00A0/g, " ") + ' FCFA', '']);
+  trData.push(['', '', '', 'TOTAL SORTANT', totalTransfersOut.toLocaleString("fr-FR").replace(/\u00A0/g, " ") + ' FCFA', '']);
+  trData.push(['', '', '', 'SOLDE NET', (totalIn + totalTransfersIn - totalTransfersOut).toLocaleString("fr-FR").replace(/\u00A0/g, " ") + ' FCFA', '']);
 
   (doc as any).autoTable({
     head: [['Date', 'Type', 'Source', 'Cible', 'Montant (FCFA)', 'Note']],
@@ -1285,7 +1285,7 @@ export async function exportCashRegisterTransactionsToPdf(
       1: { cellWidth: 22, halign: 'center' },
       2: { cellWidth: 30, halign: 'center' },
       3: { cellWidth: 30, halign: 'center' },
-      4: { cellWidth: 28, halign: 'right' },
+      4: { cellWidth: 32, halign: 'right' },
       5: { cellWidth: 'auto', halign: 'left' },
     },
     alternateRowStyles: { fillColor: [248, 250, 252] },
@@ -1436,12 +1436,12 @@ export async function exportAllCashRegistersToPdf(
     r.code,
     r.name,
     r.location || '—',
-    (Number(r.openingBalance) || 0).toLocaleString('fr-FR'),
-    (Number(r.currentBalance) || 0).toLocaleString('fr-FR'),
+    (Number(r.openingBalance) || 0).toLocaleString("fr-FR").replace(/\u00A0/g, " "),
+    (Number(r.currentBalance) || 0).toLocaleString("fr-FR").replace(/\u00A0/g, " "),
     String(r._count?.transactions || 0),
     r.isOpen ? 'Ouverte' : (r.isActive ? 'Fermée' : 'Archivée'),
   ]);
-  regData.push(['', '', '', 'TOTAL', totalBalance.toLocaleString('fr-FR') + ' FCFA', '', '']);
+  regData.push(['', '', '', 'TOTAL', totalBalance.toLocaleString("fr-FR").replace(/\u00A0/g, " ") + ' FCFA', '', '']);
 
   (doc as any).autoTable({
     head: [['Code', 'Nom', 'Emplacement', 'Solde ouverture', 'Solde courant', 'Nb tx', 'Statut']],
@@ -1454,8 +1454,8 @@ export async function exportAllCashRegistersToPdf(
       0: { cellWidth: 22, halign: 'center' },
       1: { cellWidth: 'auto', halign: 'left' },
       2: { cellWidth: 'auto', halign: 'left' },
-      3: { cellWidth: 28, halign: 'right' },
-      4: { cellWidth: 28, halign: 'right' },
+      3: { cellWidth: 32, halign: 'right' },
+      4: { cellWidth: 32, halign: 'right' },
       5: { cellWidth: 16, halign: 'center' },
       6: { cellWidth: 20, halign: 'center' },
     },
@@ -1488,10 +1488,10 @@ export async function exportAllCashRegistersToPdf(
     formatDateTimeFr(t.createdAt),
     t.fromCode || '—',
     t.toCode || '—',
-    (Number(t.amount) || 0).toLocaleString('fr-FR'),
+    (Number(t.amount) || 0).toLocaleString("fr-FR").replace(/\u00A0/g, " "),
     t.note || '—',
   ]);
-  trData.push(['', '', 'TOTAL', totalTransfers.toLocaleString('fr-FR') + ' FCFA', '']);
+  trData.push(['', '', 'TOTAL', totalTransfers.toLocaleString("fr-FR").replace(/\u00A0/g, " ") + ' FCFA', '']);
 
   (doc as any).autoTable({
     head: [['Date', 'Caisse source', 'Caisse cible', 'Montant (FCFA)', 'Note']],
@@ -1504,7 +1504,7 @@ export async function exportAllCashRegistersToPdf(
       0: { cellWidth: 32, halign: 'center' },
       1: { cellWidth: 'auto', halign: 'center' },
       2: { cellWidth: 'auto', halign: 'center' },
-      3: { cellWidth: 28, halign: 'right' },
+      3: { cellWidth: 32, halign: 'right' },
       4: { cellWidth: 'auto', halign: 'left' },
     },
     alternateRowStyles: { fillColor: [248, 250, 252] },

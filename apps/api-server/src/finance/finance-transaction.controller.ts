@@ -167,8 +167,12 @@ export class FinanceTransactionController {
     // Construire le lien public de téléchargement du reçu (via verificationToken HMAC)
     // Le token est régénéré déterministiquement à partir de transactionId + receiptNumber
     const verificationToken = this.generateReceiptToken(tx.id, tx.receiptNumber);
-    const publicBaseUrl = process.env.APP_PUBLIC_URL || process.env.PUBLIC_URL || 'https://academia-helm-api.fly.dev';
-    const receiptLink = `${publicBaseUrl}/api/receipt/verify?token=${verificationToken}`;
+    // Utiliser l'URL du FRONTEND (pas du backend) pour que le parent puisse
+    // télécharger le reçu dans son navigateur sans erreur 404.
+    // Le frontend a une route BFF /api/finance/transactions/[id]/receipt.pdf
+    // et une page publique /receipt/[token]/[id] qui télécharge le PDF.
+    const frontendUrl = process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://academia-helm.vercel.app';
+    const receiptLink = `${frontendUrl}/receipt/${verificationToken}/${tx.id}`;
 
     // Construire le message WhatsApp (avec accents — le lien wa.me les supporte)
     const message = `Bonjour${contacts.name ? ` ${contacts.name}` : ''},\n\n` +

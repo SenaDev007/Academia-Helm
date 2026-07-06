@@ -93,15 +93,16 @@ export class FeexPayService {
     const url = `${FEEXPAY_API_URL}/api/transactions/public/requesttopay/${operatorEndpoint}`;
 
     // 5. Corps de la requête
+    // Note : la documentation FeexPay montre phoneNumber comme un nombre (2290166000000),
+    // pas une string. On l'envoie donc comme nombre pour respecter la doc exactement.
     const body: any = {
-      phoneNumber: phoneNumber, // String, pas Number (comme le projet de référence)
+      phoneNumber: Number(phoneNumber),
       amount: params.amount,
       shop: config.feexpayShopId,
-      description: `Scolarite ${params.studentName}`.replace(/[^\w\s]/g, ''), // Sans caractères spéciaux
+      description: `Scolarite ${params.studentName}`.replace(/[^\w\s]/g, ''),
     };
     if (params.firstName) body.first_name = params.firstName;
     if (params.lastName) body.last_name = params.lastName;
-    // callback_info pour retrouver la transaction après webhook
     body.callback_info = JSON.stringify({
       tenantId: params.tenantId,
       studentAccountId: params.studentAccountId,
@@ -111,11 +112,13 @@ export class FeexPayService {
     });
 
     this.logger.log(
-      `FeexPay initiate: operator=${params.operator} | phone=${phoneNumber} | amount=${params.amount} | shop=${config.feexpayShopId}`,
+      `FeexPay initiate: operator=${params.operator} | phone=${phoneNumber} | amount=${params.amount} | shop=${config.feexpayShopId} | apiKey=${config.feexpayApiKey ? config.feexpayApiKey.substring(0, 6) + '...' + config.feexpayApiKey.substring(config.feexpayApiKey.length - 4) : 'MISSING'}`,
     );
+    this.logger.log(`FeexPay request body: ${JSON.stringify(body)}`);
 
     // 6. Appeler l'API FeexPay
     try {
+      this.logger.log(`FeexPay API call: POST ${url}`);
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -126,16 +129,14 @@ export class FeexPayService {
       });
 
       const responseText = await response.text();
+      this.logger.log(`FeexPay response: HTTP ${response.status} ${response.statusText} | body: ${responseText.substring(0, 500)}`);
+
       let result: any;
       try {
         result = JSON.parse(responseText);
       } catch {
         result = { raw: responseText };
       }
-
-      this.logger.log(
-        `FeexPay response: HTTP ${response.status} | body: ${JSON.stringify(result).substring(0, 500)}`,
-      );
 
       if (response.ok && result.reference) {
         // ✅ Succès — stocker les métadonnées dans PaymentInitiation
@@ -169,10 +170,18 @@ export class FeexPayService {
       // Erreur
       const rawError = result.message || result.error || `HTTP ${response.status}`;
       this.logger.error(`FeexPay initiate failed: ${rawError} (HTTP ${response.status})`);
+      this.logger.error(`FeexPay full response: ${responseText.substring(0, 1000)}`);
+      this.logger.error(`FeexPay API key used: ${config.feexpayApiKey ? config.feexpayApiKey.substring(0, 6) + '...' + config.feexpayApiKey.substring(config.feexpayApiKey.length - 4) : 'MISSING'}`);
+      this.logger.error(`FeexPay Shop ID used: ${config.feexpayShopId || 'MISSING'}`);
       // Traduire les erreurs courantes de FeexPay en messages compréhensibles
       let userError = rawError;
       if (response.status === 401 || rawError.toLowerCase().includes('unauthorized')) {
-        userError = 'Clé API FeexPay invalide ou expirée. Vérifiez vos clés dans Paramètres → Paiements. La clé doit commencer par "fp_".';
+        userError = `Clé API FeexPay refusée (HTTP 401 Unauthorized). Vérifications à faire :\n` +
+          `1. La clé API doit commencer par "fp_" (ex: fp_xxxxxxxx)\n` +
+          `2. Utilisez une clé de TEST/SANDBOX pour les tests (pas une clé de production)\n` +
+          `3. Le Shop ID doit correspondre au compte de test\n` +
+          `4. Vérifiez que le compte marchand est actif sur feexpay.me\n` +
+          `Clé utilisée: ${config.feexpayApiKey ? config.feexpayApiKey.substring(0, 6) + '...' : 'MISSING'} | Shop: ${config.feexpayShopId || 'MISSING'}`;
       } else if (response.status === 403) {
         userError = 'Accès refusé par FeexPay. Vérifiez que votre compte marchand est actif et que le Shop ID est correct.';
       } else if (response.status === 400) {

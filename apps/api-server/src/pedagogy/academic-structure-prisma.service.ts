@@ -633,10 +633,34 @@ export class AcademicStructurePrismaService {
     language?: string;
   }): Promise<any> {
     // Vérifier que l'AcademicClass existe et appartient au tenant
-    const academicClass = await this.prisma.academicClass.findFirst({
+    let academicClass = await this.prisma.academicClass.findFirst({
       where: { id: data.academicClassId, tenantId: data.tenantId },
       include: { level: { select: { name: true } } },
     });
+
+    // ⚠️ Fallback : si l'AcademicClass n'existe pas, chercher dans Classroom
+    // (table `classrooms` créée par le settings controller via education/classrooms).
+    // Les deux tables coexistent : AcademicClass (pedagogy) et Classroom (settings).
+    // L'onglet Structure du module Paramètres crée des Classrooms, pas des AcademicClasses.
+    if (!academicClass) {
+      const classroom = await this.prisma.classroom.findFirst({
+        where: { id: data.academicClassId, tenantId: data.tenantId },
+        include: { grade: { include: { cycle: { include: { level: true } } } } },
+      });
+      if (classroom) {
+        // Simuler la structure d'AcademicClass pour la suite du code
+        academicClass = {
+          id: classroom.id,
+          tenantId: classroom.tenantId,
+          academicYearId: classroom.academicYearId,
+          name: classroom.name,
+          code: classroom.code || classroom.name,
+          level: classroom.grade?.cycle?.level || { name: 'PRIMAIRE' },
+        } as any;
+        this.logger?.log?.(`createClassSection: AcademicClass introuvable, fallback vers Classroom ${classroom.id} (${classroom.name})`);
+      }
+    }
+
     if (!academicClass) {
       throw new NotFoundException(`Classe officielle introuvable (id=${data.academicClassId}).`);
     }

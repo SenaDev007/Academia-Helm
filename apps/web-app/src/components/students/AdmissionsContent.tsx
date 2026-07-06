@@ -1065,6 +1065,43 @@ export default function AdmissionsContent() {
                               </>
                             )}
 
+                            {/* Accepter et inscrire directement (DRAFT, PENDING — bypass étapes) */}
+                            {(admission.status === 'DRAFT' || admission.status === 'PENDING' || admission.status === 'MISSING_DOCUMENTS' || admission.status === 'WAITLISTED') && (
+                              <button
+                                onClick={async () => {
+                                  const ok = await confirmDialog.success(
+                                    `Accepter et inscrire directement ${admission.firstName} ${admission.lastName} ? Cette action va créer le dossier élève, générer le matricule, le compte financier et le responsable légal.`,
+                                    'Accepter et inscrire',
+                                  );
+                                  if (!ok) return;
+                                  try {
+                                    setIsActionPending(true);
+                                    const res = await fetch(`/api/students/admissions/${admission.id}/accept-and-enroll`, {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      credentials: 'include',
+                                      body: JSON.stringify({ comment: 'Acceptation directe' }),
+                                    });
+                                    if (!res.ok) {
+                                      const err = await res.json().catch(() => ({}));
+                                      throw new Error(err.message || `Erreur ${res.status}`);
+                                    }
+                                    toast({ title: '✅ Élève inscrit', description: 'Le dossier a été accepté et l\'élève est maintenant inscrit. Matricule généré, compte financier créé.', variant: 'success' });
+                                    loadAdmissions();
+                                  } catch (e: any) {
+                                    toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+                                  } finally {
+                                    setIsActionPending(false);
+                                  }
+                                }}
+                                disabled={isActionPending}
+                                className="p-2 hover:bg-emerald-50 rounded-lg text-emerald-600 transition-all disabled:opacity-50 border border-emerald-200"
+                                title="Accepter et inscrire directement"
+                              >
+                                <UserCheck className="w-4 h-4" />
+                              </button>
+                            )}
+
                             {/* Convertir (ACCEPTED → CONVERTED) */}
                             {admission.status === 'ACCEPTED' && (
                               <>

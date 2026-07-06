@@ -413,28 +413,7 @@ export default function StudentsModulePage() {
           title: 'Gestion des Élèves & Scolarité',
           description: 'Admission, inscription, dossiers élèves et organisation des classes',
           icon: 'users',
-          kpis: statistics
-            ? [
-                {
-                  label: 'Total',
-                  value: statistics.total || 0,
-                  icon: 'users',
-                  trend: 'neutral',
-                },
-                {
-                  label: 'Actifs',
-                  value: statistics.active || 0,
-                  icon: 'checkCircle',
-                  trend: 'up',
-                },
-                {
-                  label: 'Archivés',
-                  value: statistics.archived || 0,
-                  icon: 'archive',
-                  trend: 'neutral',
-                },
-              ]
-            : [],
+          kpis: [], // Statistiques supprimées — affichage direct du contenu
           actions: null,
         }}
         subModules={{

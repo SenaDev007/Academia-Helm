@@ -188,6 +188,7 @@ export class AcademicStructurePrismaController {
   @Post('sections')
   async createSection(
     @TenantId() tenantId: string,
+    @Query('tenant_id') queryTenantId: string,
     @Body() body: {
       academicYearId: string;
       academicClassId: string;
@@ -198,8 +199,8 @@ export class AcademicStructurePrismaController {
       tenantId?: string; // Override pour les rôles cross-tenant (ex: PROMOTEUR)
     },
   ) {
-    // Utiliser le tenantId du body s'il est fourni (pour les rôles cross-tenant)
-    const effectiveTenantId = body.tenantId || tenantId;
+    // Utiliser le tenantId du body > query > JWT (priorité décroissante)
+    const effectiveTenantId = body.tenantId || queryTenantId || tenantId;
     const { tenantId: _omit, ...sectionData } = body;
     return this.service.createClassSection({
       ...sectionData,

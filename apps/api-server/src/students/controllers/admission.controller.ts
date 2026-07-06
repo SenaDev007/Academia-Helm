@@ -122,6 +122,25 @@ export class AdmissionController {
     return this.admissionService.convertToStudent(id, tenantId, user?.id);
   }
 
+  /**
+   * POST /admissions/:id/accept-and-enroll
+   * Accepte l'admission ET convertit directement en élève inscrit.
+   * Permet de passer de n'importe quel statut (DRAFT, PENDING, SUBMITTED)
+   * directement à INSCRIT sans passer par les étapes intermédiaires.
+   */
+  @Post(':id/accept-and-enroll')
+  async acceptAndEnroll(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @CurrentUser() user: any,
+    @Body() body: { comment?: string },
+  ) {
+    // 1. Accepter l'admission (passe à ACCEPTED)
+    await this.admissionService.accept(id, tenantId, body.comment ?? 'Acceptation directe', user?.id);
+    // 2. Convertir en élève inscrit (crée Student + matricule + compte + guardian)
+    return this.admissionService.convertToStudent(id, tenantId, user?.id);
+  }
+
   // ═══ Batch / Bulk operations ═══
 
   @Post('batch/submit')

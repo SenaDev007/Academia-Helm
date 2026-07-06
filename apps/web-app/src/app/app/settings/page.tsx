@@ -1306,7 +1306,7 @@ export default function SettingsPage() {
     const code = (newSectionCode || '').trim() || name.replace(/\s+/g, '_').toUpperCase();
     try {
       setSectionsBusy(true);
-      const res = await fetch(`/api/pedagogy/academic-structure/sections`, {
+      const res = await fetch(`/api/pedagogy/academic-structure/sections${effectiveTenantId ? `?tenant_id=${encodeURIComponent(effectiveTenantId)}` : ''}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

@@ -295,6 +295,9 @@ export default function NewPaymentModal({
             lastname: selectedAccount.student?.lastName || '',
           },
           onComplete: async (response: any) => {
+            // Log pour débogage
+            console.log('🔄 Fedapay onComplete reçu:', JSON.stringify(response));
+
             // Vérifier les raisons d'annulation (comme le projet de référence)
             if (response?.reason === 'DIALOG DISMISSED' || response?.reason === 'USERCANCELLED') {
               toast({ title: 'Paiement annulé', description: 'Le checkout Fedapay a été fermé.' });
@@ -306,7 +309,9 @@ export default function NewPaymentModal({
             // (approche du projet de référence Zohar Decor qui marche)
             // Le webhook Fedapay reste comme sécurité (idempotence) mais ne doit
             // pas être le seul mécanisme car il n'est pas toujours envoyé en test.
-            const fedapayReference = response?.reference || `FEDAPAY-${Date.now()}`;
+            // Note : response.reference peut être undefined — on génère un fallback.
+            const fedapayReference = response?.reference || response?.id || `FEDAPAY-${Date.now()}`;
+            console.log('📝 Référence Fedapay utilisée:', fedapayReference);
             try {
               const result = await financeService.createTransaction({
                 academicYearId,
@@ -337,10 +342,11 @@ export default function NewPaymentModal({
                 });
               }
             } catch (err: any) {
-              console.error('createTransaction after Fedapay failed:', err);
+              console.error('❌ createTransaction after Fedapay failed:', err);
+              console.error('   Response:', err?.message);
               toast({
                 title: 'Paiement reçu mais transaction non enregistrée',
-                description: `Référence Fedapay : ${fedapayReference}. Contactez l'administrateur.`,
+                description: `Référence Fedapay : ${fedapayReference}. Erreur: ${err?.message || 'Inconnue'}. Contactez l'administrateur.`,
                 variant: 'destructive',
               });
               setReceipt({

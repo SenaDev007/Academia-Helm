@@ -200,7 +200,7 @@ export class FeexPayService {
       let userError = rawError;
       if (response.status === 401 || rawError.toLowerCase().includes('unauthorized')) {
         userError = `Clé API FeexPay refusée (HTTP 401 Unauthorized). Vérifications à faire :\n` +
-          `1. La clé API doit commencer par "fp_" (ex: fp_xxxxxxxx)\n` +
+          `1. La clé API doit commencer par "fp_" (production) ou "test_" (sandbox/test)\n` +
           `2. Utilisez une clé de TEST/SANDBOX pour les tests (pas une clé de production)\n` +
           `3. Le Shop ID doit correspondre au compte de test\n` +
           `4. Vérifiez que le compte marchand est actif sur feexpay.me`;

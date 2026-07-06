@@ -1005,7 +1005,7 @@ export default function NewPaymentModal({
                   type="button"
                   onClick={handleFeexPaySubmit}
                   disabled={feexpaySubmitting}
-                  className="w-full bg-gradient-to-r from-[#F79E1B] to-[#FFCB05] hover:from-[#E68A0E] hover:to-[#F0BE04] text-[#1A1A1A] font-bold shadow-md h-12 text-sm rounded-lg flex items-center justify-center gap-2 transition-all disabled:opacity-60 mt-auto"
+                  className="w-full bg-gradient-to-r from-[#F79E1B] to-[#FFCB05] hover:from-[#E68A0E] hover:to-[#F0BE04] text-[#1A1A1A] font-bold shadow-lg h-12 text-base rounded-xl flex items-center justify-center gap-2 transition-all disabled:opacity-60 mt-auto hover:shadow-xl"
                 >
                   {feexpaySubmitting ? (
                     <>
@@ -1014,7 +1014,7 @@ export default function NewPaymentModal({
                     </>
                   ) : (
                     <>
-                      Payer {formatCurrency(amountNum)} FCFA
+                      Payer {amountNum.toLocaleString('fr-FR')} FCFA
                       <ArrowRight className="w-4 h-4" />
                     </>
                   )}

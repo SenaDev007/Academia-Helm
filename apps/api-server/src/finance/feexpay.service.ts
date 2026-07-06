@@ -167,11 +167,24 @@ export class FeexPayService {
       }
 
       // Erreur
-      const errorMsg = result.message || result.error || `HTTP ${response.status}`;
-      this.logger.error(`FeexPay initiate failed: ${errorMsg}`);
+      const rawError = result.message || result.error || `HTTP ${response.status}`;
+      this.logger.error(`FeexPay initiate failed: ${rawError} (HTTP ${response.status})`);
+      // Traduire les erreurs courantes de FeexPay en messages compréhensibles
+      let userError = rawError;
+      if (response.status === 401 || rawError.toLowerCase().includes('unauthorized')) {
+        userError = 'Clé API FeexPay invalide ou expirée. Vérifiez vos clés dans Paramètres → Paiements. La clé doit commencer par "fp_".';
+      } else if (response.status === 403) {
+        userError = 'Accès refusé par FeexPay. Vérifiez que votre compte marchand est actif et que le Shop ID est correct.';
+      } else if (response.status === 400) {
+        userError = `Requête invalide : ${rawError}. Vérifiez le numéro de téléphone et le montant.`;
+      } else if (response.status === 429) {
+        userError = 'Trop de requêtes vers FeexPay. Réessayez dans quelques instants.';
+      } else if (response.status >= 500) {
+        userError = 'FeexPay est temporairement indisponible. Réessayez plus tard.';
+      }
       return {
         success: false,
-        message: errorMsg,
+        message: userError,
       };
     } catch (err: any) {
       this.logger.error(`FeexPay initiate error: ${err.message}`);

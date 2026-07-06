@@ -1370,11 +1370,28 @@ export default function SettingsPage() {
         throw new Error(err.message || err.error || `Erreur ${res.status}`);
       }
       const result = await res.json();
+      // result = { created, existing, synced }
+      //   - synced    : nb de NOUVELLES classes officielles (AcademicClass) créées
+      //                 depuis les Classrooms (table `classrooms`) qui n'avaient
+      //                 pas encore d'équivalent dans `pedagogy_academic_classes`.
+      //   - created   : nb de NOUVELLES sections (Class) créées pour des
+      //                 AcademicClasses qui n'avaient aucune section.
+      //   - existing  : nb d'AcademicClasses qui avaient déjà au moins une section.
       await loadClassSections();
-      showToast(
-        'success',
-        `Synchronisation terminée : ${result.created} section(s) créée(s), ${result.existing} existante(s).`
-      );
+      const parts: string[] = [];
+      if (result.synced > 0) {
+        parts.push(`${result.synced} nouvelle(s) classe(s) officielle(s) détectée(s)`);
+      }
+      if (result.created > 0) {
+        parts.push(`${result.created} section(s) créée(s)`);
+      }
+      if (result.existing > 0) {
+        parts.push(`${result.existing} section(s) déjà existante(s)`);
+      }
+      const msg = parts.length > 0
+        ? `Synchronisation terminée : ${parts.join(', ')}.`
+        : 'Synchronisation terminée : aucune nouvelle classe ou section à créer. Tout est à jour.';
+      showToast('success', msg);
     } catch (error: any) {
       showToast('error', error.message || 'Erreur');
     } finally {

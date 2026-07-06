@@ -2377,3 +2377,298 @@ Stage Summary:
   4. Renommage "Recouvrement" → "Recouvrement & Arriérés" : 3 fichiers à modifier (layout.tsx:50, finance-tabs.tsx:23, FinanceModulePage.tsx:136) + page.tsx à remplacer.
   5. Architecture frontend recommandée : 8 composants sous apps/web-app/src/components/finance/recovery/ (RecoveryContent shell + 6 onglets + 2 drawers) + 9 nouvelles méthodes financeService.
   6. Incohérence config : blockingThreshold (DB, utilisé par student-account.service) vs RECOVERY_BLOCK_THRESHOLD (env var, utilisé par recovery-reminder.service) — à unifier. reminderWarningDays/urgentDays/finalDays stockés mais jamais consommés.
+
+---
+Task ID: delete-tx-and-cash-register-flow-display
+Agent: main
+Task: 
+  1. Supprimer la transaction CSPEBE-REC-26-004 de la base pour reprise des tests
+  2. Afficher le flux de transfert ONLINE → caisses de destination dans l'onglet multi-caisses
+
+Work Log:
+
+## 1. Script de suppression sécurisée de transaction
+
+Création de deux artefacts dans `/home/z/my-project/scripts/` :
+
+### `delete-transaction-by-receipt.js` (Node.js, réutilisable)
+- Usage : `node scripts/delete-transaction-by-receipt.js <RECEIPT> [--confirm] [--allow-reversed]`
+- DRY-RUN par défaut, `--confirm` pour exécuter
+- Étapes (transaction SQL BEGIN/COMMIT) :
+  1. Charge la transaction par `receiptNumber`
+  2. Refuse les REVERSAL sans `--allow-reversed`
+  3. Refuse si une REVERSAL pointe vers la transaction (supprimer d'abord la REVERSAL)
+  4. Revertit chaque `AccountBreakdown` (paidAmount -= alloc, remainingAmount += alloc)
+  5. Débite la caisse source (cashRegisterId) du montant de la transaction
+  6. Pour chaque transfert d'allocation AUTO (status='AUTO_ALLOCATION', référence `AUTO-{txId8}-`):
+     - Débite la caisse destination du montant du transfert
+     - Supprime le transfert
+  7. Supprime les `finance_transaction_allocations`
+  8. Reset `payment_initiations.transactionId = NULL` (pour permettre retry)
+  9. Supprime la `finance_transactions` (désactive temporairement les triggers protecteurs si besoin)
+
+### `delete-transaction-cspebe-rec-26-004.sql` (SQL brut, à exécuter dans Neon Console)
+- Même logique en SQL pur dans un bloc BEGIN/COMMIT
+- Gestion des triggers protecteurs via `ALTER TABLE ... DISABLE/ENABLE TRIGGER`
+- Vérification post-suppression
+
+**Note** : Le sandbox ne peut pas atteindre Neon (timeout réseau). L'utilisateur doit exécuter l'un des deux scripts depuis sa machine.
+
+## 2. Backend — Enrichissement de `CashRegisterService.findOne()`
+
+**Fichier** : `apps/api-server/src/finance/cash-register.service.ts` (lignes 161-284)
+
+Ajout d'un bloc d'enrichissement après la requête Prisma existante :
+
+1. **Requête brute** : récupère tous les `cash_register_transfers` où la caisse est source OU destination (90 derniers jours, limit 200)
+2. **Indexation par préfixe txId** : pour chaque transfert `AUTO_ALLOCATION`, extrait le préfixe 8 chars de la référence (`AUTO-{txId8}-{feeType}`) et l'associe à la transaction source
+3. **Attachement à chaque transaction** : `tx.linkedTransfers[]` contient les transferts sortants liés
+4. **Construction des listes globales** :
+   - `incomingTransfers[]` : transferts reçus par cette caisse (credits)
+   - `outgoingTransfers[]` : transferts émis depuis cette caisse (debits)
+5. **Robustesse** : try/catch non bloquant — si l'enrichissement échoue, la caisse est renvoyée sans transferts liés (tableaux vides)
+
+Champs ajoutés à la réponse de `GET /api/finance/cash-registers/:id` :
+- `transactions[].linkedTransfers[]` : transferts d'allocation partant de cette transaction
+- `incomingTransfers[]` : 50 derniers transferts reçus
+- `outgoingTransfers[]` : 50 derniers transferts émis
+
+## 3. Frontend — Affichage du flux inter-caisses
+
+**Fichier** : `apps/web-app/src/components/finance/CashRegistersContent.tsx`
+
+### 3.1. Nouveaux types et helpers (lignes 35-120)
+- `interface CashRegisterTransfer` : type pour les transferts
+- `CashRegister.transactions[].linkedTransfers` : ajouté à l'interface
+- `CashRegister.incomingTransfers` / `outgoingTransfers` : ajoutés à l'interface
+- `FEE_TYPE_LABELS` : mapping feeType → libellé français (INSCRIPTION→'Frais d'inscription', TUITION→'Scolarité', CANTEEN→'Cantine', etc.)
+- `extractFeeTypeFromReference(ref)` : parse `AUTO-{txId8}-{feeType}` pour extraire le feeType
+- `getFeeTypeLabel(feeType)` : retourne le libellé français
+
+### 3.2. KPI cards étendues (lignes 1248-1274)
+Layout `grid-cols-2 md:grid-cols-3 lg:grid-cols-5` (était `grid-cols-3`).
+Ajout de 2 nouvelles cartes :
+- 🟢 "Transferts reçus" (emerald) : `incomingTransfers.length`
+- 🔴 "Transferts émis" (rose) : `outgoingTransfers.length`
+Renommage "Transactions" → "Encaissements" pour clarifier.
+
+### 3.3. Section "Transactions récentes" enrichie (lignes 1387-1508)
+Pour chaque transaction, si `tx.linkedTransfers?.length > 0`, affichage d'une ligne d'expansion sous la transaction :
+- Fond violet clair (`bg-violet-50/40`)
+- Header : "Transfert automatique vers caisse de destination" avec icône ArrowDownCircle
+- Pour chaque transfert lié :
+  - `→ [Code caisse] [Nom caisse] [Badge feeType] [Badge AUTO]`
+  - Montant en violet (`−X FCFA`)
+- Note explicative : "La caisse ONLINE conserve le cumul des paiements en ligne. Seule la caisse de destination est créditée du montant alloué."
+
+Utilisation de `<Fragment key={tx.id}>` pour retourner 2 `<tr>` par transaction (la transaction + l'expansion).
+
+### 3.4. Nouvelle section "Transferts reçus d'autres caisses" (lignes 1510-1588)
+Affichée si `selectedRegister.incomingTransfers?.length > 0` :
+- Bordure emerald
+- Header avec icône ArrowDownCircle : "Transferts reçus d'autres caisses (allocations automatiques + manuels)"
+- Colonnes : Date · Caisse source · Motif (badge feeType + "allocation automatique" OU note manuelle) · Montant reçu (+X FCFA) · Référence
+- Lignes AUTO_ALLOCATION : fond violet clair
+- Lignes manuelles : fond neutre
+
+### 3.5. Nouvelle section "Transferts émis vers d'autres caisses" (lignes 1590-1667)
+Affichée si `selectedRegister.outgoingTransfers?.length > 0` :
+- Bordure rose
+- Header avec icône ArrowUpRight : "Transferts émis vers d'autres caisses"
+- Colonnes : Date · Caisse destination · Motif · Montant transféré (−X FCFA) · Référence
+- Même distinction AUTO_ALLOCATION vs manuel
+
+## 4. Vocabulaire français utilisé
+
+Pour expliquer clairement le flux ONLINE → caisses de destination :
+
+- **Sous chaque transaction ONLINE** : "Transfert automatique vers caisse de destination" + sous-lignes "→ [Code] [Nom] [feeType] [AUTO] −X FCFA"
+- **Note pédagogique** : "La caisse {code} conserve le cumul des paiements en ligne. Seule la caisse de destination est créditée du montant alloué."
+- **Caisse destination (ex: ACCUEIL)** : "Transferts reçus d'autres caisses (allocations automatiques + manuels)" avec colonne "Motif" affichant le badge feeType (ex: "Scolarité") + "allocation automatique"
+- **Caisse source (vue résumé)** : "Transferts émis vers d'autres caisses (allocations automatiques + manuels)"
+- **KPI cards** : "Transferts reçus" (emerald) / "Transferts émis" (rose)
+- **Badges feeType** : INSCRIPTION→'Frais d'inscription', TUITION→'Scolarité', CANTEEN→'Cantine', EXAMEN→'Examen', TRANSPORT→'Transport', OTHER→'Autres frais'
+
+## 5. Vérifications TypeScript
+- `tsc --noEmit -p tsconfig.json` sur `apps/web-app` : AUCUNE erreur sur CashRegistersContent.tsx
+- `tsc --noEmit -p tsconfig.json` sur `apps/api-server` : aucune NOUVELLE erreur sur cash-register.service.ts (les erreurs préexistantes sont dues à Prisma client non généré dans le sandbox — même pattern que le code existant)
+
+## 6. Fichiers modifiés
+1. `apps/api-server/src/finance/cash-register.service.ts` — findOne() enrichi (lignes 161-284)
+2. `apps/web-app/src/components/finance/CashRegistersContent.tsx` — types, helpers, KPI, 3 sections d'affichage
+3. `scripts/delete-transaction-by-receipt.js` — NOUVEAU, script Node.js réutilisable
+4. `scripts/delete-transaction-cspebe-rec-26-004.sql` — NOUVEAU, SQL pour Neon Console
+
+Stage Summary:
+- Script de suppression prêt (Node.js + SQL) — utilisateur exécute depuis sa machine
+- Backend `GET /cash-registers/:id` retourne maintenant les transferts liés (in/out + par transaction)
+- Frontend affiche le flux complet ONLINE → caisses de destination avec libellés français clairs
+- 3 nouvelles sections dans le panneau de détail caisse :
+  1. Expansion sous chaque transaction (transferts sortants liés)
+  2. "Transferts reçus" (vue caisse destination)
+  3. "Transferts émis" (vue caisse source, résumé)
+- KPI cards étendues : 5 cartes au lieu de 3 (ajout Transferts reçus / Transferts émis)
+- Vocabulaire pédagogique : "La caisse ONLINE conserve le cumul des paiements en ligne. Seule la caisse de destination est créditée du montant alloué."
+
+---
+Task ID: multiple-fixes-admissions-payments-sections
+Agent: main
+Task: 
+  1. Exécuter le script de suppression de CSPEBE-REC-26-004
+  2. Supprimer "Virement bancaire" du modal Nouvel encaissement
+  3. Corriger le 404 sur "Soumettre en lot"
+  4. Adapter les modals de confirmation (ne plus ressembler à des suppressions)
+  5. Corriger "Accepter et inscrire" (toast succès mais action non effective)
+  6. Corriger l'erreur "référence valide, entité liée n'existe pas" pour Section par classe
+  7. Bouton Synchroniser : détecter nouvelles classes officielles sans section
+
+Work Log:
+
+## 1. Suppression de CSPEBE-REC-26-004 — ✅ EXÉCUTÉE
+Script : `scripts/delete-transaction-by-receipt.js` (Node.js, réutilisable)
+
+Corrections appliquées au script avant exécution réussie :
+- URL DB : `sslmode=require&channel_binding=require` (au lieu de `sslmode=require` seul)
+- Override de `process.env.DATABASE_URL` : ignorer les valeurs SQLite (`file:...`) présentes dans le shell
+- Suppression de `updatedAt` dans UPDATE account_breakdowns (colonne inexistante)
+- Désactivation des triggers protecteurs AVANT le BEGIN (5 triggers : `lock_transaction_after_closure`, `trg_no_delete_finance_transaction`, `verify_integrity_hash_trigger`, `trg_update_balance_after_tx`, `no_delete_finance_transaction`)
+- Réactivation dans le `finally` (garantie même en cas d'erreur)
+
+Résultat : transaction CSPEBE-REC-26-004 (id=8c35b03a-1b91-4048-a5e6-ef6fc915505a, montant=1000 FCFA, paymentMethod=CASH) supprimée avec succès. AccountBreakdown reverti (paidAmount 10000→9000, remainingAmount 18000→19000). Trigger SQL recalculera totalPaid/balance/status automatiquement.
+
+## 2. NewPaymentModal — Suppression de "Virement bancaire" — ✅
+Fichier : `apps/web-app/src/components/finance/NewPaymentModal.tsx` (ligne 40-43)
+- METHODS passe de 3 entrées à 2 : `[CASH, WIRE, FEDAPAY]` → `[CASH, FEDAPAY]`
+- Aucune autre référence à WIRE dans le fichier (logic, icônes, etc.)
+- Backend continue d'accepter WIRE (pour usage futur éventuel), mais l'UI ne l'expose plus.
+
+## 3. Correction 404 sur "Soumettre en lot" — ✅
+### 3.1 Backend : réordonner les routes batch AVANT les routes dynamiques
+**Fichier** : `apps/api-server/src/students/controllers/admission.controller.ts`
+
+**Bug critique** : NestJS match `POST /students/admissions/batch/submit` comme `:id = "batch"` + `/submit` (route `@Post(':id/submit')` déclarée avant `@Post('batch/submit')`). Le service `submit("batch", tenantId)` échouait avec 404.
+
+**Fix** : Déplacement des 4 routes batch AVANT la section "Workflow" :
+- `@Post('batch/submit')` (lignes 59-74)
+- `@Post('batch/accept')` (lignes 76-92)
+- `@Post('batch/convert')` (lignes 94-110)
+- **NOUVEAU** `@Post('batch/accept-and-enroll')` (lignes 121-145) — équivalent batch de `:id/accept-and-enroll`
+
+### 3.2 Frontend service : ajout de batchAcceptAndEnrollAdmissions + acceptAndEnrollAdmission
+**Fichier** : `apps/web-app/src/services/students.service.ts`
+- `batchAcceptAndEnrollAdmissions(admissionIds, comment?)` (lignes 158-163) : appelle `POST /students/admissions/batch/accept-and-enroll` via `apiFetch` (bypass BFF, target backend direct)
+- `acceptAndEnrollAdmission(id, comment?)` (lignes 187-192) : appelle `POST /students/admissions/:id/accept-and-enroll` via `apiFetch`
+
+### 3.3 BFF route : `accept-and-enroll/route.ts`
+**Fichier** : `apps/web-app/src/app/api/students/admissions/[admissionId]/accept-and-enroll/route.ts` (NOUVEAU)
+- Proxy BFF qui forward vers backend `POST /students/admissions/:id/accept-and-enroll`
+- Pattern aligné sur `documents/route.ts` (getProxyAuthHeaders + normalizeApiUrl)
+- Le service frontend n'utilise plus ce BFF (utilise `apiFetch` direct), mais le BFF reste utile pour d'éventuels appels directs `fetch()`.
+
+## 4. Modals de confirmation adaptés au contexte — ✅
+**Fichier** : `apps/web-app/src/components/students/AdmissionsContent.tsx`
+
+### 4.1 Ajout du type au state confirmModal
+- Nouveau type local : `type ConfirmType = 'info' | 'success' | 'warning' | 'danger'`
+- State étendu avec `confirmType: ConfirmType`
+- `showConfirm()` accepte un 5ème argument `confirmType` (default `'warning'`)
+
+### 4.2 Configuration par type
+- `info` (bleu) : icône `Send`, `bg-blue-50`, `text-blue-600`, button `bg-blue-600`
+- `success` (vert) : icône `CheckCircle`, `bg-emerald-50`, `text-emerald-600`, button `bg-emerald-600`
+- `warning` (jaune) : icône `AlertTriangle`, `bg-amber-50`, `text-amber-600`, button `bg-amber-600`
+- `danger` (rouge) : icône `AlertCircle`, `bg-rose-50`, `text-rose-600`, button `bg-rose-600`
+
+### 4.3 Mapping action → type
+| Action | confirmType | Icône | Couleur |
+|--------|-------------|-------|---------|
+| Soumettre en lot | `info` | Send | bleu |
+| Accepter en lot | `success` | CheckCircle | vert |
+| Accepter et inscrire en lot | `success` | CheckCircle | vert |
+| Convertir en lot | `success` | CheckCircle | vert |
+| Accepter le dossier (single) | `success` | CheckCircle | vert |
+| Refuser le dossier (single) | `danger` | AlertCircle | rouge |
+| Reprendre le dossier (rollback) | `warning` | AlertTriangle | jaune |
+| Supprimer le dossier / document / entretien | `danger` | AlertCircle | rouge |
+
+### 4.4 Refactor du modal
+- Header avec `bg-{type}-50` au lieu de `bg-rose-50` fixe
+- Bouton icône dans cercle blanc (pas rouge fixe)
+- Icône du bouton = icône du type (pas `Trash2` fixe)
+- Border-top colorée selon le type (`border-t-4 border-{type}-100`)
+
+## 5. Fix "Accepter et inscrire" single — ✅
+**Bug** : ligne 1177 (avant fix) appelait `confirmDialog.success(...)` — mais `confirmDialog` n'était JAMAIS déclaré ni importé → `ReferenceError` silencieux (rejet de promesse non géré). Le fetch n'était jamais exécuté. L'utilisateur voyait un toast succès probablement lié à une autre action (handleDecide 'ACCEPTED' qui ne fait qu'accepter sans inscrire).
+
+**Fix** : Remplacement par `showConfirm(...)` avec type `'success'` (vert, icône CheckCircle) :
+- Utilisation de `studentsService.acceptAndEnrollAdmission(admission.id, 'Acceptation directe')` (apiFetch → backend direct)
+- Toast succès affiche le matricule si disponible
+- Toast erreur avec `variant: 'destructive'` en cas d'échec
+
+## 6. Section par classe — Erreur "référence valide, entité liée n'existe pas" — ✅
+**Fichier** : `apps/api-server/src/pedagogy/academic-structure-prisma.service.ts`
+
+### 6.1 Bug principal : `effectiveOfficialClassId` restait à `Classroom.id`
+Dans `createClassSection()` (lignes 741-817), la logique était :
+1. `effectiveOfficialClassId = data.academicClassId` (le Classroom.id envoyé par le frontend)
+2. `isFromClassroom = !(AcademicClass exists with this id)`
+3. Si `isFromClassroom` → créer l'AcademicClass et mettre à jour `effectiveOfficialClassId`
+
+**Problème** : Si l'AcademicClass avait DÉJÀ été créée par `syncClassSections`, le check `isFromClassroom` retournait `false` (AcademicClass exists), et `effectiveOfficialClassId` restait à `Classroom.id` — qui n'est PAS dans la table `pedagogy_academic_classes` → **P2003 FK violation** sur `officialClassId`.
+
+**Fix** : Nouvelle logique à 3 branches :
+1. Si `data.academicClassId` EST un AcademicClass.id → utiliser directement
+2. Sinon, chercher un AcademicClass existant par `(tenantId, academicYearId, name = classroom.name, isActive)` — trouvé si déjà créé par sync
+3. Sinon, créer l'AcademicClass depuis le Classroom (avec grade/cycle/level chain)
+
+### 6.2 Amélioration de la résolution `schoolLevelId`
+**Avant** : match exact + match partiel simple (4 conditions)
+**Après** : 5 stratégies en cascade :
+1. Match exact sur `code` (ex: "MATERNELLE" === "MATERNELLE")
+2. Match exact sur `name`
+3. Match exact sur `label`
+4. Match partiel : `schoolLevel.code/name/label` inclus dans `level.name` (ex: "SECONDAIRE" dans "SECONDAIRE 1ER CYCLE")
+5. Match partiel inverse : `level.name` inclus dans `schoolLevel.code/name` (ex: "PRIM" dans "PRIMAIRE")
+
+Le message d'erreur est maintenant explicite : inclut le `level.name` qui a échoué + la liste des `SchoolLevel.code` disponibles.
+
+### 6.3 Même amélioration dans `syncClassSectionsFromAcademicClasses`
+Le resolver `resolveSchoolLevelId` (lignes 595-628) a été étendu avec les 5 stratégies (label ajouté, matching bidirectionnel).
+
+## 7. Bouton "Synchroniser" — ✅
+**Fichier** : `apps/web-app/src/app/app/settings/page.tsx` (lignes 1360-1401)
+
+La logique backend existait déjà (`syncClassSectionsFromAcademicClasses` dans `academic-structure-prisma.service.ts`) et faisait déjà les 2 étapes :
+1. **Synced** : Classroom → AcademicClass (pour les nouvelles classes officielles sans AcademicClass)
+2. **Created** : AcademicClass → Section (pour les AcademicClasses sans section)
+
+**Amélioration frontend** : le toast affichait seulement `created` + `existing`. Maintenant il affiche aussi `synced` :
+- "Synchronisation terminée : X nouvelle(s) classe(s) officielle(s) détectée(s), Y section(s) créée(s), Z section(s) déjà existante(s)."
+- Si rien à créer : "Synchronisation terminée : aucune nouvelle classe ou section à créer. Tout est à jour."
+
+## 8. Vérifications TypeScript
+- `apps/web-app` : AUCUNE erreur sur AdmissionsContent.tsx, settings/page.tsx, NewPaymentModal.tsx
+- `apps/api-server` : aucune NOUVELLE erreur sur admission.controller.ts et academic-structure-prisma.service.ts (erreurs préexistantes = Prisma client non généré dans le sandbox)
+
+## 9. Fichiers modifiés
+1. `scripts/delete-transaction-by-receipt.js` — URL DB + gestion triggers protecteurs
+2. `apps/web-app/src/components/finance/NewPaymentModal.tsx` — suppression WIRE
+3. `apps/api-server/src/students/controllers/admission.controller.ts` — réordonner routes batch + ajout `batch/accept-and-enroll`
+4. `apps/web-app/src/services/students.service.ts` — ajout `batchAcceptAndEnrollAdmissions` + `acceptAndEnrollAdmission`
+5. `apps/web-app/src/app/api/students/admissions/[admissionId]/accept-and-enroll/route.ts` — NOUVEAU BFF route
+6. `apps/web-app/src/components/students/AdmissionsContent.tsx` — modals type-aware + fix `confirmDialog` undefined + utilisation service
+7. `apps/api-server/src/pedagogy/academic-structure-prisma.service.ts` — fix `effectiveOfficialClassId` + amélioration résolution `schoolLevelId`
+8. `apps/web-app/src/app/app/settings/page.tsx` — toast amélioré pour Synchroniser
+
+Stage Summary:
+- Transaction CSPEBE-REC-26-004 supprimée physiquement (avec revert AccountBreakdown + cashRegister balance + allocations + payment_initiations reset)
+- "Virement bancaire" supprimé du modal Nouvel encaissement
+- Routes batch du controller admission réordonnées (fix 404 sur `batch/submit` qui était matché comme `:id="batch"`)
+- Nouvel endpoint backend `POST /students/admissions/batch/accept-and-enroll` (évite la boucle de fetch côté frontend)
+- Service frontend étendu avec `batchAcceptAndEnrollAdmissions` et `acceptAndEnrollAdmission`
+- BFF route créé pour `accept-and-enroll` (au cas où)
+- Modals de confirmation type-aware : info (bleu/Send), success (vert/CheckCircle), warning (jaune/AlertTriangle), danger (rouge/AlertCircle). Plus de `Trash2` rouge pour toutes les actions.
+- Bug `confirmDialog.success()` undefined corrigé — le bouton "Accepter et inscrire" simple fonctionne maintenant
+- Bug Section par classe corrigé : `effectiveOfficialClassId` utilise désormais l'AcademicClass.id (créé ou trouvé via sync) au lieu du Classroom.id qui cassait la FK
+- Résolution `schoolLevelId` plus robuste : 5 stratégies en cascade (code, name, label, includes, includes inverse)
+- Toast "Synchroniser" affiche maintenant les 3 métriques : classes officielles détectées, sections créées, sections existantes

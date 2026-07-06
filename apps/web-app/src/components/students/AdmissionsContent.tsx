@@ -135,16 +135,27 @@ export default function AdmissionsContent() {
   const [isActionPending, setIsActionPending] = useState(false);
 
   // Modal de confirmation personnalisé (remplace window.confirm)
+  // Type controls l'icône et la couleur du bouton pour s'adapter au contexte
+  // de l'action (info=bleu pour soumettre, success=vert pour accepter/inscrire,
+  // warning=jaune pour reprendre, danger=rouge pour supprimer/rejeter).
+  type ConfirmType = 'info' | 'success' | 'warning' | 'danger';
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
     message: string;
     confirmLabel: string;
+    confirmType: ConfirmType;
     onConfirm: () => void;
-  }>({ isOpen: false, title: '', message: '', confirmLabel: 'Confirmer', onConfirm: () => {} });
+  }>({ isOpen: false, title: '', message: '', confirmLabel: 'Confirmer', confirmType: 'warning', onConfirm: () => {} });
 
-  const showConfirm = (title: string, message: string, onConfirm: () => void, confirmLabel = 'Confirmer') => {
-    setConfirmModal({ isOpen: true, title, message, confirmLabel, onConfirm });
+  const showConfirm = (
+    title: string,
+    message: string,
+    onConfirm: () => void,
+    confirmLabel = 'Confirmer',
+    confirmType: ConfirmType = 'warning',
+  ) => {
+    setConfirmModal({ isOpen: true, title, message, confirmLabel, confirmType, onConfirm });
   };
 
   const closeConfirm = () => {
@@ -272,6 +283,7 @@ export default function AdmissionsContent() {
         }
       },
       decision === 'ACCEPTED' ? 'Accepter' : 'Refuser',
+      decision === 'ACCEPTED' ? 'success' : 'danger',
     );
   };
 
@@ -296,6 +308,7 @@ export default function AdmissionsContent() {
         }
       },
       'Confirmer',
+      'warning',
     );
   };
 
@@ -316,6 +329,7 @@ export default function AdmissionsContent() {
         }
       },
       'Supprimer',
+      'danger',
     );
   };
 
@@ -372,7 +386,7 @@ export default function AdmissionsContent() {
     if (ids.length === 0) return;
     showConfirm(
       'Soumettre en lot',
-      `Soumettre ${ids.length} candidature(s) ?`,
+      `Soumettre ${ids.length} candidature(s) ? Les dossiers passeront en statut « Soumis » pour révision.`,
       async () => {
         setBatchActionPending(true);
         try {
@@ -380,6 +394,7 @@ export default function AdmissionsContent() {
           toast({
             title: '✅ Soumission en lot terminée',
             description: `${result.succeeded} réussie(s), ${result.failed} échouée(s)`,
+            variant: result.failed > 0 ? 'destructive' : 'success',
           });
           clearSelection();
           loadAdmissions();
@@ -390,6 +405,7 @@ export default function AdmissionsContent() {
         }
       },
       'Soumettre',
+      'info',
     );
   };
 
@@ -402,25 +418,22 @@ export default function AdmissionsContent() {
       async () => {
         setBatchActionPending(true);
         try {
-          let succeeded = 0;
-          let failed = 0;
-          for (const id of ids) {
-            try {
-              const res = await fetch(`/api/students/admissions/${id}/accept-and-enroll`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ comment: 'Acceptation en lot' }),
-              });
-              if (res.ok) succeeded++;
-              else failed++;
-            } catch {
-              failed++;
-            }
-          }
+          // Utilisation de l'endpoint batch backend (beaucoup plus efficace
+          // qu'une boucle de fetch côté frontend, et évite les 404 BFF).
+          const result = await studentsService.batchAcceptAndEnrollAdmissions(
+            ids,
+            'Acceptation en lot',
+          );
+          const succeeded = result.results?.filter((r: any) => r.success) ?? [];
+          const matricules = succeeded.map((r: any) => r.matricule).filter(Boolean).join(', ');
           toast({
-            title: '✅ Acceptation en lot terminée',
-            description: `${succeeded} inscrit(s), ${failed} échouée(s)`,
+            title: result.failed > 0
+              ? 'Acceptation en lot partielle'
+              : '✅ Acceptation en lot terminée',
+            description: matricules
+              ? `${result.succeeded} inscrit(s) [${matricules}], ${result.failed} échouée(s)`
+              : `${result.succeeded} inscrit(s), ${result.failed} échouée(s)`,
+            variant: result.failed > 0 ? 'destructive' : 'success',
           });
           clearSelection();
           loadAdmissions();
@@ -431,6 +444,7 @@ export default function AdmissionsContent() {
         }
       },
       'Accepter et inscrire',
+      'success',
     );
   };
 
@@ -439,7 +453,7 @@ export default function AdmissionsContent() {
     if (ids.length === 0) return;
     showConfirm(
       'Accepter en lot',
-      `Accepter ${ids.length} candidature(s) ?`,
+      `Accepter ${ids.length} candidature(s) ? Les dossiers passeront en statut « Accepté » (sans inscription automatique).`,
       async () => {
         setBatchActionPending(true);
         try {
@@ -447,6 +461,7 @@ export default function AdmissionsContent() {
           toast({
             title: '✅ Acceptation en lot terminée',
             description: `${result.succeeded} réussie(s), ${result.failed} échouée(s)`,
+            variant: result.failed > 0 ? 'destructive' : 'success',
           });
           clearSelection();
           loadAdmissions();
@@ -457,6 +472,7 @@ export default function AdmissionsContent() {
         }
       },
       'Accepter',
+      'success',
     );
   };
 
@@ -485,6 +501,7 @@ export default function AdmissionsContent() {
         }
       },
       'Convertir',
+      'success',
     );
   };
 
@@ -651,6 +668,7 @@ export default function AdmissionsContent() {
         }
       },
       'Supprimer',
+      'danger',
     );
   };
 
@@ -699,6 +717,7 @@ export default function AdmissionsContent() {
         }
       },
       'Supprimer',
+      'danger',
     );
   };
 
@@ -1173,31 +1192,45 @@ export default function AdmissionsContent() {
                             {/* Accepter et inscrire directement (DRAFT, PENDING — bypass étapes) */}
                             {(admission.status === 'DRAFT' || admission.status === 'PENDING' || admission.status === 'MISSING_DOCUMENTS' || admission.status === 'WAITLISTED') && (
                               <button
-                                onClick={async () => {
-                                  const ok = await confirmDialog.success(
-                                    `Accepter et inscrire directement ${admission.firstName} ${admission.lastName} ? Cette action va créer le dossier élève, générer le matricule, le compte financier et le responsable légal.`,
+                                onClick={() => {
+                                  // Utilisation du modal de confirmation personnalisé
+                                  // (showConfirm) avec type "success" (vert) — pas un modal
+                                  // de suppression. Remplace l'ancien `confirmDialog.success()`
+                                  // qui n'était jamais défini → ReferenceError silencieux.
+                                  showConfirm(
                                     'Accepter et inscrire',
+                                    `Accepter et inscrire directement ${admission.firstName} ${admission.lastName} ? Cette action va créer le dossier élève, générer le matricule, le compte financier et le responsable légal.`,
+                                    async () => {
+                                      try {
+                                        setIsActionPending(true);
+                                        // Utilisation du service (apiFetch → backend direct,
+                                        // évite le 404 BFF) au lieu d'un fetch inline vers
+                                        // /api/students/admissions/:id/accept-and-enroll.
+                                        const student = await studentsService.acceptAndEnrollAdmission(
+                                          admission.id,
+                                          'Acceptation directe',
+                                        );
+                                        toast({
+                                          title: '✅ Élève inscrit',
+                                          description: `Le dossier a été accepté et l'élève est maintenant inscrit.${
+                                            student?.matricule ? ` Matricule : ${student.matricule}.` : ''
+                                          } Compte financier et responsable légal créés.`,
+                                          variant: 'success',
+                                        });
+                                        loadAdmissions();
+                                      } catch (e: any) {
+                                        toast({
+                                          title: 'Erreur',
+                                          description: e?.message || 'Échec de l\'acceptation et inscription',
+                                          variant: 'destructive',
+                                        });
+                                      } finally {
+                                        setIsActionPending(false);
+                                      }
+                                    },
+                                    'Accepter et inscrire',
+                                    'success',
                                   );
-                                  if (!ok) return;
-                                  try {
-                                    setIsActionPending(true);
-                                    const res = await fetch(`/api/students/admissions/${admission.id}/accept-and-enroll`, {
-                                      method: 'POST',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      credentials: 'include',
-                                      body: JSON.stringify({ comment: 'Acceptation directe' }),
-                                    });
-                                    if (!res.ok) {
-                                      const err = await res.json().catch(() => ({}));
-                                      throw new Error(err.message || `Erreur ${res.status}`);
-                                    }
-                                    toast({ title: '✅ Élève inscrit', description: 'Le dossier a été accepté et l\'élève est maintenant inscrit. Matricule généré, compte financier créé.', variant: 'success' });
-                                    loadAdmissions();
-                                  } catch (e: any) {
-                                    toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
-                                  } finally {
-                                    setIsActionPending(false);
-                                  }
                                 }}
                                 disabled={isActionPending}
                                 className="p-2 hover:bg-emerald-50 rounded-lg text-emerald-600 transition-all disabled:opacity-50 border border-emerald-200"
@@ -1777,55 +1810,98 @@ export default function AdmissionsContent() {
         />
       )}
 
-      {/* Modal de confirmation personnalisé (remplace window.confirm) */}
-      {confirmModal.isOpen && (
-        <div
-          className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={closeConfirm}
-        >
+      {/* Modal de confirmation personnalisé (remplace window.confirm)
+         - Type "info" (bleu)      : soumettre, actions neutres
+         - Type "success" (vert)   : accepter, inscrire, convertir
+         - Type "warning" (jaune)  : reprendre, annuler une décision
+         - Type "danger" (rouge)   : supprimer, rejeter */}
+      {confirmModal.isOpen && (() => {
+        // Configuration par type : icône, couleurs header/body/footer/button
+        const typeConfig = {
+          info: {
+            Icon: Send,
+            iconBg: 'bg-blue-50',
+            iconColor: 'text-blue-600',
+            btnColor: 'bg-blue-600 hover:bg-blue-700',
+            border: 'border-blue-100',
+            bodyBg: 'bg-white',
+          },
+          success: {
+            Icon: CheckCircle,
+            iconBg: 'bg-emerald-50',
+            iconColor: 'text-emerald-600',
+            btnColor: 'bg-emerald-600 hover:bg-emerald-700',
+            border: 'border-emerald-100',
+            bodyBg: 'bg-white',
+          },
+          warning: {
+            Icon: AlertTriangle,
+            iconBg: 'bg-amber-50',
+            iconColor: 'text-amber-600',
+            btnColor: 'bg-amber-600 hover:bg-amber-700',
+            border: 'border-amber-100',
+            bodyBg: 'bg-white',
+          },
+          danger: {
+            Icon: AlertCircle,
+            iconBg: 'bg-rose-50',
+            iconColor: 'text-rose-600',
+            btnColor: 'bg-rose-600 hover:bg-rose-700',
+            border: 'border-rose-100',
+            bodyBg: 'bg-white',
+          },
+        };
+        const cfg = typeConfig[confirmModal.confirmType];
+        const { Icon } = cfg;
+        return (
           <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
-            onClick={e => e.stopPropagation()}
+            className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={closeConfirm}
           >
-            {/* Header */}
-            <div className="px-6 py-5 border-b border-slate-100">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center shrink-0">
-                  <AlertCircle className="w-5 h-5 text-rose-500" />
+            <div
+              className={`bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border-t-4 ${cfg.border}`}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className={`px-6 py-5 border-b border-slate-100 ${cfg.iconBg}`}>
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-full bg-white flex items-center justify-center shrink-0 shadow-sm`}>
+                    <Icon className={`w-5 h-5 ${cfg.iconColor}`} />
+                  </div>
+                  <h3 className="font-bold text-slate-900 text-sm">{confirmModal.title}</h3>
                 </div>
-                <h3 className="font-bold text-slate-900 text-sm">{confirmModal.title}</h3>
+              </div>
+
+              {/* Body */}
+              <div className="px-6 py-5">
+                <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">
+                  {confirmModal.message}
+                </p>
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 bg-slate-50 flex justify-end gap-2">
+                <button
+                  onClick={closeConfirm}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg text-xs font-bold transition"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={() => {
+                    closeConfirm();
+                    confirmModal.onConfirm();
+                  }}
+                  className={`px-4 py-2 ${cfg.btnColor} text-white rounded-lg text-xs font-bold transition inline-flex items-center gap-1.5`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  {confirmModal.confirmLabel}
+                </button>
               </div>
             </div>
-
-            {/* Body */}
-            <div className="px-6 py-5">
-              <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">
-                {confirmModal.message}
-              </p>
-            </div>
-
-            {/* Footer */}
-            <div className="px-6 py-4 bg-slate-50 flex justify-end gap-2">
-              <button
-                onClick={closeConfirm}
-                className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg text-xs font-bold transition"
-              >
-                Annuler
-              </button>
-              <button
-                onClick={() => {
-                  closeConfirm();
-                  confirmModal.onConfirm();
-                }}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition inline-flex items-center gap-1.5"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                {confirmModal.confirmLabel}
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

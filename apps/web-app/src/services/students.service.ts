@@ -147,6 +147,21 @@ class StudentsService {
     });
   }
 
+  /**
+   * Batch accept-and-enroll : pour chaque candidature, accepte + convertit
+   * en élève inscrit (crée Student + matricule + compte financier + guardian).
+   *
+   * Backend: POST /students/admissions/batch/accept-and-enroll
+   * Body: { admissionIds: string[], comment?: string }
+   * Response: { total, succeeded, failed, results: [{ id, success, studentId?, matricule?, error? }] }
+   */
+  async batchAcceptAndEnrollAdmissions(admissionIds: string[], comment?: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/admissions/batch/accept-and-enroll`, {
+      method: "POST",
+      body: { admissionIds, comment },
+    });
+  }
+
   async deleteAdmission(id: string): Promise<any> {
     return apiFetch(`${BASE_URL}/admissions/${encodeURIComponent(id)}`, {
       method: "DELETE",
@@ -155,6 +170,22 @@ class StudentsService {
 
   async acceptAdmission(id: string, comment?: string): Promise<any> {
     return apiFetch(`${BASE_URL}/admissions/${encodeURIComponent(id)}/accept`, {
+      method: "POST",
+      body: { comment },
+    });
+  }
+
+  /**
+   * Accept-and-enroll single : accepte la candidature ET convertit directement
+   * en élève inscrit (crée Student + matricule + compte financier + guardian).
+   * Évite de passer par les étapes ACCEPTED → CONVERT manuelles.
+   *
+   * Backend: POST /students/admissions/:id/accept-and-enroll
+   * Body: { comment?: string }
+   * Response: l'objet Student créé (avec matricule, classe, etc.)
+   */
+  async acceptAndEnrollAdmission(id: string, comment?: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/admissions/${encodeURIComponent(id)}/accept-and-enroll`, {
       method: "POST",
       body: { comment },
     });

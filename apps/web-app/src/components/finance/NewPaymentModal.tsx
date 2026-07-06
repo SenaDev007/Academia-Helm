@@ -39,7 +39,6 @@ const OPERATOR_META: Record<FeexPayOperator, { label: string; shortLabel: string
 
 const METHODS = [
   { value: 'CASH', label: 'Espèces' },
-  { value: 'WIRE', label: 'Virement bancaire' },
   { value: 'FEDAPAY', label: 'Fedapay' },
 ];
 

@@ -589,24 +589,40 @@ export class AcademicStructurePrismaService {
       // (ex : « Maternelle » → SchoolLevel.code='MATERNELLE')
       const schoolLevels = await this.prisma.schoolLevel.findMany({
         where: { tenantId },
-        select: { id: true, code: true, name: true },
+        select: { id: true, code: true, name: true, label: true },
       });
 
       // Map : level.name normalisé → schoolLevel.id
-      // On essaie plusieurs variantes : code exact, name exact, puis matching partiel
+      // On essaie plusieurs variantes : code exact, name exact, label exact,
+      // puis matching partiel bidirectionnel (ex: « Secondaire » dans
+      // « Secondaire 1er cycle » ou inverse).
       const resolveSchoolLevelId = (levelName: string): string | null => {
         const ln = (levelName || '').trim().toUpperCase();
-        // 1. Match exact sur code (ex: « MATERNELLE »)
+        if (!ln) return null;
+        // 1. Match exact sur code
         let sl = schoolLevels.find(s => (s.code || '').toUpperCase() === ln);
         if (sl) return sl.id;
         // 2. Match exact sur name
         sl = schoolLevels.find(s => (s.name || '').toUpperCase() === ln);
         if (sl) return sl.id;
-        // 3. Match partiel (ex: « Maternelle » dans « MATERNELLE »)
+        // 3. Match exact sur label
+        sl = schoolLevels.find(s => (s.label || '').toUpperCase() === ln);
+        if (sl) return sl.id;
+        // 4. Match partiel : schoolLevel.code/name inclus dans level.name
+        //    (ex: ln="SECONDAIRE 1ER CYCLE" contient sc="SECONDAIRE")
         sl = schoolLevels.find(s => {
           const sc = (s.code || '').toUpperCase();
           const sn = (s.name || '').toUpperCase();
-          return sc.includes(ln) || sn.includes(ln) || ln.includes(sc) || ln.includes(sn);
+          const slbl = (s.label || '').toUpperCase();
+          return (sc && ln.includes(sc)) || (sn && ln.includes(sn)) || (slbl && ln.includes(slbl));
+        });
+        if (sl) return sl.id;
+        // 5. Match partiel inverse : level.name inclus dans schoolLevel.code/name
+        //    (ex: ln="PRIM" inclus dans sc="PRIMAIRE")
+        sl = schoolLevels.find(s => {
+          const sc = (s.code || '').toUpperCase();
+          const sn = (s.name || '').toUpperCase();
+          return (sc && sc.includes(ln)) || (sn && sn.includes(ln));
         });
         return sl?.id ?? null;
       };
@@ -718,23 +734,52 @@ export class AcademicStructurePrismaService {
     }
 
     // Résoudre schoolLevelId depuis level.name
+    // (ex: AcademicLevel.name = "Maternelle" → SchoolLevel.code = "MATERNELLE")
+    // Plusieurs stratégies : match exact code, match exact name, puis match
+    // partiel bidirectionnel (ex: "Secondaire" dans "Secondaire 1er cycle").
     const schoolLevels = await this.prisma.schoolLevel.findMany({
       where: { tenantId: data.tenantId },
-      select: { id: true, code: true, name: true },
+      select: { id: true, code: true, name: true, label: true },
     });
     const ln = (academicClass.level?.name || '').trim().toUpperCase();
     let schoolLevelId: string | null = null;
-    for (const sl of schoolLevels) {
-      const sc = (sl.code || '').toUpperCase();
-      const sn = (sl.name || '').toUpperCase();
-      if (sc === ln || sn === ln || sc.includes(ln) || sn.includes(ln)) {
-        schoolLevelId = sl.id;
-        break;
+    if (ln && schoolLevels.length > 0) {
+      // 1. Match exact sur code (ex: ln="MATERNELLE", sc="MATERNELLE")
+      let sl = schoolLevels.find(s => (s.code || '').toUpperCase() === ln);
+      if (!sl) {
+        // 2. Match exact sur name
+        sl = schoolLevels.find(s => (s.name || '').toUpperCase() === ln);
       }
+      if (!sl) {
+        // 3. Match exact sur label
+        sl = schoolLevels.find(s => (s.label || '').toUpperCase() === ln);
+      }
+      if (!sl) {
+        // 4. Match partiel : schoolLevel.code/name inclus dans level.name
+        //    (ex: ln="SECONDAIRE 1ER CYCLE" contient sc="SECONDAIRE")
+        sl = schoolLevels.find(s => {
+          const sc = (s.code || '').toUpperCase();
+          const sn = (s.name || '').toUpperCase();
+          const slbl = (s.label || '').toUpperCase();
+          return (sc && ln.includes(sc)) || (sn && ln.includes(sn)) || (slbl && ln.includes(slbl));
+        });
+      }
+      if (!sl) {
+        // 5. Match partiel inverse : level.name inclus dans schoolLevel.code/name
+        //    (ex: ln="PRIM" inclus dans sc="PRIMAIRE" — utile pour abréviations)
+        sl = schoolLevels.find(s => {
+          const sc = (s.code || '').toUpperCase();
+          const sn = (s.name || '').toUpperCase();
+          return (sc && sc.includes(ln)) || (sn && sn.includes(ln));
+        });
+      }
+      schoolLevelId = sl?.id ?? null;
     }
     if (!schoolLevelId) {
       throw new BadRequestException(
-        `Impossible de résoudre le niveau scolaire pour "${academicClass.level?.name}". Vérifiez la configuration des SchoolLevels.`,
+        `Impossible de résoudre le niveau scolaire pour "${academicClass.level?.name || '(inconnu)'}". ` +
+        `Vérifiez la configuration des SchoolLevels (codes attendus : MATERNELLE, PRIMAIRE, SECONDAIRE). ` +
+        `Niveaux disponibles : ${schoolLevels.map(s => s.code).join(', ') || '(aucun)'}.`,
       );
     }
 
@@ -742,44 +787,73 @@ export class AcademicStructurePrismaService {
     // l'AcademicClass correspondante pour que la FK officialClassId fonctionne.
     // Si on ne peut pas créer l'AcademicClass (grade/cycle/level manquant),
     // on met officialClassId à null pour éviter la violation de FK.
+    //
+    // BUGFIX : Si l'AcademicClass existe déjà (créée par syncClassSections),
+    // il faut utiliser SON id, pas le Classroom.id — sinon la FK officialClassId
+    // fait référence à un Classroom.id qui n'est pas dans pedagogy_academic_classes
+    // → P2003 "référence est valide, l'entité liée n'existe pas".
     let effectiveOfficialClassId: string | null = data.academicClassId;
-    const isFromClassroom = !(await this.prisma.academicClass.findFirst({
+    const existingAcademicClass = await this.prisma.academicClass.findFirst({
       where: { id: data.academicClassId, tenantId: data.tenantId },
       select: { id: true },
-    }));
-    if (isFromClassroom) {
-      // L'ID vient d'un Classroom — il faut créer l'AcademicClass correspondante
+    });
+
+    if (existingAcademicClass) {
+      // L'ID fourni EST un AcademicClass.id — tout est bon.
+      effectiveOfficialClassId = existingAcademicClass.id;
+    } else {
+      // L'ID vient d'un Classroom — il faut soit trouver l'AcademicClass
+      // correspondante (déjà créée par sync), soit la créer.
       const classroom = await this.prisma.classroom.findFirst({
         where: { id: data.academicClassId, tenantId: data.tenantId },
         include: { grade: { include: { cycle: { include: { level: true } }, series: true } } },
       });
+
       if (classroom) {
-        const grade = classroom.grade;
-        const cycle = grade?.cycle;
-        const level = cycle?.level;
-        if (level && cycle) {
-          // Créer l'AcademicClass manquante
-          const newAcademicClass = await this.prisma.academicClass.create({
-            data: {
-              ...prismaCreateDefaults(),
-              tenantId: data.tenantId,
-              academicYearId: data.academicYearId,
-              levelId: level.id,
-              cycleId: cycle.id,
-              name: classroom.name,
-              code: classroom.code || classroom.name.replace(/\s/g, '').toUpperCase(),
-              capacity: classroom.capacity,
-              isActive: true,
-              ...(grade.seriesId ? { seriesId: grade.seriesId } : {}),
-            },
-          });
-          effectiveOfficialClassId = newAcademicClass.id;
-          this.logger?.log?.(`createClassSection: AcademicClass créée depuis Classroom: ${newAcademicClass.id} (${newAcademicClass.name})`);
+        // 1. Chercher si une AcademicClass existe déjà pour ce Classroom
+        // (par nom + tenantId + academicYearId — la sync crée avec ce mapping)
+        const existingAc = await this.prisma.academicClass.findFirst({
+          where: {
+            tenantId: data.tenantId,
+            academicYearId: data.academicYearId,
+            name: classroom.name,
+            isActive: true,
+          },
+          select: { id: true },
+        });
+
+        if (existingAc) {
+          // L'AcademicClass existe déjà (créée par sync) — utiliser son id
+          effectiveOfficialClassId = existingAc.id;
+          this.logger?.log?.(`createClassSection: AcademicClass déjà existante pour Classroom ${classroom.name} → id=${existingAc.id}`);
         } else {
-          // Impossible de créer l'AcademicClass (grade/cycle/level manquant)
-          // → officialClassId à null pour éviter la violation de FK
-          effectiveOfficialClassId = null;
-          this.logger?.warn?.(`createClassSection: Impossible de créer AcademicClass depuis Classroom (grade/cycle/level manquant). Section créée sans lien officialClassId.`);
+          // 2. Créer l'AcademicClass manquante
+          const grade = classroom.grade;
+          const cycle = grade?.cycle;
+          const level = cycle?.level;
+          if (level && cycle) {
+            const newAcademicClass = await this.prisma.academicClass.create({
+              data: {
+                ...prismaCreateDefaults(),
+                tenantId: data.tenantId,
+                academicYearId: data.academicYearId,
+                levelId: level.id,
+                cycleId: cycle.id,
+                name: classroom.name,
+                code: classroom.code || classroom.name.replace(/\s/g, '').toUpperCase(),
+                capacity: classroom.capacity,
+                isActive: true,
+                ...(grade.seriesId ? { seriesId: grade.seriesId } : {}),
+              },
+            });
+            effectiveOfficialClassId = newAcademicClass.id;
+            this.logger?.log?.(`createClassSection: AcademicClass créée depuis Classroom: ${newAcademicClass.id} (${newAcademicClass.name})`);
+          } else {
+            // Impossible de créer l'AcademicClass (grade/cycle/level manquant)
+            // → officialClassId à null pour éviter la violation de FK
+            effectiveOfficialClassId = null;
+            this.logger?.warn?.(`createClassSection: Impossible de créer AcademicClass depuis Classroom (grade/cycle/level manquant). Section créée sans lien officialClassId.`);
+          }
         }
       } else {
         // Classroom introuvable aussi → null

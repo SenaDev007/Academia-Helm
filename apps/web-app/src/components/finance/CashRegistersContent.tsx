@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Wallet, Plus, Lock, Unlock, Archive, Edit, Trash2, BarChart3, X,
@@ -32,6 +32,22 @@ import {
   allCashRegistersFilename,
 } from '@/lib/exports/filename-helpers';
 
+/** Transfert inter-caisses (manuel ou allocation automatique). */
+interface CashRegisterTransfer {
+  id: string;
+  fromCashRegisterId: string;
+  toCashRegisterId: string;
+  fromCode?: string;
+  fromName?: string;
+  toCode?: string;
+  toName?: string;
+  amount: string | number;
+  note?: string;
+  reference?: string;
+  status?: string; // 'COMPLETED' | 'AUTO_ALLOCATION'
+  createdAt: string;
+}
+
 interface CashRegister {
   id: string;
   code: string;
@@ -59,7 +75,15 @@ interface CashRegister {
     studentAccount?: {
       student?: { id: string; firstName: string; lastName: string };
     };
+    /** Transferts d'allocation automatique partant de cette transaction
+     *  (un par type de frais). Permet d'afficher "→ Transféré vers
+     *  Caisse Accueil (Scolarité) : X FCFA" sous chaque paiement en ligne. */
+    linkedTransfers?: CashRegisterTransfer[];
   }>;
+  /** Transferts reçus par cette caisse (credits) — allocations auto + manuels */
+  incomingTransfers?: CashRegisterTransfer[];
+  /** Transferts émis depuis cette caisse (debits) */
+  outgoingTransfers?: CashRegisterTransfer[];
   // Champs bancaires
   bankName?: string;
   bankAccountNumber?: string;
@@ -67,6 +91,32 @@ interface CashRegister {
   bankBranch?: string;
   bankAccountType?: string;
   bankContact?: string;
+}
+
+// ─── Helpers : labels français pour les types de frais ────────────────────
+// Utilisés dans l'affichage des transferts ("Alloué à Caisse Accueil — Scolarité")
+const FEE_TYPE_LABELS: Record<string, string> = {
+  INSCRIPTION: 'Frais d\'inscription',
+  REINSCRIPTION: 'Frais de réinscription',
+  TUITION: 'Scolarité',
+  CANTEEN: 'Cantine',
+  EXAMEN: 'Examen',
+  TRANSPORT: 'Transport',
+  OTHER: 'Autres frais',
+};
+
+/** Extrait le type de frais depuis la référence d'un transfert d'allocation.
+ *  Référence format : AUTO-{txId8}-{feeType} */
+function extractFeeTypeFromReference(reference?: string): string | null {
+  if (!reference) return null;
+  const match = reference.match(/^AUTO-[a-f0-9]{8}-(.+)$/i);
+  return match ? match[1] : null;
+}
+
+/** Renvoie le libellé français d'un type de frais. */
+function getFeeTypeLabel(feeType?: string | null): string {
+  if (!feeType) return 'Allocation';
+  return FEE_TYPE_LABELS[feeType] || feeType;
 }
 
 // Helper : choisir l'icône selon le code/nom de la caisse
@@ -1196,7 +1246,7 @@ export default function CashRegistersContent() {
                   {/* Corps du panneau */}
                   <div className="p-5 space-y-4">
                     {/* KPI cards */}
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                       <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
                         <p className="text-xs text-slate-500">Solde courant</p>
                         <p className="text-xl font-bold text-slate-900">{formatCurrency(Number(selectedRegister.currentBalance || 0))}</p>
@@ -1206,8 +1256,20 @@ export default function CashRegistersContent() {
                         <p className="text-xl font-bold text-slate-700">{formatCurrency(Number(selectedRegister.openingBalance || 0))}</p>
                       </div>
                       <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
-                        <p className="text-xs text-slate-500">Transactions</p>
+                        <p className="text-xs text-slate-500">Encaissements</p>
                         <p className="text-xl font-bold text-indigo-600">{selectedRegister._count?.transactions || 0}</p>
+                      </div>
+                      <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-200">
+                        <p className="text-xs text-emerald-700 flex items-center gap-1">
+                          <ArrowDownCircle className="h-3 w-3" /> Transferts reçus
+                        </p>
+                        <p className="text-xl font-bold text-emerald-700">{selectedRegister.incomingTransfers?.length || 0}</p>
+                      </div>
+                      <div className="bg-rose-50 rounded-xl p-3 border border-rose-200">
+                        <p className="text-xs text-rose-700 flex items-center gap-1">
+                          <ArrowUpRight className="h-3 w-3" /> Transferts émis
+                        </p>
+                        <p className="text-xl font-bold text-rose-700">{selectedRegister.outgoingTransfers?.length || 0}</p>
                       </div>
                     </div>
 
@@ -1344,7 +1406,7 @@ export default function CashRegistersContent() {
                           </Badge>
                         </div>
                         <div className="border border-slate-200 rounded-lg overflow-hidden">
-                          <div className="max-h-64 overflow-y-auto">
+                          <div className="max-h-80 overflow-y-auto">
                             <table className="w-full text-sm">
                               <thead className="bg-slate-50 sticky top-0">
                                 <tr>
@@ -1371,29 +1433,240 @@ export default function CashRegistersContent() {
                                     WIRE: 'bg-blue-50 text-blue-700',
                                     MOBILE_MONEY: 'bg-orange-50 text-orange-700',
                                   };
+                                  // Transferts d'allocation automatique liés à cette transaction
+                                  // (ex : paiement Fedapay 5000 FCFA → 3000 vers Accueil (Scolarité) + 2000 vers Cantine)
+                                  const linkedTransfers: CashRegisterTransfer[] = tx.linkedTransfers || [];
+                                  const hasAllocations = linkedTransfers.length > 0;
                                   return (
-                                    <tr key={tx.id} className="hover:bg-slate-50">
+                                    <Fragment key={tx.id}>
+                                      <tr className="hover:bg-slate-50">
+                                        <td className="px-3 py-2 text-xs text-slate-600 whitespace-nowrap">
+                                          {tx.createdAt ? new Date(tx.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
+                                          <span className="text-slate-400 ml-1">
+                                            {tx.createdAt ? new Date(tx.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''}
+                                          </span>
+                                        </td>
+                                        <td className="px-3 py-2 text-xs font-medium text-slate-800">
+                                          {tx.studentAccount?.student
+                                            ? `${tx.studentAccount.student.lastName} ${tx.studentAccount.student.firstName}`
+                                            : '—'}
+                                        </td>
+                                        <td className="px-3 py-2 text-xs text-right font-mono font-semibold text-emerald-700">
+                                          +{formatCurrency(Number(tx.amount))}
+                                        </td>
+                                        <td className="px-3 py-2 text-center">
+                                          <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-medium ${methodColors[tx.paymentMethod] || 'bg-slate-50 text-slate-700'}`}>
+                                            {methodLabels[tx.paymentMethod] || tx.paymentMethod}
+                                          </span>
+                                        </td>
+                                        <td className="px-3 py-2 text-xs font-mono text-slate-500">
+                                          {tx.receiptNumber || '—'}
+                                        </td>
+                                      </tr>
+                                      {/* ─── Ligne d'expansion : transferts d'allocation ───
+                                          Affiche sous la transaction chaque transfert
+                                          automatique vers une caisse de destination.
+                                          Ex : "→ Transféré vers Caisse Accueil (Scolarité) : 3 000 FCFA" */}
+                                      {hasAllocations && (
+                                        <tr className="bg-violet-50/40">
+                                          <td colSpan={5} className="px-3 py-2">
+                                            <div className="flex flex-col gap-1">
+                                              <div className="flex items-center gap-1.5 text-[10px] text-violet-700 font-medium uppercase tracking-wide">
+                                                <ArrowDownCircle className="h-3 w-3" />
+                                                <span>Transfert automatique vers caisse de destination</span>
+                                              </div>
+                                              {linkedTransfers.map((t) => {
+                                                const feeType = extractFeeTypeFromReference(t.reference);
+                                                const feeLabel = getFeeTypeLabel(feeType);
+                                                return (
+                                                  <div key={t.id} className="flex items-center justify-between text-xs pl-4 py-0.5">
+                                                    <div className="flex items-center gap-2">
+                                                      <span className="text-slate-400">→</span>
+                                                      <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700">
+                                                        {t.toCode || '?'}
+                                                      </span>
+                                                      <span className="text-slate-700">{t.toName || 'Caisse'}</span>
+                                                      <Badge variant="outline" className="text-[9px] py-0 px-1 h-4 border-violet-200 text-violet-700">
+                                                        {feeLabel}
+                                                      </Badge>
+                                                      {t.status === 'AUTO_ALLOCATION' && (
+                                                        <span className="inline-block px-1 py-0.5 rounded text-[9px] font-bold bg-violet-100 text-violet-700">
+                                                          AUTO
+                                                        </span>
+                                                      )}
+                                                    </div>
+                                                    <span className="font-mono font-semibold text-violet-700">
+                                                      −{formatCurrency(Number(t.amount))}
+                                                    </span>
+                                                  </div>
+                                                );
+                                              })}
+                                              <p className="text-[10px] text-slate-500 italic pl-4 mt-0.5">
+                                                La caisse {selectedRegister.code} conserve le cumul des paiements en ligne.
+                                                Seule la caisse de destination est créditée du montant alloué.
+                                              </p>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      )}
+                                    </Fragment>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ─── Transferts reçus (allocations automatiques + manuels) ───
+                        Affiché sur la caisse destination (ex : ACCUEIL reçoit un
+                        transfert depuis ONLINE pour la Scolarité). Permet à
+                        l'utilisateur de comprendre pourquoi le solde de la caisse
+                        a augmenté sans qu'il y ait une transaction-élève associée. */}
+                    {selectedRegister.incomingTransfers && selectedRegister.incomingTransfers.length > 0 && (
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-1.5">
+                            <ArrowDownCircle className="h-3.5 w-3.5 text-emerald-600" />
+                            <p className="text-xs text-slate-500">
+                              Transferts reçus d'autres caisses
+                              <span className="ml-1 text-slate-400">(allocations automatiques + manuels)</span>
+                            </p>
+                          </div>
+                          <Badge variant="outline" className="text-[10px]">
+                            {selectedRegister.incomingTransfers.length} transfert(s)
+                          </Badge>
+                        </div>
+                        <div className="border border-emerald-200 rounded-lg overflow-hidden">
+                          <div className="max-h-64 overflow-y-auto">
+                            <table className="w-full text-sm">
+                              <thead className="bg-emerald-50/60 sticky top-0">
+                                <tr>
+                                  <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Date</th>
+                                  <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Caisse source</th>
+                                  <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Motif</th>
+                                  <th className="px-3 py-2 text-right font-medium text-slate-600 text-xs">Montant reçu</th>
+                                  <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Référence</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-emerald-50">
+                                {selectedRegister.incomingTransfers.map((t) => {
+                                  const feeType = extractFeeTypeFromReference(t.reference);
+                                  const feeLabel = getFeeTypeLabel(feeType);
+                                  const isAuto = t.status === 'AUTO_ALLOCATION';
+                                  return (
+                                    <tr key={t.id} className={`hover:bg-emerald-50/30 ${isAuto ? 'bg-violet-50/20' : ''}`}>
                                       <td className="px-3 py-2 text-xs text-slate-600 whitespace-nowrap">
-                                        {tx.createdAt ? new Date(tx.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
+                                        {t.createdAt ? new Date(t.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
                                         <span className="text-slate-400 ml-1">
-                                          {tx.createdAt ? new Date(tx.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''}
+                                          {t.createdAt ? new Date(t.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''}
                                         </span>
                                       </td>
-                                      <td className="px-3 py-2 text-xs font-medium text-slate-800">
-                                        {tx.studentAccount?.student
-                                          ? `${tx.studentAccount.student.lastName} ${tx.studentAccount.student.firstName}`
-                                          : '—'}
+                                      <td className="px-3 py-2 text-xs">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-50 text-rose-700">
+                                            {t.fromCode || '?'}
+                                          </span>
+                                          <span className="text-slate-700">{t.fromName || '—'}</span>
+                                        </div>
+                                      </td>
+                                      <td className="px-3 py-2 text-xs text-slate-700">
+                                        {isAuto ? (
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <Badge variant="outline" className="text-[9px] py-0 px-1 h-4 border-violet-200 text-violet-700">
+                                              {feeLabel}
+                                            </Badge>
+                                            <span className="text-[10px] text-slate-500">allocation automatique</span>
+                                          </div>
+                                        ) : (
+                                          <span className="text-slate-600">{t.note || 'Transfert manuel'}</span>
+                                        )}
                                       </td>
                                       <td className="px-3 py-2 text-xs text-right font-mono font-semibold text-emerald-700">
-                                        +{formatCurrency(Number(tx.amount))}
+                                        +{formatCurrency(Number(t.amount))}
                                       </td>
-                                      <td className="px-3 py-2 text-center">
-                                        <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-medium ${methodColors[tx.paymentMethod] || 'bg-slate-50 text-slate-700'}`}>
-                                          {methodLabels[tx.paymentMethod] || tx.paymentMethod}
+                                      <td className="px-3 py-2 text-[10px] font-mono text-slate-400">
+                                        {t.reference || '—'}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ─── Transferts émis vers d'autres caisses ───
+                        Affiché sur la caisse source (en plus du détail inline
+                        sous chaque transaction). Inclut les transferts manuels
+                        et les allocations automatiques (résumé). */}
+                    {selectedRegister.outgoingTransfers && selectedRegister.outgoingTransfers.length > 0 && (
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-1.5">
+                            <ArrowUpRight className="h-3.5 w-3.5 text-rose-600" />
+                            <p className="text-xs text-slate-500">
+                              Transferts émis vers d'autres caisses
+                              <span className="ml-1 text-slate-400">(allocations automatiques + manuels)</span>
+                            </p>
+                          </div>
+                          <Badge variant="outline" className="text-[10px]">
+                            {selectedRegister.outgoingTransfers.length} transfert(s)
+                          </Badge>
+                        </div>
+                        <div className="border border-rose-200 rounded-lg overflow-hidden">
+                          <div className="max-h-64 overflow-y-auto">
+                            <table className="w-full text-sm">
+                              <thead className="bg-rose-50/60 sticky top-0">
+                                <tr>
+                                  <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Date</th>
+                                  <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Caisse destination</th>
+                                  <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Motif</th>
+                                  <th className="px-3 py-2 text-right font-medium text-slate-600 text-xs">Montant transféré</th>
+                                  <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Référence</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-rose-50">
+                                {selectedRegister.outgoingTransfers.map((t) => {
+                                  const feeType = extractFeeTypeFromReference(t.reference);
+                                  const feeLabel = getFeeTypeLabel(feeType);
+                                  const isAuto = t.status === 'AUTO_ALLOCATION';
+                                  return (
+                                    <tr key={t.id} className={`hover:bg-rose-50/30 ${isAuto ? 'bg-violet-50/20' : ''}`}>
+                                      <td className="px-3 py-2 text-xs text-slate-600 whitespace-nowrap">
+                                        {t.createdAt ? new Date(t.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
+                                        <span className="text-slate-400 ml-1">
+                                          {t.createdAt ? new Date(t.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''}
                                         </span>
                                       </td>
-                                      <td className="px-3 py-2 text-xs font-mono text-slate-500">
-                                        {tx.receiptNumber || '—'}
+                                      <td className="px-3 py-2 text-xs">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700">
+                                            {t.toCode || '?'}
+                                          </span>
+                                          <span className="text-slate-700">{t.toName || '—'}</span>
+                                        </div>
+                                      </td>
+                                      <td className="px-3 py-2 text-xs text-slate-700">
+                                        {isAuto ? (
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <Badge variant="outline" className="text-[9px] py-0 px-1 h-4 border-violet-200 text-violet-700">
+                                              {feeLabel}
+                                            </Badge>
+                                            <span className="text-[10px] text-slate-500">allocation automatique</span>
+                                          </div>
+                                        ) : (
+                                          <span className="text-slate-600">{t.note || 'Transfert manuel'}</span>
+                                        )}
+                                      </td>
+                                      <td className="px-3 py-2 text-xs text-right font-mono font-semibold text-rose-700">
+                                        −{formatCurrency(Number(t.amount))}
+                                      </td>
+                                      <td className="px-3 py-2 text-[10px] font-mono text-slate-400">
+                                        {t.reference || '—'}
                                       </td>
                                     </tr>
                                   );

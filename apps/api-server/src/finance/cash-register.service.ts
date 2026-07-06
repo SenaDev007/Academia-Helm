@@ -160,6 +160,17 @@ export class CashRegisterService {
 
   /**
    * Récupère une caisse par son ID.
+   *
+   * Enrichit la réponse avec :
+   *   - transactions[] : 50 derniers encaissements (FinanceTransaction)
+   *   - linkedTransfers sur chaque transaction : transferts d'allocation
+   *     automatique partant de cette transaction (status='AUTO_ALLOCATION',
+   *     référence commençant par AUTO-{txId8}-).
+   *     Permet au frontend d'afficher "→ Transféré vers Caisse Accueil
+   *     (Scolarité) : X FCFA" sous chaque paiement en ligne.
+   *   - incomingTransfers : transferts reçus par cette caisse (credits)
+   *   - outgoingTransfers : transferts émis depuis cette caisse (debits)
+   *     (les 50 derniers sur 90 jours)
    */
   async findOne(id: string, tenantId: string) {
     const register = await this.prisma.cashRegister.findFirst({
@@ -190,6 +201,83 @@ export class CashRegisterService {
         select: { id: true, firstName: true, lastName: true, position: true, email: true, employeeNumber: true },
       });
       (register as any).responsibleUser = staff;
+    }
+
+    // ─── Enrichissement : transferts liés (in/out + par transaction) ─────
+    // Récupère tous les transferts où cette caisse est source OU destination
+    // (90 derniers jours, limit 200). Sert à :
+    //   1. Attacher les transferts sortants à chaque transaction (pour
+    //      afficher "→ Transféré vers Caisse Accueil (Scolarité)" sous
+    //      chaque paiement en ligne).
+    //   2. Construire incomingTransfers / outgoingTransfers (pour la caisse
+    //      destination qui n'a pas de FinanceTransaction mais a reçu un
+    //      crédit via allocation automatique).
+    try {
+      const relatedTransfers: any[] = await this.prisma.$queryRawUnsafe(
+        `SELECT
+            t.id, t."tenantId", t."fromCashRegisterId", t."toCashRegisterId",
+            t.amount, t.note, t.reference, t.status, t."createdAt",
+            fr.code AS "fromCode", fr.name AS "fromName",
+            tr.code AS "toCode",   tr.name AS "toName"
+           FROM "cash_register_transfers" t
+           LEFT JOIN "cash_registers" fr ON fr.id = t."fromCashRegisterId"
+           LEFT JOIN "cash_registers" tr ON tr.id = t."toCashRegisterId"
+          WHERE t."tenantId" = $1
+            AND (t."fromCashRegisterId" = $2 OR t."toCashRegisterId" = $2)
+            AND t."createdAt" >= NOW() - INTERVAL '90 days'
+          ORDER BY t."createdAt" DESC
+          LIMIT 200`,
+        tenantId, id,
+      );
+
+      // Construire un index : pour chaque transaction (via préfixe AUTO-{txId8}),
+      // lister les transferts sortants qui lui sont liés.
+      // Référence format : AUTO-{txIdFirst8}-{feeType}
+      const transfersByTxPrefix = new Map<string, any[]>();
+      const incomingTransfers: any[] = [];
+      const outgoingTransfers: any[] = [];
+
+      for (const t of relatedTransfers) {
+        const isOutgoing = t.fromCashRegisterId === id;
+        const isIncoming = t.toCashRegisterId === id;
+
+        if (isOutgoing) {
+          outgoingTransfers.push(t);
+          // Si c'est une allocation automatique, extraire le préfixe txId
+          if (t.status === 'AUTO_ALLOCATION' && t.reference) {
+            // Référence : AUTO-{txId8}-{feeType}
+            const match = String(t.reference).match(/^AUTO-([a-f0-9]{8})-/i);
+            if (match) {
+              const prefix = match[1].toLowerCase();
+              if (!transfersByTxPrefix.has(prefix)) {
+                transfersByTxPrefix.set(prefix, []);
+              }
+              transfersByTxPrefix.get(prefix)!.push(t);
+            }
+          }
+        }
+        if (isIncoming) {
+          incomingTransfers.push(t);
+        }
+      }
+
+      // Attacher linkedTransfers à chaque transaction
+      // (compare le préfixe 8 chars de l'id de la transaction)
+      for (const tx of (register as any).transactions || []) {
+        const prefix = String(tx.id).substring(0, 8).toLowerCase();
+        (tx as any).linkedTransfers = transfersByTxPrefix.get(prefix) || [];
+      }
+
+      (register as any).incomingTransfers = incomingTransfers.slice(0, 50);
+      (register as any).outgoingTransfers = outgoingTransfers.slice(0, 50);
+    } catch (err: any) {
+      this.logger.warn(`findOne: échec enrichissement transferts liés (non bloquant): ${err.message}`);
+      // Ne pas faire échouer l'endpoint — on renvoie la caisse sans enrichissement
+      for (const tx of (register as any).transactions || []) {
+        (tx as any).linkedTransfers = [];
+      }
+      (register as any).incomingTransfers = [];
+      (register as any).outgoingTransfers = [];
     }
 
     return register;

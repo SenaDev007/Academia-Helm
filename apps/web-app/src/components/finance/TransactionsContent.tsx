@@ -15,7 +15,8 @@ import NewPaymentModal from './NewPaymentModal';
 import { SchoolFeePaymentDialog } from './SchoolFeePaymentDialog';
 import { financeService } from '@/services/finance.service';
 import { formatCurrency } from '@/lib/utils';
-import { exportTransactionsToExcel, exportTransactionsToPdf } from '@/lib/exports/finance-exports';
+import { exportTransactionsToExcel } from '@/lib/exports/excel-exports';
+import { exportTransactionsToPdf } from '@/lib/exports/finance-exports';
 
 const METHOD_LABELS: Record<string, string> = {
   CASH: 'Espèces',

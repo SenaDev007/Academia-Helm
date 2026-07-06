@@ -23,8 +23,10 @@ import { financeService } from '@/services/finance.service';
 import { formatCurrency } from '@/lib/utils';
 import {
   exportCashRegisterTransactionsToExcel,
-  exportCashRegisterTransactionsToPdf,
   exportAllCashRegistersToExcel,
+} from '@/lib/exports/excel-exports';
+import {
+  exportCashRegisterTransactionsToPdf,
   exportAllCashRegistersToPdf,
 } from '@/lib/exports/finance-exports';
 

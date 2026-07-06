@@ -87,8 +87,8 @@ export default function NewPaymentModal({
   const [selectedClassId, setSelectedClassId] = useState('');
   const [studentSearch, setStudentSearch] = useState('');
   const [feexpayOperator, setFeexpayOperator] = useState<FeexPayOperator>('mtn');
-  // FeexPay inline widget (pas de modal séparé — meme UX que Fedapay widget)
-  const [feexpayInlineOpen, setFeexpayInlineOpen] = useState(false);
+  // FeexPay full-screen modal (comme FedaPay overlay)
+  const [feexpayModalOpen, setFeexpayModalOpen] = useState(false);
   const [feexpayPhone, setFeexpayPhone] = useState('');
   const [feexpaySubmitting, setFeexpaySubmitting] = useState(false);
   const [feexpayError, setFeexpayError] = useState<string | null>(null);
@@ -396,7 +396,7 @@ export default function NewPaymentModal({
       }
 
       setFeexpayError(null);
-      setFeexpayInlineOpen(true);
+      setFeexpayModalOpen(true);
       return;
     }
 
@@ -463,7 +463,7 @@ export default function NewPaymentModal({
     setReference('');
     setCashRegisterId('');
     setPreview(null);
-    setFeexpayInlineOpen(false);
+    setFeexpayModalOpen(false);
     setFeexpayPhone('');
     setFeexpayError(null);
   };
@@ -664,7 +664,7 @@ export default function NewPaymentModal({
           </motion.div>
         )}
 
-        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4" style={{ display: (receipt || feexpayInlineOpen) ? 'none' : undefined }}>
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4" style={{ display: receipt ? 'none' : undefined }}>
           {/* Sélecteurs Niveau + Classe (filtrage en cascade) */}
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -813,28 +813,38 @@ export default function NewPaymentModal({
           </div>
         </form>
 
-        {/* ─────────────────────────────────────────────────────────────── */}
-        {/* WIDGET FEEXPAY INLINE — Schéma Fedapay (container inline)      */}
-        {/* Palette FeexPay : orange #F79E1B, jaune #FFCB05, noir #1A1A1A  */}
-        {/* ─────────────────────────────────────────────────────────────── */}
-        {feexpayInlineOpen && !receipt && (
+      </motion.div>
+
+      {/* ─────────────────────────────────────────────────────────────── */}
+      {/* MODAL FEEXPAY PLEIN ÉCRAN — Overlay comme FedaPay              */}
+      {/* Palette FeexPay : orange #F79E1B, jaune #FFCB05, noir #1A1A1A  */}
+      {/* ─────────────────────────────────────────────────────────────── */}
+      {feexpayModalOpen && !receipt && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+          onClick={() => {
+            setFeexpayModalOpen(false);
+            setFeexpayPhone('');
+            setFeexpayError(null);
+          }}
+        >
           <div
-            id="feexpay-checkout-container"
-            className="w-full bg-slate-50 rounded-2xl border-2 border-amber-200 shadow-lg overflow-hidden"
-            style={{ minHeight: '520px' }}
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxHeight: '95vh' }}
           >
-            {/* Bandeau branding FeexPay (haut du container, comme Fedapay) */}
-            <div className="bg-gradient-to-r from-[#F79E1B] via-[#FFCB05] to-[#F79E1B] px-5 py-3 flex items-center justify-between">
+            {/* Bandeau branding FeexPay */}
+            <div className="bg-gradient-to-r from-[#F79E1B] via-[#FFCB05] to-[#F79E1B] px-6 py-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="bg-white rounded-lg px-3 py-1.5 shadow-sm flex items-center gap-2">
-                  {/* eslint-disable-next-line @next/next/no-img-label */}
-                  <img src="/logos/feexpay.png" alt="FeexPay" className="h-6 w-auto" />
+                <div className="bg-white rounded-lg px-3 py-2 shadow-sm">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/logos/feexpay.png" alt="FeexPay" className="h-7 w-auto" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-[#1A1A1A] text-sm leading-tight">
+                  <h3 className="font-bold text-[#1A1A1A] text-base leading-tight">
                     Paiement Mobile Money
                   </h3>
-                  <p className="text-[10px] text-[#1A1A1A]/70">
+                  <p className="text-[11px] text-[#1A1A1A]/70">
                     Transaction sécurisée · FeexPay API v2 · Bénin
                   </p>
                 </div>
@@ -842,20 +852,20 @@ export default function NewPaymentModal({
               <button
                 type="button"
                 onClick={() => {
-                  setFeexpayInlineOpen(false);
+                  setFeexpayModalOpen(false);
                   setFeexpayPhone('');
                   setFeexpayError(null);
                 }}
-                className="p-1.5 hover:bg-black/10 rounded-lg transition-colors"
+                className="p-2 hover:bg-black/10 rounded-lg transition-colors"
                 aria-label="Fermer"
               >
-                <svg className="w-4 h-4 text-[#1A1A1A]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
+                <svg className="w-5 h-5 text-[#1A1A1A]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
 
-            {/* Corps du widget — même structure que Fedapay checkout */}
+            {/* Corps — layout 2 colonnes */}
             <div className="bg-white p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Colonne gauche : récapitulatif transaction (fond noir, comme Fedapay) */}
+              {/* Colonne gauche : récapitulatif (fond noir) */}
               <aside className="bg-gradient-to-br from-[#1A1A1A] to-[#2D2D2D] rounded-xl p-5 text-white flex flex-col">
                 <div className="flex items-center gap-2 mb-1">
                   <Shield className="w-4 h-4 text-[#FFCB05]" />
@@ -912,7 +922,7 @@ export default function NewPaymentModal({
                 </div>
               </aside>
 
-              {/* Colonne droite : formulaire (comme Fedapay form) */}
+              {/* Colonne droite : formulaire */}
               <div className="flex flex-col gap-4">
                 <div>
                   <h4 className="font-bold text-slate-900 text-sm mb-1">Coordonnées de paiement</h4>
@@ -946,7 +956,7 @@ export default function NewPaymentModal({
                   )}
                 </div>
 
-                {/* Sélecteur opérateur manuel */}
+                {/* Sélecteur opérateur */}
                 <div className="space-y-1.5">
                   <Label className="text-[11px] font-semibold text-slate-700 uppercase tracking-wide">
                     Ou choisissez manuellement
@@ -996,11 +1006,11 @@ export default function NewPaymentModal({
                 {feexpayError && (
                   <div className="bg-red-50 border border-red-200 rounded-md p-2.5 flex items-start gap-2">
                     <AlertCircle className="w-3.5 h-3.5 text-red-600 flex-shrink-0 mt-0.5" />
-                    <p className="text-[11px] text-red-800">{feexpayError}</p>
+                    <p className="text-[11px] text-red-800 whitespace-pre-line">{feexpayError}</p>
                   </div>
                 )}
 
-                {/* Bouton Payer — pleine largeur comme Fedapay */}
+                {/* Bouton Payer */}
                 <button
                   type="button"
                   onClick={handleFeexPaySubmit}
@@ -1027,8 +1037,8 @@ export default function NewPaymentModal({
               </div>
             </div>
           </div>
-        )}
-      </motion.div>
+        </div>
+      )}
     </div>
   );
 }

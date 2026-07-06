@@ -477,7 +477,7 @@ export default function NewPaymentModal({
   const handleFeexPaySubmit = async () => {
     if (!selectedAccount?.student || !studentAccountId || !amountNum) return;
     if (!isValidBeninPhone(feexpayPhone)) {
-      setFeexpayError('Numéro invalide. Format attendu : 01 95 72 22 34 ou +229 01 95 72 22 34.');
+      setFeexpayError('Numéro invalide. Format attendu : 01 XX XX XX XX (10 chiffres) ou +229 01 XX XX XX XX.');
       return;
     }
     setFeexpaySubmitting(true);

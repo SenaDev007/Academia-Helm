@@ -192,6 +192,8 @@ export class FeexPayService {
       const rawError = result.message || result.error || `HTTP ${response.status}`;
       this.logger.error(`FeexPay initiate failed: ${rawError} (HTTP ${response.status})`);
       this.logger.error(`FeexPay full response: ${responseText.substring(0, 1000)}`);
+      // Les logs backend contiennent les informations de diagnostic (clé + shop)
+      // mais le message utilisateur ne doit JAMAIS exposer ces informations.
       this.logger.error(`FeexPay API key used: ${config.feexpayApiKey ? config.feexpayApiKey.substring(0, 6) + '...' + config.feexpayApiKey.substring(config.feexpayApiKey.length - 4) : 'MISSING'}`);
       this.logger.error(`FeexPay Shop ID used: ${config.feexpayShopId || 'MISSING'}`);
       // Traduire les erreurs courantes de FeexPay en messages compréhensibles
@@ -201,8 +203,7 @@ export class FeexPayService {
           `1. La clé API doit commencer par "fp_" (ex: fp_xxxxxxxx)\n` +
           `2. Utilisez une clé de TEST/SANDBOX pour les tests (pas une clé de production)\n` +
           `3. Le Shop ID doit correspondre au compte de test\n` +
-          `4. Vérifiez que le compte marchand est actif sur feexpay.me\n` +
-          `Clé utilisée: ${config.feexpayApiKey ? config.feexpayApiKey.substring(0, 6) + '...' : 'MISSING'} | Shop: ${config.feexpayShopId || 'MISSING'}`;
+          `4. Vérifiez que le compte marchand est actif sur feexpay.me`;
       } else if (response.status === 403) {
         userError = 'Accès refusé par FeexPay. Vérifiez que votre compte marchand est actif et que le Shop ID est correct.';
       } else if (response.status === 400) {

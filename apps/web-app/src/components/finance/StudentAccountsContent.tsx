@@ -411,6 +411,7 @@ export default function StudentAccountsContent() {
                   <TableRow className="bg-gray-50">
                     <TableHead>Élève</TableHead>
                     <TableHead className="text-right">Total dû</TableHead>
+                    <TableHead className="text-right">Arriérés</TableHead>
                     <TableHead className="text-right">Payé</TableHead>
                     <TableHead className="text-right">Solde</TableHead>
                     <TableHead>Statut</TableHead>
@@ -420,11 +421,11 @@ export default function StudentAccountsContent() {
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-gray-500 py-8">Chargement...</TableCell>
+                      <TableCell colSpan={7} className="text-center text-gray-500 py-8">Chargement...</TableCell>
                     </TableRow>
                   ) : filteredAccounts.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-gray-500 py-12">
+                      <TableCell colSpan={7} className="text-center text-gray-500 py-12">
                         {searchQuery ? `Aucun élève trouvé pour « ${searchQuery} ».` : 'Aucun compte élève.'}
                       </TableCell>
                     </TableRow>
@@ -441,6 +442,9 @@ export default function StudentAccountsContent() {
                       const totalDue = Number(a.totalDue ?? 0);
                       const totalPaid = Number(a.totalPaid ?? 0);
                       const balance = Number(a.balance ?? 0);
+                      const arrearsAmount = Number(a.arrearsAmount ?? 0);
+                      const carriedArrears = Number(a.carriedArrears ?? 0);
+                      const totalArrears = arrearsAmount + carriedArrears;
                       let rowBg = '';
                       let rowBorder = '';
                       if (balance <= 0) {
@@ -508,7 +512,21 @@ export default function StudentAccountsContent() {
                               {inscription.due > 0 && <FeeDetail label="Inscription" {...inscription} />}
                               {hasReinscription && <FeeDetail label="Réinscription" {...reinscription} />}
                               {tuition.due > 0 && <FeeDetail label="Scolarité" {...tuition} />}
+                              {totalArrears > 0 && <FeeDetail label="Arriérés" due={totalArrears} />}
                             </div>
+                          </TableCell>
+                          {/* Arriérés — montant des arriérés (saisis manuellement + reportés) */}
+                          <TableCell className="text-right">
+                            {totalArrears > 0 ? (
+                              <div>
+                                <div className="font-semibold text-amber-700 whitespace-nowrap">{formatCurrency(totalArrears)}</div>
+                                {carriedArrears > 0 && (
+                                  <div className="text-[10px] text-amber-500">dont reporté : {formatCurrency(carriedArrears)}</div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-slate-300">—</span>
+                            )}
                           </TableCell>
                           {/* Payé — avec détail par frais */}
                           <TableCell className="text-right">
@@ -534,10 +552,16 @@ export default function StudentAccountsContent() {
                               )}
                             </div>
                           </TableCell>
-                          {/* Solde — avec détail par frais */}
+                          {/* Solde — avec détail par frais (inclut arriérés) */}
                           <TableCell className="text-right">
-                            <div className={`font-bold ${balance <= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(balance)}</div>
+                            <div className={`font-bold ${balance <= 0 ? 'text-green-600' : 'text-red-600'} whitespace-nowrap`}>{formatCurrency(balance)}</div>
                             <div className="mt-1 space-y-0.5 min-w-[140px]">
+                              {totalArrears > 0 && (
+                                <div className="flex justify-between text-[10px] text-amber-600">
+                                  <span>Arriérés :</span>
+                                  <span className={totalArrears <= 0 ? 'text-green-600' : ''}>{formatCurrency(totalArrears)}</span>
+                                </div>
+                              )}
                               {inscription.due > 0 && (
                                 <div className="flex justify-between text-[10px] text-slate-500">
                                   <span>Inscription :</span>

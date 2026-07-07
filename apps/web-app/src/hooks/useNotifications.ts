@@ -178,12 +178,25 @@ export function useNotifications() {
     try {
       await notificationService.delete(id);
       setNotifications((prev) => prev.filter((n) => n.id !== id));
-      // Recalculer le compteur
       refreshUnreadCount();
     } catch {
       // ignore
     }
   }, [refreshUnreadCount]);
+
+  const clearAllNotifications = useCallback(async () => {
+    try {
+      // Supprimer toutes les notifications une par une (pas d'endpoint batch)
+      const ids = notifications.map((n) => n.id);
+      for (const id of ids) {
+        await notificationService.delete(id).catch(() => {});
+      }
+      setNotifications([]);
+      refreshUnreadCount();
+    } catch {
+      // ignore
+    }
+  }, [notifications, refreshUnreadCount]);
 
   return {
     unreadCount,
@@ -196,6 +209,7 @@ export function useNotifications() {
     markAsRead,
     markAllAsRead,
     deleteNotification,
+    clearAllNotifications,
     refreshUnreadCount,
   };
 }

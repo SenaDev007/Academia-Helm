@@ -62,20 +62,22 @@ export class RecoveryNotificationFinanceService {
     const results: Record<string, any> = {};
 
     // 1. Charger l'arriéré + élève + frais
+    // ⚠️ L'arriéré peut avoir studentFeeId = null (arriéré manuel global).
+    // On charge l'élève directement via arrear.studentId (relation directe).
     const arrear = await this.prisma.feeArrear.findFirst({
       where: { id: arrearId, tenantId },
       include: {
+        student: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            matricule: true,
+            studentGuardians: { include: { guardian: true } },
+          },
+        },
         studentFee: {
           include: {
-            student: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                matricule: true,
-                studentGuardians: { include: { guardian: true } },
-              },
-            },
             feeDefinition: { select: { label: true, feeCategory: true } },
           },
         },
@@ -88,7 +90,8 @@ export class RecoveryNotificationFinanceService {
       return { error: { status: 'failed', error: 'Arriéré introuvable' } };
     }
 
-    const student = arrear.studentFee?.student;
+    // Récupérer l'élève directement depuis la relation (pas via studentFee)
+    const student = arrear.student;
     if (!student) {
       return { error: { status: 'failed', error: 'Élève introuvable sur cet arriéré' } };
     }
@@ -108,7 +111,7 @@ export class RecoveryNotificationFinanceService {
     const balanceDue = Number(arrear.balanceDue ?? 0);
     const totalDue = Number(arrear.totalDue ?? 0);
     const totalPaid = Number(arrear.totalPaid ?? 0);
-    const feeLabel = arrear.studentFee?.feeDefinition?.label || 'frais scolaires';
+    const feeLabel = arrear.studentFee?.feeDefinition?.label || arrear.notes || 'frais scolaires';
     const lastPaymentDate = arrear.lastPaymentDate;
 
     // 2. Envoyer sur chaque canal demandé

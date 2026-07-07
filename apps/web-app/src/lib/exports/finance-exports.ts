@@ -1605,3 +1605,86 @@ export async function exportAllCashRegistersToPdf(
   const url = URL.createObjectURL(blob);
   return { blob, url };
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+//  ARRÉRÉS — Export PDF (même pattern que encaissements)
+// ═══════════════════════════════════════════════════════════════════════
+
+export async function exportArrearsToPdf(
+  arrears: any[],
+  header: SchoolHeader
+): Promise<{ blob: Blob; url: string }> {
+  const jsPDF = await loadJsPdf();
+  await loadAutoTable(jsPDF);
+
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+
+  const logoBase64 = await preloadSchoolLogo(header.schoolLogoUrl);
+  drawOfficialHeader(doc, header, pageWidth, logoBase64);
+
+  let yPos = 50;
+  doc.setFont('times', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(13, 31, 110);
+  doc.text('Liste des arriérés', pageWidth / 2, yPos, { align: 'center' });
+  yPos += 8;
+
+  doc.setFont('times', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(100, 100, 100);
+  const dateStr = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+  doc.text(`Exporté le ${dateStr}`, pageWidth / 2, yPos, { align: 'center' });
+  yPos += 5;
+
+  doc.setDrawColor(13, 31, 110);
+  doc.setLineWidth(0.5);
+  doc.line(14, yPos, pageWidth - 14, yPos);
+  yPos += 5;
+
+  const levelLabels: Record<string, string> = {
+    LOW: 'Faible', MEDIUM: 'Moyen', HIGH: 'Élevé', CRITICAL: 'Critique',
+  };
+  const statusLabels: Record<string, string> = {
+    OPEN: 'Ouvert', PARTIALLY_PAID: 'Partiellement payé', PAID: 'Soldé',
+    WRITTEN_OFF: 'Abandonné', TRANSFERRED: 'Transféré',
+  };
+
+  const tableData = arrears.map((a) => [
+    a.student ? `${a.student.lastName} ${a.student.firstName}` : '—',
+    a.student?.studentEnrollments?.[0]?.class?.name || '—',
+    a.studentFee?.feeDefinition?.label || a.notes || '—',
+    formatAmount(a.totalDue),
+    formatAmount(a.totalPaid),
+    formatAmount(a.balanceDue),
+    levelLabels[a.arrearsLevel] || a.arrearsLevel || '—',
+    statusLabels[a.status] || a.status || '—',
+  ]);
+
+  const totalBalance = arrears.reduce((s, a) => s + (Number(a.balanceDue) || 0), 0);
+  tableData.push(['', '', '', '', 'TOTAL', formatAmountFCFA(totalBalance), '', '']);
+
+  (doc as any).autoTable({
+    startY: yPos,
+    head: [['Élève', 'Classe', 'Frais', 'Total dû', 'Payé', 'Solde', 'Niveau', 'Statut']],
+    body: tableData,
+    theme: 'striped',
+    headStyles: { fillColor: [13, 31, 110], fontSize: 9, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 8 },
+    columnStyles: {
+      3: { halign: 'right' },
+      4: { halign: 'right' },
+      5: { halign: 'right', fontStyle: 'bold' },
+    },
+    didParseCell: (data: any) => {
+      if (data.row.index === tableData.length - 1 && data.column.index >= 4) {
+        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.fillColor = [220, 230, 250];
+      }
+    },
+  });
+
+  const blob = doc.output('blob');
+  const url = URL.createObjectURL(blob);
+  return { blob, url };
+}

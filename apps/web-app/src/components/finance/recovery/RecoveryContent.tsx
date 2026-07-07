@@ -46,6 +46,8 @@ import { useToast } from '@/components/ui/use-toast';
 import { financeService } from '@/services/finance.service';
 import { formatCurrency } from '@/lib/utils';
 import { WhatsAppIcon, GmailIcon, SmsIcon } from '../OfficialIcons';
+import { exportArrearsToPdf } from '@/lib/exports/finance-exports';
+import { exportArrearsToExcel } from '@/lib/exports/excel-exports';
 
 type TabId = 'dashboard' | 'arrears' | 'reminders' | 'promises' | 'actions' | 'cases';
 
@@ -261,16 +263,31 @@ export default function RecoveryContent() {
   ) => {
     try {
       const result = await financeService.sendRecoveryNotification(arrearId, [channel], level);
+
+      // Vérifier d'abord si le backend a renvoyé une erreur globale
+      if (result?.error) {
+        toast({ title: 'Erreur', description: result.error.error || 'Échec de l\'envoi', variant: 'destructive' });
+        return;
+      }
+
       const s = result?.channels?.[channel];
-      if (s?.status === 'skipped') {
-        toast({ title: 'Contact manquant', description: s.error || `Aucun contact pour ${channel}`, variant: 'destructive' });
-      } else if (s?.status === 'failed') {
-        toast({ title: 'Échec d\'envoi', description: s.error || `Échec ${channel}`, variant: 'destructive' });
-      } else {
+      if (!s) {
+        // Si le canal n'est pas dans la réponse, c'est une erreur
+        toast({ title: 'Erreur', description: `Réponse invalide du serveur pour ${channel}`, variant: 'destructive' });
+        return;
+      }
+      if (s.status === 'skipped') {
+        toast({ title: '⚠️ Contact manquant', description: s.error || `Aucun contact parent pour ${channel}. Vérifiez les informations du responsable légal.`, variant: 'destructive' });
+      } else if (s.status === 'failed') {
+        toast({ title: '❌ Échec d\'envoi', description: s.error || `Échec ${channel}`, variant: 'destructive' });
+      } else if (s.status === 'sent') {
         toast({
           title: '✅ Relance envoyée',
-          description: `${channel.charAt(0).toUpperCase() + channel.slice(1)} envoyé${s?.to ? ` à ${s.to}` : ''}`,
+          description: `${channel.charAt(0).toUpperCase() + channel.slice(1)} envoyé${s.to ? ` à ${s.to}` : ''}`,
         });
+      } else {
+        // Statut inconnu — ne pas afficher succès
+        toast({ title: 'Statut inconnu', description: `Réponse inattendue: ${s.status}`, variant: 'destructive' });
       }
       loadAll();
     } catch (e: any) {
@@ -878,200 +895,34 @@ function ArrearsTab({
   }, [classes, schoolLevelId, schoolLevels]);
 
   // Export PDF des arriérés (filtre appliqué) — génère le PDF côté frontend avec jsPDF
+  // Export PDF — utilise finance-exports.ts (même pattern que encaissements)
   const handleExportPDF = async () => {
     try {
-      // Charger jsPDF + autoTable depuis CDN (même pattern que finance-exports.ts)
-      const loadJsPdf = (): Promise<any> => new Promise((resolve) => {
-        if ((window as any).jspdf && (window as any).jspdf.jsPDF) {
-          resolve((window as any).jspdf.jsPDF);
-          return;
-        }
-        const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-        script.onload = () => resolve((window as any).jspdf.jsPDF);
-        document.head.appendChild(script);
-      });
-      const loadAutoTable = (jsPDF: any): Promise<void> => new Promise((resolve) => {
-        if ((window as any).autoTable) { resolve(); return; }
-        const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js';
-        script.onload = () => resolve();
-        document.head.appendChild(script);
-      });
-
-      const jsPDF = await loadJsPdf();
-      await loadAutoTable(jsPDF);
-      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-      const pageWidth = doc.internal.pageSize.getWidth();
-
-      // Titre
-      doc.setFont('times', 'bold');
-      doc.setFontSize(14);
-      doc.setTextColor(13, 31, 110);
-      doc.text('Liste des arriérés', pageWidth / 2, 20, { align: 'center' });
-
-      doc.setFont('times', 'normal');
-      doc.setFontSize(9);
-      doc.setTextColor(100, 100, 100);
-      const dateStr = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
-      doc.text(`Exporté le ${dateStr}`, pageWidth / 2, 26, { align: 'center' });
-
-      // Ligne séparatrice
-      doc.setDrawColor(13, 31, 110);
-      doc.setLineWidth(0.5);
-      doc.line(14, 30, pageWidth - 14, 30);
-
-      // Tableau
-      const levelLabels: Record<string, string> = {
-        LOW: 'Faible', MEDIUM: 'Moyen', HIGH: 'Élevé', CRITICAL: 'Critique',
+      const header = {
+        schoolName: 'Établissement',
+        academicYear: '',
+        schoolLogoUrl: undefined as string | undefined,
       };
-      const tableData = arrears.map((a) => [
-        a.student ? `${a.student.lastName} ${a.student.firstName}` : '—',
-        a.student?.studentEnrollments?.[0]?.class?.name || '—',
-        a.studentFee?.feeDefinition?.label || a.notes || '—',
-        a.totalDue != null ? Number(a.totalDue).toLocaleString('fr-FR') : '—',
-        a.totalPaid != null ? Number(a.totalPaid).toLocaleString('fr-FR') : '—',
-        a.balanceDue != null ? Number(a.balanceDue).toLocaleString('fr-FR') : '—',
-        levelLabels[a.arrearsLevel] || a.arrearsLevel || '—',
-      ]);
-
-      const totalBalance = arrears.reduce((s, a) => s + (Number(a.balanceDue) || 0), 0);
-      tableData.push(['', '', '', '', 'TOTAL', totalBalance.toLocaleString('fr-FR'), '']);
-
-      (doc as any).autoTable({
-        startY: 34,
-        head: [['Élève', 'Classe', 'Frais', 'Total dû', 'Payé', 'Solde', 'Niveau']],
-        body: tableData,
-        theme: 'striped',
-        headStyles: { fillColor: [13, 31, 110], fontSize: 9, fontStyle: 'bold' },
-        bodyStyles: { fontSize: 8 },
-        columnStyles: {
-          3: { halign: 'right' },
-          4: { halign: 'right' },
-          5: { halign: 'right', fontStyle: 'bold' },
-        },
-        didParseCell: (data: any) => {
-          if (data.row.index === tableData.length - 1 && data.column.index >= 4) {
-            data.cell.styles.fontStyle = 'bold';
-            data.cell.styles.fillColor = [220, 230, 250];
-          }
-        },
-      });
-
-      doc.save(`Arrieres_recouvrement_${new Date().toISOString().slice(0, 10)}.pdf`);
+      const { blob, url } = await exportArrearsToPdf(arrears, header);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Arrieres_recouvrement_${new Date().toISOString().slice(0, 10)}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
     } catch (e: any) {
       console.error('Export PDF error:', e);
     }
   };
 
-  // Export Excel des arriérés (filtre appliqué) — génère le XLSX côté frontend avec ExcelJS
+  // Export Excel — utilise excel-exports.ts (même pattern que encaissements)
   const handleExportExcel = async () => {
     try {
-      const loadExcelJS = (): Promise<any> => new Promise((resolve) => {
-        if ((window as any).ExcelJS) { resolve((window as any).ExcelJS); return; }
-        const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js';
-        script.onload = () => resolve((window as any).ExcelJS);
-        document.head.appendChild(script);
-      });
-      const ExcelJS = await loadExcelJS();
-      const wb = new ExcelJS.Workbook();
-      const ws = wb.addWorksheet('Arriérés', { properties: { defaultRowHeight: 18 } });
-
-      // Titre
-      ws.mergeCells('A1:G1');
-      const titleCell = ws.getCell('A1');
-      titleCell.value = 'Liste des arriérés';
-      titleCell.font = { bold: true, size: 14, color: { argb: 'FF1E3A8A' } };
-      titleCell.alignment = { horizontal: 'center' };
-      ws.getRow(1).height = 28;
-
-      // Date d'export
-      ws.mergeCells('A2:G2');
-      ws.getCell('A2').value = `Exporté le ${new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })} à ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
-      ws.getCell('A2').font = { italic: true, size: 10, color: { argb: 'FF64748B' } };
-      ws.getCell('A2').alignment = { horizontal: 'center' };
-
-      // En-têtes
-      const headers = ['Élève', 'Classe', 'Frais', 'Total dû (FCFA)', 'Payé (FCFA)', 'Solde (FCFA)', 'Niveau'];
-      headers.forEach((h, i) => {
-        const cell = ws.getCell(4, i + 1);
-        cell.value = h;
-        cell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
-        cell.alignment = { horizontal: i >= 3 && i <= 5 ? 'right' : 'left', vertical: 'middle' };
-        cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
-      });
-      ws.getRow(4).height = 22;
-
-      // Données
-      const levelLabels: Record<string, string> = { LOW: 'Faible', MEDIUM: 'Moyen', HIGH: 'Élevé', CRITICAL: 'Critique' };
-      let totalBalance = 0;
-      let row = 5;
-      for (const a of arrears) {
-        const amount = Number(a.balanceDue) || 0;
-        totalBalance += amount;
-        const values = [
-          a.student ? `${a.student.lastName} ${a.student.firstName}` : '—',
-          a.student?.studentEnrollments?.[0]?.class?.name || '—',
-          a.studentFee?.feeDefinition?.label || a.notes || '—',
-          Number(a.totalDue) || 0,
-          Number(a.totalPaid) || 0,
-          amount,
-          levelLabels[a.arrearsLevel] || a.arrearsLevel || '—',
-        ];
-        values.forEach((v, i) => {
-          const cell = ws.getCell(row, i + 1);
-          cell.value = v;
-          cell.font = { size: 10 };
-          cell.alignment = { horizontal: i >= 3 && i <= 5 ? 'right' : 'left', vertical: 'middle' };
-          cell.border = {
-            top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-            bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-            left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-            right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-          };
-          if (i >= 3 && i <= 5) cell.numFmt = '#,##0';
-        });
-        // Couleur niveau
-        const levelCell = ws.getCell(row, 7);
-        if (a.arrearsLevel === 'CRITICAL') levelCell.font = { size: 10, color: { argb: 'FFDC2626' }, bold: true };
-        else if (a.arrearsLevel === 'HIGH') levelCell.font = { size: 10, color: { argb: 'FFEA580C' }, bold: true };
-        else if (a.arrearsLevel === 'MEDIUM') levelCell.font = { size: 10, color: { argb: 'FFD97706' }, bold: true };
-        row++;
-      }
-
-      // Ligne total
-      if (arrears.length > 0) {
-        ws.mergeCells(row, 1, row, 5);
-        const totalLabel = ws.getCell(row, 1);
-        totalLabel.value = 'TOTAL SOLDE RESTANT';
-        totalLabel.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
-        totalLabel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
-        totalLabel.alignment = { horizontal: 'right', vertical: 'middle' };
-        const totalCell = ws.getCell(row, 6);
-        totalCell.value = totalBalance;
-        totalCell.numFmt = '#,##0';
-        totalCell.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
-        totalCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
-        totalCell.alignment = { horizontal: 'right', vertical: 'middle' };
-        ws.getCell(row, 7).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
-        ws.getRow(row).height = 26;
-      }
-
-      // Largeurs colonnes
-      ws.columns = [
-        { width: 24 }, { width: 16 }, { width: 28 }, { width: 16 }, { width: 14 }, { width: 14 }, { width: 12 },
-      ];
-
-      const buffer = await wb.xlsx.writeBuffer();
-      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Arrieres_recouvrement_${new Date().toISOString().slice(0, 10)}.xlsx`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const header = {
+        schoolName: 'Établissement',
+        academicYear: '',
+        schoolLogoUrl: undefined as string | undefined,
+      };
+      await exportArrearsToExcel(arrears, header);
     } catch (e: any) {
       console.error('Export Excel error:', e);
     }

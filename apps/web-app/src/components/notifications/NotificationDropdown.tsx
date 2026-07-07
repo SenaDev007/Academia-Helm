@@ -57,6 +57,7 @@ export default function NotificationDropdown() {
     markAsRead,
     markAllAsRead,
     deleteNotification,
+    clearAllNotifications,
   } = useNotifications();
   const router = useRouter();
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -120,6 +121,19 @@ export default function NotificationDropdown() {
                   title="Tout marquer comme lu"
                 >
                   <CheckCheck className="w-4 h-4" />
+                </button>
+              )}
+              {notifications.length > 0 && (
+                <button
+                  onClick={() => {
+                    if (window.confirm('Vider toutes les notifications ? Cette action est irréversible.')) {
+                      clearAllNotifications();
+                    }
+                  }}
+                  className="p-1.5 hover:bg-rose-100 rounded-lg text-rose-600 transition"
+                  title="Vider toutes les notifications"
+                >
+                  <Trash2 className="w-4 h-4" />
                 </button>
               )}
               <button

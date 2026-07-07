@@ -156,6 +156,7 @@ model Tenant {
   federisPayments                  FederisPayment[]                  @relation("FederisPayments")
   federisPolls                     FederisPoll[]
   feeArrears                       FeeArrear[]
+  arrearTransfers                  ArrearTransfer[]
   feeCategories                    FeeCategory[]
   feeConfigurations                FeeConfiguration[]
   feeDefinitions                   FeeDefinition[]
@@ -2214,6 +2215,7 @@ model Student {
   educastSessions              EducastSession[]
   examScores                   ExamScore[]
   feeArrears                   FeeArrear[]
+  arrearTransfers              ArrearTransfer[]
   feeOverrides                 FeeOverride[]
   gradeCalculations            GradeCalculation[]            @relation("GradeCalculationStudent")
   grades                       Grade[]

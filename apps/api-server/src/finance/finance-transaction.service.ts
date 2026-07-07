@@ -8,11 +8,12 @@
  * - Valide que la caisse est ouverte avant d'accepter un paiement
  */
 import * as crypto from 'crypto';
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { TransactionType, PaymentMethod } from '@prisma/client';
 import { ReceiptFinanceService } from './receipt-finance.service';
 import { ReceiptNotificationFinanceService } from './receipt-notification-finance.service';
+import { ArrearAccumulationService } from './arrear-accumulation.service';
 
 const PRIORITY_ORDER = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'OTHER'];
 const PAYMENT_METHODS: PaymentMethod[] = ['CASH', 'MOBILE_MONEY', 'WIRE', 'FEDAPAY'];
@@ -25,6 +26,8 @@ export class FinanceTransactionService {
     private readonly prisma: PrismaService,
     private readonly receiptFinanceService: ReceiptFinanceService,
     private readonly receiptNotificationService: ReceiptNotificationFinanceService,
+    @Inject(forwardRef(() => ArrearAccumulationService))
+    private readonly arrearAccumulationService: ArrearAccumulationService,
   ) {}
 
   /** Expose prisma pour le controller (downloadReceipt, resendReceipt) */
@@ -248,6 +251,34 @@ export class FinanceTransactionService {
 
     let remaining = data.amount;
     const updates: { breakdownId: string; paidDelta: number; remainingDelta: number; feeType: string }[] = [];
+
+    // ─── PHASE 3 : Paiement FIFO — solder d'abord les arriérés anciens ───
+    // Avant d'allouer le paiement aux AccountBreakdown de l'année en cours,
+    // on solde d'abord les FeeArrear des années antérieures (FIFO).
+    // Le montant restant après cette étape sera alloué aux frais de l'année.
+    if (remaining > 0) {
+      try {
+        const fifoResult = await this.arrearAccumulationService.allocatePaymentFIFO(
+          tenantId,
+          account.studentId,
+          remaining,
+        );
+
+        // Logger les allocations FIFO
+        if (fifoResult.allocations.length > 0) {
+          this.logger.log(
+            `FIFO: ${fifoResult.allocations.length} arriéré(s) soldé(s) pour ${data.amount - fifoResult.remainingAmount} FCFA. ` +
+            `Reste ${fifoResult.remainingAmount} FCFA pour les frais de l'année en cours.`,
+          );
+        }
+
+        // Le reste est alloué aux AccountBreakdown
+        remaining = fifoResult.remainingAmount;
+      } catch (err: any) {
+        this.logger.warn(`FIFO allocation failed (non-blocking): ${err.message}`);
+        // En cas d'erreur, on continue avec le montant original (non bloquant)
+      }
+    }
 
     const sortedBreakdowns = [...account.breakdowns].sort((a, b) => {
       const ia = PRIORITY_ORDER.indexOf(a.feeStructure.feeType);

@@ -1250,6 +1250,34 @@ function ArrearsTab({
                         >
                           <SmsIcon className="w-3.5 h-3.5" />
                         </Button>
+                        {/* Abandonner (write-off) — uniquement si OPEN ou PARTIALLY_PAID */}
+                        {(!a.status || a.status === 'OPEN' || a.status === 'PARTIALLY_PAID') && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 hover:bg-amber-100 hover:shadow-sm transition-all duration-150"
+                            onClick={() => {
+                              const reason = window.prompt(
+                                `Abandonner cet arriéré de ${formatCurrency(Number(a.balanceDue))} FCFA ?\n` +
+                                `L'élève ne devra plus ce montant.\n\nMotif de l'abandon :`
+                              );
+                              if (reason) {
+                                financeService.writeOffArrear(a.id, reason)
+                                  .then(() => {
+                                    toast({ title: '✅ Créance abandonnée', description: `${formatCurrency(Number(a.balanceDue))} FCFA retiré du total dû.` });
+                                    // Recharger — on utilise un hack: déclencher un state change
+                                    window.dispatchEvent(new CustomEvent('recovery-reload'));
+                                  })
+                                  .catch((e: any) => {
+                                    toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+                                  });
+                              }
+                            }}
+                            title="Abandonner la créance (write-off)"
+                          >
+                            <XCircle className="w-3.5 h-3.5 text-amber-600" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

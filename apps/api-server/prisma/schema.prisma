@@ -10354,6 +10354,7 @@ model StudentAccount {
   totalPaid         Decimal              @default(0) @db.Decimal(10, 2)
   balance           Decimal              @default(0) @db.Decimal(10, 2)
   arrearsAmount     Decimal              @default(0) @db.Decimal(10, 2)
+  carriedArrears    Decimal              @default(0) @db.Decimal(12, 2) // Arriérés reportés des années antérieures
   status            AccountStatus        @default(ACTIVE)
   isBlocked         Boolean              @default(false)
   createdAt         DateTime             @default(now())
@@ -10361,6 +10362,7 @@ model StudentAccount {
   breakdowns        AccountBreakdown[]
   transactions      FinanceTransaction[]
   recoveryReminders RecoveryReminder[]
+  arrearTransfers   ArrearTransfer[]
   academicYear      AcademicYear         @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   student           Student              @relation(fields: [studentId], references: [id], onDelete: Cascade)
   tenant            Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -10502,6 +10504,7 @@ model FeeArrear {
   totalPaid       Decimal              @default(0) @db.Decimal(10, 2)
   balanceDue      Decimal              @db.Decimal(10, 2)
   arrearsLevel    String               @default("LOW")
+  status          String               @default("OPEN") // OPEN | PARTIALLY_PAID | PAID | WRITTEN_OFF | TRANSFERRED
   lastPaymentDate DateTime?
   notes           String?
   createdAt       DateTime             @default(now())
@@ -10517,7 +10520,34 @@ model FeeArrear {
   @@index([tenantId, academicYearId])
   @@index([studentId])
   @@index([arrearsLevel])
+  @@index([status])
   @@map("fee_arrears")
+}
+
+/// Transfert d'arriérés d'une année scolaire à l'autre (report au passage d'année).
+/// Permet de tracer quels arriérés ont été reportés, depuis quelle année, vers quelle année,
+/// et pour quel montant. Utilisé pour l'audit et la traçabilité.
+model ArrearTransfer {
+  id                 String         @id @default(uuid())
+  tenantId           String
+  studentId          String
+  studentAccountId   String         // Compte élève de l'année DESTINATION
+  fromAcademicYearId String         // Année source (clôturée)
+  toAcademicYearId   String         // Année destination (nouvelle)
+  amount             Decimal        @db.Decimal(12, 2)
+  feeArrearId        String?        // FeeArrear d'origine (si lié)
+  transferredAt      DateTime       @default(now())
+  transferredBy      String?
+  notes              String?
+
+  studentAccount     StudentAccount @relation(fields: [studentAccountId], references: [id], onDelete: Cascade)
+  tenant             Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  student            Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, toAcademicYearId])
+  @@index([studentId])
+  @@index([fromAcademicYearId])
+  @@map("arrear_transfers")
 }
 
 model CollectionReminder {

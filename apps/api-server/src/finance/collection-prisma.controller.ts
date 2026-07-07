@@ -16,6 +16,7 @@ import {
 } from '@nestjs/common';
 import { CollectionPrismaService } from './collection-prisma.service';
 import { CollectionCaseService } from './collection-case.service';
+import { ArrearAccumulationService } from './arrear-accumulation.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -30,6 +31,7 @@ export class CollectionPrismaController {
   constructor(
     private readonly collectionService: CollectionPrismaService,
     private readonly collectionCaseService: CollectionCaseService,
+    private readonly arrearAccumulationService: ArrearAccumulationService,
   ) {}
 
   @Post('detect-arrears')
@@ -276,6 +278,63 @@ export class CollectionPrismaController {
     @Body() body: { studentId: string; academicYearId?: string; academicYearName?: string; amount: number; reason?: string },
   ) {
     return this.collectionService.createManualArrear(tenantId, body, user?.id);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  PHASE 2 : REPORT D'ARRIÉRÉS AU PASSAGE D'ANNÉE
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * POST /finance/collection/arrears/transfer-year
+   * Reporte les arriérés d'une année clôturée vers la nouvelle année.
+   * Body: { fromAcademicYearId, toAcademicYearId }
+   */
+  @Post('arrears/transfer-year')
+  @Roles('DIRECTOR', 'ADMIN', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
+  async transferArrearsToNewYear(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() body: { fromAcademicYearId: string; toAcademicYearId: string },
+  ) {
+    return this.arrearAccumulationService.transferArrearsToNewYear(
+      tenantId,
+      body.fromAcademicYearId,
+      body.toAcademicYearId,
+      user?.id,
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  PHASE 3 : ABANDON DE CRÉANCE (WRITE-OFF)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * POST /finance/collection/arrears/:id/write-off
+   * Marque un arriéré comme "abandonné" (write-off).
+   * Body: { reason }
+   */
+  @Post('arrears/:id/write-off')
+  @Roles('DIRECTOR', 'ADMIN', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
+  async writeOffArrear(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() body: { reason: string },
+  ) {
+    return this.arrearAccumulationService.writeOffArrear(tenantId, id, body.reason, user?.id);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  PHASE 5 : RAPPORT — RÉCAPITULATIF DES ARRÉRÉS PAR ANNÉE
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * GET /finance/collection/arrears/summary-by-year
+   * Récupère un récapitulatif des arriérés par année scolaire.
+   */
+  @Get('arrears/summary-by-year')
+  async getArrearsSummaryByYear(@TenantId() tenantId: string) {
+    return this.arrearAccumulationService.getArrearsSummaryByYear(tenantId);
   }
 }
 

@@ -303,6 +303,36 @@ class FinanceService {
     });
   }
 
+  /**
+   * Reporte les arriérés d'une année vers la nouvelle (Phase 2).
+   * POST /api/finance/collection/arrears/transfer-year
+   */
+  async transferArrearsToNewYear(fromAcademicYearId: string, toAcademicYearId: string): Promise<any> {
+    return financeFetch('/api/finance/collection/arrears/transfer-year', {
+      method: 'POST',
+      body: { fromAcademicYearId, toAcademicYearId },
+    });
+  }
+
+  /**
+   * Abandonne une créance (write-off) — Phase 3.
+   * POST /api/finance/collection/arrears/:id/write-off
+   */
+  async writeOffArrear(arrearId: string, reason: string): Promise<any> {
+    return financeFetch(`/api/finance/collection/arrears/${encodeURIComponent(arrearId)}/write-off`, {
+      method: 'POST',
+      body: { reason },
+    });
+  }
+
+  /**
+   * Récapitulatif des arriérés par année scolaire — Phase 5.
+   * GET /api/finance/collection/arrears/summary-by-year
+   */
+  async getArrearsSummaryByYear(): Promise<any> {
+    return financeFetch('/api/finance/collection/arrears/summary-by-year');
+  }
+
   // --- Nouveaux rapports (Phase 6) ---
   async getComparativeYear(academicYearId: string): Promise<any> {
     return financeFetch(`/api/finance/reports/comparative-year?academicYearId=${academicYearId}`);

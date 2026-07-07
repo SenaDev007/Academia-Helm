@@ -136,7 +136,11 @@ export default function RecoveryContent() {
     setLoading(true);
     try {
       const [arrearsData, remindersData, statsData, promisesData, actionsData, casesData] = await Promise.all([
-        financeService.getArrears({ academicYearId: academicYear.id }).catch(() => []),
+        // ⚠️ Les arriérés sont chargés SANS filtre academicYearId pour inclure
+        // les arriérés antérieurs (saisis manuellement pour l'onboarding).
+        // Le backend findAllArrears retourne tous les arriérés du tenant si
+        // academicYearId n'est pas fourni.
+        financeService.getArrears({}).catch(() => []),
         financeService.getRecoveryReminders({ academicYearId: academicYear.id }).catch(() => []),
         financeService.getCollectionStatistics(academicYear.id).catch(() => null),
         financeService.getCollectionPromises({ academicYearId: academicYear.id }).catch(() => []),

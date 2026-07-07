@@ -104,6 +104,7 @@ export default function RecoveryContent() {
   const [arrearSearch, setArrearSearch] = useState('');
   const [arrearSchoolLevelId, setArrearSchoolLevelId] = useState<string>('ALL');
   const [arrearClassId, setArrearClassId] = useState<string>('ALL');
+  const [arrearYearId, setArrearYearId] = useState<string>('ALL');
 
   // Filtres promesses
   const [promiseStatusFilter, setPromiseStatusFilter] = useState<string>('ALL');
@@ -399,13 +400,14 @@ export default function RecoveryContent() {
   // Filtrage des arriérés
   const filteredArrears = useMemo(() => {
     let result = arrears;
+    if (arrearYearId !== 'ALL') {
+      result = result.filter((a) => a.academicYearId === arrearYearId);
+    }
     if (arrearLevelFilter !== 'ALL') {
       result = result.filter((a) => a.arrearsLevel === arrearLevelFilter);
     }
     if (arrearSchoolLevelId !== 'ALL') {
       result = result.filter((a) => {
-        // a.student.schoolLevelId = UUID de school_levels
-        // arrearSchoolLevelId peut être l'ID school-levels ou education-levels
         return a.student?.schoolLevelId === arrearSchoolLevelId;
       });
     }
@@ -423,7 +425,7 @@ export default function RecoveryContent() {
       });
     }
     return result;
-  }, [arrears, arrearLevelFilter, arrearSearch, arrearSchoolLevelId, arrearClassId]);
+  }, [arrears, arrearLevelFilter, arrearSearch, arrearSchoolLevelId, arrearClassId, arrearYearId]);
 
   // KPIs calculés
   const kpis = useMemo(() => {
@@ -532,6 +534,12 @@ export default function RecoveryContent() {
             setSchoolLevelId={setArrearSchoolLevelId}
             classId={arrearClassId}
             setClassId={setArrearClassId}
+            yearId={arrearYearId}
+            setYearId={setArrearYearId}
+            allYears={Array.from(new Set(arrears.map((a: any) => a.academicYearId))).map((id) => {
+              const a = arrears.find((x: any) => x.academicYearId === id);
+              return { id, name: a?.academicYear?.name || id };
+            })}
             onSendChannel={(arrearId, channel) => handleSendChannelReminder(arrearId, channel, 'PREMIERE_RELANCE')}
           />
         ) : activeTab === 'reminders' ? (
@@ -794,6 +802,9 @@ function ArrearsTab({
   setSchoolLevelId,
   classId,
   setClassId,
+  yearId,
+  setYearId,
+  allYears,
   onSendChannel,
 }: {
   arrears: any[];
@@ -806,6 +817,9 @@ function ArrearsTab({
   setSchoolLevelId: (v: string) => void;
   classId: string;
   setClassId: (v: string) => void;
+  yearId: string;
+  setYearId: (v: string) => void;
+  allYears: { id: string; name: string }[];
   onSendChannel: (arrearId: string, channel: 'email' | 'whatsapp' | 'sms') => void;
 }) {
   const [schoolLevels, setSchoolLevels] = useState<any[]>([]);
@@ -926,11 +940,138 @@ function ArrearsTab({
     }
   };
 
+  // Export Excel des arriérés (filtre appliqué) — génère le XLSX côté frontend avec ExcelJS
+  const handleExportExcel = async () => {
+    try {
+      const loadExcelJS = (): Promise<any> => new Promise((resolve) => {
+        if ((window as any).ExcelJS) { resolve((window as any).ExcelJS); return; }
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js';
+        script.onload = () => resolve((window as any).ExcelJS);
+        document.head.appendChild(script);
+      });
+      const ExcelJS = await loadExcelJS();
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Arriérés', { properties: { defaultRowHeight: 18 } });
+
+      // Titre
+      ws.mergeCells('A1:G1');
+      const titleCell = ws.getCell('A1');
+      titleCell.value = 'Liste des arriérés';
+      titleCell.font = { bold: true, size: 14, color: { argb: 'FF1E3A8A' } };
+      titleCell.alignment = { horizontal: 'center' };
+      ws.getRow(1).height = 28;
+
+      // Date d'export
+      ws.mergeCells('A2:G2');
+      ws.getCell('A2').value = `Exporté le ${new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })} à ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+      ws.getCell('A2').font = { italic: true, size: 10, color: { argb: 'FF64748B' } };
+      ws.getCell('A2').alignment = { horizontal: 'center' };
+
+      // En-têtes
+      const headers = ['Élève', 'Classe', 'Frais', 'Total dû (FCFA)', 'Payé (FCFA)', 'Solde (FCFA)', 'Niveau'];
+      headers.forEach((h, i) => {
+        const cell = ws.getCell(4, i + 1);
+        cell.value = h;
+        cell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
+        cell.alignment = { horizontal: i >= 3 && i <= 5 ? 'right' : 'left', vertical: 'middle' };
+        cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+      });
+      ws.getRow(4).height = 22;
+
+      // Données
+      const levelLabels: Record<string, string> = { LOW: 'Faible', MEDIUM: 'Moyen', HIGH: 'Élevé', CRITICAL: 'Critique' };
+      let totalBalance = 0;
+      let row = 5;
+      for (const a of arrears) {
+        const amount = Number(a.balanceDue) || 0;
+        totalBalance += amount;
+        const values = [
+          a.student ? `${a.student.lastName} ${a.student.firstName}` : '—',
+          a.student?.studentEnrollments?.[0]?.class?.name || '—',
+          a.studentFee?.feeDefinition?.label || a.notes || '—',
+          Number(a.totalDue) || 0,
+          Number(a.totalPaid) || 0,
+          amount,
+          levelLabels[a.arrearsLevel] || a.arrearsLevel || '—',
+        ];
+        values.forEach((v, i) => {
+          const cell = ws.getCell(row, i + 1);
+          cell.value = v;
+          cell.font = { size: 10 };
+          cell.alignment = { horizontal: i >= 3 && i <= 5 ? 'right' : 'left', vertical: 'middle' };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          };
+          if (i >= 3 && i <= 5) cell.numFmt = '#,##0';
+        });
+        // Couleur niveau
+        const levelCell = ws.getCell(row, 7);
+        if (a.arrearsLevel === 'CRITICAL') levelCell.font = { size: 10, color: { argb: 'FFDC2626' }, bold: true };
+        else if (a.arrearsLevel === 'HIGH') levelCell.font = { size: 10, color: { argb: 'FFEA580C' }, bold: true };
+        else if (a.arrearsLevel === 'MEDIUM') levelCell.font = { size: 10, color: { argb: 'FFD97706' }, bold: true };
+        row++;
+      }
+
+      // Ligne total
+      if (arrears.length > 0) {
+        ws.mergeCells(row, 1, row, 5);
+        const totalLabel = ws.getCell(row, 1);
+        totalLabel.value = 'TOTAL SOLDE RESTANT';
+        totalLabel.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+        totalLabel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
+        totalLabel.alignment = { horizontal: 'right', vertical: 'middle' };
+        const totalCell = ws.getCell(row, 6);
+        totalCell.value = totalBalance;
+        totalCell.numFmt = '#,##0';
+        totalCell.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
+        totalCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
+        totalCell.alignment = { horizontal: 'right', vertical: 'middle' };
+        ws.getCell(row, 7).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
+        ws.getRow(row).height = 26;
+      }
+
+      // Largeurs colonnes
+      ws.columns = [
+        { width: 24 }, { width: 16 }, { width: 28 }, { width: 16 }, { width: 14 }, { width: 14 }, { width: 12 },
+      ];
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Arrieres_recouvrement_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      console.error('Export Excel error:', e);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Filtres */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-3">
         <div className="flex flex-wrap gap-3 items-end">
+          {/* Année scolaire */}
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Année scolaire</Label>
+            <Select value={yearId} onValueChange={setYearId}>
+              <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Toutes les années</SelectItem>
+                {allYears.map((y) => (
+                  <SelectItem key={y.id} value={y.id}>{y.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Niveau scolaire */}
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Niveau scolaire</Label>
@@ -987,6 +1128,12 @@ function ArrearsTab({
               />
             </div>
           </div>
+
+          {/* Export Excel */}
+          <Button variant="outline" size="sm" onClick={handleExportExcel} className="border-emerald-300 text-emerald-700 hover:bg-emerald-100">
+            <FileSpreadsheet className="w-4 h-4 mr-1.5" />
+            Excel
+          </Button>
 
           {/* Export PDF */}
           <Button variant="outline" size="sm" onClick={handleExportPDF} className="border-rose-300 text-rose-700 hover:bg-rose-100">

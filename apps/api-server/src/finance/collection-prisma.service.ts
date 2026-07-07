@@ -190,6 +190,7 @@ export class CollectionPrismaService {
     return this.prisma.feeArrear.findMany({
       where,
       include: {
+        academicYear: { select: { id: true, name: true } },
         student: {
           select: {
             id: true,
@@ -198,7 +199,9 @@ export class CollectionPrismaService {
             studentCode: true,
             schoolLevelId: true,
             studentEnrollments: {
-              where: { academicYearId: filters?.academicYearId },
+              // Si academicYearId est fourni, filtrer par année. Sinon, prendre
+              // l'inscription la plus récente (toutes années confondues).
+              ...(filters?.academicYearId ? { where: { academicYearId: filters.academicYearId } } : {}),
               select: { id: true, classId: true, class: { select: { id: true, name: true } } },
               take: 1,
               orderBy: { enrollmentDate: 'desc' },

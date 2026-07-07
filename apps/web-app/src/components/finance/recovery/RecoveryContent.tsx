@@ -127,6 +127,15 @@ export default function RecoveryContent() {
   const [arrearYearName, setArrearYearName] = useState('');
   const [arrearSaving, setArrearSaving] = useState(false);
 
+  // Niveaux scolaires chargés au niveau du parent (pour le filtrage)
+  const [parentSchoolLevels, setParentSchoolLevels] = useState<any[]>([]);
+  useEffect(() => {
+    fetch('/api/school-levels', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setParentSchoolLevels(Array.isArray(d) ? d : []))
+      .catch(() => setParentSchoolLevels([]));
+  }, []);
+
   // Modals Phase 2
   const [promiseModal, setPromiseModal] = useState<{ arrearId: string; studentName: string; balanceDue: number } | null>(null);
   const [actionModal, setActionModal] = useState<{ arrearId: string; studentName: string } | null>(null);
@@ -407,14 +416,28 @@ export default function RecoveryContent() {
       result = result.filter((a) => a.arrearsLevel === arrearLevelFilter);
     }
     if (arrearSchoolLevelId !== 'ALL') {
+      // ⚠️ arrearSchoolLevelId vient de /api/school-levels qui retourne
+      // { id: education_levels_uuid, schoolLevelId: school_levels_uuid, code: 'PRIMAIRE' }
+      // a.student.schoolLevelId = UUID de school_levels
+      // On résout l'ID sélectionné pour obtenir le schoolLevelId (UUID school_levels)
+      const selectedLevel = parentSchoolLevels.find((l) => l.id === arrearSchoolLevelId);
+      const targetSchoolLevelId = selectedLevel?.schoolLevelId || selectedLevel?.id || arrearSchoolLevelId;
+      const targetCode = selectedLevel?.code;
       result = result.filter((a) => {
-        return a.student?.schoolLevelId === arrearSchoolLevelId;
+        // Match sur schoolLevelId (UUID school_levels)
+        if (a.student?.schoolLevelId === targetSchoolLevelId) return true;
+        // Match sur l'ID directement (au cas où c'est le même)
+        if (a.student?.schoolLevelId === arrearSchoolLevelId) return true;
+        // Match par code (ex: 'PRIMAIRE')
+        // On ne peut pas comparer par code ici car student n'a pas de code
+        return false;
       });
     }
     if (arrearClassId !== 'ALL') {
       result = result.filter((a) => {
-        const enrollment = a.student?.studentEnrollments?.[0];
-        return enrollment?.classId === arrearClassId;
+        // Chercher dans TOUTES les inscriptions de l'élève, pas juste la première
+        const enrollments = a.student?.studentEnrollments || [];
+        return enrollments.some((e: any) => e.classId === arrearClassId);
       });
     }
     if (arrearSearch.trim()) {
@@ -425,7 +448,7 @@ export default function RecoveryContent() {
       });
     }
     return result;
-  }, [arrears, arrearLevelFilter, arrearSearch, arrearSchoolLevelId, arrearClassId, arrearYearId]);
+  }, [arrears, arrearLevelFilter, arrearSearch, arrearSchoolLevelId, arrearClassId, arrearYearId, parentSchoolLevels]);
 
   // KPIs calculés
   const kpis = useMemo(() => {
@@ -1151,15 +1174,15 @@ function ArrearsTab({
         <Table>
           <TableHeader>
             <TableRow className="bg-gray-50">
-              <TableHead>Élève</TableHead>
-              <TableHead>Classe</TableHead>
-              <TableHead>Frais</TableHead>
-              <TableHead className="text-right">Total dû</TableHead>
-              <TableHead className="text-right">Payé</TableHead>
-              <TableHead className="text-right">Solde</TableHead>
-              <TableHead>Niveau</TableHead>
-              <TableHead>Dernier paiement</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead className="whitespace-nowrap">Élève</TableHead>
+              <TableHead className="whitespace-nowrap">Classe</TableHead>
+              <TableHead className="whitespace-nowrap">Frais</TableHead>
+              <TableHead className="text-right whitespace-nowrap">Total dû</TableHead>
+              <TableHead className="text-right whitespace-nowrap">Payé</TableHead>
+              <TableHead className="text-right whitespace-nowrap">Solde</TableHead>
+              <TableHead className="whitespace-nowrap">Niveau</TableHead>
+              <TableHead className="whitespace-nowrap">Dernier paiement</TableHead>
+              <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -1174,18 +1197,18 @@ function ArrearsTab({
                 const config = ARREARS_LEVEL_CONFIG[a.arrearsLevel || 'LOW'] || ARREARS_LEVEL_CONFIG.LOW;
                 return (
                   <TableRow key={a.id} className="hover:bg-slate-50">
-                    <TableCell className="font-medium">
+                    <TableCell className="font-medium whitespace-nowrap">
                       {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.studentId}
                     </TableCell>
-                    <TableCell className="text-sm text-slate-600">
+                    <TableCell className="text-sm text-slate-600 whitespace-nowrap">
                       {a.student?.studentEnrollments?.[0]?.class?.name || '—'}
                     </TableCell>
-                    <TableCell className="text-sm text-slate-600">
+                    <TableCell className="text-sm text-slate-600 whitespace-nowrap">
                       {a.studentFee?.feeDefinition?.label || a.notes || '—'}
                     </TableCell>
-                    <TableCell className="text-right font-mono text-sm">{formatCurrency(a.totalDue)}</TableCell>
-                    <TableCell className="text-right font-mono text-sm text-emerald-700">{formatCurrency(a.totalPaid)}</TableCell>
-                    <TableCell className="text-right font-mono text-sm font-bold text-rose-700">{formatCurrency(a.balanceDue)}</TableCell>
+                    <TableCell className="text-right font-mono text-sm whitespace-nowrap">{formatCurrency(a.totalDue)}</TableCell>
+                    <TableCell className="text-right font-mono text-sm text-emerald-700 whitespace-nowrap">{formatCurrency(a.totalPaid)}</TableCell>
+                    <TableCell className="text-right font-mono text-sm font-bold text-rose-700 whitespace-nowrap">{formatCurrency(a.balanceDue)}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className={`${config.color} ${config.bg} ${config.border} border`}>
                         {config.label}

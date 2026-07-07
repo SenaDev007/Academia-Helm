@@ -763,19 +763,19 @@ export default function CashRegistersContent() {
                 <ArrowLeftRight className="h-4 w-4 mr-2" />
                 Transférer
               </Button>
-              <Button variant="outline" size="sm" onClick={handleExportGlobalExcel} disabled={exporting !== null || registers.length === 0}>
+              <Button variant="outline" size="sm" onClick={handleExportGlobalExcel} disabled={exporting !== null || registers.length === 0} className="border-emerald-300 text-emerald-700 hover:bg-emerald-100">
                 {exporting === 'global-excel' ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
                 ) : (
-                  <FileSpreadsheet className="h-4 w-4 mr-2" />
+                  <FileSpreadsheet className="w-4 h-4 mr-1.5" />
                 )}
                 Excel global
               </Button>
-              <Button variant="outline" size="sm" onClick={handleExportGlobalPdf} disabled={exporting !== null || registers.length === 0}>
+              <Button variant="outline" size="sm" onClick={handleExportGlobalPdf} disabled={exporting !== null || registers.length === 0} className="border-rose-300 text-rose-700 hover:bg-rose-100">
                 {exporting === 'global-pdf' ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
                 ) : (
-                  <FileText className="h-4 w-4 mr-2" />
+                  <FileText className="w-4 h-4 mr-1.5" />
                 )}
                 PDF global
               </Button>
@@ -1699,19 +1699,19 @@ export default function CashRegistersContent() {
                       <Button variant="outline" onClick={() => handleStats(selectedRegister)}>
                         <BarChart3 className="h-4 w-4 mr-2" />Statistiques
                       </Button>
-                      <Button variant="outline" size="sm" onClick={handleExportRegisterExcel} disabled={exporting !== null}>
+                      <Button variant="outline" size="sm" onClick={handleExportRegisterExcel} disabled={exporting !== null} className="border-emerald-300 text-emerald-700 hover:bg-emerald-100">
                         {exporting === 'excel' ? (
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
                         ) : (
-                          <FileSpreadsheet className="h-4 w-4 mr-2" />
+                          <FileSpreadsheet className="w-4 h-4 mr-1.5" />
                         )}
                         Excel
                       </Button>
-                      <Button variant="outline" size="sm" onClick={handleExportRegisterPdf} disabled={exporting !== null}>
+                      <Button variant="outline" size="sm" onClick={handleExportRegisterPdf} disabled={exporting !== null} className="border-rose-300 text-rose-700 hover:bg-rose-100">
                         {exporting === 'pdf' ? (
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
                         ) : (
-                          <FileText className="h-4 w-4 mr-2" />
+                          <FileText className="w-4 h-4 mr-1.5" />
                         )}
                         PDF
                       </Button>

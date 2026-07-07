@@ -131,7 +131,7 @@ export default function ExpensesPage() {
         icon="finance"
         actions={
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => exportExpensesToExcel(expenses, expensesFilename(academicYear?.label))}>
+            <Button variant="outline" size="sm" onClick={() => exportExpensesToExcel(expenses, expensesFilename(academicYear?.label))} className="border-emerald-300 text-emerald-700 hover:bg-emerald-100">
               <FileSpreadsheet className="w-4 h-4 mr-1.5" /> Excel
             </Button>
             <Button onClick={() => setModalCreate(true)}>Nouvelle dépense</Button>

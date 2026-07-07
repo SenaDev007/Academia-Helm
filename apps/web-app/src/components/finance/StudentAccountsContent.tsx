@@ -312,19 +312,19 @@ export default function StudentAccountsContent() {
               Solde, total dû, payé et statut par élève et par année.
             </p>
             <div className="flex gap-2 flex-wrap">
-              <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={filteredAccounts.length === 0 || exporting !== null}>
+              <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={filteredAccounts.length === 0 || exporting !== null} className="border-emerald-300 text-emerald-700 hover:bg-emerald-100">
                 {exporting === 'excel' ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
                 ) : (
-                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                  <FileSpreadsheet className="w-4 h-4 mr-1.5" />
                 )}
                 Excel
               </Button>
-              <Button variant="outline" size="sm" onClick={handleExportPdf} disabled={filteredAccounts.length === 0 || exporting !== null}>
+              <Button variant="outline" size="sm" onClick={handleExportPdf} disabled={filteredAccounts.length === 0 || exporting !== null} className="border-rose-300 text-rose-700 hover:bg-rose-100">
                 {exporting === 'pdf' ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
                 ) : (
-                  <FileText className="w-4 h-4 mr-2" />
+                  <FileText className="w-4 h-4 mr-1.5" />
                 )}
                 PDF
               </Button>

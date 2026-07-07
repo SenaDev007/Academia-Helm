@@ -26,7 +26,7 @@ import {
   Plus, Search, ChevronDown, ChevronRight, Users, Loader2,
   FileText, Download, UserCheck, GraduationCap, BookOpen, Baby,
   RotateCcw, CheckCircle, XCircle, Clock, AlertCircle, Upload,
-  ShieldAlert, Info, BrainCircuit, ChevronUp, EyeOff, Eye, FileDown, Pencil,
+  ShieldAlert, Info, BrainCircuit, ChevronUp, EyeOff, Eye, FileDown, Pencil, FileSpreadsheet,
   DollarSign,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -787,10 +787,10 @@ export default function EnrollmentsContent() {
           <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={handleExportCSV}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-slate-700 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 transition"
-              title="Export CSV"
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-emerald-700 bg-white hover:bg-emerald-100 rounded-lg border border-emerald-300 transition"
+              title="Export Excel"
             >
-              <Download className="w-4 h-4" /> Export
+              <FileSpreadsheet className="w-4 h-4 mr-1.5" /> Excel
             </button>
             <button
               onClick={() => setBulkReEnrollOpen(true)}

@@ -44,15 +44,15 @@ export class CollectionPrismaController {
   @Get('arrears')
   async findAllArrears(
     @TenantId() tenantId: string,
-    @SchoolLevelId() schoolLevelId: string,
     @Query('academicYearId') academicYearId?: string,
     @Query('arrearsLevel') arrearsLevel?: string,
     @Query('studentId') studentId?: string,
     @Query('search') search?: string,
+    @Query('schoolLevelId') schoolLevelId?: string,
   ) {
     return this.collectionService.findAllArrears(tenantId, {
       academicYearId,
-      schoolLevelId,
+      schoolLevelId: schoolLevelId && schoolLevelId !== 'ALL' ? schoolLevelId : undefined,
       arrearsLevel,
       studentId,
       search,

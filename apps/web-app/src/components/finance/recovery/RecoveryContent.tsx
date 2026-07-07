@@ -1062,7 +1062,7 @@ function ArrearsTab({
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Année scolaire</Label>
             <Select value={yearId} onValueChange={setYearId}>
-              <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-[160px] h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">Toutes les années</SelectItem>
                 {allYears.map((y) => (
@@ -1076,7 +1076,7 @@ function ArrearsTab({
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Niveau scolaire</Label>
             <Select value={schoolLevelId} onValueChange={(v) => { setSchoolLevelId(v); setClassId('ALL'); }}>
-              <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-[180px] h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">Tous les niveaux</SelectItem>
                 {schoolLevels.map((l) => (
@@ -1090,7 +1090,7 @@ function ArrearsTab({
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Classe</Label>
             <Select value={classId} onValueChange={setClassId}>
-              <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-[180px] h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">Toutes les classes</SelectItem>
                 {filteredClasses.map((c: any) => (
@@ -1104,7 +1104,7 @@ function ArrearsTab({
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Niveau de gravité</Label>
             <Select value={levelFilter} onValueChange={setLevelFilter}>
-              <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-[160px] h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">Tous</SelectItem>
                 <SelectItem value="LOW">Faible</SelectItem>
@@ -1124,7 +1124,7 @@ function ArrearsTab({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Nom ou prénom..."
-                className="pl-9"
+                className="pl-9 h-9"
               />
             </div>
           </div>

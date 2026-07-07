@@ -1128,22 +1128,22 @@ function ArrearsTab({
               />
             </div>
           </div>
-
-          {/* Export Excel */}
-          <Button variant="outline" size="sm" onClick={handleExportExcel} className="border-emerald-300 text-emerald-700 hover:bg-emerald-100">
-            <FileSpreadsheet className="w-4 h-4 mr-1.5" />
-            Excel
-          </Button>
-
-          {/* Export PDF */}
-          <Button variant="outline" size="sm" onClick={handleExportPDF} className="border-rose-300 text-rose-700 hover:bg-rose-100">
-            <FileText className="w-4 h-4 mr-1.5" />
-            PDF
-          </Button>
         </div>
         <div className="text-xs text-slate-500">
           {arrears.length} affiché(s) sur {totalCount} total
         </div>
+      </div>
+
+      {/* Boutons export — juste au-dessus du tableau */}
+      <div className="flex items-center justify-end gap-2">
+        <Button variant="outline" size="sm" onClick={handleExportExcel} className="border-emerald-300 text-emerald-700 hover:bg-emerald-100">
+          <FileSpreadsheet className="w-4 h-4 mr-1.5" />
+          Excel
+        </Button>
+        <Button variant="outline" size="sm" onClick={handleExportPDF} className="border-rose-300 text-rose-700 hover:bg-rose-100">
+          <FileText className="w-4 h-4 mr-1.5" />
+          PDF
+        </Button>
       </div>
 
       {/* Tableau */}

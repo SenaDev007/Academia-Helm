@@ -419,17 +419,18 @@ export default function RecoveryContent() {
       // ⚠️ arrearSchoolLevelId vient de /api/school-levels qui retourne
       // { id: education_levels_uuid, schoolLevelId: school_levels_uuid, code: 'PRIMAIRE' }
       // a.student.schoolLevelId = UUID de school_levels
-      // On résout l'ID sélectionné pour obtenir le schoolLevelId (UUID school_levels)
+      // a.student.schoolLevel.code = 'PRIMAIRE' (depuis la relation schoolLevel)
+      // On résout l'ID sélectionné pour obtenir le code
       const selectedLevel = parentSchoolLevels.find((l) => l.id === arrearSchoolLevelId);
-      const targetSchoolLevelId = selectedLevel?.schoolLevelId || selectedLevel?.id || arrearSchoolLevelId;
-      const targetCode = selectedLevel?.code;
+      const targetCode = selectedLevel?.code; // ex: 'PRIMAIRE'
+      const targetSchoolLevelId = selectedLevel?.schoolLevelId; // UUID school_levels
       result = result.filter((a) => {
-        // Match sur schoolLevelId (UUID school_levels)
-        if (a.student?.schoolLevelId === targetSchoolLevelId) return true;
-        // Match sur l'ID directement (au cas où c'est le même)
+        // 1. Match par code (le plus fiable)
+        if (targetCode && a.student?.schoolLevel?.code === targetCode) return true;
+        // 2. Match sur schoolLevelId (UUID school_levels)
+        if (targetSchoolLevelId && a.student?.schoolLevelId === targetSchoolLevelId) return true;
+        // 3. Match direct sur l'ID (au cas où)
         if (a.student?.schoolLevelId === arrearSchoolLevelId) return true;
-        // Match par code (ex: 'PRIMAIRE')
-        // On ne peut pas comparer par code ici car student n'a pas de code
         return false;
       });
     }

@@ -198,6 +198,7 @@ export class CollectionPrismaService {
             lastName: true,
             studentCode: true,
             schoolLevelId: true,
+            schoolLevel: { select: { id: true, code: true, name: true } },
             studentEnrollments: {
               // Si academicYearId est fourni, filtrer par année. Sinon, prendre
               // l'inscription la plus récente (toutes années confondues).

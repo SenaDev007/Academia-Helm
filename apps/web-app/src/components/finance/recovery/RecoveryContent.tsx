@@ -1599,43 +1599,95 @@ function ManualArrearModal({
             </div>
           </div>
 
-          {/* Ligne 2 : Recherche élève + Sélecteur élève */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
-                Rechercher un élève
-              </Label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <Input
-                  value={studentSearch}
-                  onChange={(e) => setStudentSearch(e.target.value)}
-                  placeholder="Nom, prénom ou matricule..."
-                  className="pl-9"
-                />
-              </div>
-            </div>
-            <div>
-              <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
-                Élève {selectedClassId && <span className="text-slate-400 normal-case font-normal">(filtré par classe)</span>}
-              </Label>
-              <Select value={studentId} onValueChange={setStudentId}>
-                <SelectTrigger><SelectValue placeholder="Sélectionner un élève" /></SelectTrigger>
-                <SelectContent>
-                  {filteredAccounts.map((a: any) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.id}
-                      {a.student?.matricule ? ` · ${a.student.matricule}` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {filteredAccounts.length === 0 && (
-                <p className="text-xs text-slate-500 mt-1">
-                  Aucun élève{selectedClassId ? ' dans cette classe' : ''}.
-                </p>
+          {/* Ligne 2 : Recherche + autocomplétion élève (combiné) */}
+          <div>
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
+              Élève {selectedClassId && <span className="text-slate-400 normal-case font-normal">(filtré par classe)</span>}
+            </Label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 z-10" />
+              <Input
+                value={studentSearch}
+                onChange={(e) => {
+                  setStudentSearch(e.target.value);
+                  // Réinitialiser la sélection si on modifie la recherche
+                  if (studentId) setStudentId('');
+                }}
+                placeholder="Tapez le nom, prénom ou matricule de l'élève..."
+                className="pl-9"
+                autoComplete="off"
+              />
+              {/* Liste déroulante d'autocomplétion */}
+              {studentSearch.trim() && !studentId && (
+                <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                  {filteredAccounts.length === 0 ? (
+                    <p className="px-3 py-2 text-xs text-slate-500">
+                      Aucun élève trouvé{selectedClassId ? ' dans cette classe' : ''}.
+                    </p>
+                  ) : (
+                    filteredAccounts.slice(0, 50).map((a: any) => (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => {
+                          setStudentId(a.id);
+                          // Mettre le nom dans le champ de recherche pour affichage
+                          const name = a.student
+                            ? `${a.student.lastName} ${a.student.firstName}${a.student.matricule ? ` · ${a.student.matricule}` : ''}`
+                            : a.id;
+                          setStudentSearch(name);
+                        }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 transition border-b border-slate-50 last:border-b-0 flex items-center gap-2"
+                      >
+                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500 shrink-0">
+                          {a.student?.lastName?.[0] || '?'}{a.student?.firstName?.[0] || ''}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-slate-800 truncate">
+                            {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.id}
+                          </p>
+                          {a.student?.matricule && (
+                            <p className="text-xs text-slate-400 font-mono">{a.student.matricule}</p>
+                          )}
+                        </div>
+                        {Number(a.balance) > 0 && (
+                          <span className="text-xs text-rose-600 font-mono shrink-0">
+                            {formatCurrency(Number(a.balance))} F
+                          </span>
+                        )}
+                      </button>
+                    ))
+                  )}
+                  {filteredAccounts.length > 50 && (
+                    <p className="px-3 py-1.5 text-[10px] text-slate-400 text-center bg-slate-50">
+                      {filteredAccounts.length} résultats — affinez votre recherche
+                    </p>
+                  )}
+                </div>
               )}
             </div>
+            {/* Indicateur de sélection */}
+            {studentId && (
+              <div className="mt-1.5 flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span className="text-sm font-medium text-emerald-800">
+                  {(() => {
+                    const selected = filteredAccounts.find((a: any) => a.id === studentId) ||
+                      accounts.find((a: any) => a.id === studentId);
+                    return selected?.student
+                      ? `${selected.student.lastName} ${selected.student.firstName}${selected.student.matricule ? ` · ${selected.student.matricule}` : ''}`
+                      : 'Élève sélectionné';
+                  })()}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => { setStudentId(''); setStudentSearch(''); }}
+                  className="ml-auto text-xs text-emerald-600 hover:text-rose-600"
+                >
+                  Changer
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Ligne 3 : Année scolaire + Montant (côte à côte) */}

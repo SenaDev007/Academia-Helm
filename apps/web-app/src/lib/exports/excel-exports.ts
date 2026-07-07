@@ -1085,10 +1085,14 @@ export async function exportArrearsToExcel(
   const levelLabels: Record<string, string> = { LOW: 'Faible', MEDIUM: 'Moyen', HIGH: 'Élevé', CRITICAL: 'Critique' };
   const statusLabels: Record<string, string> = { OPEN: 'Ouvert', PARTIALLY_PAID: 'Partiellement payé', PAID: 'Soldé', WRITTEN_OFF: 'Abandonné', TRANSFERRED: 'Transféré' };
   let totalBalance = 0;
+  let totalDue = 0;
+  let totalPaid = 0;
 
   for (const a of arrears) {
     const amount = Number(a.balanceDue) || 0;
     totalBalance += amount;
+    totalDue += Number(a.totalDue) || 0;
+    totalPaid += Number(a.totalPaid) || 0;
     const values = [
       a.student ? `${a.student.lastName} ${a.student.firstName}` : '—',
       a.student?.studentEnrollments?.[0]?.class?.name || '—',
@@ -1122,18 +1126,34 @@ export async function exportArrearsToExcel(
 
   // Ligne total
   if (arrears.length > 0) {
-    ws.mergeCells(row, 1, row, 5);
+    ws.mergeCells(row, 1, row, 3);
     const totalLabel = ws.getCell(row, 1);
-    totalLabel.value = 'TOTAL SOLDE RESTANT';
+    totalLabel.value = `TOTAUX (${arrears.length} arriéré${arrears.length > 1 ? 's' : ''})`;
     totalLabel.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
     totalLabel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
     totalLabel.alignment = { horizontal: 'right', vertical: 'middle' };
-    const totalCell = ws.getCell(row, 6);
-    totalCell.value = totalBalance;
-    totalCell.numFmt = '#,##0';
-    totalCell.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
-    totalCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
-    totalCell.alignment = { horizontal: 'right', vertical: 'middle' };
+
+    const totalDueCell = ws.getCell(row, 4);
+    totalDueCell.value = totalDue;
+    totalDueCell.numFmt = '#,##0';
+    totalDueCell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+    totalDueCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
+    totalDueCell.alignment = { horizontal: 'right', vertical: 'middle' };
+
+    const totalPaidCell = ws.getCell(row, 5);
+    totalPaidCell.value = totalPaid;
+    totalPaidCell.numFmt = '#,##0';
+    totalPaidCell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+    totalPaidCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
+    totalPaidCell.alignment = { horizontal: 'right', vertical: 'middle' };
+
+    const totalBalanceCell = ws.getCell(row, 6);
+    totalBalanceCell.value = totalBalance;
+    totalBalanceCell.numFmt = '#,##0';
+    totalBalanceCell.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
+    totalBalanceCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
+    totalBalanceCell.alignment = { horizontal: 'right', vertical: 'middle' };
+
     ws.mergeCells(row, 7, row, 8);
     ws.getCell(row, 7).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
     ws.getRow(row).height = 26;

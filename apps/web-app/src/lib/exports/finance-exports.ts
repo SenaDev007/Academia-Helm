@@ -1661,8 +1661,10 @@ export async function exportArrearsToPdf(
     statusLabels[a.status] || a.status || '—',
   ]);
 
+  const totalDue = arrears.reduce((s, a) => s + (Number(a.totalDue) || 0), 0);
+  const totalPaid = arrears.reduce((s, a) => s + (Number(a.totalPaid) || 0), 0);
   const totalBalance = arrears.reduce((s, a) => s + (Number(a.balanceDue) || 0), 0);
-  tableData.push(['', '', '', '', 'TOTAL', formatAmountFCFA(totalBalance), '', '']);
+  tableData.push(['', '', '', `TOTAUX (${arrears.length})`, formatAmountFCFA(totalDue), formatAmountFCFA(totalPaid), formatAmountFCFA(totalBalance), '']);
 
   (doc as any).autoTable({
     startY: yPos,

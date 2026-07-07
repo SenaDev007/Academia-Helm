@@ -32,10 +32,11 @@ import {
   AlertCircle, TrendingDown, Users, Wallet, Target, RefreshCw,
   Send, Play, Loader2, ChevronRight, Filter, Search,
   Phone, Mail, FileText, UserCheck, Clock, AlertTriangle,
-  Zap, CheckCircle2, XCircle, Calendar, Plus, Eye, FileSpreadsheet,
+  Zap, CheckCircle2, XCircle, Calendar, Plus, Eye, FileSpreadsheet, Trash2,
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { useAppSession } from '@/contexts/AppSessionContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -87,6 +88,17 @@ const MANUAL_LEVEL_OPTIONS = [
 
 export default function RecoveryContent() {
   const { academicYear } = useModuleContext();
+  const { tenant } = useAppSession();
+
+  // SchoolHeader pour les exports (même pattern que TransactionsContent)
+  const schoolInfo = useMemo(() => ({
+    schoolName: tenant?.name || 'Établissement',
+    schoolLogoUrl: tenant?.id ? `/api/tenants/${tenant.id}/logo` : undefined,
+    academicYear: academicYear?.name || '',
+    schoolAddress: tenant?.address || null,
+    schoolPhone: tenant?.phone || null,
+    schoolEmail: tenant?.email || null,
+  }), [tenant, academicYear]);
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<TabId>('dashboard');
   const [loading, setLoading] = useState(true);
@@ -174,6 +186,13 @@ export default function RecoveryContent() {
 
   useEffect(() => {
     loadAll();
+  }, [loadAll]);
+
+  // Recharger quand un bouton delete/write-off déclenche l'événement recovery-reload
+  useEffect(() => {
+    const handler = () => loadAll();
+    window.addEventListener('recovery-reload', handler);
+    return () => window.removeEventListener('recovery-reload', handler);
   }, [loadAll]);
 
   const handleDetectArrears = async () => {
@@ -582,6 +601,7 @@ export default function RecoveryContent() {
               return { id, name: a?.academicYear?.name || id };
             })}
             onSendChannel={(arrearId, channel) => handleSendChannelReminder(arrearId, channel, 'PREMIERE_RELANCE')}
+            schoolInfo={schoolInfo}
           />
         ) : activeTab === 'reminders' ? (
           <RemindersTab
@@ -847,6 +867,7 @@ function ArrearsTab({
   setYearId,
   allYears,
   onSendChannel,
+  schoolInfo,
 }: {
   arrears: any[];
   totalCount: number;
@@ -862,6 +883,7 @@ function ArrearsTab({
   setYearId: (v: string) => void;
   allYears: { id: string; name: string }[];
   onSendChannel: (arrearId: string, channel: 'email' | 'whatsapp' | 'sms') => void;
+  schoolInfo: any;
 }) {
   const [schoolLevels, setSchoolLevels] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
@@ -898,12 +920,7 @@ function ArrearsTab({
   // Export PDF — utilise finance-exports.ts (même pattern que encaissements)
   const handleExportPDF = async () => {
     try {
-      const header = {
-        schoolName: 'Établissement',
-        academicYear: '',
-        schoolLogoUrl: undefined as string | undefined,
-      };
-      const { blob, url } = await exportArrearsToPdf(arrears, header);
+      const { blob, url } = await exportArrearsToPdf(arrears, schoolInfo);
       const a = document.createElement('a');
       a.href = url;
       a.download = `Arrieres_recouvrement_${new Date().toISOString().slice(0, 10)}.pdf`;
@@ -917,12 +934,7 @@ function ArrearsTab({
   // Export Excel — utilise excel-exports.ts (même pattern que encaissements)
   const handleExportExcel = async () => {
     try {
-      const header = {
-        schoolName: 'Établissement',
-        academicYear: '',
-        schoolLogoUrl: undefined as string | undefined,
-      };
-      await exportArrearsToExcel(arrears, header);
+      await exportArrearsToExcel(arrears, schoolInfo);
     } catch (e: any) {
       console.error('Export Excel error:', e);
     }
@@ -1129,6 +1141,32 @@ function ArrearsTab({
                             <XCircle className="w-3.5 h-3.5 text-amber-600" />
                           </Button>
                         )}
+                        {/* Supprimer */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 hover:bg-rose-100 hover:shadow-sm transition-all duration-150"
+                          onClick={() => {
+                            if (window.confirm(`Supprimer cet arriéré de ${formatCurrency(Number(a.balanceDue))} FCFA ? Cette action est irréversible.`)) {
+                              fetch(`/api/finance/collection/arrears/${a.id}`, {
+                                method: 'DELETE',
+                                credentials: 'include',
+                              })
+                                .then((r) => {
+                                  if (r.ok) {
+                                    toast({ title: '✅ Arriéré supprimé', description: `${formatCurrency(Number(a.balanceDue))} FCFA retiré.` });
+                                    window.dispatchEvent(new CustomEvent('recovery-reload'));
+                                  } else {
+                                    throw new Error('Échec de la suppression');
+                                  }
+                                })
+                                .catch((e) => toast({ title: 'Erreur', description: e.message, variant: 'destructive' }));
+                            }
+                          }}
+                          title="Supprimer l'arriéré"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -1136,6 +1174,26 @@ function ArrearsTab({
               })
             )}
           </TableBody>
+          {/* Ligne des totaux */}
+          {arrears.length > 0 && (
+            <tfoot>
+              <tr className="bg-slate-50 border-t-2 border-slate-300 font-bold">
+                <td colSpan={3} className="px-3 py-2 text-right text-slate-700 text-sm whitespace-nowrap">
+                  TOTAUX ({arrears.length} arriéré{arrears.length > 1 ? 's' : ''})
+                </td>
+                <td className="px-3 py-2 text-right font-mono text-sm whitespace-nowrap">
+                  {formatCurrency(arrears.reduce((s: number, a: any) => s + (Number(a.totalDue) || 0), 0))}
+                </td>
+                <td className="px-3 py-2 text-right font-mono text-sm text-emerald-700 whitespace-nowrap">
+                  {formatCurrency(arrears.reduce((s: number, a: any) => s + (Number(a.totalPaid) || 0), 0))}
+                </td>
+                <td className="px-3 py-2 text-right font-mono text-sm font-bold text-rose-700 whitespace-nowrap">
+                  {formatCurrency(arrears.reduce((s: number, a: any) => s + (Number(a.balanceDue) || 0), 0))}
+                </td>
+                <td colSpan={3} className="px-3 py-2"></td>
+              </tr>
+            </tfoot>
+          )}
         </Table>
       </div>
     </div>

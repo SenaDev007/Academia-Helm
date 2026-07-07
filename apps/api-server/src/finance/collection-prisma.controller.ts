@@ -9,14 +9,17 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
   UseGuards,
+  NotFoundException,
 } from '@nestjs/common';
 import { CollectionPrismaService } from './collection-prisma.service';
 import { CollectionCaseService } from './collection-case.service';
 import { ArrearAccumulationService } from './arrear-accumulation.service';
+import { PrismaService } from '../database/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -32,6 +35,7 @@ export class CollectionPrismaController {
     private readonly collectionService: CollectionPrismaService,
     private readonly collectionCaseService: CollectionCaseService,
     private readonly arrearAccumulationService: ArrearAccumulationService,
+    private readonly prisma: PrismaService,
   ) {}
 
   @Post('detect-arrears')
@@ -335,6 +339,69 @@ export class CollectionPrismaController {
   @Get('arrears/summary-by-year')
   async getArrearsSummaryByYear(@TenantId() tenantId: string) {
     return this.arrearAccumulationService.getArrearsSummaryByYear(tenantId);
+  }
+
+  /**
+   * DELETE /finance/collection/arrears/:id
+   * Supprime un arriéré (pour correction d'erreurs de saisie).
+   * Ajuste le StudentAccount si nécessaire.
+   */
+  @Delete('arrears/:id')
+  @Roles('DIRECTOR', 'ADMIN', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
+  async deleteArrear(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    const arrear = await this.prisma.feeArrear.findFirst({
+      where: { id, tenantId },
+    });
+    if (!arrear) throw new NotFoundException('Arriéré non trouvé');
+
+    const balanceDue = Number(arrear.balanceDue);
+
+    // Ajuster le StudentAccount si possible
+    try {
+      await this.prisma.studentAccount.update({
+        where: {
+          studentId_academicYearId: {
+            studentId: arrear.studentId,
+            academicYearId: arrear.academicYearId,
+          },
+        },
+        data: {
+          totalDue: { decrement: balanceDue },
+          balance: { decrement: balanceDue },
+          arrearsAmount: { decrement: balanceDue },
+        },
+      });
+    } catch {
+      // Le compte n'existe peut-être pas — non bloquant
+    }
+
+    // Ajuster previousArrears sur l'inscription si elle existe
+    try {
+      const enrollment = await this.prisma.studentEnrollment.findFirst({
+        where: { studentId: arrear.studentId, tenantId, academicYearId: arrear.academicYearId },
+      });
+      if (enrollment && Number(enrollment.previousArrears) > 0) {
+        await this.prisma.studentEnrollment.update({
+          where: { id: enrollment.id },
+          data: { previousArrears: { decrement: balanceDue } },
+        });
+      }
+    } catch {
+      // Non bloquant
+    }
+
+    // Supprimer les dépendances (reminders, promises, actions)
+    await this.prisma.collectionReminder.deleteMany({ where: { feeArrearId: id } });
+    await this.prisma.paymentPromise.deleteMany({ where: { feeArrearId: id } });
+    await this.prisma.collectionAction.deleteMany({ where: { feeArrearId: id } });
+
+    // Supprimer l'arriéré
+    await this.prisma.feeArrear.delete({ where: { id } });
+
+    return { success: true, deletedAmount: balanceDue };
   }
 }
 

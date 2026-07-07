@@ -1630,7 +1630,9 @@ function ManualArrearModal({
                         key={a.id}
                         type="button"
                         onClick={() => {
-                          setStudentId(a.id);
+                          // ⚠️ a.id = StudentAccount ID, a.studentId = Student ID
+                          // Le backend createManualArrear attend un Student ID (FK vers students)
+                          setStudentId(a.studentId || a.id);
                           // Mettre le nom dans le champ de recherche pour affichage
                           const name = a.student
                             ? `${a.student.lastName} ${a.student.firstName}${a.student.matricule ? ` · ${a.student.matricule}` : ''}`
@@ -1672,8 +1674,8 @@ function ManualArrearModal({
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                 <span className="text-sm font-medium text-emerald-800">
                   {(() => {
-                    const selected = filteredAccounts.find((a: any) => a.id === studentId) ||
-                      accounts.find((a: any) => a.id === studentId);
+                    const selected = filteredAccounts.find((a: any) => (a.studentId || a.id) === studentId) ||
+                      accounts.find((a: any) => (a.studentId || a.id) === studentId);
                     return selected?.student
                       ? `${selected.student.lastName} ${selected.student.firstName}${selected.student.matricule ? ` · ${selected.student.matricule}` : ''}`
                       : 'Élève sélectionné';

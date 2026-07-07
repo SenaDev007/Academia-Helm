@@ -1482,7 +1482,29 @@ function ManualArrearModal({
   saving: boolean;
 }) {
   const [accounts, setAccounts] = useState<any[]>([]);
+  const [schoolLevels, setSchoolLevels] = useState<any[]>([]);
+  const [classes, setClasses] = useState<any[]>([]);
+  const [selectedLevelId, setSelectedLevelId] = useState<string>('');
+  const [selectedClassId, setSelectedClassId] = useState<string>('');
+  const [studentSearch, setStudentSearch] = useState('');
 
+  // Charger les niveaux scolaires
+  useEffect(() => {
+    fetch('/api/school-levels', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setSchoolLevels(Array.isArray(d) ? d.filter((l: any) => l.id !== 'ALL') : []))
+      .catch(() => setSchoolLevels([]));
+  }, []);
+
+  // Charger les classes
+  useEffect(() => {
+    fetch('/api/all-classes', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setClasses(Array.isArray(d) ? d : (d?.data ?? [])))
+      .catch(() => setClasses([]));
+  }, []);
+
+  // Charger les comptes élèves
   useEffect(() => {
     if (!academicYearId) return;
     financeService
@@ -1491,10 +1513,49 @@ function ManualArrearModal({
       .catch(() => setAccounts([]));
   }, [academicYearId]);
 
+  // Classes filtrées par niveau scolaire
+  const filteredClasses = useMemo(() => {
+    if (!selectedLevelId) return classes;
+    const selectedLevel = schoolLevels.find((l) => l.id === selectedLevelId);
+    const slId = selectedLevel?.schoolLevelId || selectedLevelId;
+    return classes.filter((c: any) =>
+      c.schoolLevelId === slId ||
+      c.schoolLevel?.code === selectedLevel?.code ||
+      c.schoolLevel?.id === slId
+    );
+  }, [classes, selectedLevelId, schoolLevels]);
+
+  // Comptes filtrés par classe
+  const filteredAccounts = useMemo(() => {
+    let result = accounts;
+    if (selectedClassId) {
+      result = result.filter((a: any) =>
+        a.student?.studentEnrollments?.some((e: any) => e.classId === selectedClassId) ||
+        a.studentEnrollments?.some((e: any) => e.classId === selectedClassId)
+      );
+    }
+    if (studentSearch.trim()) {
+      const q = studentSearch.toLowerCase().trim();
+      result = result.filter((a: any) => {
+        const name = a.student
+          ? `${a.student.lastName} ${a.student.firstName}`.toLowerCase()
+          : '';
+        const matricule = (a.student?.matricule || '').toLowerCase();
+        return name.includes(q) || matricule.includes(q);
+      });
+    }
+    return result;
+  }, [accounts, selectedClassId, studentSearch]);
+
+  // Reset studentId quand on change de classe
+  useEffect(() => {
+    setStudentId('');
+  }, [selectedClassId, setStudentId]);
+
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6"
+        className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
@@ -1503,57 +1564,113 @@ function ManualArrearModal({
         </h3>
         <p className="text-xs text-slate-500 mb-4">
           Saisissez manuellement un arriéré pour un élève (issu des registres papier).
-          Le montant sera ajouté au total dû et visible dans le tableau de recouvrement.
+          Sélectionnez d'abord le niveau scolaire, puis la classe, puis l'élève.
         </p>
         <div className="space-y-4">
-          <div>
-            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
-              Élève
-            </Label>
-            <Select value={studentId} onValueChange={setStudentId}>
-              <SelectTrigger><SelectValue placeholder="Sélectionner un élève" /></SelectTrigger>
-              <SelectContent>
-                {accounts.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.id}
-                    {a.student?.matricule ? ` · ${a.student.matricule}` : ''}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {accounts.length === 0 && (
-              <p className="text-xs text-slate-500 mt-1">Aucun élève trouvé pour cette année.</p>
-            )}
+          {/* Ligne 1 : Niveau scolaire + Classe (côte à côte) */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
+                Niveau scolaire
+              </Label>
+              <Select value={selectedLevelId} onValueChange={(v) => { setSelectedLevelId(v); setSelectedClassId(''); }}>
+                <SelectTrigger><SelectValue placeholder="Tous les niveaux" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Tous les niveaux</SelectItem>
+                  {schoolLevels.map((l) => (
+                    <SelectItem key={l.id} value={l.id}>{l.label || l.code || l.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
+                Classe {selectedLevelId && <span className="text-slate-400 normal-case font-normal">(filtrée par niveau)</span>}
+              </Label>
+              <Select value={selectedClassId} onValueChange={setSelectedClassId}>
+                <SelectTrigger><SelectValue placeholder="Toutes les classes" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Toutes les classes</SelectItem>
+                  {filteredClasses.map((c: any) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <div>
-            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
-              Année scolaire concernée
-            </Label>
-            <Input
-              type="text"
-              value={academicYearName}
-              onChange={(e) => setAcademicYearName(e.target.value)}
-              placeholder={defaultYearName || 'ex: 2024-2025'}
-            />
-            <p className="text-[11px] text-slate-500 mt-1">
-              💡 Saisissez l'année scolaire de l'arriéré. Si l'année n'existe pas encore
-              dans le système (année antérieure), elle sera créée automatiquement.
-            </p>
+
+          {/* Ligne 2 : Recherche élève + Sélecteur élève */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
+                Rechercher un élève
+              </Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <Input
+                  value={studentSearch}
+                  onChange={(e) => setStudentSearch(e.target.value)}
+                  placeholder="Nom, prénom ou matricule..."
+                  className="pl-9"
+                />
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
+                Élève {selectedClassId && <span className="text-slate-400 normal-case font-normal">(filtré par classe)</span>}
+              </Label>
+              <Select value={studentId} onValueChange={setStudentId}>
+                <SelectTrigger><SelectValue placeholder="Sélectionner un élève" /></SelectTrigger>
+                <SelectContent>
+                  {filteredAccounts.map((a: any) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.id}
+                      {a.student?.matricule ? ` · ${a.student.matricule}` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {filteredAccounts.length === 0 && (
+                <p className="text-xs text-slate-500 mt-1">
+                  Aucun élève{selectedClassId ? ' dans cette classe' : ''}.
+                </p>
+              )}
+            </div>
           </div>
-          <div>
-            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
-              Montant de l'arriéré (FCFA)
-            </Label>
-            <Input
-              type="number"
-              min="0"
-              step="any"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="ex: 25000"
-              className="font-mono font-semibold"
-            />
+
+          {/* Ligne 3 : Année scolaire + Montant (côte à côte) */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
+                Année scolaire concernée
+              </Label>
+              <Input
+                type="text"
+                value={academicYearName}
+                onChange={(e) => setAcademicYearName(e.target.value)}
+                placeholder={defaultYearName || 'ex: 2024-2025'}
+              />
+              <p className="text-[11px] text-slate-500 mt-1">
+                💡 Si l'année n'existe pas, elle sera créée automatiquement.
+              </p>
+            </div>
+            <div>
+              <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
+                Montant de l'arriéré (FCFA)
+              </Label>
+              <Input
+                type="number"
+                min="0"
+                step="any"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="ex: 25000"
+                className="font-mono font-semibold"
+              />
+            </div>
           </div>
+
+          {/* Motif */}
           <div>
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
               Motif (optionnel)
@@ -1562,9 +1679,11 @@ function ManualArrearModal({
               type="text"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="ex: Arriéré année 2024-2025"
+              placeholder="ex: Arriéré frais de scolarité 2024-2025"
             />
           </div>
+
+          {/* Info */}
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
             <p className="text-xs text-amber-800">
               💡 Cet arriéré sera ajouté au compte financier de l'élève et apparaîtra
@@ -1572,6 +1691,8 @@ function ManualArrearModal({
               (email + WhatsApp + SMS) via les boutons d'action.
             </p>
           </div>
+
+          {/* Actions */}
           <div className="flex gap-2 justify-end pt-2">
             <Button variant="outline" onClick={onClose} disabled={saving}>Annuler</Button>
             <Button

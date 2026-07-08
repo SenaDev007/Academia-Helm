@@ -13,6 +13,7 @@
 import { Controller, Get, Patch, Post, Body, UseGuards } from '@nestjs/common';
 import { FinancialSettingsService } from './financial-settings.service';
 import { AutoRecoveryService } from './auto-recovery.service';
+import { ComptaAutoExportService } from './compta-auto-export.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -26,6 +27,7 @@ export class FinancialSettingsController {
   constructor(
     private readonly service: FinancialSettingsService,
     private readonly autoRecoveryService: AutoRecoveryService,
+    private readonly comptaAutoExportService: ComptaAutoExportService,
   ) {}
 
   /**
@@ -92,5 +94,38 @@ export class FinancialSettingsController {
   )
   async runAutoRecovery(@TenantId() tenantId: string) {
     return this.autoRecoveryService.runManualRecovery(tenantId);
+  }
+
+  /**
+   * POST /finance/settings/send-compta-export
+   * Déclenche manuellement l'envoi de l'export comptable mensuel au comptable.
+   * Utile pour tester la configuration sans attendre le jour du mois prévu.
+   */
+  @Post('send-compta-export')
+  @UseGuards(RolesGuard)
+  @Roles(
+    'SUPER_DIRECTOR', 'DIRECTOR', 'ADMIN', 'SUPER_ADMIN',
+    'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN',
+    'PROMOTEUR', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
+    'DIRECTOR_GENERAL', 'DIRECTEUR', 'DIRECTEUR_GENERAL',
+    'ACCOUNTANT',
+  )
+  async sendComptaExport(@TenantId() tenantId: string) {
+    const settings = await this.service.getForTenant(tenantId);
+    if (!settings) {
+      return { success: false, message: 'Paramètres financiers introuvables' };
+    }
+    if (!settings.comptaAutoExportEnabled) {
+      return { success: false, message: 'Export comptable automatique non activé. Activez-le dans les paramètres.' };
+    }
+    if (!settings.comptaAutoExportEmail) {
+      return { success: false, message: 'Aucun email de comptable configuré' };
+    }
+    return this.comptaAutoExportService.sendAutoExportForTenant(tenantId, {
+      comptaAutoExportEmail: settings.comptaAutoExportEmail,
+      comptaAutoExportFormat: settings.comptaAutoExportFormat,
+      comptaAutoExportDay: settings.comptaAutoExportDay,
+      comptaAutoExportLastSent: settings.comptaAutoExportLastSent,
+    });
   }
 }

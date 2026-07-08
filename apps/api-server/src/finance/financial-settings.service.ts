@@ -118,6 +118,11 @@ export class FinancialSettingsService {
       autoRecoveryFrequency: string;
       autoRecoveryTime: string;
       autoRecoveryMaxLevel: string;
+      // Export comptable automatique mensuel
+      comptaAutoExportEnabled: boolean;
+      comptaAutoExportEmail: string | null;
+      comptaAutoExportFormat: string;
+      comptaAutoExportDay: number;
     }>,
     performedById?: string,
   ) {
@@ -142,6 +147,11 @@ export class FinancialSettingsService {
     if (data.autoRecoveryFrequency != null) payload.autoRecoveryFrequency = data.autoRecoveryFrequency;
     if (data.autoRecoveryTime != null) payload.autoRecoveryTime = data.autoRecoveryTime;
     if (data.autoRecoveryMaxLevel != null) payload.autoRecoveryMaxLevel = data.autoRecoveryMaxLevel;
+    // Export comptable automatique
+    if (data.comptaAutoExportEnabled != null) payload.comptaAutoExportEnabled = data.comptaAutoExportEnabled;
+    if (data.comptaAutoExportEmail !== undefined) payload.comptaAutoExportEmail = data.comptaAutoExportEmail;
+    if (data.comptaAutoExportFormat != null) payload.comptaAutoExportFormat = data.comptaAutoExportFormat;
+    if (data.comptaAutoExportDay != null) payload.comptaAutoExportDay = data.comptaAutoExportDay;
 
     // Chiffrement de fedapaySecretKey si une nouvelle valeur est fournie
     if (data.fedapaySecretKey !== undefined) {

@@ -3299,3 +3299,122 @@ Stage Summary:
 - 3 endpoints backend + 3 routes BFF
 - Bouton "Export comptable" avec menu déroulant dans Bilan périodique
 - Compatible Sage, Ciel, EBP, QuickBooks, Pennylane, Odoo, etc.
+
+---
+Task ID: compta-export-phases-4-5-migrations-neon
+Agent: main
+Task: Exécuter migrations 007+008 sur Neon, Phase 4 (export auto mensuel), Phase 5 (doc OpenAPI)
+
+Work Log:
+
+## 1. Migration 007 exécutée sur Neon (compteOhada)
+- Script : /home/z/my-project/scripts/run-migration-007-neon.js
+- Tables modifiées : expense_categories (2/2 mappées), fee_categories (1/1 mappée)
+- Auto-mapping :
+  - Fournitures → 601000 (Achats de fournitures scolaires)
+  - Salaires → 641000 (Rémunérations du personnel)
+  - Inscription → 706100 (Scolarité - Frais d'inscription)
+
+## 2. Migration 008 exécutée sur Neon (comptaAutoExport)
+- Script : /home/z/my-project/scripts/run-migration-008-neon.js
+- Champs ajoutés sur financial_settings :
+  - comptaAutoExportEnabled (BOOLEAN DEFAULT false)
+  - comptaAutoExportEmail (TEXT)
+  - comptaAutoExportFormat (TEXT DEFAULT 'OHADA')
+  - comptaAutoExportDay (INTEGER DEFAULT 5)
+  - comptaAutoExportLastSent (TIMESTAMP)
+- 1 ligne existante vérifiée : enabled=false, format=OHADA, day=5
+
+## 3. Phase 4 — Export comptable automatique mensuel
+
+### Backend
+- Schéma Prisma : 5 champs comptaAutoExport* ajoutés sur FinancialSettings
+- Migration 008_sql créée
+- DTO : 4 champs optionnels ajoutés à UpdateFinancialSettingsDto
+- FinancialSettingsService.update() : gère les nouveaux champs
+- FinancialSettingsController : nouvel endpoint POST /send-compta-export
+
+### Service ComptaAutoExportService (nouveau)
+- Cron @Cron('0 8 * * *') — tous les jours à 08:00
+- Pour chaque tenant avec comptaAutoExportEnabled=true :
+  - Vérifie si aujourd'hui = comptaAutoExportDay
+  - Anti-doublon : skip si déjà envoyé ce mois (comptaAutoExportLastSent)
+  - Calcule période = mois précédent complet (1er → dernier jour)
+  - Génère écritures via ComptaExportService.getAllEcritures()
+  - Construit fichier selon format (FEC / OHADA / CSV)
+  - Envoie email HTML structuré avec pièce jointe via EmailService
+  - Met à jour comptaAutoExportLastSent
+- Méthode publique sendAutoExportForTenant() pour déclenchement manuel
+
+### Email envoyé au comptable
+- En-tête dégradé bleu marine avec nom école
+- Tableau récapitulatif (période, format, nombre écritures, fichier)
+- Fichier comptable en pièce jointe
+- BOM UTF-8 pour CSV (Excel français)
+- Note d'information sur la modification des paramètres
+
+### Frontend
+- FinanceService.sendComptaExportTest() : POST /api/finance/settings/send-compta-export
+- BFF route /api/finance/settings/send-compta-export/route.ts
+- FinanceSettingsContent.tsx :
+  - Form state étendu avec 4 champs comptaAutoExport*
+  - Loader + reloadSettings gèrent les nouveaux champs
+  - handleSave envoie les champs au backend
+  - Nouvel état sendingCompta + handler handleSendTestCompta
+  - Nouvelle carte "Export comptable automatique" (lg:col-span-2, emerald) :
+    - Toggle activation
+    - 3 champs : email comptable, format (OHADA/FEC/CSV), jour (1-28)
+    - Bloc info période (mois précédent complet)
+    - Bouton "Tester l'envoi" (déclenche immédiatement)
+    - Bloc compatibilité logiciels (13 logiciels listés)
+
+## 4. Phase 5 — Documentation OpenAPI
+
+### Fichier : docs/API-COMPTA-OPENAPI.md (440+ lignes)
+Documentation complète des 4 endpoints :
+- GET /finance/exports/compta/fec — FEC France (18 colonnes |)
+- GET /finance/exports/compta/ohada — CSV SYSCOHADA (;)
+- GET /finance/exports/compta/csv — CSV universel (,)
+- POST /finance/settings/send-compta-export — déclenchement manuel
+
+Contenu :
+- Base URL + authentification JWT + multi-tenant
+- Paramètres (dateFrom, dateTo, academicYearId) avec exemples
+- Codes de réponse (200, 400, 401, 500)
+- Headers de réponse (Content-Type, Content-Disposition)
+- Exemples de corps de réponse (extraits FEC, OHADA, CSV)
+- Table des 18 colonnes FEC avec descriptions
+- Codes d'erreur communs + actions correctives
+- Table des journaux comptables (JVT, JAC, JQC, JQB)
+- Section mapping comptes OHADA (catégories, méthodes paiement)
+- Rate limiting (100/h, 1000/j)
+- Exemples d'intégration : cURL, JavaScript fetch, Python requests
+- Changelog (v1.0, v1.1, v1.2 planned)
+
+## 5. Vérifications TypeScript
+- Frontend (3 fichiers) : OK
+- Backend (5 fichiers) : OK
+
+## Fichiers créés/modifiés (14)
+1. apps/api-server/prisma/schema.prisma — 5 champs comptaAutoExport* sur FinancialSettings
+2. apps/api-server/migrations/008_compta_auto_export.sql — NOUVEAU
+3. apps/api-server/src/finance/dto/index.ts — 4 champs optionnels ajoutés
+4. apps/api-server/src/finance/financial-settings.service.ts — update() gère comptaAutoExport*
+5. apps/api-server/src/finance/financial-settings.controller.ts — endpoint POST /send-compta-export
+6. apps/api-server/src/finance/compta-auto-export.service.ts — NOUVEAU service cron + email
+7. apps/api-server/src/finance/finance.module.ts — enregistrement ComptaAutoExportService
+8. apps/web-app/src/services/finance.service.ts — sendComptaExportTest()
+9. apps/web-app/src/app/api/finance/settings/send-compta-export/route.ts — NOUVEAU BFF
+10. apps/web-app/src/components/finance/FinanceSettingsContent.tsx — carte export auto + bouton test
+11. apps/web-app/src/lib/exports/reports-exports.ts — (inchangé, juste référence)
+12. scripts/run-migration-007-neon.js — NOUVEAU (exécution migration Neon)
+13. scripts/run-migration-008-neon.js — NOUVEAU
+14. docs/API-COMPTA-OPENAPI.md — NOUVEAU (440+ lignes)
+
+Stage Summary:
+- Migration 007 exécutée sur Neon : 3 catégories auto-mappées OHADA
+- Migration 008 exécutée sur Neon : 5 champs comptaAutoExport* ajoutés
+- Phase 4 complète : cron quotidien + email HTML + pièce jointe + anti-doublon
+- UI complète : carte "Export comptable automatique" avec toggle, 3 champs, bouton test
+- Documentation OpenAPI complète des 4 endpoints (cURL, JS, Python)
+- Compatible Sage, Ciel, EBP, QuickBooks, Pennylane, Odoo, etc.

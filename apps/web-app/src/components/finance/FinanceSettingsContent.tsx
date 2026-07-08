@@ -35,6 +35,8 @@ import {
   Save,
   RotateCw,
   Bell,
+  Mail,
+  Send,
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
@@ -250,6 +252,11 @@ export default function FinanceSettingsContent() {
     autoRecoveryFrequency: 'DAILY',
     autoRecoveryTime: '08:00',
     autoRecoveryMaxLevel: 'MISE_EN_DEMEURE',
+    // Export comptable automatique mensuel
+    comptaAutoExportEnabled: false,
+    comptaAutoExportEmail: '',
+    comptaAutoExportFormat: 'OHADA',
+    comptaAutoExportDay: 5,
     // Fedapay legacy — conservé pour compat BDD mais l'UI active est PaymentConfigSection
     fedapayEnabled: false,
     fedapayPublicKey: '',
@@ -259,6 +266,7 @@ export default function FinanceSettingsContent() {
   const [history, setHistory] = useState<any[]>([]);
   const [orionAlerts, setOrionAlerts] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [sendingCompta, setSendingCompta] = useState(false);
 
   /* --------------------------- Data loading --------------------------- */
 
@@ -306,6 +314,10 @@ export default function FinanceSettingsContent() {
             autoRecoveryFrequency: s.autoRecoveryFrequency || 'DAILY',
             autoRecoveryTime: s.autoRecoveryTime || '08:00',
             autoRecoveryMaxLevel: s.autoRecoveryMaxLevel || 'MISE_EN_DEMEURE',
+            comptaAutoExportEnabled: s.comptaAutoExportEnabled ?? false,
+            comptaAutoExportEmail: s.comptaAutoExportEmail || '',
+            comptaAutoExportFormat: s.comptaAutoExportFormat || 'OHADA',
+            comptaAutoExportDay: s.comptaAutoExportDay ?? 5,
             fedapayEnabled: s.fedapayEnabled ?? false,
             fedapayPublicKey: s.fedapayPublicKey ?? '',
             fedapaySecretKey: '',
@@ -363,6 +375,10 @@ export default function FinanceSettingsContent() {
           autoRecoveryFrequency: s.autoRecoveryFrequency || 'DAILY',
           autoRecoveryTime: s.autoRecoveryTime || '08:00',
           autoRecoveryMaxLevel: s.autoRecoveryMaxLevel || 'MISE_EN_DEMEURE',
+          comptaAutoExportEnabled: s.comptaAutoExportEnabled ?? false,
+          comptaAutoExportEmail: s.comptaAutoExportEmail || '',
+          comptaAutoExportFormat: s.comptaAutoExportFormat || 'OHADA',
+          comptaAutoExportDay: s.comptaAutoExportDay ?? 5,
           fedapayEnabled: s.fedapayEnabled ?? false,
           fedapayPublicKey: s.fedapayPublicKey ?? '',
           fedapaySecretKey: '',
@@ -408,6 +424,11 @@ export default function FinanceSettingsContent() {
         autoRecoveryFrequency: form.autoRecoveryFrequency,
         autoRecoveryTime: form.autoRecoveryTime,
         autoRecoveryMaxLevel: form.autoRecoveryMaxLevel,
+        // Export comptable automatique mensuel
+        comptaAutoExportEnabled: form.comptaAutoExportEnabled,
+        comptaAutoExportEmail: form.comptaAutoExportEmail || null,
+        comptaAutoExportFormat: form.comptaAutoExportFormat,
+        comptaAutoExportDay: Number(form.comptaAutoExportDay) || 5,
         // Fedapay (legacy — la config active est dans PaymentConfigSection)
         fedapayEnabled: form.fedapayEnabled,
       };
@@ -434,6 +455,54 @@ export default function FinanceSettingsContent() {
       });
     }
     setSaving(false);
+  };
+
+  // ─── Envoyer un export comptable test au comptable ───
+  // Déclenche manuellement l'envoi du fichier du mois précédent pour tester
+  // la configuration sans attendre le jour du mois prévu par le cron.
+  const handleSendTestCompta = async () => {
+    if (!form.comptaAutoExportEmail) {
+      toast({
+        title: 'Email manquant',
+        description: 'Saisissez d\'abord l\'email du comptable avant de tester l\'envoi.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    // Sauvegarder d'abord pour s'assurer que les derniers réglages sont persistés
+    setSendingCompta(true);
+    try {
+      // 1. Save settings
+      await financeService.updateSettings({
+        comptaAutoExportEnabled: form.comptaAutoExportEnabled,
+        comptaAutoExportEmail: form.comptaAutoExportEmail || null,
+        comptaAutoExportFormat: form.comptaAutoExportFormat,
+        comptaAutoExportDay: Number(form.comptaAutoExportDay) || 5,
+      });
+
+      // 2. Trigger manual send
+      const result = await financeService.sendComptaExportTest();
+      if (result?.success) {
+        toast({
+          title: '✅ Export envoyé',
+          description: result.message || `Email envoyé à ${form.comptaAutoExportEmail}`,
+        });
+      } else {
+        toast({
+          title: 'Envoi impossible',
+          description: result?.message || 'Erreur inconnue',
+          variant: 'destructive',
+        });
+      }
+    } catch (e: any) {
+      toast({
+        title: 'Erreur d\'envoi',
+        description: e?.message || 'Erreur réseau',
+        variant: 'destructive',
+      });
+    } finally {
+      setSendingCompta(false);
+    }
   };
 
   /* --------------------------- Derived state -------------------------- */
@@ -1006,6 +1075,127 @@ export default function FinanceSettingsContent() {
                           configurés dans la carte <em>Blocage & Recouvrement</em> ci-dessus.
                           Le système utilise ces valeurs pour déterminer automatiquement
                           le niveau de chaque relance envoyée.
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </SettingsCard>
+
+              {/* ---- Export comptable automatique mensuel ---- */}
+              <SettingsCard
+                icon={Mail}
+                iconColor="text-emerald-600"
+                iconBg="bg-emerald-100"
+                title="Export comptable automatique"
+                description="Envoi automatique mensuel du fichier comptable (FEC / OHADA / CSV) au comptable de l'établissement"
+                className="lg:col-span-2"
+              >
+                <div className="space-y-5">
+                  <ToggleSwitch
+                    checked={form.comptaAutoExportEnabled}
+                    onChange={(v) => setForm((f) => ({ ...f, comptaAutoExportEnabled: v }))}
+                    label="Activer l'export comptable automatique mensuel"
+                    description="Le cron envoie automatiquement le fichier comptable du mois précédent au comptable configuré, le jour du mois choisi."
+                  />
+
+                  {form.comptaAutoExportEnabled && (
+                    <>
+                      {/* Configuration destinataire + format + jour */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <FormField
+                          label="Email du comptable"
+                          hint="Adresse email destinataire du fichier comptable"
+                        >
+                          <Input
+                            type="email"
+                            value={form.comptaAutoExportEmail}
+                            onChange={(e) =>
+                              setForm((f) => ({ ...f, comptaAutoExportEmail: e.target.value }))
+                            }
+                            placeholder="comptable@ecole.bj"
+                            className="w-full"
+                          />
+                        </FormField>
+                        <FormField
+                          label="Format d'export"
+                          hint="FEC (France), OHADA (Bénin) ou CSV universel"
+                        >
+                          <select
+                            value={form.comptaAutoExportFormat}
+                            onChange={(e) =>
+                              setForm((f) => ({ ...f, comptaAutoExportFormat: e.target.value }))
+                            }
+                            className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                          >
+                            <option value="OHADA">OHADA — CSV SYSCOHADA (Bénin)</option>
+                            <option value="FEC">FEC — Fichier d'Écritures Comptables (France)</option>
+                            <option value="CSV">CSV universel — mappable librement</option>
+                          </select>
+                        </FormField>
+                        <FormField
+                          label="Jour d'envoi"
+                          hint="Jour du mois (1-28) où le fichier est envoyé"
+                        >
+                          <select
+                            value={String(form.comptaAutoExportDay)}
+                            onChange={(e) =>
+                              setForm((f) => ({ ...f, comptaAutoExportDay: Number(e.target.value) }))
+                            }
+                            className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                          >
+                            {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                              <option key={d} value={d}>{d} du mois</option>
+                            ))}
+                          </select>
+                        </FormField>
+                      </div>
+
+                      {/* Informations sur la période exportée */}
+                      <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
+                        <p className="text-sm text-emerald-900 leading-relaxed">
+                          📅 <strong>Période exportée :</strong> le 1er jour du mois à <em>comptaAutoExportDay</em>,
+                          le système envoie le fichier comptable du <strong>mois précédent complet</strong>
+                          (du 1er au dernier jour du mois précédent).
+                        </p>
+                        <p className="text-xs text-emerald-700 mt-2">
+                          Exemple : avec jour = 5, le 5 février, le fichier de janvier est envoyé.
+                          Le 5 mars, le fichier de février est envoyé. Etc.
+                        </p>
+                      </div>
+
+                      {/* Bouton test d'envoi */}
+                      <div className="flex items-center justify-between gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-700">Tester l'envoi maintenant</p>
+                          <p className="text-xs text-slate-500">
+                            Déclenche immédiatement l'envoi du fichier du mois précédent
+                            (utile pour vérifier que le comptable reçoit bien le fichier).
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleSendTestCompta}
+                          disabled={sendingCompta || !form.comptaAutoExportEmail}
+                          className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                        >
+                          {sendingCompta ? (
+                            <><RotateCw className="w-4 h-4 mr-1.5 animate-spin" />Envoi…</>
+                          ) : (
+                            <><Send className="w-4 h-4 mr-1.5" />Tester l'envoi</>
+                          )}
+                        </Button>
+                      </div>
+
+                      {/* Compatibilité logiciels */}
+                      <div className="p-3 bg-violet-50 border border-violet-100 rounded-lg">
+                        <p className="text-xs text-violet-800 leading-snug">
+                          💡 <strong>Logiciels compatibles :</strong> Sage (100, OHADA, Bénin),
+                          Ciel, EBP, QuickBooks, Pennylane, Yooz, Odoo, Dex, Compta Bénin, Xero,
+                          Free Acomba. Voir <em>docs/INTEGRATION-COMPTABILITE.md</em> pour la
+                          procédure d'import dans chaque logiciel.
                         </p>
                       </div>
                     </>

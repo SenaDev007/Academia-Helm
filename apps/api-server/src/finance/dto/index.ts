@@ -631,4 +631,21 @@ export class UpdateFinancialSettingsDto {
   @IsOptional()
   @IsNumber()
   expenseReceiptThreshold?: number | null;
+
+  // ─── Export comptable automatique mensuel ───
+  @IsOptional()
+  @IsBoolean()
+  comptaAutoExportEnabled?: boolean;
+
+  @IsOptional()
+  @IsString()
+  comptaAutoExportEmail?: string;
+
+  @IsOptional()
+  @IsString()
+  comptaAutoExportFormat?: string;
+
+  @IsOptional()
+  @IsNumber()
+  comptaAutoExportDay?: number;
 }

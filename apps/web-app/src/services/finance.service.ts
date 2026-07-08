@@ -538,6 +538,15 @@ class FinanceService {
     return financeFetch('/api/finance/settings/orion-alerts');
   }
 
+  /**
+   * Déclenche manuellement l'envoi de l'export comptable mensuel au comptable.
+   * POST /api/finance/settings/send-compta-export
+   * Retourne { success: boolean, message: string }.
+   */
+  async sendComptaExportTest(): Promise<any> {
+    return financeFetch('/api/finance/settings/send-compta-export', { method: 'POST' });
+  }
+
   // --- Audit ---
   async getAnomalies(limit: number = 30): Promise<any> {
     return financeFetch(`/api/finance/anomalies?limit=${limit}`);

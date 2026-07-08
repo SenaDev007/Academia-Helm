@@ -81,6 +81,7 @@ import { AutoRecoveryService } from './auto-recovery.service';
 import { FinancePdfExportController } from './finance-pdf-export.controller';
 import { ComptaExportService } from './compta-export.service';
 import { ComptaExportController } from './compta-export.controller';
+import { ComptaAutoExportService } from './compta-auto-export.service';
 import { CommunicationModule } from '../communication/communication.module';
 
 @Module({
@@ -163,6 +164,8 @@ import { CommunicationModule } from '../communication/communication.module';
     AutoRecoveryService,
     // Sous-module 7 — Export comptable (FEC + OHADA + CSV)
     ComptaExportService,
+    // Phase 4 — Export comptable automatique mensuel (cron + email)
+    ComptaAutoExportService,
   ],
   exports: [
     FeesPrismaService,

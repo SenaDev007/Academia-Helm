@@ -5078,6 +5078,17 @@ model FinancialSettings {
   autoRecoveryTime         String   @default("08:00")
   /// Niveau de relance maximum à envoyer automatiquement
   autoRecoveryMaxLevel     String   @default("MISE_EN_DEMEURE")
+  /// ─── Export comptable automatique mensuel ───
+  /// Active l'envoi automatique mensuel du fichier comptable au comptable
+  comptaAutoExportEnabled  Boolean  @default(false)
+  /// Email du comptable destinataire
+  comptaAutoExportEmail    String?
+  /// Format d'export : FEC, OHADA, CSV
+  comptaAutoExportFormat   String   @default("OHADA")
+  /// Jour du mois d'envoi (1-28)
+  comptaAutoExportDay      Int      @default(5)
+  /// Date du dernier export envoyé (pour éviter les doublons)
+  comptaAutoExportLastSent DateTime?
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
   tenant                   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)

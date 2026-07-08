@@ -4938,12 +4938,15 @@ model FinanceExpense {
   invoiceRef     String?
   /// Utilisateur qui doit approuver cette dépense (ex: promoteur, directeur)
   pendingApproverId String?
+  /// Caisse source (la caisse qui sera débitée à l'approbation)
+  cashRegisterId    String?
   createdAt      DateTime        @default(now())
   academicYear   AcademicYear    @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   approver       User?           @relation("FinanceExpenseApprover", fields: [approvedById], references: [id])
   category       ExpenseCategory @relation(fields: [categoryId], references: [id])
   requester      User            @relation("FinanceExpenseRequester", fields: [requestedById], references: [id], onDelete: Cascade)
   pendingApprover User?          @relation("FinanceExpensePendingApprover", fields: [pendingApproverId], references: [id])
+  cashRegister   CashRegister?   @relation("CashRegisterExpenseDebit", fields: [cashRegisterId], references: [id])
   tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, academicYearId])
@@ -5144,6 +5147,7 @@ model CashRegister {
   openedBy           User?                @relation("CashRegisterOpenedBy", fields: [openedByUserId], references: [id], onDelete: SetNull)
   closedBy           User?                @relation("CashRegisterClosedBy", fields: [closedByUserId], references: [id], onDelete: SetNull)
   transactions       FinanceTransaction[]
+  expenseDebits      FinanceExpense[]     @relation("CashRegisterExpenseDebit")
 
   @@unique([tenantId, code])
   @@index([tenantId])

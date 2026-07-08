@@ -507,6 +507,11 @@ export class CreateFinanceExpenseDto {
   @IsOptional()
   @IsString()
   pendingApproverId?: string;
+
+  /** ID de la caisse source (qui sera débitée à l'approbation) */
+  @IsOptional()
+  @IsString()
+  cashRegisterId?: string;
 }
 
 // ─── 13. DailyClosure ───────────────────────────────────────────────────────

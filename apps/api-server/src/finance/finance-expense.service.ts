@@ -22,6 +22,7 @@ export class FinanceExpenseService {
       vendor?: string;
       invoiceRef?: string;
       pendingApproverId?: string;
+      cashRegisterId?: string;
     },
     receiptThreshold?: number | null,
   ) {
@@ -50,6 +51,7 @@ export class FinanceExpenseService {
         status: 'PENDING',
         requestedById: data.requestedById,
         pendingApproverId: data.pendingApproverId ?? null,
+        cashRegisterId: data.cashRegisterId ?? null,
         overBudget: overrun,
         expenseDate: data.expenseDate ?? new Date(),
         vendor: data.vendor ?? null,
@@ -155,7 +157,6 @@ export class FinanceExpenseService {
     const { overrun } = await this.checkOverrun(tenantId, e.academicYearId, e.categoryId, amount);
 
     // ⚠️ RÈGLE 4 — Dépassement budget : validation Promoteur obligatoire
-    // Si la dépense dépasse le budget, seul le PROMOTEUR peut approuver
     if (overrun && approverRole && !['PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER'].includes(approverRole)) {
       throw new BadRequestException(
         'Cette dépense dépasse le budget de sa catégorie. Seul le Promoteur peut l\'approuver.',
@@ -172,6 +173,15 @@ export class FinanceExpenseService {
         performedById: approvedById,
       },
     });
+
+    // ⚠️ Débiter la caisse source si une caisse est associée
+    if (e.cashRegisterId) {
+      await this.prisma.cashRegister.update({
+        where: { id: e.cashRegisterId },
+        data: { currentBalance: { decrement: amount } },
+      });
+    }
+
     return this.prisma.financeExpense.update({
       where: { id },
       data: { status: 'APPROVED', approvedById, approvedAt: new Date(), overBudget: overrun },

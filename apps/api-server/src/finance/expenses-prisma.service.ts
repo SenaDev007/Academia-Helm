@@ -150,6 +150,8 @@ export class ExpensesPrismaService {
       description?: string;
       code?: string;
       isActive?: boolean;
+      compteOhada?: string | null;
+      compteOhadaLib?: string | null;
     }
   ) {
     const category = await this.findExpenseCategoryById(id, tenantId);

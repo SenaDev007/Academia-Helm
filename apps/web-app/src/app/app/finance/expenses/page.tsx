@@ -81,7 +81,13 @@ export default function ExpensesPage() {
 
   // ─── Modal catégorie (CRUD) ───
   const [modalCategory, setModalCategory] = useState(false);
-  const [categoryForm, setCategoryForm] = useState({ name: '', description: '', code: '' });
+  const [categoryForm, setCategoryForm] = useState({
+    name: '',
+    description: '',
+    code: '',
+    compteOhada: '',
+    compteOhadaLib: '',
+  });
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [savingCategory, setSavingCategory] = useState(false);
@@ -387,7 +393,7 @@ export default function ExpensesPage() {
       });
       if (!res.ok) throw new Error('Erreur lors de l\'enregistrement');
       setModalCategory(false);
-      setCategoryForm({ name: '', description: '', code: '' });
+      setCategoryForm({ name: '', description: '', code: '', compteOhada: '', compteOhadaLib: '' });
       setEditingCategoryId(null);
       // Recharger les catégories
       const data = await financeService.getExpenseCategories();
@@ -1249,7 +1255,7 @@ export default function ExpensesPage() {
                 <Button
                   size="sm"
                   onClick={() => {
-                    setCategoryForm({ name: '', description: '', code: '' });
+                    setCategoryForm({ name: '', description: '', code: '', compteOhada: '', compteOhadaLib: '' });
                     setModalCategory(true);
                   }}
                 >
@@ -1265,6 +1271,7 @@ export default function ExpensesPage() {
                   <TableRow className="bg-gray-50">
                     <TableHead>Nom</TableHead>
                     <TableHead>Code</TableHead>
+                    <TableHead>Compte OHADA</TableHead>
                     <TableHead>Description</TableHead>
                     <TableHead>Statut</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -1273,7 +1280,7 @@ export default function ExpensesPage() {
                 <TableBody>
                   {categories.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-gray-500 py-12">
+                      <TableCell colSpan={6} className="text-center text-gray-500 py-12">
                         <FileSpreadsheet className="w-10 h-10 text-slate-300 mx-auto mb-3" />
                         Aucune catégorie. Cliquez sur « Nouvelle catégorie » pour commencer.
                       </TableCell>
@@ -1283,6 +1290,18 @@ export default function ExpensesPage() {
                       <TableRow key={cat.id} className="hover:bg-slate-50">
                         <TableCell className="font-medium">{cat.name}</TableCell>
                         <TableCell><Badge variant="outline">{cat.code || '—'}</Badge></TableCell>
+                        <TableCell>
+                          {cat.compteOhada ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <Badge className="bg-violet-100 text-violet-700 border-violet-200 font-mono">{cat.compteOhada}</Badge>
+                              {cat.compteOhadaLib && (
+                                <span className="text-xs text-slate-500">{cat.compteOhadaLib}</span>
+                              )}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-amber-600 italic">Non mappé</span>
+                          )}
+                        </TableCell>
                         <TableCell className="text-sm text-slate-600">{cat.description || '—'}</TableCell>
                         <TableCell>
                           <Badge variant={cat.isActive !== false ? 'default' : 'outline'} className={cat.isActive !== false ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600'}>
@@ -1295,7 +1314,13 @@ export default function ExpensesPage() {
                             size="icon"
                             className="h-7 w-7"
                             onClick={() => {
-                              setCategoryForm({ name: cat.name, description: cat.description || '', code: cat.code || '' });
+                              setCategoryForm({
+                                name: cat.name,
+                                description: cat.description || '',
+                                code: cat.code || '',
+                                compteOhada: cat.compteOhada || '',
+                                compteOhadaLib: cat.compteOhadaLib || '',
+                              });
                               setEditingCategoryId(cat.id);
                               setModalCategory(true);
                             }}
@@ -1772,6 +1797,49 @@ export default function ExpensesPage() {
                   className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
+
+              {/* ─── Mapping comptable OHADA ─── */}
+              <div className="pt-4 border-t border-slate-100">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="h-6 w-6 rounded-md bg-violet-100 flex items-center justify-center">
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-violet-600" />
+                  </div>
+                  <Label className="text-xs font-semibold text-violet-700 uppercase tracking-wide">
+                    Mapping comptable OHADA
+                  </Label>
+                </div>
+                <p className="text-[11px] text-slate-500 mb-3 leading-snug">
+                  Numéro de compte OHADA (classe 6) pour l'export comptable FEC / OHADA.
+                  Laisser vide pour utiliser le compte par défaut « 607000 — Autres achats ».
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-[11px] text-slate-600 mb-1 block">N° compte</Label>
+                    <Input
+                      type="text"
+                      value={categoryForm.compteOhada}
+                      onChange={(e) => setCategoryForm((f) => ({ ...f, compteOhada: e.target.value }))}
+                      placeholder="ex: 605000"
+                      className="font-mono"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-[11px] text-slate-600 mb-1 block">Libellé compte</Label>
+                    <Input
+                      type="text"
+                      value={categoryForm.compteOhadaLib}
+                      onChange={(e) => setCategoryForm((f) => ({ ...f, compteOhadaLib: e.target.value }))}
+                      placeholder="ex: Achats matériel pédagogique"
+                    />
+                  </div>
+                </div>
+                <div className="mt-2 p-2 bg-violet-50 border border-violet-100 rounded text-[10px] text-violet-800 leading-snug">
+                  💡 Comptes courants : 601 (fournitures), 605 (matériel pédag.), 613 (loyer),
+                  614 (entretien), 615 (eau/élec), 621 (transport), 631 (frais financiers),
+                  641 (salaires), 645 (charges sociales).
+                </div>
+              </div>
+
               <div className="flex gap-2 justify-end pt-2 border-t border-slate-100">
                 <Button type="button" variant="outline" onClick={() => { setModalCategory(false); setEditingCategoryId(null); }} disabled={savingCategory}>Annuler</Button>
                 <Button type="submit" disabled={savingCategory}>

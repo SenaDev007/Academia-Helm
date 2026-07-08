@@ -4896,6 +4896,12 @@ model ExpenseCategory {
   description     String?
   code            String?
   parentId        String?
+  /// Numéro de compte OHADA pour l'export comptable (ex: 605000 pour matériel pédagogique)
+  /// Utilisé par FecExportService et OhadaExportService pour générer les écritures.
+  compteOhada     String?
+  /// Libellé du compte OHADA (ex: "Achats de matériel pédagogique")
+  /// Facultatif — si absent, le nom de la catégorie est utilisé.
+  compteOhadaLib  String?
   isActive        Boolean           @default(true)
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
@@ -10034,6 +10040,11 @@ model FeeCategory {
   name           String
   description    String?
   code           String?
+  /// Numéro de compte OHADA pour l'export comptable (côté vente, classe 7)
+  /// Ex: 706100 pour frais d'inscription, 706200 pour scolarité, 706400 pour cantine
+  compteOhada    String?
+  /// Libellé du compte OHADA (facultatif — si absent, le nom de la catégorie est utilisé)
+  compteOhadaLib String?
   isActive       Boolean         @default(true)
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt

@@ -266,6 +266,16 @@ export class CreateExpenseCategoryDto {
   @IsOptional()
   @IsString()
   schoolLevelId?: string;
+
+  /** Numéro de compte OHADA pour l'export comptable (ex: 605000) */
+  @IsOptional()
+  @IsString()
+  compteOhada?: string;
+
+  /** Libellé du compte OHADA (facultatif) */
+  @IsOptional()
+  @IsString()
+  compteOhadaLib?: string;
 }
 
 export class UpdateExpenseCategoryDto {
@@ -280,6 +290,16 @@ export class UpdateExpenseCategoryDto {
   @IsOptional()
   @IsString()
   code?: string;
+
+  /** Numéro de compte OHADA pour l'export comptable (ex: 605000) */
+  @IsOptional()
+  @IsString()
+  compteOhada?: string;
+
+  /** Libellé du compte OHADA (facultatif) */
+  @IsOptional()
+  @IsString()
+  compteOhadaLib?: string;
 }
 
 // ─── 8. Expense ─────────────────────────────────────────────────────────────

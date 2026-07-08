@@ -79,6 +79,8 @@ import { CashRegisterController } from './cash-register.controller';
 import { FinancePdfExportService } from './finance-pdf-export.service';
 import { AutoRecoveryService } from './auto-recovery.service';
 import { FinancePdfExportController } from './finance-pdf-export.controller';
+import { ComptaExportService } from './compta-export.service';
+import { ComptaExportController } from './compta-export.controller';
 import { CommunicationModule } from '../communication/communication.module';
 
 @Module({
@@ -117,6 +119,8 @@ import { CommunicationModule } from '../communication/communication.module';
     TenantPaymentConfigController,
     FeexPayController,
     FedapayController,
+    // Sous-module 7 — Export comptable (FEC + OHADA + CSV)
+    ComptaExportController,
   ],
   providers: [
     FeesPrismaService,
@@ -157,6 +161,8 @@ import { CommunicationModule } from '../communication/communication.module';
     CashRegisterService,
     FinancePdfExportService,
     AutoRecoveryService,
+    // Sous-module 7 — Export comptable (FEC + OHADA + CSV)
+    ComptaExportService,
   ],
   exports: [
     FeesPrismaService,

@@ -3170,3 +3170,132 @@ Stage Summary:
 - Nouvelle carte "Relance automatique" complète (toggle + canaux + fréquence + heure + niveau max)
 - Nouveau champ "Seuil justificatif dépense" dans Budget
 - Documentation complète sur l'intégration avec les logiciels comptables (FEC + OHADA + 13 logiciels compatibles)
+
+---
+Task ID: compta-export-implémentation-phases-1-2-3
+Agent: main
+Task: Implémenter le plan d'intégration comptable (Phases 1, 2, 3) — mapping OHADA + service export FEC + OHADA + CSV
+
+Work Log:
+
+## Phase 3 — Mapping comptable (fondations)
+
+### 3.a. Schéma Prisma
+- `expense_categories` : ajout `compteOhada` (TEXT) + `compteOhadaLib` (TEXT)
+- `fee_categories` : ajout `compteOhada` (TEXT) + `compteOhadaLib` (TEXT)
+
+### 3.b. Migration SQL (007_add_compte_ohada_mapping.sql)
+- ALTER TABLE sur les 2 tables
+- Mapping automatique intelligent pour les catégories existantes :
+  - Catégories de dépenses (classe 6) : 601, 605, 613, 614, 615, 621, 625, 631, 641, 645
+  - Catégories de frais (classe 7) : 706100, 706200, 706300, 706400, 706500, 706600
+  - Détection par mots-clés dans name/code (ex: "fourniture" → 601000)
+- Index sur `compteOhada` pour accélérer les exports
+
+### 3.c. DTO + Service backend
+- `CreateExpenseCategoryDto` + `UpdateExpenseCategoryDto` : ajout `compteOhada` + `compteOhadaLib`
+- `ExpensesPrismaService.updateExpenseCategory()` : signature étendue
+
+### 3.d. UI mapping dans Catégories de dépense
+- `expenses/page.tsx` sous-onglet Catégories :
+  - État `categoryForm` étendu avec `compteOhada` + `compteOhadaLib`
+  - Nouvelle colonne "Compte OHADA" dans le tableau (badge violet + libellé)
+  - Indicateur "Non mappé" (ambre italique) pour les catégories sans mapping
+  - Bloc "Mapping comptable OHADA" dans le modal création/édition :
+    - 2 inputs (N° compte + Libellé compte)
+    - Rappel des comptes courants (601, 605, 613, etc.)
+
+## Phase 1 — Service export FEC (France)
+
+### Fichier : compta-export.service.ts (nouveau)
+Service unifié `ComptaExportService` qui génère des écritures comptables double-entrée :
+
+- ** getAllEcritures(tenantId, filters) ** :
+  - Charge les transactions PAYMENT (Journal JVT/JQC/JQB) + dépenses APPROVED (Journal JAC)
+  - Pour chaque transaction : génère 2 écritures (débit trésorerie / crédit élève)
+  - Pour chaque dépense : génère 2 écritures (débit charge / crédit fournisseur)
+  - Mapping compte OHADA selon :
+    - Méthode paiement → compte trésorerie (571 caisse / 521 banque / 572 caisse sec.)
+    - Catégorie dépense → compte charge (601, 605, 607 par défaut)
+    - Catégorie frais → compte produit (706200 par défaut)
+  - Comptes auxiliaires : élève (matricule) / fournisseur (nom)
+
+- ** generateFecContent(ecritures) ** :
+  - Format texte 18 colonnes séparées par `|` (norme française)
+  - En-tête : JournalCode|JournalLib|EcritureNum|EcritureDate|CompteNum|...
+  - Montants avec virgule décimale (norme FEC)
+  - Dates au format YYYYMMDD
+
+- ** generateOhadaCsvContent(ecritures) ** :
+  - Format CSV séparateur `;` (norme SYSCOHADA)
+  - Échappement des ; et " dans les valeurs
+  - Compatible Sage OHADA, Compta Bénin, EBP OHADA, Odoo
+
+- ** generateUniversalCsvContent(ecritures) ** :
+  - Format CSV séparateur `,` mappable librement
+  - Compatible Sage 100, QuickBooks, Xero, Free Acomba
+
+### Fichier : compta-export.controller.ts (nouveau)
+3 endpoints GET :
+- `/finance/exports/compta/fec?dateFrom=...&dateTo=...&academicYearId=...`
+- `/finance/exports/compta/ohada?...`
+- `/finance/exports/compta/csv?...`
+
+Réponse : fichier texte/CSV avec `Content-Disposition: attachment; filename="..."`.
+BOM UTF-8 ajouté pour les CSV (Excel français décode correctement les accents).
+
+### Module NestJS
+`finance.module.ts` : `ComptaExportService` + `ComptaExportController` enregistrés.
+
+## Phase 1 + 2 — BFF routes (3 nouvelles)
+- `/api/finance/exports/compta/fec/route.ts`
+- `/api/finance/exports/compta/ohada/route.ts`
+- `/api/finance/exports/compta/csv/route.ts`
+
+Chaque route :
+- Proxy authentifié vers le backend
+- Transmet le fichier blob avec les bons headers
+- Récupère le nom de fichier depuis `content-disposition`
+
+## UI — Boutons export comptable dans Bilan périodique
+`FinanceReportsContent.tsx` :
+- Nouveau state `exportingCompta` + `showComptaMenu`
+- `handleExportCompta(format)` : téléchargement direct via `<a download>`
+- Bouton "Export comptable" (violet) avec menu déroulant 3 options :
+  1. FEC (France) — 18 colonnes |
+  2. OHADA (Bénin) — CSV SYSCOHADA séparateur ;
+  3. CSV universel — mapping libre QuickBooks/Xero
+- Visible uniquement sur sous-onglet "Bilan périodique"
+- Validation : dateFrom + dateTo obligatoires (sinon toast d'erreur)
+- Astuce en bas du menu : "Pensez à mapper vos catégories sur les comptes OHADA"
+
+## Vérifications TypeScript
+- Frontend (5 fichiers) : OK
+- Backend (5 fichiers) : OK
+
+## Fichiers modifiés/créés (12)
+1. apps/api-server/prisma/schema.prisma — ajout champs compteOhada
+2. apps/api-server/migrations/007_add_compte_ohada_mapping.sql — NOUVEAU
+3. apps/api-server/src/finance/dto/index.ts — DTOs étendus
+4. apps/api-server/src/finance/expenses-prisma.service.ts — signature étendue
+5. apps/api-server/src/finance/compta-export.service.ts — NOUVEAU service unifié
+6. apps/api-server/src/finance/compta-export.controller.ts — NOUVEAU 3 endpoints
+7. apps/api-server/src/finance/finance.module.ts — enregistrement service+controller
+8. apps/web-app/src/app/api/finance/exports/compta/fec/route.ts — NOUVEAU BFF
+9. apps/web-app/src/app/api/finance/exports/compta/ohada/route.ts — NOUVEAU BFF
+10. apps/web-app/src/app/api/finance/exports/compta/csv/route.ts — NOUVEAU BFF
+11. apps/web-app/src/app/app/finance/expenses/page.tsx — UI mapping OHADA catégories
+12. apps/web-app/src/components/finance/FinanceReportsContent.tsx — bouton export comptable
+
+## Phases restantes (à faire plus tard)
+- Phase 4 — Export automatique mensuel : cron + paramètres (email, format, jour)
+- Phase 5 — Documentation OpenAPI des endpoints
+
+Stage Summary:
+- Mapping OHADA configurable par catégorie de dépense + catégorie de frais
+- Migration auto-mapping intelligent (10 catégories dépenses + 6 catégories frais)
+- Service unifié générant écritures double-entrée conformes OHADA
+- 3 formats d'export : FEC (France), OHADA (Bénin), CSV universel
+- 3 endpoints backend + 3 routes BFF
+- Bouton "Export comptable" avec menu déroulant dans Bilan périodique
+- Compatible Sage, Ciel, EBP, QuickBooks, Pennylane, Odoo, etc.

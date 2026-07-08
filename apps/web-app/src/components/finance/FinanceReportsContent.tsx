@@ -32,7 +32,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Calendar, FileText, FileSpreadsheet, Loader2, Filter, Download,
   TrendingUp, TrendingDown, Wallet, BarChart3, AlertTriangle,
-  Layers, Archive, Coins, ArrowRightLeft, ChevronRight,
+  Layers, Archive, Coins, ArrowRightLeft, ChevronRight, Calculator,
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -116,6 +116,8 @@ export default function FinanceReportsContent() {
 
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState<'excel' | 'pdf' | null>(null);
+  const [exportingCompta, setExportingCompta] = useState<'fec' | 'ohada' | 'csv' | null>(null);
+  const [showComptaMenu, setShowComptaMenu] = useState(false);
 
   // ─── Chargement des listes de filtres ───
   useEffect(() => {
@@ -318,6 +320,63 @@ export default function FinanceReportsContent() {
     }
   };
 
+  // ─── Export comptable (FEC / OHADA / CSV universel) ───
+  // Télécharge un fichier d'écritures comptables à importer dans Sage, Ciel,
+  // EBP, QuickBooks, Pennylane, Odoo, etc. Voir docs/INTEGRATION-COMPTABILITE.md
+  const handleExportCompta = async (format: 'fec' | 'ohada' | 'csv') => {
+    if (!academicYear?.id) {
+      toast({ title: 'Année scolaire requise', variant: 'destructive' });
+      return;
+    }
+    if (!dateFrom || !dateTo) {
+      toast({
+        title: 'Période requise',
+        description: 'Sélectionnez une date de début et de fin pour l\'export comptable.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setExportingCompta(format);
+    setShowComptaMenu(false);
+    try {
+      const params = new URLSearchParams({
+        dateFrom,
+        dateTo,
+        academicYearId: academicYear.id,
+      });
+      const res = await fetch(`/api/finance/exports/compta/${format}?${params.toString()}`, {
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData?.error || `Erreur ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const fileName = res.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1]
+        || `export-compta-${format}-${dateFrom}_${dateTo}.${format === 'fec' ? 'txt' : 'csv'}`;
+
+      // Téléchargement direct
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+      const formatLabel = format === 'fec' ? 'FEC (France)' : format === 'ohada' ? 'OHADA (Bénin)' : 'CSV universel';
+      toast({
+        title: '✅ Export comptable généré',
+        description: `Format ${formatLabel} — fichier prêt à importer dans votre logiciel comptable.`,
+      });
+    } catch (e: any) {
+      toast({ title: 'Erreur export comptable', description: e?.message, variant: 'destructive' });
+    } finally {
+      setExportingCompta(null);
+    }
+  };
+
   // ─── Filtrage local des arriérés ───
   const filteredArrears = useMemo(() => {
     let list = arrears;
@@ -456,6 +515,90 @@ export default function FinanceReportsContent() {
           {exporting === 'pdf' ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <FileText className="w-4 h-4 mr-1.5" />}
           PDF
         </Button>
+
+        {/* ─── Export comptable (FEC + OHADA + CSV) — visible uniquement sur Bilan périodique ─── */}
+        {subTab === 'bilan' && (
+          <div className="relative">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowComptaMenu(!showComptaMenu)}
+              disabled={exportingCompta !== null}
+              className="border-violet-300 text-violet-700 hover:bg-violet-50"
+            >
+              {exportingCompta ? (
+                <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+              ) : (
+                <Calculator className="w-4 h-4 mr-1.5" />
+              )}
+              Export comptable
+            </Button>
+            {showComptaMenu && (
+              <>
+                {/* Overlay pour fermer le menu en cliquant à l'extérieur */}
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setShowComptaMenu(false)}
+                />
+                <div className="absolute right-0 top-9 z-50 bg-white rounded-lg shadow-xl border border-slate-200 py-1 min-w-[280px]">
+                  <div className="px-3 py-2 border-b border-slate-100">
+                    <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                      Format d'export comptable
+                    </p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">
+                      Importable dans Sage, Ciel, EBP, QuickBooks, Pennylane, Odoo…
+                    </p>
+                  </div>
+                  <button
+                    className="w-full text-left px-3 py-2 hover:bg-violet-50 flex items-start gap-2 border-b border-slate-50"
+                    onClick={() => handleExportCompta('fec')}
+                    disabled={exportingCompta !== null}
+                  >
+                    <div className="h-8 w-8 rounded-md bg-violet-100 flex items-center justify-center flex-shrink-0">
+                      <FileText className="w-4 h-4 text-violet-700" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">FEC (France)</p>
+                      <p className="text-[11px] text-slate-500">Fichier d'Écritures Comptables — 18 colonnes |</p>
+                    </div>
+                  </button>
+                  <button
+                    className="w-full text-left px-3 py-2 hover:bg-emerald-50 flex items-start gap-2 border-b border-slate-50"
+                    onClick={() => handleExportCompta('ohada')}
+                    disabled={exportingCompta !== null}
+                  >
+                    <div className="h-8 w-8 rounded-md bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                      <FileSpreadsheet className="w-4 h-4 text-emerald-700" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">OHADA (Bénin)</p>
+                      <p className="text-[11px] text-slate-500">CSV SYSCOHADA séparateur ; — Sage OHADA</p>
+                    </div>
+                  </button>
+                  <button
+                    className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-start gap-2"
+                    onClick={() => handleExportCompta('csv')}
+                    disabled={exportingCompta !== null}
+                  >
+                    <div className="h-8 w-8 rounded-md bg-blue-100 flex items-center justify-center flex-shrink-0">
+                      <Download className="w-4 h-4 text-blue-700" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">CSV universel</p>
+                      <p className="text-[11px] text-slate-500">Mapping libre — QuickBooks, Xero, etc.</p>
+                    </div>
+                  </button>
+                  <div className="px-3 py-2 bg-slate-50 border-t border-slate-100">
+                    <p className="text-[10px] text-slate-500 leading-snug">
+                      💡 Pensez à mapper vos catégories de dépenses sur les comptes OHADA
+                      (Onglet Dépenses → Catégories) pour un export précis.
+                    </p>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
     );
   };

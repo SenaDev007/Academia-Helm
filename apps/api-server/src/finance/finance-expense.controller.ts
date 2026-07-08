@@ -1,7 +1,7 @@
 /**
  * SOUS-MODULE 5 — Dépenses & Budget — API
  */
-import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { FinanceExpenseService } from './finance-expense.service';
 import { FinancialSettingsService } from './financial-settings.service';
 import { PrismaService } from '../database/prisma.service';

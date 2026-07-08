@@ -9,6 +9,7 @@ import {
   Get,
   Post,
   Put,
+  Delete,
   Body,
   Param,
   Query,
@@ -63,6 +64,15 @@ export class ExpensesPrismaController {
     @Body() updateDto: UpdateExpenseCategoryDto,
   ) {
     return this.expensesService.updateExpenseCategory(id, tenantId, updateDto);
+  }
+
+  @Delete('categories/:id')
+  async deleteCategory(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    // Soft delete : marquer comme inactive au lieu de supprimer
+    return this.expensesService.updateExpenseCategory(id, tenantId, { isActive: false } as any);
   }
 
   // Expenses

@@ -32,7 +32,7 @@ import {
   AlertCircle, TrendingDown, Users, Wallet, Target, RefreshCw,
   Send, Play, Loader2, ChevronRight, Filter, Search,
   Phone, Mail, FileText, UserCheck, Clock, AlertTriangle,
-  Zap, CheckCircle2, XCircle, Calendar, Plus, Eye, FileSpreadsheet, Trash2,
+  Zap, CheckCircle2, XCircle, Calendar, Plus, Eye, FileSpreadsheet, Trash2, Settings,
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -61,7 +61,7 @@ const TABS: Array<{ id: TabId; label: string; icon: any }> = [
   { id: 'actions', label: 'Actions', icon: Phone },
   { id: 'promises', label: 'Promesses', icon: Target },
   { id: 'cases', label: 'Dossiers', icon: FileText },
-  { id: 'settings', label: 'Paramétrage', icon: Zap },
+  { id: 'settings', label: 'Paramétrage', icon: Settings },
 ];
 
 const ARREARS_LEVEL_CONFIG: Record<string, { label: string; color: string; bg: string; border: string }> = {
@@ -1192,6 +1192,7 @@ function SettingsTab() {
                 <SelectContent>
                   <SelectItem value="DAILY">Quotidienne</SelectItem>
                   <SelectItem value="WEEKLY">Hebdomadaire (lundi)</SelectItem>
+                  <SelectItem value="MONTHLY">Mensuelle (1er du mois)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -3876,15 +3877,21 @@ function PromiseModal({
   const [date, setDate] = useState('');
   const [notes, setNotes] = useState('');
   const [createdBy, setCreatedBy] = useState('');
+  const [manualCreator, setManualCreator] = useState('');
   const [users, setUsers] = useState<any[]>([]);
 
   useEffect(() => {
     fetch('/api/settings/users', { credentials: 'include' })
       .then((r) => r.json())
       .then((d) => {
-        const list = Array.isArray(d) ? d : (d?.data ?? []);
-        setUsers(list);
-        if (list.length > 0) setCreatedBy(list[0].id);
+        const allUsers = Array.isArray(d) ? d : (d?.data ?? []);
+        // Filtrer : uniquement le personnel administratif (pas les enseignants)
+        const ADMIN_ROLES = ['DIRECTOR', 'ADMIN', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER', 'ACCOUNTANT', 'CASHIER', 'SECRETARY', 'SECRETARY_ACCOUNTANT', 'COMPTABLE', 'SECRETAIRE_COMPTABLE', 'DIRECTEUR', 'DIRECTEUR_GENERAL', 'SCHOOL_OWNER', 'SCHOOL_ADMIN'];
+        const filtered = allUsers.filter((u: any) => {
+          const role = (u.role || u.roles?.[0] || '').toUpperCase();
+          return ADMIN_ROLES.some(r => role.includes(r));
+        });
+        setUsers(filtered);
       })
       .catch(() => setUsers([]));
   }, []);
@@ -3894,7 +3901,7 @@ function PromiseModal({
     const amt = Number(amount);
     if (!amt || amt <= 0) return;
     if (!date) return;
-    onSubmit({ arrearId: data.arrearId, promisedAmount: amt, promiseDate: date, notes: notes.trim() || undefined, createdBy: createdBy || undefined });
+    onSubmit({ arrearId: data.arrearId, promisedAmount: amt, promiseDate: date, notes: notes.trim() || undefined, createdBy: createdBy || manualCreator || undefined });
   };
 
   return (
@@ -3930,11 +3937,11 @@ function PromiseModal({
           </div>
           <div>
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Créé par</Label>
-            {users.length > 0 ? (
+            {users.length > 0 && (
               <select
                 value={createdBy}
-                onChange={(e) => setCreatedBy(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-emerald-500 bg-white"
+                onChange={(e) => { setCreatedBy(e.target.value); setManualCreator(''); }}
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-emerald-500 bg-white mb-2"
               >
                 <option value="">— Sélectionner —</option>
                 {users.map((u) => (
@@ -3943,14 +3950,14 @@ function PromiseModal({
                   </option>
                 ))}
               </select>
-            ) : (
-              <Input
-                type="text"
-                value={createdBy}
-                onChange={(e) => setCreatedBy(e.target.value)}
-                placeholder="Saisir le nom de la personne…"
-              />
             )}
+            <Input
+              type="text"
+              value={manualCreator}
+              onChange={(e) => { setManualCreator(e.target.value); setCreatedBy(''); }}
+              placeholder="Ou saisir manuellement le nom…"
+              className="text-sm"
+            />
           </div>
           <div>
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Notes (optionnel)</Label>
@@ -3990,26 +3997,29 @@ function ActionModal({
   const [actionType, setActionType] = useState('CALL');
   const [description, setDescription] = useState('');
   const [performedBy, setPerformedBy] = useState(defaultPerformerId || '');
+  const [manualPerformer, setManualPerformer] = useState('');
   const [users, setUsers] = useState<any[]>([]);
 
-  // Charger la liste des utilisateurs (caissiers, comptables, directeurs)
+  // Charger la liste des utilisateurs (uniquement personnel administratif)
   useEffect(() => {
     fetch('/api/settings/users', { credentials: 'include' })
       .then((r) => r.json())
       .then((d) => {
-        const list = Array.isArray(d) ? d : (d?.data ?? []);
-        setUsers(list);
-        // Si pas de défaut, sélectionner le premier utilisateur
-        if (!defaultPerformerId && list.length > 0) {
-          setPerformedBy(list[0].id);
-        }
+        const allUsers = Array.isArray(d) ? d : (d?.data ?? []);
+        // Filtrer : uniquement le personnel administratif (pas les enseignants)
+        const ADMIN_ROLES = ['DIRECTOR', 'ADMIN', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER', 'ACCOUNTANT', 'CASHIER', 'SECRETARY', 'SECRETARY_ACCOUNTANT', 'COMPTABLE', 'SECRETAIRE_COMPTABLE', 'DIRECTEUR', 'DIRECTEUR_GENERAL', 'SCHOOL_OWNER', 'SCHOOL_ADMIN'];
+        const filtered = allUsers.filter((u: any) => {
+          const role = (u.role || u.roles?.[0] || '').toUpperCase();
+          return ADMIN_ROLES.some(r => role.includes(r));
+        });
+        setUsers(filtered);
       })
       .catch(() => setUsers([]));
   }, [defaultPerformerId]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit({ arrearId: data.arrearId, actionType, description: description.trim() || undefined, performedBy: performedBy || undefined });
+    onSubmit({ arrearId: data.arrearId, actionType, description: description.trim() || undefined, performedBy: performedBy || manualPerformer || undefined });
   };
 
   return (
@@ -4034,11 +4044,11 @@ function ActionModal({
           </div>
           <div>
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Effectué par</Label>
-            {users.length > 0 ? (
+            {users.length > 0 && (
               <select
                 value={performedBy}
-                onChange={(e) => setPerformedBy(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500 bg-white"
+                onChange={(e) => { setPerformedBy(e.target.value); setManualPerformer(''); }}
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500 bg-white mb-2"
               >
                 <option value="">— Sélectionner —</option>
                 {users.map((u) => (
@@ -4047,14 +4057,14 @@ function ActionModal({
                   </option>
                 ))}
               </select>
-            ) : (
-              <Input
-                type="text"
-                value={performedBy}
-                onChange={(e) => setPerformedBy(e.target.value)}
-                placeholder="Saisir le nom de la personne…"
-              />
             )}
+            <Input
+              type="text"
+              value={manualPerformer}
+              onChange={(e) => { setManualPerformer(e.target.value); setPerformedBy(''); }}
+              placeholder="Ou saisir manuellement le nom…"
+              className="text-sm"
+            />
           </div>
           <div>
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Description / Notes</Label>

@@ -18,10 +18,11 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useToast } from '@/components/ui/use-toast';
 import {
   Eye, CheckCircle, XCircle, FileSpreadsheet, FileText, Plus, Search,
   TrendingDown, Clock, CheckCircle2, XCircle as XCircleIcon, Wallet,
-  Loader2, Upload, Link2, Calendar, AlertTriangle,
+  Loader2, Upload, Link2, Calendar, AlertTriangle, Trash2,
 } from 'lucide-react';
 import {
   ModuleContentArea,
@@ -48,6 +49,7 @@ type Tab = 'dashboard' | 'expenses' | 'budget' | 'categories';
 
 export default function ExpensesPage() {
   const confirmDialog = useConfirmDialog();
+  const { toast } = useToast();
   const { academicYear } = useModuleContext();
   const { tenant } = useAppSession();
 
@@ -321,6 +323,27 @@ export default function ExpensesPage() {
       return null;
     } finally {
       setUploadingReceipt(false);
+    }
+  };
+
+  // ─── Supprimer catégorie ───
+  const handleDeleteCategory = async (categoryId: string, categoryName: string) => {
+    const ok = await confirmDialog.danger(
+      `La catégorie « ${categoryName} » sera supprimée définitivement.`,
+      'Supprimer la catégorie'
+    );
+    if (!ok) return;
+    try {
+      const res = await fetch(`/api/finance/expenses/categories/${categoryId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Erreur lors de la suppression');
+      toast({ title: '✅ Catégorie supprimée', description: `« ${categoryName} » a été supprimée.` });
+      const data = await financeService.getExpenseCategories();
+      setCategories(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e?.message || 'Erreur', variant: 'destructive' });
     }
   };
 
@@ -1032,6 +1055,15 @@ export default function ExpensesPage() {
                             title="Modifier"
                           >
                             <Eye className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 hover:bg-rose-100"
+                            onClick={() => handleDeleteCategory(cat.id, cat.name)}
+                            title="Supprimer"
+                          >
+                            <Trash2 className="h-3.5 w-3.5 text-rose-600" />
                           </Button>
                         </TableCell>
                       </TableRow>

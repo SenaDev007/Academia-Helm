@@ -83,6 +83,10 @@ export class AutoRecoveryService {
           // Hebdomadaire → seulement le lundi
           continue;
         }
+        if (settings.autoRecoveryFrequency === 'MONTHLY' && now.getDate() !== 1) {
+          // Mensuelle → seulement le 1er du mois
+          continue;
+        }
 
         // Lancer la relance pour ce tenant
         await this.runAutoRecoveryForTenant(settings);

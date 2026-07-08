@@ -36,8 +36,11 @@ import { Badge } from '@/components/ui/badge';
 import { financeService } from '@/services/finance.service';
 import { formatCurrency } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
-import { loadPdfLibs } from '@/lib/exports/pdf-loader';
 import { loadXlsx } from '@/lib/exports/xlsx-loader';
+import { loadPdfLibs } from '@/lib/exports/pdf-loader';
+import {
+  preloadSchoolLogo, drawOfficialHeader, drawFooter, formatAmount, SchoolHeader,
+} from '@/lib/exports/finance-exports';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
@@ -192,37 +195,61 @@ export default function TreasuryPage() {
       const { jsPDF, autoTable } = await loadPdfLibs();
       const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
       const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+
+      // En-tête officiel (pattern Encaissements)
+      const header: SchoolHeader = {
+        schoolName: tenant?.name || 'Établissement',
+        schoolLogoUrl: tenant?.id ? `/api/tenants/${tenant.id}/logo` : undefined,
+        academicYear: academicYear?.name || '',
+        schoolAddress: tenant?.address || null,
+        schoolPhone: tenant?.phone || null,
+        schoolEmail: tenant?.email || null,
+      };
+      const logoBase64 = await preloadSchoolLogo(header.schoolLogoUrl);
+      drawOfficialHeader(doc, header, pageWidth, logoBase64);
+
+      // Titre
+      let yPos = 50;
       doc.setFont('times', 'bold');
-      doc.setFontSize(16);
+      doc.setFontSize(14);
       doc.setTextColor(13, 31, 110);
-      doc.text(tenant?.name || 'Établissement', pageWidth / 2, 18, { align: 'center' });
-      doc.setFontSize(13);
-      doc.text('Clôtures journalières', pageWidth / 2, 26, { align: 'center' });
+      doc.text('Clôtures journalières', pageWidth / 2, yPos, { align: 'center' });
+      yPos += 8;
+
       doc.setFont('times', 'normal');
-      doc.setFontSize(10);
+      doc.setFontSize(9);
       doc.setTextColor(100, 100, 100);
-      if (academicYear?.name) doc.text(`Année : ${academicYear.name}`, pageWidth / 2, 32, { align: 'center' });
-      doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR')}`, pageWidth / 2, 37, { align: 'center' });
+      doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR')}`, pageWidth / 2, yPos, { align: 'center' });
+      yPos += 5;
+
+      doc.setDrawColor(13, 31, 110);
+      doc.setLineWidth(0.5);
+      doc.line(14, yPos, pageWidth - 14, yPos);
+      yPos += 5;
 
       const tableData = closures.map((c) => [
         new Date(c.date).toLocaleDateString('fr-FR'),
         c.closureType === 'AUTO' ? 'Auto' : 'Manuel',
-        (Number(c.totalIncome ?? 0)).toLocaleString('fr-FR'),
-        (Number(c.totalExpense ?? 0)).toLocaleString('fr-FR'),
-        (Number(c.netBalance ?? 0)).toLocaleString('fr-FR'),
+        formatAmount(c.totalIncome),
+        formatAmount(c.totalExpense),
+        formatAmount(c.netBalance),
         c.anomalyDetected ? 'Oui' : 'Non',
         c.validator ? `${c.validator.firstName} ${c.validator.lastName}` : '—',
       ]);
-      tableData.push(['TOTAL', '', kpis.totalIncome.toLocaleString('fr-FR'), kpis.totalExpense.toLocaleString('fr-FR'), kpis.totalNet.toLocaleString('fr-FR'), '', '']);
+      tableData.push(['TOTAL', '', formatAmount(kpis.totalIncome), formatAmount(kpis.totalExpense), formatAmount(kpis.totalNet), '', '']);
 
       autoTable(doc, {
-        head: [['Date', 'Type', 'Encaissé', 'Dépensé', 'Solde', 'Anomalie', 'Validée par']],
+        head: [['Date', 'Type', 'Encaissé (FCFA)', 'Dépensé (FCFA)', 'Solde (FCFA)', 'Anomalie', 'Validée par']],
         body: tableData,
-        startY: 42,
+        startY: yPos,
         theme: 'grid',
-        headStyles: { fillColor: [13, 31, 110], textColor: 255, fontStyle: 'bold', fontSize: 10 },
-        bodyStyles: { fontSize: 9 },
-        columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } },
+        headStyles: { fillColor: [13, 31, 110], textColor: 255, fontStyle: 'bold', fontSize: 9, halign: 'center' },
+        bodyStyles: { fontSize: 8, textColor: [40, 40, 40] },
+        columnStyles: {
+          2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' },
+          5: { halign: 'center' },
+        },
         didParseCell: (data: any) => {
           if (data.row.index === tableData.length - 1 && data.section === 'body') {
             data.cell.styles.fontStyle = 'bold';
@@ -233,7 +260,11 @@ export default function TreasuryPage() {
             if (data.cell.raw === 'Oui') { data.cell.styles.textColor = [220, 38, 38]; data.cell.styles.fontStyle = 'bold'; }
           }
         },
+        didDrawPage: (data: any) => {
+          drawFooter(doc, pageWidth, pageHeight, data.pageNumber);
+        },
       });
+
       doc.save(`clotures-${new Date().toISOString().slice(0, 10)}.pdf`);
     } catch (e: any) {
       toast({ title: 'Erreur export', description: e?.message, variant: 'destructive' });

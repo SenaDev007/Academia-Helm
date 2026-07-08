@@ -31,7 +31,7 @@ import { formatCurrency } from '@/lib/utils';
  * Ex: 10000 → "10 000" (pas "10 000" avec U+00A0)
  * jsPDF/Helvetica ne gère pas les espaces insécables → troncature.
  */
-function formatAmount(value: number | string): string {
+export function formatAmount(value: number | string): string {
   const num = typeof value === 'string' ? parseFloat(value) : value;
   if (isNaN(num)) return '0';
   // Formater manuellement avec espaces simples
@@ -585,7 +585,7 @@ export async function exportTransactionsToPdf(
 /*  En-tête officiel République du Bénin (commun à tous les PDF)       */
 /* ------------------------------------------------------------------ */
 
-function drawOfficialHeader(doc: any, header: SchoolHeader, pageWidth: number, logoBase64?: string | null) {
+export function drawOfficialHeader(doc: any, header: SchoolHeader, pageWidth: number, logoBase64?: string | null) {
   const margin = 14;
   const headerWidth = pageWidth - 2 * margin;
   const colWidth = headerWidth / 3;
@@ -721,7 +721,7 @@ function drawDesignDivider(doc: any, centerX: number, y: number, totalWidth: num
   doc.line(centerX + 1.5, y, centerX + totalWidth / 2, y);
 }
 
-function drawFooter(doc: any, pageWidth: number, pageHeight: number, pageNumber: number) {
+export function drawFooter(doc: any, pageWidth: number, pageHeight: number, pageNumber: number) {
   doc.setFontSize(7);
   doc.setTextColor(150, 150, 150);
   doc.text(`Page ${pageNumber}`, pageWidth - 20, pageHeight - 6);

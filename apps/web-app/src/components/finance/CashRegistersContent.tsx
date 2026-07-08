@@ -1206,7 +1206,7 @@ export default function CashRegistersContent() {
                                 <span className="text-xs text-slate-600">{t.toName || ''}</span>
                               </div>
                             </td>
-                            <td className="px-4 py-3 text-right font-bold text-indigo-600">
+                            <td className="px-4 py-3 text-right font-bold text-indigo-600 whitespace-nowrap">
                               {formatCurrency(Number(t.amount || 0))}
                             </td>
                             <td className="px-4 py-3 text-xs text-slate-600 max-w-xs truncate">

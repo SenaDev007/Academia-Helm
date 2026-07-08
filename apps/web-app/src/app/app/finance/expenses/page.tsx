@@ -1024,12 +1024,13 @@ export default function ExpensesPage() {
                     <TableHead className="text-right">Restant</TableHead>
                     <TableHead className="w-[200px]">Utilisation</TableHead>
                     <TableHead>Statut</TableHead>
+                    <TableHead className="text-center">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {budgets.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-gray-500 py-12">
+                      <TableCell colSpan={7} className="text-center text-gray-500 py-12">
                         <Wallet className="w-10 h-10 text-slate-300 mx-auto mb-3" />
                         Aucun budget configuré. Cliquez sur « Définir un budget » pour commencer.
                       </TableCell>
@@ -1071,6 +1072,58 @@ export default function ExpensesPage() {
                             </div>
                           </TableCell>
                           <TableCell>{statusBadge}</TableCell>
+                          <TableCell className="text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 hover:bg-indigo-100"
+                                onClick={() => {
+                                  setBudgetForm({
+                                    categoryId: b.categoryId,
+                                    allocatedAmount: String(Number(b.allocatedAmount) || 0),
+                                  });
+                                  setModalBudget(true);
+                                }}
+                                title="Modifier le budget"
+                              >
+                                <Eye className="h-3.5 w-3.5 text-indigo-600" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 hover:bg-rose-100"
+                                onClick={async () => {
+                                  const ok = await confirmDialog.danger(
+                                    `Le budget pour « ${b.category?.name ?? b.categoryId} » sera supprimé.`,
+                                    'Supprimer le budget'
+                                  );
+                                  if (!ok) return;
+                                  try {
+                                    // Supprimer = mettre allocatedAmount à 0 (upsert)
+                                    const res = await fetch('/api/finance/expenses-v2/budgets', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      credentials: 'include',
+                                      body: JSON.stringify({
+                                        academicYearId: academicYear?.id,
+                                        categoryId: b.categoryId,
+                                        allocatedAmount: 0,
+                                      }),
+                                    });
+                                    if (!res.ok) throw new Error('Erreur');
+                                    toast({ title: '✅ Budget supprimé', description: 'Le budget a été réinitialisé à 0.' });
+                                    loadBudgets();
+                                  } catch (e: any) {
+                                    toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
+                                  }
+                                }}
+                                title="Supprimer le budget"
+                              >
+                                <Trash2 className="h-3.5 w-3.5 text-rose-600" />
+                              </Button>
+                            </div>
+                          </TableCell>
                         </TableRow>
                       );
                     })
@@ -1083,7 +1136,7 @@ export default function ExpensesPage() {
                       <td className="px-3 py-2 text-right font-mono text-sm text-indigo-700">{formatCurrency(budgets.reduce((s, b) => s + (Number(b.allocatedAmount) || 0), 0))}</td>
                       <td className="px-3 py-2 text-right font-mono text-sm text-slate-600">{formatCurrency(budgets.reduce((s, b) => s + (Number(b.spent) || 0), 0))}</td>
                       <td className="px-3 py-2 text-right font-mono text-sm text-emerald-700">{formatCurrency(budgets.reduce((s, b) => s + (Number(b.remaining) || 0), 0))}</td>
-                      <td colSpan={2}></td>
+                      <td colSpan={3}></td>
                     </tr>
                   </tfoot>
                 )}

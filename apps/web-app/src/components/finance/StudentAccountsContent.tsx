@@ -343,6 +343,12 @@ export default function StudentAccountsContent() {
         schoolAddress: tenant?.address || null,
         schoolPhone: tenant?.phone || null,
         schoolEmail: tenant?.email || null,
+        // Infos multi-année (FIFO)
+        actualArrears: Number(account.actualArrears) || 0,
+        feeArrears: account.feeArrears || [],
+        totalDue: Number(account.totalDue) || 0,
+        totalPaid: Number(account.totalPaid) || 0,
+        balance: Number(account.balance) || 0,
       });
       setPreviewDoc({
         filePath: url,

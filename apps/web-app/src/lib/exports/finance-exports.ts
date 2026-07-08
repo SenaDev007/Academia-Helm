@@ -190,6 +190,16 @@ export interface StudentAccountRow {
   totalPaid?: number;
   totalDue?: number;
   status?: string;
+  /** Total des arriérés (FeeArrear ouverts, toutes années) — ajout multi-année */
+  actualArrears?: number;
+  /** Détail des arriérés par année scolaire (pour info) */
+  feeArrears?: Array<{
+    academicYearName: string;
+    totalDue: number;
+    totalPaid: number;
+    balanceDue: number;
+    notes?: string;
+  }>;
   student?: {
     firstName?: string;
     lastName?: string;
@@ -735,6 +745,7 @@ export async function exportStudentAccountsToExcel(
   const totalDue = accounts.reduce((sum, a) => sum + (Number(a.totalDue) || 0), 0);
   const totalPaid = accounts.reduce((sum, a) => sum + (Number(a.totalPaid) || 0), 0);
   const totalBalance = accounts.reduce((sum, a) => sum + (Number(a.balance) || 0), 0);
+  const totalArrears = accounts.reduce((sum, a) => sum + (Number(a.actualArrears) || 0), 0);
 
   const data: any[][] = [
     ['', 'République du Bénin', ''],
@@ -746,7 +757,7 @@ export async function exportStudentAccountsToExcel(
     [header.academicYear ? `Année scolaire : ${header.academicYear}` : '', '', ''],
     [header.classFilter ? `Classe : ${header.classFilter}` : 'Toutes les classes', '', ''],
     ['', '', ''],
-    ['Matricule', 'Nom', 'Prénom', 'Classe', 'Niveau', 'Solde dû (FCFA)', 'Total payé (FCFA)', 'Total à payer (FCFA)', 'Statut'],
+    ['Matricule', 'Nom', 'Prénom', 'Classe', 'Niveau', 'Arriérés (FCFA)', 'Solde dû (FCFA)', 'Total payé (FCFA)', 'Total à payer (FCFA)', 'Statut'],
   ];
 
   accounts.forEach((a) => {
@@ -759,6 +770,7 @@ export async function exportStudentAccountsToExcel(
       a.student?.firstName || '—',
       className,
       level,
+      Number(a.actualArrears) || 0,
       Number(a.balance) || 0,
       Number(a.totalPaid) || 0,
       Number(a.totalDue) || 0,
@@ -767,7 +779,7 @@ export async function exportStudentAccountsToExcel(
   });
 
   data.push(['']);
-  data.push(['', '', '', '', 'TOTAL', totalBalance, totalPaid, totalDue, '']);
+  data.push(['', '', '', '', 'TOTAL', totalArrears, totalBalance, totalPaid, totalDue, '']);
 
   const ws = XLSX.utils.aoa_to_sheet(data);
   ws['!cols'] = [
@@ -776,6 +788,7 @@ export async function exportStudentAccountsToExcel(
     { wch: 20 }, // Prénom
     { wch: 18 }, // Classe
     { wch: 14 }, // Niveau
+    { wch: 14 }, // Arriérés
     { wch: 16 }, // Solde
     { wch: 16 }, // Payé
     { wch: 18 }, // À payer
@@ -803,7 +816,7 @@ export async function exportStudentAccountsToExcel(
 
   // En-tête tableau (ligne 9)
   const headerRow = 9;
-  for (let c = 0; c < 9; c++) {
+  for (let c = 0; c < 10; c++) {
     const cellRef = XLSX.utils.encode_cell({ r: headerRow, c });
     setCellStyle(ws, cellRef, {
       font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 },
@@ -824,16 +837,17 @@ export async function exportStudentAccountsToExcel(
     const r = dataStartRow + idx;
     const status = getPaymentStatus(a);
     const colors = STATUS_COLORS[status];
-    for (let c = 0; c < 9; c++) {
+    for (let c = 0; c < 10; c++) {
       const cellRef = XLSX.utils.encode_cell({ r, c });
       const isAmount = c >= 5 && c <= 8;
+      const isArrears = c === 5;
       setCellStyle(ws, cellRef, {
         font: {
           sz: 10,
           bold: isAmount,
-          color: { rgb: c === 8 ? colors.text : (isAmount ? '000000' : '1a1a1a') },
+          color: { rgb: c === 9 ? colors.text : (isArrears && Number(a.actualArrears) > 0 ? '92400E' : (isAmount ? '000000' : '1a1a1a')) },
         },
-        fill: { fgColor: { rgb: c === 8 ? colors.bg : 'FFFFFF' } },
+        fill: { fgColor: { rgb: c === 9 ? colors.bg : (isArrears && Number(a.actualArrears) > 0 ? 'FEF3C7' : 'FFFFFF') } },
         alignment: {
           horizontal: c === 1 || c === 2 ? 'left' : (isAmount ? 'right' : 'center'),
           vertical: 'center',
@@ -850,12 +864,12 @@ export async function exportStudentAccountsToExcel(
 
   // Ligne total
   const totalRow = dataStartRow + accounts.length + 1;
-  for (let c = 0; c < 9; c++) {
+  for (let c = 0; c < 10; c++) {
     const cellRef = XLSX.utils.encode_cell({ r: totalRow, c });
     setCellStyle(ws, cellRef, {
       font: { bold: true, sz: 11, color: { rgb: '92400E' } },
       fill: { fgColor: { rgb: 'FEF3C7' } },
-      alignment: { horizontal: c >= 5 && c <= 7 ? 'right' : 'center', vertical: 'center' },
+      alignment: { horizontal: c >= 5 && c <= 8 ? 'right' : 'center', vertical: 'center' },
       border: {
         top: { style: 'medium', color: { rgb: '92400E' } },
         bottom: { style: 'medium', color: { rgb: '92400E' } },
@@ -927,6 +941,7 @@ export async function exportStudentAccountsToPdf(
   const totalDue = accounts.reduce((sum, a) => sum + (Number(a.totalDue) || 0), 0);
   const totalPaid = accounts.reduce((sum, a) => sum + (Number(a.totalPaid) || 0), 0);
   const totalBalance = accounts.reduce((sum, a) => sum + (Number(a.balance) || 0), 0);
+  const totalArrears = accounts.reduce((sum, a) => sum + (Number(a.actualArrears) || 0), 0);
 
   const tableData = accounts.map((a) => {
     const status = getPaymentStatus(a);
@@ -936,6 +951,7 @@ export async function exportStudentAccountsToPdf(
       a.student?.firstName || '—',
       a.studentEnrollments?.[0]?.class?.name || '—',
       a.student?.schoolLevel?.name || '—',
+      formatAmount(a.actualArrears),
       formatAmount(a.balance),
       formatAmount(a.totalPaid),
       formatAmount(a.totalDue),
@@ -945,6 +961,7 @@ export async function exportStudentAccountsToPdf(
 
   tableData.push([
     '', '', '', '', 'TOTAL',
+    formatAmount(totalArrears),
     formatAmount(totalBalance),
     formatAmount(totalPaid),
     formatAmount(totalDue),
@@ -952,7 +969,7 @@ export async function exportStudentAccountsToPdf(
   ]);
 
   (doc as any).autoTable({
-    head: [['Matricule', 'Nom', 'Prénom', 'Classe', 'Niveau', 'Solde dû', 'Payé', 'À payer', 'Statut']],
+    head: [['Matricule', 'Nom', 'Prénom', 'Classe', 'Niveau', 'Arriérés', 'Solde dû', 'Payé', 'À payer', 'Statut']],
     body: tableData,
     startY: yPos,
     theme: 'grid',
@@ -972,15 +989,16 @@ export async function exportStudentAccountsToPdf(
       halign: 'center',
     },
     columnStyles: {
-      0: { cellWidth: 22, halign: 'center' },
+      0: { cellWidth: 20, halign: 'center' },
       1: { cellWidth: 'auto', halign: 'left' },
       2: { cellWidth: 'auto', halign: 'left' },
-      3: { cellWidth: 22, halign: 'center' },
-      4: { cellWidth: 20, halign: 'center' },
-      5: { cellWidth: 30, halign: 'right' },
-      6: { cellWidth: 30, halign: 'right' },
-      7: { cellWidth: 30, halign: 'right' },
-      8: { cellWidth: 20, halign: 'center' },
+      3: { cellWidth: 20, halign: 'center' },
+      4: { cellWidth: 18, halign: 'center' },
+      5: { cellWidth: 24, halign: 'right' },  // Arriérés
+      6: { cellWidth: 26, halign: 'right' },  // Solde dû
+      7: { cellWidth: 26, halign: 'right' },  // Payé
+      8: { cellWidth: 28, halign: 'right' },  // À payer
+      9: { cellWidth: 18, halign: 'center' }, // Statut
     },
     didParseCell: (data: any) => {
       // Ligne total
@@ -990,8 +1008,8 @@ export async function exportStudentAccountsToPdf(
         data.cell.styles.textColor = [146, 64, 14];
         data.cell.styles.fontSize = 9;
       }
-      // Colonne Statut (index 8) : couleur selon le statut
-      if (data.section === 'body' && data.column.index === 8 && data.row.index < tableData.length - 1) {
+      // Colonne Statut (index 9) : couleur selon le statut
+      if (data.section === 'body' && data.column.index === 9 && data.row.index < tableData.length - 1) {
         const statusLabel = data.cell.raw;
         let status: 'PAID' | 'PARTIAL' | 'UNPAID' = 'UNPAID';
         if (statusLabel === 'Soldé') status = 'PAID';
@@ -1007,6 +1025,15 @@ export async function exportStudentAccountsToPdf(
         data.cell.styles.fillColor = [r, g, b];
         data.cell.styles.textColor = [tr, tg, tb];
         data.cell.styles.fontStyle = 'bold';
+      }
+      // Colonne Arriérés (index 5) : surlignage ambre si > 0
+      if (data.section === 'body' && data.column.index === 5 && data.row.index < tableData.length - 1) {
+        const arrearValue = Number(String(data.cell.raw).replace(/[^\d-]/g, '')) || 0;
+        if (arrearValue > 0) {
+          data.cell.styles.fillColor = [254, 243, 199]; // bg-amber-100
+          data.cell.styles.textColor = [146, 64, 14];   // text-amber-700
+          data.cell.styles.fontStyle = 'bold';
+        }
       }
     },
     didDrawPage: (data: any) => {
@@ -1025,7 +1052,24 @@ export async function exportStudentAccountsToPdf(
 
 export async function exportStudentHistoryToPdf(
   transactions: TransactionRow[],
-  header: SchoolHeader & { studentName: string; studentMatricule: string; className?: string }
+  header: SchoolHeader & {
+    studentName: string;
+    studentMatricule: string;
+    className?: string;
+    /** Total des arriérés (FeeArrear ouverts) — multi-année */
+    actualArrears?: number;
+    /** Détail des arriérés par année scolaire */
+    feeArrears?: Array<{
+      academicYearName: string;
+      totalDue: number;
+      totalPaid: number;
+      balanceDue: number;
+      notes?: string;
+    }>;
+    totalDue?: number;
+    totalPaid?: number;
+    balance?: number;
+  }
 ): Promise<{ blob: Blob; url: string }> {
   const jsPDF = await loadJsPdf();
   await loadAutoTable(jsPDF);
@@ -1079,6 +1123,135 @@ export async function exportStudentHistoryToPdf(
   doc.setLineWidth(0.3);
   doc.line(14, yPos, pageWidth - 14, yPos);
   yPos += 5;
+
+  // ─── Section Situation du compte (multi-année + FIFO) ───
+  if (header.totalDue != null || header.actualArrears) {
+    doc.setFont('times', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(13, 31, 110);
+    doc.text('Situation du compte', 14, yPos);
+    yPos += 5;
+
+    doc.setFont('times', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(40, 40, 40);
+
+    const totalDueVal = Number(header.totalDue ?? 0);
+    const totalPaidVal = Number(header.totalPaid ?? 0);
+    const balanceVal = Number(header.balance ?? 0);
+    const arrearsVal = Number(header.actualArrears ?? 0);
+
+    // Tableau récapitulatif
+    const situationData: any[][] = [
+      ['Total à payer (incluant arriérés)', formatAmount(totalDueVal) + ' FCFA'],
+      ['Total payé', formatAmount(totalPaidVal) + ' FCFA'],
+      ['Solde restant', formatAmount(balanceVal) + ' FCFA'],
+    ];
+    if (arrearsVal > 0) {
+      situationData.push(['  dont arriérés (multi-année)', formatAmount(arrearsVal) + ' FCFA']);
+    }
+
+    (doc as any).autoTable({
+      body: situationData,
+      startY: yPos,
+      theme: 'plain',
+      styles: {
+        fontSize: 9,
+        cellPadding: 1.5,
+        textColor: [40, 40, 40],
+      },
+      columnStyles: {
+        0: { cellWidth: 100 },
+        1: { cellWidth: 'auto', halign: 'right', fontStyle: 'bold' },
+      },
+      didParseCell: (data: any) => {
+        // Ligne "dont arriérés" en ambre
+        if (data.row.index === 3 && arrearsVal > 0) {
+          data.cell.styles.textColor = [146, 64, 14];
+          data.cell.styles.fillColor = [254, 243, 199];
+        }
+        // Ligne "Solde restant" en rouge si > 0, vert si = 0
+        if (data.row.index === 2) {
+          if (balanceVal > 0) {
+            data.cell.styles.textColor = [220, 38, 38];
+          } else {
+            data.cell.styles.textColor = [22, 163, 74];
+          }
+        }
+      },
+    });
+
+    yPos = (doc as any).lastAutoTable.finalY + 6;
+
+    // ─── Détail des arriérés par année scolaire (si applicable) ───
+    if (header.feeArrears && header.feeArrears.length > 0) {
+      doc.setFont('times', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(146, 64, 14);
+      doc.text('Arriérés par année scolaire (multi-année)', 14, yPos);
+      yPos += 4;
+
+      const arrearsTableData = header.feeArrears.map((a) => [
+        a.academicYearName,
+        formatAmount(a.totalDue) + ' FCFA',
+        formatAmount(a.totalPaid) + ' FCFA',
+        formatAmount(a.balanceDue) + ' FCFA',
+      ]);
+      const totalArrearsDue = header.feeArrears.reduce((s, a) => s + a.balanceDue, 0);
+      arrearsTableData.push([
+        'TOTAL', '', '', formatAmount(totalArrearsDue) + ' FCFA',
+      ]);
+
+      (doc as any).autoTable({
+        head: [['Année scolaire', 'Dû', 'Payé', 'Reste']],
+        body: arrearsTableData,
+        startY: yPos,
+        theme: 'grid',
+        headStyles: {
+          fillColor: [146, 64, 14],
+          textColor: 255,
+          fontStyle: 'bold',
+          fontSize: 9,
+          halign: 'center',
+        },
+        bodyStyles: {
+          fontSize: 9,
+          cellPadding: 1.5,
+        },
+        columnStyles: {
+          0: { cellWidth: 'auto', halign: 'left' },
+          1: { cellWidth: 35, halign: 'right' },
+          2: { cellWidth: 35, halign: 'right' },
+          3: { cellWidth: 35, halign: 'right' },
+        },
+        didParseCell: (data: any) => {
+          if (data.row.index === arrearsTableData.length - 1 && data.section === 'body') {
+            data.cell.styles.fontStyle = 'bold';
+            data.cell.styles.fillColor = [254, 243, 199];
+            data.cell.styles.textColor = [146, 64, 14];
+          }
+        },
+      });
+
+      yPos = (doc as any).lastAutoTable.finalY + 5;
+
+      // Note FIFO
+      doc.setFont('times', 'italic');
+      doc.setFontSize(8);
+      doc.setTextColor(120, 120, 120);
+      const noteText = 'Politique FIFO : les paiements sont affectés en priorité aux arriérés des années antérieures, puis aux frais de l\'année en cours.';
+      const noteLines = doc.splitTextToSize(noteText, pageWidth - 28);
+      doc.text(noteLines, 14, yPos);
+      yPos += noteLines.length * 4 + 4;
+
+      doc.setFont('times', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(13, 31, 110);
+      doc.text('Historique des paiements', 14, yPos);
+      yPos += 5;
+      doc.setFont('times', 'normal');
+    }
+  }
 
   const totalPaid = transactions.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 

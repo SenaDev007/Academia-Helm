@@ -65,6 +65,16 @@ export interface StudentAccountRow {
   totalPaid?: number;
   totalDue?: number;
   status?: string;
+  /** Total des arriérés (FeeArrear ouverts, toutes années) — ajout multi-année */
+  actualArrears?: number;
+  /** Détail des arriérés par année scolaire (pour info) */
+  feeArrears?: Array<{
+    academicYearName: string;
+    totalDue: number;
+    totalPaid: number;
+    balanceDue: number;
+    notes?: string;
+  }>;
   student?: {
     firstName?: string;
     lastName?: string;
@@ -457,7 +467,7 @@ export async function exportStudentAccountsToExcel(
     properties: { defaultRowHeight: 18 },
   });
 
-  const numCols = 9;
+  const numCols = 10;
   let row = addOfficialHeader(ws, header, numCols);
 
   // Titre
@@ -486,7 +496,7 @@ export async function exportStudentAccountsToExcel(
   row++;
 
   // En-tête tableau
-  const headers = ['Matricule', 'Nom', 'Prénom', 'Classe', 'Niveau', 'Solde dû', 'Payé', 'À payer', 'Statut'];
+  const headers = ['Matricule', 'Nom', 'Prénom', 'Classe', 'Niveau', 'Arriérés', 'Solde dû', 'Payé', 'À payer', 'Statut'];
   headers.forEach((h, i) => {
     const cell = ws.getCell(row, i + 1);
     cell.value = h;
@@ -505,6 +515,7 @@ export async function exportStudentAccountsToExcel(
   const totalDue = accounts.reduce((s, a) => s + (Number(a.totalDue) || 0), 0);
   const totalPaid = accounts.reduce((s, a) => s + (Number(a.totalPaid) || 0), 0);
   const totalBalance = accounts.reduce((s, a) => s + (Number(a.balance) || 0), 0);
+  const totalArrears = accounts.reduce((s, a) => s + (Number(a.actualArrears) || 0), 0);
 
   accounts.forEach((a, idx) => {
     const isEven = idx % 2 === 0;
@@ -512,6 +523,7 @@ export async function exportStudentAccountsToExcel(
     const sc = STATUS_CONFIG[status];
     const className = a.studentEnrollments?.[0]?.class?.name || '—';
     const level = a.student?.schoolLevel?.name || '—';
+    const arrearAmount = Number(a.actualArrears) || 0;
 
     const values = [
       a.student?.studentCode || a.student?.matricule || '—',
@@ -519,6 +531,7 @@ export async function exportStudentAccountsToExcel(
       a.student?.firstName || '—',
       className,
       level,
+      arrearAmount,
       Number(a.balance) || 0,
       Number(a.totalPaid) || 0,
       Number(a.totalDue) || 0,
@@ -527,10 +540,13 @@ export async function exportStudentAccountsToExcel(
     values.forEach((v, i) => {
       const cell = ws.getCell(row, i + 1);
       cell.value = v;
-      // Colonne statut (index 8) : couleur spéciale
-      if (i === 8) {
+      // Colonne statut (index 9) : couleur spéciale
+      if (i === 9) {
         styleDataCell(cell, { fill: sc.bg, color: sc.text, bold: true, align: 'center' });
-      } else if (i >= 5 && i <= 7) {
+      } else if (i === 5 && arrearAmount > 0) {
+        // Colonne Arriérés : surlignage ambre si > 0
+        styleDataCell(cell, { fill: COLORS.amberBg, color: COLORS.amberText, bold: true, align: 'right' });
+      } else if (i >= 5 && i <= 8) {
         styleDataCell(cell, { isEven, bold: true, align: 'right' });
       } else if (i === 1 || i === 2) {
         styleDataCell(cell, { isEven, align: 'left' });
@@ -545,18 +561,18 @@ export async function exportStudentAccountsToExcel(
   ws.mergeCells(row, 1, row, 5);
   ws.getCell(row, 1).value = 'TOTAL';
   styleTotalCell(ws.getCell(row, 1), 'right');
-  [totalBalance, totalPaid, totalDue].forEach((v, i) => {
+  [totalArrears, totalBalance, totalPaid, totalDue].forEach((v, i) => {
     const cell = ws.getCell(row, 6 + i);
     cell.value = v;
     styleTotalCell(cell, 'right');
   });
-  styleTotalCell(ws.getCell(row, 9), 'center');
+  styleTotalCell(ws.getCell(row, 10), 'center');
   ws.getRow(row).height = 24;
 
   // Largeurs colonnes
   ws.columns = [
     { width: 16 }, { width: 20 }, { width: 20 }, { width: 18 }, { width: 14 },
-    { width: 14 }, { width: 14 }, { width: 16 }, { width: 12 },
+    { width: 14 }, { width: 14 }, { width: 14 }, { width: 16 }, { width: 12 },
   ];
 
   await downloadExcel(workbook, studentAccountsFilename(header.classFilter, 'xlsx'));

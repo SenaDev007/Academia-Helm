@@ -218,4 +218,18 @@ export class RecoveryReminderService {
       take: 200,
     });
   }
+
+  /**
+   * Supprime une relance (pour correction d'erreurs de saisie).
+   */
+  async deleteReminder(tenantId: string, reminderId: string) {
+    const reminder = await this.prisma.recoveryReminder.findFirst({
+      where: { id: reminderId, tenantId },
+    });
+    if (!reminder) {
+      throw new NotFoundException('Relance introuvable');
+    }
+    await this.prisma.recoveryReminder.delete({ where: { id: reminderId } });
+    return { success: true, deleted: true };
+  }
 }

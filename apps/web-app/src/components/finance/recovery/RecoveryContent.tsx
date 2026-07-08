@@ -56,8 +56,10 @@ const TABS: Array<{ id: TabId; label: string; icon: any }> = [
   { id: 'dashboard', label: 'Tableau de bord', icon: TrendingDown },
   { id: 'arrears', label: 'Arriérés', icon: AlertCircle },
   { id: 'reminders', label: 'Relances', icon: Send },
-  { id: 'promises', label: 'Promesses', icon: Target },
+  // Workflow logique : Actions AVANT Promesses (c'est parce qu'on a appelé/envoyé
+  // un mail que le parent a promis — l'action déclenche la promesse)
   { id: 'actions', label: 'Actions', icon: Phone },
+  { id: 'promises', label: 'Promesses', icon: Target },
   { id: 'cases', label: 'Dossiers', icon: FileText },
 ];
 
@@ -154,6 +156,63 @@ export default function RecoveryContent() {
   const [promiseModal, setPromiseModal] = useState<{ arrearId: string; studentName: string; balanceDue: number } | null>(null);
   const [actionModal, setActionModal] = useState<{ arrearId: string; studentName: string } | null>(null);
   const [caseDetailModal, setCaseDetailModal] = useState<any | null>(null);
+
+  // ─── Filtres par classe pour Promesses et Actions ───
+  const [promiseClassFilter, setPromiseClassFilter] = useState<string>('ALL');
+  const [actionClassFilter, setActionClassFilter] = useState<string>('ALL');
+  const [allClasses, setAllClasses] = useState<any[]>([]);
+  useEffect(() => {
+    fetch('/api/all-classes', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setAllClasses(Array.isArray(d) ? d : (d?.data ?? [])))
+      .catch(() => setAllClasses([]));
+  }, []);
+
+  // ─── Lien Action → Promesse (workflow : action déclenche promesse) ───
+  // Après création d'une action, on bascule sur l'onglet Promesses et on
+  // ouvre automatiquement le modal nouvelle promesse pré-rempli avec l'arriéré
+  // correspondant à l'action qui vient d'être enregistrée.
+  const [pendingPromiseFromAction, setPendingPromiseFromAction] = useState<{
+    arrearId: string;
+    studentName: string;
+    balanceDue: number;
+  } | null>(null);
+
+  // Modal suppression de relance (personnalisé, comme pour les arriérés)
+  const [deleteReminderModal, setDeleteReminderModal] = useState<{
+    reminderId: string;
+    studentName: string;
+    reminderLevel: string;
+    sentVia: string;
+    sentAt: string;
+    amountDue: number;
+  } | null>(null);
+  const [deletingReminder, setDeletingReminder] = useState(false);
+
+  /**
+   * Confirme la suppression d'une relance.
+   */
+  const handleConfirmDeleteReminder = async () => {
+    if (!deleteReminderModal) return;
+    setDeletingReminder(true);
+    try {
+      const r = await fetch(`/api/finance/recovery-reminders/${deleteReminderModal.reminderId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        throw new Error(data?.error || data?.message || `Échec (HTTP ${r.status})`);
+      }
+      toast({ title: '✅ Relance supprimée', description: 'La relance a été retirée de l\'historique.' });
+      setDeleteReminderModal(null);
+      window.dispatchEvent(new CustomEvent('recovery-reload'));
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e?.message || 'Erreur', variant: 'destructive' });
+    } finally {
+      setDeletingReminder(false);
+    }
+  };
 
   // Modal suppression d'arriéré (personnalisé)
   const [deleteArrearModal, setDeleteArrearModal] = useState<{
@@ -459,6 +518,7 @@ export default function RecoveryContent() {
       await financeService.createPaymentPromise(data);
       toast({ title: '✅ Promesse enregistrée', description: 'La promesse de paiement a été créée.' });
       setPromiseModal(null);
+      setPendingPromiseFromAction(null); // Reset au cas où on venait d'une action
       loadAll();
     } catch (e: any) {
       toast({ title: 'Erreur', description: e?.message || 'Erreur', variant: 'destructive' });
@@ -466,28 +526,90 @@ export default function RecoveryContent() {
   };
 
   // Créer une action de recouvrement
+  // ⚠️ Workflow : après enregistrement d'une action, on bascule automatiquement
+  // sur l'onglet Promesses et on ouvre le modal nouvelle promesse pré-rempli,
+  // car une action (appel/mail) déclenche généralement une promesse du parent.
   const handleCreateAction = async (data: { arrearId: string; actionType: string; description?: string }) => {
     try {
       await financeService.createCollectionAction(data);
       toast({ title: '✅ Action enregistrée', description: "L'action de recouvrement a été journalisée." });
       setActionModal(null);
       loadAll();
+
+      // ─── Lien Action → Promesse ───
+      // Trouver l'arriéré correspondant pour pré-remplir le modal promesse
+      const matchingArrear = arrears.find((a: any) => a.id === data.arrearId);
+      if (matchingArrear) {
+        const studentName = matchingArrear.student
+          ? `${matchingArrear.student.lastName} ${matchingArrear.student.firstName}`
+          : 'Élève';
+        const balanceDue = Number(matchingArrear.balanceDue) || 0;
+
+        // Toast info pour annoncer le workflow
+        toast({
+          title: '📋 Enregistrer une promesse',
+          description: `L'action a été journalisée. Saisissez maintenant la promesse de paiement du parent pour ${studentName}.`,
+        });
+
+        // Basculer sur l'onglet Promesses
+        setActiveTab('promises');
+
+        // Ouvrir le modal promesse pré-rempli (avec un léger délai pour laisser
+        // le temps à l'onglet de changer)
+        setTimeout(() => {
+          setPendingPromiseFromAction({ arrearId: data.arrearId, studentName, balanceDue });
+          setPromiseModal({ arrearId: data.arrearId, studentName, balanceDue });
+        }, 300);
+      }
     } catch (e: any) {
       toast({ title: 'Erreur', description: e?.message || 'Erreur', variant: 'destructive' });
     }
   };
 
-  // Filtrage des promesses
+  // Filtrage des promesses (statut + classe)
   const filteredPromises = useMemo(() => {
-    if (promiseStatusFilter === 'ALL') return promises;
-    return promises.filter((p) => p.status === promiseStatusFilter);
-  }, [promises, promiseStatusFilter]);
+    let result = promises;
+    if (promiseStatusFilter !== 'ALL') {
+      result = result.filter((p) => p.status === promiseStatusFilter);
+    }
+    if (promiseClassFilter !== 'ALL') {
+      // Filtrer par classe via l'arriéré lié (feeArrear.student.studentEnrollments)
+      result = result.filter((p) => {
+        const student = p.feeArrear?.student;
+        if (!student) return false;
+        // Vérifier via studentEnrollments (si inclus) ou via arrears (fallback)
+        const enrollments = (student as any).studentEnrollments || [];
+        if (enrollments.length > 0) {
+          return enrollments.some((e: any) => e.classId === promiseClassFilter);
+        }
+        // Fallback : chercher dans arrears
+        const arrear = arrears.find((a: any) => a.studentId === student.id);
+        return arrear?.student?.studentEnrollments?.some((e: any) => e.classId === promiseClassFilter) ?? false;
+      });
+    }
+    return result;
+  }, [promises, promiseStatusFilter, promiseClassFilter, arrears]);
 
-  // Filtrage des actions
+  // Filtrage des actions (type + classe)
   const filteredActions = useMemo(() => {
-    if (actionTypeFilter === 'ALL') return actions;
-    return actions.filter((a) => a.actionType === actionTypeFilter);
-  }, [actions, actionTypeFilter]);
+    let result = actions;
+    if (actionTypeFilter !== 'ALL') {
+      result = result.filter((a) => a.actionType === actionTypeFilter);
+    }
+    if (actionClassFilter !== 'ALL') {
+      result = result.filter((a) => {
+        const student = a.feeArrear?.student;
+        if (!student) return false;
+        const enrollments = (student as any).studentEnrollments || [];
+        if (enrollments.length > 0) {
+          return enrollments.some((e: any) => e.classId === actionClassFilter);
+        }
+        const arrear = arrears.find((x: any) => x.studentId === student.id);
+        return arrear?.student?.studentEnrollments?.some((e: any) => e.classId === actionClassFilter) ?? false;
+      });
+    }
+    return result;
+  }, [actions, actionTypeFilter, actionClassFilter, arrears]);
 
   // Filtrage des arriérés
   const filteredArrears = useMemo(() => {
@@ -665,6 +787,16 @@ export default function RecoveryContent() {
             reminders={reminders}
             arrears={arrears}
             onSendChannel={(arrearId, channel) => handleSendChannelReminder(arrearId, channel, 'PREMIERE_RELANCE')}
+            onDelete={(r) => setDeleteReminderModal({
+              reminderId: r.id,
+              studentName: r.studentAccount?.student
+                ? `${r.studentAccount.student.lastName} ${r.studentAccount.student.firstName}`
+                : 'Élève',
+              reminderLevel: r.reminderLevel,
+              sentVia: r.sentVia,
+              sentAt: r.sentAt ? new Date(r.sentAt).toLocaleDateString('fr-FR') : '—',
+              amountDue: Number(r.amountDue) || 0,
+            })}
           />
         ) : activeTab === 'promises' ? (
           <PromisesTab
@@ -672,6 +804,9 @@ export default function RecoveryContent() {
             totalCount={promises.length}
             statusFilter={promiseStatusFilter}
             setStatusFilter={setPromiseStatusFilter}
+            classFilter={promiseClassFilter}
+            setClassFilter={setPromiseClassFilter}
+            classes={allClasses}
             onUpdateStatus={handleUpdatePromiseStatus}
             onNewPromise={(arrear) => setPromiseModal({
               arrearId: arrear.id,
@@ -679,6 +814,7 @@ export default function RecoveryContent() {
               balanceDue: Number(arrear.balanceDue) || 0,
             })}
             arrears={arrears}
+            schoolInfo={schoolInfo}
           />
         ) : activeTab === 'actions' ? (
           <ActionsTab
@@ -686,11 +822,15 @@ export default function RecoveryContent() {
             totalCount={actions.length}
             typeFilter={actionTypeFilter}
             setTypeFilter={setActionTypeFilter}
+            classFilter={actionClassFilter}
+            setClassFilter={setActionClassFilter}
+            classes={allClasses}
             onNewAction={(arrear) => setActionModal({
               arrearId: arrear.id,
               studentName: arrear.student ? `${arrear.student.lastName} ${arrear.student.firstName}` : 'Élève',
             })}
             arrears={arrears}
+            schoolInfo={schoolInfo}
           />
         ) : (
           <CasesTab cases={cases} onViewCase={(c) => setCaseDetailModal(c)} />
@@ -760,6 +900,16 @@ export default function RecoveryContent() {
           loading={deletingArrear}
           onClose={() => setDeleteArrearModal(null)}
           onConfirm={handleConfirmDeleteArrear}
+        />
+      )}
+
+      {/* Modal suppression de relance (personnalisé) */}
+      {deleteReminderModal && (
+        <DeleteReminderModal
+          data={deleteReminderModal}
+          loading={deletingReminder}
+          onClose={() => setDeleteReminderModal(null)}
+          onConfirm={handleConfirmDeleteReminder}
         />
       )}
     </div>
@@ -1262,10 +1412,12 @@ function RemindersTab({
   reminders,
   arrears,
   onSendChannel,
+  onDelete,
 }: {
   reminders: any[];
   arrears: any[];
   onSendChannel: (arrearId: string, channel: 'email' | 'whatsapp' | 'sms') => void;
+  onDelete: (reminder: any) => void;
 }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -1351,8 +1503,18 @@ function RemindersTab({
                           </Button>
                         </>
                       ) : (
-                        <span className="text-xs text-slate-400 italic">Aucun arriéré actif</span>
+                        <span className="text-xs text-slate-400 italic mr-2">Aucun arriéré actif</span>
                       )}
+                      {/* Supprimer */}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 hover:bg-rose-100 hover:shadow-sm transition-all duration-150"
+                        onClick={() => onDelete(r)}
+                        title="Supprimer la relance"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                      </Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -1479,86 +1641,106 @@ function ManualReminderModal({
   }, [selectedClassId, setAccountId]);
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto"
+        className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
-          <Send className="w-5 h-5 text-blue-600" />
-          Relance manuelle
-        </h3>
-        <p className="text-xs text-slate-500 mb-4">
-          Sélectionnez un élève par niveau scolaire et classe, puis choisissez le niveau de relance.
-          La relance sera envoyée automatiquement par <strong>email + WhatsApp + SMS</strong> au parent.
-        </p>
-        <div className="space-y-4">
-          {/* Niveau scolaire */}
-          <div>
-            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
-              Niveau scolaire
-            </Label>
-            <Select value={selectedLevelId} onValueChange={setSelectedLevelId}>
-              <SelectTrigger><SelectValue placeholder="Tous les niveaux" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">Tous les niveaux</SelectItem>
-                {schoolLevels.map((l) => (
-                  <SelectItem key={l.id} value={l.id}>
-                    {l.label || l.code || l.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        {/* En-tête */}
+        <div className="px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-t-2xl">
+          <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <Send className="w-5 h-5 text-blue-600" />
+            Relance manuelle
+          </h3>
+          <p className="text-xs text-slate-500 mt-1">
+            Sélectionnez un élève par niveau scolaire et classe, puis choisissez le niveau de relance.
+            La relance sera envoyée automatiquement par <strong>email + WhatsApp + SMS</strong> au parent.
+          </p>
+        </div>
 
-          {/* Classe (filtrée par niveau) */}
-          <div>
-            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
-              Classe {selectedLevelId && <span className="text-slate-400 normal-case font-normal">(filtrée par niveau)</span>}
-            </Label>
-            <Select value={selectedClassId} onValueChange={setSelectedClassId}>
-              <SelectTrigger><SelectValue placeholder="Toutes les classes" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">Toutes les classes</SelectItem>
-                {filteredClasses.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name} {c.code ? `(${c.code})` : ''}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {selectedLevelId && filteredClasses.length === 0 && (
-              <p className="text-xs text-slate-500 mt-1">Aucune classe pour ce niveau.</p>
-            )}
-          </div>
+        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Colonne gauche : Sélection élève */}
+          <div className="space-y-4">
+            <h4 className="text-xs font-semibold text-slate-700 uppercase tracking-wide flex items-center gap-2">
+              <span className="bg-blue-100 text-blue-700 rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-bold">1</span>
+              Sélection de l'élève
+            </h4>
+            {/* Niveau scolaire */}
+            <div>
+              <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
+                Niveau scolaire
+              </Label>
+              <Select value={selectedLevelId} onValueChange={setSelectedLevelId}>
+                <SelectTrigger><SelectValue placeholder="Tous les niveaux" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Tous les niveaux</SelectItem>
+                  {schoolLevels.map((l) => (
+                    <SelectItem key={l.id} value={l.id}>
+                      {l.label || l.code || l.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-          {/* Élève (filtré par classe) */}
-          <div>
-            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
-              Élève {selectedClassId && <span className="text-slate-400 normal-case font-normal">(filtré par classe)</span>}
-            </Label>
-            <Select value={accountId} onValueChange={setAccountId}>
-              <SelectTrigger><SelectValue placeholder="Sélectionner un élève avec solde dû" /></SelectTrigger>
-              <SelectContent>
-                {filteredAccounts.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.id} — {formatCurrency(a.balance)} FCFA
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {filteredAccounts.length === 0 && (
-              <p className="text-xs text-slate-500 mt-1">
-                Aucun élève avec solde dû{selectedClassId ? ' dans cette classe' : ''}.
+            {/* Classe (filtrée par niveau) */}
+            <div>
+              <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
+                Classe {selectedLevelId && <span className="text-slate-400 normal-case font-normal">(filtrée par niveau)</span>}
+              </Label>
+              <Select value={selectedClassId} onValueChange={setSelectedClassId}>
+                <SelectTrigger><SelectValue placeholder="Toutes les classes" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Toutes les classes</SelectItem>
+                  {filteredClasses.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name} {c.code ? `(${c.code})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selectedLevelId && filteredClasses.length === 0 && (
+                <p className="text-xs text-slate-500 mt-1">Aucune classe pour ce niveau.</p>
+              )}
+            </div>
+
+            {/* Élève (filtré par classe) */}
+            <div>
+              <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
+                Élève {selectedClassId && <span className="text-slate-400 normal-case font-normal">(filtré par classe)</span>}
+              </Label>
+              <Select value={accountId} onValueChange={setAccountId}>
+                <SelectTrigger><SelectValue placeholder="Sélectionner un élève avec solde dû" /></SelectTrigger>
+                <SelectContent>
+                  {filteredAccounts.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.id} — {formatCurrency(a.balance)} FCFA
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {filteredAccounts.length === 0 && (
+                <p className="text-xs text-slate-500 mt-1">
+                  Aucun élève avec solde dû{selectedClassId ? ' dans cette classe' : ''}.
+                </p>
+              )}
+            </div>
+
+            {/* Info envoi multi-canal */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-xs text-blue-800">
+                <strong>📧 ⚙️ 📱 Envoi automatique multi-canal :</strong> La relance sera envoyée au parent sur les 3 canaux
+                (email + WhatsApp + SMS) en arrière-plan. Vous recevrez un rapport détaillé.
               </p>
-            )}
+            </div>
           </div>
 
-          {/* Niveau de relance (termes français) */}
-          <div>
-            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
+          {/* Colonne droite : Niveau de relance */}
+          <div className="space-y-4">
+            <h4 className="text-xs font-semibold text-slate-700 uppercase tracking-wide flex items-center gap-2">
+              <span className="bg-blue-100 text-blue-700 rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-bold">2</span>
               Niveau de relance
-            </Label>
+            </h4>
             <div className="grid grid-cols-1 gap-2">
               {MANUAL_LEVEL_OPTIONS.map((opt) => (
                 <button
@@ -1583,31 +1765,24 @@ function ManualReminderModal({
               ))}
             </div>
           </div>
+        </div>
 
-          {/* Info envoi multi-canal */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <p className="text-xs text-blue-800">
-              <strong>📧 ⚙️ 📱 Envoi automatique multi-canal :</strong> La relance sera envoyée au parent sur les 3 canaux
-              (email + WhatsApp + SMS) en arrière-plan. Vous recevrez un rapport détaillé.
-            </p>
-          </div>
-
-          <div className="flex gap-2 justify-end pt-2">
-            <Button variant="outline" onClick={onClose} disabled={sending}>Annuler</Button>
-            <Button onClick={onSubmit} disabled={!accountId || sending}>
-              {sending ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Envoi en cours...
-                </>
-              ) : (
-                <>
-                  <Send className="w-4 h-4 mr-2" />
-                  Envoyer la relance
-                </>
-              )}
-            </Button>
-          </div>
+        {/* Pied : actions */}
+        <div className="px-6 py-3 border-t border-slate-200 bg-slate-50 rounded-b-2xl flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose} disabled={sending}>Annuler</Button>
+          <Button onClick={onSubmit} disabled={!accountId || sending}>
+            {sending ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Envoi en cours...
+              </>
+            ) : (
+              <>
+                <Send className="w-4 h-4 mr-2" />
+                Envoyer la relance
+              </>
+            )}
+          </Button>
         </div>
       </div>
     </div>
@@ -1954,24 +2129,153 @@ function PromisesTab({
   totalCount,
   statusFilter,
   setStatusFilter,
+  classFilter,
+  setClassFilter,
+  classes,
   onUpdateStatus,
   onNewPromise,
   arrears,
+  schoolInfo,
 }: {
   promises: any[];
   totalCount: number;
   statusFilter: string;
   setStatusFilter: (v: string) => void;
+  classFilter: string;
+  setClassFilter: (v: string) => void;
+  classes: any[];
   onUpdateStatus: (id: string, status: 'HONORED' | 'BROKEN') => void;
   onNewPromise: (arrear: any) => void;
   arrears: any[];
+  schoolInfo: any;
 }) {
   const [showNewModal, setShowNewModal] = useState(false);
   const [selectedArrear, setSelectedArrear] = useState<any | null>(null);
+  const [exporting, setExporting] = useState<'pdf' | 'excel' | null>(null);
+
+  // Export Excel des promesses
+  const handleExportExcel = async () => {
+    setExporting('excel');
+    try {
+      const XLSX = await import('xlsx');
+      const data: any[][] = [
+        ['', schoolInfo.schoolName || 'Établissement', ''],
+        ['', 'Promesses de paiement', ''],
+        [schoolInfo.academicYear ? `Année scolaire : ${schoolInfo.academicYear}` : '', '', ''],
+        ['', '', ''],
+        ['Élève', 'Classe', 'Frais', 'Montant promis (FCFA)', 'Date promise', 'Statut', 'Créé par', 'Notes'],
+      ];
+      promises.forEach((p) => {
+        const studentName = p.feeArrear?.student
+          ? `${p.feeArrear.student.lastName} ${p.feeArrear.student.firstName}`
+          : '—';
+        const className = p.feeArrear?.student?.studentEnrollments?.[0]?.class?.name || '—';
+        const feeLabel = p.feeArrear?.studentFee?.feeDefinition?.label || '—';
+        const creator = p.creator ? `${p.creator.firstName} ${p.creator.lastName}` : 'Système';
+        const statusLabel = PROMISE_STATUS_CONFIG[p.status || 'PENDING']?.label || p.status;
+        data.push([
+          studentName,
+          className,
+          feeLabel,
+          Number(p.promisedAmount) || 0,
+          p.promisedDate ? new Date(p.promisedDate).toLocaleDateString('fr-FR') : '—',
+          statusLabel,
+          creator,
+          p.notes || '',
+        ]);
+      });
+      data.push(['']);
+      const totalAmount = promises.reduce((s, p) => s + (Number(p.promisedAmount) || 0), 0);
+      data.push(['', '', 'TOTAL', totalAmount, '', '', '', '']);
+
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      ws['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 20 }, { wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 18 }, { wch: 30 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Promesses');
+      XLSX.writeFile(wb, `promesses-paiement-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (e: any) {
+      console.error(e);
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  // Export PDF des promesses
+  const handleExportPdf = async () => {
+    setExporting('pdf');
+    try {
+      const jsPDFMod = await import('jspdf');
+      const autoTableMod = await import('jspdf-autotable');
+      const jsPDF = jsPDFMod.default || jsPDFMod.jsPDF;
+      const autoTable = autoTableMod.default;
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+
+      // En-tête simple
+      doc.setFont('times', 'bold');
+      doc.setFontSize(16);
+      doc.setTextColor(13, 31, 110);
+      doc.text(schoolInfo.schoolName || 'Établissement', pageWidth / 2, 18, { align: 'center' });
+      doc.setFontSize(13);
+      doc.text('Promesses de paiement', pageWidth / 2, 26, { align: 'center' });
+      doc.setFont('times', 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(100, 100, 100);
+      if (schoolInfo.academicYear) {
+        doc.text(`Année scolaire : ${schoolInfo.academicYear}`, pageWidth / 2, 32, { align: 'center' });
+      }
+      doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR')}`, pageWidth / 2, 37, { align: 'center' });
+
+      const tableData = promises.map((p) => {
+        const studentName = p.feeArrear?.student
+          ? `${p.feeArrear.student.lastName} ${p.feeArrear.student.firstName}`
+          : '—';
+        const className = p.feeArrear?.student?.studentEnrollments?.[0]?.class?.name || '—';
+        const feeLabel = p.feeArrear?.studentFee?.feeDefinition?.label || '—';
+        const statusLabel = PROMISE_STATUS_CONFIG[p.status || 'PENDING']?.label || p.status;
+        return [
+          studentName,
+          className,
+          feeLabel,
+          (Number(p.promisedAmount) || 0).toLocaleString('fr-FR') + ' FCFA',
+          p.promisedDate ? new Date(p.promisedDate).toLocaleDateString('fr-FR') : '—',
+          statusLabel,
+        ];
+      });
+      const totalAmount = promises.reduce((s, p) => s + (Number(p.promisedAmount) || 0), 0);
+      tableData.push(['', '', 'TOTAL', totalAmount.toLocaleString('fr-FR') + ' FCFA', '', '']);
+
+      autoTable(doc, {
+        head: [['Élève', 'Classe', 'Frais', 'Montant promis', 'Date promise', 'Statut']],
+        body: tableData,
+        startY: 42,
+        theme: 'grid',
+        headStyles: { fillColor: [13, 31, 110], textColor: 255, fontStyle: 'bold', fontSize: 10 },
+        bodyStyles: { fontSize: 9 },
+        columnStyles: {
+          3: { halign: 'right', fontStyle: 'bold' },
+          5: { halign: 'center' },
+        },
+        didParseCell: (data: any) => {
+          if (data.row.index === tableData.length - 1 && data.section === 'body') {
+            data.cell.styles.fontStyle = 'bold';
+            data.cell.styles.fillColor = [254, 243, 199];
+            data.cell.styles.textColor = [146, 64, 14];
+          }
+        },
+      });
+
+      doc.save(`promesses-paiement-${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (e: any) {
+      console.error(e);
+    } finally {
+      setExporting(null);
+    }
+  };
 
   return (
     <div className="space-y-4">
-      {/* Filtres + bouton nouvelle promesse */}
+      {/* Filtres + bouton nouvelle promesse + exports */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-wrap gap-3 items-end">
         <div className="flex flex-col gap-1.5">
           <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Statut</Label>
@@ -1985,9 +2289,44 @@ function PromisesTab({
             </SelectContent>
           </Select>
         </div>
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Classe</Label>
+          <Select value={classFilter} onValueChange={setClassFilter}>
+            <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Toutes les classes</SelectItem>
+              {classes.map((c: any) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name} {c.code ? `(${c.code})` : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="text-xs text-slate-500 ml-auto">
           {promises.length} affiché(s) sur {totalCount} total
         </div>
+        {/* Exports PDF/Excel (même design que Encaissements) */}
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleExportExcel}
+          disabled={exporting !== null || promises.length === 0}
+          className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+        >
+          {exporting === 'excel' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 mr-2" />}
+          Excel
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleExportPdf}
+          disabled={exporting !== null || promises.length === 0}
+          className="border-rose-300 text-rose-700 hover:bg-rose-50"
+        >
+          {exporting === 'pdf' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
+          PDF
+        </Button>
         <Button
           size="sm"
           onClick={() => setShowNewModal(true)}
@@ -2004,6 +2343,7 @@ function PromisesTab({
           <TableHeader>
             <TableRow className="bg-gray-50">
               <TableHead>Élève</TableHead>
+              <TableHead>Classe</TableHead>
               <TableHead>Frais</TableHead>
               <TableHead className="text-right">Montant promis</TableHead>
               <TableHead>Date promise</TableHead>
@@ -2015,7 +2355,7 @@ function PromisesTab({
           <TableBody>
             {promises.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-gray-500 py-12">
+                <TableCell colSpan={8} className="text-center text-gray-500 py-12">
                   Aucune promesse de paiement enregistrée.
                 </TableCell>
               </TableRow>
@@ -2024,6 +2364,7 @@ function PromisesTab({
                 const config = PROMISE_STATUS_CONFIG[p.status || 'PENDING'] || PROMISE_STATUS_CONFIG.PENDING;
                 const StatusIcon = config.icon;
                 const isOverdue = p.status === 'PENDING' && new Date(p.promisedDate) < new Date();
+                const className = p.feeArrear?.student?.studentEnrollments?.[0]?.class?.name || '—';
                 return (
                   <TableRow key={p.id} className="hover:bg-slate-50">
                     <TableCell className="font-medium">
@@ -2031,6 +2372,7 @@ function PromisesTab({
                         ? `${p.feeArrear.student.lastName} ${p.feeArrear.student.firstName}`
                         : '—'}
                     </TableCell>
+                    <TableCell className="text-sm text-slate-600">{className}</TableCell>
                     <TableCell className="text-sm text-slate-600">
                       {p.feeArrear?.studentFee?.feeDefinition?.label || '—'}
                     </TableCell>
@@ -2145,17 +2487,128 @@ function ActionsTab({
   totalCount,
   typeFilter,
   setTypeFilter,
+  classFilter,
+  setClassFilter,
+  classes,
   onNewAction,
   arrears,
+  schoolInfo,
 }: {
   actions: any[];
   totalCount: number;
   typeFilter: string;
   setTypeFilter: (v: string) => void;
+  classFilter: string;
+  setClassFilter: (v: string) => void;
+  classes: any[];
   onNewAction: (arrear: any) => void;
   arrears: any[];
+  schoolInfo: any;
 }) {
   const [showNewModal, setShowNewModal] = useState(false);
+  const [exporting, setExporting] = useState<'pdf' | 'excel' | null>(null);
+
+  // Export Excel des actions
+  const handleExportExcel = async () => {
+    setExporting('excel');
+    try {
+      const XLSX = await import('xlsx');
+      const data: any[][] = [
+        ['', schoolInfo.schoolName || 'Établissement', ''],
+        ['', 'Actions de recouvrement', ''],
+        [schoolInfo.academicYear ? `Année scolaire : ${schoolInfo.academicYear}` : '', '', ''],
+        ['', '', ''],
+        ['Date', 'Élève', 'Classe', 'Type', 'Description', 'Effectué par'],
+      ];
+      actions.forEach((a) => {
+        const studentName = a.feeArrear?.student
+          ? `${a.feeArrear.student.lastName} ${a.feeArrear.student.firstName}`
+          : '—';
+        const className = a.feeArrear?.student?.studentEnrollments?.[0]?.class?.name || '—';
+        const cfg = ACTION_TYPE_CONFIG[a.actionType] || ACTION_TYPE_CONFIG.OTHER;
+        const performer = a.performer ? `${a.performer.firstName} ${a.performer.lastName}` : 'Système';
+        data.push([
+          a.performedAt ? new Date(a.performedAt).toLocaleDateString('fr-FR') : '—',
+          studentName,
+          className,
+          cfg.label,
+          a.notes || '',
+          performer,
+        ]);
+      });
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      ws['!cols'] = [{ wch: 14 }, { wch: 22 }, { wch: 16 }, { wch: 22 }, { wch: 40 }, { wch: 18 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Actions');
+      XLSX.writeFile(wb, `actions-recouvrement-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (e: any) {
+      console.error(e);
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  // Export PDF des actions
+  const handleExportPdf = async () => {
+    setExporting('pdf');
+    try {
+      const jsPDFMod = await import('jspdf');
+      const autoTableMod = await import('jspdf-autotable');
+      const jsPDF = jsPDFMod.default || jsPDFMod.jsPDF;
+      const autoTable = autoTableMod.default;
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+
+      doc.setFont('times', 'bold');
+      doc.setFontSize(16);
+      doc.setTextColor(13, 31, 110);
+      doc.text(schoolInfo.schoolName || 'Établissement', pageWidth / 2, 18, { align: 'center' });
+      doc.setFontSize(13);
+      doc.text('Actions de recouvrement', pageWidth / 2, 26, { align: 'center' });
+      doc.setFont('times', 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(100, 100, 100);
+      if (schoolInfo.academicYear) {
+        doc.text(`Année scolaire : ${schoolInfo.academicYear}`, pageWidth / 2, 32, { align: 'center' });
+      }
+      doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR')}`, pageWidth / 2, 37, { align: 'center' });
+
+      const tableData = actions.map((a) => {
+        const studentName = a.feeArrear?.student
+          ? `${a.feeArrear.student.lastName} ${a.feeArrear.student.firstName}`
+          : '—';
+        const className = a.feeArrear?.student?.studentEnrollments?.[0]?.class?.name || '—';
+        const cfg = ACTION_TYPE_CONFIG[a.actionType] || ACTION_TYPE_CONFIG.OTHER;
+        const performer = a.performer ? `${a.performer.firstName} ${a.performer.lastName}` : 'Système';
+        return [
+          a.performedAt ? new Date(a.performedAt).toLocaleDateString('fr-FR') : '—',
+          studentName,
+          className,
+          cfg.label,
+          a.notes || '—',
+          performer,
+        ];
+      });
+
+      autoTable(doc, {
+        head: [['Date', 'Élève', 'Classe', 'Type', 'Description', 'Effectué par']],
+        body: tableData,
+        startY: 42,
+        theme: 'grid',
+        headStyles: { fillColor: [13, 31, 110], textColor: 255, fontStyle: 'bold', fontSize: 10 },
+        bodyStyles: { fontSize: 9 },
+        columnStyles: {
+          4: { cellWidth: 'auto' },
+        },
+      });
+
+      doc.save(`actions-recouvrement-${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (e: any) {
+      console.error(e);
+    } finally {
+      setExporting(null);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -2172,9 +2625,43 @@ function ActionsTab({
             </SelectContent>
           </Select>
         </div>
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Classe</Label>
+          <Select value={classFilter} onValueChange={setClassFilter}>
+            <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Toutes les classes</SelectItem>
+              {classes.map((c: any) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name} {c.code ? `(${c.code})` : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="text-xs text-slate-500 ml-auto">
           {actions.length} affiché(s) sur {totalCount} total
         </div>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleExportExcel}
+          disabled={exporting !== null || actions.length === 0}
+          className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+        >
+          {exporting === 'excel' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 mr-2" />}
+          Excel
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleExportPdf}
+          disabled={exporting !== null || actions.length === 0}
+          className="border-rose-300 text-rose-700 hover:bg-rose-50"
+        >
+          {exporting === 'pdf' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
+          PDF
+        </Button>
         <Button
           size="sm"
           onClick={() => setShowNewModal(true)}
@@ -2191,6 +2678,7 @@ function ActionsTab({
             <TableRow className="bg-gray-50">
               <TableHead>Date</TableHead>
               <TableHead>Élève</TableHead>
+              <TableHead>Classe</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Description</TableHead>
               <TableHead>Effectué par</TableHead>
@@ -2199,7 +2687,7 @@ function ActionsTab({
           <TableBody>
             {actions.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-gray-500 py-12">
+                <TableCell colSpan={6} className="text-center text-gray-500 py-12">
                   Aucune action de recouvrement enregistrée.
                 </TableCell>
               </TableRow>
@@ -2207,6 +2695,7 @@ function ActionsTab({
               actions.map((a) => {
                 const cfg = ACTION_TYPE_CONFIG[a.actionType] || ACTION_TYPE_CONFIG.OTHER;
                 const Icon = cfg.icon;
+                const className = a.feeArrear?.student?.studentEnrollments?.[0]?.class?.name || '—';
                 return (
                   <TableRow key={a.id} className="hover:bg-slate-50">
                     <TableCell className="text-sm text-slate-600 whitespace-nowrap">
@@ -2220,6 +2709,7 @@ function ActionsTab({
                         ? `${a.feeArrear.student.lastName} ${a.feeArrear.student.firstName}`
                         : '—'}
                     </TableCell>
+                    <TableCell className="text-sm text-slate-600">{className}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className={`${cfg.color} border-current`}>
                         <Icon className="w-3 h-3 mr-1" />
@@ -2484,6 +2974,121 @@ function CasesTab({
             )}
           </TableBody>
         </Table>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Modal — Confirmation de suppression de relance (personnalisé)      */
+/* ------------------------------------------------------------------ */
+
+function DeleteReminderModal({
+  data,
+  loading,
+  onClose,
+  onConfirm,
+}: {
+  data: {
+    reminderId: string;
+    studentName: string;
+    reminderLevel: string;
+    sentVia: string;
+    sentAt: string;
+    amountDue: number;
+  };
+  loading: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const levelLabel = REMINDER_LEVEL_CONFIG[data.reminderLevel]?.label || data.reminderLevel;
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* En-tête rouge */}
+        <div className="bg-gradient-to-br from-rose-600 to-rose-700 px-6 py-4 text-white">
+          <div className="flex items-center gap-3">
+            <div className="bg-white/20 rounded-full p-2">
+              <Trash2 className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold">Supprimer la relance</h3>
+              <p className="text-xs text-rose-100 mt-0.5">Action irréversible</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Corps */}
+        <div className="p-6 space-y-4">
+          <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-600 mt-0.5 flex-shrink-0" />
+            <p className="text-xs text-rose-700 leading-relaxed">
+              Vous êtes sur le point de supprimer définitivement cette relance de l'historique.
+              Cette action <strong>ne peut pas être annulée</strong>.
+            </p>
+          </div>
+
+          {/* Détails de la relance */}
+          <div className="border border-slate-200 rounded-lg overflow-hidden">
+            <div className="bg-slate-50 px-4 py-2 border-b border-slate-200">
+              <div className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Détails de la relance</div>
+            </div>
+            <div className="p-4 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Élève :</span>
+                <span className="font-semibold text-slate-900">{data.studentName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Niveau :</span>
+                <span className="font-medium text-slate-700">{levelLabel}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Canal :</span>
+                <span className="font-medium text-slate-700">{data.sentVia}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Date d'envoi :</span>
+                <span className="font-medium text-slate-700">{data.sentAt}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Montant dû :</span>
+                <span className="font-bold text-rose-700">{formatCurrency(data.amountDue)} FCFA</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="bg-slate-50 px-6 py-3 flex justify-end gap-2 border-t border-slate-200">
+          <Button type="button" variant="outline" onClick={onClose} disabled={loading}>
+            Annuler
+          </Button>
+          <Button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            className="bg-rose-600 hover:bg-rose-700 text-white"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Suppression…
+              </>
+            ) : (
+              <>
+                <Trash2 className="w-4 h-4 mr-2" />
+                Supprimer définitivement
+              </>
+            )}
+          </Button>
+        </div>
       </div>
     </div>
   );

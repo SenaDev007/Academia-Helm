@@ -24,13 +24,13 @@ import { Roles } from '@/auth/decorators/roles.decorator';
 import { CollectionCaseService } from './collection-case.service';
 import { ALL_ADMIN_ROLES, ALL_READ_ROLES, CASHIER_ROLES } from './finance-roles.constants';
 
-@Controller('collection')
+@Controller('finance/collection')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class CollectionCaseController {
   constructor(private readonly collectionService: CollectionCaseService) {}
 
   /**
-   * GET /api/collection/cases
+   * GET /api/finance/collection/cases
    * Récupère tous les dossiers de recouvrement
    */
   @Get('cases')

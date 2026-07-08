@@ -16,99 +16,184 @@ export class CollectionPrismaService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Détecte et crée les impayés automatiquement
+   * Détecte et crée les impayés automatiquement.
+   *
+   * ⚠️ Stratégie multi-source (depuis la refonte multi-année) :
+   *   1. Source principale : StudentAccount.balance > 0 (déclenché par trigger SQL)
+   *      → crée un FeeArrear GLOBAL (sans studentFeeId) pour l'année courante
+   *   2. Source secondaire : AccountBreakdown.remainingAmount > 0
+   *      → crée un FeeArrear PAR FRAIS (avec studentFeeId si lié à un StudentFee)
+   *   3. Source legacy : PaymentSummary (si la table est alimentée — rare)
+   *
+   * L'ancienne version ne lisait QUE PaymentSummary → 0 résultat si la table
+   * n'était pas alimentée. Désormais on lit StudentAccount qui est TOUJOURS
+   * à jour grâce au trigger SQL `update_balance_after_transaction`.
    */
   async detectArrears(tenantId: string, academicYearId: string) {
-    // FIX OOM: Process in batches of 200 instead of loading all at once
-    const BATCH_SIZE = 200;
-    let skip = 0;
-    const arrears = [];
+    const arrears: any[] = [];
 
-    while (true) {
-      const summaries = await this.prisma.paymentSummary.findMany({
-        where: {
-          tenantId,
-          academicYearId,
-          balance: { gt: 0 },
+    // ─── Source 1 : StudentAccount.balance > 0 (TJRS à jour via trigger SQL) ───
+    const accountsWithBalance = await this.prisma.studentAccount.findMany({
+      where: {
+        tenantId,
+        academicYearId,
+        balance: { gt: 0 },
+      },
+      include: {
+        student: { select: { id: true, firstName: true, lastName: true } },
+        breakdowns: {
+          include: {
+            feeStructure: { select: { id: true, name: true, feeType: true } },
+          },
         },
-        include: {
-          studentFee: { include: { feeDefinition: { select: { id: true, label: true } } } },
-          student: { select: { id: true, firstName: true, lastName: true } },
-        },
-        take: BATCH_SIZE,
-        skip,
-      });
+      },
+    });
 
-      if (summaries.length === 0) break;
+    for (const account of accountsWithBalance) {
+      const totalDue = Number(account.totalDue ?? 0);
+      const totalPaid = Number(account.totalPaid ?? 0);
+      const balance = Number(account.balance ?? 0);
+      const carriedArrears = Number(account.carriedArrears ?? 0);
 
-    for (const summary of summaries) {
-      // Vérifier si un impayé existe déjà
+      // Ne pas créer d'arriéré pour la part déjà reportée (carriedArrears)
+      // — elle a déjà un FeeArrear TRANSFERRED associé.
+      const balanceForCurrentYear = Math.max(0, balance - carriedArrears);
+
+      if (balanceForCurrentYear <= 0) continue;
+
+      // Vérifier si un FeeArrear GLOBAL existe déjà pour cet élève/année
+      // (sans studentFeeId = global)
       const existing = await this.prisma.feeArrear.findFirst({
         where: {
-          studentId: summary.studentId,
-          studentFeeId: summary.studentFeeId,
+          studentId: account.studentId,
           academicYearId,
           tenantId,
+          studentFeeId: null,
         },
       });
 
-      if (existing) {
-        // Mettre à jour l'impayé existant
-        const arrearsLevel = this.calculateArrearsLevel(
-          Number(summary.balance),
-          summary.lastPaymentDate
-        );
+      const lastPaymentDate = await this.getLastPaymentDate(account.studentId, academicYearId);
+      const arrearsLevel = this.calculateArrearsLevel(balanceForCurrentYear, lastPaymentDate);
 
+      if (existing) {
         await this.prisma.feeArrear.update({
           where: { id: existing.id },
           data: {
-            totalDue: Number(summary.expectedAmount),
-            totalPaid: Number(summary.paidAmount),
-            balanceDue: Number(summary.balance),
+            totalDue: totalDue - carriedArrears, // Exclure les arriérés reportés
+            totalPaid,
+            balanceDue: balanceForCurrentYear,
             arrearsLevel,
-            lastPaymentDate: summary.lastPaymentDate,
+            lastPaymentDate,
           },
         });
-
-        arrears.push(existing);
+        arrears.push({ ...existing, updated: true });
       } else {
-        // Créer un nouvel impayé
-        const arrearsLevel = this.calculateArrearsLevel(
-          Number(summary.balance),
-          summary.lastPaymentDate
-        );
-
         const arrear = await this.prisma.feeArrear.create({
           data: {
             tenantId,
             academicYearId,
-            studentId: summary.studentId,
-            studentFeeId: summary.studentFeeId,
-            totalDue: Number(summary.expectedAmount),
-            totalPaid: Number(summary.paidAmount),
-            balanceDue: Number(summary.balance),
+            studentId: account.studentId,
+            studentFeeId: null, // Arriéré global (tous frais confondus)
+            totalDue: totalDue - carriedArrears,
+            totalPaid,
+            balanceDue: balanceForCurrentYear,
             arrearsLevel,
-            lastPaymentDate: summary.lastPaymentDate,
+            lastPaymentDate,
+            notes: 'Détecté automatiquement depuis le solde du compte élève',
           },
           include: {
             student: true,
-            studentFee: {
-              include: {
-                feeDefinition: true,
-              },
-            },
           },
         });
-
         arrears.push(arrear);
       }
     }
 
-      skip += BATCH_SIZE;
-      if (global.gc) global.gc();
+    // ─── Source 2 (legacy, non bloquant) : PaymentSummary si la table est alimentée ───
+    try {
+      const BATCH_SIZE = 200;
+      let skip = 0;
+      while (true) {
+        const summaries = await this.prisma.paymentSummary.findMany({
+          where: {
+            tenantId,
+            academicYearId,
+            balance: { gt: 0 },
+          },
+          include: {
+            studentFee: { include: { feeDefinition: { select: { id: true, label: true } } } },
+            student: { select: { id: true, firstName: true, lastName: true } },
+          },
+          take: BATCH_SIZE,
+          skip,
+        });
+
+        if (summaries.length === 0) break;
+
+        for (const summary of summaries) {
+          // Vérifier si un impayé existe déjà pour ce studentFee
+          const existing = await this.prisma.feeArrear.findFirst({
+            where: {
+              studentId: summary.studentId,
+              studentFeeId: summary.studentFeeId,
+              academicYearId,
+              tenantId,
+            },
+          });
+
+          if (existing) {
+            // Déjà créé ou mis à jour par la source 1 — on skip
+            continue;
+          }
+
+          const arrearsLevel = this.calculateArrearsLevel(
+            Number(summary.balance),
+            summary.lastPaymentDate,
+          );
+
+          const arrear = await this.prisma.feeArrear.create({
+            data: {
+              tenantId,
+              academicYearId,
+              studentId: summary.studentId,
+              studentFeeId: summary.studentFeeId,
+              totalDue: Number(summary.expectedAmount),
+              totalPaid: Number(summary.paidAmount),
+              balanceDue: Number(summary.balance),
+              arrearsLevel,
+              lastPaymentDate: summary.lastPaymentDate,
+            },
+            include: {
+              student: true,
+              studentFee: { include: { feeDefinition: true } },
+            },
+          });
+          arrears.push(arrear);
+        }
+
+        skip += BATCH_SIZE;
+        if (global.gc) global.gc();
+      }
+    } catch (err) {
+      // PaymentSummary peut ne pas exister — non bloquant
     }
 
     return arrears;
+  }
+
+  /**
+   * Récupère la date du dernier paiement d'un élève pour une année donnée.
+   */
+  private async getLastPaymentDate(studentId: string, academicYearId: string): Promise<Date | null> {
+    const lastTx = await this.prisma.financeTransaction.findFirst({
+      where: {
+        studentAccount: { studentId, academicYearId },
+        type: 'PAYMENT',
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
+    return lastTx?.createdAt ?? null;
   }
 
   /**
@@ -425,7 +510,18 @@ export class CollectionPrismaService {
       include: {
         feeArrear: {
           include: {
-            student: { select: { id: true, firstName: true, lastName: true } },
+            student: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                // Inclure les inscriptions pour le filtre par classe côté frontend
+                studentEnrollments: {
+                  where: { academicYearId: filters?.academicYearId },
+                  select: { id: true, classId: true, class: { select: { id: true, name: true } } },
+                },
+              },
+            },
             studentFee: { include: { feeDefinition: { select: { id: true, label: true } } } },
           },
         },
@@ -480,7 +576,18 @@ export class CollectionPrismaService {
       include: {
         feeArrear: {
           include: {
-            student: { select: { id: true, firstName: true, lastName: true } },
+            student: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                // Inclure les inscriptions pour le filtre par classe côté frontend
+                studentEnrollments: {
+                  where: { academicYearId: filters?.academicYearId },
+                  select: { id: true, classId: true, class: { select: { id: true, name: true } } },
+                },
+              },
+            },
             studentFee: { include: { feeDefinition: { select: { id: true, label: true } } } },
           },
         },

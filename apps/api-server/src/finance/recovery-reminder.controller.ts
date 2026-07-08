@@ -2,7 +2,7 @@
  * SOUS-MODULE 4 — Recouvrement — API (liste rappels, rappel manuel, notification multi-canal).
  * La levée de blocage reste sur POST api/finance/accounts/:id/unblock.
  */
-import { Controller, Get, Post, Body, Query, UseGuards, Param } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Query, UseGuards, Param } from '@nestjs/common';
 import { RecoveryReminderService } from './recovery-reminder.service';
 import { RecoveryNotificationFinanceService } from './recovery-notification-finance.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -46,6 +46,15 @@ export class RecoveryReminderController {
   @Post('run-nightly')
   async runNightly(@TenantId() tenantId: string) {
     return this.service.processTenantReminders(tenantId);
+  }
+
+  /**
+   * DELETE /finance/recovery-reminders/:id
+   * Supprime une relance (pour correction d'erreurs de saisie).
+   */
+  @Delete(':id')
+  async deleteReminder(@TenantId() tenantId: string, @Param('id') id: string) {
+    return this.service.deleteReminder(tenantId, id);
   }
 
   /**

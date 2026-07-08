@@ -188,11 +188,15 @@ export default function FinanceReportsContent() {
   }, [academicYear?.id, dateFrom, dateTo, cashRegisterId, txType, toast]);
 
   // ─── Chargement Arriérés ───
+  // Note : on ne filtre PAS par academicYearId car les arriérés peuvent
+  // concerner des années antérieures (reportés). Le module Recouvrement
+  // affiche tous les arriérés du tenant, on fait pareil ici pour cohérence.
   const loadArrears = useCallback(async () => {
     if (!academicYear?.id) return;
     setLoading(true);
     try {
-      const data = await financeService.getArrears({ academicYearId: academicYear.id });
+      // Récupère TOUS les arriérés du tenant (toutes années confondues)
+      const data = await financeService.getArrears({});
       setArrears(Array.isArray(data) ? data : []);
     } catch (e: any) {
       console.error('Arrears error:', e);
@@ -518,11 +522,11 @@ export default function FinanceReportsContent() {
 
         {/* ─── Export comptable (FEC + OHADA + CSV) — visible uniquement sur Bilan périodique ─── */}
         {subTab === 'bilan' && (
-          <div className="relative">
+          <>
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setShowComptaMenu(!showComptaMenu)}
+              onClick={() => setShowComptaMenu(true)}
               disabled={exportingCompta !== null}
               className="border-violet-300 text-violet-700 hover:bg-violet-50"
             >
@@ -534,70 +538,88 @@ export default function FinanceReportsContent() {
               Export comptable
             </Button>
             {showComptaMenu && (
-              <>
-                {/* Overlay pour fermer le menu en cliquant à l'extérieur */}
+              <div
+                className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[200] p-4"
+                onClick={() => setShowComptaMenu(false)}
+              >
                 <div
-                  className="fixed inset-0 z-40"
-                  onClick={() => setShowComptaMenu(false)}
-                />
-                <div className="absolute right-0 top-9 z-50 bg-white rounded-lg shadow-xl border border-slate-200 py-1 min-w-[280px]">
-                  <div className="px-3 py-2 border-b border-slate-100">
-                    <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">
-                      Format d'export comptable
-                    </p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">
-                      Importable dans Sage, Ciel, EBP, QuickBooks, Pennylane, Odoo…
-                    </p>
+                  className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* En-tête */}
+                  <div className="px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-violet-50 to-white flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-violet-100 flex items-center justify-center flex-shrink-0">
+                      <Calculator className="w-5 h-5 text-violet-700" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-slate-900">Export comptable</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Importable dans Sage, Ciel, EBP, QuickBooks, Pennylane, Odoo…
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setShowComptaMenu(false)}
+                      className="ml-auto text-slate-400 hover:text-slate-600 p-1"
+                      title="Fermer"
+                    >
+                      ✕
+                    </button>
                   </div>
-                  <button
-                    className="w-full text-left px-3 py-2 hover:bg-violet-50 flex items-start gap-2 border-b border-slate-50"
-                    onClick={() => handleExportCompta('fec')}
-                    disabled={exportingCompta !== null}
-                  >
-                    <div className="h-8 w-8 rounded-md bg-violet-100 flex items-center justify-center flex-shrink-0">
-                      <FileText className="w-4 h-4 text-violet-700" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800">FEC (France)</p>
-                      <p className="text-[11px] text-slate-500">Fichier d'Écritures Comptables — 18 colonnes |</p>
-                    </div>
-                  </button>
-                  <button
-                    className="w-full text-left px-3 py-2 hover:bg-emerald-50 flex items-start gap-2 border-b border-slate-50"
-                    onClick={() => handleExportCompta('ohada')}
-                    disabled={exportingCompta !== null}
-                  >
-                    <div className="h-8 w-8 rounded-md bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                      <FileSpreadsheet className="w-4 h-4 text-emerald-700" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800">OHADA (Bénin)</p>
-                      <p className="text-[11px] text-slate-500">CSV SYSCOHADA séparateur ; — Sage OHADA</p>
-                    </div>
-                  </button>
-                  <button
-                    className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-start gap-2"
-                    onClick={() => handleExportCompta('csv')}
-                    disabled={exportingCompta !== null}
-                  >
-                    <div className="h-8 w-8 rounded-md bg-blue-100 flex items-center justify-center flex-shrink-0">
-                      <Download className="w-4 h-4 text-blue-700" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800">CSV universel</p>
-                      <p className="text-[11px] text-slate-500">Mapping libre — QuickBooks, Xero, etc.</p>
-                    </div>
-                  </button>
-                  <div className="px-3 py-2 bg-slate-50 border-t border-slate-100">
-                    <p className="text-[10px] text-slate-500 leading-snug">
+
+                  {/* Options */}
+                  <div className="p-3 space-y-1">
+                    <button
+                      className="w-full text-left px-3 py-3 hover:bg-violet-50 rounded-lg flex items-start gap-3 transition-colors"
+                      onClick={() => handleExportCompta('fec')}
+                      disabled={exportingCompta !== null}
+                    >
+                      <div className="h-9 w-9 rounded-lg bg-violet-100 flex items-center justify-center flex-shrink-0">
+                        <FileText className="w-4 h-4 text-violet-700" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-slate-800">FEC (France)</p>
+                        <p className="text-xs text-slate-500">Fichier d'Écritures Comptables — 18 colonnes |</p>
+                      </div>
+                    </button>
+                    <button
+                      className="w-full text-left px-3 py-3 hover:bg-emerald-50 rounded-lg flex items-start gap-3 transition-colors"
+                      onClick={() => handleExportCompta('ohada')}
+                      disabled={exportingCompta !== null}
+                    >
+                      <div className="h-9 w-9 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                        <FileSpreadsheet className="w-4 h-4 text-emerald-700" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-slate-800">OHADA (Bénin)</p>
+                        <p className="text-xs text-slate-500">CSV SYSCOHADA séparateur ; — Sage OHADA</p>
+                      </div>
+                    </button>
+                    <button
+                      className="w-full text-left px-3 py-3 hover:bg-blue-50 rounded-lg flex items-start gap-3 transition-colors"
+                      onClick={() => handleExportCompta('csv')}
+                      disabled={exportingCompta !== null}
+                    >
+                      <div className="h-9 w-9 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+                        <Download className="w-4 h-4 text-blue-700" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-slate-800">CSV universel</p>
+                        <p className="text-xs text-slate-500">Mapping libre — QuickBooks, Xero, etc.</p>
+                      </div>
+                    </button>
+                  </div>
+
+                  {/* Footer info */}
+                  <div className="px-5 py-3 bg-slate-50 border-t border-slate-100">
+                    <p className="text-[11px] text-slate-500 leading-snug">
                       💡 Pensez à mapper vos catégories de dépenses sur les comptes OHADA
                       (Onglet Dépenses → Catégories) pour un export précis.
                     </p>
                   </div>
                 </div>
-              </>
+              </div>
             )}
-          </div>
+          </>
         )}
       </div>
     );

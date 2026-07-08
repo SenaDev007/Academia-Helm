@@ -50,6 +50,7 @@ import { WhatsAppIcon, GmailIcon, SmsIcon } from '../OfficialIcons';
 import { exportArrearsToPdf } from '@/lib/exports/finance-exports';
 import { exportArrearsToExcel } from '@/lib/exports/excel-exports';
 import { loadPdfLibs } from '@/lib/exports/pdf-loader';
+import { loadXlsx } from '@/lib/exports/xlsx-loader';
 
 type TabId = 'dashboard' | 'arrears' | 'reminders' | 'promises' | 'actions' | 'cases' | 'settings';
 
@@ -258,6 +259,66 @@ export default function RecoveryContent() {
       });
     } finally {
       setDeletingArrear(false);
+    }
+  };
+
+  // Modal suppression de promesse (personnalisé)
+  const [deletePromiseModal, setDeletePromiseModal] = useState<{
+    promiseId: string;
+    studentName: string;
+    promisedAmount: number;
+    promisedDate: string;
+    status: string;
+  } | null>(null);
+  const [deletingPromise, setDeletingPromise] = useState(false);
+
+  const handleConfirmDeletePromise = async () => {
+    if (!deletePromiseModal) return;
+    setDeletingPromise(true);
+    try {
+      const r = await fetch(`/api/finance/collection/promises/${deletePromiseModal.promiseId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data?.error || data?.message || `Échec (HTTP ${r.status})`);
+      toast({ title: '✅ Promesse supprimée', description: 'La promesse a été retirée.' });
+      setDeletePromiseModal(null);
+      loadAll();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e?.message || 'Erreur', variant: 'destructive' });
+    } finally {
+      setDeletingPromise(false);
+    }
+  };
+
+  // Modal suppression d'action (personnalisé)
+  const [deleteActionModal, setDeleteActionModal] = useState<{
+    actionId: string;
+    studentName: string;
+    actionType: string;
+    performedAt: string;
+    notes: string;
+  } | null>(null);
+  const [deletingAction, setDeletingAction] = useState(false);
+
+  const handleConfirmDeleteAction = async () => {
+    if (!deleteActionModal) return;
+    setDeletingAction(true);
+    try {
+      const r = await fetch(`/api/finance/collection/actions/${deleteActionModal.actionId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data?.error || data?.message || `Échec (HTTP ${r.status})`);
+      toast({ title: '✅ Action supprimée', description: "L'action a été retirée." });
+      setDeleteActionModal(null);
+      loadAll();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e?.message || 'Erreur', variant: 'destructive' });
+    } finally {
+      setDeletingAction(false);
     }
   };
 
@@ -832,17 +893,13 @@ export default function RecoveryContent() {
               studentName: arrear.student ? `${arrear.student.lastName} ${arrear.student.firstName}` : 'Élève',
               balanceDue: Number(arrear.balanceDue) || 0,
             })}
-            onDelete={async (p) => {
-              if (window.confirm(`Supprimer la promesse de ${p.feeArrear?.student ? `${p.feeArrear.student.lastName} ${p.feeArrear.student.firstName}` : 'cet élève'} ?`)) {
-                try {
-                  await financeService.deletePaymentPromise(p.id);
-                  toast({ title: '✅ Promesse supprimée' });
-                  loadAll();
-                } catch (e: any) {
-                  toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
-                }
-              }
-            }}
+            onDelete={(p) => setDeletePromiseModal({
+              promiseId: p.id,
+              studentName: p.feeArrear?.student ? `${p.feeArrear.student.lastName} ${p.feeArrear.student.firstName}` : 'Élève',
+              promisedAmount: Number(p.promisedAmount) || 0,
+              promisedDate: p.promisedDate ? new Date(p.promisedDate).toLocaleDateString('fr-FR') : '—',
+              status: p.status || 'PENDING',
+            })}
             arrears={arrears}
             schoolInfo={schoolInfo}
           />
@@ -859,17 +916,13 @@ export default function RecoveryContent() {
               arrearId: arrear.id,
               studentName: arrear.student ? `${arrear.student.lastName} ${arrear.student.firstName}` : 'Élève',
             })}
-            onDelete={async (a) => {
-              if (window.confirm(`Supprimer cette action de recouvrement ?`)) {
-                try {
-                  await financeService.deleteCollectionAction(a.id);
-                  toast({ title: '✅ Action supprimée' });
-                  loadAll();
-                } catch (e: any) {
-                  toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
-                }
-              }
-            }}
+            onDelete={(a) => setDeleteActionModal({
+              actionId: a.id,
+              studentName: a.feeArrear?.student ? `${a.feeArrear.student.lastName} ${a.feeArrear.student.firstName}` : 'Élève',
+              actionType: a.actionType || '—',
+              performedAt: a.performedAt ? new Date(a.performedAt).toLocaleDateString('fr-FR') : '—',
+              notes: a.notes || '',
+            })}
             arrears={arrears}
             schoolInfo={schoolInfo}
           />
@@ -953,6 +1006,26 @@ export default function RecoveryContent() {
           loading={deletingReminder}
           onClose={() => setDeleteReminderModal(null)}
           onConfirm={handleConfirmDeleteReminder}
+        />
+      )}
+
+      {/* Modal suppression de promesse (personnalisé) */}
+      {deletePromiseModal && (
+        <DeletePromiseModal
+          data={deletePromiseModal}
+          loading={deletingPromise}
+          onClose={() => setDeletePromiseModal(null)}
+          onConfirm={handleConfirmDeletePromise}
+        />
+      )}
+
+      {/* Modal suppression d'action (personnalisé) */}
+      {deleteActionModal && (
+        <DeleteActionModal
+          data={deleteActionModal}
+          loading={deletingAction}
+          onClose={() => setDeleteActionModal(null)}
+          onConfirm={handleConfirmDeleteAction}
         />
       )}
     </div>
@@ -2454,7 +2527,7 @@ function PromisesTab({
   const handleExportExcel = async () => {
     setExporting('excel');
     try {
-      const XLSX = await import('xlsx');
+      const XLSX = await loadXlsx();
       const data: any[][] = [
         ['', schoolInfo.schoolName || 'Établissement', ''],
         ['', 'Promesses de paiement', ''],
@@ -2817,7 +2890,7 @@ function ActionsTab({
   const handleExportExcel = async () => {
     setExporting('excel');
     try {
-      const XLSX = await import('xlsx');
+      const XLSX = await loadXlsx();
       const data: any[][] = [
         ['', schoolInfo.schoolName || 'Établissement', ''],
         ['', 'Actions de recouvrement', ''],
@@ -3501,6 +3574,130 @@ function DeleteReminderModal({
                 Supprimer définitivement
               </>
             )}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Modal — Confirmation de suppression d'arriéré (personnalisé)       */
+/* ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ */
+/*  Modal — Suppression de promesse (personnalisé)                     */
+/* ------------------------------------------------------------------ */
+
+function DeletePromiseModal({
+  data,
+  loading,
+  onClose,
+  onConfirm,
+}: {
+  data: {
+    promiseId: string;
+    studentName: string;
+    promisedAmount: number;
+    promisedDate: string;
+    status: string;
+  };
+  loading: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const statusLabel = PROMISE_STATUS_CONFIG[data.status]?.label || data.status;
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-gradient-to-br from-rose-600 to-rose-700 px-6 py-4 text-white">
+          <div className="flex items-center gap-3">
+            <div className="bg-white/20 rounded-full p-2"><Trash2 className="w-5 h-5" /></div>
+            <div>
+              <h3 className="text-lg font-bold">Supprimer la promesse</h3>
+              <p className="text-xs text-rose-100 mt-0.5">Action irréversible</p>
+            </div>
+          </div>
+        </div>
+        <div className="p-6 space-y-4">
+          <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-600 mt-0.5 flex-shrink-0" />
+            <p className="text-xs text-rose-700">Cette promesse sera définitivement supprimée. Cette action ne peut pas être annulée.</p>
+          </div>
+          <div className="border border-slate-200 rounded-lg overflow-hidden">
+            <div className="bg-slate-50 px-4 py-2 border-b border-slate-200"><div className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Détails de la promesse</div></div>
+            <div className="p-4 space-y-2 text-sm">
+              <div className="flex justify-between"><span className="text-slate-500">Élève :</span><span className="font-semibold text-slate-900">{data.studentName}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Montant promis :</span><span className="font-bold text-emerald-700">{formatCurrency(data.promisedAmount)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Date promise :</span><span className="font-medium text-slate-700">{data.promisedDate}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Statut :</span><span className="font-medium text-slate-700">{statusLabel}</span></div>
+            </div>
+          </div>
+        </div>
+        <div className="bg-slate-50 px-6 py-3 flex justify-end gap-2 border-t border-slate-200">
+          <Button type="button" variant="outline" onClick={onClose} disabled={loading}>Annuler</Button>
+          <Button type="button" onClick={onConfirm} disabled={loading} className="bg-rose-600 hover:bg-rose-700 text-white">
+            {loading ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Suppression…</>) : (<><Trash2 className="w-4 h-4 mr-2" />Supprimer définitivement</>)}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Modal — Suppression d'action (personnalisé)                        */
+/* ------------------------------------------------------------------ */
+
+function DeleteActionModal({
+  data,
+  loading,
+  onClose,
+  onConfirm,
+}: {
+  data: {
+    actionId: string;
+    studentName: string;
+    actionType: string;
+    performedAt: string;
+    notes: string;
+  };
+  loading: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const actionLabel = ACTION_TYPE_CONFIG[data.actionType]?.label || data.actionType;
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-gradient-to-br from-rose-600 to-rose-700 px-6 py-4 text-white">
+          <div className="flex items-center gap-3">
+            <div className="bg-white/20 rounded-full p-2"><Trash2 className="w-5 h-5" /></div>
+            <div>
+              <h3 className="text-lg font-bold">Supprimer l'action</h3>
+              <p className="text-xs text-rose-100 mt-0.5">Action irréversible</p>
+            </div>
+          </div>
+        </div>
+        <div className="p-6 space-y-4">
+          <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-600 mt-0.5 flex-shrink-0" />
+            <p className="text-xs text-rose-700">Cette action de recouvrement sera définitivement supprimée du journal. Cette action ne peut pas être annulée.</p>
+          </div>
+          <div className="border border-slate-200 rounded-lg overflow-hidden">
+            <div className="bg-slate-50 px-4 py-2 border-b border-slate-200"><div className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Détails de l'action</div></div>
+            <div className="p-4 space-y-2 text-sm">
+              <div className="flex justify-between"><span className="text-slate-500">Élève :</span><span className="font-semibold text-slate-900">{data.studentName}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Type d'action :</span><span className="font-medium text-slate-700">{actionLabel}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Date :</span><span className="font-medium text-slate-700">{data.performedAt}</span></div>
+              {data.notes && <div className="flex justify-between"><span className="text-slate-500">Notes :</span><span className="font-medium text-slate-700 max-w-[60%] text-right">{data.notes}</span></div>}
+            </div>
+          </div>
+        </div>
+        <div className="bg-slate-50 px-6 py-3 flex justify-end gap-2 border-t border-slate-200">
+          <Button type="button" variant="outline" onClick={onClose} disabled={loading}>Annuler</Button>
+          <Button type="button" onClick={onConfirm} disabled={loading} className="bg-rose-600 hover:bg-rose-700 text-white">
+            {loading ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Suppression…</>) : (<><Trash2 className="w-4 h-4 mr-2" />Supprimer définitivement</>)}
           </Button>
         </div>
       </div>

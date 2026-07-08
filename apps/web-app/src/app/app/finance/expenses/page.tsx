@@ -38,8 +38,9 @@ import { financeService } from '@/services/finance.service';
 import { formatCurrency } from '@/lib/utils';
 import { exportExpensesToExcel } from '@/lib/exports/excel-exports';
 import { expensesFilename } from '@/lib/exports/filename-helpers';
-import {
 import { loadPdfLibs } from '@/lib/exports/pdf-loader';
+import {
+import { loadXlsx } from '@/lib/exports/xlsx-loader';
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from 'recharts';
 
@@ -412,7 +413,7 @@ export default function ExpensesPage() {
   // ─── Export Budget Excel ───
   const handleExportBudgetExcel = async () => {
     try {
-      const XLSX = await import('xlsx');
+      const XLSX = await loadXlsx();
       const data: any[][] = [
         ['', tenant?.name || 'Établissement', ''],
         ['', 'Budget par catégorie', ''],

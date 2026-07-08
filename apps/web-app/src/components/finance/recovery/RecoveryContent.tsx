@@ -326,11 +326,30 @@ export default function RecoveryContent() {
     if (!manualAccountId) return;
     setSendingMulti(true);
     try {
-      // Trouver l'arriéré correspondant au compte élève sélectionné
-      // (manualAccountId = studentAccountId)
-      const matchingArrear = arrears.find((a) => a.studentAccountId === manualAccountId);
+      // ⚠️ manualAccountId = StudentAccount.id (sélectionné dans le modal)
+      // FeeArrear a studentId (= Student.id), PAS studentAccountId
+      // Il faut donc récupérer le studentId depuis le StudentAccount sélectionné.
+
+      // 1. Récupérer le StudentAccount pour obtenir le studentId
+      const accountResponse = await fetch(`/api/finance/student-accounts/${manualAccountId}`, { credentials: 'include' });
+      const accountData = accountResponse.ok ? await accountResponse.json() : null;
+      const studentId = accountData?.studentId;
+
+      if (!studentId) {
+        toast({
+          title: 'Erreur',
+          description: 'Impossible de récupérer les informations de l\'élève.',
+          variant: 'destructive',
+        });
+        setSendingMulti(false);
+        return;
+      }
+
+      // 2. Trouver l'arriéré correspondant au studentId
+      const matchingArrear = arrears.find((a) => a.studentId === studentId);
+
       if (!matchingArrear) {
-        // Fallback : si pas d'arriéré trouvé, on appelle l'ancien système
+        // Fallback : si pas d'arriéré FeeArrear, on appelle l'ancien système
         await financeService.sendManualReminder({
           studentAccountId: manualAccountId,
           level: 'WARNING',
@@ -338,7 +357,7 @@ export default function RecoveryContent() {
         });
         toast({
           title: '⚠️ Relance envoyée (ancien système)',
-          description: 'Aucun arriéré trouvé pour cet élève. Relance basique envoyée par email.',
+          description: 'Aucun arriéré FeeArrear trouvé pour cet élève. Relance basique envoyée par SMS.',
         });
       } else {
         // NOUVEAU système : envoi multi-canal (email + WhatsApp + SMS) au parent

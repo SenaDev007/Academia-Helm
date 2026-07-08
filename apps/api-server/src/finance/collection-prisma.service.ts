@@ -564,6 +564,9 @@ export class CollectionPrismaService {
 
   /**
    * Liste toutes les promesses de paiement d'un tenant (avec filtres).
+   * ⚠️ Les promesses sont liées à des FeeArrear qui peuvent être d'années antérieures.
+   * On filtre donc par tenantId (toutes années confondues) sauf si academicYearId
+   * est explicitement demandé.
    */
   async findAllPaymentPromises(
     tenantId: string,
@@ -576,11 +579,11 @@ export class CollectionPrismaService {
     const where: any = {};
     if (filters?.status) where.status = filters.status;
     if (filters?.feeArrearId) where.feeArrearId = filters.feeArrearId;
-    if (filters?.academicYearId) {
-      where.feeArrear = { academicYearId: filters.academicYearId, tenantId };
-    } else {
-      where.feeArrear = { tenantId };
-    }
+
+    // ⚠️ Ne pas filtrer par academicYearId sur le feeArrear — les promesses peuvent
+    // être liées à des arriérés d'années antérieures. On filtre seulement par tenantId.
+    // L'academicYearId est utilisé uniquement pour les studentEnrollments (filtre classe).
+    where.feeArrear = { tenantId };
 
     return this.prisma.paymentPromise.findMany({
       where,
@@ -600,6 +603,7 @@ export class CollectionPrismaService {
               },
             },
             studentFee: { include: { feeDefinition: { select: { id: true, label: true } } } },
+            academicYear: { select: { id: true, name: true } },
           },
         },
         creator: { select: { id: true, firstName: true, lastName: true } },
@@ -642,11 +646,10 @@ export class CollectionPrismaService {
     const where: any = {};
     if (filters?.actionType) where.actionType = filters.actionType;
     if (filters?.feeArrearId) where.feeArrearId = filters.feeArrearId;
-    if (filters?.academicYearId) {
-      where.feeArrear = { academicYearId: filters.academicYearId, tenantId };
-    } else {
-      where.feeArrear = { tenantId };
-    }
+
+    // ⚠️ Ne pas filtrer par academicYearId sur le feeArrear — les actions peuvent
+    // être liées à des arriérés d'années antérieures. On filtre seulement par tenantId.
+    where.feeArrear = { tenantId };
 
     return this.prisma.collectionAction.findMany({
       where,
@@ -666,6 +669,7 @@ export class CollectionPrismaService {
               },
             },
             studentFee: { include: { feeDefinition: { select: { id: true, label: true } } } },
+            academicYear: { select: { id: true, name: true } },
           },
         },
         performer: { select: { id: true, firstName: true, lastName: true } },

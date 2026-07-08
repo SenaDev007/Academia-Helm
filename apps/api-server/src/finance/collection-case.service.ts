@@ -362,9 +362,9 @@ export class CollectionCaseService {
       balanceDue: { gt: 0 },
     };
 
-    if (filters?.academicYearId) {
-      where.academicYearId = filters.academicYearId;
-    }
+    // ⚠️ Ne pas filtrer par academicYearId — les dossiers doivent regrouper
+    // TOUS les arriérés du tenant (toutes années confondues).
+    // L'academicYearId est utilisé uniquement pour les studentEnrollments (filtre classe).
 
     const feeArrears = await this.prisma.feeArrear.findMany({
       where,

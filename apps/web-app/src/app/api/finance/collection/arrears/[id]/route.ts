@@ -11,12 +11,13 @@ const API_URL = getApiBaseUrlForRoutes();
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
+  const { id } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
     const r = await fetch(
-      normalizeApiUrl(`${API_URL}/finance/collection/arrears/${encodeURIComponent(params.id)}`),
+      normalizeApiUrl(`${API_URL}/finance/collection/arrears/${encodeURIComponent(id)}`),
       {
         method: 'DELETE',
         headers,

@@ -21,7 +21,7 @@ import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Eye, CheckCircle, XCircle, FileSpreadsheet, FileText, Plus, Search,
   TrendingDown, Clock, CheckCircle2, XCircle as XCircleIcon, Wallet,
-  Loader2, Upload, Link2, Calendar,
+  Loader2, Upload, Link2, Calendar, AlertTriangle,
 } from 'lucide-react';
 import {
   ModuleContentArea,
@@ -38,6 +38,9 @@ import { financeService } from '@/services/finance.service';
 import { formatCurrency } from '@/lib/utils';
 import { exportExpensesToExcel } from '@/lib/exports/excel-exports';
 import { expensesFilename } from '@/lib/exports/filename-helpers';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+} from 'recharts';
 
 type Tab = 'expenses' | 'budget';
 
@@ -50,6 +53,7 @@ export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [budgets, setBudgets] = useState<any[]>([]);
+  const [monthlyStats, setMonthlyStats] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<'pdf' | 'excel' | null>(null);
 
@@ -66,6 +70,9 @@ export default function ExpensesPage() {
   const [detailExpense, setDetailExpense] = useState<any | null>(null);
   const [modalBudget, setModalBudget] = useState(false);
   const [budgetForm, setBudgetForm] = useState({ categoryId: '', allocatedAmount: '' });
+  const [rejectModal, setRejectModal] = useState<{ id: string; studentName: string; amount: number; description: string } | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejecting, setRejecting] = useState(false);
 
   // ─── Formulaire nouvelle dépense ───
   const [form, setForm] = useState({
@@ -74,6 +81,8 @@ export default function ExpensesPage() {
     amount: '',
     receiptUrl: '',
     expenseDate: new Date().toISOString().slice(0, 10),
+    vendor: '',
+    invoiceRef: '',
   });
 
   // ─── Chargement ───
@@ -102,6 +111,16 @@ export default function ExpensesPage() {
     }
   };
 
+  const loadMonthlyStats = async () => {
+    if (!academicYear?.id) return;
+    try {
+      const data = await financeService.getExpenseMonthlyStats(academicYear.id);
+      setMonthlyStats(Array.isArray(data) ? data : []);
+    } catch {
+      setMonthlyStats([]);
+    }
+  };
+
   useEffect(() => {
     if (!academicYear?.id) return;
     setLoading(true);
@@ -110,6 +129,7 @@ export default function ExpensesPage() {
       .catch(() => setCategories([]));
     loadExpenses().then(() => setLoading(false));
     loadBudgets();
+    loadMonthlyStats();
   }, [academicYear?.id, filterStatus, filterCategory, filterFrom, filterTo]);
 
   useEffect(() => {
@@ -158,11 +178,15 @@ export default function ExpensesPage() {
         description: form.description,
         amount: Number(form.amount),
         receiptUrl: form.receiptUrl || undefined,
+        expenseDate: form.expenseDate,
+        vendor: form.vendor || undefined,
+        invoiceRef: form.invoiceRef || undefined,
       });
       setModalCreate(false);
-      setForm({ categoryId: '', description: '', amount: '', receiptUrl: '', expenseDate: new Date().toISOString().slice(0, 10) });
+      setForm({ categoryId: '', description: '', amount: '', receiptUrl: '', expenseDate: new Date().toISOString().slice(0, 10), vendor: '', invoiceRef: '' });
       loadExpenses();
       loadBudgets();
+      loadMonthlyStats();
     } catch (error) {
       console.error('Erreur lors de la création:', error);
     }
@@ -173,18 +197,27 @@ export default function ExpensesPage() {
       await financeService.approveExpense(id);
       loadExpenses();
       loadBudgets();
-    } catch (error) {
+      loadMonthlyStats();
+    } catch (error: any) {
       console.error(error);
+      alert(error?.message || 'Erreur lors de l\'approbation. Vérifiez vos permissions.');
     }
   };
 
-  const handleReject = async (id: string) => {
+  const handleReject = async (id: string, reason: string) => {
+    setRejecting(true);
     try {
-      await financeService.rejectExpense(id);
+      await financeService.rejectExpense(id, reason);
+      setRejectModal(null);
+      setRejectReason('');
       loadExpenses();
       loadBudgets();
-    } catch (error) {
+      loadMonthlyStats();
+    } catch (error: any) {
       console.error(error);
+      alert(error?.message || 'Erreur lors du rejet.');
+    } finally {
+      setRejecting(false);
     }
   };
 
@@ -361,6 +394,54 @@ export default function ExpensesPage() {
           />
         </div>
 
+        {/* ─── Graphique évolution mensuelle ─── */}
+        {monthlyStats.length > 0 && (
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                <TrendingDown className="w-4 h-4 text-indigo-500" />
+                Évolution mensuelle des dépenses approuvées
+              </h3>
+              <span className="text-xs text-slate-500">{monthlyStats.length} mois</span>
+            </div>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={monthlyStats} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis
+                  dataKey="monthLabel"
+                  tick={{ fontSize: 11, fill: '#64748b' }}
+                  axisLine={{ stroke: '#e2e8f0' }}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: '#64748b' }}
+                  axisLine={{ stroke: '#e2e8f0' }}
+                  tickLine={false}
+                  tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
+                />
+                <Tooltip
+                  formatter={(value: any) => [`${formatCurrency(Number(value))} FCFA`, 'Total']}
+                  labelStyle={{ color: '#1e293b', fontWeight: 600 }}
+                  contentStyle={{
+                    backgroundColor: '#fff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                  }}
+                />
+                <Bar dataKey="total" radius={[4, 4, 0, 0]}>
+                  {monthlyStats.map((entry, index) => (
+                    <Cell
+                      key={`cell-${index}`}
+                      fill={entry.total > 500000 ? '#dc2626' : entry.total > 200000 ? '#f59e0b' : '#6366f1'}
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
         {/* ─── Onglets Dépenses / Budget ─── */}
         <div className="flex gap-2">
           <Button
@@ -500,7 +581,16 @@ export default function ExpensesPage() {
                         <TableCell className="text-sm text-slate-600">
                           {expense.requester ? [expense.requester.firstName, expense.requester.lastName].filter(Boolean).join(' ') : '—'}
                         </TableCell>
-                        <TableCell>{getStatusBadge(expense.status)}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {getStatusBadge(expense.status)}
+                            {expense.overBudget && (
+                              <Badge variant="outline" className="text-[10px] bg-rose-50 text-rose-700 border-rose-300" title="Cette dépense dépasse le budget de sa catégorie">
+                                ⚠ Dépassement
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
                             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setDetailExpense(expense)} title="Voir détails">
@@ -511,7 +601,15 @@ export default function ExpensesPage() {
                                 <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-emerald-100" onClick={async () => { const ok = await confirmDialog.warning('Cette dépense sera approuvée et ne pourra plus être modifiée.', 'Approuver la dépense'); if (ok) handleApprove(expense.id); }} title="Approuver">
                                   <CheckCircle className="h-3.5 w-3.5 text-emerald-600" />
                                 </Button>
-                                <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-rose-100" onClick={async () => { const ok = await confirmDialog.danger('Cette dépense sera rejetée définitivement.', 'Rejeter la dépense'); if (ok) handleReject(expense.id); }} title="Rejeter">
+                                <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-rose-100" onClick={() => {
+                                  setRejectModal({
+                                    id: expense.id,
+                                    studentName: expense.requester ? `${expense.requester.firstName} ${expense.requester.lastName}` : '—',
+                                    amount: Number(expense.amount) || 0,
+                                    description: expense.description,
+                                  });
+                                  setRejectReason('');
+                                }} title="Rejeter">
                                   <XCircle className="h-3.5 w-3.5 text-rose-600" />
                                 </Button>
                               </>
@@ -699,6 +797,27 @@ export default function ExpensesPage() {
                   placeholder="ex: 50000"
                 />
               </div>
+              {/* Fournisseur + Référence facture (côte à côte) */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Fournisseur</Label>
+                  <Input
+                    type="text"
+                    value={form.vendor}
+                    onChange={(e) => setForm((f) => ({ ...f, vendor: e.target.value }))}
+                    placeholder="Optionnel"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Réf. facture</Label>
+                  <Input
+                    type="text"
+                    value={form.invoiceRef}
+                    onChange={(e) => setForm((f) => ({ ...f, invoiceRef: e.target.value }))}
+                    placeholder="Optionnel"
+                  />
+                </div>
+              </div>
               <div>
                 <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
                   Justificatif (URL)
@@ -798,10 +917,47 @@ export default function ExpensesPage() {
                 </div>
               )}
 
+              {/* Fournisseur + Réf facture */}
+              {(detailExpense.vendor || detailExpense.invoiceRef) && (
+                <div className="grid grid-cols-2 gap-3">
+                  {detailExpense.vendor && (
+                    <div className="bg-slate-50 rounded-lg p-3">
+                      <div className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-1">Fournisseur</div>
+                      <div className="font-medium text-slate-800 text-sm">{detailExpense.vendor}</div>
+                    </div>
+                  )}
+                  {detailExpense.invoiceRef && (
+                    <div className="bg-slate-50 rounded-lg p-3">
+                      <div className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-1">Réf. facture</div>
+                      <div className="font-mono text-slate-800 text-sm">{detailExpense.invoiceRef}</div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Alerte dépassement budget */}
+              {detailExpense.overBudget && (
+                <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 mt-0.5 flex-shrink-0" />
+                  <p className="text-xs text-rose-700">
+                    <strong>Dépassement de budget :</strong> Cette dépense dépasse le budget alloué à sa catégorie.
+                    Seul le Promoteur peut l'approuver.
+                  </p>
+                </div>
+              )}
+
+              {/* Motif du rejet */}
+              {detailExpense.status === 'REJECTED' && detailExpense.rejectReason && (
+                <div className="bg-rose-50 border border-rose-200 rounded-lg p-3">
+                  <div className="text-[10px] uppercase tracking-wide text-rose-600 font-semibold mb-1">Motif du rejet</div>
+                  <p className="text-sm text-rose-800">{detailExpense.rejectReason}</p>
+                </div>
+              )}
+
               {detailExpense.approvedAt && (
                 <div className="flex items-center gap-2 text-xs text-slate-500">
                   <Clock className="w-3.5 h-3.5" />
-                  Approuvée le {new Date(detailExpense.approvedAt).toLocaleDateString('fr-FR')}
+                  {detailExpense.status === 'REJECTED' ? 'Rejetée le' : 'Approuvée le'} {new Date(detailExpense.approvedAt).toLocaleDateString('fr-FR')}
                 </div>
               )}
 
@@ -821,9 +977,15 @@ export default function ExpensesPage() {
                   <Button
                     variant="outline"
                     className="flex-1 border-rose-300 text-rose-700 hover:bg-rose-50"
-                    onClick={async () => {
-                      const ok = await confirmDialog.danger('Cette dépense sera rejetée définitivement.', 'Rejeter la dépense');
-                      if (ok) { handleReject(detailExpense.id); setDetailExpense(null); }
+                    onClick={() => {
+                      setRejectModal({
+                        id: detailExpense.id,
+                        studentName: detailExpense.requester ? `${detailExpense.requester.firstName} ${detailExpense.requester.lastName}` : '—',
+                        amount: Number(detailExpense.amount) || 0,
+                        description: detailExpense.description,
+                      });
+                      setRejectReason('');
+                      setDetailExpense(null);
                     }}
                   >
                     <XCircle className="w-4 h-4 mr-1.5" />
@@ -889,6 +1051,84 @@ export default function ExpensesPage() {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Modal motif de rejet ─── */}
+      {rejectModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50 p-4" onClick={() => !rejecting && setRejectModal(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            {/* En-tête rouge */}
+            <div className="bg-gradient-to-br from-rose-600 to-rose-700 px-6 py-4 text-white">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 rounded-full p-2">
+                  <XCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold">Rejeter la dépense</h3>
+                  <p className="text-xs text-rose-100 mt-0.5">Un motif est obligatoire</p>
+                </div>
+              </div>
+            </div>
+            {/* Corps */}
+            <div className="p-6 space-y-4">
+              <div className="bg-slate-50 rounded-lg p-3 space-y-1.5 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Description :</span>
+                  <span className="font-medium text-slate-800 text-right max-w-[60%]">{rejectModal.description}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Demandé par :</span>
+                  <span className="font-medium text-slate-700">{rejectModal.studentName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Montant :</span>
+                  <span className="font-bold text-rose-700">{formatCurrency(rejectModal.amount)} FCFA</span>
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
+                  Motif du rejet * <span className="text-rose-600 normal-case font-normal">(obligatoire)</span>
+                </Label>
+                <textarea
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  rows={3}
+                  disabled={rejecting}
+                  placeholder="Expliquez pourquoi cette dépense est rejetée…"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-rose-500 disabled:bg-slate-50"
+                  required
+                />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  💡 Ce motif sera enregistré dans l'audit log et visible par le demandeur.
+                </p>
+              </div>
+            </div>
+            {/* Actions */}
+            <div className="bg-slate-50 px-6 py-3 flex justify-end gap-2 border-t border-slate-200">
+              <Button type="button" variant="outline" onClick={() => setRejectModal(null)} disabled={rejecting}>
+                Annuler
+              </Button>
+              <Button
+                type="button"
+                onClick={() => handleReject(rejectModal.id, rejectReason)}
+                disabled={!rejectReason.trim() || rejecting}
+                className="bg-rose-600 hover:bg-rose-700 text-white"
+              >
+                {rejecting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Rejet…
+                  </>
+                ) : (
+                  <>
+                    <XCircle className="w-4 h-4 mr-2" />
+                    Confirmer le rejet
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </div>
       )}

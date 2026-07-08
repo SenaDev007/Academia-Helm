@@ -4925,6 +4925,16 @@ model FinanceExpense {
   requestedById  String
   approvedById   String?
   approvedAt     DateTime?
+  /// Motif du rejet (obligatoire si status = REJECTED)
+  rejectReason   String?
+  /// Indique si la dépense dépasse le budget de sa catégorie (flag ORION)
+  overBudget     Boolean         @default(false)
+  /// Date de la dépense (peut être antérieure à createdAt pour saisie rétroactive)
+  expenseDate    DateTime        @default(now())
+  /// Fournisseur / bénéficiaire (optionnel)
+  vendor         String?
+  /// Référence facture (optionnel)
+  invoiceRef     String?
   createdAt      DateTime        @default(now())
   academicYear   AcademicYear    @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   approver       User?           @relation("FinanceExpenseApprover", fields: [approvedById], references: [id])
@@ -4935,6 +4945,7 @@ model FinanceExpense {
   @@index([tenantId, academicYearId])
   @@index([categoryId])
   @@index([status])
+  @@index([expenseDate])
   @@map("finance_expenses")
 }
 

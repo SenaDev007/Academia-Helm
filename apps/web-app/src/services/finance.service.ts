@@ -152,22 +152,30 @@ class FinanceService {
     });
   }
 
-  // --- Expenses ---
+  // --- Expenses (utilise expenses-v2 qui a le workflow complet : justificatif, budget, audit) ---
   async getExpenses(params?: Record<string, string>): Promise<any> {
     const qs = params ? new URLSearchParams(params).toString() : '';
-    return financeFetch(`/api/finance/expenses${qs ? `?${qs}` : ''}`);
+    return financeFetch(`/api/finance/expenses-v2${qs ? `?${qs}` : ''}`);
   }
 
   async createExpense(data: any): Promise<any> {
-    return financeFetch('/api/finance/expenses', { method: 'POST', body: data });
+    return financeFetch('/api/finance/expenses-v2', { method: 'POST', body: data });
   }
 
   async approveExpense(id: string): Promise<any> {
-    return financeFetch(`/api/finance/expenses/${encodeURIComponent(id)}/approve`, { method: 'POST' });
+    return financeFetch(`/api/finance/expenses-v2/${encodeURIComponent(id)}/approve`, { method: 'PATCH' });
   }
 
-  async rejectExpense(id: string, reason: string): Promise<any> {
-    return financeFetch(`/api/finance/expenses/${encodeURIComponent(id)}/reject`, { method: 'POST', body: { reason } });
+  async rejectExpense(id: string, rejectReason: string): Promise<any> {
+    return financeFetch(`/api/finance/expenses-v2/${encodeURIComponent(id)}/reject`, { method: 'PATCH', body: { rejectReason } });
+  }
+
+  /**
+   * Statistiques mensuelles des dépenses pour le graphique d'évolution.
+   * GET /api/finance/expenses-v2/monthly-stats?academicYearId=...
+   */
+  async getExpenseMonthlyStats(academicYearId: string): Promise<any> {
+    return financeFetch(`/api/finance/expenses-v2/monthly-stats?academicYearId=${encodeURIComponent(academicYearId)}`);
   }
 
   // --- Treasury / Daily Closures ---

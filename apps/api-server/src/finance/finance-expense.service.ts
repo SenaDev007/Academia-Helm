@@ -18,6 +18,9 @@ export class FinanceExpenseService {
       description: string;
       receiptUrl?: string;
       requestedById: string;
+      expenseDate?: Date;
+      vendor?: string;
+      invoiceRef?: string;
     },
     receiptThreshold?: number | null,
   ) {
@@ -32,6 +35,9 @@ export class FinanceExpenseService {
     if (!year) throw new NotFoundException('Annee scolaire introuvable');
     if (year.isClosed) throw new BadRequestException('Annee scolaire cloturee');
 
+    // Vérifier le dépassement de budget à la création
+    const { overrun } = await this.checkOverrun(tenantId, data.academicYearId, data.categoryId, data.amount);
+
     const created = await this.prisma.financeExpense.create({
       data: {
         tenantId,
@@ -42,6 +48,10 @@ export class FinanceExpenseService {
         receiptUrl: data.receiptUrl ?? null,
         status: 'PENDING',
         requestedById: data.requestedById,
+        overBudget: overrun,
+        expenseDate: data.expenseDate ?? new Date(),
+        vendor: data.vendor ?? null,
+        invoiceRef: data.invoiceRef ?? null,
       },
       include: { category: true, requester: { select: { id: true, firstName: true, lastName: true } } },
     });
@@ -51,10 +61,23 @@ export class FinanceExpenseService {
         entityType: 'FinanceExpense',
         entityId: created.id,
         action: 'CREATE',
-        newValue: { amount: data.amount, categoryId: data.categoryId, description: data.description },
+        newValue: { amount: data.amount, categoryId: data.categoryId, description: data.description, overBudget: overrun },
         performedById: data.requestedById,
       },
     });
+
+    // Si dépassement de budget → créer une anomalie ORION
+    if (overrun) {
+      await this.prisma.financialAnomaly.create({
+        data: {
+          tenantId,
+          type: 'BUDGET_OVERRUN',
+          severity: 'HIGH',
+          referenceId: created.id,
+        },
+      });
+    }
+
     return created;
   }
 
@@ -100,41 +123,46 @@ export class FinanceExpenseService {
     return e;
   }
 
-  async approve(id: string, tenantId: string, approvedById: string) {
+  async approve(id: string, tenantId: string, approvedById: string, approverRole?: string) {
     const e = await this.findOne(id, tenantId);
     if (e.status !== 'PENDING') throw new BadRequestException('Depense deja traitee');
     const amount = Number(e.amount);
     const { overrun } = await this.checkOverrun(tenantId, e.academicYearId, e.categoryId, amount);
-    if (overrun) {
-      await this.prisma.financialAnomaly.create({
-        data: {
-          tenantId,
-          type: 'BUDGET_OVERRUN',
-          severity: 'HIGH',
-          referenceId: e.id,
-        },
-      });
+
+    // ⚠️ RÈGLE 4 — Dépassement budget : validation Promoteur obligatoire
+    // Si la dépense dépasse le budget, seul le PROMOTEUR peut approuver
+    if (overrun && approverRole && !['PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER'].includes(approverRole)) {
+      throw new BadRequestException(
+        'Cette dépense dépasse le budget de sa catégorie. Seul le Promoteur peut l\'approuver.',
+      );
     }
+
     await this.prisma.financialAuditLog.create({
       data: {
         tenantId,
         entityType: 'FinanceExpense',
         entityId: id,
         action: 'APPROVE',
-        newValue: { status: 'APPROVED', approvedById, approvedAt: new Date() },
+        newValue: { status: 'APPROVED', approvedById, approvedAt: new Date(), overBudget: overrun },
         performedById: approvedById,
       },
     });
     return this.prisma.financeExpense.update({
       where: { id },
-      data: { status: 'APPROVED', approvedById, approvedAt: new Date() },
+      data: { status: 'APPROVED', approvedById, approvedAt: new Date(), overBudget: overrun },
       include: { category: true, approver: { select: { id: true, firstName: true, lastName: true } } },
     });
   }
 
-  async reject(id: string, tenantId: string, approvedById: string) {
+  async reject(id: string, tenantId: string, approvedById: string, rejectReason?: string) {
     const e = await this.findOne(id, tenantId);
     if (e.status !== 'PENDING') throw new BadRequestException('Depense deja traitee');
+
+    // Le motif de rejet est obligatoire
+    if (!rejectReason || !rejectReason.trim()) {
+      throw new BadRequestException('Le motif du rejet est obligatoire.');
+    }
+
     await this.prisma.financialAuditLog.create({
       data: {
         tenantId,
@@ -142,14 +170,19 @@ export class FinanceExpenseService {
         entityId: id,
         action: 'REJECT',
         oldValue: { status: e.status },
-        newValue: { status: 'REJECTED', approvedById },
+        newValue: { status: 'REJECTED', approvedById, rejectReason },
         performedById: approvedById,
       },
     });
     return this.prisma.financeExpense.update({
       where: { id },
-      data: { status: 'REJECTED', approvedById, approvedAt: new Date() },
-      include: { category: true },
+      data: {
+        status: 'REJECTED',
+        approvedById,
+        approvedAt: new Date(),
+        rejectReason: rejectReason.trim(),
+      },
+      include: { category: true, approver: { select: { id: true, firstName: true, lastName: true } } },
     });
   }
 
@@ -210,5 +243,36 @@ export class FinanceExpenseService {
       allocated,
       spent: Number(spent._sum.amount ?? 0),
     };
+  }
+
+  /**
+   * Statistiques mensuelles pour le graphique d'évolution des dépenses.
+   * Retourne un tableau de { month, total, count } pour l'année scolaire.
+   */
+  async getMonthlyStats(tenantId: string, academicYearId: string) {
+    const expenses = await this.prisma.financeExpense.findMany({
+      where: { tenantId, academicYearId, status: 'APPROVED' },
+      select: { amount: true, expenseDate: true },
+    });
+
+    // Grouper par mois (format YYYY-MM)
+    const byMonth: Record<string, { total: number; count: number }> = {};
+    for (const e of expenses) {
+      const d = new Date(e.expenseDate);
+      const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (!byMonth[monthKey]) byMonth[monthKey] = { total: 0, count: 0 };
+      byMonth[monthKey].total += Number(e.amount ?? 0);
+      byMonth[monthKey].count += 1;
+    }
+
+    // Trier par mois
+    return Object.entries(byMonth)
+      .map(([month, data]) => ({
+        month,
+        monthLabel: new Date(month + '-01').toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' }),
+        total: data.total,
+        count: data.count,
+      }))
+      .sort((a, b) => a.month.localeCompare(b.month));
   }
 }

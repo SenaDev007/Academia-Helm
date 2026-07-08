@@ -485,6 +485,18 @@ export class CreateFinanceExpenseDto {
   @IsOptional()
   @IsString()
   receiptUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  expenseDate?: string;
+
+  @IsOptional()
+  @IsString()
+  vendor?: string;
+
+  @IsOptional()
+  @IsString()
+  invoiceRef?: string;
 }
 
 // ─── 13. DailyClosure ───────────────────────────────────────────────────────

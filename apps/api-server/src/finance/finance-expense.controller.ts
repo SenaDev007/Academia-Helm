@@ -5,12 +5,14 @@ import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@ne
 import { FinanceExpenseService } from './finance-expense.service';
 import { FinancialSettingsService } from './financial-settings.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CreateFinanceExpenseDto } from './dto';
 
 @Controller('finance/expenses-v2')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class FinanceExpenseController {
   constructor(
     private readonly expenseService: FinanceExpenseService,
@@ -21,7 +23,7 @@ export class FinanceExpenseController {
   async create(
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
-    @Body() body: CreateFinanceExpenseDto,
+    @Body() body: CreateFinanceExpenseDto & { expenseDate?: string; vendor?: string; invoiceRef?: string },
   ) {
     const settings = await this.settingsService.getForTenant(tenantId);
     const threshold = settings?.expenseReceiptThreshold != null ? Number(settings.expenseReceiptThreshold) : null;
@@ -30,6 +32,7 @@ export class FinanceExpenseController {
       {
         ...body,
         requestedById: user?.id,
+        expenseDate: body.expenseDate ? new Date(body.expenseDate) : undefined,
       },
       threshold,
     );
@@ -54,6 +57,15 @@ export class FinanceExpenseController {
     });
   }
 
+  @Get('monthly-stats')
+  async getMonthlyStats(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!academicYearId) return [];
+    return this.expenseService.getMonthlyStats(tenantId, academicYearId);
+  }
+
   @Get('budgets')
   async getBudgets(
     @TenantId() tenantId: string,
@@ -64,6 +76,7 @@ export class FinanceExpenseController {
   }
 
   @Post('budgets')
+  @Roles('DIRECTOR', 'ADMIN', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
   async setBudget(
     @TenantId() tenantId: string,
     @Body() body: { academicYearId: string; categoryId: string; allocatedAmount: number },
@@ -82,12 +95,25 @@ export class FinanceExpenseController {
   }
 
   @Patch(':id/approve')
-  async approve(@Param('id') id: string, @TenantId() tenantId: string, @CurrentUser() user: any) {
-    return this.expenseService.approve(id, tenantId, user?.id);
+  @Roles('DIRECTOR', 'ADMIN', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
+  async approve(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+  ) {
+    // user.role est utilisé pour vérifier si le Promoteur est requis en cas de dépassement
+    const userRole = user?.role || user?.roles?.[0] || '';
+    return this.expenseService.approve(id, tenantId, user?.id, userRole);
   }
 
   @Patch(':id/reject')
-  async reject(@Param('id') id: string, @TenantId() tenantId: string, @CurrentUser() user: any) {
-    return this.expenseService.reject(id, tenantId, user?.id);
+  @Roles('DIRECTOR', 'ADMIN', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
+  async reject(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() body: { rejectReason?: string },
+  ) {
+    return this.expenseService.reject(id, tenantId, user?.id, body?.rejectReason);
   }
 }

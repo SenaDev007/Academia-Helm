@@ -31,6 +31,11 @@ import {
   cashRegisterFilename,
   allCashRegistersFilename,
 } from '@/lib/exports/filename-helpers';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+  PieChart, Pie, Legend, LineChart, Line,
+} from 'recharts';
+import { TrendingDown, AlertTriangle, Bell } from 'lucide-react';
 
 /** Transfert inter-caisses (manuel ou allocation automatique). */
 interface CashRegisterTransfer {
@@ -303,10 +308,13 @@ export default function CashRegistersContent() {
   const [transferPending, setTransferPending] = useState(false);
   const [staffList, setStaffList] = useState<any[]>([]);
   // Onglet actif : constellation | historique
-  const [activeTab, setActiveTab] = useState<'constellation' | 'historique'>('constellation');
+  const [activeTab, setActiveTab] = useState<'constellation' | 'historique' | 'dashboard'>('constellation');
   // Historique des transferts
   const [transfers, setTransfers] = useState<any[]>([]);
   const [transfersLoading, setTransfersLoading] = useState(false);
+  // Dashboard
+  const [dashboardStats, setDashboardStats] = useState<any>(null);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -402,7 +410,24 @@ export default function CashRegistersContent() {
     if (activeTab === 'historique') {
       loadTransfers();
     }
+    if (activeTab === 'dashboard') {
+      loadDashboardStats();
+    }
   }, [activeTab, loadTransfers]);
+
+  const loadDashboardStats = useCallback(async () => {
+    setDashboardLoading(true);
+    try {
+      const params = academicYear?.id ? `?academicYearId=${academicYear.id}` : '';
+      const res = await fetch(`/api/finance/cash-registers/dashboard${params}`, { credentials: 'include' });
+      const data = await res.json();
+      setDashboardStats(data);
+    } catch {
+      setDashboardStats(null);
+    } finally {
+      setDashboardLoading(false);
+    }
+  }, [academicYear?.id]);
 
   // Charger les transferts quand on sélectionne une caisse (pour les stats tontine
   // et la traçabilité des entrants/sortants)
@@ -885,9 +910,20 @@ export default function CashRegistersContent() {
                   )}
                 </div>
               </button>
+              <button
+                onClick={() => setActiveTab('dashboard')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'dashboard'
+                    ? 'border-indigo-600 text-indigo-600'
+                    : 'border-transparent text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4" />
+                  Tableau de bord
+                </div>
+              </button>
             </div>
-
-            {/* === CONTENU ONGLET CONSTELLATION === */}
             {activeTab === 'constellation' && (
             <>
             {/* === CONSTELLATION COFFRE-FORT + CAISSES === */}
@@ -1183,6 +1219,217 @@ export default function CashRegistersContent() {
                       </tbody>
                     </table>
                   </div>
+                )}
+              </div>
+            )}
+
+            {/* === CONTENU ONGLET TABLEAU DE BORD === */}
+            {activeTab === 'dashboard' && (
+              <div className="space-y-4">
+                {dashboardLoading ? (
+                  <div className="flex items-center justify-center py-16">
+                    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600" />
+                  </div>
+                ) : !dashboardStats ? (
+                  <div className="text-center py-16">
+                    <BarChart3 className="w-12 h-12 mx-auto text-slate-300 mb-3" />
+                    <p className="text-slate-500 text-sm">Aucune donnée disponible pour le tableau de bord.</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* KPIs */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                        <div className="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center mb-2">
+                          <TrendingUp className="w-4 h-4" />
+                        </div>
+                        <p className="text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-1">Total encaissé</p>
+                        <p className="text-xl font-bold text-emerald-700">{formatCurrency(dashboardStats.totalEncaisse || 0)}</p>
+                      </div>
+                      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                        <div className="w-9 h-9 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center mb-2">
+                          <TrendingDown className="w-4 h-4" />
+                        </div>
+                        <p className="text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-1">Total dépensé</p>
+                        <p className="text-xl font-bold text-rose-700">{formatCurrency(dashboardStats.totalDepense || 0)}</p>
+                      </div>
+                      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                        <div className="w-9 h-9 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center mb-2">
+                          <Wallet className="w-4 h-4" />
+                        </div>
+                        <p className="text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-1">Solde net</p>
+                        <p className={`text-xl font-bold ${(dashboardStats.totalSoldeNet || 0) >= 0 ? 'text-indigo-700' : 'text-rose-700'}`}>
+                          {formatCurrency(dashboardStats.totalSoldeNet || 0)}
+                        </p>
+                      </div>
+                      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                        <div className="w-9 h-9 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center mb-2">
+                          <Wallet className="w-4 h-4" />
+                        </div>
+                        <p className="text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-1">Solde courant</p>
+                        <p className={`text-xl font-bold ${(dashboardStats.totalSoldeCourant || 0) >= 0 ? 'text-amber-700' : 'text-rose-700'}`}>
+                          {formatCurrency(dashboardStats.totalSoldeCourant || 0)}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Graphiques côte à côte */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      {/* Barres : Entrées/Sorties par caisse */}
+                      {dashboardStats.byRegister && dashboardStats.byRegister.length > 0 && (
+                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+                          <h3 className="text-sm font-semibold text-slate-700 mb-4">Entrées / Sorties par caisse</h3>
+                          <ResponsiveContainer width="100%" height={250}>
+                            <BarChart data={dashboardStats.byRegister.map((r: any) => ({
+                              name: r.code,
+                              Encaissements: r.totalEncaisse,
+                              Dépenses: r.totalDepense,
+                            }))}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                              <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} />
+                              <YAxis tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+                              <Tooltip formatter={(value: any) => formatCurrency(Number(value))} contentStyle={{ backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px' }} />
+                              <Legend wrapperStyle={{ fontSize: '12px' }} />
+                              <Bar dataKey="Encaissements" fill="#10b981" radius={[4, 4, 0, 0]} />
+                              <Bar dataKey="Dépenses" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+
+                      {/* Camembert : Répartition du solde par caisse */}
+                      {dashboardStats.byRegister && dashboardStats.byRegister.length > 0 && (
+                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+                          <h3 className="text-sm font-semibold text-slate-700 mb-4">Répartition du solde par caisse</h3>
+                          <ResponsiveContainer width="100%" height={250}>
+                            <PieChart>
+                              <Pie
+                                data={dashboardStats.byRegister.filter((r: any) => r.currentBalance > 0).map((r: any) => ({ name: r.code, value: r.currentBalance }))}
+                                dataKey="value"
+                                nameKey="name"
+                                cx="50%"
+                                cy="50%"
+                                outerRadius={80}
+                                label={(entry: any) => `${entry.name}: ${(entry.value / 1000).toFixed(0)}k`}
+                              >
+                                {dashboardStats.byRegister.filter((r: any) => r.currentBalance > 0).map((_: any, index: number) => (
+                                  <Cell key={`cell-${index}`} fill={['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'][index % 6]} />
+                                ))}
+                              </Pie>
+                              <Tooltip formatter={(value: any) => formatCurrency(Number(value))} contentStyle={{ backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px' }} />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Évolution mensuelle (ligne) */}
+                    {dashboardStats.monthlyEvolution && dashboardStats.monthlyEvolution.length > 0 && (
+                      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+                        <h3 className="text-sm font-semibold text-slate-700 mb-4">Évolution mensuelle (Encaissements vs Dépenses)</h3>
+                        <ResponsiveContainer width="100%" height={280}>
+                          <LineChart data={dashboardStats.monthlyEvolution}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                            <XAxis dataKey="monthLabel" tick={{ fontSize: 11, fill: '#64748b' }} />
+                            <YAxis tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+                            <Tooltip formatter={(value: any) => formatCurrency(Number(value))} contentStyle={{ backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px' }} />
+                            <Legend wrapperStyle={{ fontSize: '12px' }} />
+                            <Line type="monotone" dataKey="encaisse" stroke="#10b981" strokeWidth={2} name="Encaissements" dot={{ r: 3 }} />
+                            <Line type="monotone" dataKey="depense" stroke="#ef4444" strokeWidth={2} name="Dépenses" dot={{ r: 3 }} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+
+                    {/* Alertes caisses en rouge */}
+                    {dashboardStats.byRegister && dashboardStats.byRegister.some((r: any) => r.currentBalance < 0) && (
+                      <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <AlertTriangle className="w-5 h-5 text-rose-600" />
+                          <h3 className="text-sm font-bold text-rose-700">Caisses en solde négatif</h3>
+                        </div>
+                        <div className="space-y-2">
+                          {dashboardStats.byRegister.filter((r: any) => r.currentBalance < 0).map((r: any) => (
+                            <div key={r.id} className="flex items-center justify-between bg-white rounded-lg p-3 border border-rose-200">
+                              <div>
+                                <span className="font-semibold text-rose-700">{r.name} ({r.code})</span>
+                                <p className="text-xs text-slate-500">
+                                  Solde : <span className="font-bold text-rose-700">{formatCurrency(r.currentBalance)}</span>
+                                  {' · '}Encaissé : {formatCurrency(r.totalEncaisse)}
+                                  {' · '}Dépensé : {formatCurrency(r.totalDepense)}
+                                </p>
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="border-rose-300 text-rose-700 hover:bg-rose-100"
+                                onClick={async () => {
+                                  try {
+                                    const res = await fetch('/api/finance/cash-registers/dashboard', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      credentials: 'include',
+                                      body: JSON.stringify({ action: 'alert_promoter', cashRegisterId: r.id, balance: r.currentBalance }),
+                                    });
+                                    if (res.ok) {
+                                      toast({ title: '✅ Alerte envoyée', description: 'Le promoteur a été notifié.' });
+                                    } else {
+                                      toast({ title: 'Erreur', description: 'Échec de l\'envoi', variant: 'destructive' });
+                                    }
+                                  } catch {
+                                    toast({ title: 'Erreur', variant: 'destructive' });
+                                  }
+                                }}
+                              >
+                                <Bell className="w-4 h-4 mr-1.5" />
+                                Alerter le promoteur
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Tableau récapitulatif par caisse */}
+                    {dashboardStats.byRegister && dashboardStats.byRegister.length > 0 && (
+                      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div className="px-4 py-3 border-b border-slate-200">
+                          <h3 className="text-sm font-semibold text-slate-700">Récapitulatif par caisse</h3>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead className="bg-slate-50 border-b border-slate-200">
+                              <tr>
+                                <th className="px-4 py-2 text-left font-medium text-slate-600 text-xs">Caisse</th>
+                                <th className="px-4 py-2 text-right font-medium text-slate-600 text-xs">Encaissé</th>
+                                <th className="px-4 py-2 text-right font-medium text-slate-600 text-xs">Dépensé</th>
+                                <th className="px-4 py-2 text-right font-medium text-slate-600 text-xs">Solde net</th>
+                                <th className="px-4 py-2 text-right font-medium text-slate-600 text-xs">Solde courant</th>
+                                <th className="px-4 py-2 text-center font-medium text-slate-600 text-xs">Transactions</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {dashboardStats.byRegister.map((r: any) => (
+                                <tr key={r.id} className="hover:bg-slate-50">
+                                  <td className="px-4 py-3">
+                                    <div className="flex items-center gap-2">
+                                      <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded bg-indigo-50 text-indigo-700">{r.code}</span>
+                                      <span className="text-xs text-slate-700">{r.name}</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-3 text-right font-mono text-xs text-emerald-700">{formatCurrency(r.totalEncaisse)}</td>
+                                  <td className="px-4 py-3 text-right font-mono text-xs text-rose-700">{formatCurrency(r.totalDepense)}</td>
+                                  <td className={`px-4 py-3 text-right font-mono text-xs font-bold ${r.soldeNet >= 0 ? 'text-indigo-700' : 'text-rose-700'}`}>{formatCurrency(r.soldeNet)}</td>
+                                  <td className={`px-4 py-3 text-right font-mono text-xs font-bold ${r.currentBalance >= 0 ? 'text-slate-700' : 'text-rose-700'}`}>{formatCurrency(r.currentBalance)}</td>
+                                  <td className="px-4 py-3 text-center text-xs text-slate-500">{r.nbTransactions} tx / {r.nbDepenses} dép.</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}

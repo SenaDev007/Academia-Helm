@@ -70,6 +70,67 @@ export class StudentAccountService {
   }
 
   /**
+   * ⚠️ RÈGLE MÉTIER : Régimes tarifaires (FeeRegime)
+   *
+   * Charge le StudentFeeProfile de l'élève pour l'année, et si un régime
+   * est appliqué (REDUCTION, ENFANT_ENSEIGNANT, BOURSE), calcule le montant
+   * ajusté pour chaque FeeStructure selon les règles du régime.
+   *
+   * Types de règles :
+   *   - reductionPercentage : pourcentage de réduction (ex: 20 = -20%)
+   *   - fixedAmount : montant fixe (ex: 0 = exonération totale)
+   *
+   * Priorité : override personnalisé > régime tarifaire > montant standard
+   *
+   * @returns Un Map<feeStructureId, adjustedAmount> avec les montants ajustés
+   */
+  private async loadFeeRegimeAdjustments(
+    tenantId: string,
+    studentId: string,
+    academicYearId: string,
+  ): Promise<Map<string, number>> {
+    const adjustments = new Map<string, number>();
+
+    // Charger le profil tarifaire de l'élève
+    const profile = await this.prisma.studentFeeProfile.findFirst({
+      where: { studentId, academicYearId },
+      include: {
+        feeRegime: {
+          include: { rules: true },
+        },
+      },
+    });
+
+    if (!profile?.feeRegime?.rules?.length) {
+      return adjustments; // Pas de régime → pas d'ajustement
+    }
+
+    this.logger.log(
+      `loadFeeRegimeAdjustments: régime "${profile.feeRegime.label}" appliqué ` +
+      `(élève ${studentId}, ${profile.feeRegime.rules.length} règle(s))`,
+    );
+
+    // Pour chaque règle, calculer le montant ajusté
+    for (const rule of profile.feeRegime.rules) {
+      if (rule.feeStructureId) {
+        // Règle spécifique à une FeeStructure
+        const baseAmount = Number(rule.baseAmount ?? 0);
+        let adjusted = baseAmount;
+
+        if (rule.reductionPercentage != null && rule.reductionPercentage > 0) {
+          adjusted = baseAmount * (1 - rule.reductionPercentage / 100);
+        } else if (rule.fixedAmount != null) {
+          adjusted = rule.fixedAmount;
+        }
+
+        adjustments.set(rule.feeStructureId, Math.round(adjusted));
+      }
+    }
+
+    return adjustments;
+  }
+
+  /**
    * Résout la date d'échéance réelle d'une tranche en fonction de son mode.
    *
    * - FIXED                 : retourne installment.dueDate
@@ -169,13 +230,23 @@ export class StudentAccountService {
     const feeStructuresRaw = Array.from(structuresByType.values());
     const feeStructures = this.filterFeesByEnrollmentType(feeStructuresRaw, enrollmentType);
 
+    // ⚠️ RÈGLE MÉTIER : Régimes tarifaires (FeeRegime)
+    //   Charge les ajustements du régime appliqué à l'élève (réductions, exonérations)
+    //   Priorité : override personnalisé > régime tarifaire > montant standard
+    const regimeAdjustments = await this.loadFeeRegimeAdjustments(tenantId, studentId, academicYearId);
+
     const totalDue = feeStructures.reduce((sum, fs) => {
       const override = fs.overrides[0];
-      const amount = override ? Number(override.customAmount) : Number(fs.totalAmount);
+      let amount: number;
+      if (override) {
+        amount = Number(override.customAmount);
+      } else if (regimeAdjustments.has(fs.id)) {
+        amount = regimeAdjustments.get(fs.id)!;
+      } else {
+        amount = Number(fs.totalAmount);
+      }
       return sum + amount;
     }, 0);
-
-    // ⚠️ previousArrears : arriérés antérieurs saisis manuellement à l'admission
     // (nouveaux clients qui ont des arriérés sur papier). Injectés dans le
     // StudentAccount pour être visibles dans le compte financier et inclus
     // dans le total dû et le solde.
@@ -196,7 +267,14 @@ export class StudentAccountService {
         breakdowns: {
           create: feeStructures.map((fs) => {
             const override = fs.overrides[0];
-            const initialAmount = override ? Number(override.customAmount) : Number(fs.totalAmount);
+            let initialAmount: number;
+            if (override) {
+              initialAmount = Number(override.customAmount);
+            } else if (regimeAdjustments.has(fs.id)) {
+              initialAmount = regimeAdjustments.get(fs.id)!;
+            } else {
+              initialAmount = Number(fs.totalAmount);
+            }
             return {
               feeStructureId: fs.id,
               initialAmount,
@@ -272,11 +350,18 @@ export class StudentAccountService {
     const feeStructuresRaw = Array.from(structuresByType.values());
     const feeStructures = this.filterFeesByEnrollmentType(feeStructuresRaw, enrollmentType);
 
-    const totalDue = feeStructures.reduce((sum, fs) => {
+    // ⚠️ RÈGLE MÉTIER : Régimes tarifaires (FeeRegime)
+    const regimeAdjustments = await this.loadFeeRegimeAdjustments(tenantId, studentId, academicYearId);
+
+    // Helper : calculer le montant ajusté pour une FeeStructure
+    const computeAmount = (fs: any): number => {
       const override = fs.overrides[0];
-      const amount = override ? Number(override.customAmount) : Number(fs.totalAmount);
-      return sum + amount;
-    }, 0);
+      if (override) return Number(override.customAmount);
+      if (regimeAdjustments.has(fs.id)) return regimeAdjustments.get(fs.id)!;
+      return Number(fs.totalAmount);
+    };
+
+    const totalDue = feeStructures.reduce((sum, fs) => sum + computeAmount(fs), 0);
 
     // Supprimer les anciens breakdowns (non payés)
     await this.prisma.accountBreakdown.deleteMany({
@@ -292,12 +377,11 @@ export class StudentAccountService {
     // Créer les nouveaux breakdowns (seulement pour les frais pas déjà présents)
     const newBreakdowns = feeStructures.filter((fs) => !existingFeeStructureIds.has(fs.id));
 
-    // Mettre à jour les breakdowns existants avec les overrides
+    // Mettre à jour les breakdowns existants avec les overrides/régimes
     for (const b of existingBreakdowns) {
       const fs = feeStructures.find((f) => f.id === b.feeStructureId);
       if (fs) {
-        const override = fs.overrides[0];
-        const newAmount = override ? Number(override.customAmount) : Number(fs.totalAmount);
+        const newAmount = computeAmount(fs);
         if (Number(b.initialAmount) !== newAmount) {
           await this.prisma.accountBreakdown.update({
             where: { id: b.id },
@@ -315,8 +399,7 @@ export class StudentAccountService {
     if (newBreakdowns.length > 0) {
       await this.prisma.accountBreakdown.createMany({
         data: newBreakdowns.map((fs) => {
-          const override = fs.overrides[0];
-          const initialAmount = override ? Number(override.customAmount) : Number(fs.totalAmount);
+          const initialAmount = computeAmount(fs);
           return {
             studentAccountId: account.id,
             feeStructureId: fs.id,

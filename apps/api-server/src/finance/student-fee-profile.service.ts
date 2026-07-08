@@ -10,12 +10,16 @@
 
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '@/database/prisma.service';
+import { StudentAccountService } from './student-account.service';
 
 @Injectable()
 export class StudentFeeProfileService {
   private readonly logger = new Logger(StudentFeeProfileService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly studentAccountService: StudentAccountService,
+  ) {}
 
   /**
    * Crée ou met à jour le profil tarifaire d'un élève
@@ -110,6 +114,24 @@ export class StudentFeeProfileService {
     this.logger.log(
       `Profil tarifaire ${profile.id} créé/mis à jour pour élève ${studentId}`,
     );
+
+    // ⚠️ Recalculer le StudentAccount pour appliquer les réductions du régime
+    // Le recalcule lit le StudentFeeProfile via loadFeeRegimeAdjustments()
+    // et ajuste les montants des breakdowns selon les règles du régime.
+    try {
+      await this.studentAccountService.recalculate(
+        studentId,
+        student.tenantId,
+        academicYearId,
+      );
+      this.logger.log(
+        `StudentAccount recalculé pour élève ${studentId} après application du régime`,
+      );
+    } catch (e: any) {
+      this.logger.warn(
+        `Recalcul StudentAccount échoué après régime (non bloquant): ${e.message}`,
+      );
+    }
 
     return profile;
   }

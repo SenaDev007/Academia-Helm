@@ -5,12 +5,16 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { FeeType } from '@prisma/client';
+import { StudentAccountService } from './student-account.service';
 
 const FEE_TYPES: FeeType[] = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'OTHER'];
 
 @Injectable()
 export class FeeStructureService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly studentAccountService: StudentAccountService,
+  ) {}
 
   private async ensureAcademicYearNotClosed(academicYearId: string, tenantId: string) {
     const year = await this.prisma.academicYear.findFirst({
@@ -377,7 +381,7 @@ export class FeeStructureService {
     await this.audit(tenantId, userId, 'FEE_OVERRIDE_CREATE', 'FeeOverride', override.id, undefined, { feeStructureId: data.feeStructureId, studentId: data.studentId, customAmount: data.customAmount, reason: data.reason });
 
     // Recalculer le compte élève pour appliquer la personnalisation
-    await this.recalculateStudentAccount(tenantId, data.studentId, override.feeStructure.academicYearId);
+    await this.studentAccountService.recalculate(data.studentId, tenantId, override.feeStructure.academicYearId);
 
     return override;
   }
@@ -449,7 +453,7 @@ export class FeeStructureService {
     await this.prisma.feeOverride.delete({ where: { id } });
 
     // Recalculer le compte élève pour retirer la personnalisation
-    await this.recalculateStudentAccount(tenantId, override.studentId, override.feeStructure.academicYearId);
+    await this.studentAccountService.recalculate(override.studentId, tenantId, override.feeStructure.academicYearId);
 
     return { id, deleted: true };
   }
@@ -483,7 +487,7 @@ export class FeeStructureService {
     await this.audit(tenantId, undefined, 'FEE_OVERRIDE_UPDATE', 'FeeOverride', id, { customAmount: override.customAmount, reason: override.reason }, { customAmount: updated.customAmount, reason: updated.reason });
 
     // Recalculer le compte élève pour appliquer la modification
-    await this.recalculateStudentAccount(tenantId, updated.student.id, updated.feeStructure.academicYearId);
+    await this.studentAccountService.recalculate(updated.studentId, tenantId, updated.feeStructure.academicYearId);
 
     return updated;
   }

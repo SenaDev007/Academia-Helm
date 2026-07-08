@@ -37,6 +37,7 @@ import {
   Bell,
   Mail,
   Send,
+  BookOpen,
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
@@ -49,6 +50,8 @@ import { useAppSession } from '@/contexts/AppSessionContext';
 import { cn } from '@/lib/utils';
 import PaymentConfigSection from './PaymentConfigSection';
 import { FedapayLogo } from './FedapayLogo';
+import { GmailIcon, WhatsAppIcon, SmsIcon } from './OfficialIcons';
+import DocComptabiliteModal from './DocComptabiliteModal';
 
 /* ------------------------------------------------------------------ */
 /*  Constantes de configuration visuelle                               */
@@ -268,6 +271,7 @@ export default function FinanceSettingsContent() {
   const [orionAlerts, setOrionAlerts] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [sendingCompta, setSendingCompta] = useState(false);
+  const [showDocModal, setShowDocModal] = useState(false);
 
   /* --------------------------- Data loading --------------------------- */
 
@@ -973,9 +977,12 @@ export default function FinanceSettingsContent() {
                               }
                               className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                             />
-                            <div>
-                              <span className="text-sm font-semibold text-slate-700 block">📧 Email</span>
-                              <span className="text-xs text-slate-500 block">Relance par email au parent</span>
+                            <div className="flex items-center gap-2">
+                              <GmailIcon className="w-5 h-5 flex-shrink-0" />
+                              <div>
+                                <span className="text-sm font-semibold text-slate-700 block">Email</span>
+                                <span className="text-xs text-slate-500 block">Relance par email au parent</span>
+                              </div>
                             </div>
                           </label>
                           <label className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 border border-slate-200 cursor-pointer hover:bg-slate-100 transition-colors">
@@ -993,9 +1000,12 @@ export default function FinanceSettingsContent() {
                               }
                               className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                             />
-                            <div>
-                              <span className="text-sm font-semibold text-slate-700 block">💬 WhatsApp</span>
-                              <span className="text-xs text-slate-500 block">Message WhatsApp au parent</span>
+                            <div className="flex items-center gap-2">
+                              <WhatsAppIcon className="w-5 h-5 flex-shrink-0" />
+                              <div>
+                                <span className="text-sm font-semibold text-slate-700 block">WhatsApp</span>
+                                <span className="text-xs text-slate-500 block">Message WhatsApp au parent</span>
+                              </div>
                             </div>
                           </label>
                           <label className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 border border-slate-200 cursor-pointer hover:bg-slate-100 transition-colors">
@@ -1013,9 +1023,12 @@ export default function FinanceSettingsContent() {
                               }
                               className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                             />
-                            <div>
-                              <span className="text-sm font-semibold text-slate-700 block">📱 SMS</span>
-                              <span className="text-xs text-slate-500 block">SMS court au parent</span>
+                            <div className="flex items-center gap-2">
+                              <SmsIcon className="w-5 h-5 flex-shrink-0" />
+                              <div>
+                                <span className="text-sm font-semibold text-slate-700 block">SMS</span>
+                                <span className="text-xs text-slate-500 block">SMS court au parent</span>
+                              </div>
                             </div>
                           </label>
                         </div>
@@ -1195,8 +1208,16 @@ export default function FinanceSettingsContent() {
                         <p className="text-xs text-violet-800 leading-snug">
                           💡 <strong>Logiciels compatibles :</strong> Sage (100, OHADA, Bénin),
                           Ciel, EBP, QuickBooks, Pennylane, Yooz, Odoo, Dex, Compta Bénin, Xero,
-                          Free Acomba. Voir <em>docs/INTEGRATION-COMPTABILITE.md</em> pour la
-                          procédure d'import dans chaque logiciel.
+                          Free Acomba.{' '}
+                          <button
+                            type="button"
+                            onClick={() => setShowDocModal(true)}
+                            className="inline-flex items-center gap-1 text-violet-700 hover:text-violet-900 underline font-semibold"
+                          >
+                            <BookOpen className="w-3 h-3" />
+                            Voir la documentation complète
+                          </button>
+                          {' '}pour la procédure d'import dans chaque logiciel.
                         </p>
                       </div>
                     </>
@@ -1342,6 +1363,9 @@ export default function FinanceSettingsContent() {
           </div>
         )}
       </ModuleContentArea>
+
+      {/* Modal documentation intégration comptable */}
+      <DocComptabiliteModal open={showDocModal} onClose={() => setShowDocModal(false)} />
     </div>
   );
 }

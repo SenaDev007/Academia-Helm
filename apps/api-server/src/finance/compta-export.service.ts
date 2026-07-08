@@ -129,42 +129,44 @@ export class ComptaExportService {
     const nextSeq = () => String(seqCounter++).padStart(8, '0');
 
     // ─── 1. ENCAISSEMENTS (transactions PAYMENT) → Journal des ventes (JVT) ───
-    const transactions = await this.prisma.financeTransaction.findMany({
-      where: {
-        tenantId,
-        academicYearId: filters.academicYearId || undefined,
-        type: 'PAYMENT',
-        createdAt: {
-          gte: dateFrom,
-          lte: dateTo,
-        },
-      },
-      include: {
-        studentAccount: {
-          include: {
-            student: {
-              select: { id: true, firstName: true, lastName: true, matricule: true, studentCode: true },
-            },
-          },
-        },
-        cashRegister: { select: { id: true, code: true, name: true } },
-      },
-      orderBy: { createdAt: 'asc' },
-    });
+    // Note : on utilise $queryRawUnsafe pour éviter les problèmes de client
+    // Prisma non régénéré (champs récents comme cashRegisterId).
+    const transactionsRaw = await this.prisma.$queryRawUnsafe(`
+      SELECT
+        t.id,
+        t."receiptNumber",
+        t.amount::FLOAT,
+        t.type,
+        t."paymentMethod",
+        t.reference,
+        t."createdAt",
+        t."cashRegisterId",
+        cr.code AS "cashRegisterCode",
+        cr.name AS "cashRegisterName",
+        s."firstName" AS "studentFirstName",
+        s."lastName" AS "studentLastName",
+        s."matricule",
+        s."studentCode"
+      FROM "finance_transactions" t
+      LEFT JOIN "cash_registers" cr ON t."cashRegisterId" = cr.id
+      LEFT JOIN "student_accounts" sa ON t."studentAccountId" = sa.id
+      LEFT JOIN "students" s ON sa."studentId" = s.id
+      WHERE t."tenantId" = $1
+        AND t."academicYearId" = $2
+        AND t.type = 'PAYMENT'
+        AND t."createdAt" >= $3
+        AND t."createdAt" <= $4
+      ORDER BY t."createdAt" ASC
+    `, tenantId, filters.academicYearId, dateFrom, dateTo);
 
-    // Charger le mapping des catégories de frais pour ce tenant (réservé à un
-    // usage futur — actuellement le mapping par transaction n'est pas activé
-    // car PaymentAllocation n'est pas lié à FinanceTransaction dans le schéma).
-    // const feeCategories = await this.prisma.feeCategory.findMany({
-    //   where: { tenantId },
-    //   select: { id: true, name: true, code: true, compteOhada: true, compteOhadaLib: true },
-    // });
+    const transactions = transactionsRaw as any[];
 
     for (const tx of transactions) {
       const dateStr = this.formatDate(tx.createdAt);
-      const student = tx.studentAccount?.student;
-      const studentName = student ? `${student.lastName} ${student.firstName}`.trim() : 'Élève inconnu';
-      const studentCode = student?.studentCode || student?.matricule || '';
+      const studentName = (tx.studentLastName || tx.studentFirstName)
+        ? `${tx.studentLastName || ''} ${tx.studentFirstName || ''}`.trim()
+        : 'Élève inconnu';
+      const studentCode = tx.studentCode || tx.matricule || '';
       const amount = Number(tx.amount) || 0;
       const pieceRef = tx.receiptNumber || tx.id;
       const ecritLib = `Scolarité - ${studentName}`.slice(0, 50);
@@ -175,8 +177,8 @@ export class ComptaExportService {
 
       // Si cashRegister secondaire détecté (code contient "SEC" ou "2"), utiliser 572000
       let compteTresoFinal = compteTreso;
-      if (tx.paymentMethod === 'CASH' && tx.cashRegister?.code) {
-        const code = tx.cashRegister.code.toUpperCase();
+      if (tx.paymentMethod === 'CASH' && tx.cashRegisterCode) {
+        const code = tx.cashRegisterCode.toUpperCase();
         if (code.includes('SEC') || code.includes('2') || code.includes('ANNEXE')) {
           compteTresoFinal = ComptaExportService.DEFAULT_ACCOUNTS.CAISSE_SECONDAIRE;
         }
@@ -217,7 +219,7 @@ export class ComptaExportService {
         ecritureDate: dateStr,
         compteNum: ComptaExportService.DEFAULT_ACCOUNTS.ELEVES_CREANCES.num,
         compteLib: ComptaExportService.DEFAULT_ACCOUNTS.ELEVES_CREANCES.lib,
-        compAuxNum: studentCode || student?.id?.slice(0, 8) || '',
+        compAuxNum: studentCode || String(tx.id || '').slice(0, 8),
         compAuxLib: studentName,
         pieceRef,
         pieceDate: dateStr,
@@ -231,37 +233,50 @@ export class ComptaExportService {
         idevise: 'XOF',
         natCode,
       });
-
-      // Note : on ne génère pas de comptabilisation du produit directement ici
-      // pour éviter la double comptabilisation. Le compte produit est utilisé
-      // dans l'export OHADA pour la partie analyse (balance par classe 7).
     }
 
     // ─── 2. DÉPENSES APPROUVÉES → Journal des achats (JAC) ───
+    // Note : on utilise $queryRawUnsafe au lieu de l'API Prisma typée car
+    // le client Prisma peut ne pas être à jour avec les champs récents
+    // (expenseDate, vendor, invoiceRef, cashRegisterId, paymentMethod).
     const expenseDateFrom = dateFrom;
     const expenseDateTo = dateTo;
-    const expenses = await this.prisma.financeExpense.findMany({
-      where: {
-        tenantId,
-        academicYearId: filters.academicYearId || undefined,
-        status: 'APPROVED',
-        // Filtrer par expenseDate si disponible, sinon createdAt
-        OR: [
-          {
-            expenseDate: { gte: expenseDateFrom, lte: expenseDateTo },
-          },
-          {
-            expenseDate: null,
-            createdAt: { gte: expenseDateFrom, lte: expenseDateTo },
-          },
-        ],
-      },
-      include: {
-        category: { select: { id: true, name: true, code: true, compteOhada: true, compteOhadaLib: true } },
-        cashRegister: { select: { id: true, code: true, name: true } },
-      },
-      orderBy: { expenseDate: 'asc' },
-    });
+    const expensesRaw = await this.prisma.$queryRawUnsafe(`
+      SELECT
+        fe.id,
+        fe."tenantId",
+        fe."academicYearId",
+        fe."categoryId",
+        fe.amount::FLOAT,
+        fe.description,
+        fe.status,
+        fe."expenseDate",
+        fe."createdAt",
+        fe.vendor,
+        fe."invoiceRef",
+        fe."cashRegisterId",
+        fe."paymentMethod",
+        ec.name AS "categoryName",
+        ec.code AS "categoryCode",
+        ec."compteOhada" AS "categoryCompteOhada",
+        ec."compteOhadaLib" AS "categoryCompteOhadaLib",
+        cr.code AS "cashRegisterCode",
+        cr.name AS "cashRegisterName"
+      FROM "finance_expenses" fe
+      LEFT JOIN "expense_categories" ec ON fe."categoryId" = ec.id
+      LEFT JOIN "cash_registers" cr ON fe."cashRegisterId" = cr.id
+      WHERE fe."tenantId" = $1
+        AND fe."academicYearId" = $2
+        AND fe.status = 'APPROVED'
+        AND (
+          (fe."expenseDate" IS NOT NULL AND fe."expenseDate" >= $3 AND fe."expenseDate" <= $4)
+          OR
+          (fe."expenseDate" IS NULL AND fe."createdAt" >= $3 AND fe."createdAt" <= $4)
+        )
+      ORDER BY COALESCE(fe."expenseDate", fe."createdAt") ASC
+    `, tenantId, filters.academicYearId, expenseDateFrom, expenseDateTo);
+
+    const expenses = expensesRaw as any[];
 
     for (const ex of expenses) {
       const dateStr = this.formatDate(ex.expenseDate || ex.createdAt);
@@ -270,16 +285,16 @@ export class ComptaExportService {
       const ecritLib = ex.description?.slice(0, 50) || 'Dépense';
 
       // Compte de charge (classe 6) selon mapping catégorie
-      const compteCharge = ex.category?.compteOhada
-        ? { num: ex.category.compteOhada, lib: ex.category.compteOhadaLib || ex.category.name }
+      const compteCharge = ex.categoryCompteOhada
+        ? { num: ex.categoryCompteOhada, lib: ex.categoryCompteOhadaLib || ex.categoryName }
         : ComptaExportService.DEFAULT_ACCOUNTS.AUTRES_ACHATS;
 
       // Compte de trésorerie (débit de la sortie)
       const paymentMethod = (ex.paymentMethod || 'CASH') as keyof typeof ComptaExportService.PAYMENT_TO_COMPTE;
       let compteTreso = ComptaExportService.PAYMENT_TO_COMPTE[paymentMethod]
         || ComptaExportService.DEFAULT_ACCOUNTS.CAISSE_PRINCIPALE;
-      if (paymentMethod === 'CASH' && ex.cashRegister?.code) {
-        const code = ex.cashRegister.code.toUpperCase();
+      if (paymentMethod === 'CASH' && ex.cashRegisterCode) {
+        const code = ex.cashRegisterCode.toUpperCase();
         if (code.includes('SEC') || code.includes('2') || code.includes('ANNEXE')) {
           compteTreso = ComptaExportService.DEFAULT_ACCOUNTS.CAISSE_SECONDAIRE;
         }

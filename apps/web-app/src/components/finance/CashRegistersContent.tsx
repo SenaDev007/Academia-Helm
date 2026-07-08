@@ -36,6 +36,7 @@ import {
   PieChart, Pie, Legend, LineChart, Line,
 } from 'recharts';
 import { TrendingDown, AlertTriangle, Bell } from 'lucide-react';
+import { FedapayLogo } from './FedapayLogo';
 
 /** Transfert inter-caisses (manuel ou allocation automatique). */
 interface CashRegisterTransfer {
@@ -1670,7 +1671,7 @@ export default function CashRegistersContent() {
                                 {selectedRegister.transactions.map((tx: any) => {
                                   const methodLabels: Record<string, string> = {
                                     CASH: '💵 Espèces',
-                                    FEDAPAY: '💳 Fedapay',
+                                    FEDAPAY: 'Fedapay',
                                     FEEXPAY: '📱 FeexPay',
                                     WIRE: '🏦 Virement',
                                     MOBILE_MONEY: '📱 Mobile Money',
@@ -1704,9 +1705,15 @@ export default function CashRegistersContent() {
                                           +{formatCurrency(Number(tx.amount))}
                                         </td>
                                         <td className="px-3 py-2 text-center">
-                                          <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-medium ${methodColors[tx.paymentMethod] || 'bg-slate-50 text-slate-700'}`}>
-                                            {methodLabels[tx.paymentMethod] || tx.paymentMethod}
-                                          </span>
+                                          {tx.paymentMethod === 'FEDAPAY' ? (
+                                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium ${methodColors[tx.paymentMethod] || 'bg-slate-50 text-slate-700'}`}>
+                                              <FedapayLogo className="h-3 w-auto" />
+                                            </span>
+                                          ) : (
+                                            <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-medium ${methodColors[tx.paymentMethod] || 'bg-slate-50 text-slate-700'}`}>
+                                              {methodLabels[tx.paymentMethod] || tx.paymentMethod}
+                                            </span>
+                                          )}
                                         </td>
                                         <td className="px-3 py-2 text-xs font-mono text-slate-500">
                                           {tx.receiptNumber || '—'}

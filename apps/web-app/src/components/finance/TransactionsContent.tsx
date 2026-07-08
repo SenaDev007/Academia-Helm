@@ -17,6 +17,7 @@ import { financeService } from '@/services/finance.service';
 import { formatCurrency } from '@/lib/utils';
 import { exportTransactionsToExcel } from '@/lib/exports/excel-exports';
 import { transactionsFilename } from '@/lib/exports/filename-helpers';
+import { PaymentMethodBadge } from './FedapayLogo';
 
 const METHOD_LABELS: Record<string, string> = {
   CASH: 'Espèces',
@@ -248,7 +249,7 @@ export default function TransactionsContent() {
                     </TableCell>
                     <TableCell className="text-right font-semibold">{formatCurrency(t.amount)}</TableCell>
                     <TableCell>
-                      <Badge variant="outline">{METHOD_LABELS[t.paymentMethod] ?? t.paymentMethod}</Badge>
+                      <PaymentMethodBadge method={t.paymentMethod} methodLabel={METHOD_LABELS[t.paymentMethod]} />
                     </TableCell>
                     <TableCell>
                       <Badge variant={t.type === 'REVERSAL' ? 'destructive' : 'default'}>

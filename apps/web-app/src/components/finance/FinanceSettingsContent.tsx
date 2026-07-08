@@ -48,6 +48,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import { cn } from '@/lib/utils';
 import PaymentConfigSection from './PaymentConfigSection';
+import { FedapayLogo } from './FedapayLogo';
 
 /* ------------------------------------------------------------------ */
 /*  Constantes de configuration visuelle                               */
@@ -1209,8 +1210,8 @@ export default function FinanceSettingsContent() {
             {/* ========================================================== */}
             <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
               <header className="px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-violet-50 to-white flex items-start gap-3">
-                <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center shadow-sm">
-                  <CreditCard className="w-5 h-5 text-violet-600" />
+                <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-white border border-violet-200 flex items-center justify-center shadow-sm overflow-hidden p-1">
+                  <FedapayLogo className="h-full w-auto object-contain" />
                 </div>
                 <div>
                   <h3 className="font-semibold text-slate-900">

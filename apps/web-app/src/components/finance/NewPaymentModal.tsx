@@ -17,6 +17,7 @@ import { financeService } from '@/services/finance.service';
 import { networkDetectionService } from '@/lib/offline/network-detection.service';
 import { formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { FedapayLogo } from './FedapayLogo';
 import {
   detectFeexPayOperator,
   isValidBeninPhone,
@@ -39,7 +40,7 @@ const OPERATOR_META: Record<FeexPayOperator, { label: string; shortLabel: string
 
 const METHODS = [
   { value: 'CASH', label: 'Espèces' },
-  { value: 'FEDAPAY', label: 'Fedapay' },
+  { value: 'FEDAPAY', label: 'Fedapay', isFedapay: true },
 ];
 
 const FEE_TYPE_LABELS: Record<string, string> = {
@@ -593,7 +594,14 @@ export default function NewPaymentModal({
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {METHODS.map((m) => (
-                  <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                  <SelectItem key={m.value} value={m.value}>
+                    <span className="flex items-center gap-2">
+                      {m.isFedapay && (
+                        <FedapayLogo className="h-3.5 w-auto" />
+                      )}
+                      <span>{m.label}</span>
+                    </span>
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -631,11 +639,18 @@ export default function NewPaymentModal({
               </p>
             )}
             {(paymentMethod === 'FEDAPAY' || paymentMethod === 'FEEXPAY') && (
-              <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
-                <CreditCard className="w-3 h-3" />
-                Les paiements en ligne sont automatiquement rattachés à la
-                <strong className="mx-1">Caisse Paiements en Ligne</strong>
-                (créée automatiquement si elle n'existe pas).
+              <p className="text-xs text-blue-600 mt-1 flex items-center gap-1.5">
+                {paymentMethod === 'FEDAPAY' && (
+                  <FedapayLogo className="h-3 w-auto" />
+                )}
+                {paymentMethod === 'FEEXPAY' && (
+                  <CreditCard className="w-3 h-3" />
+                )}
+                <span>
+                  Les paiements en ligne sont automatiquement rattachés à la
+                  <strong className="mx-1">Caisse Paiements en Ligne</strong>
+                  (créée automatiquement si elle n'existe pas).
+                </span>
               </p>
             )}
           </div>

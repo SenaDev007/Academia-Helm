@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { CreditCard, Save, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Save, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
+import { FedapayLogo } from './FedapayLogo';
 
 export default function PaymentConfigSection({ tenantId }: { tenantId: string }) {
   const { toast } = useToast();
@@ -75,8 +76,8 @@ export default function PaymentConfigSection({ tenantId }: { tenantId: string })
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-500 flex items-center justify-center text-white shadow-lg">
-            <CreditCard className="w-5 h-5" />
+          <div className="h-10 w-10 rounded-xl bg-white border border-violet-200 flex items-center justify-center shadow-sm overflow-hidden p-1">
+            <FedapayLogo className="h-full w-auto object-contain" />
           </div>
           <div>
             <h3 className="text-base font-semibold text-slate-800">Paiements en ligne</h3>
@@ -105,8 +106,8 @@ export default function PaymentConfigSection({ tenantId }: { tenantId: string })
       <div>
         <Label className="text-xs font-semibold">Fournisseur de paiement</Label>
         <div className="mt-1 p-3 bg-violet-50 border border-violet-200 rounded-lg flex items-center gap-3">
-          <div className="h-8 w-8 rounded-lg bg-violet-600 flex items-center justify-center text-white">
-            <CreditCard className="w-4 h-4" />
+          <div className="h-10 w-10 rounded-lg bg-white border border-violet-200 flex items-center justify-center overflow-hidden p-1 flex-shrink-0">
+            <FedapayLogo className="h-full w-auto object-contain" />
           </div>
           <div>
             <p className="text-sm font-semibold text-violet-900">Fedapay</p>

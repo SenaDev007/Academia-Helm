@@ -35,6 +35,7 @@ import { useModuleContext } from '@/hooks/useModuleContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import StudentEnrollmentForm from '@/components/students/StudentEnrollmentForm';
+import ImportElevesModal from '@/components/students/ImportElevesModal';
 import { studentsService } from '@/services/students.service';
 import { financeService } from '@/services/finance.service';
 import { toast } from '@/components/ui/toast';
@@ -179,6 +180,7 @@ export default function EnrollmentsContent() {
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [editEnrollment, setEditEnrollment] = useState<Enrollment | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedLevels, setExpandedLevels] = useState<Set<string>>(new Set());
@@ -791,6 +793,13 @@ export default function EnrollmentsContent() {
               title="Export Excel"
             >
               <FileSpreadsheet className="w-4 h-4 mr-1.5" /> Excel
+            </button>
+            <button
+              onClick={() => setIsImportModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-violet-700 bg-violet-50 hover:bg-violet-100 rounded-lg border border-violet-300 transition"
+              title="Importer des élèves depuis Excel"
+            >
+              <Upload className="w-4 h-4 mr-1.5" /> Importer
             </button>
             <button
               onClick={() => setBulkReEnrollOpen(true)}
@@ -1488,6 +1497,16 @@ export default function EnrollmentsContent() {
           />
         </FormModal>
       )}
+
+      {/* ─── MODAL : Import en masse ─── */}
+      <ImportElevesModal
+        open={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onSuccess={() => {
+          // Recharger la liste des inscriptions après import
+          window.location.reload();
+        }}
+      />
     </>
   );
 }

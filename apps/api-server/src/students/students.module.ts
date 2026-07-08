@@ -44,6 +44,8 @@ import { StudentsLifecycleController } from './controllers/students-lifecycle.co
 import { EducmasterExcelExportService } from './services/educmaster-excel-export.service';
 import { ClassListPdfService } from './services/class-list-pdf.service';
 import { MatriculeService } from './services/matricule.service';
+import { StudentsImportService } from './services/students-import.service';
+import { StudentsImportController } from './controllers/students-import.controller';
 import { StudentTransferController } from './student-transfer.controller';
 import { StudentTransferService } from './student-transfer.service';
 import { FinanceModule } from '../finance/finance.module';
@@ -86,6 +88,7 @@ import { CommunicationModule } from '../communication/communication.module';
     DocumentsPrismaController,
     GeneratedDocumentsController,
     TransfersPrismaController,
+    StudentsImportController,
   ],
   providers: [
     StudentsService,
@@ -111,6 +114,7 @@ import { CommunicationModule } from '../communication/communication.module';
     ClassListPdfService,
     MatriculeService,
     StudentTransferService,
+    StudentsImportService,
   ],
   exports: [
     StudentsService,

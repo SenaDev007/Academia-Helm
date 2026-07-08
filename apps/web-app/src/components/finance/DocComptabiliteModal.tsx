@@ -149,7 +149,7 @@ const SECTIONS: DocSection[] = [
   },
   {
     id: 'workflow',
-    title: 'Workflow d'export',
+    title: "Workflow d'export",
     icon: Workflow,
     content: (
       <div className="space-y-4 text-sm text-slate-700">

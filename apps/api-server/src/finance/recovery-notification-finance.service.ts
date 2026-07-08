@@ -113,6 +113,17 @@ export class RecoveryNotificationFinanceService {
     const totalPaid = Number(arrear.totalPaid ?? 0);
     const feeLabel = arrear.studentFee?.feeDefinition?.label || arrear.notes || 'frais scolaires';
     const lastPaymentDate = arrear.lastPaymentDate;
+    const academicYearName = arrear.academicYear?.name || '—';
+
+    // Déterminer si l'arriéré est antérieur à l'année en cours (multi-année)
+    const currentYear = await this.prisma.academicYear.findFirst({
+      where: { tenantId, isCurrent: true },
+      select: { id: true, name: true, startDate: true },
+    });
+    const isPreviousYearArrear = currentYear && arrear.academicYearId !== currentYear.id;
+    const yearContextLabel = isPreviousYearArrear
+      ? `Année scolaire ${academicYearName} (arriéré reporté)`
+      : `Année scolaire ${academicYearName}`;
 
     // 2. Envoyer sur chaque canal demandé
     for (const channel of channels) {
@@ -132,6 +143,9 @@ export class RecoveryNotificationFinanceService {
             branding,
             tenantId,
             arrearId,
+            academicYearName,
+            isPreviousYearArrear,
+            yearContextLabel,
           });
         } else if (channel === 'whatsapp') {
           results.whatsapp = await this.sendByWhatsApp({
@@ -145,6 +159,8 @@ export class RecoveryNotificationFinanceService {
             branding,
             tenantId,
             arrearId,
+            academicYearName,
+            isPreviousYearArrear,
           });
         } else if (channel === 'sms') {
           results.sms = await this.sendBySMS({
@@ -154,6 +170,8 @@ export class RecoveryNotificationFinanceService {
             balanceDue,
             level,
             branding,
+            academicYearName,
+            isPreviousYearArrear,
           });
         }
       } catch (err: any) {
@@ -182,6 +200,9 @@ export class RecoveryNotificationFinanceService {
     branding: any;
     tenantId: string;
     arrearId: string;
+    academicYearName?: string;
+    isPreviousYearArrear?: boolean;
+    yearContextLabel?: string;
   }): Promise<{ status: 'sent' | 'failed' | 'skipped'; to?: string; error?: string }> {
     if (!params.to) {
       return { status: 'skipped', error: 'Aucun email parent disponible' };
@@ -200,6 +221,11 @@ export class RecoveryNotificationFinanceService {
     const lastPaymentStr = params.lastPaymentDate
       ? new Date(params.lastPaymentDate).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })
       : 'Aucun paiement enregistré';
+
+    // Libellé contexte : "frais scolaires" ou "arriéré reporté de l'année XXXX-YYYY"
+    const contextLabel = params.isPreviousYearArrear
+      ? `l'arriéré reporté de l'année scolaire <strong>${params.academicYearName}</strong>`
+      : `les <strong>${params.feeLabel}</strong> de l'année scolaire <strong>${params.academicYearName}</strong>`;
 
     const subject = `${levelConfig.emoji} ${levelConfig.emailTitle} — ${params.studentName} (${schoolName})`;
 
@@ -229,13 +255,17 @@ export class RecoveryNotificationFinanceService {
               Bonjour${params.parentName ? ` ${params.parentName}` : ''},
             </p>
             <p style="margin: 0 0 16px; font-size: 14px; color: #475569; line-height: 1.6;">
-              Nous vous contactons concernant le paiement des <strong>${params.feeLabel}</strong> de votre enfant
+              Nous vous contactons concernant ${contextLabel} de votre enfant
               <strong>${params.studentName}</strong>${params.className !== '—' ? ` (Classe: ${params.className})` : ''}.
             </p>
 
             <!-- Tableau récapitulatif -->
             <div style="background: ${levelConfig.tableBg}; border: 1px solid ${levelConfig.tableBorder}; border-radius: 8px; padding: 16px; margin: 20px 0;">
               <table style="width: 100%; font-size: 14px; color: #1e293b;">
+                <tr>
+                  <td style="padding: 6px 0; color: #64748b;">Année scolaire :</td>
+                  <td style="padding: 6px 0; text-align: right; font-weight: 600;">${params.academicYearName || '—'}${params.isPreviousYearArrear ? ' (arriéré reporté)' : ''}</td>
+                </tr>
                 <tr>
                   <td style="padding: 6px 0; color: #64748b;">Montant total dû :</td>
                   <td style="padding: 6px 0; text-align: right; font-weight: 600;">${totalDueStr} FCFA</td>
@@ -258,6 +288,16 @@ export class RecoveryNotificationFinanceService {
             <p style="margin: 16px 0; font-size: 14px; color: #475569; line-height: 1.6;">
               ${levelConfig.emailBody}
             </p>
+
+            ${params.isPreviousYearArrear ? `
+            <div style="background: #ede9fe; border-left: 4px solid #8b5cf6; padding: 12px 16px; border-radius: 4px; margin: 20px 0;">
+              <p style="margin: 0; font-size: 13px; color: #5b21b6;">
+                <strong>ℹ️ Information importante :</strong> Cet arriéré provient de l'année scolaire
+                <strong>${params.academicYearName}</strong> et a été reporté sur l'année en cours.
+                Conformément à la politique de l'établissement, les paiements sont affectés en priorité
+                aux arriérés des années antérieures (méthode FIFO), puis aux frais de l'année en cours.
+              </p>
+            </div>` : ''}
 
             <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 4px; margin: 20px 0;">
               <p style="margin: 0; font-size: 13px; color: #92400e;">
@@ -319,6 +359,8 @@ export class RecoveryNotificationFinanceService {
     branding: any;
     tenantId: string;
     arrearId: string;
+    academicYearName?: string;
+    isPreviousYearArrear?: boolean;
   }): Promise<{ status: 'sent' | 'failed' | 'skipped'; to?: string; error?: string }> {
     if (!params.to) {
       return { status: 'skipped', error: 'Aucun téléphone parent disponible' };
@@ -328,14 +370,20 @@ export class RecoveryNotificationFinanceService {
     const schoolName = params.branding.schoolName || 'l\'établissement';
     const balanceStr = params.balanceDue.toLocaleString('fr-FR');
     const classPart = params.className !== '—' ? ` (Classe: ${params.className})` : '';
+    const yearPart = params.academicYearName ? `📅 Année scolaire : ${params.academicYearName}${params.isPreviousYearArrear ? ' (arriéré reporté)' : ''}\n` : '';
+    const fifoNote = params.isPreviousYearArrear
+      ? '\nℹ️ Conformément à la politique de l\'établissement, les paiements sont affectés en priorité aux arriérés des années antérieures (méthode FIFO).\n'
+      : '';
 
     const message = `${levelConfig.emoji} ${levelConfig.waTitle}\n\n` +
       `Bonjour${params.parentName ? ` ${params.parentName}` : ''},\n\n` +
       `${levelConfig.waBody}\n\n` +
+      `${yearPart}` +
       `👤 Élève : ${params.studentName}${classPart}\n` +
       `💰 Solde restant : ${balanceStr} FCFA\n` +
-      `📋 Frais : ${params.feeLabel}\n\n` +
-      `Merci de régulariser cette situation dans les meilleurs délais. ` +
+      `📋 Frais : ${params.feeLabel}\n` +
+      `${fifoNote}` +
+      `\nMerci de régulariser cette situation dans les meilleurs délais. ` +
       `Pour toute question, contactez l'administration de ${schoolName}.\n\n` +
       `Cordialement,\n` +
       `La Direction — ${schoolName}`;
@@ -369,6 +417,8 @@ export class RecoveryNotificationFinanceService {
     balanceDue: number;
     level: RecoveryLevel;
     branding: any;
+    academicYearName?: string;
+    isPreviousYearArrear?: boolean;
   }): Promise<{ status: 'sent' | 'failed' | 'skipped'; to?: string; error?: string }> {
     if (!params.to) {
       return { status: 'skipped', error: 'Aucun téléphone parent disponible' };
@@ -379,8 +429,10 @@ export class RecoveryNotificationFinanceService {
     const studentShort = params.studentName.substring(0, 18);
     const classPart = params.className !== '—' ? ` (${params.className.substring(0, 10)})` : '';
     const balanceStr = params.balanceDue.toLocaleString('fr-FR');
+    const yearShort = params.academicYearName ? params.academicYearName.substring(0, 9) : '';
+    const arrearTag = params.isPreviousYearArrear ? ' ARR' : '';
 
-    const message = `${schoolName}: ${levelConfig.smsTitle} - ${studentShort}${classPart}. ` +
+    const message = `${schoolName}: ${levelConfig.smsTitle} - ${studentShort}${classPart}${yearShort ? ` ${yearShort}${arrearTag}` : ''}. ` +
       `Solde restant: ${balanceStr}F. ` +
       `${levelConfig.smsBody} Contactez l'ecole pour regulariser.`;
 

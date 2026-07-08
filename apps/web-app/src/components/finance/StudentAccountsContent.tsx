@@ -444,7 +444,11 @@ export default function StudentAccountsContent() {
                       const balance = Number(a.balance ?? 0);
                       const arrearsAmount = Number(a.arrearsAmount ?? 0);
                       const carriedArrears = Number(a.carriedArrears ?? 0);
-                      const totalArrears = arrearsAmount + carriedArrears;
+                      // ⚠️ Utiliser actualArrears (calculé en backend en agrégeant les FeeArrear ouverts)
+                      // au lieu de arrearsAmount + carriedArrears qui ne sont pas toujours synchronisés.
+                      // On prend le max des deux pour ne jamais sous-estimer les arriérés affichés.
+                      const actualArrears = Number(a.actualArrears ?? 0);
+                      const totalArrears = Math.max(actualArrears, arrearsAmount + carriedArrears);
                       let rowBg = '';
                       let rowBorder = '';
                       if (balance <= 0) {
@@ -515,13 +519,19 @@ export default function StudentAccountsContent() {
                               {totalArrears > 0 && <FeeDetail label="Arriérés" due={totalArrears} />}
                             </div>
                           </TableCell>
-                          {/* Arriérés — montant des arriérés (saisis manuellement + reportés) */}
+                          {/* Arriérés — montant des arriérés (récupéré via FeeArrear réels) */}
                           <TableCell className="text-right">
                             {totalArrears > 0 ? (
                               <div>
                                 <div className="font-semibold text-amber-700 whitespace-nowrap">{formatCurrency(totalArrears)}</div>
-                                {carriedArrears > 0 && (
-                                  <div className="text-[10px] text-amber-500">dont reporté : {formatCurrency(carriedArrears)}</div>
+                                {(a.feeArrears?.length > 0 || carriedArrears > 0) && (
+                                  <div className="text-[10px] text-amber-500">
+                                    {a.feeArrears?.length > 0
+                                      ? `${a.feeArrears.length} arriéré${a.feeArrears.length > 1 ? 's' : ''} (multi-année)`
+                                      : carriedArrears > 0
+                                        ? `dont reporté : ${formatCurrency(carriedArrears)}`
+                                        : ''}
+                                  </div>
                                 )}
                               </div>
                             ) : (
@@ -827,16 +837,50 @@ export default function StudentAccountsContent() {
               <div><span className="text-gray-600">Total payé :</span> {formatCurrency(detailAccount.totalPaid)}</div>
               <div><span className="text-gray-600">Solde :</span> {formatCurrency(detailAccount.balance)}</div>
               <div><span className="text-gray-600">Statut :</span> <Badge className={STATUS_COLORS[detailAccount.status]}>{detailAccount.status}</Badge></div>
-              {Number(detailAccount.arrearsAmount) > 0 && (
-                <div className="col-span-2"><span className="text-gray-600">Arriérés (année précédente) :</span> {formatCurrency(detailAccount.arrearsAmount)}</div>
+              {Number(detailAccount.actualArrears ?? detailAccount.arrearsAmount ?? 0) > 0 && (
+                <div className="col-span-2">
+                  <span className="text-gray-600">Arriérés (multi-année) :</span>{' '}
+                  <span className="font-semibold text-amber-700">
+                    {formatCurrency(Number(detailAccount.actualArrears ?? detailAccount.arrearsAmount ?? 0))}
+                  </span>
+                  {detailAccount.feeArrears?.length > 0 && (
+                    <span className="text-xs text-slate-500 ml-2">
+                      ({detailAccount.feeArrears.length} arriéré{detailAccount.feeArrears.length > 1 ? 's' : ''})
+                    </span>
+                  )}
+                </div>
               )}
             </div>
+            {/* Détail des arriérés par année scolaire (multi-année) */}
+            {detailAccount.feeArrears?.length > 0 && (
+              <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <h4 className="text-sm font-semibold text-amber-800 mb-2 flex items-center gap-2">
+                  📅 Arriérés par année scolaire
+                </h4>
+                <ul className="space-y-1.5">
+                  {detailAccount.feeArrears.map((arrear: any) => (
+                    <li key={arrear.id} className="flex justify-between text-xs bg-white p-2 rounded border border-amber-100">
+                      <div>
+                        <div className="font-medium text-slate-800">{arrear.academicYearName}</div>
+                        {arrear.notes && <div className="text-[10px] text-slate-500 mt-0.5">{arrear.notes}</div>}
+                      </div>
+                      <div className="text-right">
+                        <div className="font-semibold text-rose-700">{formatCurrency(arrear.balanceDue)} FCFA</div>
+                        <div className="text-[10px] text-slate-500">
+                          Dû : {formatCurrency(arrear.totalDue)} · Payé : {formatCurrency(arrear.totalPaid)}
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <h4 className="font-medium mb-2">Détail par frais</h4>
             <ul className="space-y-2">
-              {Number(detailAccount.arrearsAmount) > 0 && (
+              {Number(detailAccount.actualArrears ?? detailAccount.arrearsAmount ?? 0) > 0 && (
                 <li className="flex justify-between text-sm">
-                  <span>Arriéré</span>
-                  <span>{formatCurrency(detailAccount.arrearsAmount)} — Non payé</span>
+                  <span>Arriéré (multi-année)</span>
+                  <span>{formatCurrency(Number(detailAccount.actualArrears ?? detailAccount.arrearsAmount ?? 0))} — Non payé</span>
                 </li>
               )}
               {detailAccount.breakdowns?.map((b: any) => {

@@ -97,6 +97,31 @@ export class ReceiptFinanceService {
       throw new Error(`Transaction ${transactionId} introuvable`);
     }
 
+    // 1.bis Récupérer les arriérés (FeeArrear) ouverts pour cet élève
+    // (toutes années confondues, OPEN ou PARTIALLY_PAID)
+    const openArrears = tx.studentAccount?.studentId
+      ? await this.prisma.feeArrear.findMany({
+          where: {
+            tenantId,
+            studentId: tx.studentAccount.studentId,
+            status: { in: ['OPEN', 'PARTIALLY_PAID'] },
+            balanceDue: { gt: 0 },
+          },
+          include: {
+            academicYear: { select: { name: true } },
+          },
+          orderBy: [{ academicYear: { startDate: 'asc' } }],
+        })
+      : [];
+
+    // 1.ter Calculer la part du paiement appliquée aux arriérés (FIFO)
+    // = total payé - somme des allocations aux AccountBreakdown de l'année en cours
+    const totalAllocatedToBreakdowns = (tx.allocations || []).reduce(
+      (sum: number, a: any) => sum + Number(a.amount ?? 0),
+      0,
+    );
+    const amountAppliedToArrears = Math.max(0, Number(tx.amount) - totalAllocatedToBreakdowns);
+
     // 2. Récupérer le branding de l'école + logo pour filigrane
     const branding = await this.getTenantBranding(tenantId);
 
@@ -118,6 +143,12 @@ export class ReceiptFinanceService {
       };
     }
 
+    // Total arriérés encore dus (somme des balanceDue des FeeArrear ouverts)
+    const totalArrearsRemaining = openArrears.reduce(
+      (sum, a) => sum + Number(a.balanceDue ?? 0),
+      0,
+    );
+
     // 3. Générer le token de vérification (pour QR code)
     const verificationToken = this.generateVerificationToken(tx.id, tx.receiptNumber);
 
@@ -137,6 +168,9 @@ export class ReceiptFinanceService {
       balanceAfter,
       breakdownsByType,
       className,
+      openArrears,
+      amountAppliedToArrears,
+      totalArrearsRemaining,
     });
 
     // 6. Convertir en PDF via Puppeteer
@@ -189,8 +223,11 @@ export class ReceiptFinanceService {
     balanceAfter: number;
     breakdownsByType: Record<string, { due: number; paid: number; remaining: number; name?: string }>;
     className?: string;
+    openArrears?: any[];
+    amountAppliedToArrears?: number;
+    totalArrearsRemaining?: number;
   }): string {
-    const { tx, branding, qrCodeDataUrl, verificationToken, totalDue, totalPaidAfter, balanceAfter, breakdownsByType, className } = params;
+    const { tx, branding, qrCodeDataUrl, verificationToken, totalDue, totalPaidAfter, balanceAfter, breakdownsByType, className, openArrears = [], amountAppliedToArrears = 0, totalArrearsRemaining = 0 } = params;
     const student = tx.studentAccount?.student;
     const studentName = student ? `${student.lastName} ${student.firstName}` : '—';
     const matricule = student?.matricule || '—';
@@ -205,7 +242,8 @@ export class ReceiptFinanceService {
       minute: '2-digit',
     });
 
-    // Détail des allocations (par frais)
+    // Détail des allocations (par frais) — uniquement les allocations aux
+    // AccountBreakdown de l'année en cours (les arriérés sont affichés séparément)
     const allocationsRows = (tx.allocations || [])
       .map(
         (a: any) => `
@@ -219,6 +257,18 @@ export class ReceiptFinanceService {
         </tr>`,
       )
       .join('');
+
+    // Ligne "Arriérés antérieurs (FIFO)" si une partie du paiement y a été appliquée
+    const fifoRow = amountAppliedToArrears > 0
+      ? `<tr style="background: #fef3c7;">
+          <td style="padding: 6px 8px; border-bottom: 1px solid #e5e7eb; color: #92400e; font-weight: 600;">
+            📅 Arriérés antérieurs (règlement FIFO)
+          </td>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #e5e7eb; text-align: right; color: #92400e; font-weight: 600;">
+            ${amountAppliedToArrears.toLocaleString('fr-FR')} FCFA
+          </td>
+        </tr>`
+      : '';
 
     const methodLabels: Record<string, string> = {
       CASH: 'Espèces',
@@ -351,12 +401,17 @@ export class ReceiptFinanceService {
       </thead>
       <tbody>
         ${allocationsRows || `<tr><td colspan="2" style="padding: 8px; text-align: center; color: #94a3b8;">Paiement global (non imputé par frais)</td></tr>`}
+        ${fifoRow}
         <tr class="total-row">
           <td>TOTAL</td>
           <td class="amount">${Number(tx.amount).toLocaleString('fr-FR')} FCFA</td>
         </tr>
       </tbody>
     </table>
+    ${amountAppliedToArrears > 0 ? `
+    <p style="margin-top: 8px; padding: 6px 10px; background: #fef3c7; border-left: 3px solid #f59e0b; font-size: 10px; color: #92400e; line-height: 1.5;">
+      <strong>ℹ️ Règlement FIFO :</strong> Conformément à la politique de l'établissement, <strong>${amountAppliedToArrears.toLocaleString('fr-FR')} FCFA</strong> ont été affectés en priorité au règlement des arriérés des années antérieures. Le reste (${(Number(tx.amount) - amountAppliedToArrears).toLocaleString('fr-FR')} FCFA) a été imputé aux frais de l'année en cours.
+    </p>` : ''}
   </div>
 
   <div class="section">
@@ -412,6 +467,41 @@ export class ReceiptFinanceService {
   </div>
   `}
   ` : ''}
+
+  <!-- Section Arriérés antérieurs (si l'élève a des arriérés ouverts) -->
+  ${openArrears.length > 0 ? `
+  <div class="section">
+    <div class="section-title" style="color: #b45309;">📅 Arriérés antérieurs en cours</div>
+    <table>
+      <thead>
+        <tr style="background: #fef3c7;">
+          <th style="color: #92400e;">Année scolaire</th>
+          <th style="text-align: right; color: #92400e;">Montant dû</th>
+          <th style="text-align: right; color: #92400e;">Déjà payé</th>
+          <th style="text-align: right; color: #92400e;">Reste à payer</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${openArrears.map((arrear: any) => `
+        <tr>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #fde68a;">${arrear.academicYear?.name || '—'}${arrear.notes ? `<br><span style="font-size: 9px; color: #94a3b8;">${arrear.notes}</span>` : ''}</td>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #fde68a; text-align: right;">${Number(arrear.totalDue).toLocaleString('fr-FR')} FCFA</td>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #fde68a; text-align: right; color: #059669;">${Number(arrear.totalPaid).toLocaleString('fr-FR')} FCFA</td>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #fde68a; text-align: right; color: #dc2626; font-weight: 700;">${Number(arrear.balanceDue).toLocaleString('fr-FR')} FCFA</td>
+        </tr>`).join('')}
+        <tr class="total-row" style="background: #fef3c7;">
+          <td style="color: #92400e;">TOTAL arriérés</td>
+          <td colspan="2" style="text-align: right; color: #92400e;"></td>
+          <td class="amount" style="color: #b45309; text-align: right;">${totalArrearsRemaining.toLocaleString('fr-FR')} FCFA</td>
+        </tr>
+      </tbody>
+    </table>
+    <p style="margin-top: 8px; padding: 8px 10px; background: #fef3c7; border-left: 3px solid #f59e0b; font-size: 10px; color: #92400e; line-height: 1.5;">
+      <strong>⚠️ Information :</strong> Cet élève présente des arriérés des années antérieures non réglés.
+      Conformément à la politique de l'établissement (règle FIFO), tout nouveau paiement sera affecté
+      en priorité à ces arriérés avant les frais de l'année en cours.
+    </p>
+  </div>` : ''}
 
   <div class="footer">
     <div class="qr-block">

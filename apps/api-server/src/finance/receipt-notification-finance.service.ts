@@ -126,6 +126,36 @@ export class ReceiptNotificationFinanceService {
       this.logger.error(`Échec génération PDF pour notifications: ${err.message}`);
     }
 
+    // 2.bis Récupérer les arriérés antérieurs ouverts de l'élève (toutes années)
+    const openArrears = tx.studentAccount?.studentId
+      ? await this.prisma.feeArrear.findMany({
+          where: {
+            tenantId,
+            studentId: tx.studentAccount.studentId,
+            status: { in: ['OPEN', 'PARTIALLY_PAID'] },
+            balanceDue: { gt: 0 },
+          },
+          include: { academicYear: { select: { name: true } } },
+          orderBy: [{ academicYear: { startDate: 'asc' } }],
+        })
+      : [];
+
+    // Calculer la part appliquée aux arriérés (FIFO) :
+    // total payé - somme des allocations aux AccountBreakdowns
+    const totalAllocatedToBreakdowns = (tx.allocations || []).reduce(
+      (sum: number, a: any) => sum + Number(a.amount ?? 0),
+      0,
+    );
+    const amountAppliedToArrears = Math.max(0, Number(tx.amount) - totalAllocatedToBreakdowns);
+
+    const openArrearsForEmail = openArrears.map(a => ({
+      academicYearName: a.academicYear?.name || '—',
+      totalDue: Number(a.totalDue ?? 0),
+      totalPaid: Number(a.totalPaid ?? 0),
+      balanceDue: Number(a.balanceDue ?? 0),
+      notes: a.notes || undefined,
+    }));
+
     // 3. Envoyer sur chaque canal demandé
     for (const channel of channels) {
       try {
@@ -147,6 +177,8 @@ export class ReceiptNotificationFinanceService {
             balanceAfter,
             personalizationNote,
             className,
+            amountAppliedToArrears,
+            openArrears: openArrearsForEmail,
           });
         } else if (channel === 'whatsapp') {
           results.whatsapp = await this.sendByWhatsApp({
@@ -162,6 +194,8 @@ export class ReceiptNotificationFinanceService {
             balanceAfter,
             personalizationNote,
             pdfBuffer,
+            amountAppliedToArrears,
+            openArrearsTotal: openArrears.reduce((s, a) => s + Number(a.balanceDue ?? 0), 0),
           });
         } else if (channel === 'sms') {
           results.sms = await this.sendBySMS({
@@ -173,6 +207,7 @@ export class ReceiptNotificationFinanceService {
             balanceAfter,
             personalizationNote,
             className,
+            amountAppliedToArrears,
           });
         }
       } catch (err: any) {
@@ -205,6 +240,8 @@ export class ReceiptNotificationFinanceService {
     balanceAfter?: number;
     personalizationNote?: string;
     className?: string;
+    amountAppliedToArrears?: number;
+    openArrears?: Array<{ academicYearName: string; balanceDue: number; totalDue: number; totalPaid: number; notes?: string }>;
   }): Promise<{ status: 'sent' | 'failed' | 'skipped'; to?: string; error?: string }> {
     if (!params.to) {
       return { status: 'skipped', error: 'Aucun email parent disponible' };
@@ -232,6 +269,8 @@ export class ReceiptNotificationFinanceService {
       balanceAfter: params.balanceAfter,
       personalizationNote: params.personalizationNote,
       className: params.className,
+      amountAppliedToArrears: params.amountAppliedToArrears,
+      openArrears: params.openArrears,
     });
 
     const result = await this.emailService.sendCategorized({
@@ -278,6 +317,8 @@ export class ReceiptNotificationFinanceService {
     balanceAfter?: number;
     personalizationNote?: string;
     pdfBuffer?: Buffer | null;
+    amountAppliedToArrears?: number;
+    openArrearsTotal?: number;
   }): Promise<{ status: 'sent' | 'failed' | 'skipped'; to?: string; error?: string }> {
     if (!params.to) {
       return { status: 'skipped', error: 'Aucun téléphone parent disponible' };
@@ -298,10 +339,18 @@ export class ReceiptNotificationFinanceService {
         : `Compte solde - aucun solde restant.`)
       : '';
 
+    // Section règlement FIFO (si une partie du paiement a été appliquée aux arriérés)
+    const fifoLine = params.amountAppliedToArrears && params.amountAppliedToArrears > 0
+      ? `Arrieres anterieurs regles (FIFO) : ${params.amountAppliedToArrears.toLocaleString('fr-FR')} FCFA. `
+      : '';
+
+    // Section arriérés encore en cours
+    const remainingArrearsLine = params.openArrearsTotal && params.openArrearsTotal > 0
+      ? `Arrieres encore dus : ${params.openArrearsTotal.toLocaleString('fr-FR')} FCFA. `
+      : '';
+
     // Ajouter la note de personnalisation au balance_line (variable 7 du template)
-    const fullBalanceLine = params.personalizationNote
-      ? `${balanceLine}${balanceLine ? ' ' : ''}${params.personalizationNote}`
-      : balanceLine;
+    const fullBalanceLine = `${fifoLine}${remainingArrearsLine}${balanceLine}${params.personalizationNote ? ` ${params.personalizationNote}` : ''}`.trim();
 
     // Utiliser le template Meta/Gupshup 'recu_paiement' (pré-approuvé)
     // Les variables doivent être passées par NOM (clé du bodyVariables du registry)
@@ -352,6 +401,7 @@ export class ReceiptNotificationFinanceService {
     balanceAfter?: number;
     personalizationNote?: string;
     className?: string;
+    amountAppliedToArrears?: number;
   }): Promise<{ status: 'sent' | 'failed' | 'skipped'; to?: string; error?: string }> {
     if (!params.to) {
       return { status: 'skipped', error: 'Aucun téléphone parent disponible' };
@@ -369,13 +419,18 @@ export class ReceiptNotificationFinanceService {
         : ' Compte solde.')
       : '';
 
+    // Mention FIFO si une partie du paiement a été appliquée aux arriérés
+    const fifoPart = params.amountAppliedToArrears && params.amountAppliedToArrears > 0
+      ? ` Arrieres regles: ${params.amountAppliedToArrears.toLocaleString('fr-FR')}F.`
+      : '';
+
     // Note de personnalisation courte pour SMS (réduction appliquée)
     const persoPart = params.personalizationNote
       ? ' Reduction appliquee.'
       : '';
 
     // SMS peut être un peu plus long si solde (jusqu'à 200 car)
-    const message = `${schoolName}: Recu ${params.receiptNumber} - ${amountStr}F pour ${studentShort}${classPart}.${balancePart}${persoPart} Recu PDF a l'ecole.`;
+    const message = `${schoolName}: Recu ${params.receiptNumber} - ${amountStr}F pour ${studentShort}${classPart}.${fifoPart}${balancePart}${persoPart} Recu PDF a l'ecole.`;
 
     const result = await this.smsService.sendSMS(params.to, message);
     if (result.success) {

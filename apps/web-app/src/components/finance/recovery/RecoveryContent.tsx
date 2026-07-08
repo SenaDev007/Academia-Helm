@@ -155,6 +155,53 @@ export default function RecoveryContent() {
   const [actionModal, setActionModal] = useState<{ arrearId: string; studentName: string } | null>(null);
   const [caseDetailModal, setCaseDetailModal] = useState<any | null>(null);
 
+  // Modal suppression d'arriéré (personnalisé)
+  const [deleteArrearModal, setDeleteArrearModal] = useState<{
+    arrearId: string;
+    studentName: string;
+    className: string;
+    academicYearName: string;
+    balanceDue: number;
+    totalDue: number;
+    totalPaid: number;
+    status: string;
+  } | null>(null);
+  const [deletingArrear, setDeletingArrear] = useState(false);
+
+  /**
+   * Confirme la suppression d'un arriéré via le modal personnalisé.
+   * Appelle le BFF DELETE /api/finance/collection/arrears/[id] qui proxy vers
+   * le backend DELETE /finance/collection/arrears/:id.
+   */
+  const handleConfirmDeleteArrear = async () => {
+    if (!deleteArrearModal) return;
+    setDeletingArrear(true);
+    try {
+      const r = await fetch(`/api/finance/collection/arrears/${deleteArrearModal.arrearId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        throw new Error(data?.error || data?.message || `Échec de la suppression (HTTP ${r.status})`);
+      }
+      toast({
+        title: '✅ Arriéré supprimé',
+        description: `${formatCurrency(deleteArrearModal.balanceDue)} FCFA retiré pour ${deleteArrearModal.studentName}.`,
+      });
+      setDeleteArrearModal(null);
+      window.dispatchEvent(new CustomEvent('recovery-reload'));
+    } catch (e: any) {
+      toast({
+        title: 'Erreur de suppression',
+        description: e?.message || 'Erreur lors de la suppression',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeletingArrear(false);
+    }
+  };
+
   const loadAll = useCallback(async () => {
     if (!academicYear?.id) return;
     setLoading(true);
@@ -602,6 +649,16 @@ export default function RecoveryContent() {
             })}
             onSendChannel={(arrearId, channel) => handleSendChannelReminder(arrearId, channel, 'PREMIERE_RELANCE')}
             schoolInfo={schoolInfo}
+            onDelete={(a) => setDeleteArrearModal({
+              arrearId: a.id,
+              studentName: a.student ? `${a.student.lastName} ${a.student.firstName}` : 'Élève',
+              className: a.student?.schoolLevel?.name || a.student?.studentEnrollments?.[0]?.class?.name || '—',
+              academicYearName: a.academicYear?.name || '—',
+              balanceDue: Number(a.balanceDue) || 0,
+              totalDue: Number(a.totalDue) || 0,
+              totalPaid: Number(a.totalPaid) || 0,
+              status: a.status || 'OPEN',
+            })}
           />
         ) : activeTab === 'reminders' ? (
           <RemindersTab
@@ -693,6 +750,16 @@ export default function RecoveryContent() {
           reason={arrearReason}
           setReason={setArrearReason}
           saving={arrearSaving}
+        />
+      )}
+
+      {/* Modal suppression d'arriéré (personnalisé) */}
+      {deleteArrearModal && (
+        <DeleteArrearModal
+          data={deleteArrearModal}
+          loading={deletingArrear}
+          onClose={() => setDeleteArrearModal(null)}
+          onConfirm={handleConfirmDeleteArrear}
         />
       )}
     </div>
@@ -868,6 +935,7 @@ function ArrearsTab({
   allYears,
   onSendChannel,
   schoolInfo,
+  onDelete,
 }: {
   arrears: any[];
   totalCount: number;
@@ -884,7 +952,9 @@ function ArrearsTab({
   allYears: { id: string; name: string }[];
   onSendChannel: (arrearId: string, channel: 'email' | 'whatsapp' | 'sms') => void;
   schoolInfo: any;
+  onDelete: (arrear: any) => void;
 }) {
+  const { toast } = useToast();
   const [schoolLevels, setSchoolLevels] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
 
@@ -1146,23 +1216,7 @@ function ArrearsTab({
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7 hover:bg-rose-100 hover:shadow-sm transition-all duration-150"
-                          onClick={() => {
-                            if (window.confirm(`Supprimer cet arriéré de ${formatCurrency(Number(a.balanceDue))} FCFA ? Cette action est irréversible.`)) {
-                              fetch(`/api/finance/collection/arrears/${a.id}`, {
-                                method: 'DELETE',
-                                credentials: 'include',
-                              })
-                                .then((r) => {
-                                  if (r.ok) {
-                                    toast({ title: '✅ Arriéré supprimé', description: `${formatCurrency(Number(a.balanceDue))} FCFA retiré.` });
-                                    window.dispatchEvent(new CustomEvent('recovery-reload'));
-                                  } else {
-                                    throw new Error('Échec de la suppression');
-                                  }
-                                })
-                                .catch((e) => toast({ title: 'Erreur', description: e.message, variant: 'destructive' }));
-                            }
-                          }}
+                          onClick={() => onDelete(a)}
                           title="Supprimer l'arriéré"
                         >
                           <Trash2 className="w-3.5 h-3.5 text-rose-600" />
@@ -2430,6 +2484,160 @@ function CasesTab({
             )}
           </TableBody>
         </Table>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Modal — Confirmation de suppression d'arriéré (personnalisé)       */
+/* ------------------------------------------------------------------ */
+
+const ARREAR_STATUS_LABELS: Record<string, { label: string; color: string; bg: string }> = {
+  OPEN: { label: 'Ouvert', color: 'text-rose-700', bg: 'bg-rose-50 border-rose-200' },
+  PARTIALLY_PAID: { label: 'Partiellement payé', color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200' },
+  PAID: { label: 'Soldé', color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
+  WRITTEN_OFF: { label: 'Abandonné', color: 'text-slate-700', bg: 'bg-slate-50 border-slate-200' },
+  TRANSFERRED: { label: 'Reporté', color: 'text-indigo-700', bg: 'bg-indigo-50 border-indigo-200' },
+};
+
+function DeleteArrearModal({
+  data,
+  loading,
+  onClose,
+  onConfirm,
+}: {
+  data: {
+    arrearId: string;
+    studentName: string;
+    className: string;
+    academicYearName: string;
+    balanceDue: number;
+    totalDue: number;
+    totalPaid: number;
+    status: string;
+  };
+  loading: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const statusCfg = ARREAR_STATUS_LABELS[data.status] || { label: data.status, color: 'text-slate-700', bg: 'bg-slate-50 border-slate-200' };
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* En-tête rouge */}
+        <div className="bg-gradient-to-br from-rose-600 to-rose-700 px-6 py-4 text-white">
+          <div className="flex items-center gap-3">
+            <div className="bg-white/20 rounded-full p-2">
+              <Trash2 className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold">Supprimer l'arriéré</h3>
+              <p className="text-xs text-rose-100 mt-0.5">Action irréversible</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Corps */}
+        <div className="p-6 space-y-4">
+          <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-600 mt-0.5 flex-shrink-0" />
+            <p className="text-xs text-rose-700 leading-relaxed">
+              Vous êtes sur le point de supprimer définitivement cet arriéré.
+              Cette action <strong>ne peut pas être annulée</strong> et supprimera
+              également toutes les relances, promesses et actions de recouvrement
+              qui y sont rattachées.
+            </p>
+          </div>
+
+          {/* Détails de l'arriéré */}
+          <div className="border border-slate-200 rounded-lg overflow-hidden">
+            <div className="bg-slate-50 px-4 py-2 border-b border-slate-200">
+              <div className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Détails de l'arriéré</div>
+            </div>
+            <div className="p-4 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Élève :</span>
+                <span className="font-semibold text-slate-900">{data.studentName}</span>
+              </div>
+              {data.className !== '—' && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Classe :</span>
+                  <span className="font-medium text-slate-700">{data.className}</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-slate-500">Année scolaire :</span>
+                <span className="font-medium text-slate-700">{data.academicYearName}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Statut :</span>
+                <Badge variant="outline" className={`${statusCfg.bg} ${statusCfg.color} border-current`}>
+                  {statusCfg.label}
+                </Badge>
+              </div>
+            </div>
+          </div>
+
+          {/* Récapitulatif financier */}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-slate-50 rounded-lg p-3 text-center border border-slate-200">
+              <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Total dû</div>
+              <div className="text-sm font-bold text-slate-700">{formatCurrency(data.totalDue)}</div>
+            </div>
+            <div className="bg-emerald-50 rounded-lg p-3 text-center border border-emerald-200">
+              <div className="text-[10px] uppercase tracking-wide text-emerald-600 mb-1">Payé</div>
+              <div className="text-sm font-bold text-emerald-700">{formatCurrency(data.totalPaid)}</div>
+            </div>
+            <div className="bg-rose-50 rounded-lg p-3 text-center border border-rose-200">
+              <div className="text-[10px] uppercase tracking-wide text-rose-600 mb-1">Reste</div>
+              <div className="text-sm font-bold text-rose-700">{formatCurrency(data.balanceDue)}</div>
+            </div>
+          </div>
+
+          <p className="text-xs text-slate-500 leading-relaxed">
+            Le compte élève sera ajusté : le montant de l'arriéré sera retiré du
+            total dû et du solde. Les inscriptions avec <code className="bg-slate-100 px-1 rounded">previousArrears</code> seront
+            également ajustées.
+          </p>
+        </div>
+
+        {/* Actions */}
+        <div className="bg-slate-50 px-6 py-3 flex justify-end gap-2 border-t border-slate-200">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            disabled={loading}
+          >
+            Annuler
+          </Button>
+          <Button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            className="bg-rose-600 hover:bg-rose-700 text-white"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Suppression…
+              </>
+            ) : (
+              <>
+                <Trash2 className="w-4 h-4 mr-2" />
+                Supprimer définitivement
+              </>
+            )}
+          </Button>
+        </div>
       </div>
     </div>
   );

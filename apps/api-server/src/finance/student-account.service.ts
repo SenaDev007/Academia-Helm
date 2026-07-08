@@ -457,7 +457,7 @@ export class StudentAccountService {
       };
     }
 
-    return this.prisma.studentAccount.findMany({
+    const accounts = await this.prisma.studentAccount.findMany({
       where,
       include: {
         student: {
@@ -483,6 +483,58 @@ export class StudentAccountService {
       },
       orderBy: [{ student: { lastName: 'asc' } }, { student: { firstName: 'asc' } }],
       take: 500,
+    });
+
+    // ─── Multi-année : récupérer les arriérés réels (FeeArrear) pour chaque élève ───
+    // Les champs StudentAccount.arrearsAmount et carriedArrears ne sont pas toujours
+    // synchronisés avec les FeeArrear (ex: arriérés créés manuellement via le module
+    // Recouvrement). On agrège donc les FeeArrear ouverts (OPEN ou PARTIALLY_PAID)
+    // pour afficher le vrai total d'arriérés dans la colonne "Arriérés".
+    const studentIds = accounts.map((a) => a.studentId);
+    const openArrears: any[] = studentIds.length > 0
+      ? await this.prisma.feeArrear.findMany({
+          where: {
+            tenantId,
+            studentId: { in: studentIds },
+            status: { in: ['OPEN', 'PARTIALLY_PAID'] },
+            balanceDue: { gt: 0 },
+          },
+          include: {
+            academicYear: { select: { name: true, startDate: true } },
+          },
+          orderBy: [{ academicYear: { startDate: 'asc' } }],
+        })
+      : [];
+
+    // Grouper par studentId
+    const arrearsByStudent = new Map<string, { total: number; items: any[] }>();
+    for (const arrear of openArrears) {
+      const existing = arrearsByStudent.get(arrear.studentId) || { total: 0, items: [] };
+      existing.total += Number(arrear.balanceDue ?? 0);
+      existing.items.push({
+        id: arrear.id,
+        academicYearId: arrear.academicYearId,
+        academicYearName: arrear.academicYear?.name || '—',
+        totalDue: Number(arrear.totalDue ?? 0),
+        totalPaid: Number(arrear.totalPaid ?? 0),
+        balanceDue: Number(arrear.balanceDue ?? 0),
+        status: arrear.status,
+        notes: arrear.notes,
+      });
+      arrearsByStudent.set(arrear.studentId, existing);
+    }
+
+    // Attacher les infos d'arriérés à chaque compte
+    return accounts.map((account) => {
+      const arrearData = arrearsByStudent.get(account.studentId);
+      const actualArrears = arrearData?.total ?? 0;
+      return {
+        ...account,
+        // actualArrears : total des FeeArrear ouverts (toutes années confondues)
+        actualArrears,
+        // feeArrears : détails des arriérés (pour le modal de détail)
+        feeArrears: arrearData?.items ?? [],
+      };
     });
   }
 
@@ -514,7 +566,32 @@ export class StudentAccountService {
       orderBy: { createdAt: 'desc' },
     });
 
-    return { ...account, overrides };
+    // ─── Multi-année : récupérer les arriérés réels (FeeArrear) pour cet élève ───
+    // Toutes années confondues, OPEN ou PARTIALLY_PAID — pour le détail multi-année.
+    const openArrears = await this.prisma.feeArrear.findMany({
+      where: {
+        tenantId,
+        studentId: account.studentId,
+        status: { in: ['OPEN', 'PARTIALLY_PAID'] },
+        balanceDue: { gt: 0 },
+      },
+      include: { academicYear: { select: { name: true, startDate: true } } },
+      orderBy: [{ academicYear: { startDate: 'asc' } }],
+    });
+
+    const feeArrears = openArrears.map((a) => ({
+      id: a.id,
+      academicYearId: a.academicYearId,
+      academicYearName: a.academicYear?.name || '—',
+      totalDue: Number(a.totalDue ?? 0),
+      totalPaid: Number(a.totalPaid ?? 0),
+      balanceDue: Number(a.balanceDue ?? 0),
+      status: a.status,
+      notes: a.notes,
+    }));
+    const actualArrears = feeArrears.reduce((sum, a) => sum + a.balanceDue, 0);
+
+    return { ...account, overrides, feeArrears, actualArrears };
   }
 
   /**

@@ -45,6 +45,10 @@ export interface ReceiptEmailData {
   personalizationNote?: string;
   /** Classe de l'élève */
   className?: string;
+  /** Montant appliqué aux arriérés antérieurs (FIFO) */
+  amountAppliedToArrears?: number;
+  /** Liste des arriérés antérieurs encore ouverts */
+  openArrears?: Array<{ academicYearName: string; balanceDue: number; totalDue: number; totalPaid: number; notes?: string }>;
 }
 
 const METHOD_LABELS: Record<string, string> = {
@@ -139,6 +143,49 @@ export function renderReceiptEmail(data: ReceiptEmailData): { subject: string; h
     </table>
 
     ${balanceSection}
+
+    ${data.amountAppliedToArrears && data.amountAppliedToArrears > 0 ? `
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;margin:16px 0;">
+      <tr>
+        <td style="padding:12px 16px;">
+          <div style="font-size:12px;font-weight:600;color:#92400e;margin-bottom:4px;">📅 Règlement FIFO appliqué</div>
+          <div style="font-size:12px;color:#92400e;line-height:1.5;">
+            Conformément à la politique de l'établissement, <strong>${data.amountAppliedToArrears.toLocaleString('fr-FR')} FCFA</strong> ont été affectés en priorité au règlement des arriérés des années antérieures. Le reste (${(data.amount - data.amountAppliedToArrears).toLocaleString('fr-FR')} FCFA) a été imputé aux frais de l'année en cours.
+          </div>
+        </td>
+      </tr>
+    </table>` : ''}
+
+    ${data.openArrears && data.openArrears.length > 0 ? `
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#fffbeb;border:2px solid #f59e0b;border-radius:8px;margin:16px 0;">
+      <tr>
+        <td style="padding:16px 20px;">
+          <div style="font-size:12px;font-weight:600;color:#92400e;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">📅 Arriérés antérieurs en cours</div>
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="font-size:12px;color:#1e293b;">
+            <thead>
+              <tr style="border-bottom:1px solid #fde68a;">
+                <td style="padding:6px 4px;font-weight:600;color:#92400e;">Année scolaire</td>
+                <td style="padding:6px 4px;text-align:right;font-weight:600;color:#92400e;">Dû</td>
+                <td style="padding:6px 4px;text-align:right;font-weight:600;color:#92400e;">Payé</td>
+                <td style="padding:6px 4px;text-align:right;font-weight:600;color:#92400e;">Reste</td>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.openArrears.map(a => `
+              <tr style="border-bottom:1px solid #fef3c7;">
+                <td style="padding:6px 4px;">${escHtml(a.academicYearName)}${a.notes ? `<br><span style="font-size:10px;color:#94a3b8;">${escHtml(a.notes)}</span>` : ''}</td>
+                <td style="padding:6px 4px;text-align:right;">${a.totalDue.toLocaleString('fr-FR')} FCFA</td>
+                <td style="padding:6px 4px;text-align:right;color:#059669;">${a.totalPaid.toLocaleString('fr-FR')} FCFA</td>
+                <td style="padding:6px 4px;text-align:right;color:#dc2626;font-weight:700;">${a.balanceDue.toLocaleString('fr-FR')} FCFA</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+          <div style="margin-top:8px;font-size:11px;color:#92400e;line-height:1.5;">
+            <strong>⚠️ Information :</strong> Cet élève présente des arriérés non réglés. Conformément à la politique de l'établissement (règle FIFO), les prochains paiements seront affectés en priorité à ces arriérés.
+          </div>
+        </td>
+      </tr>
+    </table>` : ''}
 
     ${data.personalizationNote ? `
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#ede9fe;border:1px solid #8b5cf6;border-radius:8px;margin:16px 0;">

@@ -238,7 +238,10 @@ export class ComptaExportService {
     // ─── 2. DÉPENSES APPROUVÉES → Journal des achats (JAC) ───
     // Note : on utilise $queryRawUnsafe au lieu de l'API Prisma typée car
     // le client Prisma peut ne pas être à jour avec les champs récents
-    // (expenseDate, vendor, invoiceRef, cashRegisterId, paymentMethod).
+    // (expenseDate, vendor, invoiceRef, cashRegisterId).
+    // Note : FinanceExpense n'a PAS de champ paymentMethod — les dépenses
+    // sont toujours payées depuis une caisse (cashRegisterId). On utilise
+    // 'CASH' comme méthode par défaut pour le mapping du compte de trésorerie.
     const expenseDateFrom = dateFrom;
     const expenseDateTo = dateTo;
     const expensesRaw = await this.prisma.$queryRawUnsafe(`
@@ -255,7 +258,6 @@ export class ComptaExportService {
         fe.vendor,
         fe."invoiceRef",
         fe."cashRegisterId",
-        fe."paymentMethod",
         ec.name AS "categoryName",
         ec.code AS "categoryCode",
         ec."compteOhada" AS "categoryCompteOhada",
@@ -289,11 +291,10 @@ export class ComptaExportService {
         ? { num: ex.categoryCompteOhada, lib: ex.categoryCompteOhadaLib || ex.categoryName }
         : ComptaExportService.DEFAULT_ACCOUNTS.AUTRES_ACHATS;
 
-      // Compte de trésorerie (débit de la sortie)
-      const paymentMethod = (ex.paymentMethod || 'CASH') as keyof typeof ComptaExportService.PAYMENT_TO_COMPTE;
-      let compteTreso = ComptaExportService.PAYMENT_TO_COMPTE[paymentMethod]
-        || ComptaExportService.DEFAULT_ACCOUNTS.CAISSE_PRINCIPALE;
-      if (paymentMethod === 'CASH' && ex.cashRegisterCode) {
+      // Compte de trésorerie : les dépenses sont toujours payées depuis une caisse (CASH).
+      // Si la caisse est secondaire (code contient SEC/2/ANNEXE), utiliser 572000.
+      let compteTreso = ComptaExportService.DEFAULT_ACCOUNTS.CAISSE_PRINCIPALE;
+      if (ex.cashRegisterCode) {
         const code = ex.cashRegisterCode.toUpperCase();
         if (code.includes('SEC') || code.includes('2') || code.includes('ANNEXE')) {
           compteTreso = ComptaExportService.DEFAULT_ACCOUNTS.CAISSE_SECONDAIRE;

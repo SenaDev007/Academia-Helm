@@ -571,4 +571,29 @@ export class UpdateFinancialSettingsDto {
   @IsOptional()
   @IsString()
   fedapaySecretKey?: string;
+
+  // ─── Relance automatique ───
+  @IsOptional()
+  @IsBoolean()
+  autoRecoveryEnabled?: boolean;
+
+  @IsOptional()
+  @IsString()
+  autoRecoveryChannels?: string;
+
+  @IsOptional()
+  @IsString()
+  autoRecoveryFrequency?: string;
+
+  @IsOptional()
+  @IsString()
+  autoRecoveryTime?: string;
+
+  @IsOptional()
+  @IsString()
+  autoRecoveryMaxLevel?: string;
+
+  @IsOptional()
+  @IsNumber()
+  expenseReceiptThreshold?: number | null;
 }

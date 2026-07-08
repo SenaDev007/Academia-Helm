@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Save, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { CreditCard, Save, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -76,8 +76,8 @@ export default function PaymentConfigSection({ tenantId }: { tenantId: string })
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-white border border-violet-200 flex items-center justify-center shadow-sm overflow-hidden p-1">
-            <FedapayLogo className="h-full w-auto object-contain" />
+          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-500 flex items-center justify-center text-white shadow-lg">
+            <CreditCard className="w-5 h-5" />
           </div>
           <div>
             <h3 className="text-base font-semibold text-slate-800">Paiements en ligne</h3>

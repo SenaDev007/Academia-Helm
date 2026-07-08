@@ -1708,6 +1708,7 @@ export default function CashRegistersContent() {
                                           {tx.paymentMethod === 'FEDAPAY' ? (
                                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium ${methodColors[tx.paymentMethod] || 'bg-slate-50 text-slate-700'}`}>
                                               <FedapayLogo className="h-3 w-auto" />
+                                              <span>Fedapay</span>
                                             </span>
                                           ) : (
                                             <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-medium ${methodColors[tx.paymentMethod] || 'bg-slate-50 text-slate-700'}`}>

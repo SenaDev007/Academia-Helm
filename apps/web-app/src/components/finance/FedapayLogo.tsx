@@ -73,7 +73,8 @@ const METHOD_LABELS: Record<string, string> = {
 
 /**
  * Badge affichant la méthode de paiement :
- *   - Pour Fedapay : le logo officiel dans un badge outline
+ *   - Pour Fedapay : le logo officiel + le texte "Fedapay" côte à côte
+ *     (comme dans le modal Nouveau paiement), dans un badge standard
  *   - Pour les autres méthodes : un badge textuel standard
  *
  * Utilisable partout où une méthode de paiement doit être affichée
@@ -89,7 +90,7 @@ export function PaymentMethodBadge({
 }) {
   if (method === 'FEDAPAY') {
     return (
-      <Badge variant="outline" className="px-1.5 py-0.5 gap-1 bg-violet-50 border-violet-200">
+      <Badge variant="outline" className="gap-1.5">
         <Image
           src="/images/logoFedaPay.webp"
           alt="Fedapay"
@@ -98,6 +99,7 @@ export function PaymentMethodBadge({
           height={14}
           className="h-3.5 w-auto object-contain"
         />
+        <span>Fedapay</span>
       </Badge>
     );
   }

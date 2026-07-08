@@ -2842,15 +2842,24 @@ function CasesTab({
   }, [cases, filterSchoolLevelId, filterClassId, search]);
 
   // Export Excel
+  const [exporting, setExporting] = useState<'pdf' | 'excel' | null>(null);
+
   const handleExportExcel = async () => {
-    const ExcelJS = (window as any).ExcelJS;
-    if (!ExcelJS) {
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js';
-      script.onload = () => doExportExcel();
-      document.head.appendChild(script);
-    } else {
-      doExportExcel();
+    setExporting('excel');
+    try {
+      const ExcelJS = (window as any).ExcelJS;
+      if (!ExcelJS) {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js';
+        script.onload = () => doExportExcel();
+        document.head.appendChild(script);
+      } else {
+        await doExportExcel();
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setExporting(null);
     }
   };
   const doExportExcel = async () => {
@@ -2880,6 +2889,99 @@ function CasesTab({
     a.download = `Dossiers_recouvrement_${new Date().toISOString().slice(0, 10)}.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  // Export PDF
+  const handleExportPdf = async () => {
+    setExporting('pdf');
+    try {
+      const jsPDFMod = await import('jspdf');
+      const autoTableMod = await import('jspdf-autotable');
+      const jsPDF = jsPDFMod.default || jsPDFMod.jsPDF;
+      const autoTable = autoTableMod.default;
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+
+      // En-tête
+      doc.setFont('times', 'bold');
+      doc.setFontSize(16);
+      doc.setTextColor(13, 31, 110);
+      doc.text('Dossiers de recouvrement', pageWidth / 2, 18, { align: 'center' });
+      doc.setFont('times', 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(100, 100, 100);
+      doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR')}`, pageWidth / 2, 26, { align: 'center' });
+      doc.text(`${filteredCases.length} dossier(s)`, pageWidth / 2, 31, { align: 'center' });
+
+      const tableData = filteredCases.map((c) => {
+        const config = CASE_STATUS_CONFIG[c.status] || CASE_STATUS_CONFIG.ON_TIME;
+        const escalation = ESCALATION_LABELS[c.escalationLevel || 0] || ESCALATION_LABELS[0];
+        return [
+          c.student ? `${c.student.lastName} ${c.student.firstName}` : '—',
+          (Number(c.totalDue) || 0).toLocaleString('fr-FR'),
+          (Number(c.totalPaid) || 0).toLocaleString('fr-FR'),
+          (Number(c.outstandingAmount) || 0).toLocaleString('fr-FR'),
+          config.label,
+          escalation.label,
+          c.lastActionAt ? new Date(c.lastActionAt).toLocaleDateString('fr-FR') : '—',
+        ];
+      });
+
+      // Ligne total
+      const totalDue = filteredCases.reduce((s, c) => s + (Number(c.totalDue) || 0), 0);
+      const totalPaid = filteredCases.reduce((s, c) => s + (Number(c.totalPaid) || 0), 0);
+      const totalOutstanding = filteredCases.reduce((s, c) => s + (Number(c.outstandingAmount) || 0), 0);
+      tableData.push([
+        'TOTAL', '',
+        '',
+        totalOutstanding.toLocaleString('fr-FR'),
+        '', '', '',
+      ]);
+
+      autoTable(doc, {
+        head: [['Élève', 'Total dû', 'Payé', 'Reste à payer', 'Statut', 'Escalade', 'Dernière action']],
+        body: tableData,
+        startY: 36,
+        theme: 'grid',
+        headStyles: { fillColor: [13, 31, 110], textColor: 255, fontStyle: 'bold', fontSize: 10 },
+        bodyStyles: { fontSize: 9 },
+        columnStyles: {
+          1: { halign: 'right' },
+          2: { halign: 'right' },
+          3: { halign: 'right', fontStyle: 'bold' },
+          4: { halign: 'center' },
+          5: { halign: 'center' },
+        },
+        didParseCell: (data: any) => {
+          // Ligne total
+          if (data.row.index === tableData.length - 1 && data.section === 'body') {
+            data.cell.styles.fontStyle = 'bold';
+            data.cell.styles.fillColor = [254, 243, 199];
+            data.cell.styles.textColor = [146, 64, 14];
+          }
+          // Couleur statut
+          if (data.section === 'body' && data.column.index === 4 && data.row.index < tableData.length - 1) {
+            const statusLabel = data.cell.raw;
+            const colors: Record<string, [number, number, number]> = {
+              'À jour': [22, 163, 74],
+              'En retard': [217, 119, 6],
+              'Critique': [234, 88, 12],
+              'Bloqué': [220, 38, 38],
+            };
+            if (colors[statusLabel]) {
+              data.cell.styles.textColor = colors[statusLabel];
+              data.cell.styles.fontStyle = 'bold';
+            }
+          }
+        },
+      });
+
+      doc.save(`Dossiers_recouvrement_${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (e: any) {
+      console.error(e);
+    } finally {
+      setExporting(null);
+    }
   };
 
   return (
@@ -2914,8 +3016,11 @@ function CasesTab({
               <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nom ou prénom..." className="pl-9" />
             </div>
           </div>
-          <Button variant="outline" size="sm" onClick={handleExportExcel} className="border-emerald-300 text-emerald-700 hover:bg-emerald-100">
-            <FileSpreadsheet className="w-4 h-4 mr-1.5" /> Excel
+          <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={exporting !== null || filteredCases.length === 0} className="border-emerald-300 text-emerald-700 hover:bg-emerald-100">
+            {exporting === 'excel' ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 mr-1.5" />} Excel
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleExportPdf} disabled={exporting !== null || filteredCases.length === 0} className="border-rose-300 text-rose-700 hover:bg-rose-100">
+            {exporting === 'pdf' ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <FileText className="w-4 h-4 mr-1.5" />} PDF
           </Button>
         </div>
         <div className="text-xs text-slate-500 mt-2">{filteredCases.length} affiché(s) sur {cases.length} total</div>

@@ -39,8 +39,8 @@ import { formatCurrency } from '@/lib/utils';
 import { exportExpensesToExcel } from '@/lib/exports/excel-exports';
 import { expensesFilename } from '@/lib/exports/filename-helpers';
 import { loadPdfLibs } from '@/lib/exports/pdf-loader';
-import {
 import { loadXlsx } from '@/lib/exports/xlsx-loader';
+import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from 'recharts';
 

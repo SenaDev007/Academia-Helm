@@ -518,7 +518,7 @@ class FinanceService {
   }
 
   async getExpenseBudgets(academicYearId: string): Promise<any> {
-    return financeFetch(`/api/finance/expenses/budgets?academicYearId=${academicYearId}`);
+    return financeFetch(`/api/finance/expenses-v2/budgets?academicYearId=${academicYearId}`);
   }
 
   // --- Treasury aliases (page uses getTreasuryClosures etc.) ---

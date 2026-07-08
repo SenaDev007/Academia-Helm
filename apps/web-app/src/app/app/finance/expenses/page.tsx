@@ -209,30 +209,35 @@ export default function ExpensesPage() {
     if (!academicYear?.id || !form.categoryId || !form.description || !form.amount) return;
     try {
       // Upload du justificatif si un fichier est sélectionné
-      let receiptUrl = form.receiptUrl || undefined;
+      let receiptUrl: string | undefined = form.receiptUrl || undefined;
       if (receiptFile) {
         const uploadedUrl = await handleUploadReceipt(receiptFile);
         if (uploadedUrl) {
           receiptUrl = uploadedUrl;
         }
       }
-      await financeService.createExpense({
+      // Nettoyer les undefined → ne pas les envoyer (évite les erreurs de validation)
+      const payload: Record<string, any> = {
         academicYearId: academicYear.id,
         categoryId: form.categoryId,
         description: form.description,
         amount: Number(form.amount),
-        receiptUrl,
-        expenseDate: form.expenseDate,
-        vendor: form.vendor || undefined,
-        invoiceRef: form.invoiceRef || undefined,
-      });
+      };
+      if (receiptUrl) payload.receiptUrl = receiptUrl;
+      if (form.expenseDate) payload.expenseDate = form.expenseDate;
+      if (form.vendor) payload.vendor = form.vendor;
+      if (form.invoiceRef) payload.invoiceRef = form.invoiceRef;
+
+      await financeService.createExpense(payload);
+      toast({ title: '✅ Dépense créée', description: 'La dépense a été soumise pour validation.' });
       setModalCreate(false);
       setForm({ categoryId: '', description: '', amount: '', receiptUrl: '', expenseDate: new Date().toISOString().slice(0, 10), vendor: '', invoiceRef: '' });
       setReceiptFile(null);
       loadExpenses();
       loadBudgets();
       loadMonthlyStats();
-    } catch (error) {
+    } catch (error: any) {
+      toast({ title: 'Erreur création', description: error?.message || 'Erreur lors de la création', variant: 'destructive' });
       console.error('Erreur lors de la création:', error);
     }
   };
@@ -675,6 +680,19 @@ export default function ExpensesPage() {
                 <p className="text-[10px] text-slate-500 mt-0.5">{kpis.rejectedCount} rejetée(s)</p>
               </div>
             </div>
+
+            {/* Message si aucune donnée */}
+            {expenses.length === 0 && (
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
+                <TrendingDown className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                <p className="text-sm text-slate-500">Aucune dépense enregistrée pour le moment.</p>
+                <p className="text-xs text-slate-400 mt-1">Les graphiques apparaîtront dès qu'une dépense sera approuvée.</p>
+                <Button size="sm" className="mt-4" onClick={() => setTab('expenses')}>
+                  <Plus className="w-4 h-4 mr-1.5" />
+                  Créer une dépense
+                </Button>
+              </div>
+            )}
 
             {/* Graphiques : évolution mensuelle + répartition par catégorie (côte à côte) */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

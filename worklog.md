@@ -2888,3 +2888,79 @@ Stage Summary:
 - Modal Relance manuelle : sélecteurs niveau scolaire → classe → élève + termes français
 - Envoi multi-canal automatique (email + WhatsApp + SMS) au parent
 - 1 commit poussé : b74d91c8
+
+---
+Task ID: multi-year-notifications-and-fixes
+Agent: main
+Task: Mettre à jour les messages de notification (email/SMS/WhatsApp) et le reçu pour refléter les implémentations multi-année ; personnaliser le modal de suppression d'arriérés + fixer le bug de suppression ; fixer la colonne Arriérés dans Comptes élèves
+
+Work Log:
+
+## 1. Notifications de relance (email/WhatsApp/SMS) — multi-année
+Fichier : `recovery-notification-finance.service.ts`
+- Détection automatique : si `arrear.academicYearId` ≠ année en cours → `isPreviousYearArrear = true`
+- Email : nouvelle ligne "Année scolaire" dans le tableau récapitulatif + bloc violet explicatif sur la politique FIFO quand arriéré reporté
+- WhatsApp : ligne "📅 Année scolaire" + note FIFO si applicable
+- SMS : tag "ARR" pour les arriérés reportés + année scolaire courte
+
+## 2. Reçu PDF — multi-année + FIFO
+Fichier : `receipt-finance.service.ts`
+- Récupération des FeeArrear ouverts pour l'élève (toutes années)
+- Calcul `amountAppliedToArrears` = total payé - somme des allocations aux AccountBreakdown
+- Nouvelle ligne "📅 Arriérés antérieurs (règlement FIFO)" dans le tableau de détail du paiement
+- Note explicative sous le tableau : "X FCFA affectés aux arriérés, reste Y FCFA imputés aux frais de l'année en cours"
+- Nouvelle section "📅 Arriérés antérieurs en cours" avec tableau détaillé par année scolaire + avertissement FIFO
+
+## 3. Notifications de reçu (email/WhatsApp/SMS) — multi-année
+Fichier : `receipt-notification-finance.service.ts` + `receipt-email-templates.ts`
+- Email : sections "Règlement FIFO appliqué" + "Arriérés antérieurs en cours" (tableau)
+- WhatsApp : lignes "Arriérés antérieurs réglés (FIFO)" + "Arriérés encore dus" ajoutées au `balance_line` du template Gupshup
+- SMS : mention "Arriérés réglés : X F" si FIFO appliqué
+
+## 4. Fix suppression arriérés (RecoveryContent)
+### 4.a. Bug : BFF route manquant
+- Frontend appelait `DELETE /api/finance/collection/arrears/[id]` mais aucune route BFF n'existait → 404 silencieux
+- Créé : `apps/web-app/src/app/api/finance/collection/arrears/[id]/route.ts` (handler DELETE proxy vers backend)
+- Backend `DELETE /finance/collection/arrears/:id` existait déjà et fonctionne
+
+### 4.b. Modal de suppression personnalisé
+- Remplacé `window.confirm()` par `DeleteArrearModal` (composant dédié) :
+  - En-tête rouge gradient avec icône Trash2
+  - Bloc d'alerte (AlertTriangle) sur l'irréversibilité + suppression des dépendances
+  - Cartouche "Détails de l'arriéré" : élève, classe, année scolaire, statut (badge coloré)
+  - 3 cartes récapitulatives : Total dû / Payé / Reste
+  - Note explicative sur l'ajustement du StudentAccount
+  - Bouton "Supprimer définitivement" avec loading state
+- Ajout state `deleteArrearModal` + `deletingArrear` + handler `handleConfirmDeleteArrear` dans le parent
+- Fix bug latent : `useToast()` manquait dans `ArrearsTab` (write-off handler utilisait `toast` non défini) → ajouté
+
+## 5. Fix colonne Arriérés dans Comptes élèves (StudentAccountsContent)
+Problème : `StudentAccount.arrearsAmount` et `carriedArrears` ne sont pas synchronisés avec les FeeArrear créés manuellement via le module Recouvrement → la colonne affichait 0 même quand l'élève avait des arriérés.
+
+### 5.a. Backend `student-account.service.ts`
+- `findAll()` : après récupération des StudentAccounts, agrège les FeeArrear ouverts (OPEN/PARTIALLY_PAID, balanceDue > 0) par studentId
+- Attache `actualArrears` (total) + `feeArrears[]` (détails par année) à chaque compte
+- `findOne()` : idem pour le modal de détail
+
+### 5.b. Frontend `StudentAccountsContent.tsx`
+- Utilise `actualArrears` (max avec `arrearsAmount + carriedArrears`) pour ne jamais sous-estimer
+- Colonne Arriérés : affiche "X arriérés (multi-année)" si `feeArrears.length > 0`
+- Modal de détail : nouvelle section "📅 Arriérés par année scolaire" avec liste des FeeArrear ouverts
+
+## Fichiers modifiés (8)
+1. `recovery-notification-finance.service.ts` — multi-année dans relances
+2. `receipt-finance.service.ts` — reçu PDF avec FIFO + section arriérés
+3. `receipt-email-templates.ts` — template email avec FIFO + section arriérés
+4. `receipt-notification-finance.service.ts` — notifications reçu multi-canal avec FIFO
+5. `student-account.service.ts` — findAll/findOne agrègent les FeeArrear réels
+6. `RecoveryContent.tsx` — DeleteArrearModal personnalisé + fix useToast
+7. `StudentAccountsContent.tsx` — utilise actualArrears + détail multi-année
+8. `apps/web-app/src/app/api/finance/collection/arrears/[id]/route.ts` — NOUVEAU BFF DELETE
+
+Stage Summary:
+- Les notifications de relance mentionnent maintenant l'année scolaire et la politique FIFO
+- Le reçu PDF affiche la répartition FIFO (arriérés vs année en cours) + la liste des arriérés multi-année
+- Les notifications de reçu (email/WhatsApp/SMS) incluent les infos FIFO
+- Le bouton Supprimer d'arriéré ouvre un modal personnalisé (au lieu de window.confirm) ET supprime réellement la donnée (BFF route créé)
+- La colonne Arriérés du tableau Comptes élèves affiche maintenant les vrais arriérés (agrégation des FeeArrear ouverts)
+- 1 commit local : c8f4be8d (push échoué — pas de réseau GitHub)

@@ -33,12 +33,14 @@ import {
   Send, Play, Loader2, ChevronRight, Filter, Search,
   Phone, Mail, FileText, UserCheck, Clock, AlertTriangle,
   Zap, CheckCircle2, XCircle, Calendar, Plus, Eye, FileSpreadsheet, Trash2, Settings,
+  Upload,
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import ImportArrearsModal from '@/components/finance/ImportArrearsModal';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -138,6 +140,7 @@ export default function RecoveryContent() {
 
   // Modal saisie manuelle d'arriéré (onboarding nouveaux clients)
   const [manualArrearModal, setManualArrearModal] = useState(false);
+  const [showImportArrears, setShowImportArrears] = useState(false);
   const [arrearStudentId, setArrearStudentId] = useState('');
   const [arrearAmount, setArrearAmount] = useState('');
   const [arrearReason, setArrearReason] = useState('');
@@ -764,6 +767,10 @@ export default function RecoveryContent() {
                 <Plus className="w-4 h-4 mr-2" />
                 Saisir un arriéré
               </Button>
+              <Button variant="outline" size="sm" onClick={() => setShowImportArrears(true)} className="border-violet-300 text-violet-700 hover:bg-violet-100">
+                <Upload className="w-4 h-4 mr-2" />
+                Importer arriérés
+              </Button>
               <Button variant="outline" size="sm" onClick={() => setManualModal(true)}>
                 <Send className="w-4 h-4 mr-2" />
                 Relance manuelle
@@ -998,6 +1005,16 @@ export default function RecoveryContent() {
           onConfirm={handleConfirmDeleteArrear}
         />
       )}
+
+      {/* Modal import d'arriérés via Excel */}
+      <ImportArrearsModal
+        open={showImportArrears}
+        onClose={() => setShowImportArrears(false)}
+        onSuccess={() => {
+          // Recharger les données après import
+          loadAll();
+        }}
+      />
 
       {/* Modal suppression de relance (personnalisé) */}
       {deleteReminderModal && (

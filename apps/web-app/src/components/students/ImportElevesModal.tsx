@@ -36,7 +36,6 @@ interface PreviewRow {
   schoolLevelName: string;
   className: string;
   isNewStudent: boolean | null;
-  previousArrears: number;
   guardianName: string | null;
   errors: string[];
   isValid: boolean;

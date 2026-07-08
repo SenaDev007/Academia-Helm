@@ -18,7 +18,11 @@
  * Format Excel (13 colonnes) :
  *   Prénom | Nom | Date de naissance | Sexe | Lieu de naissance |
  *   Nationalité | Niveau scolaire | Classe | Type d'élève |
- *   Arriérés antérieurs | Nom du parent | Téléphone du parent | Email du parent
+ *   Nom du parent | Téléphone du parent | Email du parent
+ *
+ * ⚠️ Les arriérés antérieurs NE sont PAS dans ce fichier. Ils sont importés
+ * séparément via ArrearsImportService (un élève peut avoir des arriérés sur
+ * plusieurs années, ce qui nécessite un fichier dédié).
  *
  * Utilise ExcelJS (déjà installé côté backend).
  * ============================================================================
@@ -41,7 +45,6 @@ export interface ImportRow {
   schoolLevelName: string;
   className: string;
   isNewStudent: boolean | null;
-  previousArrears: number;
   guardianName: string | null;
   guardianPhone: string | null;
   guardianEmail: string | null;
@@ -84,6 +87,9 @@ export class StudentsImportService {
   private readonly logger = new Logger(StudentsImportService.name);
 
   // En-têtes attendues (dans l'ordre des colonnes)
+  // Note : les arriérés antérieurs NE sont PAS dans ce fichier — ils sont
+  // importés séparément via ArrearsImportService (un élève peut avoir des
+  // arriérés sur plusieurs années, ce qui nécessite un fichier dédié).
   private static readonly HEADERS = [
     'Prénom',
     'Nom',
@@ -94,7 +100,6 @@ export class StudentsImportService {
     'Niveau scolaire',
     'Classe',
     "Type d'élève",
-    'Arriérés antérieurs (FCFA)',
     'Nom du parent/tuteur',
     'Téléphone du parent',
     'Email du parent',
@@ -214,7 +219,7 @@ export class StudentsImportService {
           placeOfBirth: row.placeOfBirth || undefined,
           nationality: row.nationality || undefined,
           classId: classId || undefined,
-          previousArrears: row.previousArrears || 0,
+          previousArrears: 0, // Les arriérés sont importés séparément via ArrearsImportService
           enrollmentType,
         }, userId);
 
@@ -288,8 +293,8 @@ export class StudentsImportService {
 
     // Lignes d'exemple (ligne 2 et 3)
     const examples = [
-      ['Marie', 'AKOVI', '15/03/2015', 'F', 'Cotonou', 'Béninoise', 'Primaire', 'CE1', 'Nouvel élève', 0, 'Koffi AKOVI', '+229 01 97 22 23 45', 'koffi.akovi@email.com'],
-      ['Jean', 'DOSSOU', '22/09/2014', 'M', 'Porto-Novo', 'Béninoise', 'Primaire', 'CM2', 'Ancien élève', 15000, 'Adèle DOSSOU', '+229 01 96 11 22 33', 'adele.dossou@email.com'],
+      ['Marie', 'AKOVI', '15/03/2015', 'F', 'Cotonou', 'Béninoise', 'Primaire', 'CE1', 'Nouvel élève', 'Koffi AKOVI', '+229 01 97 22 23 45', 'koffi.akovi@email.com'],
+      ['Jean', 'DOSSOU', '22/09/2014', 'M', 'Porto-Novo', 'Béninoise', 'Primaire', 'CM2', 'Ancien élève', 'Adèle DOSSOU', '+229 01 96 11 22 33', 'adele.dossou@email.com'],
     ];
     examples.forEach((example) => {
       worksheet.addRow(example);
@@ -310,7 +315,7 @@ export class StudentsImportService {
     worksheet.addRow(['🎓 Niveau scolaire : Maternelle, Primaire ou Secondaire (doit exister dans votre établissement)']);
     worksheet.addRow(['🏫 Classe : nom exact de la classe dans votre établissement (ex: CE1, 6ème, Terminale)']);
     worksheet.addRow(["📦 Type d'élève : \"Nouvel élève\" (paie frais d'inscription) ou \"Ancien élève\" (paie frais de réinscription)"]);
-    worksheet.addRow(['💰 Arriérés antérieurs : montant en FCFA (0 si aucun)']);
+    worksheet.addRow(['💰 Arriérés antérieurs : ⚠️ NON inclus dans ce fichier — utilisez l\'import d\'arriérés dédié (module Recouvrement).']);
     worksheet.addRow(['📋 Toutes les colonnes en gras sont obligatoires. Les autres sont optionnelles.']);
 
     for (let i = 5; i <= 13; i++) {
@@ -402,7 +407,7 @@ export class StudentsImportService {
       gender = 'F';
     }
 
-    // Parse type d'élève
+    // Parse type d'élève (colonne 9)
     const typeRaw = getCell(9).toLowerCase();
     let isNewStudent: boolean | null = null;
     if (typeRaw.includes('nouvel') || typeRaw.includes('nouveau') || typeRaw === 'new') {
@@ -410,10 +415,6 @@ export class StudentsImportService {
     } else if (typeRaw.includes('ancien') || typeRaw.includes('reinscription') || typeRaw === 'old') {
       isNewStudent = false;
     }
-
-    // Parse arriérés
-    const arrearsStr = getCell(10).replace(/[^\d.-]/g, '');
-    const previousArrears = arrearsStr ? Number(arrearsStr) : 0;
 
     return {
       rowIndex: rowNumber,
@@ -426,10 +427,9 @@ export class StudentsImportService {
       schoolLevelName: getCell(7),
       className: getCell(8),
       isNewStudent,
-      previousArrears: isNaN(previousArrears) ? 0 : previousArrears,
-      guardianName: getCell(11) || null,
-      guardianPhone: getCell(12) || null,
-      guardianEmail: getCell(13) || null,
+      guardianName: getCell(10) || null,
+      guardianPhone: getCell(11) || null,
+      guardianEmail: getCell(12) || null,
       errors: [],
       isValid: true,
     };
@@ -501,10 +501,6 @@ export class StudentsImportService {
     // Type d'élève obligatoire
     if (row.isNewStudent === null) {
       row.errors.push('Type d\'élève manquant (attendu "Nouvel élève" ou "Ancien élève")');
-    }
-    // Arriérés ne peuvent pas être négatifs
-    if (row.previousArrears < 0) {
-      row.errors.push('Arriérés antérieurs ne peut pas être négatif');
     }
 
     row.isValid = row.errors.length === 0;

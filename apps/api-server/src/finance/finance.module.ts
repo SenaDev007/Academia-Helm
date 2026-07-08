@@ -82,6 +82,8 @@ import { FinancePdfExportController } from './finance-pdf-export.controller';
 import { ComptaExportService } from './compta-export.service';
 import { ComptaExportController } from './compta-export.controller';
 import { ComptaAutoExportService } from './compta-auto-export.service';
+import { ArrearsImportService } from './arrears-import.service';
+import { ArrearsImportController } from './arrears-import.controller';
 import { CommunicationModule } from '../communication/communication.module';
 
 @Module({
@@ -122,6 +124,8 @@ import { CommunicationModule } from '../communication/communication.module';
     FedapayController,
     // Sous-module 7 — Export comptable (FEC + OHADA + CSV)
     ComptaExportController,
+    // Import d'arriérés via Excel
+    ArrearsImportController,
   ],
   providers: [
     FeesPrismaService,
@@ -166,6 +170,8 @@ import { CommunicationModule } from '../communication/communication.module';
     ComptaExportService,
     // Phase 4 — Export comptable automatique mensuel (cron + email)
     ComptaAutoExportService,
+    // Import d'arriérés via Excel
+    ArrearsImportService,
   ],
   exports: [
     FeesPrismaService,

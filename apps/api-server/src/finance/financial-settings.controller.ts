@@ -10,8 +10,9 @@
  * - Toute modification critique (seuil blocage, clôture auto, budget) est détectée
  *   et remontée comme anomalie dans financial_anomalies pour ORION.
  */
-import { Controller, Get, Patch, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Patch, Post, Body, UseGuards } from '@nestjs/common';
 import { FinancialSettingsService } from './financial-settings.service';
+import { AutoRecoveryService } from './auto-recovery.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -22,7 +23,10 @@ import { UpdateFinancialSettingsDto } from './dto';
 @Controller('finance/settings')
 @UseGuards(JwtAuthGuard)
 export class FinancialSettingsController {
-  constructor(private readonly service: FinancialSettingsService) {}
+  constructor(
+    private readonly service: FinancialSettingsService,
+    private readonly autoRecoveryService: AutoRecoveryService,
+  ) {}
 
   /**
    * Lecture des paramètres — accessible à tout utilisateur authentifié.
@@ -69,5 +73,24 @@ export class FinancialSettingsController {
   @Get('orion-alerts')
   async getOrionAlerts(@TenantId() tenantId: string) {
     return this.service.getOrionAlerts(tenantId);
+  }
+
+  /**
+   * POST /finance/settings/run-auto-recovery
+   * Lance manuellement la relance automatique pour le tenant courant.
+   * Parcourt tous les FeeArrear ouverts et envoie les relances selon les
+   * paramètres configurés (canaux, niveaux, jours).
+   */
+  @Post('run-auto-recovery')
+  @UseGuards(RolesGuard)
+  @Roles(
+    'SUPER_DIRECTOR', 'DIRECTOR', 'ADMIN', 'SUPER_ADMIN',
+    'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN',
+    'PROMOTEUR', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
+    'DIRECTOR_GENERAL', 'DIRECTEUR', 'DIRECTEUR_GENERAL',
+    'ACCOUNTANT',
+  )
+  async runAutoRecovery(@TenantId() tenantId: string) {
+    return this.autoRecoveryService.runManualRecovery(tenantId);
   }
 }

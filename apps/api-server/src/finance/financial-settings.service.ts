@@ -113,6 +113,11 @@ export class FinancialSettingsService {
       fedapayEnabled: boolean;
       fedapayPublicKey: string | null;
       fedapaySecretKey: string | null;
+      autoRecoveryEnabled: boolean;
+      autoRecoveryChannels: string;
+      autoRecoveryFrequency: string;
+      autoRecoveryTime: string;
+      autoRecoveryMaxLevel: string;
     }>,
     performedById?: string,
   ) {
@@ -131,6 +136,12 @@ export class FinancialSettingsService {
     if (data.expenseReceiptThreshold !== undefined) payload.expenseReceiptThreshold = data.expenseReceiptThreshold == null ? null : new Prisma.Decimal(data.expenseReceiptThreshold);
     if (data.fedapayEnabled != null) payload.fedapayEnabled = data.fedapayEnabled;
     if (data.fedapayPublicKey !== undefined) payload.fedapayPublicKey = data.fedapayPublicKey;
+    // Relance automatique
+    if (data.autoRecoveryEnabled != null) payload.autoRecoveryEnabled = data.autoRecoveryEnabled;
+    if (data.autoRecoveryChannels != null) payload.autoRecoveryChannels = data.autoRecoveryChannels;
+    if (data.autoRecoveryFrequency != null) payload.autoRecoveryFrequency = data.autoRecoveryFrequency;
+    if (data.autoRecoveryTime != null) payload.autoRecoveryTime = data.autoRecoveryTime;
+    if (data.autoRecoveryMaxLevel != null) payload.autoRecoveryMaxLevel = data.autoRecoveryMaxLevel;
 
     // Chiffrement de fedapaySecretKey si une nouvelle valeur est fournie
     if (data.fedapaySecretKey !== undefined) {

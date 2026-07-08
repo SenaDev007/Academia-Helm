@@ -50,17 +50,16 @@ import { WhatsAppIcon, GmailIcon, SmsIcon } from '../OfficialIcons';
 import { exportArrearsToPdf } from '@/lib/exports/finance-exports';
 import { exportArrearsToExcel } from '@/lib/exports/excel-exports';
 
-type TabId = 'dashboard' | 'arrears' | 'reminders' | 'promises' | 'actions' | 'cases';
+type TabId = 'dashboard' | 'arrears' | 'reminders' | 'promises' | 'actions' | 'cases' | 'settings';
 
 const TABS: Array<{ id: TabId; label: string; icon: any }> = [
   { id: 'dashboard', label: 'Tableau de bord', icon: TrendingDown },
   { id: 'arrears', label: 'Arriérés', icon: AlertCircle },
   { id: 'reminders', label: 'Relances', icon: Send },
-  // Workflow logique : Actions AVANT Promesses (c'est parce qu'on a appelé/envoyé
-  // un mail que le parent a promis — l'action déclenche la promesse)
   { id: 'actions', label: 'Actions', icon: Phone },
   { id: 'promises', label: 'Promesses', icon: Target },
   { id: 'cases', label: 'Dossiers', icon: FileText },
+  { id: 'settings', label: 'Paramétrage', icon: Zap },
 ];
 
 const ARREARS_LEVEL_CONFIG: Record<string, { label: string; color: string; bg: string; border: string }> = {
@@ -875,7 +874,9 @@ export default function RecoveryContent() {
           />
         ) : (
           <CasesTab cases={cases} onViewCase={(c) => setCaseDetailModal(c)} />
-        )}
+        ) : activeTab === 'settings' ? (
+          <SettingsTab />
+        ) : null}
       </ModuleContentArea>
 
       {/* Modal nouvelle promesse */}
@@ -953,6 +954,258 @@ export default function RecoveryContent() {
           onConfirm={handleConfirmDeleteReminder}
         />
       )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Onglet Paramétrage (relance automatique)                           */
+/* ------------------------------------------------------------------ */
+
+function SettingsTab() {
+  const { toast } = useToast();
+  const [settings, setSettings] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [running, setRunning] = useState(false);
+
+  // Formulaire local
+  const [form, setForm] = useState({
+    autoRecoveryEnabled: false,
+    autoRecoveryChannels: { email: true, whatsapp: true, sms: true },
+    autoRecoveryFrequency: 'DAILY',
+    autoRecoveryTime: '08:00',
+    autoRecoveryMaxLevel: 'MISE_EN_DEMEURE',
+    reminderWarningDays: 3,
+    reminderUrgentDays: 7,
+    reminderFinalDays: 15,
+  });
+
+  useEffect(() => {
+    fetch('/api/finance/settings', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((data) => {
+        setSettings(data);
+        // Parser les canaux
+        let channels = { email: true, whatsapp: true, sms: true };
+        try {
+          channels = JSON.parse(data.autoRecoveryChannels || '{}');
+        } catch {}
+        setForm({
+          autoRecoveryEnabled: data.autoRecoveryEnabled ?? false,
+          autoRecoveryChannels: channels,
+          autoRecoveryFrequency: data.autoRecoveryFrequency || 'DAILY',
+          autoRecoveryTime: data.autoRecoveryTime || '08:00',
+          autoRecoveryMaxLevel: data.autoRecoveryMaxLevel || 'MISE_EN_DEMEURE',
+          reminderWarningDays: data.reminderWarningDays ?? 3,
+          reminderUrgentDays: data.reminderUrgentDays ?? 7,
+          reminderFinalDays: data.reminderFinalDays ?? 15,
+        });
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch('/api/finance/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          autoRecoveryEnabled: form.autoRecoveryEnabled,
+          autoRecoveryChannels: JSON.stringify(form.autoRecoveryChannels),
+          autoRecoveryFrequency: form.autoRecoveryFrequency,
+          autoRecoveryTime: form.autoRecoveryTime,
+          autoRecoveryMaxLevel: form.autoRecoveryMaxLevel,
+          reminderWarningDays: form.reminderWarningDays,
+          reminderUrgentDays: form.reminderUrgentDays,
+          reminderFinalDays: form.reminderFinalDays,
+        }),
+      });
+      if (!res.ok) throw new Error('Erreur lors de la sauvegarde');
+      toast({ title: '✅ Paramètres enregistrés', description: 'La relance automatique a été configurée.' });
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRunNow = async () => {
+    setRunning(true);
+    try {
+      const res = await fetch('/api/finance/settings/run-auto-recovery', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Erreur');
+      toast({
+        title: '✅ Relance exécutée',
+        description: `${data.sent} relance(s) envoyée(s), ${data.skipped} ignorée(s), ${data.failed} échec(s).`,
+      });
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  if (loading) {
+    return <div className="text-center py-12 text-slate-500">Chargement…</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* En-tête */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Zap className="w-5 h-5 text-amber-500" />
+              Relance automatique
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">
+              Configurez la relance automatique multi-canal (email + WhatsApp + SMS) pour tous les élèves ayant des arriérés.
+            </p>
+          </div>
+          {/* Switch activé/désactivé */}
+          <label className="flex items-center gap-2 cursor-pointer">
+            <span className="text-sm font-medium text-slate-700">{form.autoRecoveryEnabled ? 'Activée' : 'Désactivée'}</span>
+            <button
+              type="button"
+              onClick={() => setForm((f) => ({ ...f, autoRecoveryEnabled: !f.autoRecoveryEnabled }))}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.autoRecoveryEnabled ? 'bg-emerald-500' : 'bg-slate-300'}`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${form.autoRecoveryEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
+          </label>
+        </div>
+
+        {/* Configuration */}
+        <div className={`space-y-4 ${form.autoRecoveryEnabled ? '' : 'opacity-50 pointer-events-none'}`}>
+          {/* Canaux */}
+          <div>
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2 block">Canaux de relance</Label>
+            <div className="flex gap-3">
+              {(['email', 'whatsapp', 'sms'] as const).map((channel) => (
+                <label key={channel} className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.autoRecoveryChannels[channel]}
+                    onChange={(e) => setForm((f) => ({
+                      ...f,
+                      autoRecoveryChannels: { ...f.autoRecoveryChannels, [channel]: e.target.checked },
+                    }))}
+                    className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span className="text-sm text-slate-700 capitalize">
+                    {channel === 'email' ? 'Email' : channel === 'whatsapp' ? 'WhatsApp' : 'SMS'}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Fréquence + Heure */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Fréquence</Label>
+              <Select value={form.autoRecoveryFrequency} onValueChange={(v) => setForm((f) => ({ ...f, autoRecoveryFrequency: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="DAILY">Quotidienne</SelectItem>
+                  <SelectItem value="WEEKLY">Hebdomadaire (lundi)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Heure d'exécution</Label>
+              <Input
+                type="time"
+                value={form.autoRecoveryTime}
+                onChange={(e) => setForm((f) => ({ ...f, autoRecoveryTime: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          {/* Niveaux de relance (jours) */}
+          <div>
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2 block">Niveaux de relance (en jours)</Label>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <Label className="text-[10px] text-slate-500 mb-1 block">1ère relance (J+)</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="30"
+                  value={form.reminderWarningDays}
+                  onChange={(e) => setForm((f) => ({ ...f, reminderWarningDays: Number(e.target.value) }))}
+                  className="text-center"
+                />
+              </div>
+              <div>
+                <Label className="text-[10px] text-slate-500 mb-1 block">2ème relance (J+)</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="60"
+                  value={form.reminderUrgentDays}
+                  onChange={(e) => setForm((f) => ({ ...f, reminderUrgentDays: Number(e.target.value) }))}
+                  className="text-center"
+                />
+              </div>
+              <div>
+                <Label className="text-[10px] text-slate-500 mb-1 block">Mise en demeure (J+)</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="90"
+                  value={form.reminderFinalDays}
+                  onChange={(e) => setForm((f) => ({ ...f, reminderFinalDays: Number(e.target.value) }))}
+                  className="text-center"
+                />
+              </div>
+            </div>
+            <p className="text-[10px] text-slate-500 mt-1">
+              💡 Le système calcule l'ancienneté de l'arriéré et envoie le niveau approprié.
+              Anti-harcèlement : une relance n'est pas renvoyée si une a été envoyée dans les dernières 24h.
+            </p>
+          </div>
+
+          {/* Niveau maximum */}
+          <div>
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Niveau maximum à envoyer automatiquement</Label>
+            <Select value={form.autoRecoveryMaxLevel} onValueChange={(v) => setForm((f) => ({ ...f, autoRecoveryMaxLevel: v }))}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="PREMIERE_RELANCE">1ère relance uniquement</SelectItem>
+                <SelectItem value="DEUXIEME_RELANCE">Jusqu'à la 2ème relance</SelectItem>
+                <SelectItem value="MISE_EN_DEMEURE">Jusqu'à la mise en demeure (tous niveaux)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-2 justify-end pt-4 border-t border-slate-100 mt-4">
+          <Button
+            variant="outline"
+            onClick={handleRunNow}
+            disabled={running}
+            className="border-amber-300 text-amber-700 hover:bg-amber-50"
+          >
+            {running ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Zap className="w-4 h-4 mr-2" />}
+            Lancer maintenant
+          </Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
+            Enregistrer
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -5055,6 +5055,16 @@ model FinancialSettings {
   fedapayEnabled           Boolean  @default(false)
   fedapayPublicKey         String?
   fedapaySecretKey         String?
+  /// Relance automatique activée
+  autoRecoveryEnabled      Boolean  @default(false)
+  /// Canaux activés pour la relance auto (JSON : {email: true, whatsapp: true, sms: true})
+  autoRecoveryChannels     String   @default("{\"email\":true,\"whatsapp\":true,\"sms\":true}")
+  /// Fréquence de la relance auto (DAILY ou WEEKLY)
+  autoRecoveryFrequency    String   @default("DAILY")
+  /// Heure d'exécution (format HH:MM)
+  autoRecoveryTime         String   @default("08:00")
+  /// Niveau de relance maximum à envoyer automatiquement
+  autoRecoveryMaxLevel     String   @default("MISE_EN_DEMEURE")
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
   tenant                   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)

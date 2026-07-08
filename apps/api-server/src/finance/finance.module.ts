@@ -77,6 +77,7 @@ import { FinanceAuditController } from './finance-audit.controller';
 import { CashRegisterService } from './cash-register.service';
 import { CashRegisterController } from './cash-register.controller';
 import { FinancePdfExportService } from './finance-pdf-export.service';
+import { AutoRecoveryService } from './auto-recovery.service';
 import { FinancePdfExportController } from './finance-pdf-export.controller';
 import { CommunicationModule } from '../communication/communication.module';
 
@@ -155,6 +156,7 @@ import { CommunicationModule } from '../communication/communication.module';
     FinanceReportsService,
     CashRegisterService,
     FinancePdfExportService,
+    AutoRecoveryService,
   ],
   exports: [
     FeesPrismaService,

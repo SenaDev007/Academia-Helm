@@ -350,36 +350,106 @@ export class CollectionCaseService {
       minOutstanding?: number;
     },
   ) {
-    const where: any = { tenantId };
+    // ─── Nouvelle stratégie : agréger les FeeArrear (nouveau système) ───
+    // L'ancien système utilisait CollectionCase (basé sur StudentFee/PaymentSummary).
+    // Le nouveau système utilise FeeArrear (multi-année, manuel + auto).
+    // On agrège les FeeArrear par élève/année pour construire des "dossiers"
+    // virtuels compatibles avec l'UI existante.
+
+    const where: any = {
+      tenantId,
+      status: { in: ['OPEN', 'PARTIALLY_PAID'] },
+      balanceDue: { gt: 0 },
+    };
 
     if (filters?.academicYearId) {
       where.academicYearId = filters.academicYearId;
     }
 
-    if (filters?.status) {
-      where.status = filters.status;
-    }
-
-    if (filters?.minOutstanding) {
-      where.outstandingAmount = {
-        gte: filters.minOutstanding,
-      };
-    }
-
-    return this.prisma.collectionCase.findMany({
+    const feeArrears = await this.prisma.feeArrear.findMany({
       where,
       include: {
         student: {
-          include: {
-            identifier: true,
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            matricule: true,
+            studentCode: true,
+            schoolLevel: { select: { id: true, name: true, code: true } },
+            studentEnrollments: {
+              where: filters?.academicYearId ? { academicYearId: filters.academicYearId } : undefined,
+              select: {
+                id: true,
+                classId: true,
+                class: { select: { id: true, name: true } },
+              },
+            },
           },
         },
-        academicYear: true,
+        academicYear: { select: { id: true, name: true } },
       },
-      orderBy: {
-        outstandingAmount: 'desc',
-      },
+      orderBy: { balanceDue: 'desc' },
     });
+
+    // Grouper par (studentId, academicYearId) pour construire des dossiers
+    const caseMap = new Map<string, any>();
+    for (const arrear of feeArrears) {
+      const key = `${arrear.studentId}_${arrear.academicYearId}`;
+      if (!caseMap.has(key)) {
+        const balance = Number(arrear.balanceDue ?? 0);
+        const totalDue = Number(arrear.totalDue ?? 0);
+        const totalPaid = Number(arrear.totalPaid ?? 0);
+
+        // Déterminer le statut
+        let status = 'LATE';
+        if (balance > 100000) status = 'CRITICAL';
+        else if (balance > 0) status = 'LATE';
+        else status = 'ON_TIME';
+
+        caseMap.set(key, {
+          id: key, // ID virtuel
+          tenantId,
+          studentId: arrear.studentId,
+          academicYearId: arrear.academicYearId,
+          totalDue,
+          totalPaid,
+          outstandingAmount: balance,
+          status,
+          escalationLevel: arrear.arrearsLevel === 'CRITICAL' ? 3 : arrear.arrearsLevel === 'HIGH' ? 2 : 1,
+          lastActionAt: arrear.lastPaymentDate,
+          createdAt: arrear.createdAt,
+          updatedAt: arrear.updatedAt,
+          student: arrear.student,
+          academicYear: arrear.academicYear,
+          // Infos supplémentaires pour le tableau
+          arrearsCount: 1,
+          arrears: [arrear],
+        });
+      } else {
+        // Additionner les arriérés multiples
+        const existing = caseMap.get(key);
+        existing.totalDue += Number(arrear.totalDue ?? 0);
+        existing.totalPaid += Number(arrear.totalPaid ?? 0);
+        existing.outstandingAmount += Number(arrear.balanceDue ?? 0);
+        existing.arrearsCount += 1;
+        existing.arrears.push(arrear);
+      }
+    }
+
+    let cases = Array.from(caseMap.values());
+
+    // Filtrer par statut si demandé
+    if (filters?.status) {
+      cases = cases.filter((c) => c.status === filters.status);
+    }
+
+    // Filtrer par montant minimum si demandé
+    if (filters?.minOutstanding) {
+      cases = cases.filter((c) => Number(c.outstandingAmount) >= filters.minOutstanding!);
+    }
+
+    return cases;
   }
 }
 

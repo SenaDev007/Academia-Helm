@@ -13,9 +13,10 @@
  *     - 🏦 Clôture journalière
  *     - 📊 Budget & Alertes
  *     - ⏱️ Annulation
- *  3. 🌐 Paiements en ligne (FeexPay/Fedapay) — PaymentConfigSection
- *  4. 📜 Historique des modifications (audit logs)
- *  5. Barre de sauvegarde sticky
+ *  3. 🤖 Relance automatique (auto-récupération multi-canal)
+ *  4. 🌐 Paiements en ligne (Fedapay) — PaymentConfigSection
+ *  5. 📜 Historique des modifications (audit logs)
+ *  6. Barre de sauvegarde sticky
  * ============================================================================
  */
 'use client';
@@ -33,6 +34,7 @@ import {
   TrendingUp,
   Save,
   RotateCw,
+  Bell,
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
@@ -226,16 +228,28 @@ export default function FinanceSettingsContent() {
   const { tenant } = useAppSession();
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
+    // Blocage & Recouvrement
     blockingThreshold: '',
-    reminderWarningDays: '',
-    reminderUrgentDays: '',
-    reminderFinalDays: '',
-    autoClosureEnabled: true,
-    autoClosureTime: '23:59',
-    budgetAlertThreshold: '85',
+    reminderWarningDays: '3',
+    reminderUrgentDays: '7',
+    reminderFinalDays: '15',
+    // Paiement
     allowPartialPayment: true,
     minimumInstallmentAmount: '',
+    // Clôture
+    autoClosureEnabled: true,
+    autoClosureTime: '23:59',
+    // Budget
+    budgetAlertThreshold: '85',
+    expenseReceiptThreshold: '',
+    // Annulation
     cancellationDelayHours: '24',
+    // Relance automatique (auto-récupération multi-canal)
+    autoRecoveryEnabled: false,
+    autoRecoveryChannels: { email: true, whatsapp: true, sms: false },
+    autoRecoveryFrequency: 'DAILY',
+    autoRecoveryTime: '08:00',
+    autoRecoveryMaxLevel: 'MISE_EN_DEMEURE',
     // Fedapay legacy — conservé pour compat BDD mais l'UI active est PaymentConfigSection
     fedapayEnabled: false,
     fedapayPublicKey: '',
@@ -247,6 +261,19 @@ export default function FinanceSettingsContent() {
   const [loading, setLoading] = useState(true);
 
   /* --------------------------- Data loading --------------------------- */
+
+  // Helper pour parser le JSON autoRecoveryChannels de façon robuste
+  const parseAutoRecoveryChannels = (raw: any): { email: boolean; whatsapp: boolean; sms: boolean } => {
+    const defaults = { email: true, whatsapp: true, sms: false };
+    if (!raw) return defaults;
+    if (typeof raw === 'object') return { ...defaults, ...raw };
+    try {
+      const parsed = JSON.parse(String(raw));
+      return { ...defaults, ...parsed };
+    } catch {
+      return defaults;
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -261,17 +288,24 @@ export default function FinanceSettingsContent() {
         if (s) {
           setForm((f) => ({
             ...f,
-            blockingThreshold: String(s.blockingThreshold ?? ''),
-            reminderWarningDays: String(s.reminderWarningDays ?? '3'),
-            reminderUrgentDays: String(s.reminderUrgentDays ?? '7'),
-            reminderFinalDays: String(s.reminderFinalDays ?? '15'),
-            autoClosureEnabled: s.autoClosureEnabled ?? true,
-            autoClosureTime: s.autoClosureTime ?? '23:59',
-            budgetAlertThreshold: String(s.budgetAlertThreshold ?? '85'),
+            blockingThreshold: s.blockingThreshold != null ? String(s.blockingThreshold) : '',
+            reminderWarningDays: s.reminderWarningDays != null ? String(s.reminderWarningDays) : '3',
+            reminderUrgentDays: s.reminderUrgentDays != null ? String(s.reminderUrgentDays) : '7',
+            reminderFinalDays: s.reminderFinalDays != null ? String(s.reminderFinalDays) : '15',
             allowPartialPayment: s.allowPartialPayment ?? true,
             minimumInstallmentAmount:
               s.minimumInstallmentAmount != null ? String(s.minimumInstallmentAmount) : '',
-            cancellationDelayHours: String(s.cancellationDelayHours ?? '24'),
+            autoClosureEnabled: s.autoClosureEnabled ?? true,
+            autoClosureTime: s.autoClosureTime ?? '23:59',
+            budgetAlertThreshold: s.budgetAlertThreshold != null ? String(s.budgetAlertThreshold) : '85',
+            expenseReceiptThreshold:
+              s.expenseReceiptThreshold != null ? String(s.expenseReceiptThreshold) : '',
+            cancellationDelayHours: s.cancellationDelayHours != null ? String(s.cancellationDelayHours) : '24',
+            autoRecoveryEnabled: s.autoRecoveryEnabled ?? false,
+            autoRecoveryChannels: parseAutoRecoveryChannels(s.autoRecoveryChannels),
+            autoRecoveryFrequency: s.autoRecoveryFrequency || 'DAILY',
+            autoRecoveryTime: s.autoRecoveryTime || '08:00',
+            autoRecoveryMaxLevel: s.autoRecoveryMaxLevel || 'MISE_EN_DEMEURE',
             fedapayEnabled: s.fedapayEnabled ?? false,
             fedapayPublicKey: s.fedapayPublicKey ?? '',
             fedapaySecretKey: '',
@@ -304,40 +338,98 @@ export default function FinanceSettingsContent() {
     }
   };
 
+  // Re-fetch complet des settings après sauvegarde pour confirmer la persistance
+  const reloadSettings = async () => {
+    try {
+      const s = await financeService.getSettings();
+      if (s) {
+        setForm((f) => ({
+          ...f,
+          blockingThreshold: s.blockingThreshold != null ? String(s.blockingThreshold) : '',
+          reminderWarningDays: s.reminderWarningDays != null ? String(s.reminderWarningDays) : '3',
+          reminderUrgentDays: s.reminderUrgentDays != null ? String(s.reminderUrgentDays) : '7',
+          reminderFinalDays: s.reminderFinalDays != null ? String(s.reminderFinalDays) : '15',
+          allowPartialPayment: s.allowPartialPayment ?? true,
+          minimumInstallmentAmount:
+            s.minimumInstallmentAmount != null ? String(s.minimumInstallmentAmount) : '',
+          autoClosureEnabled: s.autoClosureEnabled ?? true,
+          autoClosureTime: s.autoClosureTime ?? '23:59',
+          budgetAlertThreshold: s.budgetAlertThreshold != null ? String(s.budgetAlertThreshold) : '85',
+          expenseReceiptThreshold:
+            s.expenseReceiptThreshold != null ? String(s.expenseReceiptThreshold) : '',
+          cancellationDelayHours: s.cancellationDelayHours != null ? String(s.cancellationDelayHours) : '24',
+          autoRecoveryEnabled: s.autoRecoveryEnabled ?? false,
+          autoRecoveryChannels: parseAutoRecoveryChannels(s.autoRecoveryChannels),
+          autoRecoveryFrequency: s.autoRecoveryFrequency || 'DAILY',
+          autoRecoveryTime: s.autoRecoveryTime || '08:00',
+          autoRecoveryMaxLevel: s.autoRecoveryMaxLevel || 'MISE_EN_DEMEURE',
+          fedapayEnabled: s.fedapayEnabled ?? false,
+          fedapayPublicKey: s.fedapayPublicKey ?? '',
+          fedapaySecretKey: '',
+        }));
+        setExistingMaskedKey(s.fedapaySecretKey ?? '');
+      }
+    } catch (e) {
+      console.error('Failed to reload settings after save', e);
+    }
+  };
+
   /* ------------------------------ Actions ----------------------------- */
+
+  // Helper : convertir une valeur form string en number valide pour le backend
+  // ou undefined si vide (le backend ne touchera pas au champ existant).
+  // IMPORTANT : on utilise `e.target.value !== ''` plutôt que `value ? ...`
+  // pour ne pas traiter 0 comme falsy (0 doit être envoyé pour écraser une valeur existante).
+  const numOrUndef = (v: string): number | undefined => (v !== '' && v !== null && v !== undefined ? Number(v) : undefined);
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      await financeService.updateSettings({
-        blockingThreshold: form.blockingThreshold ? Number(form.blockingThreshold) : undefined,
-        reminderWarningDays: form.reminderWarningDays
-          ? Number(form.reminderWarningDays)
-          : undefined,
-        reminderUrgentDays: form.reminderUrgentDays ? Number(form.reminderUrgentDays) : undefined,
-        reminderFinalDays: form.reminderFinalDays ? Number(form.reminderFinalDays) : undefined,
+      const payload: Record<string, any> = {
+        // Blocage & Recouvrement — toujours envoyés (même si 0)
+        blockingThreshold: numOrUndef(form.blockingThreshold),
+        reminderWarningDays: numOrUndef(form.reminderWarningDays),
+        reminderUrgentDays: numOrUndef(form.reminderUrgentDays),
+        reminderFinalDays: numOrUndef(form.reminderFinalDays),
+        // Paiement
+        allowPartialPayment: form.allowPartialPayment,
+        minimumInstallmentAmount: form.minimumInstallmentAmount !== '' ? Number(form.minimumInstallmentAmount) : null,
+        // Clôture
         autoClosureEnabled: form.autoClosureEnabled,
         autoClosureTime: form.autoClosureTime,
-        budgetAlertThreshold: form.budgetAlertThreshold
-          ? Number(form.budgetAlertThreshold)
-          : undefined,
-        allowPartialPayment: form.allowPartialPayment,
-        minimumInstallmentAmount: form.minimumInstallmentAmount
-          ? Number(form.minimumInstallmentAmount)
-          : null,
-        cancellationDelayHours: form.cancellationDelayHours
-          ? Number(form.cancellationDelayHours)
-          : undefined,
+        // Budget
+        budgetAlertThreshold: numOrUndef(form.budgetAlertThreshold),
+        expenseReceiptThreshold: form.expenseReceiptThreshold !== '' ? Number(form.expenseReceiptThreshold) : null,
+        // Annulation
+        cancellationDelayHours: numOrUndef(form.cancellationDelayHours),
+        // Relance automatique
+        autoRecoveryEnabled: form.autoRecoveryEnabled,
+        autoRecoveryChannels: JSON.stringify(form.autoRecoveryChannels),
+        autoRecoveryFrequency: form.autoRecoveryFrequency,
+        autoRecoveryTime: form.autoRecoveryTime,
+        autoRecoveryMaxLevel: form.autoRecoveryMaxLevel,
+        // Fedapay (legacy — la config active est dans PaymentConfigSection)
         fedapayEnabled: form.fedapayEnabled,
-        ...(form.fedapayPublicKey ? { fedapayPublicKey: form.fedapayPublicKey } : {}),
-        ...(form.fedapaySecretKey ? { fedapaySecretKey: form.fedapaySecretKey } : {}),
-      });
-      toast({ title: '✅ Paramètres enregistrés' });
-      await refreshHistoryAndAlerts();
+      };
+      // Stripping undefined pour éviter d'envoyer des champs vides (qui seraient rejetés par forbidNonWhitelisted? non, undefined est juste omis par JSON.stringify)
+      Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k]);
+
+      // Clés Fedapay : n'envoyer que si l'utilisateur a saisi quelque chose
+      if (form.fedapayPublicKey) payload.fedapayPublicKey = form.fedapayPublicKey;
+      if (form.fedapaySecretKey && !form.fedapaySecretKey.includes('****')) {
+        payload.fedapaySecretKey = form.fedapaySecretKey;
+      }
+
+      await financeService.updateSettings(payload);
+      toast({ title: '✅ Paramètres enregistrés', description: 'La configuration a bien été persistée.' });
+
+      // Re-charger les données pour confirmer la persistance (évite le bug
+      // "quand je reviens, c'est déréglé" — on s'assure que le form reflète la BDD).
+      await Promise.all([reloadSettings(), refreshHistoryAndAlerts()]);
     } catch (e: any) {
       toast({
-        title: 'Erreur',
-        description: e?.message || 'Erreur réseau',
+        title: 'Erreur d\'enregistrement',
+        description: e?.message || 'Erreur réseau — vérifiez la console.',
         variant: 'destructive',
       });
     }
@@ -700,6 +792,24 @@ export default function FinanceSettingsContent() {
                     Alerte à {form.budgetAlertThreshold || 0}% du budget
                   </p>
                 </div>
+
+                {/* Seuil justificatif de dépense */}
+                <div className="mt-4 pt-4 border-t border-slate-100">
+                  <FormField
+                    label="Seuil justificatif dépense (XOF)"
+                    hint="Montant au-dessus duquel un justificatif (reçu/facture) est obligatoire. Laisser vide pour désactiver."
+                  >
+                    <Input
+                      type="number"
+                      value={form.expenseReceiptThreshold}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, expenseReceiptThreshold: e.target.value }))
+                      }
+                      placeholder="ex: 50000"
+                      className="w-full"
+                    />
+                  </FormField>
+                </div>
               </SettingsCard>
 
               {/* ---- Annulation ---- */}
@@ -752,10 +862,160 @@ export default function FinanceSettingsContent() {
                   </div>
                 </div>
               </SettingsCard>
+
+              {/* ---- Relance automatique (auto-récupération multi-canal) ---- */}
+              <SettingsCard
+                icon={Bell}
+                iconColor="text-violet-600"
+                iconBg="bg-violet-100"
+                title="Relance automatique"
+                description="Envoi automatique de relances multi-canal (email + WhatsApp + SMS) selon l'ancienneté des arriérés"
+                className="lg:col-span-2"
+              >
+                <div className="space-y-5">
+                  <ToggleSwitch
+                    checked={form.autoRecoveryEnabled}
+                    onChange={(v) => setForm((f) => ({ ...f, autoRecoveryEnabled: v }))}
+                    label="Activer la relance automatique"
+                    description="Le cron vérifie toutes les heures les arriérés éligibles et envoie les relances selon l'ancienneté."
+                  />
+
+                  {form.autoRecoveryEnabled && (
+                    <>
+                      {/* Canaux de relance */}
+                      <div>
+                        <Label className="text-xs font-medium text-slate-700 uppercase tracking-wide mb-2 block">
+                          Canaux de relance
+                        </Label>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <label className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 border border-slate-200 cursor-pointer hover:bg-slate-100 transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={form.autoRecoveryChannels.email}
+                              onChange={(e) =>
+                                setForm((f) => ({
+                                  ...f,
+                                  autoRecoveryChannels: {
+                                    ...f.autoRecoveryChannels,
+                                    email: e.target.checked,
+                                  },
+                                }))
+                              }
+                              className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <div>
+                              <span className="text-sm font-semibold text-slate-700 block">📧 Email</span>
+                              <span className="text-xs text-slate-500 block">Relance par email au parent</span>
+                            </div>
+                          </label>
+                          <label className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 border border-slate-200 cursor-pointer hover:bg-slate-100 transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={form.autoRecoveryChannels.whatsapp}
+                              onChange={(e) =>
+                                setForm((f) => ({
+                                  ...f,
+                                  autoRecoveryChannels: {
+                                    ...f.autoRecoveryChannels,
+                                    whatsapp: e.target.checked,
+                                  },
+                                }))
+                              }
+                              className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <div>
+                              <span className="text-sm font-semibold text-slate-700 block">💬 WhatsApp</span>
+                              <span className="text-xs text-slate-500 block">Message WhatsApp au parent</span>
+                            </div>
+                          </label>
+                          <label className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 border border-slate-200 cursor-pointer hover:bg-slate-100 transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={form.autoRecoveryChannels.sms}
+                              onChange={(e) =>
+                                setForm((f) => ({
+                                  ...f,
+                                  autoRecoveryChannels: {
+                                    ...f.autoRecoveryChannels,
+                                    sms: e.target.checked,
+                                  },
+                                }))
+                              }
+                              className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <div>
+                              <span className="text-sm font-semibold text-slate-700 block">📱 SMS</span>
+                              <span className="text-xs text-slate-500 block">SMS court au parent</span>
+                            </div>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Fréquence + heure + niveau max */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <FormField
+                          label="Fréquence"
+                          hint="Quotidienne ou hebdomadaire"
+                        >
+                          <select
+                            value={form.autoRecoveryFrequency}
+                            onChange={(e) =>
+                              setForm((f) => ({ ...f, autoRecoveryFrequency: e.target.value }))
+                            }
+                            className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                          >
+                            <option value="DAILY">Quotidienne</option>
+                            <option value="WEEKLY">Hebdomadaire (lundi)</option>
+                          </select>
+                        </FormField>
+                        <FormField
+                          label="Heure d'exécution"
+                          hint="Format 24h — ex : 08:00"
+                        >
+                          <Input
+                            type="time"
+                            value={form.autoRecoveryTime}
+                            onChange={(e) =>
+                              setForm((f) => ({ ...f, autoRecoveryTime: e.target.value }))
+                            }
+                            className="w-full"
+                          />
+                        </FormField>
+                        <FormField
+                          label="Niveau maximum"
+                          hint="Niveau de relance le plus élevé à envoyer automatiquement"
+                        >
+                          <select
+                            value={form.autoRecoveryMaxLevel}
+                            onChange={(e) =>
+                              setForm((f) => ({ ...f, autoRecoveryMaxLevel: e.target.value }))
+                            }
+                            className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                          >
+                            <option value="PREMIERE_RELANCE">Première relance (J+3)</option>
+                            <option value="DEUXIEME_RELANCE">Deuxième relance (J+7)</option>
+                            <option value="MISE_EN_DEMEURE">Mise en demeure (J+15)</option>
+                          </select>
+                        </FormField>
+                      </div>
+
+                      {/* Récap des jours de relance (rappel) */}
+                      <div className="p-3 bg-violet-50 border border-violet-200 rounded-lg">
+                        <p className="text-xs text-violet-800">
+                          <strong>Rappel :</strong> Les jours de relance (J+3, J+7, J+15) sont
+                          configurés dans la carte <em>Blocage & Recouvrement</em> ci-dessus.
+                          Le système utilise ces valeurs pour déterminer automatiquement
+                          le niveau de chaque relance envoyée.
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </SettingsCard>
             </div>
 
             {/* ========================================================== */}
-            {/* 3. PAIEMENTS EN LIGNE — FeexPay / Fedapay (pleine largeur)  */}
+            {/* 3. PAIEMENTS EN LIGNE — Fedapay (pleine largeur)            */}
             {/* ========================================================== */}
             <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
               <header className="px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-violet-50 to-white flex items-start gap-3">
@@ -767,7 +1027,7 @@ export default function FinanceSettingsContent() {
                     Paiements en ligne — Configuration par établissement
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Chaque école configure son propre compte FeexPay ou Fedapay. Les fonds sont
+                    Chaque école configure son propre compte Fedapay. Les fonds sont
                     versés directement sur le compte de l'établissement.
                   </p>
                 </div>

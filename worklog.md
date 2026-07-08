@@ -3075,3 +3075,98 @@ Stage Summary:
 - Contrôle & Audit : 5 sous-onglets avec détection anti-fraude ORION (anomalies, transactions suspectes, écarts caisse, clôtures manquées, top comptables)
 - Backend étendu avec 6 nouveaux endpoints agrégeant données multi-tables (transactions + cash registers + closures + users + audit logs)
 - Pattern d'export strictement identique à l'onglet Encaissements (logo école + drapeau Bénin + formatAmount espace + "Francs CFA" complet)
+
+---
+Task ID: finance-reports-charts-feexpay-cleanup-settings-fix
+Agent: main
+Task: 1) Ajouter graphiques sur Bilan périodique 2) Supprimer FeexPay des paramètres 3) Fixer persistance blocage/recouvrement + clôture 4) Commit/push 5) Doc intégration comptables
+
+Work Log:
+
+## 1. Graphiques sur Bilan périodique
+FinanceReportsContent.tsx :
+- Import recharts (BarChart, PieChart, LineChart, Cell, Legend, Tooltip, etc.)
+- Nouveau state `monthlyData` chargé en parallèle avec `getBilanPeriodique` via `getMonthlyEncaissements`
+- `renderBilan()` enrichi d'un bloc graphiques en grille 5 colonnes (3+2) :
+  - **Courbe mensuelle des encaissements** (LineChart, lg:col-span-3) — ligne emerald avec dots, axe Y formaté (k/M), tooltip formatCurrency
+  - **Camembert des dépenses par catégorie** (PieChart donut, lg:col-span-2) — top 8 catégories, 12 couleurs OHADA, % dans tooltip, légende inline
+- Données vides gérées (placeholder italique au centre)
+- Layout responsive (stack sur mobile, grille 5 col sur desktop)
+
+## 2. Suppression FeexPay du paramétrage
+PaymentConfigSection.tsx — refonte complète :
+- State initial : `provider: 'fedapay'` (was `'feexpay'`)
+- Sélecteur provider remplacé par carte fixe "Fedapay" (violet) avec mention "FeexPay n'est plus disponible"
+- Auto-conversion : si GET retourne `provider: 'feexpay'`, force à `'fedapay'` dans le state
+- POST force toujours `provider: 'fedapay'` dans le body
+- Tous les champs FeexPay (apiKey, shopId, webhookSecret) supprimés du state et de l'UI
+- Section d'information mise à jour pour mentionner Fedapay uniquement
+- Champs Fedapay (Public Key + Secret Key + URL Webhook) conservés
+
+FinanceSettingsContent.tsx — header de section "Paiements en ligne" :
+- Commentaire `FeexPay / Fedapay` → `Fedapay` uniquement
+- Description : "Chaque école configure son propre compte Fedapay" (was "FeexPay ou Fedapay")
+
+## 3. Fix persistance blocage & recouvrement + clôture
+FinanceSettingsContent.tsx — refonte form state + handleSave :
+
+### 3.a. État du form enrichi
+- Ajout des champs `autoRecovery*` (autoRecoveryEnabled, autoRecoveryChannels, autoRecoveryFrequency, autoRecoveryTime, autoRecoveryMaxLevel)
+- Ajout de `expenseReceiptThreshold` (était dans DTO mais pas dans form)
+- Defaults explicites pour tous les champs numériques ('3', '7', '15', '24', '85')
+
+### 3.b. Loader robuste
+- Helper `parseAutoRecoveryChannels` : gère string JSON / objet / null avec fallback sûr
+- Test `!= null` au lieu de `?? ''` pour distinguer 0 de null/undefined
+- Charge les champs autoRecovery* depuis la BDD (ils étaient ignorés avant)
+
+### 3.c. handleSave corrigé
+- Helper `numOrUndef(v)` : `v !== ''` au lieu de `v ?` — préserve 0 comme valeur valide
+- Tous les champs envoyés explicitement (même si 0) — fini les `undefined` silencieux
+- `autoRecoveryChannels` sérialisé en JSON string avant envoi
+- `expenseReceiptThreshold` envoyé (number ou null)
+- Après save : **re-fetch complet** via `reloadSettings()` pour confirmer persistance
+- Toast avec description "La configuration a bien été persistée." (au lieu de juste "Paramètres enregistrés")
+
+### 3.d. Nouvelle carte "Relance automatique" dans l'UI
+- Carte pleine largeur (lg:col-span-2) placée après la carte Annulation
+- Toggle "Activer la relance automatique"
+- 3 checkboxes canaux (Email / WhatsApp / SMS) avec icônes
+- 3 champs : Fréquence (DAILY/WEEKLY), Heure (time), Niveau max (PREMIERE_RELANCE/DEUXIEME_RELANCE/MISE_EN_DEMEURE)
+- Rappel des jours de relance configurés dans Blocage & Recouvrement
+
+### 3.e. Carte Budget enrichie
+- Ajout du champ "Seuil justificatif dépense (XOF)" (expenseReceiptThreshold)
+- Séparateur visuel (border-t) entre seuil budget % et seuil justificatif
+
+## 4. Documentation intégration comptables
+Nouveau fichier : `repo/Academia-Helm/docs/INTEGRATION-COMPTABILITE.md` (316 lignes)
+
+Contenu :
+- Standards FEC (France) + OHADA (Bénin/Afrique) + CSV universel
+- Plan comptable OHADA pré-mappé par défaut pour écoles (20+ comptes)
+- Table de compatibilité 13 logiciels (Sage, Ciel, EBP, QuickBooks, Pennylane, Yooz, Odoo, Dex, etc.)
+- 3 workflows : manuel, automatique mensuel, API REST
+- Mapping des transactions Academia Helm → écritures comptables double entrée
+- Exemple concret de fichier FEC généré
+- Roadmap d'implémentation en 5 phases (~5 semaines)
+- Cas d'usage École Saint-Joseph de Cotonou (95 % de réduction du temps comptable)
+
+## 5. Vérifications TypeScript
+- FinanceReportsContent.tsx : OK
+- FinanceSettingsContent.tsx : OK
+- PaymentConfigSection.tsx : OK
+
+## Fichiers modifiés (4)
+1. apps/web-app/src/components/finance/FinanceReportsContent.tsx — graphiques + state monthlyData
+2. apps/web-app/src/components/finance/FinanceSettingsContent.tsx — form enrichi + auto-recovery card + handleSave fix
+3. apps/web-app/src/components/finance/PaymentConfigSection.tsx — suppression FeexPay (sélecteur + champs)
+4. repo/Academia-Helm/docs/INTEGRATION-COMPTABILITE.md — NOUVEAU (documentation)
+
+Stage Summary:
+- Bilan périodique : courbe mensuelle + camembert dépenses ajoutés (responsive, formatCurrency)
+- Paramètres : FeexPay supprimé du sélecteur et des champs (Fedapay uniquement)
+- Paramètres : persistance des champs blocage/recouvrement + clôture corrigée (re-fetch après save, numOrUndef préserve 0, autoRecovery* ajoutés au form)
+- Nouvelle carte "Relance automatique" complète (toggle + canaux + fréquence + heure + niveau max)
+- Nouveau champ "Seuil justificatif dépense" dans Budget
+- Documentation complète sur l'intégration avec les logiciels comptables (FEC + OHADA + 13 logiciels compatibles)

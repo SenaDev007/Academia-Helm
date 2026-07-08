@@ -52,6 +52,10 @@ import {
   exportArrearsStateToExcel,
 } from '@/lib/exports/reports-exports';
 import DocumentPreviewModal from '@/components/students/DocumentPreviewModal';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, Legend, LineChart, Line,
+} from 'recharts';
 
 type SubTab = 'bilan' | 'arrieres' | 'journal' | 'comparatif';
 
@@ -108,6 +112,7 @@ export default function FinanceReportsContent() {
   const [comparative, setComparative] = useState<any>(null);
   const [projection, setProjection] = useState<any>(null);
   const [cashComparative, setCashComparative] = useState<any[]>([]);
+  const [monthlyData, setMonthlyData] = useState<any[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState<'excel' | 'pdf' | null>(null);
@@ -141,13 +146,17 @@ export default function FinanceReportsContent() {
     if (!academicYear?.id) return;
     setLoading(true);
     try {
-      const data = await financeService.getBilanPeriodique(academicYear.id, {
-        dateFrom: dateFrom || undefined,
-        dateTo: dateTo || undefined,
-        classId: classId || undefined,
-        cashRegisterId: cashRegisterId || undefined,
-      });
-      setBilan(data);
+      const [bilanData, monthly] = await Promise.all([
+        financeService.getBilanPeriodique(academicYear.id, {
+          dateFrom: dateFrom || undefined,
+          dateTo: dateTo || undefined,
+          classId: classId || undefined,
+          cashRegisterId: cashRegisterId || undefined,
+        }),
+        financeService.getMonthlyEncaissements({ academicYearId: academicYear.id }).catch(() => []),
+      ]);
+      setBilan(bilanData);
+      setMonthlyData(Array.isArray(monthly) ? monthly : []);
     } catch (e: any) {
       console.error('Bilan error:', e);
       toast({ title: 'Erreur chargement bilan', description: e?.message, variant: 'destructive' });
@@ -501,6 +510,29 @@ export default function FinanceReportsContent() {
   // ─── 1. Bilan périodique ───
   const renderBilan = () => {
     const k = bilan?.kpi || { totalEncaissement: 0, totalDepenses: 0, soldeNet: 0 };
+
+    // ─── Préparation des données pour les graphiques ───
+    const MONTH_LABELS: Record<string, string> = {
+      '01': 'Jan', '02': 'Fév', '03': 'Mar', '04': 'Avr', '05': 'Mai', '06': 'Jun',
+      '07': 'Juil', '08': 'Aoû', '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Déc',
+    };
+    const monthlyChartData = (monthlyData || []).map((m: any) => {
+      const monthStr = String(m.month || '');
+      const [, mm] = monthStr.split('-');
+      return {
+        month: MONTH_LABELS[mm] || monthStr,
+        total: Number(m.total) || 0,
+      };
+    });
+
+    const PIE_COLORS = ['#0D1F6E', '#1E40AF', '#3B82F6', '#06B6D4', '#10B981', '#84CC16', '#EAB308', '#F97316', '#EF4444', '#EC4899', '#8B5CF6', '#6B7280'];
+    const pieData = (bilan?.parCategorie || []).slice(0, 8).map((c: any, i: number) => ({
+      name: c.category || '—',
+      value: Number(c.total) || 0,
+      color: PIE_COLORS[i % PIE_COLORS.length],
+    }));
+    const pieTotal = pieData.reduce((s: number, c: any) => s + c.value, 0);
+
     return (
       <div className="space-y-5">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -520,6 +552,111 @@ export default function FinanceReportsContent() {
             color="amber"
             sub="sur la période"
           />
+        </div>
+
+        {/* ─── Graphiques : courbe mensuelle + camembert dépenses ─── */}
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+          {/* Courbe mensuelle des encaissements */}
+          <div className="lg:col-span-3 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="p-4 border-b border-slate-100 bg-slate-50">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-emerald-500" />
+                Évolution mensuelle des encaissements
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">Année scolaire {academicYear?.name || academicYear?.label || ''}</p>
+            </div>
+            <div className="p-4" style={{ height: 320 }}>
+              {loading ? (
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+                </div>
+              ) : monthlyChartData.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-slate-400 italic text-sm">
+                  Aucun encaissement sur l'année.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={monthlyChartData} margin={{ top: 10, right: 20, left: 10, bottom: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                    <XAxis
+                      dataKey="month"
+                      tick={{ fontSize: 11, fill: '#6B7280' }}
+                      tickLine={{ stroke: '#E5E7EB' }}
+                      axisLine={{ stroke: '#E5E7EB' }}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: '#6B7280' }}
+                      tickLine={{ stroke: '#E5E7EB' }}
+                      axisLine={{ stroke: '#E5E7EB' }}
+                      tickFormatter={(v) => v >= 1000000 ? `${(v / 1000000).toFixed(1)}M` : (v >= 1000 ? `${Math.round(v / 1000)}k` : v)}
+                    />
+                    <Tooltip
+                      formatter={(v: any) => [formatCurrency(Number(v)), 'Encaissements']}
+                      contentStyle={{ borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 12 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="total"
+                      stroke="#10B981"
+                      strokeWidth={2.5}
+                      dot={{ fill: '#10B981', r: 4 }}
+                      activeDot={{ r: 6, fill: '#047857' }}
+                      name="Encaissements"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>
+
+          {/* Camembert des dépenses par catégorie */}
+          <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="p-4 border-b border-slate-100 bg-slate-50">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                <TrendingDown className="w-4 h-4 text-rose-500" />
+                Répartition des dépenses
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">Top {pieData.length} catégories</p>
+            </div>
+            <div className="p-4" style={{ height: 320 }}>
+              {loading ? (
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+                </div>
+              ) : pieData.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-slate-400 italic text-sm text-center">
+                  Aucune dépense sur la période.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={90}
+                      innerRadius={45}
+                      paddingAngle={2}
+                    >
+                      {pieData.map((entry, idx) => (
+                        <Cell key={idx} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(v: any, n: any) => [`${formatCurrency(Number(v))} (${pieTotal > 0 ? ((Number(v) / pieTotal) * 100).toFixed(1) : 0}%)`, n]}
+                      contentStyle={{ borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 12 }}
+                    />
+                    <Legend
+                      wrapperStyle={{ fontSize: 11, marginTop: 8 }}
+                      formatter={(value) => <span style={{ color: '#374151' }}>{value}</span>}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

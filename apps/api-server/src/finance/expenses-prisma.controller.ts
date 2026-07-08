@@ -38,8 +38,8 @@ export class ExpensesPrismaController {
   @Get('categories')
   async findAllCategories(
     @TenantId() tenantId: string,
-    @SchoolLevelId() schoolLevelId: string,
     @Query('academicYearId') academicYearId?: string,
+    @Query('schoolLevelId') schoolLevelId?: string,
     @Query('parentId') parentId?: string,
     @Query('isActive') isActive?: string,
   ) {

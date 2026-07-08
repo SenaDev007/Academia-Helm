@@ -42,7 +42,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from 'recharts';
 
-type Tab = 'expenses' | 'budget';
+type Tab = 'dashboard' | 'expenses' | 'budget' | 'categories';
 
 export default function ExpensesPage() {
   const confirmDialog = useConfirmDialog();
@@ -58,7 +58,7 @@ export default function ExpensesPage() {
   const [exporting, setExporting] = useState<'pdf' | 'excel' | null>(null);
 
   // ─── UI ───
-  const [tab, setTab] = useState<Tab>('expenses');
+  const [tab, setTab] = useState<Tab>('dashboard');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
   const [filterFrom, setFilterFrom] = useState('');
@@ -73,6 +73,16 @@ export default function ExpensesPage() {
   const [rejectModal, setRejectModal] = useState<{ id: string; studentName: string; amount: number; description: string } | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [rejecting, setRejecting] = useState(false);
+
+  // ─── Modal catégorie (CRUD) ───
+  const [modalCategory, setModalCategory] = useState(false);
+  const [categoryForm, setCategoryForm] = useState({ name: '', description: '', code: '' });
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [savingCategory, setSavingCategory] = useState(false);
+
+  // ─── Upload justificatif (fichier) ───
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
 
   // ─── Formulaire nouvelle dépense ───
   const [form, setForm] = useState({
@@ -172,18 +182,27 @@ export default function ExpensesPage() {
     e.preventDefault();
     if (!academicYear?.id || !form.categoryId || !form.description || !form.amount) return;
     try {
+      // Upload du justificatif si un fichier est sélectionné
+      let receiptUrl = form.receiptUrl || undefined;
+      if (receiptFile) {
+        const uploadedUrl = await handleUploadReceipt(receiptFile);
+        if (uploadedUrl) {
+          receiptUrl = uploadedUrl;
+        }
+      }
       await financeService.createExpense({
         academicYearId: academicYear.id,
         categoryId: form.categoryId,
         description: form.description,
         amount: Number(form.amount),
-        receiptUrl: form.receiptUrl || undefined,
+        receiptUrl,
         expenseDate: form.expenseDate,
         vendor: form.vendor || undefined,
         invoiceRef: form.invoiceRef || undefined,
       });
       setModalCreate(false);
       setForm({ categoryId: '', description: '', amount: '', receiptUrl: '', expenseDate: new Date().toISOString().slice(0, 10), vendor: '', invoiceRef: '' });
+      setReceiptFile(null);
       loadExpenses();
       loadBudgets();
       loadMonthlyStats();
@@ -240,6 +259,60 @@ export default function ExpensesPage() {
       loadBudgets();
     } catch (error) {
       console.error(error);
+    }
+  };
+
+  // ─── Sauvegarder catégorie (création ou modification) ───
+  const handleSaveCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!categoryForm.name.trim()) return;
+    setSavingCategory(true);
+    try {
+      const url = editingCategoryId
+        ? `/api/finance/expenses/categories/${editingCategoryId}`
+        : '/api/finance/expenses/categories';
+      const method = editingCategoryId ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(categoryForm),
+      });
+      if (!res.ok) throw new Error('Erreur lors de l\'enregistrement');
+      setModalCategory(false);
+      setCategoryForm({ name: '', description: '', code: '' });
+      setEditingCategoryId(null);
+      // Recharger les catégories
+      const data = await financeService.getExpenseCategories();
+      setCategories(Array.isArray(data) ? data : []);
+    } catch (error: any) {
+      console.error(error);
+      alert(error?.message || 'Erreur');
+    } finally {
+      setSavingCategory(false);
+    }
+  };
+
+  // ─── Upload justificatif (fichier) ───
+  const handleUploadReceipt = async (file: File): Promise<string | null> => {
+    setUploadingReceipt(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('type', 'expense_receipt');
+      const res = await fetch('/api/uploads', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Erreur upload');
+      const data = await res.json();
+      return data.url || data.filePath || null;
+    } catch (error) {
+      console.error('Upload error:', error);
+      return null;
+    } finally {
+      setUploadingReceipt(false);
     }
   };
 
@@ -362,105 +435,139 @@ export default function ExpensesPage() {
     <>
       {confirmDialog.dialog}
       <div className="space-y-4">
-        {/* ─── KPIs ─── */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <KpiCard
-            icon={TrendingDown}
-            label="Total dépenses"
-            value={formatCurrency(kpis.total)}
-            subtext={`${expenses.length} dépense(s)`}
-            color="bg-indigo-100 text-indigo-600"
-          />
-          <KpiCard
-            icon={Clock}
-            label="En attente"
-            value={formatCurrency(kpis.pendingAmount)}
-            subtext={`${kpis.pendingCount} à valider`}
-            color="bg-amber-100 text-amber-600"
-          />
-          <KpiCard
-            icon={CheckCircle2}
-            label="Approuvées"
-            value={formatCurrency(kpis.approvedAmount)}
-            subtext={`${kpis.approvedCount} validée(s)`}
-            color="bg-emerald-100 text-emerald-600"
-          />
-          <KpiCard
-            icon={XCircleIcon}
-            label="Rejetées"
-            value={formatCurrency(kpis.rejectedAmount)}
-            subtext={`${kpis.rejectedCount} rejetée(s)`}
-            color="bg-rose-100 text-rose-600"
-          />
-        </div>
-
-        {/* ─── Graphique évolution mensuelle ─── */}
-        {monthlyStats.length > 0 && (
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-                <TrendingDown className="w-4 h-4 text-indigo-500" />
-                Évolution mensuelle des dépenses approuvées
-              </h3>
-              <span className="text-xs text-slate-500">{monthlyStats.length} mois</span>
-            </div>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={monthlyStats} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis
-                  dataKey="monthLabel"
-                  tick={{ fontSize: 11, fill: '#64748b' }}
-                  axisLine={{ stroke: '#e2e8f0' }}
-                  tickLine={false}
-                />
-                <YAxis
-                  tick={{ fontSize: 11, fill: '#64748b' }}
-                  axisLine={{ stroke: '#e2e8f0' }}
-                  tickLine={false}
-                  tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
-                />
-                <Tooltip
-                  formatter={(value: any) => [`${formatCurrency(Number(value))} FCFA`, 'Total']}
-                  labelStyle={{ color: '#1e293b', fontWeight: 600 }}
-                  contentStyle={{
-                    backgroundColor: '#fff',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '8px',
-                    fontSize: '12px',
-                  }}
-                />
-                <Bar dataKey="total" radius={[4, 4, 0, 0]}>
-                  {monthlyStats.map((entry, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={entry.total > 500000 ? '#dc2626' : entry.total > 200000 ? '#f59e0b' : '#6366f1'}
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-
-        {/* ─── Onglets Dépenses / Budget ─── */}
-        <div className="flex gap-2">
+        {/* ─── Sous-onglets Dépenses ─── */}
+        <div className="flex gap-2 border-b border-slate-200 pb-2">
           <Button
-            variant={tab === 'expenses' ? 'default' : 'outline'}
+            variant={tab === 'dashboard' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setTab('dashboard')}
+            className={tab === 'dashboard' ? 'bg-indigo-600 text-white' : 'text-slate-600'}
+          >
+            <TrendingDown className="w-4 h-4 mr-1.5" />
+            Tableau de bord
+          </Button>
+          <Button
+            variant={tab === 'expenses' ? 'default' : 'ghost'}
             size="sm"
             onClick={() => setTab('expenses')}
+            className={tab === 'expenses' ? 'bg-indigo-600 text-white' : 'text-slate-600'}
           >
             <TrendingDown className="w-4 h-4 mr-1.5" />
             Dépenses
           </Button>
           <Button
-            variant={tab === 'budget' ? 'default' : 'outline'}
+            variant={tab === 'budget' ? 'default' : 'ghost'}
             size="sm"
             onClick={() => setTab('budget')}
+            className={tab === 'budget' ? 'bg-indigo-600 text-white' : 'text-slate-600'}
           >
             <Wallet className="w-4 h-4 mr-1.5" />
             Budget
           </Button>
+          <Button
+            variant={tab === 'categories' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setTab('categories')}
+            className={tab === 'categories' ? 'bg-indigo-600 text-white' : 'text-slate-600'}
+          >
+            <FileSpreadsheet className="w-4 h-4 mr-1.5" />
+            Catégories
+          </Button>
         </div>
+
+        {/* ─── Contenu onglet Tableau de bord ─── */}
+        {tab === 'dashboard' && (
+          <div className="space-y-4">
+            {/* KPIs */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                <div className="w-9 h-9 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center mb-2">
+                  <TrendingDown className="w-4 h-4" />
+                </div>
+                <p className="text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-1">Total dépenses</p>
+                <p className="text-xl font-bold text-slate-900">{formatCurrency(kpis.total)}</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">{expenses.length} dépense(s)</p>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                <div className="w-9 h-9 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center mb-2">
+                  <Clock className="w-4 h-4" />
+                </div>
+                <p className="text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-1">En attente</p>
+                <p className="text-xl font-bold text-slate-900">{formatCurrency(kpis.pendingAmount)}</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">{kpis.pendingCount} à valider</p>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                <div className="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center mb-2">
+                  <CheckCircle2 className="w-4 h-4" />
+                </div>
+                <p className="text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-1">Approuvées</p>
+                <p className="text-xl font-bold text-slate-900">{formatCurrency(kpis.approvedAmount)}</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">{kpis.approvedCount} validée(s)</p>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                <div className="w-9 h-9 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center mb-2">
+                  <XCircleIcon className="w-4 h-4" />
+                </div>
+                <p className="text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-1">Rejetées</p>
+                <p className="text-xl font-bold text-slate-900">{formatCurrency(kpis.rejectedAmount)}</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">{kpis.rejectedCount} rejetée(s)</p>
+              </div>
+            </div>
+
+            {/* Graphique évolution mensuelle */}
+            {monthlyStats.length > 0 && (
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+                <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
+                  <TrendingDown className="w-4 h-4 text-indigo-500" />
+                  Évolution mensuelle des dépenses approuvées
+                </h3>
+                <ResponsiveContainer width="100%" height={250}>
+                  <BarChart data={monthlyStats} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="monthLabel" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+                    <Tooltip
+                      formatter={(value: any) => [formatCurrency(Number(value)), 'Total']}
+                      labelStyle={{ color: '#1e293b', fontWeight: 600 }}
+                      contentStyle={{ backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px' }}
+                    />
+                    <Bar dataKey="total" radius={[4, 4, 0, 0]}>
+                      {monthlyStats.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.total > 500000 ? '#dc2626' : entry.total > 200000 ? '#f59e0b' : '#6366f1'} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {/* Budget summary */}
+            {budgets.length > 0 && (
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+                <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
+                  <Wallet className="w-4 h-4 text-indigo-500" />
+                  Budget {academicYear?.name || ''} — Synthèse par catégorie
+                </h3>
+                <div className="space-y-3">
+                  {budgets.map((b: any) => {
+                    const pct = b.percentUsed ?? 0;
+                    const barColor = pct >= 100 ? 'bg-rose-500' : pct >= 85 ? 'bg-rose-400' : pct >= 60 ? 'bg-amber-400' : 'bg-emerald-500';
+                    return (
+                      <div key={b.id} className="flex items-center gap-3">
+                        <div className="w-32 text-sm font-medium text-slate-700 truncate">{b.category?.name ?? b.categoryId}</div>
+                        <div className="flex-1 bg-slate-100 rounded-full h-2 overflow-hidden">
+                          <div className={`h-full ${barColor} transition-all`} style={{ width: `${Math.min(100, pct)}%` }} />
+                        </div>
+                        <div className="w-24 text-right text-xs text-slate-600">{formatCurrency(b.spent ?? 0)} / {formatCurrency(b.allocatedAmount)}</div>
+                        <div className={`w-12 text-right text-xs font-semibold ${pct >= 85 ? 'text-rose-600' : pct >= 60 ? 'text-amber-600' : 'text-emerald-600'}`}>{pct}%</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ─── Contenu onglet Dépenses ─── */}
         {tab === 'expenses' && (
@@ -734,6 +841,82 @@ export default function ExpensesPage() {
             </div>
           </ModuleContentArea>
         )}
+
+        {/* ─── Contenu onglet Catégories ─── */}
+        {tab === 'categories' && (
+          <ModuleContentArea
+            layout="custom"
+            toolbar={
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm text-slate-600">
+                  <span className="font-semibold">{categories.length}</span> catégorie(s) de dépenses
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setCategoryForm({ name: '', description: '', code: '' });
+                    setModalCategory(true);
+                  }}
+                >
+                  <Plus className="w-4 h-4 mr-1.5" />
+                  Nouvelle catégorie
+                </Button>
+              </div>
+            }
+          >
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-gray-50">
+                    <TableHead>Nom</TableHead>
+                    <TableHead>Code</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead>Statut</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {categories.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-gray-500 py-12">
+                        <FileSpreadsheet className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                        Aucune catégorie. Cliquez sur « Nouvelle catégorie » pour commencer.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    categories.map((cat) => (
+                      <TableRow key={cat.id} className="hover:bg-slate-50">
+                        <TableCell className="font-medium">{cat.name}</TableCell>
+                        <TableCell><Badge variant="outline">{cat.code || '—'}</Badge></TableCell>
+                        <TableCell className="text-sm text-slate-600">{cat.description || '—'}</TableCell>
+                        <TableCell>
+                          <Badge variant={cat.isActive !== false ? 'default' : 'outline'} className={cat.isActive !== false ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600'}>
+                            {cat.isActive !== false ? 'Active' : 'Inactive'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() => {
+                              setCategoryForm({ name: cat.name, description: cat.description || '', code: cat.code || '' });
+                              setEditingCategoryId(cat.id);
+                              setModalCategory(true);
+                            }}
+                            title="Modifier"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </ModuleContentArea>
+        )}
       </div>
 
       {/* ─── Modal création dépense ─── */}
@@ -820,22 +1003,46 @@ export default function ExpensesPage() {
               </div>
               <div>
                 <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
-                  Justificatif (URL)
+                  Justificatif (fichier)
                 </Label>
                 <div className="flex items-center gap-2">
-                  <div className="relative flex-1">
-                    <Upload className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <Input
-                      type="url"
-                      value={form.receiptUrl}
-                      onChange={(e) => setForm((f) => ({ ...f, receiptUrl: e.target.value }))}
-                      placeholder="https://… (optionnel — obligatoire si > seuil)"
-                      className="pl-9"
+                  <label className="flex-1 cursor-pointer">
+                    <div className="flex items-center gap-2 px-3 py-2 border border-slate-300 rounded-md hover:bg-slate-50 transition-colors">
+                      {uploadingReceipt ? (
+                        <Loader2 className="w-4 h-4 text-indigo-500 animate-spin" />
+                      ) : (
+                        <Upload className="w-4 h-4 text-slate-400" />
+                      )}
+                      <span className="text-sm text-slate-600 truncate">
+                        {receiptFile ? receiptFile.name : (uploadingReceipt ? 'Upload en cours…' : 'Cliquer pour sélectionner un fichier')}
+                      </span>
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/*,.pdf,.jpg,.jpeg,.png"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) setReceiptFile(f);
+                      }}
                     />
-                  </div>
+                  </label>
+                  {receiptFile && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => setReceiptFile(null)}
+                      title="Retirer le fichier"
+                    >
+                      <XCircle className="w-4 h-4 text-rose-500" />
+                    </Button>
+                  )}
                 </div>
                 <p className="text-[10px] text-slate-500 mt-1">
                   💡 Un justificatif peut être obligatoire selon le seuil configuré par l'établissement.
+                  {' '}Formats acceptés : PDF, JPG, PNG.
                 </p>
               </div>
               <div className="flex gap-2 justify-end pt-2 border-t border-slate-100">
@@ -1048,6 +1255,58 @@ export default function ExpensesPage() {
                 <Button type="submit">
                   <Wallet className="w-4 h-4 mr-1.5" />
                   Enregistrer le budget
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Modal catégorie (création/modification) ─── */}
+      {modalCategory && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50 p-4" onClick={() => !savingCategory && setModalCategory(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-indigo-50 to-blue-50">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <FileSpreadsheet className="w-5 h-5 text-indigo-600" />
+                {editingCategoryId ? 'Modifier la catégorie' : 'Nouvelle catégorie'}
+              </h3>
+            </div>
+            <form onSubmit={handleSaveCategory} className="p-6 space-y-4">
+              <div>
+                <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Nom *</Label>
+                <Input
+                  type="text"
+                  value={categoryForm.name}
+                  onChange={(e) => setCategoryForm((f) => ({ ...f, name: e.target.value }))}
+                  required
+                  placeholder="ex: Maintenance, Fournitures, Salaires…"
+                />
+              </div>
+              <div>
+                <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Code</Label>
+                <Input
+                  type="text"
+                  value={categoryForm.code}
+                  onChange={(e) => setCategoryForm((f) => ({ ...f, code: e.target.value }))}
+                  placeholder="ex: MAINT, FOURN, SAL (optionnel)"
+                />
+              </div>
+              <div>
+                <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Description</Label>
+                <textarea
+                  value={categoryForm.description}
+                  onChange={(e) => setCategoryForm((f) => ({ ...f, description: e.target.value }))}
+                  rows={2}
+                  placeholder="Description optionnelle"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div className="flex gap-2 justify-end pt-2 border-t border-slate-100">
+                <Button type="button" variant="outline" onClick={() => { setModalCategory(false); setEditingCategoryId(null); }} disabled={savingCategory}>Annuler</Button>
+                <Button type="submit" disabled={savingCategory}>
+                  {savingCategory ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Plus className="w-4 h-4 mr-1.5" />}
+                  {editingCategoryId ? 'Modifier' : 'Créer'}
                 </Button>
               </div>
             </form>

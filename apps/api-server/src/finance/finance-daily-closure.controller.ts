@@ -26,6 +26,22 @@ export class FinanceDailyClosureController {
     return this.service.findClosures(tenantId, academicYearId, from, to);
   }
 
+  /**
+   * GET /finance/daily-closures/preview?academicYearId=&date=
+   * Prévisualisation des montants d'une journée avant clôture
+   * (rapprochement par caisse).
+   */
+  @Get('preview')
+  async previewDay(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('date') date?: string,
+  ) {
+    if (!academicYearId) return { totalIncome: 0, totalExpense: 0, netBalance: 0, byRegister: [] };
+    const targetDate = date ? new Date(date) : new Date();
+    return this.service.computeDay(tenantId, academicYearId, targetDate);
+  }
+
   @Post()
   @Roles('ACCOUNTANT', 'CASHIER', 'DIRECTOR', 'ADMIN', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER', 'COMPTABLE', 'SECRETAIRE_COMPTABLE')
   async create(

@@ -904,23 +904,25 @@ export default function ExpensesPage() {
                     )}
                   </div>
                   {/* Statut */}
-                  <Select value={filterStatus || 'ALL'} onValueChange={(v) => setFilterStatus(v === 'ALL' ? '' : v)}>
-                    <SelectTrigger className="w-[140px] h-8"><SelectValue placeholder="Statut" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ALL">Tous les statuts</SelectItem>
-                      <SelectItem value="PENDING">En attente</SelectItem>
-                      <SelectItem value="APPROVED">Approuvées</SelectItem>
-                      <SelectItem value="REJECTED">Rejetées</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <select
+                    value={filterStatus || 'ALL'}
+                    onChange={(e) => setFilterStatus(e.target.value === 'ALL' ? '' : e.target.value)}
+                    className="h-8 px-2 text-xs border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-indigo-500 whitespace-nowrap"
+                  >
+                    <option value="ALL">Tous les statuts</option>
+                    <option value="PENDING">En attente</option>
+                    <option value="APPROVED">Approuvées</option>
+                    <option value="REJECTED">Rejetées</option>
+                  </select>
                   {/* Catégorie */}
-                  <Select value={filterCategory || 'ALL'} onValueChange={(v) => setFilterCategory(v === 'ALL' ? '' : v)}>
-                    <SelectTrigger className="w-[160px] h-8"><SelectValue placeholder="Catégorie" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ALL">Toutes les catégories</SelectItem>
-                      {categories.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <select
+                    value={filterCategory || 'ALL'}
+                    onChange={(e) => setFilterCategory(e.target.value === 'ALL' ? '' : e.target.value)}
+                    className="h-8 px-2 text-xs border border-slate-200 rounded-md bg-white focus:ring-2 focus:ring-indigo-500 whitespace-nowrap max-w-[180px] truncate"
+                  >
+                    <option value="ALL">Toutes les catégories</option>
+                    {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
                   {/* Période */}
                   <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5">
                     <Calendar className="w-3.5 h-3.5 text-slate-500" />

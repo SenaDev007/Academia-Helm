@@ -55,6 +55,8 @@ export default function TreasuryPage() {
   const [closureDate, setClosureDate] = useState(new Date().toISOString().split('T')[0]);
   const [physicalAmount, setPhysicalAmount] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [previewData, setPreviewData] = useState<any>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [exporting, setExporting] = useState<'pdf' | 'excel' | null>(null);
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
@@ -78,6 +80,17 @@ export default function TreasuryPage() {
   useEffect(() => {
     loadClosures();
   }, [academicYear?.id, filterFrom, filterTo]);
+
+  // Charger le preview quand le modal est ouvert et la date change
+  useEffect(() => {
+    if (!modalClosure || !academicYear?.id) return;
+    setPreviewLoading(true);
+    fetch(`/api/finance/treasury/daily-closures/preview?academicYearId=${academicYear.id}&date=${closureDate}`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((data) => setPreviewData(data))
+      .catch(() => setPreviewData(null))
+      .finally(() => setPreviewLoading(false));
+  }, [modalClosure, closureDate, academicYear?.id]);
 
   // KPIs
   const kpis = useMemo(() => {
@@ -438,6 +451,59 @@ export default function TreasuryPage() {
                 <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Date</Label>
                 <Input type="date" value={closureDate} onChange={(e) => setClosureDate(e.target.value)} required />
               </div>
+
+              {/* Rapprochement par caisse (preview) */}
+              {previewLoading ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />
+                </div>
+              ) : previewData ? (
+                <div className="border border-slate-200 rounded-lg overflow-hidden">
+                  <div className="bg-slate-50 px-4 py-2 border-b border-slate-200">
+                    <div className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Rapprochement de la journée</div>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    {/* Totaux */}
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="bg-emerald-50 rounded-lg p-2 text-center">
+                        <div className="text-[10px] uppercase text-emerald-600 font-semibold">Encaissé</div>
+                        <div className="text-sm font-bold text-emerald-700">{formatCurrency(previewData.totalIncome || 0)}</div>
+                      </div>
+                      <div className="bg-rose-50 rounded-lg p-2 text-center">
+                        <div className="text-[10px] uppercase text-rose-600 font-semibold">Dépensé</div>
+                        <div className="text-sm font-bold text-rose-700">{formatCurrency(previewData.totalExpense || 0)}</div>
+                      </div>
+                      <div className={`rounded-lg p-2 text-center ${(previewData.netBalance || 0) >= 0 ? 'bg-indigo-50' : 'bg-rose-50'}`}>
+                        <div className={`text-[10px] uppercase font-semibold ${(previewData.netBalance || 0) >= 0 ? 'text-indigo-600' : 'text-rose-600'}`}>Solde</div>
+                        <div className={`text-sm font-bold ${(previewData.netBalance || 0) >= 0 ? 'text-indigo-700' : 'text-rose-700'}`}>{formatCurrency(previewData.netBalance || 0)}</div>
+                      </div>
+                    </div>
+
+                    {/* Par caisse */}
+                    {previewData.byRegister && previewData.byRegister.length > 0 && (
+                      <div>
+                        <div className="text-[10px] text-slate-500 font-semibold uppercase mb-1">Par caisse</div>
+                        <div className="space-y-1">
+                          {previewData.byRegister.map((r: any) => (
+                            <div key={r.cashRegisterId} className="flex items-center justify-between text-xs bg-slate-50 rounded px-2 py-1">
+                              <div className="flex items-center gap-2">
+                                <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold rounded bg-indigo-50 text-indigo-700">{r.code}</span>
+                                <span className="text-slate-700">{r.name}</span>
+                              </div>
+                              <div className="flex items-center gap-3 font-mono">
+                                <span className="text-emerald-600">+{formatCurrency(r.income)}</span>
+                                <span className="text-rose-600">−{formatCurrency(r.expense)}</span>
+                                <span className={`font-bold ${r.net >= 0 ? 'text-slate-700' : 'text-rose-700'}`}>{formatCurrency(r.net)}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
               <div>
                 <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
                   Montant physique caisse (FCFA)

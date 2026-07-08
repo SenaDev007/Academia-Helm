@@ -308,7 +308,7 @@ export default function CashRegistersContent() {
   const [transferPending, setTransferPending] = useState(false);
   const [staffList, setStaffList] = useState<any[]>([]);
   // Onglet actif : constellation | historique
-  const [activeTab, setActiveTab] = useState<'constellation' | 'historique' | 'dashboard'>('constellation');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'constellation' | 'historique'>('dashboard');
   // Historique des transferts
   const [transfers, setTransfers] = useState<any[]>([]);
   const [transfersLoading, setTransfersLoading] = useState(false);
@@ -879,8 +879,21 @@ export default function CashRegistersContent() {
               </motion.div>
             </div>
 
-            {/* === ONGLETS : Constellation | Historique === */}
+            {/* === ONGLETS : Tableau de bord | Caisses | Historique === */}
             <div className="flex items-center gap-2 border-b border-slate-200">
+              <button
+                onClick={() => setActiveTab('dashboard')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'dashboard'
+                    ? 'border-indigo-600 text-indigo-600'
+                    : 'border-transparent text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4" />
+                  Tableau de bord
+                </div>
+              </button>
               <button
                 onClick={() => setActiveTab('constellation')}
                 className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
@@ -910,19 +923,6 @@ export default function CashRegistersContent() {
                       {transfers.length}
                     </span>
                   )}
-                </div>
-              </button>
-              <button
-                onClick={() => setActiveTab('dashboard')}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === 'dashboard'
-                    ? 'border-indigo-600 text-indigo-600'
-                    : 'border-transparent text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <BarChart3 className="w-4 h-4" />
-                  Tableau de bord
                 </div>
               </button>
             </div>

@@ -55,7 +55,74 @@ export class FinanceDailyClosureService {
     });
     const totalIncome = Number(incomeRows._sum.amount ?? 0);
     const totalExpense = Number(expenseRows._sum.amount ?? 0);
-    return { totalIncome, totalExpense, netBalance: totalIncome - totalExpense };
+
+    // Rapprochement par caisse : encaissements et dépenses par cashRegisterId
+    const incomeByRegister = await this.prisma.financeTransaction.groupBy({
+      by: ['cashRegisterId'],
+      where: {
+        tenantId,
+        academicYearId,
+        type: 'PAYMENT',
+        createdAt: { gte: dayStart, lte: dayEnd },
+      },
+      _sum: { amount: true },
+    });
+    const expenseByRegister = await this.prisma.financeExpense.groupBy({
+      by: ['cashRegisterId'],
+      where: {
+        tenantId,
+        academicYearId,
+        status: 'APPROVED',
+        approvedAt: { gte: dayStart, lte: dayEnd },
+        cashRegisterId: { not: null },
+      },
+      _sum: { amount: true },
+    });
+
+    // Récupérer les infos des caisses
+    const registerIds = new Set([
+      ...incomeByRegister.map(r => r.cashRegisterId).filter(Boolean),
+      ...expenseByRegister.map(r => r.cashRegisterId).filter(Boolean),
+    ]);
+    const registers = registerIds.size > 0
+      ? await this.prisma.cashRegister.findMany({
+          where: { id: { in: Array.from(registerIds) } },
+          select: { id: true, name: true, code: true, currentBalance: true },
+        })
+      : [];
+
+    const registerMap = new Map(registers.map(r => [r.id, r]));
+    const byRegister = Array.from(registerIds).map(rid => {
+      const reg = registerMap.get(rid);
+      const income = incomeByRegister.find(r => r.cashRegisterId === rid);
+      const expense = expenseByRegister.find(r => r.cashRegisterId === rid);
+      const inc = Number(income?._sum.amount ?? 0);
+      const exp = Number(expense?._sum.amount ?? 0);
+      return {
+        cashRegisterId: rid,
+        name: reg?.name || '—',
+        code: reg?.code || '—',
+        currentBalance: Number(reg?.currentBalance ?? 0),
+        income: inc,
+        expense: exp,
+        net: inc - exp,
+      };
+    });
+
+    return { totalIncome, totalExpense, netBalance: totalIncome - totalExpense, byRegister };
+  }
+
+  /**
+   * Vérifie si une date est déjà clôturée (pour verrouiller les transactions).
+   */
+  async isDateClosed(tenantId: string, academicYearId: string, date: Date): Promise<boolean> {
+    const dateOnly = new Date(date);
+    dateOnly.setHours(0, 0, 0, 0);
+    const closure = await this.prisma.financeDailyClosure.findUnique({
+      where: { tenantId_academicYearId_date: { tenantId, academicYearId, date: dateOnly } },
+      select: { id: true, validatedById: true },
+    });
+    return !!closure?.validatedById;
   }
 
   async findClosures(tenantId: string, academicYearId: string, from?: string, to?: string) {

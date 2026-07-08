@@ -95,6 +95,8 @@ export default function ExpensesPage() {
   const [requestedById, setRequestedById] = useState('');
   const [manualRequester, setManualRequester] = useState('');
   const [pendingApproverId, setPendingApproverId] = useState('');
+  const [cashRegisters, setCashRegisters] = useState<any[]>([]);
+  const [selectedCashRegisterId, setSelectedCashRegisterId] = useState('');
   useEffect(() => {
     fetch('/api/settings/users', { credentials: 'include' })
       .then((r) => r.json())
@@ -106,13 +108,11 @@ export default function ExpensesPage() {
           return ADMIN_ROLES.some(r => role.includes(r));
         });
         setExpenseUsers(filtered);
-        // Par défaut : secrétaire comptable ou comptable
         const comptable = filtered.find((u: any) => {
           const role = (u.role || '').toUpperCase();
           return role.includes('COMPTABLE') || role.includes('SECRETARY') || role.includes('ACCOUNTANT') || role.includes('CASHIER');
         });
         if (comptable) setRequestedById(comptable.id);
-        // Par défaut : promoteur pour approbation
         const promoter = filtered.find((u: any) => {
           const role = (u.role || '').toUpperCase();
           return role.includes('PROMOTEUR') || role.includes('PROMOTER') || role.includes('PLATFORM_OWNER');
@@ -120,6 +120,19 @@ export default function ExpensesPage() {
         if (promoter) setPendingApproverId(promoter.id);
       })
       .catch(() => setExpenseUsers([]));
+
+    // Charger les caisses actives
+    fetch('/api/finance/cash-registers', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => {
+        const list = Array.isArray(d) ? d : (d?.data ?? []);
+        // Filtrer les caisses actives (pas la caisse ONLINE qui n'est jamais débitée)
+        const active = list.filter((c: any) => c.isActive !== false && c.code !== 'ONLINE');
+        setCashRegisters(active);
+        // Par défaut : la première caisse active (ex: ACCUEIL)
+        if (active.length > 0) setSelectedCashRegisterId(active[0].id);
+      })
+      .catch(() => setCashRegisters([]));
   }, []);
 
   // ─── Formulaire nouvelle dépense ───
@@ -265,6 +278,8 @@ export default function ExpensesPage() {
       else if (manualRequester) payload.requestedById = manualRequester;
       // À approuver par
       if (pendingApproverId) payload.pendingApproverId = pendingApproverId;
+      // Caisse source (sera débitée à l'approbation)
+      if (selectedCashRegisterId) payload.cashRegisterId = selectedCashRegisterId;
 
       if (editingExpenseId) {
         // Modification → PUT
@@ -1433,6 +1448,27 @@ export default function ExpensesPage() {
                   </p>
                 </div>
               </div>
+              {/* Caisse source */}
+              {cashRegisters.length > 0 && (
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Caisse source</Label>
+                  <select
+                    value={selectedCashRegisterId}
+                    onChange={(e) => setSelectedCashRegisterId(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500 bg-white"
+                  >
+                    <option value="">— Aucune (non imputée) —</option>
+                    {cashRegisters.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.code}) — Solde : {formatCurrency(Number(c.currentBalance ?? 0))}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    💡 Le montant de la dépense sera débité de cette caisse à l'approbation.
+                  </p>
+                </div>
+              )}
               <div>
                 <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
                   Justificatif (fichier)

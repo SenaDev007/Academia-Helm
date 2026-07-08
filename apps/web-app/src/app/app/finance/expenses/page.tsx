@@ -1324,7 +1324,7 @@ export default function ExpensesPage() {
       {/* ─── Modal création dépense ─── */}
       {modalCreate && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50 p-4" onClick={() => setModalCreate(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             {/* En-tête */}
             <div className="px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-indigo-50 to-blue-50">
               <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">

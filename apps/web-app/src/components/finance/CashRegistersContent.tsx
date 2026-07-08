@@ -293,7 +293,7 @@ export default function CashRegistersContent() {
   const confirmDialog = useConfirmDialog();
   const { toast } = useToast();
   const { tenant } = useAppSession();
-  const { schoolLevel } = useModuleContext();
+  const { schoolLevel, academicYear } = useModuleContext();
   const [exporting, setExporting] = useState<'excel' | 'pdf' | 'global-excel' | 'global-pdf' | null>(null);
   const [registers, setRegisters] = useState<CashRegister[]>([]);
   const [loading, setLoading] = useState(true);

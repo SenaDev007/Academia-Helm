@@ -123,6 +123,29 @@ export class FinanceExpenseService {
     return e;
   }
 
+  /**
+   * Supprime une dépense (uniquement si PENDING).
+   * Après approbation/rejet, la suppression est interdite (audit trail).
+   */
+  async deleteExpense(id: string, tenantId: string) {
+    const e = await this.findOne(id, tenantId);
+    if (e.status !== 'PENDING') {
+      throw new BadRequestException('Suppression interdite : la dépense a déjà été traitée (approuvée ou rejetée).');
+    }
+    await this.prisma.financialAuditLog.create({
+      data: {
+        tenantId,
+        entityType: 'FinanceExpense',
+        entityId: id,
+        action: 'DELETE',
+        oldValue: { status: e.status, amount: Number(e.amount), description: e.description },
+        performedById: null,
+      },
+    });
+    await this.prisma.financeExpense.delete({ where: { id } });
+    return { success: true, deleted: true };
+  }
+
   async approve(id: string, tenantId: string, approvedById: string, approverRole?: string) {
     const e = await this.findOne(id, tenantId);
     if (e.status !== 'PENDING') throw new BadRequestException('Depense deja traitee');
@@ -220,6 +243,20 @@ export class FinanceExpenseService {
       update: { allocatedAmount: new Prisma.Decimal(allocatedAmount) },
       include: { category: true },
     });
+  }
+
+  /**
+   * Supprime un budget (DELETE réel, pas soft delete).
+   */
+  async deleteBudget(tenantId: string, budgetId: string) {
+    const budget = await this.prisma.financeBudget.findFirst({
+      where: { id: budgetId, tenantId },
+    });
+    if (!budget) {
+      throw new NotFoundException('Budget introuvable');
+    }
+    await this.prisma.financeBudget.delete({ where: { id: budgetId } });
+    return { success: true, deleted: true };
   }
 
   async checkOverrun(

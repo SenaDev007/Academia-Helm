@@ -89,9 +89,27 @@ export class FinanceExpenseController {
     );
   }
 
+  @Delete('budgets/:id')
+  @Roles('DIRECTOR', 'ADMIN', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
+  async deleteBudget(
+    @TenantId() tenantId: string,
+    @Param('id') budgetId: string,
+  ) {
+    return this.expenseService.deleteBudget(tenantId, budgetId);
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string, @TenantId() tenantId: string) {
     return this.expenseService.findOne(id, tenantId);
+  }
+
+  @Delete(':id')
+  @Roles('DIRECTOR', 'ADMIN', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
+  async deleteExpense(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.expenseService.deleteExpense(id, tenantId);
   }
 
   @Patch(':id/approve')

@@ -22,7 +22,7 @@ import { useToast } from '@/components/ui/use-toast';
 import {
   Eye, CheckCircle, XCircle, FileSpreadsheet, FileText, Plus, Search,
   TrendingDown, Clock, CheckCircle2, XCircle as XCircleIcon, Wallet,
-  Loader2, Upload, Link2, Calendar, AlertTriangle, Trash2,
+  Loader2, Upload, Link2, Calendar, AlertTriangle, Trash2, Pencil,
 } from 'lucide-react';
 import {
   ModuleContentArea,
@@ -83,6 +83,7 @@ export default function ExpensesPage() {
   const [modalCategory, setModalCategory] = useState(false);
   const [categoryForm, setCategoryForm] = useState({ name: '', description: '', code: '' });
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [savingCategory, setSavingCategory] = useState(false);
 
   // ─── Upload justificatif (fichier) ───
@@ -228,8 +229,25 @@ export default function ExpensesPage() {
       if (form.vendor) payload.vendor = form.vendor;
       if (form.invoiceRef) payload.invoiceRef = form.invoiceRef;
 
-      await financeService.createExpense(payload);
-      toast({ title: '✅ Dépense créée', description: 'La dépense a été soumise pour validation.' });
+      if (editingExpenseId) {
+        // Modification → PUT
+        const res = await fetch(`/api/finance/expenses/${editingExpenseId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err?.message || err?.error || 'Erreur modification');
+        }
+        toast({ title: '✅ Dépense modifiée', description: 'La dépense a été mise à jour.' });
+        setEditingExpenseId(null);
+      } else {
+        // Création → POST
+        await financeService.createExpense(payload);
+        toast({ title: '✅ Dépense créée', description: 'La dépense a été soumise pour validation.' });
+      }
       setModalCreate(false);
       setForm({ categoryId: '', description: '', amount: '', receiptUrl: '', expenseDate: new Date().toISOString().slice(0, 10), vendor: '', invoiceRef: '' });
       setReceiptFile(null);
@@ -728,7 +746,7 @@ export default function ExpensesPage() {
                   </h3>
                   <ResponsiveContainer width="100%" height={250}>
                     <PieChart>
-                      <Pie data={categoryStats} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={(entry: any) => `${entry.name}: ${formatCurrency(entry.value)}`}>
+                      <Pie data={categoryStats} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} label={(entry: any) => `${entry.name.length > 12 ? entry.name.substring(0, 10) + '…' : entry.name}: ${(entry.value / 1000).toFixed(0)}k`}>
                         {categoryStats.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.fill} />
                         ))}
@@ -872,7 +890,7 @@ export default function ExpensesPage() {
                   </Button>
                 </div>
                 {/* Bouton droite */}
-                <Button size="sm" onClick={() => setModalCreate(true)}>
+                <Button size="sm" onClick={() => { setEditingExpenseId(null); setForm({ categoryId: '', description: '', amount: '', receiptUrl: '', expenseDate: new Date().toISOString().slice(0, 10), vendor: '', invoiceRef: '' }); setModalCreate(true); }}>
                   <Plus className="w-4 h-4 mr-1.5" />
                   Nouvelle dépense
                 </Button>
@@ -947,6 +965,21 @@ export default function ExpensesPage() {
                             </Button>
                             {expense.status === 'PENDING' && (
                               <>
+                                <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-indigo-100" onClick={() => {
+                                  setForm({
+                                    categoryId: expense.categoryId,
+                                    description: expense.description,
+                                    amount: String(Number(expense.amount) || 0),
+                                    receiptUrl: expense.receiptUrl || '',
+                                    expenseDate: expense.expenseDate ? new Date(expense.expenseDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+                                    vendor: expense.vendor || '',
+                                    invoiceRef: expense.invoiceRef || '',
+                                  });
+                                  setEditingExpenseId(expense.id);
+                                  setModalCreate(true);
+                                }} title="Modifier">
+                                  <Pencil className="h-3.5 w-3.5 text-indigo-600" />
+                                </Button>
                                 <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-emerald-100" onClick={async () => { const ok = await confirmDialog.warning('Cette dépense sera approuvée et ne pourra plus être modifiée.', 'Approuver la dépense'); if (ok) handleApprove(expense.id); }} title="Approuver">
                                   <CheckCircle className="h-3.5 w-3.5 text-emerald-600" />
                                 </Button>
@@ -960,6 +993,18 @@ export default function ExpensesPage() {
                                   setRejectReason('');
                                 }} title="Rejeter">
                                   <XCircle className="h-3.5 w-3.5 text-rose-600" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-rose-100" onClick={async () => {
+                                  const ok = await confirmDialog.danger('Cette dépense sera définitivement supprimée.', 'Supprimer la dépense');
+                                  if (!ok) return;
+                                  try {
+                                    const res = await fetch(`/api/finance/expenses-v2/${expense.id}`, { method: 'DELETE', credentials: 'include' });
+                                    if (!res.ok) throw new Error('Erreur');
+                                    toast({ title: '✅ Dépense supprimée' });
+                                    loadExpenses(); loadBudgets(); loadMonthlyStats();
+                                  } catch (e: any) { toast({ title: 'Erreur', description: e?.message, variant: 'destructive' }); }
+                                }} title="Supprimer">
+                                  <Trash2 className="h-3.5 w-3.5 text-rose-600" />
                                 </Button>
                               </>
                             )}
@@ -1087,7 +1132,7 @@ export default function ExpensesPage() {
                                 }}
                                 title="Modifier le budget"
                               >
-                                <Eye className="h-3.5 w-3.5 text-indigo-600" />
+                                <Pencil className="h-3.5 w-3.5 text-indigo-600" />
                               </Button>
                               <Button
                                 variant="ghost"
@@ -1095,24 +1140,17 @@ export default function ExpensesPage() {
                                 className="h-7 w-7 hover:bg-rose-100"
                                 onClick={async () => {
                                   const ok = await confirmDialog.danger(
-                                    `Le budget pour « ${b.category?.name ?? b.categoryId} » sera supprimé.`,
+                                    `Le budget pour « ${b.category?.name ?? b.categoryId} » sera définitivement supprimé.`,
                                     'Supprimer le budget'
                                   );
                                   if (!ok) return;
                                   try {
-                                    // Supprimer = mettre allocatedAmount à 0 (upsert)
-                                    const res = await fetch('/api/finance/expenses-v2/budgets', {
-                                      method: 'POST',
-                                      headers: { 'Content-Type': 'application/json' },
+                                    const res = await fetch(`/api/finance/expenses-v2/budgets/${b.id}`, {
+                                      method: 'DELETE',
                                       credentials: 'include',
-                                      body: JSON.stringify({
-                                        academicYearId: academicYear?.id,
-                                        categoryId: b.categoryId,
-                                        allocatedAmount: 0,
-                                      }),
                                     });
                                     if (!res.ok) throw new Error('Erreur');
-                                    toast({ title: '✅ Budget supprimé', description: 'Le budget a été réinitialisé à 0.' });
+                                    toast({ title: '✅ Budget supprimé', description: 'Le budget a été définitivement supprimé.' });
                                     loadBudgets();
                                   } catch (e: any) {
                                     toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });

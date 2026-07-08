@@ -43,6 +43,7 @@ import { loadPdfLibs } from '@/lib/exports/pdf-loader';
 import { loadXlsx } from '@/lib/exports/xlsx-loader';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+  PieChart, Pie, LineChart, Line, Legend,
 } from 'recharts';
 
 type Tab = 'dashboard' | 'expenses' | 'budget' | 'categories';
@@ -169,6 +170,27 @@ export default function ExpensesPage() {
       rejectedAmount,
     };
   }, [expenses]);
+
+  // ─── Données pour graphiques ───
+  // Répartition par catégorie (camembert)
+  const categoryStats = useMemo(() => {
+    const byCat: Record<string, number> = {};
+    expenses.filter((e) => e.status === 'APPROVED').forEach((e) => {
+      const catName = e.category?.name || 'Autre';
+      byCat[catName] = (byCat[catName] || 0) + (Number(e.amount) || 0);
+    });
+    const colors = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
+    return Object.entries(byCat)
+      .map(([name, value], i) => ({ name, value, fill: colors[i % colors.length] }))
+      .sort((a, b) => b.value - a.value);
+  }, [expenses]);
+
+  // Répartition par statut (camembter)
+  const statusStats = useMemo(() => [
+    { name: 'Approuvées', value: kpis.approvedCount, fill: '#10b981' },
+    { name: 'En attente', value: kpis.pendingCount, fill: '#f59e0b' },
+    { name: 'Rejetées', value: kpis.rejectedCount, fill: '#ef4444' },
+  ].filter(s => s.value > 0), [kpis]);
 
   // ─── Filtre recherche ───
   const filteredExpenses = useMemo(() => {
@@ -654,32 +676,94 @@ export default function ExpensesPage() {
               </div>
             </div>
 
-            {/* Graphique évolution mensuelle */}
-            {monthlyStats.length > 0 && (
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-                <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
-                  <TrendingDown className="w-4 h-4 text-indigo-500" />
-                  Évolution mensuelle des dépenses approuvées
-                </h3>
-                <ResponsiveContainer width="100%" height={250}>
-                  <BarChart data={monthlyStats} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="monthLabel" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} />
-                    <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
-                    <Tooltip
-                      formatter={(value: any) => [formatCurrency(Number(value)), 'Total']}
-                      labelStyle={{ color: '#1e293b', fontWeight: 600 }}
-                      contentStyle={{ backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px' }}
-                    />
-                    <Bar dataKey="total" radius={[4, 4, 0, 0]}>
-                      {monthlyStats.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.total > 500000 ? '#dc2626' : entry.total > 200000 ? '#f59e0b' : '#6366f1'} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
+            {/* Graphiques : évolution mensuelle + répartition par catégorie (côte à côte) */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Évolution mensuelle (barres) */}
+              {monthlyStats.length > 0 && (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+                  <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
+                    <TrendingDown className="w-4 h-4 text-indigo-500" />
+                    Évolution mensuelle (dépensé)
+                  </h3>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <BarChart data={monthlyStats} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="monthLabel" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} />
+                      <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+                      <Tooltip formatter={(value: any) => [formatCurrency(Number(value)), 'Total']} labelStyle={{ color: '#1e293b', fontWeight: 600 }} contentStyle={{ backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px' }} />
+                      <Bar dataKey="total" radius={[4, 4, 0, 0]}>
+                        {monthlyStats.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.total > 500000 ? '#dc2626' : entry.total > 200000 ? '#f59e0b' : '#6366f1'} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {/* Répartition par catégorie (camembert) */}
+              {categoryStats.length > 0 && (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+                  <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
+                    <FileSpreadsheet className="w-4 h-4 text-indigo-500" />
+                    Répartition par catégorie
+                  </h3>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <PieChart>
+                      <Pie data={categoryStats} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={(entry: any) => `${entry.name}: ${formatCurrency(entry.value)}`}>
+                        {categoryStats.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.fill} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value: any) => formatCurrency(Number(value))} contentStyle={{ backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px' }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+
+            {/* Graphiques : statut + tendance (côte à côte) */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Répartition par statut (camembert) */}
+              {statusStats.length > 0 && (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+                  <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-indigo-500" />
+                    Répartition par statut
+                  </h3>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie data={statusStats} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={(entry: any) => `${entry.name}: ${entry.value}`}>
+                        {statusStats.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.fill} />
+                        ))}
+                      </Pie>
+                      <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px' }} />
+                      <Legend wrapperStyle={{ fontSize: '12px' }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {/* Tendance mensuelle (ligne) */}
+              {monthlyStats.length > 1 && (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+                  <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
+                    <TrendingDown className="w-4 h-4 text-indigo-500" />
+                    Tendance des dépenses (ligne)
+                  </h3>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <LineChart data={monthlyStats} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="monthLabel" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} />
+                      <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+                      <Tooltip formatter={(value: any) => [formatCurrency(Number(value)), 'Total']} labelStyle={{ color: '#1e293b', fontWeight: 600 }} contentStyle={{ backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px' }} />
+                      <Line type="monotone" dataKey="total" stroke="#6366f1" strokeWidth={2} dot={{ fill: '#6366f1', r: 4 }} activeDot={{ r: 6 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
 
             {/* Budget summary */}
             {budgets.length > 0 && (

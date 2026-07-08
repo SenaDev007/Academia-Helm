@@ -44,7 +44,26 @@ export class CollectionPrismaController {
     @TenantId() tenantId: string,
     @Body() body: { academicYearId: string },
   ) {
-    return this.collectionService.detectArrears(tenantId, body.academicYearId);
+    // ─── Détecter sur l'année active (carriedArrears) ───
+    const allArrears: any[] = [];
+
+    // 1. Détecter sur l'année passée en paramètre (année active)
+    const activeArrears = await this.collectionService.detectArrears(tenantId, body.academicYearId);
+    allArrears.push(...activeArrears);
+
+    // 2. Détecter sur TOUTES les années NON actives (années antérieures)
+    //    car les arriérés peuvent être sur n'importe quelle année antérieure
+    const inactiveYears = await this.prisma.academicYear.findMany({
+      where: { tenantId, isActive: false },
+      select: { id: true },
+    });
+
+    for (const year of inactiveYears) {
+      const yearArrears = await this.collectionService.detectArrears(tenantId, year.id);
+      allArrears.push(...yearArrears);
+    }
+
+    return allArrears;
   }
 
   @Get('arrears')

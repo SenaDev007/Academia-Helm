@@ -33,90 +33,96 @@ export class CollectionPrismaService {
     const arrears: any[] = [];
 
     // ─── Stratégie : ne détecter que les VRAIS arriérés ───
-    // Un arriéré n'est pas simplement un solde > 0 (qui inclurait tous les élèves
-    // n'ayant pas encore payé leur scolarité). Un vrai arriéré est :
-    //   1. Un solde reporté d'une année antérieure (carriedArrears > 0)
-    //   2. OU un solde > 0 sur une année CLÔTURÉE (isClosed = true)
-    //   3. OU un FeeArrear manuel créé par l'utilisateur
+    // Règle métier (confirmée par l'utilisateur) :
+    //   - Année courante = année avec isActive = true (ex: 2026-2027)
+    //   - Années antérieures = années avec isActive = false (ex: 2024-2025, 2025-2026)
+    //   - Les années antérieures sont considérées comme clôturées
     //
-    // Pour l'année courante (non clôturée), on ne crée PAS d'arriéré automatique
-    // — le solde impayé est géré par le module Recouvrement via les FeeArrear
-    // manuels ou le report d'année.
+    // Un vrai arriéré est :
+    //   1. Un solde reporté d'une année antérieure (carriedArrears > 0 sur l'année active)
+    //   2. OU un solde > 0 sur une année NON active (année antérieure)
+    //
+    // Pour l'année courante (active), on ne crée PAS d'arriéré automatique pour
+    // le solde de l'année — un élève qui n'a pas encore payé sa scolarité 2026-2027
+    // n'a pas d'arriéré, il a juste un solde à payer.
 
-    // Vérifier si l'année est clôturée
+    // Vérifier l'année passée en paramètre
     const academicYear = await this.prisma.academicYear.findFirst({
       where: { id: academicYearId, tenantId },
-      select: { id: true, name: true, isClosed: true, endDate: true },
+      select: { id: true, name: true, isActive: true, isClosed: true, endDate: true },
     });
 
     if (!academicYear) {
       return arrears;
     }
 
-    // ─── Source 1 : élèves avec carriedArrears > 0 (arriérés reportés) ───
+    // ─── Source 1 : élèves avec carriedArrears > 0 sur l'année active ───
     // Ces élèves ont des arriérés d'années antérieures reportés sur l'année courante.
-    const accountsWithCarriedArrears = await this.prisma.studentAccount.findMany({
-      where: {
-        tenantId,
-        academicYearId,
-        carriedArrears: { gt: 0 },
-      },
-      include: {
-        student: { select: { id: true, firstName: true, lastName: true } },
-      },
-    });
-
-    for (const account of accountsWithCarriedArrears) {
-      const carriedArrears = Number(account.carriedArrears ?? 0);
-
-      // Vérifier si un FeeArrear GLOBAL existe déjà pour cet élève/année
-      const existing = await this.prisma.feeArrear.findFirst({
+    if (academicYear.isActive) {
+      const accountsWithCarriedArrears = await this.prisma.studentAccount.findMany({
         where: {
-          studentId: account.studentId,
-          academicYearId,
           tenantId,
-          studentFeeId: null,
-          notes: { contains: 'reporté' },
+          academicYearId,
+          carriedArrears: { gt: 0 },
+        },
+        include: {
+          student: { select: { id: true, firstName: true, lastName: true } },
         },
       });
 
-      const lastPaymentDate = await this.getLastPaymentDate(account.studentId, academicYearId);
-      const arrearsLevel = this.calculateArrearsLevel(carriedArrears, lastPaymentDate);
+      for (const account of accountsWithCarriedArrears) {
+        const carriedArrears = Number(account.carriedArrears ?? 0);
 
-      if (existing) {
-        await this.prisma.feeArrear.update({
-          where: { id: existing.id },
-          data: {
-            totalDue: carriedArrears,
-            totalPaid: 0,
-            balanceDue: carriedArrears,
-            arrearsLevel,
-            lastPaymentDate,
-          },
-        });
-        arrears.push({ ...existing, updated: true });
-      } else {
-        const arrear = await this.prisma.feeArrear.create({
-          data: {
-            tenantId,
-            academicYearId,
+        // Vérifier si un FeeArrear GLOBAL existe déjà pour cet élève/année
+        const existing = await this.prisma.feeArrear.findFirst({
+          where: {
             studentId: account.studentId,
+            academicYearId,
+            tenantId,
             studentFeeId: null,
-            totalDue: carriedArrears,
-            totalPaid: 0,
-            balanceDue: carriedArrears,
-            arrearsLevel,
-            lastPaymentDate,
-            notes: `Arriéré reporté — ${academicYear.name} (détecté automatiquement)`,
+            notes: { contains: 'reporté' },
           },
-          include: { student: true },
         });
-        arrears.push(arrear);
+
+        const lastPaymentDate = await this.getLastPaymentDate(account.studentId, academicYearId);
+        const arrearsLevel = this.calculateArrearsLevel(carriedArrears, lastPaymentDate);
+
+        if (existing) {
+          await this.prisma.feeArrear.update({
+            where: { id: existing.id },
+            data: {
+              totalDue: carriedArrears,
+              totalPaid: 0,
+              balanceDue: carriedArrears,
+              arrearsLevel,
+              lastPaymentDate,
+            },
+          });
+          arrears.push({ ...existing, updated: true });
+        } else {
+          const arrear = await this.prisma.feeArrear.create({
+            data: {
+              tenantId,
+              academicYearId,
+              studentId: account.studentId,
+              studentFeeId: null,
+              totalDue: carriedArrears,
+              totalPaid: 0,
+              balanceDue: carriedArrears,
+              arrearsLevel,
+              lastPaymentDate,
+              notes: `Arriéré reporté — ${academicYear.name} (détecté automatiquement)`,
+            },
+            include: { student: true },
+          });
+          arrears.push(arrear);
+        }
       }
     }
 
-    // ─── Source 2 : si l'année est CLÔTURÉE, tous les soldes > 0 sont des arriérés ───
-    if (academicYear.isClosed) {
+    // ─── Source 2 : si l'année n'est PAS active (année antérieure), ───
+    // tous les soldes > 0 sont des arriérés
+    if (!academicYear.isActive) {
       const accountsWithBalance = await this.prisma.studentAccount.findMany({
         where: {
           tenantId,
@@ -169,7 +175,7 @@ export class CollectionPrismaService {
               balanceDue: balance,
               arrearsLevel,
               lastPaymentDate,
-              notes: `Solde impayé — ${academicYear.name} (année clôturée, détection auto)`,
+              notes: `Solde impayé — ${academicYear.name} (année antérieure, détection auto)`,
             },
             include: { student: true },
           });

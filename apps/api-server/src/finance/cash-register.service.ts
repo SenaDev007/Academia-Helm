@@ -754,4 +754,112 @@ export class CashRegisterService {
       amount: data.amount,
     };
   }
+
+  /**
+   * Statistiques globales pour le tableau de bord Multi-caisses.
+   * Retourne : total encaissé, total dépensé, solde net, par caisse + évolution mensuelle.
+   */
+  async getDashboardStats(tenantId: string, academicYearId?: string) {
+    const registers = await this.prisma.cashRegister.findMany({
+      where: { tenantId, isActive: true },
+      select: {
+        id: true, code: true, name: true,
+        currentBalance: true, openingBalance: true,
+        _count: { select: { transactions: true } },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    // Total encaissements par caisse
+    const txByRegister = await this.prisma.financeTransaction.groupBy({
+      by: ['cashRegisterId'],
+      where: {
+        tenantId,
+        type: 'PAYMENT',
+        ...(academicYearId ? { academicYearId } : {}),
+      },
+      _sum: { amount: true },
+      _count: true,
+    });
+    const txMap = new Map(txByRegister.map(t => [t.cashRegisterId, t]));
+
+    // Total dépenses approuvées par caisse
+    const expensesByRegister = await this.prisma.financeExpense.groupBy({
+      by: ['cashRegisterId'],
+      where: {
+        tenantId,
+        status: 'APPROVED',
+        cashRegisterId: { not: null },
+        ...(academicYearId ? { academicYearId } : {}),
+      },
+      _sum: { amount: true },
+      _count: true,
+    });
+    const expMap = new Map(expensesByRegister.map(e => [e.cashRegisterId, e]));
+
+    // Construire les stats par caisse
+    const byRegister = registers.map(r => {
+      const tx = txMap.get(r.id);
+      const exp = expMap.get(r.id);
+      const totalEncaisse = Number(tx?._sum.amount ?? 0);
+      const totalDepense = Number(exp?._sum.amount ?? 0);
+      return {
+        id: r.id, code: r.code, name: r.name,
+        currentBalance: Number(r.currentBalance ?? 0),
+        totalEncaisse,
+        totalDepense,
+        soldeNet: totalEncaisse - totalDepense,
+        nbTransactions: tx?._count ?? 0,
+        nbDepenses: exp?._count ?? 0,
+      };
+    });
+
+    // Évolution mensuelle (encaissements + dépenses)
+    const allTx = await this.prisma.financeTransaction.findMany({
+      where: { tenantId, type: 'PAYMENT', ...(academicYearId ? { academicYearId } : {}) },
+      select: { amount: true, createdAt: true },
+    });
+    const allExp = await this.prisma.financeExpense.findMany({
+      where: { tenantId, status: 'APPROVED', ...(academicYearId ? { academicYearId } : {}) },
+      select: { amount: true, approvedAt: true, createdAt: true },
+    });
+
+    const byMonth: Record<string, { encaisse: number; depense: number }> = {};
+    for (const t of allTx) {
+      const d = new Date(t.createdAt);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (!byMonth[key]) byMonth[key] = { encaisse: 0, depense: 0 };
+      byMonth[key].encaisse += Number(t.amount ?? 0);
+    }
+    for (const e of allExp) {
+      const d = new Date(e.approvedAt || e.createdAt);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (!byMonth[key]) byMonth[key] = { encaisse: 0, depense: 0 };
+      byMonth[key].depense += Number(e.amount ?? 0);
+    }
+    const monthlyEvolution = Object.entries(byMonth)
+      .map(([month, data]) => ({
+        month,
+        monthLabel: new Date(month + '-01').toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' }),
+        encaisse: data.encaisse,
+        depense: data.depense,
+        net: data.encaisse - data.depense,
+      }))
+      .sort((a, b) => a.month.localeCompare(b.month));
+
+    // Totaux globaux
+    const totalEncaisse = byRegister.reduce((s, r) => s + r.totalEncaisse, 0);
+    const totalDepense = byRegister.reduce((s, r) => s + r.totalDepense, 0);
+    const totalSolde = byRegister.reduce((s, r) => s + r.currentBalance, 0);
+
+    return {
+      totalEncaisse,
+      totalDepense,
+      totalSoldeNet: totalEncaisse - totalDepense,
+      totalSoldeCourant: totalSolde,
+      nbCaisses: registers.length,
+      byRegister,
+      monthlyEvolution,
+    };
+  }
 }

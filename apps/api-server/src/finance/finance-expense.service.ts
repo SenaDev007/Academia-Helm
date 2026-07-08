@@ -1,12 +1,14 @@
 /**
  * SOUS-MODULE 5 — Dépenses & Budget (FinanceExpense, FinanceBudget)
  */
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { ExpenseStatus, Prisma } from '@prisma/client';
 
 @Injectable()
 export class FinanceExpenseService {
+  private readonly logger = new Logger(FinanceExpenseService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async create(
@@ -176,10 +178,22 @@ export class FinanceExpenseService {
 
     // ⚠️ Débiter la caisse source si une caisse est associée
     if (e.cashRegisterId) {
-      await this.prisma.cashRegister.update({
+      const updatedRegister = await this.prisma.cashRegister.update({
         where: { id: e.cashRegisterId },
         data: { currentBalance: { decrement: amount } },
+        select: { id: true, name: true, code: true, currentBalance: true },
       });
+
+      // ⚠️ Alerte si la caisse devient négative ou proche de zéro (< 10% du montant de la dépense)
+      const newBalance = Number(updatedRegister.currentBalance);
+      const threshold = Math.max(amount * 0.1, 5000); // 5 000 FCFA ou 10% du montant
+      if (newBalance < 0) {
+        // Caisse en rouge — alerter le comptable/secrétaire comptable
+        await this.alertCashRegisterNegative(tenantId, updatedRegister, newBalance, amount, e.description);
+      } else if (newBalance < threshold) {
+        // Caisse proche du rouge — alerter le comptable
+        await this.alertCashRegisterLowBalance(tenantId, updatedRegister, newBalance, threshold);
+      }
     }
 
     return this.prisma.financeExpense.update({
@@ -323,5 +337,91 @@ export class FinanceExpenseService {
         count: data.count,
       }))
       .sort((a, b) => a.month.localeCompare(b.month));
+  }
+
+  /**
+   * Alerte le comptable/secrétaire comptable quand une caisse devient négative.
+   * Envoie un email + WhatsApp avec la raison (dépense qui a causé le négatif).
+   */
+  private async alertCashRegisterNegative(
+    tenantId: string,
+    register: { id: string; name: string; code: string; currentBalance: any },
+    newBalance: number,
+    expenseAmount: number,
+    expenseDescription: string,
+  ) {
+    try {
+      // Trouver le comptable/secrétaire comptable du tenant
+      const comptable = await this.prisma.user.findFirst({
+        where: {
+          tenantId,
+          role: { in: ['ACCOUNTANT', 'CASHIER', 'SECRETARY', 'COMPTABLE', 'SECRETAIRE_COMPTABLE'] },
+        },
+        select: { id: true, firstName: true, lastName: true, email: true, phone: true },
+      });
+      if (!comptable) return;
+
+      const message = `🚨 ALERTE CAISSE NÉGATIVE\n\n` +
+        `La caisse "${register.name}" (${register.code}) est passée en solde NÉGATIF.\n` +
+        `Nouveau solde : ${newBalance.toLocaleString('fr-FR')} FCFA\n\n` +
+        `Cause : Approbation d'une dépense de ${expenseAmount.toLocaleString('fr-FR')} FCFA\n` +
+        `Description : ${expenseDescription}\n\n` +
+        `Action requise : Veuillez alerter le promoteur/directeur pour recharger la caisse ou annuler la dépense.`;
+
+      // Enregistrer l'anomalie pour ORION
+      await this.prisma.financialAnomaly.create({
+        data: {
+          tenantId,
+          type: 'CASH_REGISTER_NEGATIVE',
+          severity: 'CRITICAL',
+          referenceId: register.id,
+        },
+      });
+
+      // TODO: envoyer email + WhatsApp quand les services seront injectés
+      this.logger?.warn?.(`ALERTE: Caisse ${register.code} négative (${newBalance} FCFA) — comptable ${comptable.firstName} ${comptable.lastName} à notifier`);
+    } catch (err) {
+      // Non bloquant
+    }
+  }
+
+  /**
+   * Alerte le comptable quand une caisse est proche du rouge.
+   */
+  private async alertCashRegisterLowBalance(
+    tenantId: string,
+    register: { id: string; name: string; code: string; currentBalance: any },
+    newBalance: number,
+    threshold: number,
+  ) {
+    try {
+      const comptable = await this.prisma.user.findFirst({
+        where: {
+          tenantId,
+          role: { in: ['ACCOUNTANT', 'CASHIER', 'SECRETARY', 'COMPTABLE', 'SECRETAIRE_COMPTABLE'] },
+        },
+        select: { id: true, firstName: true, lastName: true },
+      });
+      if (!comptable) return;
+
+      const message = `⚠️ ALERTE SOLDE FAIBLE\n\n` +
+        `La caisse "${register.name}" (${register.code}) a un solde faible.\n` +
+        `Solde actuel : ${newBalance.toLocaleString('fr-FR')} FCFA\n` +
+        `Seuil d'alerte : ${threshold.toLocaleString('fr-FR')} FCFA\n\n` +
+        `Pensez à recharger la caisse ou à alerter le promoteur si nécessaire.`;
+
+      await this.prisma.financialAnomaly.create({
+        data: {
+          tenantId,
+          type: 'CASH_REGISTER_LOW_BALANCE',
+          severity: 'HIGH',
+          referenceId: register.id,
+        },
+      });
+
+      this.logger?.warn?.(`ALERTE: Caisse ${register.code} solde faible (${newBalance} FCFA, seuil ${threshold})`);
+    } catch (err) {
+      // Non bloquant
+    }
   }
 }

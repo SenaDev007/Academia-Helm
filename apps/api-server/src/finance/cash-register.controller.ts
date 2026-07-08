@@ -83,6 +83,18 @@ export class CashRegisterController {
   // GET /transfers sur @Get(':id') avec id="transfers" → "Caisse non trouvée".
 
   /**
+   * GET /finance/cash-registers/dashboard?academicYearId=
+   * Statistiques globales pour le tableau de bord Multi-caisses.
+   */
+  @Get('dashboard')
+  async getDashboardStats(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId?: string,
+  ) {
+    return this.service.getDashboardStats(tenantId, academicYearId);
+  }
+
+  /**
    * GET /finance/cash-registers/transfers?cashRegisterId=&dateFrom=&dateTo=&limit=
    * Historique des transferts inter-caisses d'un tenant.
    * Peut être filtré par caisse (source ou cible) et par période.

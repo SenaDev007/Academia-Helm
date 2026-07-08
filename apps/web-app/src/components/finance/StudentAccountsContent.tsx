@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Eye, Unlock, UserCog, Search, Download, Receipt, Clock, FileSpreadsheet, FileText, Loader2 } from 'lucide-react';
@@ -66,6 +66,60 @@ export default function StudentAccountsContent() {
   const [previewDoc, setPreviewDoc] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [whatsappMenuId, setWhatsappMenuId] = useState<string | null>(null);
+
+  // ─── Splitter redimensionnable entre Comptes élèves (gauche) et Historique (droite) ───
+  // leftPercent = pourcentage de largeur du panneau gauche (20% à 80%)
+  const [leftPercent, setLeftPercent] = useState(50);
+  const [isResizing, setIsResizing] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const splitterRef = useRef<HTMLDivElement>(null);
+
+  // Détecter le breakpoint desktop (lg = 1024px) pour activer le splitter
+  useEffect(() => {
+    const checkDesktop = () => setIsDesktop(window.innerWidth >= 1024);
+    checkDesktop();
+    window.addEventListener('resize', checkDesktop);
+    return () => window.removeEventListener('resize', checkDesktop);
+  }, []);
+
+  // Gestionnaires du splitter (mouse + touch)
+  const startResize = useCallback((clientX: number) => {
+    setIsResizing(true);
+  }, []);
+
+  const onResizeMove = useCallback((clientX: number) => {
+    if (!isResizing || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const delta = clientX - rect.left;
+    const percent = (delta / rect.width) * 100;
+    // Borner entre 20% et 80% pour éviter qu'un tableau devienne inutilisable
+    const clamped = Math.max(20, Math.min(80, percent));
+    setLeftPercent(clamped);
+  }, [isResizing]);
+
+  useEffect(() => {
+    if (!isResizing) return;
+    const handleMouseMove = (e: MouseEvent) => onResizeMove(e.clientX);
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches[0]) onResizeMove(e.touches[0].clientX);
+    };
+    const handleEnd = () => setIsResizing(false);
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleEnd);
+    window.addEventListener('touchmove', handleTouchMove, { passive: true });
+    window.addEventListener('touchend', handleEnd);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleEnd);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleEnd);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing, onResizeMove]);
 
   // L'année effective = filtre utilisateur OU année du contexte
   const effectiveYearId = filterYearId || academicYear?.id || '';
@@ -396,16 +450,22 @@ export default function StudentAccountsContent() {
           </div>
         </div>
 
-        {/* Layout 2 tableaux côte à côte : Comptes (gauche) + Historique paiements (droite) */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-
+        {/* Layout 2 tableaux côte à c avec splitter redimensionnable */}
+        <div
+          ref={containerRef}
+          className="flex w-full gap-4 lg:gap-0 flex-col lg:flex-row"
+          style={{ minHeight: '400px' }}
+        >
           {/* TABLEAU GAUCHE — Comptes élèves (cliquable pour sélectionner) */}
-          <div>
+          <div
+            className="flex flex-col min-w-0"
+            style={{ width: isDesktop ? `calc(${leftPercent}% - 4px)` : '100%' }}
+          >
             <h3 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
               <UserCog className="w-4 h-4 text-slate-500" />
               Comptes élèves
             </h3>
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-auto" style={{ maxHeight: '70vh' }}>
               <Table>
                 <TableHeader>
                   <TableRow className="bg-gray-50">
@@ -509,9 +569,14 @@ export default function StudentAccountsContent() {
                               )}
                             </div>
                           </TableCell>
-                          {/* Total dû — avec détail par frais */}
+                          {/* Total dû — INCLUANT les arriérés (FIFO) */}
                           <TableCell className="text-right">
                             <div className="font-semibold text-red-700">{formatCurrency(totalDue)}</div>
+                            {totalArrears > 0 && (
+                              <div className="text-[10px] text-amber-600 mt-0.5" title="Total dû incluant les arriérés des années antérieures (FIFO)">
+                                dont arriérés : {formatCurrency(totalArrears)}
+                              </div>
+                            )}
                             <div className="mt-1 space-y-0.5 min-w-[140px]">
                               {inscription.due > 0 && <FeeDetail label="Inscription" {...inscription} />}
                               {hasReinscription && <FeeDetail label="Réinscription" {...reinscription} />}
@@ -620,8 +685,37 @@ export default function StudentAccountsContent() {
             </div>
           </div>
 
+          {/* SPLITTER — barre de redimensionnement entre les 2 tableaux (visible desktop uniquement) */}
+          <div
+            ref={splitterRef}
+            className="hidden lg:flex flex-col items-center justify-center w-2 cursor-col-resize group relative flex-shrink-0"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              startResize(e.clientX);
+            }}
+            onTouchStart={(e) => {
+              if (e.touches[0]) startResize(e.touches[0].clientX);
+            }}
+            title="Glissez pour redimensionner"
+            style={{ touchAction: 'none' }}
+          >
+            {/* Zone de clic élargie (invisible) */}
+            <div className="absolute inset-y-0 -left-1 -right-1" />
+            {/* Ligne visuelle */}
+            <div className={`w-0.5 h-full transition-colors ${isResizing ? 'bg-indigo-500' : 'bg-slate-200 group-hover:bg-indigo-400'}`} />
+            {/* Poignée centrale avec indicateurs */}
+            <div className={`absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 flex flex-col items-center gap-0.5 rounded-md px-1 py-2 transition-all ${isResizing ? 'bg-indigo-500' : 'bg-slate-100 group-hover:bg-indigo-50'}`}>
+              <div className={`w-1 h-1 rounded-full ${isResizing ? 'bg-white' : 'bg-slate-400 group-hover:bg-indigo-500'}`} />
+              <div className={`w-1 h-1 rounded-full ${isResizing ? 'bg-white' : 'bg-slate-400 group-hover:bg-indigo-500'}`} />
+              <div className={`w-1 h-1 rounded-full ${isResizing ? 'bg-white' : 'bg-slate-400 group-hover:bg-indigo-500'}`} />
+            </div>
+          </div>
+
           {/* TABLEAU DROIT — Historique des encaissements de l'élève sélectionné */}
-          <div>
+          <div
+            className="flex flex-col min-w-0"
+            style={{ width: isDesktop ? `calc(${100 - leftPercent}% - 4px)` : '100%' }}
+          >
             <h3 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
               <Receipt className="w-4 h-4 text-slate-500" />
               Historique des encaissements
@@ -633,7 +727,7 @@ export default function StudentAccountsContent() {
                 </span>
               )}
             </h3>
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-auto" style={{ maxHeight: '70vh' }}>
               {!selectedAccountId ? (
                 <div className="text-center text-gray-500 py-16">
                   <Receipt className="w-10 h-10 text-slate-300 mx-auto mb-3" />
@@ -833,7 +927,15 @@ export default function StudentAccountsContent() {
               {detailAccount.student ? `${detailAccount.student.lastName} ${detailAccount.student.firstName}` : 'Détail compte'}
             </h3>
             <div className="grid grid-cols-2 gap-4 mb-4">
-              <div><span className="text-gray-600">Total dû :</span> {formatCurrency(detailAccount.totalDue)}</div>
+              <div>
+                <span className="text-gray-600">Total dû :</span>{' '}
+                <span className="font-semibold text-red-700">{formatCurrency(detailAccount.totalDue)}</span>
+                {Number(detailAccount.actualArrears ?? 0) > 0 && (
+                  <div className="text-[10px] text-amber-600 mt-0.5">
+                    dont arriérés : {formatCurrency(Number(detailAccount.actualArrears ?? 0))}
+                  </div>
+                )}
+              </div>
               <div><span className="text-gray-600">Total payé :</span> {formatCurrency(detailAccount.totalPaid)}</div>
               <div><span className="text-gray-600">Solde :</span> {formatCurrency(detailAccount.balance)}</div>
               <div><span className="text-gray-600">Statut :</span> <Badge className={STATUS_COLORS[detailAccount.status]}>{detailAccount.status}</Badge></div>

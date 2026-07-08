@@ -524,16 +524,29 @@ export class StudentAccountService {
       arrearsByStudent.set(arrear.studentId, existing);
     }
 
-    // Attacher les infos d'arriérés à chaque compte
+    // Attacher les infos d'arriérés à chaque compte.
+    // ⚠️ IMPORTANT : Le `totalDue` et `balance` affichés doivent INCLURE les arriérés
+    // (FIFO) pour refléter la vraie dette de l'élève envers l'établissement.
+    // On conserve aussi `baseTotalDue` / `baseBalance` (sans arriérés) pour référence.
     return accounts.map((account) => {
       const arrearData = arrearsByStudent.get(account.studentId);
       const actualArrears = arrearData?.total ?? 0;
+      const baseTotalDue = Number(account.totalDue ?? 0);
+      const baseBalance = Number(account.balance ?? 0);
       return {
         ...account,
+        // Montants "de base" (sans arriérés) — pour info / debug
+        baseTotalDue,
+        baseBalance,
         // actualArrears : total des FeeArrear ouverts (toutes années confondues)
         actualArrears,
         // feeArrears : détails des arriérés (pour le modal de détail)
         feeArrears: arrearData?.items ?? [],
+        // ⚠️ Surcharge : totalDue et balance INCLUENT maintenant les arriérés
+        // (compatibilité avec le FIFO — ce sont ces montants qui seront déduits
+        // au fur et à mesure des paiements)
+        totalDue: baseTotalDue + actualArrears,
+        balance: baseBalance + actualArrears,
       };
     });
   }
@@ -591,7 +604,20 @@ export class StudentAccountService {
     }));
     const actualArrears = feeArrears.reduce((sum, a) => sum + a.balanceDue, 0);
 
-    return { ...account, overrides, feeArrears, actualArrears };
+    // ⚠️ Surcharge : totalDue et balance INCLUENT les arriérés (FIFO)
+    const baseTotalDue = Number(account.totalDue ?? 0);
+    const baseBalance = Number(account.balance ?? 0);
+
+    return {
+      ...account,
+      overrides,
+      feeArrears,
+      actualArrears,
+      baseTotalDue,
+      baseBalance,
+      totalDue: baseTotalDue + actualArrears,
+      balance: baseBalance + actualArrears,
+    };
   }
 
   /**

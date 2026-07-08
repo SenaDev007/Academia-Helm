@@ -39,6 +39,7 @@ import { formatCurrency } from '@/lib/utils';
 import { exportExpensesToExcel } from '@/lib/exports/excel-exports';
 import { expensesFilename } from '@/lib/exports/filename-helpers';
 import {
+import { loadPdfLibs } from '@/lib/exports/pdf-loader';
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from 'recharts';
 
@@ -244,7 +245,7 @@ export default function ExpensesPage() {
     e.preventDefault();
     if (!academicYear?.id || !budgetForm.categoryId || !budgetForm.allocatedAmount) return;
     try {
-      await fetch('/api/finance/expenses-v2/budgets', {
+      const res = await fetch('/api/finance/expenses-v2/budgets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -254,10 +255,16 @@ export default function ExpensesPage() {
           allocatedAmount: Number(budgetForm.allocatedAmount),
         }),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.message || err?.error || `Erreur HTTP ${res.status}`);
+      }
+      toast({ title: '✅ Budget enregistré', description: 'Le budget a été défini pour cette catégorie.' });
       setModalBudget(false);
       setBudgetForm({ categoryId: '', allocatedAmount: '' });
       loadBudgets();
-    } catch (error) {
+    } catch (error: any) {
+      toast({ title: 'Erreur', description: error?.message || 'Erreur lors de l\'enregistrement du budget', variant: 'destructive' });
       console.error(error);
     }
   };
@@ -320,10 +327,7 @@ export default function ExpensesPage() {
   const handleExportPdf = async () => {
     setExporting('pdf');
     try {
-      const jsPDFMod = await import('jspdf');
-      const autoTableMod = await import('jspdf-autotable');
-      const jsPDF = jsPDFMod.default || jsPDFMod.jsPDF;
-      const autoTable = autoTableMod.default;
+      const { jsPDF, autoTable } = await loadPdfLibs();
       const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
       const pageWidth = doc.internal.pageSize.getWidth();
 
@@ -403,6 +407,118 @@ export default function ExpensesPage() {
     } finally {
       setExporting(null);
     }
+  };
+
+  // ─── Export Budget Excel ───
+  const handleExportBudgetExcel = async () => {
+    try {
+      const XLSX = await import('xlsx');
+      const data: any[][] = [
+        ['', tenant?.name || 'Établissement', ''],
+        ['', 'Budget par catégorie', ''],
+        [academicYear?.name ? `Année scolaire : ${academicYear.name}` : '', '', ''],
+        ['', '', ''],
+        ['Catégorie', 'Budget alloué', 'Dépensé', 'Restant', '% utilisé', 'Statut'],
+      ];
+      budgets.forEach((b: any) => {
+        const pct = b.percentUsed ?? 0;
+        const statut = pct >= 100 ? 'Dépassé' : pct >= 85 ? 'Critique' : pct >= 60 ? 'Attention' : 'Sous contrôle';
+        data.push([
+          b.category?.name ?? b.categoryId,
+          Number(b.allocatedAmount) || 0,
+          Number(b.spent ?? 0),
+          Number(b.remaining ?? 0),
+          pct,
+          statut,
+        ]);
+      });
+      data.push(['']);
+      data.push([
+        'TOTAL',
+        budgets.reduce((s, b) => s + (Number(b.allocatedAmount) || 0), 0),
+        budgets.reduce((s, b) => s + (Number(b.spent) || 0), 0),
+        budgets.reduce((s, b) => s + (Number(b.remaining) || 0), 0),
+        '', '',
+      ]);
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      ws['!cols'] = [{ wch: 24 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 14 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Budget');
+      XLSX.writeFile(wb, `budget-depenses-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (e: any) {
+      console.error(e);
+    }
+  };
+
+  // ─── Export Budget PDF ───
+  const handleExportBudgetPdf = async () => {
+    setExporting('pdf');
+    try {
+      const { jsPDF, autoTable } = await loadPdfLibs();
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+
+      // En-tête école
+      doc.setFont('times', 'bold');
+      doc.setFontSize(16);
+      doc.setTextColor(13, 31, 110);
+      doc.text(tenant?.name || 'Établissement', pageWidth / 2, 18, { align: 'center' });
+      doc.setFontSize(13);
+      doc.text('Budget par catégorie', pageWidth / 2, 26, { align: 'center' });
+      doc.setFont('times', 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(100, 100, 100);
+      if (academicYear?.name) {
+        doc.text(`Année scolaire : ${academicYear.name}`, pageWidth / 2, 32, { align: 'center' });
+      }
+      doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR')}`, pageWidth / 2, 37, { align: 'center' });
+
+      const tableData = budgets.map((b: any) => {
+        const pct = b.percentUsed ?? 0;
+        const statut = pct >= 100 ? 'Dépassé' : pct >= 85 ? 'Critique' : pct >= 60 ? 'Attention' : 'Sous contrôle';
+        return [
+          b.category?.name ?? '—',
+          (Number(b.allocatedAmount) || 0).toLocaleString('fr-FR'),
+          (Number(b.spent ?? 0)).toLocaleString('fr-FR'),
+          (Number(b.remaining ?? 0)).toLocaleString('fr-FR'),
+          `${pct}%`,
+          statut,
+        ];
+      });
+      const totalAllocated = budgets.reduce((s, b) => s + (Number(b.allocatedAmount) || 0), 0);
+      const totalSpent = budgets.reduce((s, b) => s + (Number(b.spent) || 0), 0);
+      const totalRemaining = budgets.reduce((s, b) => s + (Number(b.remaining) || 0), 0);
+      tableData.push(['TOTAL', totalAllocated.toLocaleString('fr-FR'), totalSpent.toLocaleString('fr-FR'), totalRemaining.toLocaleString('fr-FR'), '', '']);
+
+      autoTable(doc, {
+        head: [['Catégorie', 'Budget alloué (FCFA)', 'Dépensé (FCFA)', 'Restant (FCFA)', '% utilisé', 'Statut']],
+        body: tableData,
+        startY: 42,
+        theme: 'grid',
+        headStyles: { fillColor: [13, 31, 110], textColor: 255, fontStyle: 'bold', fontSize: 10 },
+        bodyStyles: { fontSize: 9 },
+        columnStyles: {
+          1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'center' }, 5: { halign: 'center' },
+        },
+        didParseCell: (data: any) => {
+          if (data.row.index === tableData.length - 1 && data.section === 'body') {
+            data.cell.styles.fontStyle = 'bold';
+            data.cell.styles.fillColor = [254, 243, 199];
+            data.cell.styles.textColor = [146, 64, 14];
+          }
+          // Statut colors
+          if (data.section === 'body' && data.column.index === 5 && data.row.index < tableData.length - 1) {
+            const s = data.cell.raw;
+            const colors: Record<string, [number, number, number]> = {
+              'Sous contrôle': [22, 163, 74], 'Attention': [217, 119, 6],
+              'Critique': [234, 88, 12], 'Dépassé': [220, 38, 38],
+            };
+            if (colors[s]) { data.cell.styles.textColor = colors[s]; data.cell.styles.fontStyle = 'bold'; }
+          }
+        },
+      });
+      doc.save(`budget-depenses-${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (e: any) { console.error(e); } finally { setExporting(null); }
   };
 
   const getStatusBadge = (status: string) => {
@@ -757,10 +873,18 @@ export default function ExpensesPage() {
                   {' · '}
                   Total alloué : <span className="font-semibold text-indigo-700">{formatCurrency(budgets.reduce((s, b) => s + (Number(b.allocatedAmount) || 0), 0))}</span>
                 </div>
-                <Button size="sm" onClick={() => setModalBudget(true)}>
-                  <Plus className="w-4 h-4 mr-1.5" />
-                  Définir un budget
-                </Button>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={handleExportBudgetExcel} disabled={budgets.length === 0} className="border-emerald-300 text-emerald-700 hover:bg-emerald-50">
+                    <FileSpreadsheet className="w-4 h-4 mr-1.5" /> Excel
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleExportBudgetPdf} disabled={budgets.length === 0} className="border-rose-300 text-rose-700 hover:bg-rose-50">
+                    <FileText className="w-4 h-4 mr-1.5" /> PDF
+                  </Button>
+                  <Button size="sm" onClick={() => setModalBudget(true)}>
+                    <Plus className="w-4 h-4 mr-1.5" />
+                    Définir un budget
+                  </Button>
+                </div>
               </div>
             }
           >

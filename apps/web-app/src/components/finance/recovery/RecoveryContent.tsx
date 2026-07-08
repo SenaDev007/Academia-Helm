@@ -49,6 +49,7 @@ import { formatCurrency } from '@/lib/utils';
 import { WhatsAppIcon, GmailIcon, SmsIcon } from '../OfficialIcons';
 import { exportArrearsToPdf } from '@/lib/exports/finance-exports';
 import { exportArrearsToExcel } from '@/lib/exports/excel-exports';
+import { loadPdfLibs } from '@/lib/exports/pdf-loader';
 
 type TabId = 'dashboard' | 'arrears' | 'reminders' | 'promises' | 'actions' | 'cases' | 'settings';
 
@@ -872,7 +873,7 @@ export default function RecoveryContent() {
             arrears={arrears}
             schoolInfo={schoolInfo}
           />
-        ) : (
+        ) : activeTab === 'cases' ? (
           <CasesTab cases={cases} onViewCase={(c) => setCaseDetailModal(c)} />
         ) : activeTab === 'settings' ? (
           <SettingsTab />
@@ -2500,10 +2501,7 @@ function PromisesTab({
   const handleExportPdf = async () => {
     setExporting('pdf');
     try {
-      const jsPDFMod = await import('jspdf');
-      const autoTableMod = await import('jspdf-autotable');
-      const jsPDF = jsPDFMod.default || jsPDFMod.jsPDF;
-      const autoTable = autoTableMod.default;
+      const { jsPDF, autoTable } = await loadPdfLibs();
       const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
       const pageWidth = doc.internal.pageSize.getWidth();
 
@@ -2859,10 +2857,7 @@ function ActionsTab({
   const handleExportPdf = async () => {
     setExporting('pdf');
     try {
-      const jsPDFMod = await import('jspdf');
-      const autoTableMod = await import('jspdf-autotable');
-      const jsPDF = jsPDFMod.default || jsPDFMod.jsPDF;
-      const autoTable = autoTableMod.default;
+      const { jsPDF, autoTable } = await loadPdfLibs();
       const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
       const pageWidth = doc.internal.pageSize.getWidth();
 
@@ -3212,10 +3207,7 @@ function CasesTab({
   const handleExportPdf = async () => {
     setExporting('pdf');
     try {
-      const jsPDFMod = await import('jspdf');
-      const autoTableMod = await import('jspdf-autotable');
-      const jsPDF = jsPDFMod.default || jsPDFMod.jsPDF;
-      const autoTable = autoTableMod.default;
+      const { jsPDF, autoTable } = await loadPdfLibs();
       const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
       const pageWidth = doc.internal.pageSize.getWidth();
 
@@ -3690,7 +3682,7 @@ function PromiseModal({
   const [users, setUsers] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch('/api/users?role=ACCOUNTANT,DIRECTOR,ADMIN,CASHIER,SUPER_DIRECTOR', { credentials: 'include' })
+    fetch('/api/settings/users', { credentials: 'include' })
       .then((r) => r.json())
       .then((d) => {
         const list = Array.isArray(d) ? d : (d?.data ?? []);
@@ -3741,16 +3733,27 @@ function PromiseModal({
           </div>
           <div>
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Créé par</Label>
-            <Select value={createdBy} onValueChange={setCreatedBy}>
-              <SelectTrigger><SelectValue placeholder="Sélectionner…" /></SelectTrigger>
-              <SelectContent>
+            {users.length > 0 ? (
+              <select
+                value={createdBy}
+                onChange={(e) => setCreatedBy(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-emerald-500 bg-white"
+              >
+                <option value="">— Sélectionner —</option>
                 {users.map((u) => (
-                  <SelectItem key={u.id} value={u.id}>
+                  <option key={u.id} value={u.id}>
                     {u.firstName} {u.lastName}{u.role ? ` (${u.role})` : ''}
-                  </SelectItem>
+                  </option>
                 ))}
-              </SelectContent>
-            </Select>
+              </select>
+            ) : (
+              <Input
+                type="text"
+                value={createdBy}
+                onChange={(e) => setCreatedBy(e.target.value)}
+                placeholder="Saisir le nom de la personne…"
+              />
+            )}
           </div>
           <div>
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Notes (optionnel)</Label>
@@ -3794,7 +3797,7 @@ function ActionModal({
 
   // Charger la liste des utilisateurs (caissiers, comptables, directeurs)
   useEffect(() => {
-    fetch('/api/users?role=ACCOUNTANT,DIRECTOR,ADMIN,CASHIER,SUPER_DIRECTOR', { credentials: 'include' })
+    fetch('/api/settings/users', { credentials: 'include' })
       .then((r) => r.json())
       .then((d) => {
         const list = Array.isArray(d) ? d : (d?.data ?? []);
@@ -3834,16 +3837,27 @@ function ActionModal({
           </div>
           <div>
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Effectué par</Label>
-            <Select value={performedBy} onValueChange={setPerformedBy}>
-              <SelectTrigger><SelectValue placeholder="Sélectionner…" /></SelectTrigger>
-              <SelectContent>
+            {users.length > 0 ? (
+              <select
+                value={performedBy}
+                onChange={(e) => setPerformedBy(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500 bg-white"
+              >
+                <option value="">— Sélectionner —</option>
                 {users.map((u) => (
-                  <SelectItem key={u.id} value={u.id}>
+                  <option key={u.id} value={u.id}>
                     {u.firstName} {u.lastName}{u.role ? ` (${u.role})` : ''}
-                  </SelectItem>
+                  </option>
                 ))}
-              </SelectContent>
-            </Select>
+              </select>
+            ) : (
+              <Input
+                type="text"
+                value={performedBy}
+                onChange={(e) => setPerformedBy(e.target.value)}
+                placeholder="Saisir le nom de la personne…"
+              />
+            )}
           </div>
           <div>
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Description / Notes</Label>

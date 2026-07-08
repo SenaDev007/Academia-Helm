@@ -28,9 +28,9 @@
  * ============================================================================
  */
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
-import { PrismaService } from '../database/prisma.service';
-import { StudentsLifecycleService } from './services/students-lifecycle.service';
-import { StudentAccountService } from '../finance/student-account.service';
+import { PrismaService } from '../../database/prisma.service';
+import { StudentsLifecycleService } from './students-lifecycle.service';
+import { StudentAccountService } from '../../finance/student-account.service';
 import * as ExcelJS from 'exceljs';
 import { Response } from 'express';
 

@@ -189,6 +189,19 @@ export class CashRegisterService {
             },
           },
         },
+        // Dépenses approuvées imputées à cette caisse
+        expenseDebits: {
+          where: { status: 'APPROVED' },
+          orderBy: { approvedAt: 'desc' },
+          take: 50,
+          select: {
+            id: true,
+            amount: true,
+            description: true,
+            approvedAt: true,
+            category: { select: { id: true, name: true } },
+          },
+        },
         _count: { select: { transactions: true } },
       },
     });

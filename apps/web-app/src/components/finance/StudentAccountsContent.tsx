@@ -212,11 +212,18 @@ export default function StudentAccountsContent() {
 
   // Filtrage frontend par recherche (nom, prénom, matricule)
   const filteredAccounts = useMemo(() => {
-    if (!searchQuery.trim()) return accounts;
-    const q = searchQuery.toLowerCase().trim();
-    return accounts.filter((a) => {
-      const name = `${a.student?.lastName || ''} ${a.student?.firstName || ''} ${a.student?.studentCode || ''}`.toLowerCase();
-      return name.includes(q);
+    // D'abord filtrer par recherche
+    const base = !searchQuery.trim()
+      ? accounts
+      : accounts.filter((a) => {
+          const name = `${a.student?.lastName || ''} ${a.student?.firstName || ''} ${a.student?.studentCode || ''}`.toLowerCase();
+          return name.includes(searchQuery.toLowerCase().trim());
+        });
+    // Puis trier par ordre alphabétique (lastName, puis firstName)
+    return [...base].sort((a, b) => {
+      const nameA = `${a.student?.lastName || ''} ${a.student?.firstName || ''}`.toLowerCase();
+      const nameB = `${b.student?.lastName || ''} ${b.student?.firstName || ''}`.toLowerCase();
+      return nameA.localeCompare(nameB, 'fr');
     });
   }, [accounts, searchQuery]);
 

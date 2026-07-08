@@ -174,7 +174,12 @@ export default function FeeOverridesContent() {
       });
     }
 
-    return result;
+    // Tri par ordre alphabétique (lastName, puis firstName)
+    return [...result].sort((a, b) => {
+      const nameA = `${a.student?.lastName || ''} ${a.student?.firstName || ''}`.toLowerCase();
+      const nameB = `${b.student?.lastName || ''} ${b.student?.firstName || ''}`.toLowerCase();
+      return nameA.localeCompare(nameB, 'fr');
+    });
   }, [overrides, filterLevelId, filterClassId, filterFeeType, searchQuery, eduToSchoolLevelMap]);
 
   const handleDelete = async (id: string, studentName: string) => {

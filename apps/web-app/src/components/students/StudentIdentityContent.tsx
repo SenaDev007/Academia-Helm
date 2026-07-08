@@ -133,12 +133,12 @@ export default function StudentIdentityContent() {
     return enr?.class?.id || '';
   };
 
-  // Filtrer par recherche + niveau + classe
+  // Filtrer par recherche + niveau + classe, puis trier par ordre alphabétique
   const filteredStudents = students.filter(s => {
     // Filtre recherche
     if (searchTerm.trim()) {
       const q = searchTerm.toLowerCase();
-      if (!`${s.firstName} ${s.lastName}`.toLowerCase().includes(q) &&
+      if (!`${s.lastName} ${s.firstName}`.toLowerCase().includes(q) &&
           !(s.matricule || '').toLowerCase().includes(q) &&
           !(s.npi || '').toLowerCase().includes(q)) return false;
     }
@@ -152,6 +152,11 @@ export default function StudentIdentityContent() {
       if (getStudentClassId(s) !== filterClass) return false;
     }
     return true;
+  }).sort((a, b) => {
+    // Tri alphabétique par lastName puis firstName
+    const nameA = `${a.lastName} ${a.firstName}`.toLowerCase();
+    const nameB = `${b.lastName} ${b.firstName}`.toLowerCase();
+    return nameA.localeCompare(nameB, 'fr');
   });
 
   // Grouper par niveau puis par classe

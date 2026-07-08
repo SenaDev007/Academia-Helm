@@ -757,9 +757,9 @@ export default function AdmissionsContent() {
     // Tri selon le mode sélectionné
     switch (sortBy) {
       case 'name-asc':
-        return `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`, 'fr');
+        return `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`, 'fr');
       case 'name-desc':
-        return `${b.firstName} ${b.lastName}`.localeCompare(`${a.firstName} ${a.lastName}`, 'fr');
+        return `${b.lastName} ${b.firstName}`.localeCompare(`${a.lastName} ${a.firstName}`, 'fr');
       case 'date-recent': {
         const dA = new Date(a.submittedAt || a.createdAt || 0).getTime();
         const dB = new Date(b.submittedAt || b.createdAt || 0).getTime();

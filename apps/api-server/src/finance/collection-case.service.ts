@@ -389,7 +389,11 @@ export class CollectionCaseService {
         },
         academicYear: { select: { id: true, name: true } },
       },
-      orderBy: { balanceDue: 'desc' },
+      orderBy: [
+        { student: { lastName: 'asc' } },
+        { student: { firstName: 'asc' } },
+        { balanceDue: 'desc' },
+      ],
     });
 
     // Grouper par (studentId, academicYearId) pour construire des dossiers

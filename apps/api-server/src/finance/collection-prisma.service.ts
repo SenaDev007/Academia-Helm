@@ -390,7 +390,8 @@ export class CollectionPrismaService {
         },
       },
       orderBy: [
-        { arrearsLevel: 'desc' },
+        { student: { lastName: 'asc' } },
+        { student: { firstName: 'asc' } },
         { balanceDue: 'desc' },
       ],
       take: 500,
@@ -614,7 +615,11 @@ export class CollectionPrismaService {
         },
         creator: { select: { id: true, firstName: true, lastName: true } },
       },
-      orderBy: { promisedDate: 'asc' },
+      orderBy: [
+        { feeArrear: { student: { lastName: 'asc' } } },
+        { feeArrear: { student: { firstName: 'asc' } } },
+        { promisedDate: 'asc' },
+      ],
     });
   }
 
@@ -680,7 +685,11 @@ export class CollectionPrismaService {
         },
         performer: { select: { id: true, firstName: true, lastName: true } },
       },
-      orderBy: { performedAt: 'desc' },
+      orderBy: [
+        { feeArrear: { student: { lastName: 'asc' } } },
+        { feeArrear: { student: { firstName: 'asc' } } },
+        { performedAt: 'desc' },
+      ],
     });
   }
 
@@ -713,7 +722,11 @@ export class CollectionPrismaService {
           },
         },
       },
-      orderBy: { sentAt: 'desc' },
+      orderBy: [
+        { feeArrear: { student: { lastName: 'asc' } } },
+        { feeArrear: { student: { firstName: 'asc' } } },
+        { sentAt: 'desc' },
+      ],
     });
   }
 

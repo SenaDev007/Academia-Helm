@@ -414,9 +414,60 @@ export class AdmissionService {
         }
       }
 
+      // ─── Auto-détection isNewStudent (sécurité) ───
+      // Si admission.isNewStudent n'est pas explicitement défini (undefined),
+      // on vérifie si un élève avec le même prénom + nom + date de naissance
+      // existe déjà dans ce tenant. Si oui → c'est un ancien élève (REPEAT).
+      // Si non → c'est un nouvel élève (NEW).
+      // Cette auto-détection est une sécurité : l'admin peut toujours forcer
+      // le choix via le formulaire d'admission (isNewStudent explicite).
+      let effectiveIsNewStudent = admission.isNewStudent;
+      if (effectiveIsNewStudent === undefined || effectiveIsNewStudent === null) {
+        const existingStudent = await this.prisma.student.findFirst({
+          where: {
+            tenantId,
+            firstName: { equals: admission.firstName, mode: 'insensitive' },
+            lastName: { equals: admission.lastName, mode: 'insensitive' },
+            ...(admission.dateOfBirth ? { dateOfBirth: admission.dateOfBirth } : {}),
+          },
+          select: { id: true, firstName: true, lastName: true },
+        });
+        if (existingStudent) {
+          effectiveIsNewStudent = false;
+          this.logger.log(
+            `convertToStudent: auto-détection — élève existant trouvé ` +
+            `(${existingStudent.firstName} ${existingStudent.lastName}, id=${existingStudent.id}) ` +
+            `→ isNewStudent=false (REINSCRIPTION)`,
+          );
+        } else {
+          effectiveIsNewStudent = true;
+          this.logger.log(
+            `convertToStudent: auto-détection — aucun élève existant trouvé ` +
+            `→ isNewStudent=true (INSCRIPTION)`,
+          );
+        }
+
+        // Persister la valeur détectée sur l'admission pour audit
+        await this.prisma.admission.update({
+          where: { id: admission.id },
+          data: { isNewStudent: effectiveIsNewStudent },
+        }).catch((e) => {
+          this.logger.warn(`convertToStudent: impossible de persister isNewStudent auto-détecté: ${e.message}`);
+        });
+      }
+
+      const effectiveEnrollmentType = effectiveIsNewStudent === false ? 'REPEAT' : 'NEW';
+
       // 1. Pré-inscription (crée Student + StudentEnrollment PRE_REGISTERED)
       //    ⚠️ previousArrears n'est plus saisi à l'admission — il est géré
       //    dans le module Finance > Recouvrement (saisie manuelle d'arriérés).
+      //
+      //    ⚠️ Phase 2 (2026-07) : propagation de admission.isNewStudent →
+      //    enrollmentType pour appliquer les bons frais :
+      //      - isNewStudent = true  → enrollmentType = 'NEW'  → frais d'INSCRIPTION
+      //      - isNewStudent = false → enrollmentType = 'REPEAT' → frais de REINSCRIPTION
+      //    Voir student-account.service.ts (filterFeesByEnrollmentType) pour
+      //    la logique de filtrage des FeeType INSCRIPTION vs REINSCRIPTION.
       const student = await this.lifecycleService.preRegister(tenantId, {
         academicYearId: admission.academicYearId,
         schoolLevelId: studentSchoolLevelId,  // ← UUID de school_levels (pas education_levels)
@@ -427,9 +478,14 @@ export class AdmissionService {
         placeOfBirth: admission.birthPlace ?? undefined,
         nationality: admission.nationality ?? undefined,
         classId: validClassId ?? undefined,  // ← null si classe supprimée
+        // Propager isNewStudent → enrollmentType
+        enrollmentType: effectiveEnrollmentType,
       }, userId);
 
-      this.logger.log(`convertToStudent: preRegister OK, student.id=${student.id}`);
+      this.logger.log(
+        `convertToStudent: preRegister OK, student.id=${student.id}, ` +
+        `isNewStudent=${effectiveIsNewStudent}, enrollmentType=${effectiveEnrollmentType}`,
+      );
 
     // 2. Résoudre le classId pour admit()
       //    admit() requires a classId (non-null). Si l'admission n'a pas de

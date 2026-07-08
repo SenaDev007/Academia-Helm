@@ -9,12 +9,14 @@
  * ============================================================================
  */
 
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AcademicYearCalculatorService } from './academic-year-calculator.service';
 
 @Injectable()
 export class AcademicYearsPrismaService {
+  private readonly logger = new Logger(AcademicYearsPrismaService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly calculator: AcademicYearCalculatorService,
@@ -294,6 +296,10 @@ export class AcademicYearsPrismaService {
     const nextYear = await this.generateNextAcademicYear(tenantId);
     const closedAt = new Date();
 
+    // Variable pour stocker les IDs des élèves promus (remplie dans la transaction,
+    // utilisée après pour créer les StudentAccounts).
+    let promotedStudentIds: Array<{ studentId: string; schoolLevelId: string; classId: string | null }> = [];
+
     await this.prisma.$transaction(async (tx) => {
       // 1. Marquer l'année comme clôturée
       await tx.academicYear.update({
@@ -364,8 +370,41 @@ export class AcademicYearsPrismaService {
             },
           });
         }
+
+        // Stocker les IDs des élèves promus pour créer leurs StudentAccounts
+        // après la transaction (StudentAccountService ne peut pas être injecté
+        // ici car il dépend de PrismaService → risque de dépendance circulaire).
+        promotedStudentIds = activeEnrollments.map((e) => ({
+          studentId: e.studentId,
+          schoolLevelId: e.schoolLevelId,
+          classId: e.classId,
+        }));
       }
     });
+
+    // 5. Créer les StudentAccounts pour les élèves promus (en dehors de la transaction)
+    //    Ceci assure que les frais de REINSCRIPTION sont visibles immédiatement
+    //    dans le module Finance pour la nouvelle année scolaire.
+    if (promotedStudentIds.length > 0 && nextYear) {
+      this.logger.log(
+        `closeAndPromoteYear: création des StudentAccounts pour ${promotedStudentIds.length} ` +
+        `élève(s) promu(s) vers l'année ${nextYear.label}...`,
+      );
+      // Import dynamique pour éviter la dépendance circulaire
+      const { StudentAccountService } = await import('../finance/student-account.service.js');
+      const studentAccountService = new StudentAccountService(this.prisma);
+      for (const { studentId } of promotedStudentIds) {
+        try {
+          await studentAccountService.getOrCreate(studentId, tenantId, nextYear.id, 'PROMOTION');
+        } catch (e) {
+          this.logger.warn(
+            `closeAndPromoteYear: impossible de créer le StudentAccount pour ` +
+            `l'élève ${studentId}: ${e.message}`,
+          );
+        }
+      }
+      this.logger.log(`closeAndPromoteYear: StudentAccounts créés avec succès.`);
+    }
 
     return {
       previousYearId: year.id,

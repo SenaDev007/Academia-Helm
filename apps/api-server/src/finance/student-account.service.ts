@@ -42,6 +42,34 @@ export class StudentAccountService {
   }
 
   /**
+   * ⚠️ RÈGLE MÉTIER : Nouvel élève vs ancien élève
+   *
+   * Filtre les FeeStructure selon le type d'enrollment pour appliquer
+   * les bons frais d'inscription / réinscription :
+   *   - enrollmentType === 'NEW' → frais d'INSCRIPTION (exclut REINSCRIPTION)
+   *   - enrollmentType ∈ ['REPEAT', 'PROMOTION', 'TRANSFER'] → frais de
+   *     REINSCRIPTION (exclut INSCRIPTION)
+   *
+   * Un élève ne doit JAMAIS payer à la fois INSCRIPTION et REINSCRIPTION.
+   *
+   * @param feeStructuresRaw Liste brute des FeeStructure (déjà dédupliquées par priorité)
+   * @param enrollmentType Type d'enrollment ('NEW', 'REPEAT', 'PROMOTION', 'TRANSFER')
+   * @returns Liste filtrée selon la règle métier
+   */
+  private filterFeesByEnrollmentType(feeStructuresRaw: any[], enrollmentType: string): any[] {
+    const isNewStudent = enrollmentType === 'NEW';
+    return feeStructuresRaw.filter((fs) => {
+      if (isNewStudent) {
+        // Nouvel élève : exclure REINSCRIPTION (il paie INSCRIPTION)
+        return fs.feeType !== 'REINSCRIPTION';
+      } else {
+        // Ancien élève : exclure INSCRIPTION (il paie REINSCRIPTION)
+        return fs.feeType !== 'INSCRIPTION';
+      }
+    });
+  }
+
+  /**
    * Résout la date d'échéance réelle d'une tranche en fonction de son mode.
    *
    * - FIXED                 : retourne installment.dueDate
@@ -137,17 +165,9 @@ export class StudentAccountService {
     //   - enrollmentType === 'NEW' → frais d'INSCRIPTION (pas de REINSCRIPTION)
     //   - enrollmentType ∈ ['REPEAT', 'PROMOTION', 'TRANSFER'] → frais de REINSCRIPTION (pas d'INSCRIPTION)
     //   Un élève ne doit JAMAIS payer à la fois INSCRIPTION et REINSCRIPTION.
-    const isNewStudent = enrollmentType === 'NEW';
+    //   (Logique extraite dans filterFeesByEnrollmentType() pour éviter la duplication)
     const feeStructuresRaw = Array.from(structuresByType.values());
-    const feeStructures = feeStructuresRaw.filter((fs) => {
-      if (isNewStudent) {
-        // Nouvel élève : exclure REINSCRIPTION (il paie INSCRIPTION)
-        return fs.feeType !== 'REINSCRIPTION';
-      } else {
-        // Ancien élève : exclure INSCRIPTION (il paie REINSCRIPTION)
-        return fs.feeType !== 'INSCRIPTION';
-      }
-    });
+    const feeStructures = this.filterFeesByEnrollmentType(feeStructuresRaw, enrollmentType);
 
     const totalDue = feeStructures.reduce((sum, fs) => {
       const override = fs.overrides[0];
@@ -248,15 +268,9 @@ export class StudentAccountService {
     });
 
     // ⚠️ RÈGLE MÉTIER : Nouvel élève vs ancien élève (même logique que getOrCreate)
-    const isNewStudent = enrollmentType === 'NEW';
+    //   (Logique extraite dans filterFeesByEnrollmentType() pour éviter la duplication)
     const feeStructuresRaw = Array.from(structuresByType.values());
-    const feeStructures = feeStructuresRaw.filter((fs) => {
-      if (isNewStudent) {
-        return fs.feeType !== 'REINSCRIPTION';
-      } else {
-        return fs.feeType !== 'INSCRIPTION';
-      }
-    });
+    const feeStructures = this.filterFeesByEnrollmentType(feeStructuresRaw, enrollmentType);
 
     const totalDue = feeStructures.reduce((sum, fs) => {
       const override = fs.overrides[0];

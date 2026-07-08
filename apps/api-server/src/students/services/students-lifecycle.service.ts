@@ -123,7 +123,14 @@ export class StudentsLifecycleService {
 
   /** Pré-inscription : dossier incomplet autorisé, statut PRE_REGISTERED.
    *  previousArrears permet aux nouveaux clients de saisir les arriérés
-   *  antérieurs (sur papier) au moment de l'onboarding. */
+   *  antérieurs (sur papier) au moment de l'onboarding.
+   *
+   *  enrollmentType détermine le type de frais à appliquer :
+   *    - 'NEW' (défaut) → nouvel élève → frais d'INSCRIPTION
+   *    - 'REPEAT' → ancien élève → frais de REINSCRIPTION
+   *  Ce paramètre est propagated depuis Admission.isNewStudent lors de la
+   *  conversion d'une admission en élève (voir admission.service.ts).
+   */
   async preRegister(
     tenantId: string,
     data: {
@@ -140,6 +147,8 @@ export class StudentsLifecycleService {
       photoUrl?: string;
       npi?: string;
       previousArrears?: number;
+      /** Type d'inscription : 'NEW' (défaut) pour nouvel élève, 'REPEAT' pour ancien élève */
+      enrollmentType?: string;
     },
     userId?: string,
   ) {
@@ -147,6 +156,7 @@ export class StudentsLifecycleService {
     await this.assertCanEnroll(tenantId);
 
     const enrollmentDate = new Date();
+    const enrollmentType = data.enrollmentType || 'NEW';
     const student = await this.prisma.student.create({
       data: {
         tenantId,
@@ -173,7 +183,7 @@ export class StudentsLifecycleService {
         schoolLevelId: data.schoolLevelId,
         studentId: student.id,
         classId: data.classId ?? null,
-        enrollmentType: 'NEW',
+        enrollmentType,
         enrollmentDate,
         status: ENROLLMENT_STATUS.PRE_REGISTERED,
         previousArrears: data.previousArrears ?? 0,

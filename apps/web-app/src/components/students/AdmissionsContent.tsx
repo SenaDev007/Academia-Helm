@@ -1064,8 +1064,17 @@ export default function AdmissionsContent() {
                               {admission.firstName[0]}{admission.lastName[0]}
                             </div>
                             <div className="ml-4">
-                              <div className="text-sm font-semibold text-slate-900 group-hover:text-blue-700 transition-colors">
+                              <div className="text-sm font-semibold text-slate-900 group-hover:text-blue-700 transition-colors flex items-center gap-2">
                                 {admission.lastName.toUpperCase()} {admission.firstName}
+                                {admission.isNewStudent === false ? (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide bg-amber-100 text-amber-700 border border-amber-200" title="Ancien élève — paie les frais de réinscription">
+                                    ↻ Ancien élève
+                                  </span>
+                                ) : admission.isNewStudent === true ? (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide bg-emerald-100 text-emerald-700 border border-emerald-200" title="Nouvel élève — paie les frais d'inscription">
+                                    ★ Nouvel élève
+                                  </span>
+                                ) : null}
                               </div>
                               <div className="text-[11px] font-medium text-slate-400 flex items-center gap-1.5">
                                 <span className="bg-slate-100 px-1.5 py-0.5 rounded uppercase tracking-tighter">

@@ -500,15 +500,21 @@ export class CollectionPrismaService {
     tenantId: string,
     academicYearId?: string
   ) {
+    // ─── Ne compter que les VRAIS arriérés ───
+    // Un arriéré est un FeeArrear avec :
+    //   - status OPEN ou PARTIALLY_PAID (pas PAID, WRITTEN_OFF, TRANSFERRED)
+    //   - balanceDue > 0 (il reste quelque chose à payer)
     const where: any = {
       tenantId,
+      status: { in: ['OPEN', 'PARTIALLY_PAID'] },
+      balanceDue: { gt: 0 },
     };
 
     if (academicYearId) {
       where.academicYearId = academicYearId;
     }
 
-    const [totalArrears, byLevel, totalDue, totalPaid] = await Promise.all([
+    const [totalArrears, byLevel, totalDue, totalPaid, studentsWithArrears] = await Promise.all([
       this.prisma.feeArrear.count({ where }),
       this.prisma.feeArrear.groupBy({
         by: ['arrearsLevel'],
@@ -530,6 +536,11 @@ export class CollectionPrismaService {
           totalPaid: true,
         },
       }),
+      // Compter le nombre d'élèves distincts avec arriérés
+      this.prisma.feeArrear.groupBy({
+        by: ['studentId'],
+        where,
+      }),
     ]);
 
     const totalBalanceDue = Number(totalDue._sum.balanceDue || 0);
@@ -547,6 +558,7 @@ export class CollectionPrismaService {
         balanceDue: totalBalanceDue,
         collectionRate: parseFloat(collectionRate.toFixed(2)),
       },
+      studentsWithArrears: studentsWithArrears.length,
     };
   }
 

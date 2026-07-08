@@ -246,7 +246,7 @@ export default function RecoveryContent() {
       }
       toast({
         title: '✅ Arriéré supprimé',
-        description: `${formatCurrency(deleteArrearModal.balanceDue)} FCFA retiré pour ${deleteArrearModal.studentName}.`,
+        description: `${formatCurrency(deleteArrearModal.balanceDue)} retiré pour ${deleteArrearModal.studentName}.`,
       });
       setDeleteArrearModal(null);
       window.dispatchEvent(new CustomEvent('recovery-reload'));
@@ -450,7 +450,7 @@ export default function RecoveryContent() {
       });
       toast({
         title: '✅ Arriéré enregistré',
-        description: `${formatCurrency(amount)} FCFA ajouté aux arriérés de l'élève pour l'année ${result.academicYearName || yearName}.` +
+        description: `${formatCurrency(amount)} ajouté aux arriérés de l'élève pour l'année ${result.academicYearName || yearName}.` +
           (result.yearCreated ? ' (année scolaire créée automatiquement)' : ''),
       });
       setManualArrearModal(false);
@@ -945,7 +945,7 @@ function DashboardTab({
           iconBg="bg-rose-100"
           iconColor="text-rose-600"
           label="Total arriérés"
-          value={`${formatCurrency(kpis.totalArrears)} FCFA`}
+          value={formatCurrency(kpis.totalArrears)}
           subtext={`${kpis.studentsWithArrears} élève(s) concerné(s)`}
         />
         <KpiCard
@@ -954,7 +954,7 @@ function DashboardTab({
           iconColor="text-emerald-600"
           label="Taux de recouvrement"
           value={`${recoveryRate.toFixed(1)}%`}
-          subtext={`${formatCurrency(totalCollected)} encaissé`}
+          subtext={formatCurrency(totalCollected)}
         />
         <KpiCard
           icon={AlertTriangle}
@@ -992,7 +992,7 @@ function DashboardTab({
                   <span className={`text-2xl font-bold ${config.color}`}>{count}</span>
                 </div>
                 <div className="text-xs text-slate-600 mb-2">
-                  {formatCurrency(totalLevel)} FCFA
+                  {formatCurrency(totalLevel)}
                 </div>
                 <div className="h-1.5 bg-white/60 rounded-full overflow-hidden">
                   <div
@@ -1049,7 +1049,7 @@ function DashboardTab({
                     </div>
                     <div className="text-right">
                       <p className={`text-base font-bold ${config.color}`}>
-                        {formatCurrency(a.balanceDue)} FCFA
+                        {formatCurrency(a.balanceDue)}
                       </p>
                       <Badge variant="outline" className={`text-[10px] ${config.color} ${config.bg} ${config.border} border`}>
                         {config.label}
@@ -1341,13 +1341,13 @@ function ArrearsTab({
                             className="h-7 w-7 hover:bg-amber-100 hover:shadow-sm transition-all duration-150"
                             onClick={() => {
                               const reason = window.prompt(
-                                `Abandonner cet arriéré de ${formatCurrency(Number(a.balanceDue))} FCFA ?\n` +
+                                `Abandonner cet arriéré de ${formatCurrency(Number(a.balanceDue))} ?\n` +
                                 `L'élève ne devra plus ce montant.\n\nMotif de l'abandon :`
                               );
                               if (reason) {
                                 financeService.writeOffArrear(a.id, reason)
                                   .then(() => {
-                                    toast({ title: '✅ Créance abandonnée', description: `${formatCurrency(Number(a.balanceDue))} FCFA retiré du total dû.` });
+                                    toast({ title: '✅ Créance abandonnée', description: `${formatCurrency(Number(a.balanceDue))} retiré du total dû.` });
                                     // Recharger — on utilise un hack: déclencher un state change
                                     window.dispatchEvent(new CustomEvent('recovery-reload'));
                                   })
@@ -1714,7 +1714,7 @@ function ManualReminderModal({
                 <SelectContent>
                   {filteredAccounts.map((a) => (
                     <SelectItem key={a.id} value={a.id}>
-                      {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.id} — {formatCurrency(a.balance)} FCFA
+                      {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.id} — {formatCurrency(a.balance)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -2450,7 +2450,7 @@ function PromisesTab({
                       {a.student ? `${a.student.lastName} ${a.student.firstName}` : '—'}
                     </p>
                     <p className="text-xs text-slate-500">
-                      {a.studentFee?.feeDefinition?.label || 'Frais'} · Solde : {formatCurrency(a.balanceDue)} FCFA
+                      {a.studentFee?.feeDefinition?.label || 'Frais'} · Solde : {formatCurrency(a.balanceDue)}
                     </p>
                   </button>
                 ))}
@@ -2752,7 +2752,7 @@ function ActionsTab({
                       {a.student ? `${a.student.lastName} ${a.student.firstName}` : '—'}
                     </p>
                     <p className="text-xs text-slate-500">
-                      {a.studentFee?.feeDefinition?.label || 'Frais'} · Solde : {formatCurrency(a.balanceDue)} FCFA
+                      {a.studentFee?.feeDefinition?.label || 'Frais'} · Solde : {formatCurrency(a.balanceDue)}
                     </p>
                   </button>
                 ))}
@@ -3059,7 +3059,7 @@ function DeleteReminderModal({
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Montant dû :</span>
-                <span className="font-bold text-rose-700">{formatCurrency(data.amountDue)} FCFA</span>
+                <span className="font-bold text-rose-700">{formatCurrency(data.amountDue)}</span>
               </div>
             </div>
           </div>
@@ -3280,7 +3280,7 @@ function PromiseModal({
           <Target className="w-5 h-5 text-emerald-600" />
           Nouvelle promesse de paiement
         </h3>
-        <p className="text-xs text-slate-500 mb-4">Élève : <strong>{data.studentName}</strong> · Solde dû : {formatCurrency(data.balanceDue)} FCFA</p>
+        <p className="text-xs text-slate-500 mb-4">Élève : <strong>{data.studentName}</strong> · Solde dû : {formatCurrency(data.balanceDue)}</p>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Montant promis (FCFA)</Label>
@@ -3292,7 +3292,7 @@ function PromiseModal({
               min={1}
               required
             />
-            <p className="text-[10px] text-slate-500 mt-1">Ne peut pas dépasser le solde dû ({formatCurrency(data.balanceDue)} FCFA).</p>
+            <p className="text-[10px] text-slate-500 mt-1">Ne peut pas dépasser le solde dû ({formatCurrency(data.balanceDue)}).</p>
           </div>
           <div>
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Date promise</Label>

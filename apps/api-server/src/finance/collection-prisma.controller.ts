@@ -117,14 +117,15 @@ export class CollectionPrismaController {
   @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
   async createPaymentPromise(
     @CurrentUser() user: any,
-    @Body() createDto: CreatePaymentPromiseDto,
+    @Body() createDto: CreatePaymentPromiseDto & { createdBy?: string },
   ) {
     return this.collectionService.createPaymentPromise({
       feeArrearId: createDto.arrearId,
       promisedAmount: createDto.promisedAmount,
       promisedDate: new Date(createDto.promiseDate),
       notes: createDto.notes,
-      createdBy: user?.id,
+      // Utiliser createdBy du body si fourni, sinon l'utilisateur connecté
+      createdBy: createDto.createdBy || user?.id,
     });
   }
 
@@ -151,17 +152,27 @@ export class CollectionPrismaController {
     return this.collectionService.updatePaymentPromiseStatus(promiseId, body.status);
   }
 
+  @Delete('promises/:id')
+  @Roles('DIRECTOR', 'ADMIN', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
+  async deletePaymentPromise(
+    @TenantId() tenantId: string,
+    @Param('id') promiseId: string,
+  ) {
+    return this.collectionService.deletePaymentPromise(tenantId, promiseId);
+  }
+
   @Post('actions')
   @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
   async createCollectionAction(
     @CurrentUser() user: any,
-    @Body() createDto: CreateCollectionActionDto,
+    @Body() createDto: CreateCollectionActionDto & { performedBy?: string },
   ) {
     return this.collectionService.createCollectionAction({
       feeArrearId: createDto.arrearId,
       actionType: createDto.actionType,
       notes: createDto.description,
-      performedBy: user?.id,
+      // Utiliser performedBy du body si fourni, sinon l'utilisateur connecté
+      performedBy: createDto.performedBy || user?.id,
     });
   }
 
@@ -177,6 +188,15 @@ export class CollectionPrismaController {
       actionType,
       feeArrearId,
     });
+  }
+
+  @Delete('actions/:id')
+  @Roles('DIRECTOR', 'ADMIN', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
+  async deleteCollectionAction(
+    @TenantId() tenantId: string,
+    @Param('id') actionId: string,
+  ) {
+    return this.collectionService.deleteCollectionAction(tenantId, actionId);
   }
 
   @Get('statistics')

@@ -53,8 +53,9 @@ export class MCPContextComposer {
       }
 
       // Récupérer l'année académique courante
+      // ⚠️ Le schéma Prisma utilise isActive (pas isCurrent)
       const currentAcademicYear = await this.prisma.academicYear.findFirst({
-        where: { tenantId: request.tenantId, isCurrent: true },
+        where: { tenantId: request.tenantId, isActive: true },
       });
 
       // Récupérer la période courante

@@ -532,7 +532,7 @@ export default function RecoveryContent() {
   };
 
   // Créer une promesse de paiement
-  const handleCreatePromise = async (data: { arrearId: string; promisedAmount: number; promiseDate: string; notes?: string }) => {
+  const handleCreatePromise = async (data: { arrearId: string; promisedAmount: number; promiseDate: string; notes?: string; createdBy?: string }) => {
     try {
       await financeService.createPaymentPromise(data);
       toast({ title: '✅ Promesse enregistrée', description: 'La promesse de paiement a été créée.' });
@@ -548,7 +548,7 @@ export default function RecoveryContent() {
   // ⚠️ Workflow : après enregistrement d'une action, on bascule automatiquement
   // sur l'onglet Promesses et on ouvre le modal nouvelle promesse pré-rempli,
   // car une action (appel/mail) déclenche généralement une promesse du parent.
-  const handleCreateAction = async (data: { arrearId: string; actionType: string; description?: string }) => {
+  const handleCreateAction = async (data: { arrearId: string; actionType: string; description?: string; performedBy?: string }) => {
     try {
       await financeService.createCollectionAction(data);
       toast({ title: '✅ Action enregistrée', description: "L'action de recouvrement a été journalisée." });
@@ -832,6 +832,17 @@ export default function RecoveryContent() {
               studentName: arrear.student ? `${arrear.student.lastName} ${arrear.student.firstName}` : 'Élève',
               balanceDue: Number(arrear.balanceDue) || 0,
             })}
+            onDelete={async (p) => {
+              if (window.confirm(`Supprimer la promesse de ${p.feeArrear?.student ? `${p.feeArrear.student.lastName} ${p.feeArrear.student.firstName}` : 'cet élève'} ?`)) {
+                try {
+                  await financeService.deletePaymentPromise(p.id);
+                  toast({ title: '✅ Promesse supprimée' });
+                  loadAll();
+                } catch (e: any) {
+                  toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
+                }
+              }
+            }}
             arrears={arrears}
             schoolInfo={schoolInfo}
           />
@@ -848,6 +859,17 @@ export default function RecoveryContent() {
               arrearId: arrear.id,
               studentName: arrear.student ? `${arrear.student.lastName} ${arrear.student.firstName}` : 'Élève',
             })}
+            onDelete={async (a) => {
+              if (window.confirm(`Supprimer cette action de recouvrement ?`)) {
+                try {
+                  await financeService.deleteCollectionAction(a.id);
+                  toast({ title: '✅ Action supprimée' });
+                  loadAll();
+                } catch (e: any) {
+                  toast({ title: 'Erreur', description: e?.message, variant: 'destructive' });
+                }
+              }
+            }}
             arrears={arrears}
             schoolInfo={schoolInfo}
           />
@@ -2153,6 +2175,7 @@ function PromisesTab({
   classes,
   onUpdateStatus,
   onNewPromise,
+  onDelete,
   arrears,
   schoolInfo,
 }: {
@@ -2165,6 +2188,7 @@ function PromisesTab({
   classes: any[];
   onUpdateStatus: (id: string, status: 'HONORED' | 'BROKEN') => void;
   onNewPromise: (arrear: any) => void;
+  onDelete: (promise: any) => void;
   arrears: any[];
   schoolInfo: any;
 }) {
@@ -2418,24 +2442,33 @@ function PromisesTab({
                       {p.creator ? `${p.creator.firstName} ${p.creator.lastName}` : 'Système'}
                     </TableCell>
                     <TableCell className="text-center">
-                      {p.status === 'PENDING' && (
-                        <div className="flex gap-1 justify-center">
-                          <button
-                            onClick={() => onUpdateStatus(p.id, 'HONORED')}
-                            className="p-1.5 hover:bg-emerald-100 rounded text-emerald-700"
-                            title="Marquer honorée"
-                          >
-                            <CheckCircle2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => onUpdateStatus(p.id, 'BROKEN')}
-                            className="p-1.5 hover:bg-rose-100 rounded text-rose-700"
-                            title="Marquer rompu"
-                          >
-                            <XCircle className="w-4 h-4" />
-                          </button>
-                        </div>
-                      )}
+                      <div className="flex gap-1 justify-center">
+                        {p.status === 'PENDING' && (
+                          <>
+                            <button
+                              onClick={() => onUpdateStatus(p.id, 'HONORED')}
+                              className="p-1.5 hover:bg-emerald-100 rounded text-emerald-700"
+                              title="Marquer honorée"
+                            >
+                              <CheckCircle2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => onUpdateStatus(p.id, 'BROKEN')}
+                              className="p-1.5 hover:bg-rose-100 rounded text-rose-700"
+                              title="Marquer rompu"
+                            >
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                        <button
+                          onClick={() => onDelete(p)}
+                          className="p-1.5 hover:bg-rose-100 rounded text-rose-600"
+                          title="Supprimer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -2510,6 +2543,7 @@ function ActionsTab({
   setClassFilter,
   classes,
   onNewAction,
+  onDelete,
   arrears,
   schoolInfo,
 }: {
@@ -2521,6 +2555,7 @@ function ActionsTab({
   setClassFilter: (v: string) => void;
   classes: any[];
   onNewAction: (arrear: any) => void;
+  onDelete: (action: any) => void;
   arrears: any[];
   schoolInfo: any;
 }) {
@@ -2701,12 +2736,13 @@ function ActionsTab({
               <TableHead>Type</TableHead>
               <TableHead>Description</TableHead>
               <TableHead>Effectué par</TableHead>
+              <TableHead className="text-center">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {actions.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-gray-500 py-12">
+                <TableCell colSpan={7} className="text-center text-gray-500 py-12">
                   Aucune action de recouvrement enregistrée.
                 </TableCell>
               </TableRow>
@@ -2740,6 +2776,15 @@ function ActionsTab({
                     </TableCell>
                     <TableCell className="text-xs text-slate-500">
                       {a.performer ? `${a.performer.firstName} ${a.performer.lastName}` : 'Système'}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <button
+                        onClick={() => onDelete(a)}
+                        className="p-1.5 hover:bg-rose-100 rounded text-rose-600"
+                        title="Supprimer"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </TableCell>
                   </TableRow>
                 );
@@ -3383,18 +3428,31 @@ function PromiseModal({
 }: {
   data: { arrearId: string; studentName: string; balanceDue: number };
   onClose: () => void;
-  onSubmit: (data: { arrearId: string; promisedAmount: number; promiseDate: string; notes?: string }) => void;
+  onSubmit: (data: { arrearId: string; promisedAmount: number; promiseDate: string; notes?: string; createdBy?: string }) => void;
 }) {
   const [amount, setAmount] = useState(String(data.balanceDue || ''));
   const [date, setDate] = useState('');
   const [notes, setNotes] = useState('');
+  const [createdBy, setCreatedBy] = useState('');
+  const [users, setUsers] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch('/api/users?role=ACCOUNTANT,DIRECTOR,ADMIN,CASHIER,SUPER_DIRECTOR', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => {
+        const list = Array.isArray(d) ? d : (d?.data ?? []);
+        setUsers(list);
+        if (list.length > 0) setCreatedBy(list[0].id);
+      })
+      .catch(() => setUsers([]));
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const amt = Number(amount);
     if (!amt || amt <= 0) return;
     if (!date) return;
-    onSubmit({ arrearId: data.arrearId, promisedAmount: amt, promiseDate: date, notes: notes.trim() || undefined });
+    onSubmit({ arrearId: data.arrearId, promisedAmount: amt, promiseDate: date, notes: notes.trim() || undefined, createdBy: createdBy || undefined });
   };
 
   return (
@@ -3429,6 +3487,19 @@ function PromiseModal({
             />
           </div>
           <div>
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Créé par</Label>
+            <Select value={createdBy} onValueChange={setCreatedBy}>
+              <SelectTrigger><SelectValue placeholder="Sélectionner…" /></SelectTrigger>
+              <SelectContent>
+                {users.map((u) => (
+                  <SelectItem key={u.id} value={u.id}>
+                    {u.firstName} {u.lastName}{u.role ? ` (${u.role})` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Notes (optionnel)</Label>
             <textarea
               value={notes}
@@ -3456,17 +3527,36 @@ function ActionModal({
   data,
   onClose,
   onSubmit,
+  defaultPerformerId,
 }: {
   data: { arrearId: string; studentName: string };
   onClose: () => void;
-  onSubmit: (data: { arrearId: string; actionType: string; description?: string }) => void;
+  onSubmit: (data: { arrearId: string; actionType: string; description?: string; performedBy?: string }) => void;
+  defaultPerformerId?: string;
 }) {
   const [actionType, setActionType] = useState('CALL');
   const [description, setDescription] = useState('');
+  const [performedBy, setPerformedBy] = useState(defaultPerformerId || '');
+  const [users, setUsers] = useState<any[]>([]);
+
+  // Charger la liste des utilisateurs (caissiers, comptables, directeurs)
+  useEffect(() => {
+    fetch('/api/users?role=ACCOUNTANT,DIRECTOR,ADMIN,CASHIER,SUPER_DIRECTOR', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => {
+        const list = Array.isArray(d) ? d : (d?.data ?? []);
+        setUsers(list);
+        // Si pas de défaut, sélectionner le premier utilisateur
+        if (!defaultPerformerId && list.length > 0) {
+          setPerformedBy(list[0].id);
+        }
+      })
+      .catch(() => setUsers([]));
+  }, [defaultPerformerId]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit({ arrearId: data.arrearId, actionType, description: description.trim() || undefined });
+    onSubmit({ arrearId: data.arrearId, actionType, description: description.trim() || undefined, performedBy: performedBy || undefined });
   };
 
   return (
@@ -3485,6 +3575,19 @@ function ActionModal({
               <SelectContent>
                 {Object.entries(ACTION_TYPE_CONFIG).filter(([k]) => !['REMINDER', 'WARNING', 'BLOCK'].includes(k)).map(([key, cfg]) => (
                   <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Effectué par</Label>
+            <Select value={performedBy} onValueChange={setPerformedBy}>
+              <SelectTrigger><SelectValue placeholder="Sélectionner…" /></SelectTrigger>
+              <SelectContent>
+                {users.map((u) => (
+                  <SelectItem key={u.id} value={u.id}>
+                    {u.firstName} {u.lastName}{u.role ? ` (${u.role})` : ''}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>

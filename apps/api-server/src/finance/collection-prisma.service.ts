@@ -644,6 +644,34 @@ export class CollectionPrismaService {
   }
 
   /**
+   * Supprime une promesse de paiement.
+   */
+  async deletePaymentPromise(tenantId: string, promiseId: string) {
+    const promise = await this.prisma.paymentPromise.findFirst({
+      where: { id: promiseId, feeArrear: { tenantId } },
+    });
+    if (!promise) {
+      throw new NotFoundException('Promesse introuvable');
+    }
+    await this.prisma.paymentPromise.delete({ where: { id: promiseId } });
+    return { success: true, deleted: true };
+  }
+
+  /**
+   * Supprime une action de recouvrement.
+   */
+  async deleteCollectionAction(tenantId: string, actionId: string) {
+    const action = await this.prisma.collectionAction.findFirst({
+      where: { id: actionId, feeArrear: { tenantId } },
+    });
+    if (!action) {
+      throw new NotFoundException('Action introuvable');
+    }
+    await this.prisma.collectionAction.delete({ where: { id: actionId } });
+    return { success: true, deleted: true };
+  }
+
+  /**
    * Liste toutes les actions de recouvrement d'un tenant (avec filtres).
    */
   async findAllCollectionActions(

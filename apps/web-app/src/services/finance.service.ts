@@ -277,6 +277,14 @@ class FinanceService {
     });
   }
 
+  async deletePaymentPromise(promiseId: string): Promise<any> {
+    return financeFetch(`/api/finance/collection/promises/${promiseId}`, { method: 'DELETE' });
+  }
+
+  async deleteCollectionAction(actionId: string): Promise<any> {
+    return financeFetch(`/api/finance/collection/actions/${actionId}`, { method: 'DELETE' });
+  }
+
   async getCollectionActions(params?: Record<string, string>): Promise<any> {
     const qs = params ? new URLSearchParams(params).toString() : '';
     return financeFetch(`/api/finance/collection/actions${qs ? `?${qs}` : ''}`);

@@ -116,8 +116,9 @@ export class RecoveryNotificationFinanceService {
     const academicYearName = arrear.academicYear?.name || '—';
 
     // Déterminer si l'arriéré est antérieur à l'année en cours (multi-année)
+    // ⚠️ Le schéma Prisma utilise isActive (pas isCurrent) pour désigner l'année courante.
     const currentYear = await this.prisma.academicYear.findFirst({
-      where: { tenantId, isCurrent: true },
+      where: { tenantId, isActive: true },
       select: { id: true, name: true, startDate: true },
     });
     const isPreviousYearArrear = currentYear && arrear.academicYearId !== currentYear.id;

@@ -366,6 +366,71 @@ class FinanceService {
     return financeFetch(`/api/finance/reports/cash-register-comparative?academicYearId=${academicYearId}`);
   }
 
+  /**
+   * Bilan périodique — agrégats encaissements/dépenses/solde sur une période
+   * filtrée par date, classe et caisse.
+   */
+  async getBilanPeriodique(
+    academicYearId: string,
+    filters?: { dateFrom?: string; dateTo?: string; classId?: string; cashRegisterId?: string },
+  ): Promise<any> {
+    const qs = new URLSearchParams({ academicYearId });
+    if (filters?.dateFrom) qs.set('dateFrom', filters.dateFrom);
+    if (filters?.dateTo) qs.set('dateTo', filters.dateTo);
+    if (filters?.classId) qs.set('classId', filters.classId);
+    if (filters?.cashRegisterId) qs.set('cashRegisterId', filters.cashRegisterId);
+    return financeFetch(`/api/finance/reports/bilan-periodique?${qs.toString()}`);
+  }
+
+  /**
+   * Journal de caisse — liste des transactions filtrées par caisse + date.
+   */
+  async getJournalCaisse(
+    academicYearId: string,
+    filters?: { dateFrom?: string; dateTo?: string; cashRegisterId?: string; type?: string },
+  ): Promise<any> {
+    const qs = new URLSearchParams({ academicYearId });
+    if (filters?.dateFrom) qs.set('dateFrom', filters.dateFrom);
+    if (filters?.dateTo) qs.set('dateTo', filters.dateTo);
+    if (filters?.cashRegisterId) qs.set('cashRegisterId', filters.cashRegisterId);
+    if (filters?.type) qs.set('type', filters.type);
+    return financeFetch(`/api/finance/reports/journal-caisse?${qs.toString()}`);
+  }
+
+  /**
+   * Transactions suspectes — annulations, transactions nocturnes, montants élevés.
+   */
+  async getSuspiciousTransactions(
+    academicYearId: string,
+    options?: { days?: number; minAmount?: number },
+  ): Promise<any> {
+    const qs = new URLSearchParams({ academicYearId });
+    if (options?.days) qs.set('days', String(options.days));
+    if (options?.minAmount) qs.set('minAmount', String(options.minAmount));
+    return financeFetch(`/api/finance/reports/suspicious-transactions?${qs.toString()}`);
+  }
+
+  /**
+   * Écarts caisse — comparaison solde théorique vs solde déclaré.
+   */
+  async getCashMismatches(academicYearId: string): Promise<any> {
+    return financeFetch(`/api/finance/reports/cash-mismatches?academicYearId=${academicYearId}`);
+  }
+
+  /**
+   * Clôtures manquées sur la période.
+   */
+  async getMissedClosures(academicYearId: string, days: number = 30): Promise<any> {
+    return financeFetch(`/api/finance/reports/missed-closures?academicYearId=${academicYearId}&days=${days}`);
+  }
+
+  /**
+   * Top 10 comptables les plus actifs.
+   */
+  async getTopAccountants(academicYearId: string, days: number = 30): Promise<any> {
+    return financeFetch(`/api/finance/reports/top-accountants?academicYearId=${academicYearId}&days=${days}`);
+  }
+
   // --- Cash Registers ---
   async getCashRegisters(params?: { isActive?: boolean; isOpen?: boolean; responsibleUserId?: string }): Promise<any> {
     const query = new URLSearchParams();

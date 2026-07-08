@@ -2964,3 +2964,114 @@ Stage Summary:
 - Le bouton Supprimer d'arriéré ouvre un modal personnalisé (au lieu de window.confirm) ET supprime réellement la donnée (BFF route créé)
 - La colonne Arriérés du tableau Comptes élèves affiche maintenant les vrais arriérés (agrégation des FeeArrear ouverts)
 - 1 commit local : c8f4be8d (push échoué — pas de réseau GitHub)
+
+---
+Task ID: finance-reports-audit-refonte
+Agent: main
+Task: Refonte complète des onglets Rapports Financiers et Contrôle & Audit du module Finance
+
+Work Log:
+
+## 1. Doublon d'onglet Rapports financiers — supprimé
+Problème : `reports/page.tsx` rendait son propre ModuleHeader + SubModuleNavigation en plus de celui du layout parent → 2 barres d'onglets visibles.
+Fix : `reports/page.tsx` ne rend plus que `<FinanceReportsContent />` (le layout gère l'en-tête).
+
+## 2. Backend — FinanceReportsService étendu
+Nouvelles méthodes (finance-reports.service.ts) :
+- `getBilanPeriodique(tenantId, academicYearId, { dateFrom, dateTo, classId, cashRegisterId })`
+  - Calcule encaissements + dépenses + solde net filtrés
+  - Détail par classe (TOP N) + par catégorie de dépense
+- `getJournalCaisse(tenantId, academicYearId, { dateFrom, dateTo, cashRegisterId, type })`
+  - Liste transactions filtrées avec cash register + caissier + élève + classe
+  - Totaux entrées/sorties/solde net
+- `getSuspiciousTransactions(tenantId, academicYearId, { days, minAmount })`
+  - Annulations 30 jours + transactions nocturnes (21h-6h) + montants élevés (≥ seuil)
+  - Stats agrégées par catégorie
+- `getCashMismatches(tenantId, academicYearId)`
+  - Compare solde théorique (ouverture + paiements - annulations) vs solde déclaré
+  - Trie par écart absolu décroissant
+- `getMissedClosures(tenantId, academicYearId, days)`
+  - Identifie les jours ouvrés (hors dimanche) sans clôture par caisse active
+  - Stats : totalExpected, totalMissed, missRate
+- `getTopAccountants(tenantId, academicYearId, days)`
+  - Top 10 comptables par nombre de transactions
+  - Volume encaissé, annulations, nombre de caisses utilisées
+
+Nouvelles routes API (finance-reports.controller.ts) :
+- GET /finance/reports/bilan-periodique
+- GET /finance/reports/journal-caisse
+- GET /finance/reports/suspicious-transactions
+- GET /finance/reports/cash-mismatches
+- GET /finance/reports/missed-closures
+- GET /finance/reports/top-accountants
+
+## 3. BFF — 6 nouvelles routes Next.js
+- /api/finance/reports/bilan-periodique/route.ts
+- /api/finance/reports/journal-caisse/route.ts
+- /api/finance/reports/suspicious-transactions/route.ts
+- /api/finance/reports/cash-mismatches/route.ts
+- /api/finance/reports/missed-closures/route.ts
+- /api/finance/reports/top-accountants/route.ts
+
+## 4. Service frontend — FinanceService étendu
+Ajout des méthodes manquantes :
+- getBilanPeriodique(academicYearId, filters)
+- getJournalCaisse(academicYearId, filters)
+- getSuspiciousTransactions(academicYearId, options)
+- getCashMismatches(academicYearId)
+- getMissedClosures(academicYearId, days)
+- getTopAccountants(academicYearId, days)
+
+## 5. Exports — nouveau fichier reports-exports.ts
+Pattern rigoureux de l'onglet Encaissements (drawOfficialHeader avec logo école + drapeau Bénin, formatAmount avec espace, "Francs CFA" complet non tronqué) :
+- exportBilanPeriodiqueToPdf(bilan, header) — portrait A4, synthèse + par classe + par catégorie
+- exportBilanPeriodiqueToExcel(bilan, header) — feuille unique avec en-tête officielle
+- exportCashJournalToPdf(journal, header) — paysage A4, transactions + totaux
+- exportCashJournalToExcel(journal, header) — feuille unique, montants négatifs en rouge
+- exportArrearsStateToPdf = re-export de exportArrearsToPdf (déjà dans finance-exports)
+- exportArrearsStateToExcel(arrears, header) — feuille unique avec codes couleur statut
+- exportAuditReportToPdf(audit, header) — multi-pages (synthèse + anomalies + écarts + top comptables)
+- exportAuditReportToExcel(audit, header) — 6 feuilles (Synthèse, Anomalies, Écarts caisse, Transactions suspectes, Top comptables, Historique audit)
+
+## 6. Refonte FinanceReportsContent — 4 sous-onglets
+- **Bilan périodique** : filtres date/classe/caisse, KPI cards (encaissements, dépenses, solde net, transactions), 2 tableaux (par classe, par catégorie)
+- **État des arriérés** : filtres niveau de gravité + statut, KPI cards, table nominative élèves
+- **Journal de caisse** : filtres date/caisse/type, KPI cards (entrées/sorties/solde net), table détaillée
+- **Comparatif & Projections** : N vs N-1, projection trésorerie (trimestre + année + risque déficit), comparatif multi-caisses
+
+Chaque sous-onglet : export PDF + Excel via pattern Encaissements.
+
+## 7. Refonte FinanceAuditContent — 5 sous-onglets
+- **Tableau de bord** : bannière ORION + 4 KPI cards (anomalies non résolues, annulations, écarts critiques, taux clôtures manquées) + table Top 5 comptables + résumé clôtures manquées
+- **Anomalies** : filtres toutes/non résolues/résolues + table avec badges gravité/statut
+- **Transactions suspectes** : 3 KPI cards + 3 tables (annulations, nocturnes, montants élevés) avec code couleur par catégorie
+- **Écarts caisse** : table avec solde théorique vs déclaré + écart + statut (OK/À vérifier/CRITIQUE) + lignes colorées si critique
+- **Historique audit** : recherche textuelle + table avec date/entité/action/utilisateur
+
+Export PDF + Excel global (toutes sections consolidées) via pattern Encaissements.
+
+## 8. Vérifications TypeScript
+- Frontend : AUCUNE erreur sur les 11 nouveaux fichiers (vérifié via transpile individuel)
+- Backend : aucune NOUVELLE erreur sur finance-reports.service.ts et finance-reports.controller.ts (les erreurs PrismaService sont préexistantes — Prisma client non généré dans le sandbox)
+
+## Fichiers modifiés (15)
+1. apps/web-app/src/app/app/finance/reports/page.tsx — suppression doublon ModuleHeader + SubModuleNavigation
+2. apps/api-server/src/finance/finance-reports.service.ts — 6 nouvelles méthodes
+3. apps/api-server/src/finance/finance-reports.controller.ts — 6 nouveaux endpoints
+4. apps/web-app/src/app/api/finance/reports/bilan-periodique/route.ts — NOUVEAU BFF
+5. apps/web-app/src/app/api/finance/reports/journal-caisse/route.ts — NOUVEAU BFF
+6. apps/web-app/src/app/api/finance/reports/suspicious-transactions/route.ts — NOUVEAU BFF
+7. apps/web-app/src/app/api/finance/reports/cash-mismatches/route.ts — NOUVEAU BFF
+8. apps/web-app/src/app/api/finance/reports/missed-closures/route.ts — NOUVEAU BFF
+9. apps/web-app/src/app/api/finance/reports/top-accountants/route.ts — NOUVEAU BFF
+10. apps/web-app/src/services/finance.service.ts — 6 nouvelles méthodes
+11. apps/web-app/src/lib/exports/reports-exports.ts — NOUVEAU fichier d'exports (8 fonctions)
+12. apps/web-app/src/components/finance/FinanceReportsContent.tsx — refonte 4 sous-onglets
+13. apps/web-app/src/components/finance/FinanceAuditContent.tsx — refonte 5 sous-onglets
+
+Stage Summary:
+- Doublon d'onglet Rapports financiers supprimé (layout gère l'en-tête)
+- Rapports financiers : 4 sous-onglets fonctionnels avec filtres dynamiques (date, classe, caisse, type, niveau, statut) + exports PDF/Excel pattern Encaissements
+- Contrôle & Audit : 5 sous-onglets avec détection anti-fraude ORION (anomalies, transactions suspectes, écarts caisse, clôtures manquées, top comptables)
+- Backend étendu avec 6 nouveaux endpoints agrégeant données multi-tables (transactions + cash registers + closures + users + audit logs)
+- Pattern d'export strictement identique à l'onglet Encaissements (logo école + drapeau Bénin + formatAmount espace + "Francs CFA" complet)

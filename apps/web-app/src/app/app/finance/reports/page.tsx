@@ -1,28 +1,24 @@
+/**
+ * ============================================================================
+ * SOUS-MODULE 7 — Rapports financiers (page wrapper)
+ * ============================================================================
+ *
+ * Layout : le ModuleHeader + SubModuleNavigation sont déjà rendus par
+ * `app/finance/layout.tsx` (pattern commun à tout le module Finance).
+ * Cette page ne fait que rendre le contenu métier.
+ *
+ * Refonte :
+ *   - 4 sous-onglets internes : Bilan périodique, État des arriérés,
+ *     Journal de caisse, Comparatif & Projections.
+ *   - Filtres dynamiques par sous-onglet.
+ *   - Export PDF + Excel selon le pattern Encaissements (drawOfficialHeader,
+ *     formatAmount, formatAmountFCFA — logo école + drapeau Bénin).
+ * ============================================================================
+ */
 'use client';
 
-import { ModuleHeader, SubModuleNavigation, ModuleContentArea } from '@/components/modules/blueprint';
-import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
 import FinanceReportsContent from '@/components/finance/FinanceReportsContent';
 
 export default function FinanceReportsPage() {
-  const subModuleTabs = FINANCE_SUBMODULE_TABS.map((t) => ({
-    id: t.id,
-    label: t.label,
-    path: t.path,
-    icon: <t.icon className="w-4 h-4" />,
-  }));
-
-  return (
-    <div className="space-y-6">
-      <ModuleHeader
-        title="Rapports financiers"
-        description="Encaissement par période et par classe, recouvrement global, dépenses par catégorie, prévision trésorerie, comparatif années."
-        icon="finance"
-      />
-      <SubModuleNavigation tabs={subModuleTabs} currentPath="/app/finance/reports" />
-      <ModuleContentArea layout="custom">
-        <FinanceReportsContent />
-      </ModuleContentArea>
-    </div>
-  );
+  return <FinanceReportsContent />;
 }

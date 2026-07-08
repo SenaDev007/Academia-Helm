@@ -285,6 +285,476 @@ export class FinanceReportsService {
     return data;
   }
 
+  /**
+   * Journal de caisse — liste paginée des transactions filtrées par
+   * caisse + plage de dates, avec le caissier et le solde théorique calculé.
+   *
+   * Utilisé par le rapport "Journal de caisse" dans l'onglet Rapports financiers.
+   */
+  async getJournalCaisse(
+    tenantId: string,
+    academicYearId: string,
+    filters: { dateFrom?: string; dateTo?: string; cashRegisterId?: string; type?: string },
+  ) {
+    const where: string[] = [
+      `t."tenantId" = $1`,
+      `t."academicYearId" = $2`,
+    ];
+    const params: any[] = [tenantId, academicYearId];
+    let paramIdx = 3;
+
+    if (filters.dateFrom) {
+      where.push(`t."createdAt" >= $${paramIdx}`);
+      params.push(new Date(filters.dateFrom + 'T00:00:00'));
+      paramIdx++;
+    }
+    if (filters.dateTo) {
+      where.push(`t."createdAt" <= $${paramIdx}`);
+      params.push(new Date(filters.dateTo + 'T23:59:59'));
+      paramIdx++;
+    }
+    if (filters.cashRegisterId) {
+      where.push(`t."cashRegisterId" = $${paramIdx}`);
+      params.push(filters.cashRegisterId);
+      paramIdx++;
+    }
+    if (filters.type) {
+      where.push(`t."type" = $${paramIdx}`);
+      params.push(filters.type);
+      paramIdx++;
+    }
+
+    const sql = `
+      SELECT
+        t.id,
+        t."receiptNumber",
+        t.amount::FLOAT,
+        t.type,
+        t."paymentMethod",
+        t.reference,
+        t."createdAt",
+        t."cashRegisterId",
+        cr.code AS "cashRegisterCode",
+        cr.name AS "cashRegisterName",
+        t."studentAccountId",
+        s."firstName" AS "studentFirstName",
+        s."lastName" AS "studentLastName",
+        s."studentCode",
+        c.name AS "className",
+        u."firstName" AS "cashierFirstName",
+        u."lastName" AS "cashierLastName"
+      FROM "finance_transactions" t
+      LEFT JOIN "cash_registers" cr ON t."cashRegisterId" = cr.id
+      LEFT JOIN "student_accounts" sa ON t."studentAccountId" = sa.id
+      LEFT JOIN "students" s ON sa."studentId" = s.id
+      LEFT JOIN "student_enrollments" se ON s.id = se."studentId" AND se."academicYearId" = t."academicYearId"
+      LEFT JOIN "classes" c ON se."classId" = c.id
+      LEFT JOIN "users" u ON t."cashierId" = u.id
+      WHERE ${where.join(' AND ')}
+      ORDER BY t."createdAt" DESC
+      LIMIT 1000
+    `;
+    const rows = await this.prisma.$queryRawUnsafe(sql, ...params);
+
+    // Calcul des totaux + solde net
+    const typed = rows as any[];
+    const totalIn = typed
+      .filter((r) => r.type === 'PAYMENT')
+      .reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    const totalOut = typed
+      .filter((r) => r.type === 'REVERSAL')
+      .reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    const netBalance = totalIn - totalOut;
+
+    return {
+      rows: typed,
+      totals: {
+        totalIn,
+        totalOut,
+        netBalance,
+        count: typed.length,
+      },
+    };
+  }
+
+  /**
+   * Bilan périodique — agrégats encaissements / dépenses / solde net sur une
+   * période filtrée par date, classe et caisse.
+   *
+   * Utilisé par le rapport "Bilan périodique" dans l'onglet Rapports financiers.
+   */
+  async getBilanPeriodique(
+    tenantId: string,
+    academicYearId: string,
+    filters: { dateFrom?: string; dateTo?: string; classId?: string; cashRegisterId?: string },
+  ) {
+    // Construction des conditions dynamiques pour les transactions
+    const txWhere: string[] = [
+      `t."tenantId" = $1`,
+      `t."academicYearId" = $2`,
+      `t.type = 'PAYMENT'`,
+    ];
+    const txParams: any[] = [tenantId, academicYearId];
+    let txIdx = 3;
+
+    if (filters.dateFrom) {
+      txWhere.push(`t."createdAt" >= $${txIdx}`);
+      txParams.push(new Date(filters.dateFrom + 'T00:00:00'));
+      txIdx++;
+    }
+    if (filters.dateTo) {
+      txWhere.push(`t."createdAt" <= $${txIdx}`);
+      txParams.push(new Date(filters.dateTo + 'T23:59:59'));
+      txIdx++;
+    }
+    if (filters.cashRegisterId) {
+      txWhere.push(`t."cashRegisterId" = $${txIdx}`);
+      txParams.push(filters.cashRegisterId);
+      txIdx++;
+    }
+    if (filters.classId) {
+      txWhere.push(`se."classId" = $${txIdx}`);
+      txParams.push(filters.classId);
+      txIdx++;
+    }
+
+    // Total encaissements
+    const encaissementsSql = `
+      SELECT COALESCE(SUM(t.amount), 0)::FLOAT AS total
+      FROM "finance_transactions" t
+      LEFT JOIN "student_accounts" sa ON t."studentAccountId" = sa.id
+      LEFT JOIN "students" s ON sa."studentId" = s.id
+      LEFT JOIN "student_enrollments" se ON s.id = se."studentId" AND se."academicYearId" = t."academicYearId"
+      WHERE ${txWhere.join(' AND ')}
+    `;
+    const encaissementResult = await this.prisma.$queryRawUnsafe(encaissementsSql, ...txParams);
+    const totalEncaissement = Number((encaissementResult as any[])[0]?.total ?? 0);
+
+    // Total dépenses (filtré par date + catégorie)
+    const exWhere: string[] = [
+      `fe."tenantId" = $1`,
+      `fe."academicYearId" = $2`,
+      `fe.status = 'APPROVED'`,
+    ];
+    const exParams: any[] = [tenantId, academicYearId];
+    let exIdx = 3;
+
+    if (filters.dateFrom) {
+      exWhere.push(`fe."expenseDate" >= $${exIdx}`);
+      exParams.push(new Date(filters.dateFrom + 'T00:00:00'));
+      exIdx++;
+    }
+    if (filters.dateTo) {
+      exWhere.push(`fe."expenseDate" <= $${exIdx}`);
+      exParams.push(new Date(filters.dateTo + 'T23:59:59'));
+      exIdx++;
+    }
+    if (filters.cashRegisterId) {
+      exWhere.push(`fe."cashRegisterId" = $${exIdx}`);
+      exParams.push(filters.cashRegisterId);
+      exIdx++;
+    }
+
+    const depensesSql = `
+      SELECT COALESCE(SUM(fe.amount), 0)::FLOAT AS total
+      FROM "finance_expenses" fe
+      WHERE ${exWhere.join(' AND ')}
+    `;
+    const depensesResult = await this.prisma.$queryRawUnsafe(depensesSql, ...exParams);
+    const totalDepenses = Number((depensesResult as any[])[0]?.total ?? 0);
+
+    // Détail par classe (encaissements)
+    const classSql = `
+      SELECT
+        c.name AS "className",
+        COALESCE(SUM(t.amount), 0)::FLOAT AS total,
+        COUNT(t.id)::INT AS count
+      FROM "finance_transactions" t
+      LEFT JOIN "student_accounts" sa ON t."studentAccountId" = sa.id
+      LEFT JOIN "students" s ON sa."studentId" = s.id
+      LEFT JOIN "student_enrollments" se ON s.id = se."studentId" AND se."academicYearId" = t."academicYearId"
+      LEFT JOIN "classes" c ON se."classId" = c.id
+      WHERE ${txWhere.join(' AND ')} AND c.id IS NOT NULL
+      GROUP BY c.name
+      ORDER BY total DESC
+    `;
+    const classData = await this.prisma.$queryRawUnsafe(classSql, ...txParams);
+
+    // Détail par catégorie de dépense
+    const catSql = `
+      SELECT
+        ec.name AS category,
+        COALESCE(SUM(fe.amount), 0)::FLOAT AS total,
+        COUNT(fe.id)::INT AS count
+      FROM "finance_expenses" fe
+      LEFT JOIN "expense_categories" ec ON fe."categoryId" = ec.id
+      WHERE ${exWhere.join(' AND ')}
+      GROUP BY ec.name
+      ORDER BY total DESC
+    `;
+    const categoryData = await this.prisma.$queryRawUnsafe(catSql, ...exParams);
+
+    return {
+      periode: {
+        dateFrom: filters.dateFrom || null,
+        dateTo: filters.dateTo || null,
+      },
+      kpi: {
+        totalEncaissement,
+        totalDepenses,
+        soldeNet: totalEncaissement - totalDepenses,
+        transactionCount: 0, // sera calculé par l'appelant si besoin
+      },
+      parClasse: classData,
+      parCategorie: categoryData,
+    };
+  }
+
+  /**
+   * Transactions suspectes — annulations + montants inhabituels.
+   *
+   * Utilisé par l'onglet Contrôle & Audit.
+   */
+  async getSuspiciousTransactions(
+    tenantId: string,
+    academicYearId: string,
+    options: { days?: number; minAmount?: number } = {},
+  ) {
+    const days = options.days ?? 30;
+    const minAmount = options.minAmount ?? 100000;
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    // 1. Annulations récentes
+    const reversals = await this.prisma.financeTransaction.findMany({
+      where: {
+        tenantId,
+        academicYearId,
+        type: 'REVERSAL',
+        createdAt: { gte: since },
+      },
+      include: {
+        studentAccount: { include: { student: { select: { firstName: true, lastName: true, studentCode: true } } } },
+        cashier: { select: { firstName: true, lastName: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+
+    // 2. Transactions nocturnes (entre 21h et 6h) — potentiellement suspectes
+    const nocturnal = await this.prisma.$queryRawUnsafe(`
+      SELECT
+        t.id,
+        t."receiptNumber",
+        t.amount::FLOAT,
+        t.type,
+        t."paymentMethod",
+        t."createdAt",
+        s."firstName" AS "studentFirstName",
+        s."lastName" AS "studentLastName",
+        u."firstName" AS "cashierFirstName",
+        u."lastName" AS "cashierLastName"
+      FROM "finance_transactions" t
+      LEFT JOIN "student_accounts" sa ON t."studentAccountId" = sa.id
+      LEFT JOIN "students" s ON sa."studentId" = s.id
+      LEFT JOIN "users" u ON t."cashierId" = u.id
+      WHERE t."tenantId" = $1
+        AND t."academicYearId" = $2
+        AND t."createdAt" >= $3
+        AND (EXTRACT(HOUR FROM t."createdAt") >= 21 OR EXTRACT(HOUR FROM t."createdAt") < 6)
+      ORDER BY t."createdAt" DESC
+      LIMIT 50
+    `, tenantId, academicYearId, since);
+
+    // 3. Transactions au-dessus du seuil
+    const highValue = await this.prisma.financeTransaction.findMany({
+      where: {
+        tenantId,
+        academicYearId,
+        type: 'PAYMENT',
+        amount: { gte: minAmount },
+        createdAt: { gte: since },
+      },
+      include: {
+        studentAccount: { include: { student: { select: { firstName: true, lastName: true, studentCode: true } } } },
+        cashier: { select: { firstName: true, lastName: true } },
+      },
+      orderBy: { amount: 'desc' },
+      take: 50,
+    });
+
+    return {
+      reversals: reversals as any[],
+      nocturnal: nocturnal as any[],
+      highValue: highValue as any[],
+      stats: {
+        reversalCount: reversals.length,
+        reversalTotal: reversals.reduce((s, r) => s + Number(r.amount), 0),
+        nocturnalCount: (nocturnal as any[]).length,
+        highValueCount: highValue.length,
+        highValueTotal: highValue.reduce((s, r) => s + Number(r.amount), 0),
+      },
+    };
+  }
+
+  /**
+   * Écarts caisse — comparaison du solde théorique (somme des transactions)
+   * avec le solde courant déclaré.
+   *
+   * Utilisé par l'onglet Contrôle & Audit.
+   */
+  async getCashMismatches(tenantId: string, academicYearId: string) {
+    const rows = await this.prisma.$queryRawUnsafe(`
+      SELECT
+        cr.id,
+        cr.code,
+        cr.name,
+        cr."currentBalance"::FLOAT,
+        cr."openingBalance"::FLOAT,
+        cr."isOpen",
+        cr."isActive",
+        COALESCE(SUM(CASE WHEN t.type = 'PAYMENT' THEN t.amount ELSE 0 END), 0)::FLOAT AS "theoreticalIn",
+        COALESCE(SUM(CASE WHEN t.type = 'REVERSAL' THEN t.amount ELSE 0 END), 0)::FLOAT AS "theoreticalOut",
+        (
+          cr."openingBalance" +
+          COALESCE(SUM(CASE WHEN t.type = 'PAYMENT' THEN t.amount ELSE 0 END), 0) -
+          COALESCE(SUM(CASE WHEN t.type = 'REVERSAL' THEN t.amount ELSE 0 END), 0)
+        )::FLOAT AS "theoreticalBalance",
+        (
+          cr."currentBalance" -
+          (
+            cr."openingBalance" +
+            COALESCE(SUM(CASE WHEN t.type = 'PAYMENT' THEN t.amount ELSE 0 END), 0) -
+            COALESCE(SUM(CASE WHEN t.type = 'REVERSAL' THEN t.amount ELSE 0 END), 0)
+          )
+        )::FLOAT AS "ecart"
+      FROM "cash_registers" cr
+      LEFT JOIN "finance_transactions" t ON cr.id = t."cashRegisterId" AND t."academicYearId" = $2
+      WHERE cr."tenantId" = $1 AND cr."isActive" = true
+      GROUP BY cr.id, cr.code, cr.name, cr."currentBalance", cr."openingBalance", cr."isOpen", cr."isActive"
+      ORDER BY ABS(
+        cr."currentBalance" -
+        (
+          cr."openingBalance" +
+          COALESCE(SUM(CASE WHEN t.type = 'PAYMENT' THEN t.amount ELSE 0 END), 0) -
+          COALESCE(SUM(CASE WHEN t.type = 'REVERSAL' THEN t.amount ELSE 0 END), 0)
+        )
+      ) DESC
+    `, tenantId, academicYearId);
+    return rows;
+  }
+
+  /**
+   * Clôtures manquées — identifie les jours où une caisse ouverte n'a pas
+   * fait l'objet d'une clôture journalière.
+   *
+   * Utilisé par l'onglet Contrôle & Audit.
+   */
+  async getMissedClosures(tenantId: string, academicYearId: string, days: number = 30) {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    // Récupère toutes les clôtures de la période
+    const closures = await this.prisma.financeDailyClosure.findMany({
+      where: {
+        tenantId,
+        academicYearId,
+        closureDate: { gte: since },
+      },
+      select: { closureDate: true, cashRegisterId: true },
+    });
+
+    // Récupère les caisses actives
+    const activeRegisters = await this.prisma.cashRegister.findMany({
+      where: { tenantId, isActive: true },
+      select: { id: true, code: true, name: true },
+    });
+
+    // Construit l'ensemble des jours attendus (hors week-end)
+    const expectedDays: { date: string; dayName: string }[] = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const cursor = new Date(since);
+    cursor.setHours(0, 0, 0, 0);
+    while (cursor <= today) {
+      const day = cursor.getDay();
+      // 0 = dimanche, 6 = samedi — on exclut le dimanche
+      if (day !== 0) {
+        expectedDays.push({
+          date: cursor.toISOString().slice(0, 10),
+          dayName: cursor.toLocaleDateString('fr-FR', { weekday: 'long' }),
+        });
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    // Pour chaque caisse, identifie les jours manquants
+    const closureSet = new Set(
+      closures.map((c) => `${c.cashRegisterId}|${c.closureDate.toISOString().slice(0, 10)}`),
+    );
+    const missed: any[] = [];
+    for (const reg of activeRegisters) {
+      for (const day of expectedDays) {
+        const key = `${reg.id}|${day.date}`;
+        if (!closureSet.has(key)) {
+          missed.push({
+            cashRegisterId: reg.id,
+            cashRegisterCode: reg.code,
+            cashRegisterName: reg.name,
+            missedDate: day.date,
+            dayName: day.dayName,
+          });
+        }
+      }
+    }
+
+    return {
+      missed,
+      stats: {
+        totalExpected: expectedDays.length * activeRegisters.length,
+        totalMissed: missed.length,
+        totalDone: closures.length,
+        missRate: expectedDays.length * activeRegisters.length > 0
+          ? Math.round((missed.length / (expectedDays.length * activeRegisters.length)) * 100)
+          : 0,
+      },
+    };
+  }
+
+  /**
+   * Comptable le plus actif — top comptables par nombre de transactions
+   * et volume total traité.
+   *
+   * Utilisé par l'onglet Contrôle & Audit.
+   */
+  async getTopAccountants(tenantId: string, academicYearId: string, days: number = 30) {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    const rows = await this.prisma.$queryRawUnsafe(`
+      SELECT
+        u.id,
+        u."firstName",
+        u."lastName",
+        u.email,
+        r.name AS role,
+        COUNT(t.id)::INT AS "transactionCount",
+        COALESCE(SUM(CASE WHEN t.type = 'PAYMENT' THEN t.amount ELSE 0 END), 0)::FLOAT AS "paymentTotal",
+        COALESCE(SUM(CASE WHEN t.type = 'REVERSAL' THEN t.amount ELSE 0 END), 0)::FLOAT AS "reversalTotal",
+        COUNT(DISTINCT t."cashRegisterId")::INT AS "cashRegistersUsed"
+      FROM "users" u
+      LEFT JOIN "finance_transactions" t ON u.id = t."cashierId"
+        AND t."tenantId" = $1 AND t."academicYearId" = $2 AND t."createdAt" >= $3
+      LEFT JOIN "roles" r ON u."roleId" = r.id
+      WHERE u."tenantId" = $1
+        AND (t.id IS NOT NULL)
+      GROUP BY u.id, u."firstName", u."lastName", u.email, r.name
+      ORDER BY "transactionCount" DESC
+      LIMIT 10
+    `, tenantId, academicYearId, since);
+    return rows;
+  }
+
   async logExport(tenantId: string, academicYearId: string, reportType: string, generatedById: string) {
     return this.prisma.financialReportExport.create({
       data: { tenantId, academicYearId, reportType, generatedById },

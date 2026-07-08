@@ -497,6 +497,16 @@ export class CreateFinanceExpenseDto {
   @IsOptional()
   @IsString()
   invoiceRef?: string;
+
+  /** ID de l'utilisateur qui fait la demande (défaut: utilisateur connecté) */
+  @IsOptional()
+  @IsString()
+  requestedById?: string;
+
+  /** ID de l'utilisateur qui doit approuver (ex: promoteur, directeur) */
+  @IsOptional()
+  @IsString()
+  pendingApproverId?: string;
 }
 
 // ─── 13. DailyClosure ───────────────────────────────────────────────────────

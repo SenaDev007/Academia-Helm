@@ -4,6 +4,7 @@
 import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { FinanceExpenseService } from './finance-expense.service';
 import { FinancialSettingsService } from './financial-settings.service';
+import { PrismaService } from '../database/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -17,21 +18,42 @@ export class FinanceExpenseController {
   constructor(
     private readonly expenseService: FinanceExpenseService,
     private readonly settingsService: FinancialSettingsService,
+    private readonly prisma: PrismaService,
   ) {}
 
   @Post()
   async create(
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
-    @Body() body: CreateFinanceExpenseDto & { expenseDate?: string; vendor?: string; invoiceRef?: string },
+    @Body() body: CreateFinanceExpenseDto & { expenseDate?: string; vendor?: string; invoiceRef?: string; requestedById?: string; pendingApproverId?: string },
   ) {
     const settings = await this.settingsService.getForTenant(tenantId);
     const threshold = settings?.expenseReceiptThreshold != null ? Number(settings.expenseReceiptThreshold) : null;
+
+    // ⚠️ requestedById : utiliser celui du body si fourni, sinon l'utilisateur connecté
+    const requestedById = body.requestedById || user?.id;
+
+    // ⚠️ pendingApproverId : celui qui doit approuver (ex: promoteur, directeur)
+    // Si non fourni, on le détermine automatiquement (ex: promoteur par défaut)
+    let pendingApproverId = body.pendingApproverId;
+    if (!pendingApproverId) {
+      // Chercher le promoteur du tenant pour l'approbation par défaut
+      const promoter = await this.prisma.user.findFirst({
+        where: {
+          tenantId,
+          role: { in: ['PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER'] },
+        },
+        select: { id: true },
+      });
+      pendingApproverId = promoter?.id;
+    }
+
     return this.expenseService.create(
       tenantId,
       {
         ...body,
-        requestedById: user?.id,
+        requestedById,
+        pendingApproverId,
         expenseDate: body.expenseDate ? new Date(body.expenseDate) : undefined,
       },
       threshold,

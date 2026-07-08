@@ -1808,6 +1808,7 @@ model User {
   cashRegistersClosed                       CashRegister[]                    @relation("CashRegisterClosedBy")
   approvedFinanceExpenses                   FinanceExpense[]                  @relation("FinanceExpenseApprover")
   requestedFinanceExpenses                  FinanceExpense[]                  @relation("FinanceExpenseRequester")
+  pendingApproverFinanceExpenses            FinanceExpense[]                  @relation("FinanceExpensePendingApprover")
   financialAuditLogsPerformed               FinancialAuditLog[]               @relation("FinancialAuditLogPerformer")
   generatedFinancialReportExports           FinancialReportExport[]           @relation("FinancialReportExportGenerator")
   gedDocumentVersions                       GedDocumentVersion[]
@@ -4935,11 +4936,14 @@ model FinanceExpense {
   vendor         String?
   /// Référence facture (optionnel)
   invoiceRef     String?
+  /// Utilisateur qui doit approuver cette dépense (ex: promoteur, directeur)
+  pendingApproverId String?
   createdAt      DateTime        @default(now())
   academicYear   AcademicYear    @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   approver       User?           @relation("FinanceExpenseApprover", fields: [approvedById], references: [id])
   category       ExpenseCategory @relation(fields: [categoryId], references: [id])
   requester      User            @relation("FinanceExpenseRequester", fields: [requestedById], references: [id], onDelete: Cascade)
+  pendingApprover User?          @relation("FinanceExpensePendingApprover", fields: [pendingApproverId], references: [id])
   tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, academicYearId])

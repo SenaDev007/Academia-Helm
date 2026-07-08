@@ -90,6 +90,38 @@ export default function ExpensesPage() {
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
 
+  // ─── Sélecteurs utilisateurs pour le modal dépense ───
+  const [expenseUsers, setExpenseUsers] = useState<any[]>([]);
+  const [requestedById, setRequestedById] = useState('');
+  const [manualRequester, setManualRequester] = useState('');
+  const [pendingApproverId, setPendingApproverId] = useState('');
+  useEffect(() => {
+    fetch('/api/settings/users', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => {
+        const allUsers = Array.isArray(d) ? d : (d?.data ?? []);
+        const ADMIN_ROLES = ['DIRECTOR', 'ADMIN', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER', 'ACCOUNTANT', 'CASHIER', 'SECRETARY', 'SECRETARY_ACCOUNTANT', 'COMPTABLE', 'SECRETAIRE_COMPTABLE', 'DIRECTEUR', 'DIRECTEUR_GENERAL', 'SCHOOL_OWNER', 'SCHOOL_ADMIN'];
+        const filtered = allUsers.filter((u: any) => {
+          const role = (u.role || u.roles?.[0] || '').toUpperCase();
+          return ADMIN_ROLES.some(r => role.includes(r));
+        });
+        setExpenseUsers(filtered);
+        // Par défaut : secrétaire comptable ou comptable
+        const comptable = filtered.find((u: any) => {
+          const role = (u.role || '').toUpperCase();
+          return role.includes('COMPTABLE') || role.includes('SECRETARY') || role.includes('ACCOUNTANT') || role.includes('CASHIER');
+        });
+        if (comptable) setRequestedById(comptable.id);
+        // Par défaut : promoteur pour approbation
+        const promoter = filtered.find((u: any) => {
+          const role = (u.role || '').toUpperCase();
+          return role.includes('PROMOTEUR') || role.includes('PROMOTER') || role.includes('PLATFORM_OWNER');
+        });
+        if (promoter) setPendingApproverId(promoter.id);
+      })
+      .catch(() => setExpenseUsers([]));
+  }, []);
+
   // ─── Formulaire nouvelle dépense ───
   const [form, setForm] = useState({
     categoryId: '',
@@ -228,6 +260,11 @@ export default function ExpensesPage() {
       if (form.expenseDate) payload.expenseDate = form.expenseDate;
       if (form.vendor) payload.vendor = form.vendor;
       if (form.invoiceRef) payload.invoiceRef = form.invoiceRef;
+      // Demandé par : priorité au select, puis saisie manuelle
+      if (requestedById) payload.requestedById = requestedById;
+      else if (manualRequester) payload.requestedById = manualRequester;
+      // À approuver par
+      if (pendingApproverId) payload.pendingApproverId = pendingApproverId;
 
       if (editingExpenseId) {
         // Modification → PUT
@@ -1349,6 +1386,51 @@ export default function ExpensesPage() {
                     onChange={(e) => setForm((f) => ({ ...f, invoiceRef: e.target.value }))}
                     placeholder="Optionnel"
                   />
+                </div>
+              </div>
+              {/* Demandé par + À approuver par (côte à côte) */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Demandé par</Label>
+                  {expenseUsers.length > 0 && (
+                    <select
+                      value={requestedById}
+                      onChange={(e) => { setRequestedById(e.target.value); setManualRequester(''); }}
+                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500 bg-white mb-1"
+                    >
+                      <option value="">— Sélectionner —</option>
+                      {expenseUsers.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.firstName} {u.lastName}{u.role ? ` (${u.role})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <Input
+                    type="text"
+                    value={manualRequester}
+                    onChange={(e) => { setManualRequester(e.target.value); setRequestedById(''); }}
+                    placeholder="Ou saisir le nom…"
+                    className="text-sm"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">À approuver par</Label>
+                  <select
+                    value={pendingApproverId}
+                    onChange={(e) => setPendingApproverId(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500 bg-white"
+                  >
+                    <option value="">— Sélectionner —</option>
+                    {expenseUsers.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.firstName} {u.lastName}{u.role ? ` (${u.role})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    💡 Une notification sera envoyée à cette personne pour approuver ou rejeter.
+                  </p>
                 </div>
               </div>
               <div>

@@ -21,6 +21,7 @@ export class FinanceExpenseService {
       expenseDate?: Date;
       vendor?: string;
       invoiceRef?: string;
+      pendingApproverId?: string;
     },
     receiptThreshold?: number | null,
   ) {
@@ -48,12 +49,13 @@ export class FinanceExpenseService {
         receiptUrl: data.receiptUrl ?? null,
         status: 'PENDING',
         requestedById: data.requestedById,
+        pendingApproverId: data.pendingApproverId ?? null,
         overBudget: overrun,
         expenseDate: data.expenseDate ?? new Date(),
         vendor: data.vendor ?? null,
         invoiceRef: data.invoiceRef ?? null,
       },
-      include: { category: true, requester: { select: { id: true, firstName: true, lastName: true } } },
+      include: { category: true, requester: { select: { id: true, firstName: true, lastName: true } }, pendingApprover: { select: { id: true, firstName: true, lastName: true } } },
     });
     await this.prisma.financialAuditLog.create({
       data: {

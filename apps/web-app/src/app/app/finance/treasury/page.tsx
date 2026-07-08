@@ -21,7 +21,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   CheckCircle, Eye, Lock, Calendar, TrendingUp, TrendingDown, Wallet,
-  AlertTriangle, FileSpreadsheet, FileText, Loader2,
+  AlertTriangle, FileSpreadsheet, FileText, Loader2, BarChart3,
 } from 'lucide-react';
 import {
   ModuleContentArea,
@@ -48,6 +48,7 @@ export default function TreasuryPage() {
   const { academicYear } = useModuleContext();
   const { tenant } = useAppSession();
 
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'cloture'>('dashboard');
   const [closures, setClosures] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalClosure, setModalClosure] = useState(false);
@@ -245,61 +246,89 @@ export default function TreasuryPage() {
     <>
       {confirmDialog.dialog}
       <div className="space-y-4">
-        {/* KPIs */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-            <div className="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center mb-2">
-              <TrendingUp className="w-4 h-4" />
-            </div>
-            <p className="text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-1">Total encaissé</p>
-            <p className="text-xl font-bold text-emerald-700">{formatCurrency(kpis.totalIncome)}</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">{closures.length} clôture(s)</p>
-          </div>
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-            <div className="w-9 h-9 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center mb-2">
-              <TrendingDown className="w-4 h-4" />
-            </div>
-            <p className="text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-1">Total dépensé</p>
-            <p className="text-xl font-bold text-rose-700">{formatCurrency(kpis.totalExpense)}</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">{kpis.anomalies} anomalie(s)</p>
-          </div>
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-            <div className="w-9 h-9 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center mb-2">
-              <Wallet className="w-4 h-4" />
-            </div>
-            <p className="text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-1">Solde cumulé</p>
-            <p className={`text-xl font-bold ${kpis.totalNet >= 0 ? 'text-indigo-700' : 'text-rose-700'}`}>{formatCurrency(kpis.totalNet)}</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">Trésorerie globale</p>
-          </div>
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-            <div className="w-9 h-9 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center mb-2">
-              <Lock className="w-4 h-4" />
-            </div>
-            <p className="text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-1">Non validées</p>
-            <p className="text-xl font-bold text-amber-700">{kpis.unvalidated}</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">{kpis.autoCount} auto / {closures.length - kpis.autoCount} manuel</p>
-          </div>
+        {/* Sous-onglets */}
+        <div className="flex gap-2 border-b border-slate-200 pb-2">
+          <Button
+            variant={activeTab === 'dashboard' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setActiveTab('dashboard')}
+            className={activeTab === 'dashboard' ? 'bg-indigo-600 text-white' : 'text-slate-600'}
+          >
+            <BarChart3 className="w-4 h-4 mr-1.5" />
+            Tableau de bord
+          </Button>
+          <Button
+            variant={activeTab === 'cloture' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setActiveTab('cloture')}
+            className={activeTab === 'cloture' ? 'bg-indigo-600 text-white' : 'text-slate-600'}
+          >
+            <Lock className="w-4 h-4 mr-1.5" />
+            Clôture journalière
+          </Button>
         </div>
 
-        {/* Graphique évolution */}
-        {chartData.length > 0 && (
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-            <h3 className="text-sm font-semibold text-slate-700 mb-4">Évolution des clôtures (30 derniers jours)</h3>
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#64748b' }} />
-                <YAxis tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
-                <Tooltip formatter={(value: any) => formatCurrency(Number(value))} contentStyle={{ backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px' }} />
-                <Legend wrapperStyle={{ fontSize: '12px' }} />
-                <Bar dataKey="Encaissements" fill="#10b981" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="Dépenses" fill="#ef4444" radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+        {/* === SOUS-ONGLET TABLEAU DE BORD === */}
+        {activeTab === 'dashboard' && (
+          <>
+            {/* KPIs */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                <div className="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center mb-2">
+                  <TrendingUp className="w-4 h-4" />
+                </div>
+                <p className="text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-1">Total encaissé</p>
+                <p className="text-xl font-bold text-emerald-700">{formatCurrency(kpis.totalIncome)}</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">{closures.length} clôture(s)</p>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                <div className="w-9 h-9 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center mb-2">
+                  <TrendingDown className="w-4 h-4" />
+                </div>
+                <p className="text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-1">Total dépensé</p>
+                <p className="text-xl font-bold text-rose-700">{formatCurrency(kpis.totalExpense)}</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">{kpis.anomalies} anomalie(s)</p>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                <div className="w-9 h-9 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center mb-2">
+                  <Wallet className="w-4 h-4" />
+                </div>
+                <p className="text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-1">Solde cumulé</p>
+                <p className={`text-xl font-bold ${kpis.totalNet >= 0 ? 'text-indigo-700' : 'text-rose-700'}`}>{formatCurrency(kpis.totalNet)}</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">Trésorerie globale</p>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                <div className="w-9 h-9 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center mb-2">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <p className="text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-1">Non validées</p>
+                <p className="text-xl font-bold text-amber-700">{kpis.unvalidated}</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">{kpis.autoCount} auto / {closures.length - kpis.autoCount} manuel</p>
+              </div>
+            </div>
+
+            {/* Graphique évolution */}
+            {chartData.length > 0 && (
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+                <h3 className="text-sm font-semibold text-slate-700 mb-4">Évolution des clôtures (30 derniers jours)</h3>
+                <ResponsiveContainer width="100%" height={250}>
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#64748b' }} />
+                    <YAxis tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+                    <Tooltip formatter={(value: any) => formatCurrency(Number(value))} contentStyle={{ backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px' }} />
+                    <Legend wrapperStyle={{ fontSize: '12px' }} />
+                    <Bar dataKey="Encaissements" fill="#10b981" radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="Dépenses" fill="#ef4444" radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </>
         )}
 
-        {/* Tableau */}
+        {/* === SOUS-ONGLET CLÔTURE JOURNALIÈRE === */}
+        {activeTab === 'cloture' && (
         <ModuleContentArea
           layout="custom"
           toolbar={
@@ -431,6 +460,7 @@ export default function TreasuryPage() {
             </Table>
           </div>
         </ModuleContentArea>
+        )}
       </div>
 
       {/* Modal clôture */}

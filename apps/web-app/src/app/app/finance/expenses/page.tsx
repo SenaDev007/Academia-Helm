@@ -1301,7 +1301,7 @@ export default function ExpensesPage() {
                             }}
                             title="Modifier"
                           >
-                            <Eye className="h-3.5 w-3.5" />
+                            <Pencil className="h-3.5 w-3.5 text-indigo-600" />
                           </Button>
                           <Button
                             variant="ghost"

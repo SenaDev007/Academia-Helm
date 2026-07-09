@@ -1142,189 +1142,75 @@ export default function EnrollmentsContent() {
 
       {/* ─── MODAL : Nouvelle inscription ─── */}
       <FormModal title="Nouvelle inscription" isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} size="xl" actions={null}>
-        {academicYear && schoolLevel ? (
-          <StudentEnrollmentForm
-            academicYearId={academicYear.id}
-            schoolLevelId={schoolLevel.schoolLevelId || schoolLevel.id}
-            onSubmit={async (data) => {
-              try {
-                const isAutoSave = (data as any)._isAutoSave === true;
-                const isFinalSubmit = (data as any)._isFinalSubmit === true;
-                const existingStudentId = (data as any)._studentId as string | undefined;
-                let student: any;
+        <StudentEnrollmentForm
+          onSubmit={async (data) => {
+            try {
+              // 1. Pré-inscrire l'élève
+              const student = await studentsService.preRegister({
+                academicYearId: academicYear!.id,
+                schoolLevelId: schoolLevel!.schoolLevelId || schoolLevel!.id,
+                firstName: data.student.firstName,
+                lastName: data.student.lastName,
+                dateOfBirth: data.student.dateOfBirth,
+                gender: data.student.gender,
+                nationality: data.student.nationality,
+                placeOfBirth: data.student.placeOfBirth,
+                photoUrl: data.student.photoUrl,
+                classId: data.classId,
+              });
 
-                // ─── Auto-save (étapes intermédiaires) ───
-                // Si un élève existe déjà (créé à une étape précédente), on update.
-                // Sinon, on crée en PRE_REGISTER et on retourne l'élève (avec son ID)
-                // pour que le formulaire puisse stocker l'ID et updater aux étapes suivantes.
-                if (isAutoSave) {
-                  if (existingStudentId) {
-                    // Update simple (pas de admit, pas de preRegister)
-                    // ⚠️ Le backend UpdateStudentPrismaDto n'accepte QUE : firstName,
-                    // lastName, dateOfBirth, gender, nationality, primaryLanguage,
-                    // npi, photoUrl, placeOfBirth, status. academicYearId et
-                    // schoolLevelId sont REJETÉS (forbidNonWhitelisted: true).
-                    await studentsService.update(existingStudentId, {
-                      firstName: data.student.firstName,
-                      lastName: data.student.lastName,
-                      dateOfBirth: data.student.dateOfBirth,
-                      gender: data.student.gender,
-                      nationality: data.student.nationality,
-                      primaryLanguage: data.student.primaryLanguage,
-                      npi: data.student.npi,
-                      photoUrl: data.student.photoUrl,
-                      placeOfBirth: data.student.placeOfBirth,
-                    });
-                    // Changement de classe si fournie
-                    if (data.classId) {
-                      await studentsService.changeClass(existingStudentId, academicYear.id, data.classId)
-                        .catch((e: any) => console.warn('AutoSave changeClass:', e?.message));
-                    }
-                    // Régime tarifaire (non bloquant)
-                    if (data.feeProfile?.feeRegimeId) {
-                      await financeService.createStudentFeeProfile({
-                        studentId: existingStudentId,
-                        academicYearId: academicYear.id,
-                        feeRegimeId: data.feeProfile.feeRegimeId,
-                        justification: data.feeProfile.justification,
-                      }).catch((e: any) => console.warn('AutoSave FeeProfile:', e?.message));
-                    }
-                    // Guardians (non bloquant)
-                    if (data.guardians?.length) {
-                      for (const g of data.guardians) {
-                        if (!g.firstName?.trim() && !g.lastName?.trim()) continue;
-                        await studentsService.addGuardians(existingStudentId, {
-                          guardians: [{
-                            firstName: g.firstName, lastName: g.lastName,
-                            relationship: g.relationship || 'GUARDIAN',
-                            phone: g.phone, email: g.email, isPrimary: g.isPrimary ?? false,
-                          }],
-                        }).catch((e: any) => console.warn('AutoSave Guardian:', e?.message));
-                      }
-                    }
-                    return { id: existingStudentId };
-                  } else {
-                    // Première étape : créer en PRE_REGISTER (sans admit)
-                    student = await studentsService.preRegister({
-                      academicYearId: academicYear.id, schoolLevelId: schoolLevel.schoolLevelId || schoolLevel.id,
-                      firstName: data.student.firstName, lastName: data.student.lastName,
-                      dateOfBirth: data.student.dateOfBirth, gender: data.student.gender,
-                      nationality: data.student.nationality, placeOfBirth: data.student.placeOfBirth,
-                      photoUrl: data.student.photoUrl, classId: data.classId,
-                    });
-                    // Régime tarifaire (non bloquant) — pour appliquer dès le début
-                    if (data.feeProfile?.feeRegimeId) {
-                      await financeService.createStudentFeeProfile({
-                        studentId: student.id,
-                        academicYearId: academicYear.id,
-                        feeRegimeId: data.feeProfile.feeRegimeId,
-                        justification: data.feeProfile.justification,
-                      }).catch((e: any) => console.warn('AutoSave FeeProfile:', e?.message));
-                    }
-                    return student; // ← retourne l'élève créé pour que le form stocke l'ID
-                  }
-                }
+              // 2. Admettre l'élève (génère matricule + compte financier)
+              const admitted = await studentsService.admit({
+                studentId: student.id,
+                academicYearId: academicYear!.id,
+                schoolLevelId: schoolLevel!.schoolLevelId || schoolLevel!.id,
+                classId: data.classId,
+              });
 
-                // ─── Final submit (bouton "Enregistrer l'admission") ───
-                if (existingStudentId) {
-                  // L'élève a déjà été créé par auto-save : on fait juste admit()
-                  // (les autres champs ont déjà été mis à jour incrémentalement)
-                  if (data.operation === 'ADMIT') {
-                    student = await studentsService.admit({
-                      studentId: existingStudentId,
-                      academicYearId: academicYear.id,
-                      schoolLevelId: schoolLevel.schoolLevelId || schoolLevel.id,
-                      classId: data.classId,
-                    });
-                  } else {
-                    // PRE_REGISTER final : l'élève existe déjà, on le retourne
-                    // ⚠️ Ne pas envoyer academicYearId ni schoolLevelId (rejetés par UpdateStudentPrismaDto)
-                    student = await studentsService.update(existingStudentId, {
-                      firstName: data.student.firstName,
-                      lastName: data.student.lastName,
-                      dateOfBirth: data.student.dateOfBirth,
-                      gender: data.student.gender,
-                      nationality: data.student.nationality,
-                      primaryLanguage: data.student.primaryLanguage,
-                      npi: data.student.npi,
-                      photoUrl: data.student.photoUrl,
-                      placeOfBirth: data.student.placeOfBirth,
-                    });
-                  }
-                } else {
-                  // L'élève n'a pas été auto-sauvegardé (cas normal) :
-                  // créer + éventuellement admettre
-                  if (data.operation === 'PRE_REGISTER') {
-                    student = await studentsService.preRegister({
-                      academicYearId: academicYear.id, schoolLevelId: schoolLevel.schoolLevelId || schoolLevel.id,
-                      firstName: data.student.firstName, lastName: data.student.lastName,
-                      dateOfBirth: data.student.dateOfBirth, gender: data.student.gender,
-                      nationality: data.student.nationality, placeOfBirth: data.student.placeOfBirth,
-                      photoUrl: data.student.photoUrl, classId: data.classId,
-                    });
-                  } else {
-                    // ADMIT : preRegister + admit
-                    student = await studentsService.preRegister({
-                      academicYearId: academicYear.id, schoolLevelId: schoolLevel.schoolLevelId || schoolLevel.id,
-                      firstName: data.student.firstName, lastName: data.student.lastName,
-                      dateOfBirth: data.student.dateOfBirth, gender: data.student.gender,
-                      nationality: data.student.nationality, placeOfBirth: data.student.placeOfBirth,
-                      photoUrl: data.student.photoUrl, classId: data.classId,
-                    });
-                    student = await studentsService.admit({
-                      studentId: student.id,
-                      academicYearId: academicYear.id,
-                      schoolLevelId: schoolLevel.schoolLevelId || schoolLevel.id,
-                      classId: data.classId,
-                    });
-                  }
-                  // Régime tarifaire (non bloquant)
-                  if (data.feeProfile?.feeRegimeId) {
-                    await financeService.createStudentFeeProfile({
-                      studentId: student.id,
-                      academicYearId: academicYear.id,
-                      feeRegimeId: data.feeProfile.feeRegimeId,
-                      justification: data.feeProfile.justification,
-                    }).catch((e: any) => console.warn('FeeProfile:', e?.message));
-                  }
-                  // Parents / tuteurs (non bloquant)
-                  if (data.guardians?.length) {
-                    for (const g of data.guardians) {
-                      if (!g.firstName?.trim() && !g.lastName?.trim()) continue;
-                      await studentsService.addGuardians(student.id, {
-                        guardians: [{
-                          firstName: g.firstName, lastName: g.lastName,
-                          relationship: g.relationship || 'GUARDIAN',
-                          phone: g.phone, email: g.email, isPrimary: g.isPrimary ?? false,
-                        }],
-                      }).catch((e: any) => console.warn('Guardian:', e?.message));
-                    }
-                  }
-                }
-
-                toast({
-                  title: data.operation === 'PRE_REGISTER' ? 'Pré-inscription enregistrée' : 'Admission effectuée',
-                  description: data.operation === 'PRE_REGISTER'
-                    ? `${data.student.firstName} ${data.student.lastName} a été pré-inscrit(e).`
-                    : `${data.student.firstName} ${data.student.lastName} a été admis(e)${student?.matricule ? ` (matricule: ${student.matricule})` : ''}.`,
-                  variant: 'success',
-                });
-                setIsCreateModalOpen(false);
-                loadData();
-                return student;
-              } catch (e: any) {
-                console.error('Erreur inscription:', e);
-                toast({
-                  title: "Erreur lors de l'inscription",
-                  description: e?.message || 'Une erreur est survenue. Veuillez réessayer.',
-                  variant: 'error',
-                });
-                throw e; // ← re-throw pour que handleNext/handleSubmit puisse réagir
+              // 3. Appliquer le régime tarifaire (non bloquant)
+              if (data.feeProfile?.feeRegimeId) {
+                await financeService.createStudentFeeProfile({
+                  studentId: student.id,
+                  academicYearId: academicYear!.id,
+                  feeRegimeId: data.feeProfile.feeRegimeId,
+                  justification: data.feeProfile.justification,
+                }).catch((e: any) => console.warn('FeeProfile:', e?.message));
               }
-            }}
-            onCancel={() => setIsCreateModalOpen(false)}
-          />
-        ) : <div className="text-center py-8 text-sm text-gray-600">Sélectionnez une année et un niveau</div>}
+
+              // 4. Ajouter les parents (non bloquant)
+              if (data.guardians?.length) {
+                for (const g of data.guardians) {
+                  if (!g.firstName?.trim() && !g.lastName?.trim()) continue;
+                  await studentsService.addGuardians(student.id, {
+                    guardians: [{
+                      firstName: g.firstName, lastName: g.lastName,
+                      relationship: g.relationship || 'GUARDIAN',
+                      phone: g.phone, email: g.email, isPrimary: g.isPrimary ?? false,
+                    }],
+                  }).catch((e: any) => console.warn('Guardian:', e?.message));
+                }
+              }
+
+              toast({
+                title: 'Inscription effectuée',
+                description: `${data.student.firstName} ${data.student.lastName} a été admis(e)${admitted?.matricule ? ` (matricule: ${admitted.matricule})` : ''}.`,
+                variant: 'success',
+              });
+              setIsCreateModalOpen(false);
+              loadData();
+              return admitted;
+            } catch (e: any) {
+              console.error('Erreur inscription:', e);
+              toast({
+                title: "Erreur lors de l'inscription",
+                description: e?.message || 'Une erreur est survenue.',
+                variant: 'error',
+              });
+              throw e;
+            }
+          }}
+          onCancel={() => setIsCreateModalOpen(false)}
+        />
       </FormModal>
 
       {/* ─── MODAL : Réinscription individuelle ─── */}
@@ -1401,9 +1287,7 @@ export default function EnrollmentsContent() {
         />
       )}
 
-      {/* ─── MODAL : Éditer / Compléter une inscription ───
-          Ouvre le StudentEnrollmentForm pré-rempli avec les données de l'élève.
-          Permet de compléter les informations manquantes (guardians, finances, etc.). */}
+      {/* ─── MODAL : Éditer / Compléter une inscription ─── */}
       {editEnrollment && academicYear && schoolLevel && (
         <FormModal
           title="Éditer / Compléter l'inscription"
@@ -1416,54 +1300,37 @@ export default function EnrollmentsContent() {
             academicYearId={academicYear.id}
             schoolLevelId={schoolLevel.schoolLevelId || schoolLevel.id}
             initialData={{
-              studentId: editEnrollment.student.id,
               firstName: editEnrollment.student.firstName || '',
               lastName: editEnrollment.student.lastName || '',
-              matricule: editEnrollment.student.matricule || undefined,
-              studentCode: editEnrollment.student.studentCode,
               gender: (editEnrollment.student.gender as any) || '',
               dateOfBirth: editEnrollment.student.dateOfBirth || '',
               nationality: editEnrollment.student.nationality || '',
               placeOfBirth: editEnrollment.student.placeOfBirth || '',
-              address: editEnrollment.student.address || '',
               photoUrl: editEnrollment.student.photoUrl || '',
               npi: editEnrollment.student.npi || '',
               classId: editEnrollment.class?.id,
-              // Pré-remplir les guardians depuis l'admission
-              guardians: (editEnrollment.student.studentGuardians || []).map(sg => ({
-                firstName: sg.guardian?.firstName || '',
-                lastName: sg.guardian?.lastName || '',
-                relationship: sg.guardian?.relationship || 'PARENT',
-                phone: sg.guardian?.phone || '',
-                email: sg.guardian?.email || '',
-                isPrimary: sg.isPrimary ?? false,
-              })),
             }}
             onSubmit={async (data) => {
-              const isFinalSubmit = (data as any)._isFinalSubmit === true;
-              // ⚠️ Le update de base est le seul appel critique — les autres sont non bloquants
-              // On inclut photoUrl dans le update() directement (contournement endpoint upload-photo)
-              // ⚠️ Ne pas envoyer academicYearId ni schoolLevelId (rejetés par UpdateStudentPrismaDto)
+              // Update des infos élève
               await studentsService.update(editEnrollment.student.id, {
                 firstName: data.student.firstName,
                 lastName: data.student.lastName,
                 dateOfBirth: data.student.dateOfBirth,
                 gender: data.student.gender,
                 nationality: data.student.nationality,
-                primaryLanguage: data.student.primaryLanguage,
-                npi: data.student.npi,
                 photoUrl: data.student.photoUrl,
                 placeOfBirth: data.student.placeOfBirth,
+                npi: data.student.npi,
               });
-              // Upload photo via endpoint dédié (pattern RH) — non bloquant
+              // Upload photo si nouvelle
               if (data.student.photoUrl && data.student.photoUrl.startsWith('data:')) {
                 await studentsService.uploadPhoto(editEnrollment.student.id, data.student.photoUrl)
-                  .catch((e: any) => console.warn('Upload photo endpoint:', e?.message));
+                  .catch(() => undefined);
               }
               // Changement de classe
               if (data.classId && data.classId !== editEnrollment.class?.id) {
                 await studentsService.changeClass(editEnrollment.student.id, academicYear.id, data.classId)
-                  .catch((e: any) => console.warn('Change class:', e?.message));
+                  .catch(() => undefined);
               }
               // Guardians
               if (data.guardians?.length) {
@@ -1478,7 +1345,7 @@ export default function EnrollmentsContent() {
                   }).catch(() => undefined);
                 }
               }
-              // Régime financier
+              // Régime
               if (data.feeProfile?.feeRegimeId) {
                 await financeService.createStudentFeeProfile({
                   studentId: editEnrollment.student.id,
@@ -1487,11 +1354,9 @@ export default function EnrollmentsContent() {
                   justification: data.feeProfile.justification,
                 }).catch(() => undefined);
               }
-              if (isFinalSubmit) {
-                toast({ title: '✅ Inscription mise à jour', variant: 'success' });
-                setEditEnrollment(null);
-                loadData();
-              }
+              toast({ title: '✅ Inscription mise à jour', variant: 'success' });
+              setEditEnrollment(null);
+              loadData();
             }}
             onCancel={() => setEditEnrollment(null)}
           />

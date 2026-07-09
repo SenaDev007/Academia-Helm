@@ -102,11 +102,14 @@ export default function StudentEnrollmentForm({
   onCancel,
   initialData,
 }: StudentEnrollmentFormProps) {
-  const { academicYear, schoolLevel } = useModuleContext();
+  const { academicYear } = useModuleContext();
 
-  // IDs effectifs : props en priorité, fallback sur le contexte
+  // Niveau scolaire sélectionnable (state interne, pas figé par le contexte)
+  const [schoolLevels, setSchoolLevels] = useState<any[]>([]);
+  const [selectedLevelId, setSelectedLevelId] = useState<string>(propLevelId || schoolLevel?.id || schoolLevel?.schoolLevelId || '');
+
+  // IDs effectifs
   const yearId = propYearId || academicYear?.id || '';
-  const levelId = propLevelId || schoolLevel?.id || schoolLevel?.schoolLevelId || '';
 
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -157,7 +160,22 @@ export default function StudentEnrollmentForm({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // ─── Chargement des classes (pattern AdmissionForm : fetch direct) ───
+  // ─── Chargement des niveaux scolaires (fetch direct comme AdmissionForm) ───
+  useEffect(() => {
+    fetch('/api/school-levels', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => {
+        const list = Array.isArray(data) ? data : [];
+        setSchoolLevels(list);
+        // Si aucun niveau sélectionné, prendre le premier
+        if (!selectedLevelId && list.length > 0) {
+          setSelectedLevelId(list[0].id);
+        }
+      })
+      .catch(() => setSchoolLevels([]));
+  }, []);
+
+  // ─── Chargement des classes (filtrées par niveau sélectionné) ───
   useEffect(() => {
     if (!yearId) {
       setClassesList([]);
@@ -173,14 +191,14 @@ export default function StudentEnrollmentForm({
       .finally(() => setIsLoadingClasses(false));
   }, [yearId]);
 
-  // ─── Chargement des régimes (pattern AdmissionForm : fetch direct) ───
+  // ─── Chargement des régimes (basé sur selectedLevelId, pas levelId figé) ───
   useEffect(() => {
-    if (!yearId || !levelId) {
+    if (!yearId || !selectedLevelId) {
       setRegimes([]);
       return;
     }
     setIsLoadingRegimes(true);
-    const url = `/api/finance/fee-regimes?academicYearId=${encodeURIComponent(yearId)}&schoolLevelId=${encodeURIComponent(levelId)}`;
+    const url = `/api/finance/fee-regimes?academicYearId=${encodeURIComponent(yearId)}&schoolLevelId=${encodeURIComponent(selectedLevelId)}`;
     fetch(url, { credentials: 'include' })
       .then(r => {
         if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -200,13 +218,20 @@ export default function StudentEnrollmentForm({
         setRegimes([]);
       })
       .finally(() => setIsLoadingRegimes(false));
-  }, [yearId, levelId]);
+  }, [yearId, selectedLevelId]);
 
   // ─── Handlers ───
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     setError(null);
+  };
+
+  // Changement de niveau scolaire → recharge les régimes + reset classe
+  const handleLevelChange = (newLevelId: string) => {
+    setSelectedLevelId(newLevelId);
+    setFormData(prev => ({ ...prev, classId: '', feeRegimeId: '' }));
+    setRegimes([]);
   };
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -352,8 +377,8 @@ export default function StudentEnrollmentForm({
   };
 
   // ─── Filtrage des classes par niveau ───
-  const filteredClasses = levelId
-    ? classesList.filter(c => c.schoolLevelId === levelId)
+  const filteredClasses = selectedLevelId
+    ? classesList.filter(c => c.schoolLevelId === selectedLevelId)
     : classesList;
 
   // ─── Render ───
@@ -558,15 +583,34 @@ export default function StudentEnrollmentForm({
             <BookOpen className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
             <div>
               <p className="text-sm font-medium text-blue-800">Classe et régime de scolarité</p>
-              <p className="text-sm text-blue-700">Choisissez la classe et le régime tarifaire pour l'année scolaire.</p>
+              <p className="text-sm text-blue-700">Choisissez le niveau, la classe et le régime tarifaire pour l'année scolaire.</p>
             </div>
           </div>
 
-          {/* Classe */}
+          {/* Niveau scolaire (sélecteur qui filtre les classes ET recharge les régimes) */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Niveau scolaire *</label>
+            <select
+              value={selectedLevelId}
+              onChange={e => handleLevelChange(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">— Sélectionner un niveau —</option>
+              {schoolLevels.map(sl => (
+                <option key={sl.id} value={sl.id}>{sl.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Classe (filtrée par le niveau sélectionné) */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Classe</label>
-            {isLoadingClasses ? (
+            {!selectedLevelId ? (
+              <p className="text-sm text-gray-400 italic">Sélectionnez d'abord un niveau scolaire</p>
+            ) : isLoadingClasses ? (
               <p className="text-sm text-gray-500">Chargement des classes...</p>
+            ) : filteredClasses.length === 0 ? (
+              <p className="text-sm text-amber-600">Aucune classe configurée pour ce niveau.</p>
             ) : (
               <select value={formData.classId} onChange={e => handleInputChange('classId', e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">

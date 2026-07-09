@@ -762,6 +762,9 @@ class StudentsService {
    *
    * ⭐ Si schoolLevelId n'est pas fourni, génère pour TOUS les élèves actifs
    * du tenant pour l'année, tous niveaux confondus.
+   *
+   * ⚠️ Timeout étendu à 5 minutes (300000ms) car la génération de cartes
+   * via Puppeteer est lente (~2-5s par carte × N élèves).
    */
   async generateBulkIdCards(data: {
     academicYearId: string;
@@ -771,6 +774,7 @@ class StudentsService {
     return apiFetch(`${BASE_URL}/id-cards/generate-bulk`, {
       method: "POST",
       body: data,
+      timeout: 300000, // 5 minutes (génération PDF via Puppeteer)
     });
   }
 
@@ -786,19 +790,27 @@ class StudentsService {
   /**
    * ⭐ Télécharge un PDF groupé par classe (toutes les cartes de la classe dans un seul PDF).
    * Retourne un Blob pour déclencher le téléchargement côté navigateur.
+   * ⚠️ Timeout 5 min (génération PDF via Puppeteer pour N élèves).
    */
   async downloadClassBundlePdf(classId: string, academicYearId: string): Promise<Blob> {
     const url = `${BASE_URL}/id-cards/class/${encodeURIComponent(classId)}/bundle-pdf?academicYearId=${encodeURIComponent(academicYearId)}`;
-    const response = await apiClient.get(url, { responseType: 'blob' });
+    const response = await apiClient.get(url, {
+      responseType: 'blob',
+      timeout: 300000, // 5 minutes
+    });
     return response.data;
   }
 
   /**
    * ⭐ Télécharge le PDF d'une carte individuelle.
+   * ⚠️ Timeout 60s (1 carte = 1 PDF Puppeteer).
    */
   async downloadIdCardPdf(cardId: string): Promise<Blob> {
     const url = `${BASE_URL}/id-cards/${encodeURIComponent(cardId)}/download`;
-    const response = await apiClient.get(url, { responseType: 'blob' });
+    const response = await apiClient.get(url, {
+      responseType: 'blob',
+      timeout: 60000, // 1 minute
+    });
     return response.data;
   }
 

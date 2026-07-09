@@ -27,6 +27,7 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   CreditCard, CheckCircle, XCircle, AlertCircle, Users, RefreshCw,
   FileDown, Loader2, ChevronDown, ChevronRight, Search, Ban, Download,
+  Layers, BookOpen,
 } from 'lucide-react';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { studentsService } from '@/services/students.service';
@@ -111,10 +112,25 @@ export default function StudentIdCardsSection() {
   const [revokeReason, setRevokeReason] = useState('');
   const [isRevokeModalOpen, setIsRevokeModalOpen] = useState(false);
 
+  // ⭐ États pour le modal de génération (sélection niveau + classe)
+  const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
+  const [genScope, setGenScope] = useState<'all' | 'level' | 'class'>('all');
+  const [genLevelId, setGenLevelId] = useState<string>('');
+  const [genClassId, setGenClassId] = useState<string>('');
+  const [allClasses, setAllClasses] = useState<Array<{ id: string; name: string; schoolLevelId: string; schoolLevel?: { id: string; name: string; code?: string } }>>([]);
+
   // États pour l'arborescence
   const [expandedLevels, setExpandedLevels] = useState<Set<string>>(new Set());
   const [expandedClasses, setExpandedClasses] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Charger les classes une fois (pour le modal de génération)
+  useEffect(() => {
+    fetch('/api/all-classes', { credentials: 'include', cache: 'no-store' })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setAllClasses(Array.isArray(data) ? data : []))
+      .catch(() => setAllClasses([]));
+  }, []);
 
   // Charger stats + cartes groupées
   useEffect(() => {
@@ -147,30 +163,73 @@ export default function StudentIdCardsSection() {
     }
   };
 
-  // Génération en lot (TOUS les élèves sans carte, tous niveaux confondus)
-  // ⭐ On ne passe PAS schoolLevelId pour générer sur tous les niveaux.
-  // Si l'utilisateur veut filtrer par niveau, il utilise le bouton par classe
-  // dans l'arborescence (handleGenerateForClass).
-  const handleGenerateBulk = async () => {
-    const ok = await confirmDialog.info(
-      'Des cartes seront générées pour TOUS les élèves actifs sans carte (tous niveaux confondus). Voulez-vous continuer ?',
-      'Générer les cartes',
-    );
-    if (!ok) return;
+  // ⭐ Ouvrir le modal de génération (sélection niveau + classe)
+  // On ne génère plus directement — l'utilisateur doit choisir la portée.
+  const handleGenerateBulk = () => {
     const academicYearId = academicYear?.id || '';
     if (!academicYearId) {
       toast({ title: 'Attention', description: 'Aucune année scolaire sélectionnée.', variant: 'error' });
       return;
     }
+    // Reset + ouvrir le modal
+    setGenScope('all');
+    setGenLevelId('');
+    setGenClassId('');
+    setIsGenerateModalOpen(true);
+  };
+
+  // ⭐ Génération effective (appelée après confirmation du modal)
+  const handleConfirmGenerate = async () => {
+    const academicYearId = academicYear?.id || '';
+    if (!academicYearId) return;
+
+    // Validation selon le scope
+    if (genScope === 'level' && !genLevelId) {
+      toast({ title: 'Attention', description: 'Veuillez sélectionner un niveau scolaire.', variant: 'error' });
+      return;
+    }
+    if (genScope === 'class' && !genClassId) {
+      toast({ title: 'Attention', description: 'Veuillez sélectionner une classe.', variant: 'error' });
+      return;
+    }
+
+    // Construction du payload selon le scope
+    const payload: { academicYearId: string; schoolLevelId?: string; classId?: string } = { academicYearId };
+    let scopeLabel = 'tous les niveaux';
+    if (genScope === 'level') {
+      payload.schoolLevelId = genLevelId;
+      const levelName = allClasses.find(c => c.schoolLevelId === genLevelId)?.schoolLevel?.name || 'niveau sélectionné';
+      scopeLabel = `le niveau ${levelName}`;
+    } else if (genScope === 'class') {
+      payload.classId = genClassId;
+      const cls = allClasses.find(c => c.id === genClassId);
+      payload.schoolLevelId = cls?.schoolLevelId; // nécessaire pour le backend
+      scopeLabel = `la classe ${cls?.name || 'sélectionnée'}`;
+    }
+
+    const ok = await confirmDialog.info(
+      `Des cartes seront générées pour les élèves actifs sans carte (${scopeLabel}). Cela peut prendre plusieurs minutes. Voulez-vous continuer ?`,
+      'Générer les cartes',
+    );
+    if (!ok) return;
+
+    setIsGenerateModalOpen(false);
     setIsGenerating(true);
     try {
-      // ⭐ Pas de schoolLevelId → génère pour TOUS les niveaux
-      const data = await studentsService.generateBulkIdCards({ academicYearId });
-      toast({
-        title: '✅ Génération terminée',
-        description: `${data.succeeded} carte(s) générée(s) sur ${data.total} élève(s).`,
-        variant: 'success',
-      });
+      const data = await studentsService.generateBulkIdCards(payload);
+      if (data.total === 0) {
+        toast({
+          title: 'ℹ️ Aucune carte à générer',
+          description: `Tous les élèves de ${scopeLabel} ont déjà une carte active.`,
+          variant: 'success',
+        });
+      } else {
+        toast({
+          title: '✅ Génération terminée',
+          description: `${data.succeeded} carte(s) générée(s) sur ${data.total} élève(s) — ${scopeLabel}.`,
+          variant: 'success',
+        });
+      }
       loadAll();
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message || 'Échec génération', variant: 'error' });
@@ -511,6 +570,147 @@ export default function StudentIdCardsSection() {
           </div>
         )}
       </div>
+
+      {/* ⭐ Modal de génération (sélection portée : tous / niveau / classe) */}
+      {isGenerateModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setIsGenerateModalOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                <Users className="w-4 h-4 text-green-600" />
+                Générer les cartes scolaires
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Sélectionnez la portée de la génération. Seuls les élèves actifs sans carte existante seront traités.
+              </p>
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              {/* Choix de la portée */}
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => { setGenScope('all'); setGenLevelId(''); setGenClassId(''); }}
+                  className={cn(
+                    'p-3 rounded-lg border text-xs font-bold transition text-center',
+                    genScope === 'all'
+                      ? 'border-green-500 bg-green-50 text-green-700 ring-2 ring-green-200'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                  )}
+                >
+                  <Users className="w-4 h-4 mx-auto mb-1" />
+                  Tous les niveaux
+                </button>
+                <button
+                  onClick={() => { setGenScope('level'); setGenClassId(''); }}
+                  className={cn(
+                    'p-3 rounded-lg border text-xs font-bold transition text-center',
+                    genScope === 'level'
+                      ? 'border-green-500 bg-green-50 text-green-700 ring-2 ring-green-200'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                  )}
+                >
+                  <Layers className="w-4 h-4 mx-auto mb-1" />
+                  Par niveau
+                </button>
+                <button
+                  onClick={() => setGenScope('class')}
+                  className={cn(
+                    'p-3 rounded-lg border text-xs font-bold transition text-center',
+                    genScope === 'class'
+                      ? 'border-green-500 bg-green-50 text-green-700 ring-2 ring-green-200'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                  )}
+                >
+                  <BookOpen className="w-4 h-4 mx-auto mb-1" />
+                  Par classe
+                </button>
+              </div>
+
+              {/* Sélecteur niveau (si scope = level ou class) */}
+              {genScope !== 'all' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 uppercase mb-1.5">
+                    Niveau scolaire
+                  </label>
+                  <select
+                    value={genLevelId}
+                    onChange={(e) => { setGenLevelId(e.target.value); setGenClassId(''); }}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                  >
+                    <option value="">— Sélectionner un niveau —</option>
+                    {Array.from(new Map(allClasses.map(c => [c.schoolLevelId, c.schoolLevel])).values())
+                      .filter(Boolean)
+                      .sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''))
+                      .map((level: any) => (
+                        <option key={level.id} value={level.id}>{level.name}</option>
+                      ))
+                    }
+                  </select>
+                </div>
+              )}
+
+              {/* Sélecteur classe (si scope = class) */}
+              {genScope === 'class' && genLevelId && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 uppercase mb-1.5">
+                    Classe
+                  </label>
+                  <select
+                    value={genClassId}
+                    onChange={(e) => setGenClassId(e.target.value)}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                  >
+                    <option value="">— Sélectionner une classe —</option>
+                    {allClasses
+                      .filter(c => c.schoolLevelId === genLevelId)
+                      .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                      .map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))
+                    }
+                  </select>
+                </div>
+              )}
+
+              {/* Info sur la portée sélectionnée */}
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-xs text-blue-700">
+                  {genScope === 'all' && '🌍 Génération pour TOUS les élèves actifs sans carte (tous niveaux confondus). Cela peut prendre plusieurs minutes.'}
+                  {genScope === 'level' && (genLevelId
+                    ? `📚 Génération pour le niveau sélectionné uniquement.`
+                    : '⚠️ Veuillez sélectionner un niveau scolaire.')
+                  }
+                  {genScope === 'class' && (genClassId
+                    ? `🏫 Génération pour la classe sélectionnée uniquement.`
+                    : genLevelId
+                      ? '⚠️ Veuillez sélectionner une classe.'
+                      : '⚠️ Veuillez d\'abord sélectionner un niveau, puis une classe.')
+                  }
+                </p>
+              </div>
+            </div>
+            <div className="px-6 py-4 bg-slate-50 flex justify-end gap-2">
+              <button
+                onClick={() => setIsGenerateModalOpen(false)}
+                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 rounded-lg transition"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleConfirmGenerate}
+                disabled={
+                  isGenerating ||
+                  (genScope === 'level' && !genLevelId) ||
+                  (genScope === 'class' && (!genLevelId || !genClassId))
+                }
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition"
+              >
+                {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Users className="w-4 h-4" />}
+                {isGenerating ? 'Génération...' : 'Générer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de révocation */}
       {isRevokeModalOpen && selectedCard && (

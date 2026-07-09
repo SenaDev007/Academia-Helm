@@ -229,14 +229,26 @@ export const api: any = {
 
 /**
  * Wrapper fetch-like pour axios
+ *
+ * ⭐ Support d'un timeout personnalisé via options.timeout (en ms).
+ * Par défaut : 8000ms (8s). Pour les opérations longues (génération de cartes
+ * scolaires en lot, import Excel, génération PDF groupé), passer un timeout
+ * plus élevé, ex : { timeout: 300000 } pour 5 minutes.
  */
 export async function apiFetch<T>(url: string, options: any = {}): Promise<T> {
   const method = options.method || 'GET';
-  const response = await apiClient({
+  // ⭐ Extraire timeout des options pour ne pas le passer à axios en double
+  // (axios accepte `timeout` au niveau de la config de la requête)
+  const { timeout, ...rest } = options;
+  const axiosConfig: any = {
     url,
     method,
-    data: options.body ? (typeof options.body === 'string' ? JSON.parse(options.body) : options.body) : undefined,
-    ...options,
-  });
+    data: rest.body ? (typeof rest.body === 'string' ? JSON.parse(rest.body) : rest.body) : undefined,
+    ...rest,
+  };
+  if (timeout) {
+    axiosConfig.timeout = timeout;
+  }
+  const response = await apiClient(axiosConfig);
   return response.data;
 }

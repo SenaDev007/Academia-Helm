@@ -1071,7 +1071,8 @@ export class StudentsLifecycleService {
       where: {
         tenantId,
         ...(params.academicYearId && { academicYearId: params.academicYearId }),
-        ...(params.schoolLevelId && { schoolLevelId: params.schoolLevelId }),
+        // Ignorer 'ALL' qui signifie "tous les niveaux" (pas un UUID valide)
+        ...(params.schoolLevelId && params.schoolLevelId !== 'ALL' && { schoolLevelId: params.schoolLevelId }),
       },
       include: {
         student: {

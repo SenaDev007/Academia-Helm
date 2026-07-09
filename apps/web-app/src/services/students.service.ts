@@ -22,8 +22,16 @@ class StudentsService {
    * Récupère la liste des étudiants
    */
   async getAll(params?: Record<string, string>): Promise<any> {
-    const qs = params ? new URLSearchParams(params).toString() : "";
-    
+    // ⚠️ Le backend pagine par défaut à 50 élèves (students-prisma.service.ts ligne 190).
+    // Pour les onglets qui ont besoin de TOUS les élèves (Mouvement, Historique,
+    // Audit, Familles, Régime finance, Identité), on force limit=200 sauf si
+    // l'appelant a explicitement spécifié un limit ou une page.
+    const finalParams: Record<string, string> = { ...(params || {}) };
+    if (!finalParams.limit && !finalParams.page) {
+      finalParams.limit = '200';
+    }
+    const qs = new URLSearchParams(finalParams).toString();
+
     if (!networkDetectionService.isConnected()) {
       return LocalSearchService.search("students", { tenantId: getTenantId() });
     }

@@ -1145,26 +1145,29 @@ export default function EnrollmentsContent() {
         <StudentEnrollmentForm
           onSubmit={async (data) => {
             try {
+              const effectiveSchoolLevelId = data.schoolLevelId || schoolLevel!.schoolLevelId || schoolLevel!.id;
+
               // 1. Pré-inscrire l'élève
               const student = await studentsService.preRegister({
                 academicYearId: academicYear!.id,
-                schoolLevelId: data.schoolLevelId || schoolLevel!.schoolLevelId || schoolLevel!.id,
+                schoolLevelId: effectiveSchoolLevelId,
                 firstName: data.student.firstName,
                 lastName: data.student.lastName,
-                dateOfBirth: data.student.dateOfBirth,
-                gender: data.student.gender,
-                nationality: data.student.nationality,
-                placeOfBirth: data.student.placeOfBirth,
-                photoUrl: data.student.photoUrl,
-                classId: data.classId,
+                // Convertir la date string (YYYY-MM-DD) en ISO pour Prisma
+                dateOfBirth: data.student.dateOfBirth ? new Date(data.student.dateOfBirth).toISOString() : undefined,
+                gender: data.student.gender || undefined,
+                nationality: data.student.nationality || undefined,
+                placeOfBirth: data.student.placeOfBirth || undefined,
+                photoUrl: data.student.photoUrl || undefined,
+                classId: data.classId || undefined,
               });
 
               // 2. Admettre l'élève (génère matricule + compte financier)
               const admitted = await studentsService.admit({
                 studentId: student.id,
                 academicYearId: academicYear!.id,
-                schoolLevelId: data.schoolLevelId || schoolLevel!.schoolLevelId || schoolLevel!.id,
-                classId: data.classId,
+                schoolLevelId: effectiveSchoolLevelId,
+                classId: data.classId || undefined,
               });
 
               // 3. Appliquer le régime tarifaire (non bloquant)
@@ -1324,12 +1327,12 @@ export default function EnrollmentsContent() {
               await studentsService.update(editEnrollment.student.id, {
                 firstName: data.student.firstName,
                 lastName: data.student.lastName,
-                dateOfBirth: data.student.dateOfBirth,
-                gender: data.student.gender,
-                nationality: data.student.nationality,
-                photoUrl: data.student.photoUrl,
-                placeOfBirth: data.student.placeOfBirth,
-                npi: data.student.npi,
+                dateOfBirth: data.student.dateOfBirth ? new Date(data.student.dateOfBirth).toISOString() : undefined,
+                gender: data.student.gender || undefined,
+                nationality: data.student.nationality || undefined,
+                photoUrl: data.student.photoUrl || undefined,
+                placeOfBirth: data.student.placeOfBirth || undefined,
+                npi: data.student.npi || undefined,
               });
               // Upload photo si nouvelle
               if (data.student.photoUrl && data.student.photoUrl.startsWith('data:')) {

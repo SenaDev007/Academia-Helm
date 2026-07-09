@@ -156,6 +156,16 @@ async function main() {
       `, params);
       console.log(`  ✓ ${recalcAccounts.rowCount} student_account(s) recalculé(s) (totalPaid=0, balance=totalDue)`);
 
+      // i. ⚠️ Supprimer les clôtures journalières résiduelles
+      //    Le cron de clôture auto peut créer des clôtures entre le moment
+      //    où on a purgé et le moment où on vérifie. On les supprime ici
+      //    pour garantir un état propre.
+      const delResidualClosures = await client.query(
+        `DELETE FROM "finance_daily_closures" ${tenantFilter} RETURNING id`,
+        params
+      );
+      console.log(`  ✓ ${delResidualClosures.rowCount} clôture(s) résiduelle(s) supprimée(s)`);
+
       await client.query('COMMIT');
       console.log('  ✓ Transaction validée (COMMIT)');
     } catch (err) {

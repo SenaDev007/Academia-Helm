@@ -39,7 +39,10 @@ export class StudentIdCardController {
    */
   @Post(':studentId/generate')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'DIRECTOR', 'SECRETARY')
+  // ⚠️ PROMOTER = fondateur/propriétaire de l'école — doit pouvoir gérer les cartes
+  // SCHOOL_OWNER, BOARD_PRESIDENT, DIRECTOR_GENERAL, SCHOOL_DIRECTOR, DEPUTY_DIRECTOR,
+  // SCHOOL_ADMIN = rôles de direction équivalents à ADMIN/DIRECTOR
+  @Roles('ADMIN', 'DIRECTOR', 'SECRETARY', 'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN')
   async generateIdCard(
     @GetTenant() tenant: any,
     @Param('studentId') studentId: string,
@@ -61,7 +64,8 @@ export class StudentIdCardController {
    */
   @Post('generate-bulk')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'DIRECTOR')
+  // ⚠️ PROMOTER + rôles de direction école (voir ci-dessus)
+  @Roles('ADMIN', 'DIRECTOR', 'SECRETARY', 'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN')
   async generateBulkIdCards(
     @GetTenant() tenant: any,
     @Body() data: {
@@ -143,7 +147,7 @@ export class StudentIdCardController {
    */
   @Put(':cardId/revoke')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'DIRECTOR')
+  @Roles('ADMIN', 'DIRECTOR', 'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN')
   async revokeIdCard(
     @GetTenant() tenant: any,
     @CurrentUser() user: any,
@@ -162,7 +166,7 @@ export class StudentIdCardController {
    */
   @Get('stats')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'DIRECTOR')
+  @Roles('ADMIN', 'DIRECTOR', 'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN', 'SECRETARY')
   async getIdCardStats(
     @GetTenant() tenant: any,
     @Query('academicYearId') academicYearId?: string,

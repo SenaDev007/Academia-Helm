@@ -136,6 +136,17 @@ async function main() {
       const delTx = await client.query(`DELETE FROM "finance_transactions" ${tenantFilter} RETURNING id`, params);
       console.log(`  ✓ ${delTx.rowCount} transaction(s) financière(s) supprimée(s)`);
 
+      // f2. ⚠️ Supprimer les transferts inter-caisses (allocations automatiques)
+      //     Ces transferts sont créés automatiquement lors des paiements (ex: Fedapay
+      //     → allocation vers Caisse Accueil). Si on ne les supprime pas, ils restent
+      //     visibles dans Multi-caisses > Historique des transferts.
+      const delTransfers = await client.query(`DELETE FROM "cash_register_transfers" ${tenantFilter} RETURNING id`, params);
+      console.log(`  ✓ ${delTransfers.rowCount} transfert(s) inter-caisses supprimé(s)`);
+
+      // f3. ⚠️ Supprimer les transactions de caisse (ajustements, ouvertures/fermetures)
+      const delCashTx = await client.query(`DELETE FROM "cash_register_transactions" ${tenantFilter} RETURNING id`, params);
+      console.log(`  ✓ ${delCashTx.rowCount} transaction(s) de caisse supprimée(s)`);
+
       // g. Supprimer les dépenses (au cas où il en resterait)
       const delExpenses = await client.query(`DELETE FROM "finance_expenses" ${tenantFilter} RETURNING id`, params);
       console.log(`  ✓ ${delExpenses.rowCount} dépense(s) supprimée(s)`);

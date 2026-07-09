@@ -1148,7 +1148,7 @@ export default function EnrollmentsContent() {
               // 1. Pré-inscrire l'élève
               const student = await studentsService.preRegister({
                 academicYearId: academicYear!.id,
-                schoolLevelId: schoolLevel!.schoolLevelId || schoolLevel!.id,
+                schoolLevelId: data.schoolLevelId || schoolLevel!.schoolLevelId || schoolLevel!.id,
                 firstName: data.student.firstName,
                 lastName: data.student.lastName,
                 dateOfBirth: data.student.dateOfBirth,
@@ -1163,7 +1163,7 @@ export default function EnrollmentsContent() {
               const admitted = await studentsService.admit({
                 studentId: student.id,
                 academicYearId: academicYear!.id,
-                schoolLevelId: schoolLevel!.schoolLevelId || schoolLevel!.id,
+                schoolLevelId: data.schoolLevelId || schoolLevel!.schoolLevelId || schoolLevel!.id,
                 classId: data.classId,
               });
 

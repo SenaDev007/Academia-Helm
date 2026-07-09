@@ -61,6 +61,7 @@ export interface EnrollmentSubmitData {
   };
   guardians: Guardian[];
   classId?: string;
+  schoolLevelId?: string; // UUID de school_levels sélectionné par l'utilisateur
 }
 
 interface StudentEnrollmentFormProps {
@@ -382,6 +383,7 @@ export default function StudentEnrollmentForm({
         },
         guardians,
         classId: formData.classId || undefined,
+        schoolLevelId: selectedLevelId || undefined,
       });
     } catch (err: any) {
       setError(err.message || "Erreur lors de l'inscription");

@@ -7,8 +7,8 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { FeeRegimeService } from './fee-regime.service';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
+import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { User } from '@prisma/client';
 import { CreateFeeRegimeDto, UpdateFeeRegimeDto, CreateFeeRegimeRuleDto } from './dto';
 
 @Controller('finance/fee-regimes')
@@ -18,23 +18,23 @@ export class FeeRegimeController {
 
   @Post()
   async createRegime(
+    @TenantId() tenantId: string,
     @Body() data: CreateFeeRegimeDto,
-    @CurrentUser() user: User,
   ) {
     return this.regimeService.createRegime({
       ...data,
-      tenantId: user.tenantId || '',
+      tenantId,
     });
   }
 
   @Get()
   async getRegimes(
+    @TenantId() tenantId: string,
     @Query('academicYearId') academicYearId: string,
     @Query('schoolLevelId') schoolLevelId: string | undefined,
-    @CurrentUser() user: User,
   ) {
     return this.regimeService.getRegimes(
-      user.tenantId || '',
+      tenantId,
       academicYearId,
       schoolLevelId || undefined,
     );

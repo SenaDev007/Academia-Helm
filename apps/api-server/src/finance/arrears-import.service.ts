@@ -1,27 +1,28 @@
 /**
  * ============================================================================
- * ARREARS IMPORT SERVICE — Import en masse d'arriérés via Excel
+ * ARREARS IMPORT SERVICE — Import en masse d'arriérés via Excel (multi-feuilles)
  * ============================================================================
  *
- * Permet aux établissements d'importer les arriérés des élèves sur une ou
- * plusieurs années scolaires, depuis un fichier Excel (.xlsx).
- *
- * Un élève peut avoir des arriérés sur plusieurs années (ex: 2023-2024 +
- * 2024-2025). Le fichier contient une ligne par (élève × année scolaire).
+ * ⭐ TEMPLATE MULTI-FEUILLES (une feuille par classe physique) :
+ *   Le template généré contient une feuille par classe configurée dans le
+ *   système. Chaque feuille est nommée d'après la classe (ex: "Maternelle 1",
+ *   "CP", "6ème"). Chaque feuille est pré-remplie avec les élèves déjà
+ *   inscrits dans cette classe (prénom, nom, matricule) — l'école n'a qu'à
+ *   saisir les montants dus/payés et l'année scolaire.
  *
  * Workflow :
- *   1. L'admin télécharge le template Excel (GET /finance/arrears-import/template)
- *   2. L'admin remplit le template (une ligne par élève × année)
+ *   1. L'admin télécharge le template (GET /finance/arrears-import/template)
+ *      → une feuille par classe, pré-remplie avec les élèves
+ *   2. L'admin remplit les montants pour chaque élève × année scolaire
  *   3. L'admin upload le fichier → preview (POST /finance/arrears-import/preview)
  *   4. L'admin confirme → import (POST /finance/arrears-import/run)
- *      → crée un FeeArrear pour chaque ligne valide
- *      → met à jour le StudentAccount (arrearsAmount + totalDue + balance)
  *
- * Format Excel (7 colonnes) :
- *   Prénom | Nom | Matricule (optionnel) | Année scolaire | Montant total dû (FCFA) |
+ * Format Excel (7 colonnes par feuille) :
+ *   Prénom | Nom | Matricule | Année scolaire | Montant total dû (FCFA) |
  *   Montant déjà payé (FCFA) | Notes (optionnel)
  *
- * Utilise ExcelJS (déjà installé côté backend).
+ * ⚠️ Le prénom, nom et matricule sont pré-remplis pour les élèves existants.
+ * L'école peut aussi ajouter manuellement des lignes pour de nouveaux élèves.
  * ============================================================================
  */
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
@@ -31,6 +32,7 @@ import { Response } from 'express';
 
 export interface ArrearsImportRow {
   rowIndex: number;
+  sheetName: string; // ⭐ nom de la feuille (utile pour le debug)
   firstName: string;
   lastName: string;
   matricule: string | null;
@@ -51,6 +53,7 @@ export interface ArrearsImportPreviewResult {
   validRows: number;
   invalidRows: number;
   rows: ArrearsImportRow[];
+  sheetsProcessed: string[];
   summary: {
     totalArrearsAmount: number;
     byYear: Record<string, number>;
@@ -64,6 +67,7 @@ export interface ArrearsImportRunResult {
   failed: number;
   results: Array<{
     rowIndex: number;
+    sheetName: string;
     studentName: string;
     academicYear: string;
     success: boolean;
@@ -78,7 +82,7 @@ export class ArrearsImportService {
   private static readonly HEADERS = [
     'Prénom',
     'Nom',
-    'Matricule (optionnel)',
+    'Matricule',
     'Année scolaire',
     'Montant total dû (FCFA)',
     'Montant déjà payé (FCFA)',
@@ -88,17 +92,13 @@ export class ArrearsImportService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Parse et valide le fichier Excel sans créer d'arriérés.
+   * Parse et valide le fichier Excel (multi-feuilles) sans créer d'arriérés.
    */
   async previewImport(
     tenantId: string,
     fileDataUrl: string,
   ): Promise<ArrearsImportPreviewResult> {
     const workbook = await this.parseExcelFile(fileDataUrl);
-    const worksheet = workbook.getWorksheet(1);
-    if (!worksheet) {
-      throw new BadRequestException('Aucune feuille trouvée dans le fichier Excel');
-    }
 
     // Pré-charger les élèves et années scolaires du tenant
     const students = await this.prisma.student.findMany({
@@ -111,15 +111,34 @@ export class ArrearsImportService {
     });
 
     const rows: ArrearsImportRow[] = [];
+    const sheetsProcessed: string[] = [];
 
-    worksheet.eachRow((row, rowNumber) => {
-      if (rowNumber === 1) return; // Skip header
-      const firstCell = row.getCell(1).value;
-      if (!firstCell || (typeof firstCell === 'string' && !firstCell.trim())) return;
+    // ⭐ Itérer sur toutes les feuilles du classeur
+    workbook.eachSheet((worksheet) => {
+      const sheetName = worksheet.name;
+      // Ignorer les feuilles d'instructions
+      if (sheetName.startsWith('_') || /instruction/i.test(sheetName)) {
+        return;
+      }
+      sheetsProcessed.push(sheetName);
 
-      const parsed = this.parseRow(row, rowNumber);
-      this.validateRow(parsed, students, academicYears);
-      rows.push(parsed);
+      let isFirstRow = true;
+      worksheet.eachRow((row, rowNumber) => {
+        if (isFirstRow) {
+          isFirstRow = false;
+          return;
+        }
+        const firstCell = row.getCell(1).value;
+        if (!firstCell || (typeof firstCell === 'string' && !firstCell.trim())) return;
+        // Skip les lignes d'instructions (emoji)
+        if (typeof firstCell === 'string' && /^[⚠️📅💰✅📊🧑📋💡🏫]/.test(firstCell.trim())) {
+          return;
+        }
+
+        const parsed = this.parseRow(row, rowNumber, sheetName);
+        this.validateRow(parsed, students, academicYears);
+        rows.push(parsed);
+      });
     });
 
     const validRows = rows.filter((r) => r.isValid).length;
@@ -139,7 +158,7 @@ export class ArrearsImportService {
       summary.byYear[r.academicYearLabel] = (summary.byYear[r.academicYearLabel] || 0) + (r.totalDue - r.totalPaid);
     });
 
-    return { totalRows: rows.length, validRows, invalidRows, rows, summary };
+    return { totalRows: rows.length, validRows, invalidRows, rows, sheetsProcessed, summary };
   }
 
   /**
@@ -226,14 +245,16 @@ export class ArrearsImportService {
 
         results.push({
           rowIndex: row.rowIndex,
+          sheetName: row.sheetName,
           studentName: `${row.lastName} ${row.firstName}`,
           academicYear: row.academicYearLabel,
           success: true,
         });
       } catch (e) {
-        this.logger.error(`Import arriéré ligne ${row.rowIndex}: ${e.message}`);
+        this.logger.error(`Import arriéré feuille "${row.sheetName}" ligne ${row.rowIndex}: ${e.message}`);
         results.push({
           rowIndex: row.rowIndex,
+          sheetName: row.sheetName,
           studentName: `${row.lastName} ${row.firstName}`,
           academicYear: row.academicYearLabel,
           success: false,
@@ -251,55 +272,77 @@ export class ArrearsImportService {
   }
 
   /**
-   * Génère et télécharge le template Excel.
+   * ⭐ Génère et télécharge le template Excel MULTI-FEUILLES.
+   * Une feuille par classe physique configurée dans le système (tenant).
+   * Chaque feuille est pré-remplie avec les élèves déjà inscrits dans cette classe.
    */
-  async downloadTemplate(res: Response): Promise<void> {
+  async downloadTemplate(tenantId: string, res: Response): Promise<void> {
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Academia Helm';
     workbook.created = new Date();
 
-    const worksheet = workbook.addWorksheet('Arriérés');
+    // ⭐ Récupérer toutes les classes physiques du tenant, triées par niveau puis par nom
+    const classes = await this.prisma.class.findMany({
+      where: { tenantId },
+      include: {
+        schoolLevel: {
+          select: { id: true, name: true, code: true, order: true },
+        },
+      },
+      orderBy: [
+        { schoolLevel: { order: 'asc' } },
+        { name: 'asc' },
+      ],
+    });
 
-    worksheet.columns = ArrearsImportService.HEADERS.map((header) => ({
-      header,
-      key: header,
-      width: 25,
-    }));
+    // ⭐ Récupérer toutes les années scolaires du tenant (pour l'exemple)
+    const academicYears = await this.prisma.academicYear.findMany({
+      where: { tenantId },
+      select: { id: true, name: true, label: true },
+      orderBy: { name: 'desc' },
+    });
+    const exampleYear = academicYears[0]?.name || '2024-2025';
 
-    // Style en-tête
-    const headerRow = worksheet.getRow(1);
-    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
-    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF92400E' } };
-    headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-    headerRow.height = 30;
+    if (classes.length === 0) {
+      // Fallback : template par défaut avec une seule feuille
+      this.logger.warn(`Aucune classe configurée pour le tenant ${tenantId} — template par défaut`);
+      const ws = workbook.addWorksheet('Arriérés');
+      this.applySheetLayout(ws, '', exampleYear, []);
+      this.addInstructionsRow(ws);
+    } else {
+      // ⭐ Récupérer les inscriptions actives par classe (avec les élèves)
+      const enrollments = await this.prisma.studentEnrollment.findMany({
+        where: {
+          tenantId,
+          classId: { in: classes.map(c => c.id) },
+          status: { in: ['ENROLLED', 'PRE_REGISTERED'] },
+        },
+        include: {
+          student: {
+            select: { id: true, firstName: true, lastName: true, matricule: true, studentCode: true },
+          },
+        },
+        orderBy: { student: { lastName: 'asc' } },
+      });
 
-    // Exemples
-    const examples = [
-      ['Marie', 'AKOVI', 'ELV-001', '2023-2024', 75000, 30000, 'Scolarité 3e trimestre impayée'],
-      ['Jean', 'DOSSOU', 'ELV-002', '2024-2025', 120000, 0, 'Scolarité année complète impayée'],
-      ['Marie', 'AKOVI', 'ELV-001', '2024-2025', 50000, 25000, 'Frais de cantine impayés'],
-    ];
-    examples.forEach((ex) => worksheet.addRow(ex));
+      // Grouper les élèves par classId
+      const studentsByClass = new Map<string, any[]>();
+      enrollments.forEach(e => {
+        if (!e.classId) return;
+        if (!studentsByClass.has(e.classId)) studentsByClass.set(e.classId, []);
+        studentsByClass.get(e.classId)!.push(e.student);
+      });
 
-    for (let i = 2; i <= 4; i++) {
-      const row = worksheet.getRow(i);
-      row.font = { italic: true, color: { argb: 'FF6B7280' }, size: 10 };
-    }
-
-    // Notes
-    worksheet.addRow([]);
-    worksheet.addRow(['⚠️ Lignes d\'exemple à supprimer avant import.']);
-    worksheet.addRow(['📅 Année scolaire : label exact (ex: 2023-2024, 2024-2025) — doit exister dans votre établissement.']);
-    worksheet.addRow(['💰 Montant total dû : montant total des frais de l\'année (en FCFA).']);
-    worksheet.addRow(['✅ Montant déjà payé : ce que l\'élève a déjà payé pour cette année (en FCFA).']);
-    worksheet.addRow(['📊 Solde restant = Montant total dû − Montant déjà payé.']);
-    worksheet.addRow(['🧑‍🎓 Matricule : optionnel mais recommandé pour identifier précisément l\'élève.']);
-    worksheet.addColumn(['📋 Un élève peut avoir plusieurs lignes (une par année scolaire).']);
-    worksheet.addRow(['📋 Colonnes obligatoires : Prénom, Nom, Année scolaire, Montant total dû, Montant déjà payé.']);
-
-    for (let i = 5; i <= 13; i++) {
-      const row = worksheet.getRow(i);
-      row.font = { italic: true, color: { argb: 'FF92400E' }, size: 10 };
+      // ⭐ Une feuille par classe
+      for (const cls of classes) {
+        const sheetName = this.sanitizeSheetName(cls.name || cls.code || `Classe-${cls.id.substring(0, 8)}`);
+        const schoolLevelName = cls.schoolLevel?.name || '';
+        const studentsInClass = studentsByClass.get(cls.id) || [];
+        const ws = workbook.addWorksheet(sheetName);
+        this.applySheetLayout(ws, schoolLevelName, exampleYear, studentsInClass);
+        this.addInstructionsRow(ws);
+        this.logger.log(`Feuille "${sheetName}" créée avec ${studentsInClass.length} élève(s) pré-rempli(s)`);
+      }
     }
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -310,6 +353,118 @@ export class ArrearsImportService {
 
   // ─── Méthodes privées ───
 
+  /**
+   * Nettoie un nom de feuille Excel (max 31 chars, pas de \ / ? * [ ] :).
+   */
+  private sanitizeSheetName(name: string): string {
+    let clean = name.replace(/[\\/?*\[\]:]/g, '-').trim();
+    if (clean.length > 31) clean = clean.substring(0, 31);
+    return clean || 'Feuille';
+  }
+
+  /**
+   * Applique la mise en page standard à une feuille : en-têtes + élèves pré-remplis + bordures.
+   */
+  private applySheetLayout(
+    worksheet: ExcelJS.Worksheet,
+    schoolLevelName: string,
+    exampleYear: string,
+    studentsInClass: any[],
+  ): void {
+    // Définir les colonnes avec largeurs
+    worksheet.columns = ArrearsImportService.HEADERS.map((header) => ({
+      header,
+      key: header,
+      width: 22,
+    }));
+
+    // Style en-tête (ligne 1) — orange (couleur arriérés finance)
+    const headerRow = worksheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+    headerRow.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF92400E' },
+    };
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    headerRow.height = 30;
+
+    // ⭐ Pré-remplir avec les élèves de la classe (une ligne par élève)
+    // L'année scolaire est pré-remplie avec l'année d'exemple (modifiable)
+    let rowIdx = 2;
+    if (studentsInClass.length > 0) {
+      for (const s of studentsInClass) {
+        worksheet.addRow([
+          s.firstName || '',
+          s.lastName || '',
+          s.matricule || s.studentCode || '',
+          exampleYear, // pré-rempli mais modifiable
+          '', // Montant dû — à remplir
+          '', // Montant payé — à remplir
+          '', // Notes — optionnel
+        ]);
+        rowIdx++;
+      }
+    } else {
+      // Aucun élève dans cette classe — ligne d'exemple
+      worksheet.addRow(['Marie', 'AKOVI', 'ELV-001', exampleYear, 75000, 30000, 'Scolarité impayée']);
+      rowIdx++;
+    }
+
+    // Style des lignes de données (italique gris si exemples, normal si élèves réels)
+    const startRow = 2;
+    const endRow = rowIdx - 1;
+    for (let i = startRow; i <= endRow; i++) {
+      const row = worksheet.getRow(i);
+      row.font = studentsInClass.length > 0
+        ? { size: 10, color: { argb: 'FF1F2937' } }
+        : { italic: true, color: { argb: 'FF6B7280' }, size: 10 };
+      row.alignment = { vertical: 'middle' };
+    }
+
+    // Bordures sur les colonnes (en-tête + lignes de données)
+    for (let i = 1; i <= endRow; i++) {
+      const row = worksheet.getRow(i);
+      row.eachCell((cell) => {
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+        };
+      });
+    }
+
+    // ⭐ Note en haut de feuille indiquant la classe concernée
+    const noteRow = worksheet.addRow([
+      `🏫 Feuille pour la classe : ${worksheet.name}${schoolLevelName ? ` (${schoolLevelName})` : ''} — ` +
+      `${studentsInClass.length} élève(s) pré-rempli(s). Saisissez les montants et l'année scolaire concernée.`,
+    ]);
+    noteRow.font = { italic: true, color: { argb: 'FF92400E' }, size: 10 };
+  }
+
+  /**
+   * Ajoute les lignes d'instructions en bas de feuille.
+   */
+  private addInstructionsRow(worksheet: ExcelJS.Worksheet): void {
+    worksheet.addRow([]);
+    worksheet.addRow(['⚠️ Lignes d\'exemple à supprimer avant import. Les lignes pré-remplies avec des élèves réels peuvent être conservées.']);
+    worksheet.addRow(['📅 Année scolaire : label exact (ex: 2023-2024, 2024-2025) — doit exister dans votre établissement.']);
+    worksheet.addRow(['💰 Montant total dû : montant total des frais de l\'année (en FCFA).']);
+    worksheet.addRow(['✅ Montant déjà payé : ce que l\'élève a déjà payé pour cette année (en FCFA).']);
+    worksheet.addRow(['📊 Solde restant = Montant total dû − Montant déjà payé.']);
+    worksheet.addRow(['🧑‍🎓 Matricule : pré-rempli pour les élèves existants. Pour un nouvel élève, saisissez son matricule ou laissez vide (résolution par nom).']);
+    worksheet.addRow(['📋 Un élève peut avoir plusieurs lignes (une par année scolaire d\'arriéré).']);
+    worksheet.addRow(['💡 Pour ajouter une feuille pour une nouvelle classe, configurez-la d\'abord dans Paramètres > Classes, puis re-téléchargez ce template.']);
+
+    // Styler les lignes d'instructions
+    const lastRow = worksheet.rowCount;
+    for (let i = lastRow - 7; i <= lastRow; i++) {
+      const row = worksheet.getRow(i);
+      row.font = { italic: true, color: { argb: 'FF92400E' }, size: 10 };
+    }
+  }
+
   private async parseExcelFile(fileDataUrl: string): Promise<ExcelJS.Workbook> {
     const base64Match = fileDataUrl.match(/^data:([^;]+);base64,(.+)$/);
     const base64Data = base64Match ? base64Match[2] : fileDataUrl;
@@ -319,7 +474,11 @@ export class ArrearsImportService {
     return workbook;
   }
 
-  private parseRow(row: ExcelJS.Row, rowNumber: number): ArrearsImportRow {
+  /**
+   * ⭐ Parse une ligne Excel en ArrearsImportRow.
+   * sheetName est conservé pour le debug (mais la résolution se fait par matricule/nom).
+   */
+  private parseRow(row: ExcelJS.Row, rowNumber: number, sheetName: string): ArrearsImportRow {
     const getCell = (col: number): string => {
       const val = row.getCell(col).value;
       if (val === null || val === undefined) return '';
@@ -337,6 +496,7 @@ export class ArrearsImportService {
 
     return {
       rowIndex: rowNumber,
+      sheetName,
       firstName: getCell(1),
       lastName: getCell(2),
       matricule: getCell(3) || null,

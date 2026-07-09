@@ -281,8 +281,12 @@ export default function StudentTransferContent() {
               filteredTransfers.map(t => (
                 <div key={t.id} className="p-6 hover:bg-gray-50/50 transition-all flex items-center justify-between group">
                   <div className="flex items-center space-x-6">
-                    <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center">
-                      <User className="w-6 h-6 text-blue-900" />
+                    <div className="w-12 h-12 bg-blue-50 rounded-2xl overflow-hidden flex items-center justify-center">
+                      {t.student.photoUrl ? (
+                        <img src={t.student.photoUrl} alt={`${t.student.firstName} ${t.student.lastName}`} className="w-full h-full object-cover" />
+                      ) : (
+                        <User className="w-6 h-6 text-blue-900" />
+                      )}
                     </div>
                     <div>
                       <h4 className="text-sm font-black text-gray-900">{t.student.lastName} {t.student.firstName}</h4>

@@ -87,8 +87,12 @@ export default function StudentHistoryContent() {
               <tr key={item.id} className="hover:bg-blue-50/30 transition-colors group">
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center font-bold text-gray-400 group-hover:bg-purple-100 group-hover:text-purple-600 transition-all">
-                      {item.student.lastName[0]}
+                    <div className="w-8 h-8 rounded-lg bg-gray-100 overflow-hidden flex items-center justify-center font-bold text-gray-400 group-hover:bg-purple-100 group-hover:text-purple-600 transition-all">
+                      {item.student.photoUrl ? (
+                        <img src={item.student.photoUrl} alt={`${item.student.firstName} ${item.student.lastName}`} className="w-full h-full object-cover" />
+                      ) : (
+                        <>{item.student.lastName[0]}</>
+                      )}
                     </div>
                     <div>
                       <div className="text-sm font-bold text-gray-900">{item.student.lastName} {item.student.firstName}</div>

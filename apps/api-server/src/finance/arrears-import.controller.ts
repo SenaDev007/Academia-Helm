@@ -19,9 +19,21 @@ import { TenantId } from '../common/decorators/tenant-id.decorator';
 export class ArrearsImportController {
   constructor(private readonly importService: ArrearsImportService) {}
 
+  /**
+   * GET /finance/arrears-import/template
+   * Télécharge le template Excel multi-feuilles : une feuille par classe physique
+   * configurée dans le système (pour le tenant courant).
+   *
+   * Chaque feuille est nommée d'après la classe (ex: "Maternelle 1", "CP", "6ème")
+   * et contient la liste des élèves déjà inscrits dans cette classe (pré-remplis)
+   * avec les colonnes montant vides à remplir.
+   */
   @Get('template')
-  async downloadTemplate(@Res() res: Response) {
-    await this.importService.downloadTemplate(res);
+  async downloadTemplate(
+    @TenantId() tenantId: string,
+    @Res() res: Response,
+  ) {
+    await this.importService.downloadTemplate(tenantId, res);
   }
 
   @Post('preview')

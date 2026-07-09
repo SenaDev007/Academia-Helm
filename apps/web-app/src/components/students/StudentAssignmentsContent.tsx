@@ -37,6 +37,7 @@ interface Student {
   status: string;
   isActive: boolean;
   schoolLevelId?: string;
+  photoUrl?: string | null;
 }
 
 interface ClassInfo {
@@ -331,8 +332,12 @@ export default function StudentAssignmentsContent() {
                       onChange={() => toggleUnassignedSelection(student.id)}
                       className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 shrink-0"
                     />
-                    <div className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500 shrink-0">
-                      {student.lastName[0]}{student.firstName[0]}
+                    <div className="h-8 w-8 rounded-full bg-slate-100 overflow-hidden flex items-center justify-center text-xs font-bold text-slate-500 shrink-0">
+                      {student.photoUrl ? (
+                        <img src={student.photoUrl} alt={`${student.firstName} ${student.lastName}`} className="w-full h-full object-cover" />
+                      ) : (
+                        <>{student.lastName[0]}{student.firstName[0]}</>
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-slate-800 truncate">
@@ -480,8 +485,12 @@ export default function StudentAssignmentsContent() {
                                       className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 shrink-0"
                                     />
                                     <span className="text-[10px] font-mono text-slate-400 w-5 text-right">{idx + 1}</span>
-                                    <div className="h-7 w-7 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500 shrink-0">
-                                      {enr.student.lastName[0]}{enr.student.firstName[0]}
+                                    <div className="h-7 w-7 rounded-full bg-slate-100 overflow-hidden flex items-center justify-center text-[10px] font-bold text-slate-500 shrink-0">
+                                      {enr.student.photoUrl ? (
+                                        <img src={enr.student.photoUrl} alt={`${enr.student.firstName} ${enr.student.lastName}`} className="w-full h-full object-cover" />
+                                      ) : (
+                                        <>{enr.student.lastName[0]}{enr.student.firstName[0]}</>
+                                      )}
                                     </div>
                                     <span className="text-sm text-slate-700 flex-1">
                                       {enr.student.lastName.toUpperCase()} {enr.student.firstName}

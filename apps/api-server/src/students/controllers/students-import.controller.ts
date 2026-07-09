@@ -34,11 +34,19 @@ export class StudentsImportController {
 
   /**
    * GET /students/import/template
-   * Télécharge le template Excel vierge avec en-têtes et exemples.
+   * Télécharge le template Excel multi-feuilles : une feuille par classe physique
+   * configurée dans le système (pour le tenant courant).
+   *
+   * Chaque feuille est nommée "MATERNELLE 1", "CP", "6ème", etc.
+   * Les colonnes "Niveau scolaire" et "Classe" sont pré-remplies (readonly)
+   * pour chaque feuille — l'école ne saisit que les informations élève.
    */
   @Get('template')
-  async downloadTemplate(@Res() res: Response) {
-    await this.importService.downloadTemplate(res);
+  async downloadTemplate(
+    @TenantId() tenantId: string,
+    @Res() res: Response,
+  ) {
+    await this.importService.downloadTemplate(tenantId, res);
   }
 
   /**

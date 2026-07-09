@@ -1,30 +1,34 @@
 /**
  * ============================================================================
- * STUDENTS IMPORT SERVICE — Import en masse d'élèves via Excel
+ * STUDENTS IMPORT SERVICE — Import en masse d'élèves via Excel (multi-feuilles)
  * ============================================================================
  *
  * Permet aux établissements d'importer leur liste d'élèves existants
  * depuis un fichier Excel (.xlsx) pour un onboarding rapide.
  *
+ * ⭐ TEMPLATE MULTI-FEUILLES (une feuille par classe physique) :
+ *   Le template généré contient une feuille par classe configurée dans le
+ *   système. Chaque feuille est nommée d'après la classe (ex: "Maternelle 1",
+ *   "CP", "6ème", "Terminale S"). L'école n'a plus à saisir le niveau scolaire
+ *   ni la classe — ils sont déduits du nom de la feuille.
+ *
  * Workflow :
- *   1. L'admin télécharge le template Excel (GET /students/import/template)
- *   2. L'admin remplit le template (une ligne par élève)
+ *   1. L'admin télécharge le template (GET /students/import/template)
+ *      → une feuille par classe physique du tenant
+ *   2. L'admin remplit chaque feuille (une ligne par élève de cette classe)
  *   3. L'admin upload le fichier → preview (POST /students/import/preview)
- *      → le système valide chaque ligne et retourne les erreurs
+ *      → le système valide chaque ligne de chaque feuille
  *   4. L'admin corrige les erreurs éventuelles et confirme
  *   5. Import réel (POST /students/import/run)
  *      → crée Student + StudentEnrollment + StudentAccount pour chaque ligne valide
  *
- * Format Excel (13 colonnes) :
+ * Format Excel (10 colonnes par feuille) :
  *   Prénom | Nom | Date de naissance | Sexe | Lieu de naissance |
- *   Nationalité | Niveau scolaire | Classe | Type d'élève |
- *   Nom du parent | Téléphone du parent | Email du parent
+ *   Nationalité | Type d'élève |
+ *   Nom du parent/tuteur | Téléphone du parent | Email du parent
  *
  * ⚠️ Les arriérés antérieurs NE sont PAS dans ce fichier. Ils sont importés
- * séparément via ArrearsImportService (un élève peut avoir des arriérés sur
- * plusieurs années, ce qui nécessite un fichier dédié).
- *
- * Utilise ExcelJS (déjà installé côté backend).
+ * séparément via ArrearsImportService.
  * ============================================================================
  */
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
@@ -35,15 +39,16 @@ import * as ExcelJS from 'exceljs';
 import { Response } from 'express';
 
 export interface ImportRow {
-  rowIndex: number; // 1-based (ligne dans le fichier Excel)
+  rowIndex: number; // 1-based (ligne dans la feuille Excel)
+  sheetName: string; // ⭐ nom de la feuille (utile pour le debug)
   firstName: string;
   lastName: string;
   dateOfBirth: Date | null;
   gender: string | null;
   placeOfBirth: string | null;
   nationality: string | null;
-  schoolLevelName: string;
-  className: string;
+  schoolLevelName: string; // déduit du nom de la feuille
+  className: string;       // déduit du nom de la feuille
   isNewStudent: boolean | null;
   guardianName: string | null;
   guardianPhone: string | null;
@@ -61,6 +66,7 @@ export interface ImportPreviewResult {
   validRows: number;
   invalidRows: number;
   rows: ImportRow[];
+  sheetsProcessed: string[]; // ⭐ liste des feuilles traitées
   summary: {
     newStudents: number;
     oldStudents: number;
@@ -75,6 +81,7 @@ export interface ImportRunResult {
   failed: number;
   results: Array<{
     rowIndex: number;
+    sheetName: string;
     studentName: string;
     success: boolean;
     error?: string;
@@ -86,10 +93,8 @@ export interface ImportRunResult {
 export class StudentsImportService {
   private readonly logger = new Logger(StudentsImportService.name);
 
-  // En-têtes attendues (dans l'ordre des colonnes)
-  // Note : les arriérés antérieurs NE sont PAS dans ce fichier — ils sont
-  // importés séparément via ArrearsImportService (un élève peut avoir des
-  // arriérés sur plusieurs années, ce qui nécessite un fichier dédié).
+  // ⭐ En-têtes attendues (10 colonnes — sans "Niveau scolaire" ni "Classe"
+  // car ils sont déduits du nom de la feuille).
   private static readonly HEADERS = [
     'Prénom',
     'Nom',
@@ -97,8 +102,6 @@ export class StudentsImportService {
     'Sexe',
     'Lieu de naissance',
     'Nationalité',
-    'Niveau scolaire',
-    'Classe',
     "Type d'élève",
     'Nom du parent/tuteur',
     'Téléphone du parent',
@@ -112,7 +115,8 @@ export class StudentsImportService {
   ) {}
 
   /**
-   * Parse un fichier Excel (base64 data URL) et valide chaque ligne.
+   * Parse un fichier Excel (base64 data URL) et valide chaque ligne de chaque feuille.
+   * ⭐ Multi-feuilles : chaque feuille = une classe physique.
    * Retourne un aperçu sans créer d'élèves.
    */
   async previewImport(
@@ -121,10 +125,6 @@ export class StudentsImportService {
     fileDataUrl: string,
   ): Promise<ImportPreviewResult> {
     const workbook = await this.parseExcelFile(fileDataUrl);
-    const worksheet = workbook.getWorksheet(1);
-    if (!worksheet) {
-      throw new BadRequestException('Aucune feuille trouvée dans le fichier Excel');
-    }
 
     // Pré-charger les niveaux et classes du tenant pour la résolution
     const schoolLevels = await this.prisma.schoolLevel.findMany({
@@ -137,28 +137,56 @@ export class StudentsImportService {
     });
 
     const rows: ImportRow[] = [];
-    let headerRow: ExcelJS.Row | null = null;
+    const sheetsProcessed: string[] = [];
 
-    worksheet.eachRow((row, rowNumber) => {
-      if (rowNumber === 1) {
-        headerRow = row;
+    // ⭐ Itérer sur toutes les feuilles du classeur
+    workbook.eachSheet((worksheet) => {
+      const sheetName = worksheet.name;
+      // Ignorer les feuilles "instructions" (commençant par _ ou contenant "instruction")
+      if (sheetName.startsWith('_') || /instruction/i.test(sheetName)) {
         return;
       }
-      // Skip lignes vides
-      const firstCell = row.getCell(1).value;
-      if (!firstCell || (typeof firstCell === 'string' && !firstCell.trim())) {
+      sheetsProcessed.push(sheetName);
+
+      // ⭐ Déduire schoolLevelName et className du nom de la feuille
+      // Le nom de la feuille DOIT correspondre à une classe existante.
+      // On essaie d'abord un match exact, puis un match insensible à la casse.
+      const cls = classes.find(
+        (c) => c.name.toLowerCase() === sheetName.toLowerCase() ||
+               (c.code && c.code.toLowerCase() === sheetName.toLowerCase()),
+      );
+      if (!cls) {
+        // Feuille inconnue — on ignore avec un warning
+        this.logger.warn(`Feuille "${sheetName}" ne correspond à aucune classe configurée — ignorée`);
         return;
       }
+      const schoolLevel = schoolLevels.find((sl) => sl.id === cls.schoolLevelId);
+      const schoolLevelName = schoolLevel?.name || '';
+      const className = cls.name;
 
-      const parsed = this.parseRow(row, rowNumber);
-      this.validateRow(parsed, schoolLevels, classes);
-      rows.push(parsed);
+      // Parcourir les lignes de la feuille
+      let isFirstRow = true;
+      worksheet.eachRow((row, rowNumber) => {
+        if (isFirstRow) {
+          // Ligne 1 = en-têtes — skipper
+          isFirstRow = false;
+          return;
+        }
+        // Skip lignes vides
+        const firstCell = row.getCell(1).value;
+        if (!firstCell || (typeof firstCell === 'string' && !firstCell.trim())) {
+          return;
+        }
+        // Skip les lignes d'instructions (commençant par ⚠️ ou 📅)
+        if (typeof firstCell === 'string' && /^[⚠️📅👤🎓🏫📦💰📋]/.test(firstCell.trim())) {
+          return;
+        }
+
+        const parsed = this.parseRow(row, rowNumber, sheetName, schoolLevelName, className);
+        this.validateRow(parsed, schoolLevels, classes);
+        rows.push(parsed);
+      });
     });
-
-    // Vérifier les en-têtes
-    if (headerRow) {
-      this.validateHeaders(headerRow);
-    }
 
     const validRows = rows.filter((r) => r.isValid).length;
     const invalidRows = rows.length - validRows;
@@ -180,12 +208,13 @@ export class StudentsImportService {
       validRows,
       invalidRows,
       rows,
+      sheetsProcessed,
       summary,
     };
   }
 
   /**
-   * Importe réellement les élèves du fichier Excel.
+   * Importe réellement les élèves du fichier Excel (multi-feuilles).
    * Crée Student + StudentEnrollment + StudentAccount pour chaque ligne valide.
    */
   async runImport(
@@ -219,7 +248,7 @@ export class StudentsImportService {
           placeOfBirth: row.placeOfBirth || undefined,
           nationality: row.nationality || undefined,
           classId: classId || undefined,
-          previousArrears: 0, // Les arriérés sont importés séparément via ArrearsImportService
+          previousArrears: 0,
           enrollmentType,
         }, userId);
 
@@ -238,16 +267,18 @@ export class StudentsImportService {
 
         results.push({
           rowIndex: row.rowIndex,
+          sheetName: row.sheetName,
           studentName: `${row.lastName} ${row.firstName}`,
           success: true,
           studentId: student.id,
         });
       } catch (e) {
         this.logger.error(
-          `Import ligne ${row.rowIndex} (${row.lastName} ${row.firstName}): ${e.message}`,
+          `Import feuille "${row.sheetName}" ligne ${row.rowIndex} (${row.lastName} ${row.firstName}): ${e.message}`,
         );
         results.push({
           rowIndex: row.rowIndex,
+          sheetName: row.sheetName,
           studentName: `${row.lastName} ${row.firstName}`,
           success: false,
           error: e.message,
@@ -264,15 +295,85 @@ export class StudentsImportService {
   }
 
   /**
-   * Génère et télécharge le template Excel vierge avec en-têtes et exemples.
+   * ⭐ Génère et télécharge le template Excel MULTI-FEUILLES.
+   * Une feuille par classe physique configurée dans le système (tenant).
+   * Chaque feuille est nommée d'après la classe.
+   *
+   * Si aucune classe n'est configurée, on tombe sur un template par défaut
+   * avec une seule feuille "Élèves" (rétro-compatibilité).
    */
-  async downloadTemplate(res: Response): Promise<void> {
+  async downloadTemplate(tenantId: string, res: Response): Promise<void> {
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Academia Helm';
     workbook.created = new Date();
 
-    const worksheet = workbook.addWorksheet('Élèves');
+    // ⭐ Récupérer toutes les classes physiques du tenant, triées par niveau puis par nom
+    // Note : le modèle Class n'a pas de champ isActive — on prend toutes les classes.
+    const classes = await this.prisma.class.findMany({
+      where: { tenantId },
+      include: {
+        schoolLevel: {
+          select: { id: true, name: true, code: true, order: true },
+        },
+      },
+      orderBy: [
+        { schoolLevel: { order: 'asc' } },
+        { name: 'asc' },
+      ],
+    });
 
+    if (classes.length === 0) {
+      // Fallback : template par défaut avec une seule feuille
+      this.logger.warn(`Aucune classe configurée pour le tenant ${tenantId} — template par défaut`);
+      const ws = workbook.addWorksheet('Élèves');
+      this.applySheetLayout(ws, '', '');
+      this.addInstructionsRow(ws);
+    } else {
+      // ⭐ Une feuille par classe
+      for (const cls of classes) {
+        // ⭐ Nom de feuille : nom de la classe (limité à 31 chars — limite Excel)
+        // + sanitized pour éviter les caractères interdits : \ / ? * [ ]
+        const sheetName = this.sanitizeSheetName(cls.name || cls.code || `Classe-${cls.id.substring(0, 8)}`);
+        const schoolLevelName = cls.schoolLevel?.name || '';
+        const ws = workbook.addWorksheet(sheetName);
+        this.applySheetLayout(ws, schoolLevelName, cls.name);
+        this.addInstructionsRow(ws);
+      }
+    }
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="template-import-eleves-academia-helm.xlsx"',
+    );
+    await workbook.xlsx.write(res);
+    res.end();
+  }
+
+  // ─── Méthodes privées ───
+
+  /**
+   * Nettoie un nom de feuille Excel (max 31 chars, pas de \ / ? * [ ] :).
+   */
+  private sanitizeSheetName(name: string): string {
+    let clean = name.replace(/[\\/?*\[\]:]/g, '-').trim();
+    if (clean.length > 31) {
+      clean = clean.substring(0, 31);
+    }
+    return clean || 'Feuille';
+  }
+
+  /**
+   * Applique la mise en page standard à une feuille : en-têtes + exemples + bordures.
+   */
+  private applySheetLayout(
+    worksheet: ExcelJS.Worksheet,
+    schoolLevelName: string,
+    className: string,
+  ): void {
     // Définir les colonnes avec largeurs
     worksheet.columns = StudentsImportService.HEADERS.map((header) => ({
       header,
@@ -291,65 +392,63 @@ export class StudentsImportService {
     headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
     headerRow.height = 30;
 
-    // Lignes d'exemple (ligne 2 et 3)
+    // Lignes d'exemple (ligne 2) — adaptées au niveau/classe de la feuille
+    const exampleClassName = className || 'CE1';
+    const exampleLevel = schoolLevelName || 'Primaire';
     const examples = [
-      ['Marie', 'AKOVI', '15/03/2015', 'F', 'Cotonou', 'Béninoise', 'Primaire', 'CE1', 'Nouvel élève', 'Koffi AKOVI', '+229 01 97 22 23 45', 'koffi.akovi@email.com'],
-      ['Jean', 'DOSSOU', '22/09/2014', 'M', 'Porto-Novo', 'Béninoise', 'Primaire', 'CM2', 'Ancien élève', 'Adèle DOSSOU', '+229 01 96 11 22 33', 'adele.dossou@email.com'],
+      ['Marie', 'AKOVI', '15/03/2015', 'F', 'Cotonou', 'Béninoise', 'Nouvel élève', 'Koffi AKOVI', '+229 01 97 22 23 45', 'koffi.akovi@email.com'],
     ];
     examples.forEach((example) => {
       worksheet.addRow(example);
     });
 
     // Style lignes d'exemple (italique gris)
-    for (let i = 2; i <= 3; i++) {
+    const exRow = worksheet.getRow(2);
+    exRow.font = { italic: true, color: { argb: 'FF6B7280' }, size: 10 };
+    exRow.alignment = { vertical: 'middle' };
+
+    // Bordures sur les colonnes (lignes 1 et 2)
+    for (let i = 1; i <= 2; i++) {
       const row = worksheet.getRow(i);
-      row.font = { italic: true, color: { argb: 'FF6B7280' }, size: 10 };
-      row.alignment = { vertical: 'middle' };
+      row.eachCell((cell) => {
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+        };
+      });
     }
 
-    // Note explicative (ligne 5)
+    // ⭐ Note en haut de feuille (ligne 4) indiquant la classe concernée
+    worksheet.addRow([]);
+    const noteRow = worksheet.addRow([
+      `🏫 Feuille pour la classe : ${exampleClassName} (${exampleLevel}) — ` +
+      `le niveau et la classe sont déduits automatiquement du nom de cette feuille.`,
+    ]);
+    noteRow.font = { italic: true, color: { argb: 'FF92400E' }, size: 10 };
+  }
+
+  /**
+   * Ajoute les lignes d'instructions en bas de feuille.
+   */
+  private addInstructionsRow(worksheet: ExcelJS.Worksheet): void {
     worksheet.addRow([]);
     worksheet.addRow(['⚠️ Lignes d\'exemple à supprimer avant import. Respectez l\'ordre des colonnes.']);
     worksheet.addRow(['📅 Date de naissance au format JJ/MM/AAAA (ex: 15/03/2015)']);
     worksheet.addRow(["👤 Sexe : M (Garçon) ou F (Fille)"]);
-    worksheet.addRow(['🎓 Niveau scolaire : Maternelle, Primaire ou Secondaire (doit exister dans votre établissement)']);
-    worksheet.addRow(['🏫 Classe : nom exact de la classe dans votre établissement (ex: CE1, 6ème, Terminale)']);
     worksheet.addRow(["📦 Type d'élève : \"Nouvel élève\" (paie frais d'inscription) ou \"Ancien élève\" (paie frais de réinscription)"]);
     worksheet.addRow(['💰 Arriérés antérieurs : ⚠️ NON inclus dans ce fichier — utilisez l\'import d\'arriérés dédié (module Recouvrement).']);
-    worksheet.addRow(['📋 Toutes les colonnes en gras sont obligatoires. Les autres sont optionnelles.']);
+    worksheet.addRow(['📋 Chaque feuille correspond à une classe physique configurée dans votre établissement.']);
+    worksheet.addRow(['💡 Pour ajouter une feuille pour une nouvelle classe, configurez-la d\'abord dans Paramètres > Classes, puis re-téléchargez ce template.']);
 
-    for (let i = 5; i <= 13; i++) {
+    // Styler les lignes d'instructions
+    const lastRow = worksheet.rowCount;
+    for (let i = lastRow - 6; i <= lastRow; i++) {
       const row = worksheet.getRow(i);
       row.font = { italic: true, color: { argb: 'FF92400E' }, size: 10 };
     }
-
-    // Bordures sur les colonnes
-    worksheet.eachRow((row, rowNumber) => {
-      if (rowNumber <= 3) {
-        row.eachCell((cell) => {
-          cell.border = {
-            top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-            bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-            left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-            right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-          };
-        });
-      }
-    });
-
-    res.setHeader(
-      'Content-Type',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    );
-    res.setHeader(
-      'Content-Disposition',
-      'attachment; filename="template-import-eleves-academia-helm.xlsx"',
-    );
-    await workbook.xlsx.write(res);
-    res.end();
   }
-
-  // ─── Méthodes privées ───
 
   private async parseExcelFile(fileDataUrl: string): Promise<ExcelJS.Workbook> {
     // Extraire le base64 du data URL
@@ -368,7 +467,17 @@ export class StudentsImportService {
     return workbook;
   }
 
-  private parseRow(row: ExcelJS.Row, rowNumber: number): ImportRow {
+  /**
+   * Parse une ligne Excel en ImportRow.
+   * ⭐ schoolLevelName et className sont déduits du nom de la feuille.
+   */
+  private parseRow(
+    row: ExcelJS.Row,
+    rowNumber: number,
+    sheetName: string,
+    schoolLevelName: string,
+    className: string,
+  ): ImportRow {
     const getCell = (col: number): string => {
       const val = row.getCell(col).value;
       if (val === null || val === undefined) return '';
@@ -398,7 +507,7 @@ export class StudentsImportService {
       dateOfBirth = new Date(Date.UTC(1899, 11, 30) + dobCell * 24 * 60 * 60 * 1000);
     }
 
-    // Parse sexe
+    // Parse sexe (colonne 4)
     const genderRaw = getCell(4).toUpperCase();
     let gender: string | null = null;
     if (genderRaw === 'M' || genderRaw === 'GARCON' || genderRaw === 'GARÇON') {
@@ -407,8 +516,8 @@ export class StudentsImportService {
       gender = 'F';
     }
 
-    // Parse type d'élève (colonne 9)
-    const typeRaw = getCell(9).toLowerCase();
+    // ⭐ Parse type d'élève (colonne 7 — anciennement colonne 9)
+    const typeRaw = getCell(7).toLowerCase();
     let isNewStudent: boolean | null = null;
     if (typeRaw.includes('nouvel') || typeRaw.includes('nouveau') || typeRaw === 'new') {
       isNewStudent = true;
@@ -418,18 +527,20 @@ export class StudentsImportService {
 
     return {
       rowIndex: rowNumber,
+      sheetName,
       firstName: getCell(1),
       lastName: getCell(2),
       dateOfBirth,
       gender,
       placeOfBirth: getCell(5) || null,
       nationality: getCell(6) || null,
-      schoolLevelName: getCell(7),
-      className: getCell(8),
+      // ⭐ Déduits du nom de la feuille, pas de la ligne
+      schoolLevelName,
+      className,
       isNewStudent,
-      guardianName: getCell(10) || null,
-      guardianPhone: getCell(11) || null,
-      guardianEmail: getCell(12) || null,
+      guardianName: getCell(8) || null,
+      guardianPhone: getCell(9) || null,
+      guardianEmail: getCell(10) || null,
       errors: [],
       isValid: true,
     };
@@ -456,9 +567,9 @@ export class StudentsImportService {
     if (!row.gender) {
       row.errors.push('Sexe manquant ou invalide (attendu M ou F)');
     }
-    // Niveau scolaire obligatoire + doit exister
+    // ⭐ Niveau scolaire — déduit du nom de la feuille, mais on vérifie qu'il existe
     if (!row.schoolLevelName) {
-      row.errors.push('Niveau scolaire manquant');
+      row.errors.push('Niveau scolaire non déduit (feuille sans classe correspondante ?)');
     } else {
       const level = schoolLevels.find(
         (sl) =>
@@ -473,9 +584,9 @@ export class StudentsImportService {
         row.resolvedSchoolLevelId = level.id;
       }
     }
-    // Classe obligatoire + doit exister
+    // ⭐ Classe — déduite du nom de la feuille, mais on vérifie qu'elle existe
     if (!row.className) {
-      row.errors.push('Classe manquante');
+      row.errors.push('Classe non déduite (feuille sans classe correspondante ?)');
     } else if (row.resolvedSchoolLevelId) {
       const cls = classes.find(
         (c) =>
@@ -504,27 +615,6 @@ export class StudentsImportService {
     }
 
     row.isValid = row.errors.length === 0;
-  }
-
-  private validateHeaders(headerRow: ExcelJS.Row): void {
-    const actualHeaders = StudentsImportService.HEADERS.map((_, i) => {
-      const val = headerRow.getCell(i + 1).value;
-      return typeof val === 'string' ? val.trim() : String(val || '').trim();
-    });
-
-    const mismatches: string[] = [];
-    StudentsImportService.HEADERS.forEach((expected, i) => {
-      if (actualHeaders[i] !== expected) {
-        mismatches.push(`Colonne ${i + 1}: attendu "${expected}", trouvé "${actualHeaders[i]}"`);
-      }
-    });
-
-    if (mismatches.length > 0) {
-      this.logger.warn(
-        `En-têtes Excel non conformes:\n${mismatches.join('\n')}\n` +
-        `L'import continuera mais vérifiez le template.`,
-      );
-    }
   }
 
   private async resolveSchoolLevel(tenantId: string, name: string): Promise<any> {

@@ -250,8 +250,8 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
                     <FileSpreadsheet className="w-5 h-5 text-indigo-700" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-slate-800">Template Excel</p>
-                    <p className="text-xs text-slate-500">Téléchargez le modèle à remplir</p>
+                    <p className="text-sm font-semibold text-slate-800">Template Excel multi-feuilles</p>
+                    <p className="text-xs text-slate-500">Une feuille par classe physique configurée dans votre établissement</p>
                   </div>
                 </div>
                 <Button variant="outline" size="sm" onClick={handleDownloadTemplate} className="border-indigo-300 text-indigo-700 hover:bg-indigo-100">
@@ -291,12 +291,13 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
                 <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">📋 Instructions</p>
                 <ul className="text-xs text-slate-600 space-y-1.5">
-                  <li>1. Téléchargez le template Excel</li>
-                  <li>2. Remplissez une ligne par élève (supprimez les lignes d'exemple)</li>
+                  <li>1. Téléchargez le template Excel — ⭐ une feuille par classe physique configurée dans votre établissement</li>
+                  <li>2. Remplissez chaque feuille avec les élèves de la classe correspondante (supprimez les lignes d'exemple)</li>
                   <li>3. Indiquez "Nouvel élève" ou "Ancien élève" pour chaque élève</li>
-                  <li>4. Les colonnes obligatoires sont : Prénom, Nom, Date de naissance, Sexe, Niveau, Classe, Type d'élève</li>
-                  <li>5. Uploadez le fichier rempli et vérifiez le preview</li>
-                  <li>6. Confirmez l'import — les élèves et leurs comptes financiers sont créés automatiquement</li>
+                  <li>4. ⭐ Le niveau scolaire et la classe sont déduits automatiquement du nom de la feuille — ne les saisissez pas</li>
+                  <li>5. Colonnes obligatoires : Prénom, Nom, Date de naissance, Sexe, Type d'élève</li>
+                  <li>6. Uploadez le fichier rempli et vérifiez le preview</li>
+                  <li>7. Confirmez l'import — les élèves et leurs comptes financiers sont créés automatiquement</li>
                 </ul>
               </div>
 

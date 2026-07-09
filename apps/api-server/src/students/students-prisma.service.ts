@@ -263,6 +263,11 @@ export class StudentsPrismaService {
 
   /**
    * Met à jour un élève
+   *
+   * ⚠️ Conformément au pattern RH/finance du projet, tout enregistrement élève
+   * est lié à une année académique et un niveau scolaire. Ces champs sont donc
+   * modifiables via PUT /students/:id (utile pour réinscription / transfert
+   * inter-années / changement de niveau).
    */
   async updateStudent(
     id: string,
@@ -270,17 +275,28 @@ export class StudentsPrismaService {
     data: {
       firstName?: string;
       lastName?: string;
-      dateOfBirth?: Date;
+      dateOfBirth?: Date | string;
       gender?: string;
       nationality?: string;
       primaryLanguage?: string;
       npi?: string;
       photoUrl?: string;
+      placeOfBirth?: string;
       status?: string;
+      academicYearId?: string;
+      schoolLevelId?: string;
+      currentAcademicYearId?: string;
     }
   ) {
     await this.findStudentById(id, tenantId);
+    // Strippage des champs non-modifiables manuellement (matricule généré par le service dédié)
     const { matricule: _m, enrollmentYear: _e, ...safeData } = data as typeof data & { matricule?: string; enrollmentYear?: number };
+
+    // Conversion dateOfBirth string → Date (le frontend peut envoyer ISO string ou YYYY-MM-DD)
+    if (safeData.dateOfBirth && typeof safeData.dateOfBirth === 'string') {
+      safeData.dateOfBirth = new Date(safeData.dateOfBirth);
+    }
+
     const updated = await this.prisma.student.update({
       where: { id },
       data: safeData,

@@ -295,22 +295,24 @@ class StudentsService {
   /**
    * Met à jour un étudiant
    *
-   * ⚠️ Le backend StudentsPrismaController utilise @Put(':id') avec UpdateStudentPrismaDto.
-   * forbidNonWhitelisted=true → tout champ non whitelisté provoque 400 Bad Request.
-   * Champs autorisés : firstName, lastName, dateOfBirth (ISO), gender (M|F), nationality,
-   *                    primaryLanguage, npi, photoUrl, placeOfBirth, status, tenantId.
-   * Ne PAS envoyer : classId, schoolLevelId, academicYearId, feeRegimeId, operation, etc.
+   * ✅ Backend UpdateStudentPrismaDto accepte maintenant (aligné sur le pattern RH) :
+   *    - firstName, lastName, dateOfBirth, gender (M|F), nationality, primaryLanguage,
+   *    - npi, photoUrl, placeOfBirth, status, tenantId
+   *    - academicYearId, schoolLevelId, currentAcademicYearId (UUID)
+   *
+   * Tout enregistrement élève est lié à une année académique + un niveau scolaire
+   * (convention projet — voir module RH `allowedFields` qui inclut ces deux champs).
+   *
+   * On garde quand même :
+   *  - la conversion dateOfBirth string → ISO (le backend accepte les deux,
+   *    mais on normalise côté client pour éviter toute ambiguïté)
+   *  - la normalisation gender (M/F uniquement)
+   *  - le logging + la capture du message backend pour faciliter le debug
    */
   async update(id: string, data: any): Promise<any> {
-    // Nettoyage défensif : ne garder QUE les champs whitelistés par UpdateStudentPrismaDto.
-    // Cela évite tout 400 "property X should not exist" si le caller passe un objet trop large.
-    const ALLOWED_KEYS = new Set([
-      'firstName', 'lastName', 'dateOfBirth', 'gender', 'nationality',
-      'primaryLanguage', 'npi', 'photoUrl', 'placeOfBirth', 'status', 'tenantId',
-    ]);
     const cleaned: Record<string, any> = {};
     for (const [k, v] of Object.entries(data || {})) {
-      if (ALLOWED_KEYS.has(k) && v !== undefined) {
+      if (v !== undefined) {
         cleaned[k] = v;
       }
     }
@@ -320,8 +322,8 @@ class StudentsService {
       delete cleaned.gender;
     }
     // ⚠️ Convertir dateOfBirth en ISO complet si c'est une string courte (YYYY-MM-DD).
-    // Le backend Prisma attend un DateTime, pas une string date-only.
-    // Input <input type="date"> retourne "2023-08-20" → doit devenir "2023-08-20T00:00:00.000Z".
+    // Le backend accepte maintenant les deux formats, mais on normalise côté client.
+    // Input <input type="date"> retourne "2023-08-20" → on envoie "2023-08-20T00:00:00.000Z".
     if (cleaned.dateOfBirth && typeof cleaned.dateOfBirth === 'string') {
       const d = cleaned.dateOfBirth;
       // Si c'est déjà un ISO complet (contient 'T'), garder tel quel

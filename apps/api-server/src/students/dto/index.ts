@@ -34,6 +34,14 @@ export class UpdateStudentPrismaDto {
   @IsOptional() @IsString() photoUrl?: string;
   @IsOptional() @IsString() placeOfBirth?: string;
   @IsOptional() @IsIn(['ACTIVE', 'INACTIVE', 'GRADUATED', 'TRANSFERRED', 'ARCHIVED']) status?: string;
+  /** Année académique — tout enregistrement élève DOIT être lié à une année
+   *  (conformément au pattern RH/finance du projet). Permet la réinscription
+   *  et le transfert inter-années via PUT /students/:id. */
+  @IsOptional() @IsUUID() academicYearId?: string;
+  /** Niveau scolaire — obligatoire pour le scoped multi-niveaux (pattern RH). */
+  @IsOptional() @IsUUID() schoolLevelId?: string;
+  /** Année académique courante (pour réinscription sans perdre l'année d'origine). */
+  @IsOptional() @IsUUID() currentAcademicYearId?: string;
   /** Frontend may send tenantId — ignored */
   @IsOptional() @IsString() tenantId?: string;
 }

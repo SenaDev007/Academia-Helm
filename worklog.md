@@ -3418,3 +3418,49 @@ Stage Summary:
 - UI complète : carte "Export comptable automatique" avec toggle, 3 champs, bouton test
 - Documentation OpenAPI complète des 4 endpoints (cURL, JS, Python)
 - Compatible Sage, Ciel, EBP, QuickBooks, Pennylane, Odoo, etc.
+
+---
+Task ID: fix-400-edit-enrollment
+Agent: main agent
+Task: Corriger l'erreur 400 lors de l'enregistrement d'une modification d'inscription (module Élève, modal d'édition)
+
+Work Log:
+- Lecture du StudentEnrollmentForm.tsx (nouveau formulaire 745 lignes, 5 étapes)
+- Lecture du AdmissionForm.tsx (pattern de référence qui fonctionne)
+- Lecture du EnrollmentsContent.tsx (handler onSubmit mode édition)
+- Lecture du students.service.ts (frontend) : update() utilise PUT /api/students/:id
+- Lecture du students-prisma.controller.ts : @Put(':id') avec @Body() updateDto: UpdateStudentPrismaDto
+- Lecture du dto/index.ts : UpdateStudentPrismaDto accepte firstName, lastName, dateOfBirth, gender (M|F), nationality, primaryLanguage, npi, photoUrl, placeOfBirth, status, tenantId
+- Lecture du main.ts (backend) : ValidationPipe avec forbidNonWhitelisted=true, whitelist=true, transform=true
+- Lecture du students-lifecycle.controller.ts : @Post('pre-register') utilise @Body() body: ANY (pas de DTO !) → c'est pourquoi l'admission marche toujours
+- Vérification de la DB Neon pour AKPOVI (c9a4b7d0-fadd-40a8-8ec0-c472772b5708) : gender="F", dateOfBirth=2023-08-20, photoUrl=NULL, npi="null" (chaîne littérale)
+- Script de test direct (scripts/test-akpovi-edit.js) avec credentials promoteur :
+  - Test 1 (payload minimal) → 200 OK
+  - Test 2 (payload complet frontend) → 200 OK
+  - Test 3 (sans npi) → 200 OK
+  - Test 4 (avec classId non whitelisté) → 400 "property classId should not exist" (prouve que forbidNonWhitelisted est actif)
+- Conclusion : le backend N'est PAS en cause. Le frontend envoyait potentiellement un payload trop large OU la version déployée n'était pas à jour.
+- Restauration des valeurs initiales d'AKPOVI après tests.
+
+Corrections appliquées (défensives) :
+1. students.service.ts → update() :
+   - Filtrage strict des champs whitelistés par UpdateStudentPrismaDto (ALLOWED_KEYS)
+   - Normalisation gender : si pas 'M'/'F', suppression du champ
+   - Logging du payload envoyé (console.log)
+   - Capture et affichage du message backend détaillé (err.response.data.message)
+   - Re-throw avec message lisible pour l'UI
+2. students.service.ts → ajout de changeClass(studentId, academicYearId, classId) :
+   - POST /api/students/change-class (endpoint backend StudentsLifecycleController)
+   - Avant : TypeError car la méthode n'existait pas (silencieusement catchée)
+3. EnrollmentsContent.tsx → onSubmit mode édition :
+   - Exclusion de photoUrl du PUT update (sera géré par uploadPhoto séparément)
+   - try/catch explicite avec toast d'erreur affichant le message backend
+   - Logs .catch((e) => console.warn(...)) pour chaque étape non-bloquante
+
+Stage Summary:
+- Backend confirmé OK : PUT /api/students/:id avec payload frontend passe en 200
+- forbidNonWhitelisted=true est actif et rejette tout champ hors DTO (ex: classId)
+- Le mode création marche car /api/students/pre-register utilise @Body() body: any (pas de DTO)
+- Le mode édition est maintenant défensif : même si un champ non whitelisté est passé au service, il est filtré
+- L'utilisateur verra désormais le message backend exact dans le toast d'erreur (au lieu de "Request failed with status code 400")
+- Les fichiers modifiés : apps/web-app/src/services/students.service.ts, apps/web-app/src/components/students/EnrollmentsContent.tsx

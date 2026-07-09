@@ -4,7 +4,7 @@
  * ============================================================================
  */
 
-import { apiFetch } from "@/lib/api/client";
+import { apiFetch, apiClient } from "@/lib/api/client";
 import { createEntityOffline, updateEntityOffline } from "@/lib/offline/offline-business.service";
 import { networkDetectionService } from "@/lib/offline/network-detection.service";
 import { LocalSearchService } from "@/lib/offline/local-search.service";
@@ -740,11 +740,50 @@ class StudentsService {
   async generateBulkIdCards(data: {
     academicYearId: string;
     schoolLevelId: string;
+    classId?: string;
   }): Promise<any> {
     return apiFetch(`${BASE_URL}/id-cards/generate-bulk`, {
       method: "POST",
       body: data,
     });
+  }
+
+  /**
+   * ⭐ Liste les cartes groupées par niveau scolaire puis par classe.
+   */
+  async getCardsGroupedByClass(academicYearId: string): Promise<any> {
+    return apiFetch(
+      `${BASE_URL}/id-cards/grouped-by-class?academicYearId=${encodeURIComponent(academicYearId)}`,
+    );
+  }
+
+  /**
+   * ⭐ Télécharge un PDF groupé par classe (toutes les cartes de la classe dans un seul PDF).
+   * Retourne un Blob pour déclencher le téléchargement côté navigateur.
+   */
+  async downloadClassBundlePdf(classId: string, academicYearId: string): Promise<Blob> {
+    const url = `${BASE_URL}/id-cards/class/${encodeURIComponent(classId)}/bundle-pdf?academicYearId=${encodeURIComponent(academicYearId)}`;
+    const response = await apiClient.get(url, { responseType: 'blob' });
+    return response.data;
+  }
+
+  /**
+   * ⭐ Télécharge le PDF d'une carte individuelle.
+   */
+  async downloadIdCardPdf(cardId: string): Promise<Blob> {
+    const url = `${BASE_URL}/id-cards/${encodeURIComponent(cardId)}/download`;
+    const response = await apiClient.get(url, { responseType: 'blob' });
+    return response.data;
+  }
+
+  /**
+   * ⭐ Génère une carte pour un élève spécifique.
+   */
+  async generateIdCard(studentId: string, academicYearId: string, schoolLevelId: string): Promise<any> {
+    return apiFetch(
+      `${BASE_URL}/id-cards/${encodeURIComponent(studentId)}/generate?academicYearId=${encodeURIComponent(academicYearId)}&schoolLevelId=${encodeURIComponent(schoolLevelId)}`,
+      { method: "POST" },
+    );
   }
 
   /**
@@ -822,8 +861,10 @@ class StudentsService {
    * Révoquer une carte d'identité
    */
   async revokeIdCard(id: string, reason: string): Promise<any> {
+    // ⚠️ Fix bug : l'endpoint est /students/id-cards/{cardId}/revoke (sans /card/)
+    // Ancien code : ${BASE_URL}/id-cards/card/${id}/revoke → 404
     return apiFetch(
-      `${BASE_URL}/id-cards/card/${encodeURIComponent(id)}/revoke`,
+      `${BASE_URL}/id-cards/${encodeURIComponent(id)}/revoke`,
       {
         method: "PUT",
         body: { reason },

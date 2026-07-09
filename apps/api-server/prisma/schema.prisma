@@ -2316,7 +2316,7 @@ model StudentAcademicTrack {
 model StudentPhoto {
   id           String   @id @default(uuid())
   tenantId     String
-  studentId    String
+  studentId    String   @unique
   originalUrl  String
   hdUrl        String
   thumbnailUrl String

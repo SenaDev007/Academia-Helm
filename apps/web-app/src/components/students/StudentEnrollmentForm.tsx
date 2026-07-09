@@ -103,7 +103,7 @@ export default function StudentEnrollmentForm({
   onCancel,
   initialData,
 }: StudentEnrollmentFormProps) {
-  const { academicYear } = useModuleContext();
+  const { academicYear, schoolLevel } = useModuleContext();
 
   // Niveau scolaire sélectionnable (state interne, pas figé par le contexte)
   const [schoolLevels, setSchoolLevels] = useState<any[]>([]);

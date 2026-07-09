@@ -1147,7 +1147,9 @@ export default function EnrollmentsContent() {
             try {
               const effectiveSchoolLevelId = data.schoolLevelId || schoolLevel!.schoolLevelId || schoolLevel!.id;
 
-              // 1. Pré-inscrire l'élève
+              // 1. Pré-inscrire l'élève — ne PAS envoyer photoUrl dans le payload
+              //    (sera uploadée via uploadPhoto séparément pour persister dans student_photos).
+              //    Le backend preRegister persiste déjà npi, photoUrl, placeOfBirth, etc.
               const student = await studentsService.preRegister({
                 academicYearId: academicYear!.id,
                 schoolLevelId: effectiveSchoolLevelId,
@@ -1158,9 +1160,15 @@ export default function EnrollmentsContent() {
                 gender: data.student.gender || undefined,
                 nationality: data.student.nationality || undefined,
                 placeOfBirth: data.student.placeOfBirth || undefined,
-                photoUrl: data.student.photoUrl || undefined,
+                npi: data.student.npi || undefined,
                 classId: data.classId || undefined,
               });
+
+              // 1b. Upload photo via endpoint dédié (pattern RH) si data URL présente
+              if (data.student.photoUrl && data.student.photoUrl.startsWith('data:')) {
+                await studentsService.uploadPhoto(student.id, data.student.photoUrl)
+                  .catch((e: any) => console.warn('uploadPhoto:', e?.message));
+              }
 
               // 2. Admettre l'élève (génère matricule + compte financier)
               const admitted = await studentsService.admit({

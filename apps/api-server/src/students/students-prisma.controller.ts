@@ -25,6 +25,7 @@ import { StudentsPrismaService } from './students-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { IMAGE_ONLY_DATA_URL_PIPE } from '../common/pipes/data-url-validation.pipe';
 import { CreateStudentPrismaDto, UpdateStudentPrismaDto, EnrollStudentDto, ArchiveStudentDto } from './dto';
 
 @Controller('students')
@@ -125,12 +126,13 @@ export class StudentsPrismaController {
    * POST /students/:id/upload-photo
    * Upload photo d'élève via data URL (base64) — pattern identique au RH (staff).
    * Body: { photoDataUrl: string }
+   * Le pipe IMAGE_ONLY_DATA_URL_PIPE valide le format (image/*, max 5 Mo).
    */
   @Post(':id/upload-photo')
   async uploadPhoto(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @TenantId() tenantId: string,
-    @Body('photoDataUrl') photoDataUrl: string,
+    @Body('photoDataUrl', IMAGE_ONLY_DATA_URL_PIPE) photoDataUrl: string,
   ) {
     return this.studentsService.uploadStudentPhotoDataUrl(id, tenantId, photoDataUrl);
   }

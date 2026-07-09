@@ -131,51 +131,72 @@ export class ComptaExportService {
     // ─── 1. ENCAISSEMENTS (transactions PAYMENT) → Journal des ventes (JVT) ───
     // Note : on utilise $queryRawUnsafe pour éviter les problèmes de client
     // Prisma non régénéré (champs récents comme cashRegisterId).
+    //
+    // ⚠️ On joint account_breakdowns → fee_structures pour récupérer le feeType
+    // de chaque transaction. Cela permet de mapper le bon compte OHADA :
+    //   INSCRIPTION/REINSCRIPTION → 706100, TUITION → 706200, EXAMEN → 706300,
+    //   CANTEEN → 706400, TRANSPORT → 706500, PARASCOLAIRE → 706600, OTHER → 706999
+    //
+    // Une transaction peut avoir plusieurs breakdowns (ex: 3000 INSCRIPTION + 10000 TUITION).
+    // On génère alors une paire d'écritures par breakdown (précision comptable maximale).
     const transactionsRaw = await this.prisma.$queryRawUnsafe(`
       SELECT
         t.id,
         t."receiptNumber",
-        t.amount::FLOAT,
-        t.type,
         t."paymentMethod",
-        t.reference,
         t."createdAt",
         t."cashRegisterId",
         cr.code AS "cashRegisterCode",
-        cr.name AS "cashRegisterName",
         s."firstName" AS "studentFirstName",
         s."lastName" AS "studentLastName",
         s."matricule",
-        s."studentCode"
+        s."studentCode",
+        ab.id AS "breakdownId",
+        ab."initialAmount"::FLOAT AS "breakdownInitial",
+        ab."paidAmount"::FLOAT AS "breakdownPaid",
+        fs."feeType" AS "feeType",
+        fs.name AS "feeName",
+        sl.name AS "schoolLevelName"
       FROM "finance_transactions" t
       LEFT JOIN "cash_registers" cr ON t."cashRegisterId" = cr.id
       LEFT JOIN "student_accounts" sa ON t."studentAccountId" = sa.id
       LEFT JOIN "students" s ON sa."studentId" = s.id
+      LEFT JOIN "school_levels" sl ON s."schoolLevelId" = sl.id
+      LEFT JOIN "finance_transaction_allocations" fta ON fta."transactionId" = t.id
+      LEFT JOIN "account_breakdowns" ab ON fta."accountBreakdownId" = ab.id
+      LEFT JOIN "fee_structures" fs ON ab."feeStructureId" = fs.id
       WHERE t."tenantId" = $1
         AND t."academicYearId" = $2
         AND t.type = 'PAYMENT'
         AND t."createdAt" >= $3
         AND t."createdAt" <= $4
-      ORDER BY t."createdAt" ASC
+      ORDER BY t."createdAt" ASC, ab.id ASC
     `, tenantId, filters.academicYearId, dateFrom, dateTo);
 
-    const transactions = transactionsRaw as any[];
+    const txRows = transactionsRaw as any[];
 
-    for (const tx of transactions) {
+    // Grouper les lignes par transaction (une transaction peut avoir plusieurs breakdowns)
+    const txMap = new Map<string, any[]>();
+    for (const row of txRows) {
+      const arr = txMap.get(row.id) || [];
+      arr.push(row);
+      txMap.set(row.id, arr);
+    }
+
+    for (const [txId, rows] of txMap) {
+      const tx = rows[0]; // Première ligne = infos transaction
       const dateStr = this.formatDate(tx.createdAt);
       const studentName = (tx.studentLastName || tx.studentFirstName)
         ? `${tx.studentLastName || ''} ${tx.studentFirstName || ''}`.trim()
         : 'Élève inconnu';
       const studentCode = tx.studentCode || tx.matricule || '';
-      const amount = Number(tx.amount) || 0;
-      const pieceRef = tx.receiptNumber || tx.id;
-      const ecritLib = `Scolarité - ${studentName}`.slice(0, 50);
+      const levelName = tx.schoolLevelName || '';
+      const pieceRef = tx.receiptNumber || txId;
 
       // Compte de trésorerie selon méthode de paiement
       const compteTreso = ComptaExportService.PAYMENT_TO_COMPTE[tx.paymentMethod as keyof typeof ComptaExportService.PAYMENT_TO_COMPTE]
         || ComptaExportService.DEFAULT_ACCOUNTS.CAISSE_PRINCIPALE;
 
-      // Si cashRegister secondaire détecté (code contient "SEC" ou "2"), utiliser 572000
       let compteTresoFinal = compteTreso;
       if (tx.paymentMethod === 'CASH' && tx.cashRegisterCode) {
         const code = tx.cashRegisterCode.toUpperCase();
@@ -188,51 +209,81 @@ export class ComptaExportService {
       const journalLib = journalCode === 'JQC' ? 'Journal de caisse' : 'Journal de banque';
       const natCode = journalCode === 'JQC' ? 'CAI' : 'BNK';
 
-      // Écriture 1 : Débit compte trésorerie / Crédit compte élève (créance)
-      ecritures.push({
-        journalCode,
-        journalLib,
-        ecritureNum: nextSeq(),
-        ecritureDate: dateStr,
-        compteNum: compteTresoFinal.num,
-        compteLib: compteTresoFinal.lib,
-        compAuxNum: '',
-        compAuxLib: '',
-        pieceRef,
-        pieceDate: dateStr,
-        ecritLib: `Encaissement - ${studentName}`.slice(0, 50),
-        debit: amount,
-        credit: 0,
-        ecritureLet: '',
-        dateLet: '',
-        validDate: dateStr,
-        montantdevise: 0,
-        idevise: 'XOF',
-        natCode,
-      });
+      // Si la transaction a des breakdowns, générer une paire d'écritures par breakdown
+      // Sinon, générer une seule paire avec le compte par défaut (706200)
+      const breakdowns = rows.filter(r => r.breakdownId);
+      const lines = breakdowns.length > 0
+        ? breakdowns.map(r => ({
+            amount: Number(r.breakdownPaid) || 0,
+            feeType: r.feeType || 'TUITION',
+            feeName: r.feeName || 'Scolarité',
+          }))
+        : [{ amount: 0, feeType: 'TUITION', feeName: 'Scolarité' }]; // Fallback si pas de breakdowns
 
-      // Écriture 2 : Débit compte élève (créance soldée) / Crédit compte produit
-      ecritures.push({
-        journalCode,
-        journalLib,
-        ecritureNum: nextSeq(),
-        ecritureDate: dateStr,
-        compteNum: ComptaExportService.DEFAULT_ACCOUNTS.ELEVES_CREANCES.num,
-        compteLib: ComptaExportService.DEFAULT_ACCOUNTS.ELEVES_CREANCES.lib,
-        compAuxNum: studentCode || String(tx.id || '').slice(0, 8),
-        compAuxLib: studentName,
-        pieceRef,
-        pieceDate: dateStr,
-        ecritLib,
-        debit: 0,
-        credit: amount,
-        ecritureLet: '',
-        dateLet: '',
-        validDate: dateStr,
-        montantdevise: 0,
-        idevise: 'XOF',
-        natCode,
-      });
+      // Si aucun montant n'a pu être récupéré des breakdowns, utiliser le montant total de la transaction
+      const totalFromBreakdowns = lines.reduce((s, l) => s + l.amount, 0);
+      if (totalFromBreakdowns === 0) {
+        // Récupérer le montant total de la transaction
+        const txAmountRow = await this.prisma.$queryRawUnsafe(
+          `SELECT amount::FLOAT FROM "finance_transactions" WHERE id = $1`,
+          txId,
+        );
+        lines[0].amount = Number((txAmountRow as any[])[0]?.amount) || 0;
+      }
+
+      for (const line of lines) {
+        if (line.amount === 0) continue; // Skip les lignes à 0
+
+        // Mapper le feeType vers le compte OHADA et le libellé
+        const compteProduit = this.getCompteProduitByFeeType(line.feeType);
+        const ecritLib = this.getEcritLibByFeeType(line.feeType, line.feeName, levelName, studentName);
+
+        // Écriture 1 : Débit compte trésorerie
+        ecritures.push({
+          journalCode,
+          journalLib,
+          ecritureNum: nextSeq(),
+          ecritureDate: dateStr,
+          compteNum: compteTresoFinal.num,
+          compteLib: compteTresoFinal.lib,
+          compAuxNum: '',
+          compAuxLib: '',
+          pieceRef,
+          pieceDate: dateStr,
+          ecritLib: `Encaissement - ${studentName}`.slice(0, 50),
+          debit: line.amount,
+          credit: 0,
+          ecritureLet: '',
+          dateLet: '',
+          validDate: dateStr,
+          montantdevise: 0,
+          idevise: 'XOF',
+          natCode,
+        });
+
+        // Écriture 2 : Crédit compte élève (créance soldée)
+        ecritures.push({
+          journalCode,
+          journalLib,
+          ecritureNum: nextSeq(),
+          ecritureDate: dateStr,
+          compteNum: ComptaExportService.DEFAULT_ACCOUNTS.ELEVES_CREANCES.num,
+          compteLib: ComptaExportService.DEFAULT_ACCOUNTS.ELEVES_CREANCES.lib,
+          compAuxNum: studentCode || String(txId || '').slice(0, 8),
+          compAuxLib: studentName,
+          pieceRef,
+          pieceDate: dateStr,
+          ecritLib,
+          debit: 0,
+          credit: line.amount,
+          ecritureLet: '',
+          dateLet: '',
+          validDate: dateStr,
+          montantdevise: 0,
+          idevise: 'XOF',
+          natCode,
+        });
+      }
     }
 
     // ─── 2. DÉPENSES APPROUVÉES → Journal des achats (JAC) ───
@@ -284,7 +335,12 @@ export class ComptaExportService {
       const dateStr = this.formatDate(ex.expenseDate || ex.createdAt);
       const amount = Number(ex.amount) || 0;
       const pieceRef = ex.invoiceRef || ex.id;
-      const ecritLib = ex.description?.slice(0, 50) || 'Dépense';
+      // Libellé précis : nom de la catégorie + description de la dépense
+      // Ex: "Achats de matériel pédagogique — Achat 50 cahiers"
+      const categoryPrefix = ex.categoryName || 'Dépense';
+      const ecritLib = ex.description
+        ? `${categoryPrefix} — ${ex.description}`.slice(0, 50)
+        : categoryPrefix.slice(0, 50);
 
       // Compte de charge (classe 6) selon mapping catégorie
       const compteCharge = ex.categoryCompteOhada
@@ -500,5 +556,81 @@ export class ComptaExportService {
     const m = String(date.getMonth() + 1).padStart(2, '0');
     const d = String(date.getDate()).padStart(2, '0');
     return `${y}${m}${d}`;
+  }
+
+  /**
+   * ⚠️ Mapping FeeType → Compte OHADA (classe 7 — produits)
+   *
+   * Aligne les libellés et comptes OHADA sur les types réels de frais du système :
+   *   INSCRIPTION    → 706100 — Scolarité - Frais d'inscription
+   *   REINSCRIPTION  → 706100 — Scolarité - Frais d'inscription (réinscription)
+   *   TUITION        → 706200 — Scolarité - Frais de scolarité
+   *   EXAMEN         → 706300 — Scolarité - Frais d'examen
+   *   CANTEEN        → 706400 — Cantine scolaire
+   *   OTHER          → 706999 — Autres produits scolaires (avec nom du frais)
+   *
+   * Si la FeeCategory a un compteOHada personnalisé, il est utilisé en priorité.
+   */
+  private getCompteProduitByFeeType(feeType: string): { num: string; lib: string } {
+    switch (feeType) {
+      case 'INSCRIPTION':
+      case 'REINSCRIPTION':
+        return { num: '706100', lib: "Scolarité - Frais d'inscription" };
+      case 'TUITION':
+        return { num: '706200', lib: 'Scolarité - Frais de scolarité' };
+      case 'EXAMEN':
+        return { num: '706300', lib: "Scolarité - Frais d'examen" };
+      case 'CANTEEN':
+        return { num: '706400', lib: 'Cantine scolaire' };
+      case 'OTHER':
+      default:
+        return { num: '706999', lib: 'Autres produits scolaires' };
+    }
+  }
+
+  /**
+   * Génère un libellé d'écriture précis selon le type de frais.
+   *
+   * Exemples :
+   *   INSCRIPTION + Maternelle + Marie AKOVI → "Frais d'inscription — Maternelle — AKOVI Marie"
+   *   TUITION + Primaire + Jean DOSSOU       → "Frais de scolarité — Primaire — DOSSOU Jean"
+   *   CANTEEN + Marie AKOVI                  → "Cantine — AKOVI Marie"
+   *   EXAMEN + Jean DOSSOU                   → "Frais d'examen — DOSSOU Jean"
+   *   OTHER + Transport + Marie AKOVI        → "Transport — AKOVI Marie"
+   */
+  private getEcritLibByFeeType(
+    feeType: string,
+    feeName: string,
+    levelName: string,
+    studentName: string,
+  ): string {
+    let prefix: string;
+    switch (feeType) {
+      case 'INSCRIPTION':
+        prefix = "Frais d'inscription";
+        break;
+      case 'REINSCRIPTION':
+        prefix = 'Frais de réinscription';
+        break;
+      case 'TUITION':
+        prefix = 'Frais de scolarité';
+        break;
+      case 'EXAMEN':
+        prefix = "Frais d'examen";
+        break;
+      case 'CANTEEN':
+        prefix = 'Cantine';
+        break;
+      case 'OTHER':
+      default:
+        prefix = feeName || 'Autres frais';
+        break;
+    }
+
+    // Format : "{prefix} — {niveau} — {nom élève}" (limité à 50 caractères pour le FEC)
+    const parts = [prefix];
+    if (levelName) parts.push(levelName);
+    parts.push(studentName);
+    return parts.join(' — ').slice(0, 50);
   }
 }

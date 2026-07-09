@@ -297,7 +297,7 @@ class StudentsService {
    *
    * ⚠️ Le backend StudentsPrismaController utilise @Put(':id') avec UpdateStudentPrismaDto.
    * forbidNonWhitelisted=true → tout champ non whitelisté provoque 400 Bad Request.
-   * Champs autorisés : firstName, lastName, dateOfBirth, gender (M|F), nationality,
+   * Champs autorisés : firstName, lastName, dateOfBirth (ISO), gender (M|F), nationality,
    *                    primaryLanguage, npi, photoUrl, placeOfBirth, status, tenantId.
    * Ne PAS envoyer : classId, schoolLevelId, academicYearId, feeRegimeId, operation, etc.
    */
@@ -318,6 +318,16 @@ class StudentsService {
     // Si la valeur n'est ni 'M' ni 'F' (ex: 'Masculin', 'Féminin', ''), on l'omet.
     if (cleaned.gender !== undefined && cleaned.gender !== 'M' && cleaned.gender !== 'F') {
       delete cleaned.gender;
+    }
+    // ⚠️ Convertir dateOfBirth en ISO complet si c'est une string courte (YYYY-MM-DD).
+    // Le backend Prisma attend un DateTime, pas une string date-only.
+    // Input <input type="date"> retourne "2023-08-20" → doit devenir "2023-08-20T00:00:00.000Z".
+    if (cleaned.dateOfBirth && typeof cleaned.dateOfBirth === 'string') {
+      const d = cleaned.dateOfBirth;
+      // Si c'est déjà un ISO complet (contient 'T'), garder tel quel
+      if (!d.includes('T')) {
+        cleaned.dateOfBirth = new Date(d + 'T00:00:00.000Z').toISOString();
+      }
     }
     console.log('[studentsService.update] PUT /students/' + id, cleaned);
     try {

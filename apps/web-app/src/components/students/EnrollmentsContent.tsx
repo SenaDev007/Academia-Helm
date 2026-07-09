@@ -1309,6 +1309,15 @@ export default function EnrollmentsContent() {
               photoUrl: editEnrollment.student.photoUrl || '',
               npi: editEnrollment.student.npi || '',
               classId: editEnrollment.class?.id,
+              // Pré-remplir les guardians depuis les données existantes
+              guardians: (editEnrollment.student.studentGuardians || []).map((sg: any) => ({
+                firstName: sg.guardian?.firstName || '',
+                lastName: sg.guardian?.lastName || '',
+                phone: sg.guardian?.phone || '',
+                email: sg.guardian?.email || '',
+                relationship: sg.guardian?.relationship || 'Père',
+                isPrimary: sg.isPrimary ?? false,
+              })),
             }}
             onSubmit={async (data) => {
               // Update des infos élève

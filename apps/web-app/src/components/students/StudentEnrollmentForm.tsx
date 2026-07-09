@@ -11,9 +11,9 @@
  */
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
-  CheckCircle, AlertCircle, BookOpen, Loader2, Camera, Upload, X,
+  CheckCircle, AlertCircle, BookOpen, Loader2, Camera, Upload, X, RefreshCw,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { compressImageFileToDataUrl } from '@/lib/media';
@@ -112,7 +112,7 @@ export default function StudentEnrollmentForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Données formulaire
+  // Données formulaire — pré-rempli depuis initialData si mode édition
   const [formData, setFormData] = useState({
     firstName: initialData?.firstName || '',
     lastName: initialData?.lastName || '',
@@ -122,15 +122,24 @@ export default function StudentEnrollmentForm({
     placeOfBirth: initialData?.placeOfBirth || '',
     npi: initialData?.npi || '',
     photoUrl: initialData?.photoUrl || '',
-    classId: '',
-    feeRegimeId: '',
-    justification: '',
+    classId: initialData?.classId || '',
+    feeRegimeId: initialData?.feeRegimeId || '',
+    justification: initialData?.justification || '',
   });
 
-  // Parents
-  const [guardians, setGuardians] = useState<Guardian[]>([
-    { firstName: '', lastName: '', phone: '', email: '', relationship: 'Père', isPrimary: true },
-  ]);
+  // Parents — pré-rempli depuis initialData si mode édition
+  const [guardians, setGuardians] = useState<Guardian[]>(
+    initialData?.guardians?.length > 0
+      ? initialData.guardians.map((g: any) => ({
+          firstName: g.firstName || '',
+          lastName: g.lastName || '',
+          phone: g.phone || '',
+          email: g.email || '',
+          relationship: g.relationship || 'Père',
+          isPrimary: g.isPrimary ?? false,
+        }))
+      : [{ firstName: '', lastName: '', phone: '', email: '', relationship: 'Père', isPrimary: true }]
+  );
 
   // Régimes
   const [regimes, setRegimes] = useState<FeeRegime[]>([]);
@@ -143,6 +152,10 @@ export default function StudentEnrollmentForm({
   // Photo
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoPreview, setPhotoPreview] = useState(initialData?.photoUrl || '');
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   // ─── Chargement des classes (pattern AdmissionForm : fetch direct) ───
   useEffect(() => {
@@ -209,6 +222,49 @@ export default function StudentEnrollmentForm({
     } finally {
       setPhotoUploading(false);
     }
+  };
+
+  // ─── Caméra ───
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
+      setIsCameraActive(true);
+      setError(null);
+    } catch (err: any) {
+      setError('Impossible d\'accéder à la caméra: ' + (err.message || ''));
+    }
+  };
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+    setIsCameraActive(false);
+  };
+
+  const capturePhoto = () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const size = Math.min(video.videoWidth, video.videoHeight);
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    // Centrer et cropper en carré
+    const sx = (video.videoWidth - size) / 2;
+    const sy = (video.videoHeight - size) / 2;
+    ctx.drawImage(video, sx, sy, size, size, 0, 0, size, size);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+    setPhotoPreview(dataUrl);
+    setFormData(prev => ({ ...prev, photoUrl: dataUrl }));
+    stopCamera();
   };
 
   const updateGuardian = (idx: number, field: string, value: string) => {
@@ -387,7 +443,8 @@ export default function StudentEnrollmentForm({
       {step === 2 && (
         <div className="space-y-4">
           <div className="flex flex-col items-center gap-4">
-            {photoPreview ? (
+            {/* Aperçu photo si déjà prise */}
+            {photoPreview && !isCameraActive && (
               <div className="relative">
                 <img src={photoPreview} alt="Photo" className="w-32 h-32 rounded-full object-cover border-4 border-blue-200" />
                 <button onClick={() => { setPhotoPreview(''); setFormData(prev => ({ ...prev, photoUrl: '' })); }}
@@ -395,14 +452,57 @@ export default function StudentEnrollmentForm({
                   <X className="w-4 h-4" />
                 </button>
               </div>
-            ) : (
-              <label className="flex flex-col items-center gap-2 cursor-pointer">
-                <div className="w-32 h-32 rounded-full border-4 border-dashed border-gray-300 flex items-center justify-center hover:border-blue-400 transition">
+            )}
+
+            {/* Mode caméra actif */}
+            {isCameraActive && (
+              <div className="flex flex-col items-center gap-3">
+                <video ref={videoRef} className="w-64 h-64 rounded-full object-cover border-4 border-blue-400" playsInline />
+                <canvas ref={canvasRef} className="hidden" />
+                <div className="flex gap-2">
+                  <button onClick={capturePhoto}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 flex items-center gap-2">
+                    <Camera className="w-4 h-4" /> Capturer
+                  </button>
+                  <button onClick={stopCamera}
+                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300">
+                    Annuler
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Pas de photo et caméra inactive : proposer upload + caméra */}
+            {!photoPreview && !isCameraActive && (
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-32 h-32 rounded-full border-4 border-dashed border-gray-300 flex items-center justify-center">
                   {photoUploading ? <Loader2 className="w-8 h-8 text-blue-500 animate-spin" /> : <Camera className="w-8 h-8 text-gray-400" />}
                 </div>
-                <span className="text-sm text-gray-600">Cliquez pour ajouter une photo</span>
-                <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
-              </label>
+                <div className="flex gap-2">
+                  <button onClick={startCamera}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 flex items-center gap-2">
+                    <Camera className="w-4 h-4" /> Prendre une photo
+                  </button>
+                  <label className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 cursor-pointer flex items-center gap-2">
+                    <Upload className="w-4 h-4" /> Importer
+                    <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {/* Photo déjà présente : proposer de reprendre */}
+            {photoPreview && !isCameraActive && (
+              <div className="flex gap-2">
+                <button onClick={startCamera}
+                  className="px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg flex items-center gap-1.5">
+                  <RefreshCw className="w-4 h-4" /> Reprendre
+                </button>
+                <label className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg cursor-pointer flex items-center gap-1.5">
+                  <Upload className="w-4 h-4" /> Importer
+                  <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
+                </label>
+              </div>
             )}
           </div>
         </div>

@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.5",
+    "docx": "^9.7.1",
     "pg": "^8.21.0"
   }
 }

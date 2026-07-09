@@ -108,13 +108,53 @@ async function main() {
         // Ignorer
       }
 
-      // d. Supprimer les transactions financières (encaissements + annulations)
+      // d. ⚠️ RESET des account_breakdowns AVANT de supprimer les transactions
+      //    Les breakdowns ont des paidAmount/remainingAmount liés aux transactions.
+      //    Si on supprime les transactions sans reset les breakdowns, on crée des
+      //    incohérences (paidAmount > 0 sans transaction correspondante).
+      const resetBreakdowns = await client.query(`
+        UPDATE account_breakdowns ab
+        SET "paidAmount" = 0,
+            "remainingAmount" = ab."initialAmount"
+        FROM student_accounts sa
+        WHERE ab."studentAccountId" = sa.id
+          ${tenantId ? `AND sa."tenantId" = $1` : ''}
+        RETURNING ab.id
+      `, params);
+      console.log(`  ✓ ${resetBreakdowns.rowCount} account_breakdown(s) reset (paidAmount=0, remainingAmount=initialAmount)`);
+
+      // e. Supprimer les allocations de breakdowns liées aux transactions
+      //    (table finance_transaction_allocations ou similaire)
+      try {
+        const delTxAlloc = await client.query(`DELETE FROM "finance_transaction_allocations" ${tenantFilter} RETURNING id`, params);
+        console.log(`  ✓ ${delTxAlloc.rowCount} allocation(s) de transaction supprimée(s)`);
+      } catch (e) {
+        // Table peut ne pas exister — on ignore
+      }
+
+      // f. Supprimer les transactions financières (encaissements + annulations)
       const delTx = await client.query(`DELETE FROM "finance_transactions" ${tenantFilter} RETURNING id`, params);
       console.log(`  ✓ ${delTx.rowCount} transaction(s) financière(s) supprimée(s)`);
 
-      // e. Supprimer les dépenses (au cas où il en resterait)
+      // g. Supprimer les dépenses (au cas où il en resterait)
       const delExpenses = await client.query(`DELETE FROM "finance_expenses" ${tenantFilter} RETURNING id`, params);
       console.log(`  ✓ ${delExpenses.rowCount} dépense(s) supprimée(s)`);
+
+      // h. ⚠️ Recalculer totalPaid et balance des StudentAccounts
+      //    Après reset des breakdowns, totalPaid doit être 0 et balance = totalDue
+      const recalcAccounts = await client.query(`
+        UPDATE student_accounts sa
+        SET "totalPaid" = 0,
+            "balance" = (
+              SELECT COALESCE(SUM(ab."remainingAmount"), 0)::numeric
+              FROM account_breakdowns ab WHERE ab."studentAccountId" = sa.id
+            ),
+            "isBlocked" = false,
+            "updatedAt" = NOW()
+        ${tenantId ? 'WHERE sa."tenantId" = $1' : ''}
+        RETURNING sa.id
+      `, params);
+      console.log(`  ✓ ${recalcAccounts.rowCount} student_account(s) recalculé(s) (totalPaid=0, balance=totalDue)`);
 
       await client.query('COMMIT');
       console.log('  ✓ Transaction validée (COMMIT)');

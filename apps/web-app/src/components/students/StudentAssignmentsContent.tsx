@@ -2,30 +2,34 @@
 
 /**
  * ============================================================================
- * AFFECTATIONS — Assignation des élèves aux classes
+ * AFFECTATIONS — Changement de classe des élèves
  * ============================================================================
  *
- * Fonctionnalités :
- *   - Stats : classes ouvertes, élèves affectés, non affectés
- *   - Liste des élèves non affectés (avec recherche)
- *   - Assignation individuelle à une classe (select)
- *   - Liste des élèves affectés par classe (arborescence)
- *   - Changement de classe
+ * Nouveau concept (depuis le 2026-07-09) :
+ *   Au cours des admissions/inscriptions, la classe de l'élève est désormais
+ *   obligatoire. L'ancien panneau "Élèves non affectés" ne sert donc plus.
  *
- * Selon MODULE ELEVES.md — Onglet 6
+ *   Cet onglet sert maintenant au CHANGEMENT DE CLASSE :
+ *     - Panneau gauche : classe de DÉPART (sélection + liste des élèves à transférer)
+ *     - Panneau droit : classe d'ARRIVÉE (sélection + preview des élèves déjà présents)
+ *     - Bouton "Transférer →" au milieu pour déplacer les élèves sélectionnés
+ *
+ * Règles :
+ *   - On ne peut pas transférer vers la même classe (validation)
+ *   - Multi-sélection possible dans le panneau gauche
+ *   - Après transfert, les listes sont rafraîchies
  * ============================================================================
  */
 
 import { useState, useEffect, useMemo } from 'react';
 import {
-  Share2, Search, Loader2, UserCheck, Layers, Layout,
-  ChevronDown, ChevronRight, Users, ArrowRight,
+  Share2, Search, Loader2, ArrowRight, ChevronDown, ChevronRight,
+  Users, ArrowRightLeft, AlertCircle, CheckCircle2,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { studentsService } from '@/services/students.service';
 import { apiFetch } from '@/lib/api/client';
 import { toast } from '@/components/ui/toast';
-import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
 interface Student {
@@ -38,6 +42,7 @@ interface Student {
   isActive: boolean;
   schoolLevelId?: string;
   photoUrl?: string | null;
+  dateOfBirth?: string | null;
 }
 
 interface ClassInfo {
@@ -54,19 +59,47 @@ interface Enrollment {
   status: string;
 }
 
+// Ordre pédagogique des niveaux (Maternelle < Primaire < Secondaire)
+const LEVEL_ORDER: Record<string, number> = {
+  MATERNELLE: 1, MAT: 1,
+  PRIMAIRE: 2, PRIMARY: 2,
+  SECONDAIRE: 3, SECONDARY: 3, SECOND: 3,
+};
+
+function getLevelOrder(code?: string): number {
+  if (!code) return 99;
+  return LEVEL_ORDER[code.toUpperCase()] || 99;
+}
+
+// Composant Avatar réutilisable
+function StudentAvatar({ student, size = 'md' }: { student: Student; size?: 'sm' | 'md' }) {
+  const sizes = { sm: 'h-8 w-8 text-xs', md: 'h-9 w-9 text-xs' };
+  const cls = sizes[size];
+  if (student.photoUrl) {
+    return (
+      <img src={student.photoUrl} alt={`${student.firstName} ${student.lastName}`}
+        className={cn(cls, 'rounded-full object-cover shrink-0 border border-slate-200')} />
+    );
+  }
+  return (
+    <div className={cn(cls, 'rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-500 shrink-0')}>
+      {student.lastName?.[0] || '?'}{student.firstName?.[0] || ''}
+    </div>
+  );
+}
+
 export default function StudentAssignmentsContent() {
   const { academicYear, schoolLevel } = useModuleContext();
-  const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<ClassInfo[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isTransferring, setIsTransferring] = useState(false);
+
+  // ⭐ Nouveau state : classe de départ + classe d'arrivée
+  const [fromClassId, setFromClassId] = useState<string>('');
+  const [toClassId, setToClassId] = useState<string>('');
+  const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
-  const [expandedClasses, setExpandedClasses] = useState<Set<string>>(new Set());
-  const [assigningStudentId, setAssigningStudentId] = useState<string | null>(null);
-  // Multi-sélection pour affectation en lot
-  const [selectedUnassigned, setSelectedUnassigned] = useState<Set<string>>(new Set());
-  const [selectedAssigned, setSelectedAssigned] = useState<Set<string>>(new Set());
-  const [bulkTargetClass, setBulkTargetClass] = useState<string>('');
 
   useEffect(() => {
     if (academicYear) loadData();
@@ -76,13 +109,10 @@ export default function StudentAssignmentsContent() {
     if (!academicYear) return;
     setIsLoading(true);
     try {
-      const [studentsData, classesRes, enrollmentsData] = await Promise.all([
-        studentsService.getAll({ academicYearId: academicYear.id }),
+      const [classesRes, enrollmentsData] = await Promise.all([
         fetch(`/api/all-classes`, { cache: 'no-store' }).then(r => r.ok ? r.json() : []).catch(() => []),
         studentsService.getEnrollments({ academicYearId: academicYear.id }),
       ]);
-
-      setStudents(Array.isArray(studentsData) ? studentsData : []);
       setClasses(Array.isArray(classesRes) ? classesRes : []);
       setEnrollments(Array.isArray(enrollmentsData) ? enrollmentsData : []);
     } catch (e: any) {
@@ -93,434 +123,390 @@ export default function StudentAssignmentsContent() {
     }
   };
 
-  // Élèves non affectés (pas d'enrollment avec classId)
-  const unassignedStudents = useMemo(() => {
-    const assignedIds = new Set(
-      enrollments.filter(e => e.class?.id).map(e => e.student.id)
-    );
-    return students.filter(s =>
-      s.isActive &&
-      !assignedIds.has(s.id) &&
-      (searchQuery.trim() === '' ||
-        `${s.firstName} ${s.lastName}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (s.matricule || '').toLowerCase().includes(searchQuery.toLowerCase()))
-    );
-  }, [students, enrollments, searchQuery]);
+  // Classes triées par ordre pédagogique puis par nom
+  const sortedClasses = useMemo(() => {
+    return [...classes].sort((a, b) => {
+      const orderA = getLevelOrder(a.schoolLevel?.code);
+      const orderB = getLevelOrder(b.schoolLevel?.code);
+      if (orderA !== orderB) return orderA - orderB;
+      return a.name.localeCompare(b.name);
+    });
+  }, [classes]);
 
-  // Élèves affectés groupés par classe
-  const assignedByClass = useMemo(() => {
-    const map = new Map<string, Enrollment[]>();
-    for (const enr of enrollments) {
-      if (enr.class?.id) {
-        if (!map.has(enr.class.id)) map.set(enr.class.id, []);
-        map.get(enr.class.id)!.push(enr);
+  // Map classId → élèves inscrits dans cette classe
+  const studentsByClass = useMemo(() => {
+    const m = new Map<string, Enrollment[]>();
+    enrollments.forEach(e => {
+      if (e.class?.id) {
+        if (!m.has(e.class.id)) m.set(e.class.id, []);
+        m.get(e.class.id)!.push(e);
       }
-    }
-    // Trier par nom
-    for (const [, list] of map) {
-      list.sort((a, b) =>
-        `${a.student.lastName} ${a.student.firstName}`.localeCompare(
-          `${b.student.lastName} ${b.student.firstName}`
-        )
-      );
-    }
-    return map;
+    });
+    // Trier chaque liste par nom
+    m.forEach(list => list.sort((a, b) =>
+      a.student.lastName.localeCompare(b.student.lastName) ||
+      a.student.firstName.localeCompare(b.student.firstName)
+    ));
+    return m;
   }, [enrollments]);
 
-  const totalAssigned = enrollments.filter(e => e.class?.id).length;
-  const totalUnassigned = unassignedStudents.length;
+  // Élèves de la classe de départ (avec filtre recherche)
+  const fromClassStudents = useMemo(() => {
+    if (!fromClassId) return [];
+    const list = studentsByClass.get(fromClassId) || [];
+    if (!searchQuery.trim()) return list;
+    const q = searchQuery.toLowerCase();
+    return list.filter(e =>
+      `${e.student.firstName} ${e.student.lastName}`.toLowerCase().includes(q) ||
+      (e.student.matricule || '').toLowerCase().includes(q)
+    );
+  }, [fromClassId, studentsByClass, searchQuery]);
 
-  const toggleClass = (classId: string) => {
-    setExpandedClasses(prev => {
+  // Élèves de la classe d'arrivée (preview)
+  const toClassStudents = useMemo(() => {
+    if (!toClassId) return [];
+    return studentsByClass.get(toClassId) || [];
+  }, [toClassId, studentsByClass]);
+
+  const fromClassName = useMemo(() => classes.find(c => c.id === fromClassId)?.name || '', [classes, fromClassId]);
+  const toClassName = useMemo(() => classes.find(c => c.id === toClassId)?.name || '', [classes, toClassId]);
+
+  // Toggle sélection élève dans le panneau gauche
+  const toggleStudentSelection = (studentId: string) => {
+    setSelectedStudents(prev => {
       const next = new Set(prev);
-      if (next.has(classId)) next.delete(classId);
-      else next.add(classId);
+      if (next.has(studentId)) next.delete(studentId);
+      else next.add(studentId);
       return next;
     });
   };
 
-  const handleAssign = async (studentId: string, classId: string) => {
-    if (!classId || !academicYear) return;
-    setAssigningStudentId(studentId);
-    try {
-      await apiFetch('/students/change-class', {
-        method: 'POST',
-        body: JSON.stringify({
-          studentId,
-          academicYearId: academicYear.id,
-          newClassId: classId,
-        }),
-      });
-      toast({ title: '✅ Élève affecté', variant: 'success' });
-      loadData();
-    } catch (e: any) {
-      toast({ title: 'Erreur', description: e.message || 'Échec de l\'affectation', variant: 'error' });
-    } finally {
-      setAssigningStudentId(null);
-    }
+  // Sélectionner / désélectionner tous les élèves visibles
+  const toggleSelectAll = () => {
+    const visibleIds = fromClassStudents.map(e => e.student.id);
+    const allSelected = visibleIds.every(id => selectedStudents.has(id));
+    setSelectedStudents(prev => {
+      const next = new Set(prev);
+      if (allSelected) {
+        visibleIds.forEach(id => next.delete(id));
+      } else {
+        visibleIds.forEach(id => next.add(id));
+      }
+      return next;
+    });
   };
 
-  // Multi-affectation : affecter plusieurs élèves non affectés vers une classe
-  const handleBulkAssign = async () => {
-    if (!academicYear || !bulkTargetClass || selectedUnassigned.size === 0) return;
-    setAssigningStudentId('bulk');
+  // ⭐ Transférer les élèves sélectionnés vers la classe d'arrivée
+  const handleTransfer = async () => {
+    if (!academicYear || !fromClassId || !toClassId || selectedStudents.size === 0) return;
+    if (fromClassId === toClassId) {
+      toast({ title: 'Erreur', description: 'La classe de départ et d\'arrivée doivent être différentes.', variant: 'error' });
+      return;
+    }
+    setIsTransferring(true);
     try {
-      const studentIds = Array.from(selectedUnassigned);
-      await Promise.all(
-        studentIds.map(id =>
+      const studentIds = Array.from(selectedStudents);
+      // Transférer un par un (endpoint /students/change-class)
+      const results = await Promise.allSettled(
+        studentIds.map(studentId =>
           apiFetch('/students/change-class', {
             method: 'POST',
             body: JSON.stringify({
-              studentId: id,
+              studentId,
               academicYearId: academicYear.id,
-              newClassId: bulkTargetClass,
+              newClassId: toClassId,
             }),
           })
         )
       );
-      toast({ title: `✅ ${studentIds.length} élève(s) affecté(s)`, variant: 'success' });
-      setSelectedUnassigned(new Set());
-      setBulkTargetClass('');
+      const succeeded = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.filter(r => r.status === 'rejected').length;
+      if (failed === 0) {
+        toast({
+          title: '✅ Transfert réussi',
+          description: `${succeeded} élève(s) transféré(s) de "${fromClassName}" vers "${toClassName}".`,
+          variant: 'success',
+        });
+      } else {
+        toast({
+          title: '⚠️ Transfert partiel',
+          description: `${succeeded} réussi(s), ${failed} échec(s) sur ${studentIds.length} élève(s).`,
+          variant: 'success',
+        });
+      }
+      // Reset sélection + reload
+      setSelectedStudents(new Set());
       loadData();
     } catch (e: any) {
-      toast({ title: 'Erreur affectation en lot', description: e.message, variant: 'error' });
+      toast({ title: 'Erreur', description: e.message || 'Échec du transfert', variant: 'error' });
     } finally {
-      setAssigningStudentId(null);
+      setIsTransferring(false);
     }
   };
 
-  // Multi-changement de classe : déplacer plusieurs élèves vers une nouvelle classe
-  const handleBulkChangeClass = async () => {
-    if (!academicYear || !bulkTargetClass || selectedAssigned.size === 0) return;
-    setAssigningStudentId('bulk');
-    try {
-      const studentIds = Array.from(selectedAssigned);
-      await Promise.all(
-        studentIds.map(id =>
-          apiFetch('/students/change-class', {
-            method: 'POST',
-            body: JSON.stringify({
-              studentId: id,
-              academicYearId: academicYear.id,
-              newClassId: bulkTargetClass,
-            }),
-          })
-        )
-      );
-      toast({ title: `✅ ${studentIds.length} élève(s) déplacé(s)`, variant: 'success' });
-      setSelectedAssigned(new Set());
-      setBulkTargetClass('');
-      loadData();
-    } catch (e: any) {
-      toast({ title: 'Erreur changement en lot', description: e.message, variant: 'error' });
-    } finally {
-      setAssigningStudentId(null);
-    }
-  };
+  const canTransfer = fromClassId && toClassId && fromClassId !== toClassId && selectedStudents.size > 0 && !isTransferring;
 
-  const toggleUnassignedSelection = (studentId: string) => {
-    setSelectedUnassigned(prev => {
-      const next = new Set(prev);
-      next.has(studentId) ? next.delete(studentId) : next.add(studentId);
-      return next;
-    });
-  };
-
-  const toggleAssignedSelection = (studentId: string) => {
-    setSelectedAssigned(prev => {
-      const next = new Set(prev);
-      next.has(studentId) ? next.delete(studentId) : next.add(studentId);
-      return next;
-    });
-  };
+  // Stats
+  const stats = useMemo(() => ({
+    totalClasses: classes.length,
+    totalAssigned: enrollments.filter(e => e.class?.id).length,
+    selected: selectedStudents.size,
+    fromClassCount: fromClassId ? (studentsByClass.get(fromClassId)?.length || 0) : 0,
+    toClassCount: toClassId ? (studentsByClass.get(toClassId)?.length || 0) : 0,
+  }), [classes, enrollments, selectedStudents, fromClassId, toClassId, studentsByClass]);
 
   return (
     <div className="flex flex-col h-full space-y-4 animate-in fade-in duration-500">
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
-          <div className="p-2.5 rounded-lg bg-blue-50"><Layout className="w-5 h-5 text-blue-600" /></div>
-          <div>
-            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Classes ouvertes</p>
-            <p className="text-lg font-bold text-slate-900">{classes.length}</p>
-          </div>
-        </div>
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
-          <div className="p-2.5 rounded-lg bg-emerald-50"><UserCheck className="w-5 h-5 text-emerald-600" /></div>
-          <div>
-            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Affectés</p>
-            <p className="text-lg font-bold text-slate-900">{totalAssigned}</p>
-          </div>
-        </div>
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
-          <div className="p-2.5 rounded-lg bg-amber-50"><Layers className="w-5 h-5 text-amber-600" /></div>
-          <div>
-            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Non affectés</p>
-            <p className="text-lg font-bold text-slate-900">{totalUnassigned}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Layout 2 colonnes : Non affectés | Affectés par classe */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0">
-        {/* Colonne gauche : Élèves non affectés */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-          <div className="px-4 py-3 border-b border-slate-100 bg-amber-50/50">
-            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-              <Layers className="w-4 h-4 text-amber-600" />
-              Élèves non affectés ({totalUnassigned})
-            </h3>
-          </div>
-          <div className="p-3 border-b border-slate-100">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Rechercher..."
-                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          { label: 'Classes', value: stats.totalClasses, icon: Share2, color: 'bg-blue-50 text-blue-600' },
+          { label: 'Élèves affectés', value: stats.totalAssigned, icon: Users, color: 'bg-emerald-50 text-emerald-600' },
+          { label: 'Classe départ', value: stats.fromClassCount, icon: ArrowRight, color: 'bg-amber-50 text-amber-600' },
+          { label: 'Classe arrivée', value: stats.toClassCount, icon: CheckCircle2, color: 'bg-indigo-50 text-indigo-600' },
+        ].map((stat, i) => (
+          <div key={i} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex items-center gap-2.5">
+            <div className={cn('p-2 rounded-lg', stat.color)}><stat.icon className="w-4 h-4" /></div>
+            <div>
+              <p className="text-[10px] font-medium text-slate-500 uppercase">{stat.label}</p>
+              <p className="text-base font-bold text-slate-900">{stat.value}</p>
             </div>
           </div>
-          <div className="flex-1 overflow-y-auto">
-            {isLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
-              </div>
-            ) : totalUnassigned === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <UserCheck className="w-10 h-10 text-emerald-300 mb-2" />
-                <p className="text-sm text-slate-500">Tous les élèves sont affectés !</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-slate-50">
-                {/* Barre d'action en lot */}
-                {selectedUnassigned.size > 0 && (
-                  <div className="flex items-center gap-2 p-3 bg-blue-50 border-b border-blue-100">
-                    <span className="text-xs font-bold text-blue-700">{selectedUnassigned.size} sélectionné(s)</span>
-                    <select
-                      value={bulkTargetClass}
-                      onChange={(e) => setBulkTargetClass(e.target.value)}
-                      className="text-xs border border-blue-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 flex-1"
-                    >
-                      <option value="">Classe cible...</option>
-                      {classes.map(cls => (
-                        <option key={cls.id} value={cls.id}>{cls.name}</option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={handleBulkAssign}
-                      disabled={!bulkTargetClass || assigningStudentId === 'bulk'}
-                      className="px-3 py-1.5 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      {assigningStudentId === 'bulk' ? '...' : 'Affecter'}
-                    </button>
-                    <button
-                      onClick={() => setSelectedUnassigned(new Set())}
-                      className="px-2 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 rounded-lg"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                )}
-                {unassignedStudents.map(student => (
-                  <div key={student.id} className="flex items-center gap-3 p-3 hover:bg-slate-50 transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={selectedUnassigned.has(student.id)}
-                      onChange={() => toggleUnassignedSelection(student.id)}
-                      className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 shrink-0"
-                    />
-                    <div className="h-8 w-8 rounded-full bg-slate-100 overflow-hidden flex items-center justify-center text-xs font-bold text-slate-500 shrink-0">
-                      {student.photoUrl ? (
-                        <img src={student.photoUrl} alt={`${student.firstName} ${student.lastName}`} className="w-full h-full object-cover" />
-                      ) : (
-                        <>{student.lastName[0]}{student.firstName[0]}</>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-800 truncate">
-                        {student.lastName.toUpperCase()} {student.firstName}
-                      </p>
-                      <p className="text-[10px] font-mono text-slate-400">
-                        {student.matricule || student.studentCode || '—'}
-                      </p>
-                    </div>
-                    <select
-                      value=""
-                      onChange={(e) => e.target.value && handleAssign(student.id, e.target.value)}
-                      disabled={assigningStudentId === student.id}
-                      className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 shrink-0"
-                    >
-                      <option value="">Assigner...</option>
-                      {classes.map(cls => (
-                        <option key={cls.id} value={cls.id}>{cls.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                ))}
+        ))}
+      </div>
+
+      {/* Toolbar — sélecteurs de classes */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <div className="flex flex-wrap items-center gap-3 mb-2">
+          <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+            <ArrowRightLeft className="w-4 h-4 text-blue-600" />
+            Changement de classe
+          </h3>
+          <p className="text-xs text-slate-500">
+            Sélectionnez une classe de départ, choisissez les élèves à transférer, puis sélectionnez la classe d'arrivée.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-3 items-end">
+          {/* Classe de départ */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Classe de départ</label>
+            <select
+              value={fromClassId}
+              onChange={(e) => { setFromClassId(e.target.value); setSelectedStudents(new Set()); }}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+            >
+              <option value="">— Sélectionner —</option>
+              {sortedClasses.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.schoolLevel?.name ? `${c.schoolLevel.name} · ` : ''}{c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          {/* Bouton transférer */}
+          <div className="flex flex-col items-center">
+            <button
+              onClick={handleTransfer}
+              disabled={!canTransfer}
+              className={cn(
+                'inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold transition',
+                canTransfer
+                  ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-md'
+                  : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+              )}
+              title={fromClassId === toClassId ? 'Classes identiques' : 'Transférer les élèves sélectionnés'}
+            >
+              {isTransferring ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+              {isTransferring ? 'Transfert...' : 'Transférer'}
+            </button>
+            <span className="text-[10px] text-slate-400 mt-1">
+              {selectedStudents.size} sélectionné(s)
+            </span>
+          </div>
+          {/* Classe d'arrivée */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Classe d'arrivée</label>
+            <select
+              value={toClassId}
+              onChange={(e) => setToClassId(e.target.value)}
+              className={cn(
+                'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2',
+                fromClassId === toClassId && toClassId ? 'ring-2 ring-red-400 border-red-300' : 'focus:ring-indigo-500'
+              )}
+            >
+              <option value="">— Sélectionner —</option>
+              {sortedClasses.map(c => (
+                <option key={c.id} value={c.id} disabled={c.id === fromClassId}>
+                  {c.schoolLevel?.name ? `${c.schoolLevel.name} · ` : ''}{c.name}{c.id === fromClassId ? ' (départ)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        {fromClassId === toClassId && toClassId && (
+          <div className="mt-2 flex items-center gap-1.5 text-xs text-red-600">
+            <AlertCircle className="w-3.5 h-3.5" />
+            La classe d'arrivée doit être différente de la classe de départ.
+          </div>
+        )}
+      </div>
+
+      {/* Panneaux gauche / droit */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0">
+        {/* ─── Panneau gauche : élèves de la classe de départ ─── */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+          <div className="p-3 border-b border-slate-100 bg-amber-50/50">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1.5">
+                <ArrowRight className="w-3.5 h-3.5 text-amber-600" />
+                {fromClassName ? `Départ : ${fromClassName}` : 'Classe de départ'}
+              </h4>
+              {fromClassStudents.length > 0 && (
+                <button
+                  onClick={toggleSelectAll}
+                  className="text-[10px] font-semibold text-blue-600 hover:text-blue-800"
+                >
+                  {fromClassStudents.every(e => selectedStudents.has(e.student.id)) ? 'Tout désélectionner' : 'Tout sélectionner'}
+                </button>
+              )}
+            </div>
+            {fromClassId && (
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Rechercher..."
+                  className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
               </div>
             )}
           </div>
-        </div>
-
-        {/* Colonne droite : Élèves affectés par classe */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-          <div className="px-4 py-3 border-b border-slate-100 bg-emerald-50/50">
-            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-              <UserCheck className="w-4 h-4 text-emerald-600" />
-              Élèves affectés par classe
-            </h3>
-          </div>
           <div className="flex-1 overflow-y-auto">
-            {classes.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <Layout className="w-10 h-10 text-slate-300 mb-2" />
-                <p className="text-sm text-slate-500">Aucune classe configurée</p>
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 text-amber-500 animate-spin" /></div>
+            ) : !fromClassId ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Share2 className="w-10 h-10 text-slate-300 mb-2" />
+                <p className="text-xs text-slate-500">Sélectionnez une classe de départ</p>
+              </div>
+            ) : fromClassStudents.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Users className="w-10 h-10 text-slate-300 mb-2" />
+                <p className="text-xs text-slate-500">Aucun élève dans cette classe</p>
               </div>
             ) : (
-              <div className="divide-y divide-slate-100">
-                {/* Tri pédagogique : Maternelle < Primaire < Secondaire, puis CI < CP < ... < CM2 */}
-                {[...classes].sort((a, b) => {
-                  // Tri par niveau
-                  const levelOrder = (name: string) => {
-                    const n = (name || '').toUpperCase();
-                    if (n.includes('MATERNELLE')) return 0;
-                    if (n.includes('PRIMAIRE')) return 1;
-                    if (n.includes('SECONDAIRE')) return 2;
-                    return 3;
-                  };
-                  const aLevel = levelOrder(a.schoolLevel?.name || '');
-                  const bLevel = levelOrder(b.schoolLevel?.name || '');
-                  if (aLevel !== bLevel) return aLevel - bLevel;
-
-                  // Tri par classe dans le niveau
-                  const classOrder = (name: string): number => {
-                    const n = (name || '').trim().toUpperCase();
-                    if (n === 'MATERNELLE 1' || n === 'M1' || n === 'MAT1') return 0;
-                    if (n === 'MATERNELLE 2' || n === 'M2' || n === 'MAT2') return 1;
-                    if (n === 'CI') return 10;
-                    if (n === 'CP') return 11;
-                    if (n === 'CE1') return 12;
-                    if (n === 'CE2') return 13;
-                    if (n === 'CM1') return 14;
-                    if (n === 'CM2') return 15;
-                    if (n.startsWith('6')) return 20;
-                    if (n.startsWith('5')) return 21;
-                    if (n.startsWith('4')) return 22;
-                    if (n.startsWith('3')) return 23;
-                    if (n.startsWith('2NDE')) return 24;
-                    if (n.startsWith('1ER')) return 25;
-                    if (n.startsWith('TERM') || n.startsWith('TLE')) return 26;
-                    return 100 + name.charCodeAt(0);
-                  };
-                  return classOrder(a.name) - classOrder(b.name);
-                }).map(cls => {
-                  const studentsInClass = assignedByClass.get(cls.id) || [];
-                  const isExpanded = expandedClasses.has(cls.id);
+              <div className="divide-y divide-slate-50">
+                {fromClassStudents.map(enr => {
+                  const isSelected = selectedStudents.has(enr.student.id);
                   return (
-                    <div key={cls.id}>
-                      <button
-                        onClick={() => toggleClass(cls.id)}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 transition-colors text-left group"
-                      >
-                        <div className="shrink-0 pl-1">
-                          {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
-                        </div>
-                        <div className="p-1.5 bg-slate-100 rounded-lg shrink-0"><Users className="w-4 h-4 text-slate-500" /></div>
-                        <span className="flex-1 text-sm font-semibold text-slate-700">{cls.name}</span>
-                        <span className="px-2 py-0.5 bg-emerald-50 rounded-full text-[10px] font-bold text-emerald-700 shrink-0">
-                          {studentsInClass.length}
-                        </span>
-                      </button>
-                      <AnimatePresence>
-                        {isExpanded && (
-                          <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            transition={{ duration: 0.15 }}
-                            className="overflow-hidden"
-                          >
-                            {studentsInClass.length === 0 ? (
-                              <p className="px-4 py-2 text-xs text-slate-400 italic pl-12">Aucun élève</p>
-                            ) : (
-                              <div className="pl-12 pr-4 py-1">
-                                {/* Barre d'action en lot (changement de classe) */}
-                                {selectedAssigned.size > 0 && (
-                                  <div className="flex items-center gap-2 p-2 mb-1 bg-amber-50 rounded-lg border border-amber-100">
-                                    <span className="text-[10px] font-bold text-amber-700">{selectedAssigned.size} sélectionné(s)</span>
-                                    <select
-                                      value={bulkTargetClass}
-                                      onChange={(e) => setBulkTargetClass(e.target.value)}
-                                      className="text-[10px] border border-amber-200 rounded px-1.5 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 flex-1"
-                                    >
-                                      <option value="">Nouvelle classe...</option>
-                                      {classes.filter(c => c.id !== cls.id).map(c => (
-                                        <option key={c.id} value={c.id}>{c.name}</option>
-                                      ))}
-                                    </select>
-                                    <button
-                                      onClick={handleBulkChangeClass}
-                                      disabled={!bulkTargetClass || assigningStudentId === 'bulk'}
-                                      className="px-2 py-1 text-[10px] font-bold text-white bg-amber-600 rounded hover:bg-amber-700 disabled:opacity-50"
-                                    >
-                                      {assigningStudentId === 'bulk' ? '...' : 'Déplacer'}
-                                    </button>
-                                    <button
-                                      onClick={() => setSelectedAssigned(new Set())}
-                                      className="px-1.5 py-1 text-[10px] text-slate-500 hover:bg-slate-100 rounded"
-                                    >
-                                      ✕
-                                    </button>
-                                  </div>
-                                )}
-                                {studentsInClass.map((enr, idx) => (
-                                  <div key={enr.id} className="flex items-center gap-3 py-1.5 px-2 hover:bg-slate-50 rounded-lg transition-colors">
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedAssigned.has(enr.student.id)}
-                                      onChange={() => toggleAssignedSelection(enr.student.id)}
-                                      className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 shrink-0"
-                                    />
-                                    <span className="text-[10px] font-mono text-slate-400 w-5 text-right">{idx + 1}</span>
-                                    <div className="h-7 w-7 rounded-full bg-slate-100 overflow-hidden flex items-center justify-center text-[10px] font-bold text-slate-500 shrink-0">
-                                      {enr.student.photoUrl ? (
-                                        <img src={enr.student.photoUrl} alt={`${enr.student.firstName} ${enr.student.lastName}`} className="w-full h-full object-cover" />
-                                      ) : (
-                                        <>{enr.student.lastName[0]}{enr.student.firstName[0]}</>
-                                      )}
-                                    </div>
-                                    <span className="text-sm text-slate-700 flex-1">
-                                      {enr.student.lastName.toUpperCase()} {enr.student.firstName}
-                                    </span>
-                                    {/* Changement de classe individuel */}
-                                    <select
-                                      value=""
-                                      onChange={(e) => e.target.value && handleAssign(enr.student.id, e.target.value)}
-                                      className="text-[10px] border border-slate-200 rounded px-1.5 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 shrink-0"
-                                    >
-                                      <option value="">Changer...</option>
-                                      {classes.filter(c => c.id !== cls.id).map(c => (
-                                        <option key={c.id} value={c.id}>{c.name}</option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
+                    <label
+                      key={enr.student.id}
+                      className={cn(
+                        'flex items-center gap-2.5 p-2.5 cursor-pointer hover:bg-amber-50/50 transition',
+                        isSelected && 'bg-amber-50'
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleStudentSelection(enr.student.id)}
+                        className="w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500 shrink-0"
+                      />
+                      <StudentAvatar student={enr.student} size="sm" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-800 truncate">
+                          {enr.student.lastName.toUpperCase()} {enr.student.firstName}
+                        </p>
+                        <p className="text-[10px] font-mono text-slate-400">
+                          {enr.student.matricule || enr.student.studentCode || '—'}
+                        </p>
+                      </div>
+                    </label>
                   );
                 })}
               </div>
             )}
           </div>
+          {fromClassStudents.length > 0 && (
+            <div className="p-2 border-t border-slate-100 bg-slate-50/50 text-[10px] text-slate-500 text-center">
+              {fromClassStudents.length} élève(s) · {selectedStudents.size} sélectionné(s)
+            </div>
+          )}
+        </div>
+
+        {/* ─── Panneau droit : preview classe d'arrivée ─── */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+          <div className="p-3 border-b border-slate-100 bg-indigo-50/50">
+            <h4 className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600" />
+              {toClassName ? `Arrivée : ${toClassName}` : 'Classe d\'arrivée'}
+            </h4>
+            <p className="text-[10px] text-slate-500 mt-0.5">
+              {toClassId
+                ? `${toClassStudents.length} élève(s) déjà dans cette classe`
+                : 'Sélectionnez une classe d\'arrivée pour voir les élèves déjà présents'}
+            </p>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {!toClassId ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <CheckCircle2 className="w-10 h-10 text-slate-300 mb-2" />
+                <p className="text-xs text-slate-500">Sélectionnez une classe d'arrivée</p>
+              </div>
+            ) : toClassStudents.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Users className="w-10 h-10 text-slate-300 mb-2" />
+                <p className="text-xs text-slate-500">Aucun élève dans cette classe</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-50">
+                {toClassStudents.map(enr => (
+                  <div key={enr.student.id} className="flex items-center gap-2.5 p-2.5">
+                    <StudentAvatar student={enr.student} size="sm" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-800 truncate">
+                        {enr.student.lastName.toUpperCase()} {enr.student.firstName}
+                      </p>
+                      <p className="text-[10px] font-mono text-slate-400">
+                        {enr.student.matricule || enr.student.studentCode || '—'}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          {toClassId && toClassStudents.length > 0 && (
+            <div className="p-2 border-t border-slate-100 bg-slate-50/50 text-[10px] text-slate-500 text-center">
+              {toClassStudents.length} élève(s) dans la classe d'arrivée
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Récapitulatif transfert */}
+      {canTransfer && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm text-blue-800">
+            <ArrowRightLeft className="w-4 h-4" />
+            <span>
+              <strong>{selectedStudents.size}</strong> élève(s) seront transférés de
+              <strong className="mx-1">{fromClassName}</strong> vers
+              <strong className="mx-1">{toClassName}</strong>
+            </span>
+          </div>
+          <button
+            onClick={handleTransfer}
+            disabled={isTransferring}
+            className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-bold transition"
+          >
+            {isTransferring ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+            Confirmer le transfert
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -16,6 +16,7 @@ import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.servi
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import * as QRCode from 'qrcode';
 
 @Injectable()
 export class StudentIdCardService {

@@ -160,16 +160,30 @@ export default function StudentEnrollmentForm({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // ─── Chargement des niveaux scolaires (fetch direct comme AdmissionForm) ───
+  // ─── Chargement des niveaux scolaires depuis /api/all-classes ───
+  // On extrait les niveaux uniques des classes (qui ont toutes un schoolLevelId).
+  // Ce pattern est plus robuste que /api/school-levels qui dépend d'education_levels.
   useEffect(() => {
-    fetch('/api/school-levels', { credentials: 'include' })
+    fetch('/api/all-classes', { credentials: 'include' })
       .then(r => r.ok ? r.json() : [])
       .then(data => {
-        const list = Array.isArray(data) ? data : [];
-        setSchoolLevels(list);
+        const allClasses = Array.isArray(data) ? data : [];
+        // Extraire les niveaux uniques
+        const levelMap = new Map<string, { id: string; name: string; code?: string }>();
+        allClasses.forEach((c: any) => {
+          if (c.schoolLevelId && !levelMap.has(c.schoolLevelId)) {
+            levelMap.set(c.schoolLevelId, {
+              id: c.schoolLevelId,
+              name: c.schoolLevel?.name || c.schoolLevel?.code || 'Niveau',
+              code: c.schoolLevel?.code,
+            });
+          }
+        });
+        const levels = Array.from(levelMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+        setSchoolLevels(levels);
         // Si aucun niveau sélectionné, prendre le premier
-        if (!selectedLevelId && list.length > 0) {
-          setSelectedLevelId(list[0].id);
+        if (!selectedLevelId && levels.length > 0) {
+          setSelectedLevelId(levels[0].id);
         }
       })
       .catch(() => setSchoolLevels([]));

@@ -13,8 +13,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Camera, Upload, X, CheckCircle, AlertCircle, Info, Calendar, Link2, Trash2, Users, FileText, BookOpen, Loader2 } from 'lucide-react';
 import { studentsService } from '@/services/students.service';
-import { financeService } from '@/services/finance.service';
-import { classesService } from '@/services/classes.service';
+import { useModuleContext } from '@/hooks/useModuleContext';
 import { motion } from 'framer-motion';
 import { formatGradeLabel, formatCurrency } from '@/lib/utils';
 import { compressImageFileToDataUrl } from '@/lib/media';
@@ -130,6 +129,7 @@ export default function StudentEnrollmentForm({
   onCancel,
   initialData,
 }: StudentEnrollmentFormProps) {
+  const { academicYear: ctxAcademicYear, schoolLevel: ctxSchoolLevel } = useModuleContext();
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -221,15 +221,21 @@ export default function StudentEnrollmentForm({
   const [classesList, setClassesList] = useState<{ id: string; name: string; schoolLevelId?: string; schoolLevel?: { id: string; name: string; code?: string } }[]>([]);
   const [isLoadingClasses, setIsLoadingClasses] = useState(false);
 
-  // Charger les régimes tarifaires
+  // Charger les régimes tarifaires — pattern identique à AdmissionForm :
+  // fetch() direct (pas financeService/financeFetch) avec credentials + guard
+  // sur les valeurs vides. Utilise le contexte (useModuleContext) comme fallback
+  // si les props ne sont pas renseignées.
+  const effectiveAcademicYearId = academicYearId || ctxAcademicYear?.id || '';
+  const effectiveSchoolLevelId = schoolLevelId || ctxSchoolLevel?.id || ctxSchoolLevel?.schoolLevelId || '';
+
   useEffect(() => {
     loadRegimes();
-  }, [academicYearId, schoolLevelId]);
+  }, [effectiveAcademicYearId, effectiveSchoolLevelId]);
 
   // Charger les classes depuis le backend (route BFF /api/all-classes qui contourne
   // le filtre schoolLevelId du contexte admin). On inclut schoolLevel pour le groupage.
   useEffect(() => {
-    if (!academicYearId) {
+    if (!effectiveAcademicYearId) {
       setClassesList([]);
       return;
     }
@@ -247,19 +253,27 @@ export default function StudentEnrollmentForm({
       })
       .catch(() => setClassesList([]))
       .finally(() => setIsLoadingClasses(false));
-  }, [academicYearId, schoolLevelId]);
+  }, [effectiveAcademicYearId, effectiveSchoolLevelId]);
 
   const loadRegimes = async () => {
+    // Guard : ne pas lancer la requête si les identifiants sont vides
+    if (!effectiveAcademicYearId || !effectiveSchoolLevelId) {
+      setRegimes([]);
+      setIsLoadingRegimes(false);
+      return;
+    }
+
     setIsLoadingRegimes(true);
     try {
-      // schoolLevelId est déjà le bon UUID (school_levels) grâce au fix précédent
-      // dans EnrollmentsContent qui passe schoolLevel.schoolLevelId || schoolLevel.id
-      const params = new URLSearchParams({
-        academicYearId,
-        schoolLevelId,
-      });
-
-      const data = await financeService.getFeeRegimes(Object.fromEntries(params.entries()));
+      // fetch() direct comme AdmissionForm — pas de financeService/financeFetch
+      const url = `/api/finance/fee-regimes?academicYearId=${encodeURIComponent(effectiveAcademicYearId)}&schoolLevelId=${encodeURIComponent(effectiveSchoolLevelId)}`;
+      const response = await fetch(url, { credentials: 'include' });
+      if (!response.ok) {
+        console.warn('loadRegimes: response not ok', response.status);
+        setRegimes([]);
+        return;
+      }
+      const data = await response.json();
       const list = Array.isArray(data) ? data : [];
       setRegimes(list);
 

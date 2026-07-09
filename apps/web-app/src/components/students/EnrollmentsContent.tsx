@@ -1323,52 +1323,64 @@ export default function EnrollmentsContent() {
               })),
             }}
             onSubmit={async (data) => {
-              // Update des infos élève
-              await studentsService.update(editEnrollment.student.id, {
-                firstName: data.student.firstName,
-                lastName: data.student.lastName,
-                dateOfBirth: data.student.dateOfBirth ? new Date(data.student.dateOfBirth).toISOString() : undefined,
-                gender: data.student.gender || undefined,
-                nationality: data.student.nationality || undefined,
-                photoUrl: data.student.photoUrl || undefined,
-                placeOfBirth: data.student.placeOfBirth || undefined,
-                npi: data.student.npi || undefined,
-              });
-              // Upload photo si nouvelle
-              if (data.student.photoUrl && data.student.photoUrl.startsWith('data:')) {
-                await studentsService.uploadPhoto(editEnrollment.student.id, data.student.photoUrl)
-                  .catch(() => undefined);
-              }
-              // Changement de classe
-              if (data.classId && data.classId !== editEnrollment.class?.id) {
-                await studentsService.changeClass(editEnrollment.student.id, academicYear.id, data.classId)
-                  .catch(() => undefined);
-              }
-              // Guardians
-              if (data.guardians?.length) {
-                for (const g of data.guardians) {
-                  if (!g.firstName?.trim() && !g.lastName?.trim()) continue;
-                  await studentsService.addGuardians(editEnrollment.student.id, {
-                    guardians: [{
-                      firstName: g.firstName, lastName: g.lastName,
-                      relationship: g.relationship || 'GUARDIAN',
-                      phone: g.phone, email: g.email, isPrimary: g.isPrimary ?? false,
-                    }],
-                  }).catch(() => undefined);
+              try {
+                // Update des infos élève — ne PAS envoyer photoUrl (géré par uploadPhoto séparément)
+                // Le backend UpdateStudentPrismaDto a forbidNonWhitelisted=true ; on n'envoie QUE
+                // les champs whitelistés pour éviter tout 400 "property X should not exist".
+                await studentsService.update(editEnrollment.student.id, {
+                  firstName: data.student.firstName,
+                  lastName: data.student.lastName,
+                  dateOfBirth: data.student.dateOfBirth ? new Date(data.student.dateOfBirth).toISOString() : undefined,
+                  gender: data.student.gender || undefined,
+                  nationality: data.student.nationality || undefined,
+                  placeOfBirth: data.student.placeOfBirth || undefined,
+                  npi: data.student.npi || undefined,
+                  // ⚠️ PAS de photoUrl ici — la photo est uploadée via uploadPhoto (endpoint dédié)
+                });
+                // Upload photo si nouvelle (data URL)
+                if (data.student.photoUrl && data.student.photoUrl.startsWith('data:')) {
+                  await studentsService.uploadPhoto(editEnrollment.student.id, data.student.photoUrl)
+                    .catch((e: any) => console.warn('uploadPhoto:', e?.message));
                 }
+                // Changement de classe
+                if (data.classId && data.classId !== editEnrollment.class?.id) {
+                  await studentsService.changeClass(editEnrollment.student.id, academicYear.id, data.classId)
+                    .catch((e: any) => console.warn('changeClass:', e?.message));
+                }
+                // Guardians
+                if (data.guardians?.length) {
+                  for (const g of data.guardians) {
+                    if (!g.firstName?.trim() && !g.lastName?.trim()) continue;
+                    await studentsService.addGuardians(editEnrollment.student.id, {
+                      guardians: [{
+                        firstName: g.firstName, lastName: g.lastName,
+                        relationship: g.relationship || 'GUARDIAN',
+                        phone: g.phone, email: g.email, isPrimary: g.isPrimary ?? false,
+                      }],
+                    }).catch((e: any) => console.warn('Guardian:', e?.message));
+                  }
+                }
+                // Régime
+                if (data.feeProfile?.feeRegimeId) {
+                  await financeService.createStudentFeeProfile({
+                    studentId: editEnrollment.student.id,
+                    academicYearId: academicYear.id,
+                    feeRegimeId: data.feeProfile.feeRegimeId,
+                    justification: data.feeProfile.justification,
+                  }).catch((e: any) => console.warn('FeeProfile:', e?.message));
+                }
+                toast({ title: '✅ Inscription mise à jour', variant: 'success' });
+                setEditEnrollment(null);
+                loadData();
+              } catch (e: any) {
+                console.error('Erreur modification inscription:', e);
+                toast({
+                  title: "Erreur lors de la modification",
+                  description: e?.message || 'Une erreur est survenue.',
+                  variant: 'error',
+                });
+                throw e;
               }
-              // Régime
-              if (data.feeProfile?.feeRegimeId) {
-                await financeService.createStudentFeeProfile({
-                  studentId: editEnrollment.student.id,
-                  academicYearId: academicYear.id,
-                  feeRegimeId: data.feeProfile.feeRegimeId,
-                  justification: data.feeProfile.justification,
-                }).catch(() => undefined);
-              }
-              toast({ title: '✅ Inscription mise à jour', variant: 'success' });
-              setEditEnrollment(null);
-              loadData();
             }}
             onCancel={() => setEditEnrollment(null)}
           />

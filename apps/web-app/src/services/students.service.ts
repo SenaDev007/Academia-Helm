@@ -294,14 +294,61 @@ class StudentsService {
 
   /**
    * Met à jour un étudiant
+   *
+   * ⚠️ Le backend StudentsPrismaController utilise @Put(':id') avec UpdateStudentPrismaDto.
+   * forbidNonWhitelisted=true → tout champ non whitelisté provoque 400 Bad Request.
+   * Champs autorisés : firstName, lastName, dateOfBirth, gender (M|F), nationality,
+   *                    primaryLanguage, npi, photoUrl, placeOfBirth, status, tenantId.
+   * Ne PAS envoyer : classId, schoolLevelId, academicYearId, feeRegimeId, operation, etc.
    */
   async update(id: string, data: any): Promise<any> {
-    // ⚠️ Le backend StudentsPrismaController utilise @Put(':id'), pas @Patch.
-    // L'ancien StudentsController a @Patch mais il peut être shadowé par le Prisma controller.
-    // On utilise PUT pour être sûr d'atteindre le bon endpoint.
-    return apiFetch(`${BASE_URL}/${encodeURIComponent(id)}`, {
-      method: "PUT",
-      body: data,
+    // Nettoyage défensif : ne garder QUE les champs whitelistés par UpdateStudentPrismaDto.
+    // Cela évite tout 400 "property X should not exist" si le caller passe un objet trop large.
+    const ALLOWED_KEYS = new Set([
+      'firstName', 'lastName', 'dateOfBirth', 'gender', 'nationality',
+      'primaryLanguage', 'npi', 'photoUrl', 'placeOfBirth', 'status', 'tenantId',
+    ]);
+    const cleaned: Record<string, any> = {};
+    for (const [k, v] of Object.entries(data || {})) {
+      if (ALLOWED_KEYS.has(k) && v !== undefined) {
+        cleaned[k] = v;
+      }
+    }
+    // Normaliser gender : le DTO impose @IsIn(['M', 'F']).
+    // Si la valeur n'est ni 'M' ni 'F' (ex: 'Masculin', 'Féminin', ''), on l'omet.
+    if (cleaned.gender !== undefined && cleaned.gender !== 'M' && cleaned.gender !== 'F') {
+      delete cleaned.gender;
+    }
+    console.log('[studentsService.update] PUT /students/' + id, cleaned);
+    try {
+      return await apiFetch(`${BASE_URL}/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        body: cleaned,
+      });
+    } catch (err: any) {
+      // Axios range les détails du backend dans err.response.data
+      const backendMsg = err?.response?.data?.message || err?.response?.data?.error;
+      console.error('[studentsService.update] Erreur backend:', err?.response?.status, backendMsg, err?.response?.data);
+      // Re-lancer avec un message explicite pour l'UI
+      if (Array.isArray(backendMsg)) {
+        throw new Error(backendMsg.join(' • '));
+      }
+      if (backendMsg) {
+        throw new Error(typeof backendMsg === 'string' ? backendMsg : JSON.stringify(backendMsg));
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Change la classe d'un élève (POST /students/change-class)
+   * Backend : StudentsLifecycleController.changeClass
+   * Body: { studentId, academicYearId, classId }
+   */
+  async changeClass(studentId: string, academicYearId: string, classId: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/change-class`, {
+      method: "POST",
+      body: { studentId, academicYearId, classId },
     });
   }
 

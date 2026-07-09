@@ -182,12 +182,17 @@ export class StudentIdCardService {
   }
 
   /**
-   * Génère des cartes par lot (classe, niveau)
+   * Génère des cartes par lot (classe, niveau, ou TOUS les niveaux)
+   *
+   * ⭐ Si schoolLevelId n'est pas fourni (ou est 'ALL'), génère pour TOUS les
+   * élèves actifs du tenant pour l'année, tous niveaux confondus.
+   * C'est le comportement attendu quand l'admin clique sur "Générer les cartes"
+   * sans vouloir filtrer par niveau.
    */
   async generateBulkIdCards(
     tenantId: string,
     academicYearId: string,
-    schoolLevelId: string,
+    schoolLevelId?: string,
     filters?: {
       classId?: string;
       status?: string;
@@ -197,9 +202,12 @@ export class StudentIdCardService {
     const where: any = {
       tenantId,
       academicYearId,
-      schoolLevelId,
       status: 'ACTIVE',
     };
+    // ⭐ Ne filtrer par schoolLevelId que s'il est fourni ET différent de 'ALL'
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
+      where.schoolLevelId = schoolLevelId;
+    }
 
     const students = await this.prisma.student.findMany({
       where,

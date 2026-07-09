@@ -759,10 +759,13 @@ class StudentsService {
 
   /**
    * Génération par lot de cartes d'identité
+   *
+   * ⭐ Si schoolLevelId n'est pas fourni, génère pour TOUS les élèves actifs
+   * du tenant pour l'année, tous niveaux confondus.
    */
   async generateBulkIdCards(data: {
     academicYearId: string;
-    schoolLevelId: string;
+    schoolLevelId?: string;
     classId?: string;
   }): Promise<any> {
     return apiFetch(`${BASE_URL}/id-cards/generate-bulk`, {

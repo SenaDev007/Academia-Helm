@@ -60,7 +60,10 @@ export class StudentIdCardController {
   }
 
   /**
-   * Génère des cartes par lot (classe, niveau)
+   * Génère des cartes par lot (classe, niveau, ou TOUS les niveaux)
+   *
+   * ⭐ Si schoolLevelId n'est pas fourni dans le body, génère pour TOUS les
+   * élèves actifs du tenant pour l'année, tous niveaux confondus.
    */
   @Post('generate-bulk')
   @UseGuards(RolesGuard)
@@ -70,7 +73,7 @@ export class StudentIdCardController {
     @GetTenant() tenant: any,
     @Body() data: {
       academicYearId: string;
-      schoolLevelId: string;
+      schoolLevelId?: string;
       classId?: string;
       status?: string;
     },
@@ -79,7 +82,7 @@ export class StudentIdCardController {
     return this.idCardService.generateBulkIdCards(
       tenant.id,
       data.academicYearId,
-      data.schoolLevelId,
+      data.schoolLevelId, // ⭐ maintenant optionnel
       {
         classId: data.classId,
         status: data.status,

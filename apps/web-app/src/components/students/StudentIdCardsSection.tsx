@@ -147,22 +147,25 @@ export default function StudentIdCardsSection() {
     }
   };
 
-  // Génération en lot (tous les élèves sans carte)
+  // Génération en lot (TOUS les élèves sans carte, tous niveaux confondus)
+  // ⭐ On ne passe PAS schoolLevelId pour générer sur tous les niveaux.
+  // Si l'utilisateur veut filtrer par niveau, il utilise le bouton par classe
+  // dans l'arborescence (handleGenerateForClass).
   const handleGenerateBulk = async () => {
     const ok = await confirmDialog.info(
-      'Des cartes seront générées pour tous les élèves actifs sans carte. Voulez-vous continuer ?',
+      'Des cartes seront générées pour TOUS les élèves actifs sans carte (tous niveaux confondus). Voulez-vous continuer ?',
       'Générer les cartes',
     );
     if (!ok) return;
     const academicYearId = academicYear?.id || '';
-    const schoolLevelId = schoolLevel?.id || '';
-    if (!academicYearId || !schoolLevelId) {
-      toast({ title: 'Attention', description: 'Année scolaire ou niveau manquant dans le contexte.', variant: 'error' });
+    if (!academicYearId) {
+      toast({ title: 'Attention', description: 'Aucune année scolaire sélectionnée.', variant: 'error' });
       return;
     }
     setIsGenerating(true);
     try {
-      const data = await studentsService.generateBulkIdCards({ academicYearId, schoolLevelId });
+      // ⭐ Pas de schoolLevelId → génère pour TOUS les niveaux
+      const data = await studentsService.generateBulkIdCards({ academicYearId });
       toast({
         title: '✅ Génération terminée',
         description: `${data.succeeded} carte(s) générée(s) sur ${data.total} élève(s).`,

@@ -19,16 +19,31 @@ function getTenantId(): string {
 
 class StudentsService {
   /**
-   * Récupère la liste des étudiants
+   * Récupère la liste des étudiants (paginée).
+   *
+   * ⚠️ Le backend retourne maintenant un objet paginé :
+   *   { data: Student[], total: number, page: number, limit: number, totalPages: number }
+   *
+   * Pour préserver la rétro-compatibilité avec les callers qui attendent un
+   * array, on :
+   *   - retourne l'array si la réponse est un array (ancien format)
+   *   - sinon retourne l'objet { data, total, page, limit, totalPages }
+   *
+   * Les callers peuvent utiliser :
+   *   const result = await studentsService.getAll({ academicYearId, page: 1, limit: 50 });
+   *   const students = Array.isArray(result) ? result : result.data;
+   *   const total = Array.isArray(result) ? result.length : result.total;
+   *
+   * Si l'appelant ne spécifie pas de page/limit, on utilise limit=50 par défaut
+   * (page gérable avec boutons de navigation) au lieu de 200 qui masquait la
+   * pagination.
    */
   async getAll(params?: Record<string, string>): Promise<any> {
-    // ⚠️ Le backend pagine par défaut à 50 élèves (students-prisma.service.ts ligne 190).
-    // Pour les onglets qui ont besoin de TOUS les élèves (Mouvement, Historique,
-    // Audit, Familles, Régime finance, Identité), on force limit=200 sauf si
-    // l'appelant a explicitement spécifié un limit ou une page.
     const finalParams: Record<string, string> = { ...(params || {}) };
+    // ⭐ Par défaut limit=50 (page gérable avec pagination UI).
+    // Si l'appelant veut tous les élèves d'un coup, il doit passer limit=200.
     if (!finalParams.limit && !finalParams.page) {
-      finalParams.limit = '200';
+      finalParams.limit = '50';
     }
     const qs = new URLSearchParams(finalParams).toString();
 

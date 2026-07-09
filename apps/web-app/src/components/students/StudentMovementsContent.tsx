@@ -23,6 +23,7 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   History, LogOut, UserMinus, Search, Loader2,
   ArrowRightLeft, RotateCcw, Archive, Users, Filter,
+  ChevronLeft, ChevronRight, MoreHorizontal,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { studentsService } from '@/services/students.service';
@@ -73,6 +74,95 @@ const STATUS_LABELS: Record<string, { label: string; color: string; icon: any }>
   ACTIVE: { label: 'Actif', color: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: Users },
 };
 
+// ⭐ Composant Pagination réutilisable
+// Affiche : « 1-50 sur 94 » + boutons Précédent/Suivant + numéros de page
+function Pagination({
+  currentPage, totalPages, total, limit, onPageChange, isLoading,
+}: {
+  currentPage: number;
+  totalPages: number;
+  total: number;
+  limit: number;
+  onPageChange: (page: number) => void;
+  isLoading?: boolean;
+}) {
+  if (totalPages <= 1) return null;
+
+  // Calculer la plage affichée (ex: 1-50 sur 94, 51-94 sur 94)
+  const start = (currentPage - 1) * limit + 1;
+  const end = Math.min(currentPage * limit, total);
+
+  // Générer la liste des numéros de page à afficher
+  // On affiche toujours la 1ère, la dernière, la courante, et 1 autour de la courante
+  // Les pages éloignées sont remplacées par "…"
+  const pages: (number | 'ellipsis')[] = [];
+  const add = (p: number) => { if (!pages.includes(p)) pages.push(p); };
+  add(1);
+  if (currentPage - 1 > 2) pages.push('ellipsis');
+  for (let p = Math.max(2, currentPage - 1); p <= Math.min(totalPages - 1, currentPage + 1); p++) {
+    add(p);
+  }
+  if (currentPage + 1 < totalPages - 1) pages.push('ellipsis');
+  if (totalPages > 1) add(totalPages);
+
+  return (
+    <div className="bg-white px-4 py-3 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
+      <div className="text-xs text-slate-500">
+        Affichage <strong className="text-slate-700">{start}-{end}</strong> sur <strong className="text-slate-700">{total}</strong> élève(s)
+      </div>
+      <div className="flex items-center gap-1">
+        {/* Bouton Précédent */}
+        <button
+          onClick={() => onPageChange(currentPage - 1)}
+          disabled={currentPage <= 1 || isLoading}
+          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition"
+        >
+          <ChevronLeft className="w-3.5 h-3.5" />
+          Précédent
+        </button>
+
+        {/* Numéros de page */}
+        <div className="flex items-center gap-0.5">
+          {pages.map((p, i) => {
+            if (p === 'ellipsis') {
+              return (
+                <span key={`e-${i}`} className="px-2 text-slate-400">
+                  <MoreHorizontal className="w-3.5 h-3.5" />
+                </span>
+              );
+            }
+            return (
+              <button
+                key={p}
+                onClick={() => onPageChange(p)}
+                disabled={isLoading}
+                className={cn(
+                  'min-w-[28px] h-7 px-2 text-xs font-bold rounded-lg transition disabled:opacity-50',
+                  p === currentPage
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-slate-600 bg-slate-50 hover:bg-blue-50 hover:text-blue-700 border border-slate-200'
+                )}
+              >
+                {p}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Bouton Suivant */}
+        <button
+          onClick={() => onPageChange(currentPage + 1)}
+          disabled={currentPage >= totalPages || isLoading}
+          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition"
+        >
+          Suivant
+          <ChevronRight className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Composant Avatar réutilisable : photo si dispo, sinon initiales
 function StudentAvatar({ student, size = 'md' }: { student: Student; size?: 'sm' | 'md' | 'lg' }) {
   const sizes = {
@@ -114,6 +204,19 @@ export default function StudentMovementsContent() {
   const [filterClassId, setFilterClassId] = useState<string>('');
   const [filterYearId, setFilterYearId] = useState<string>('');
 
+  // ⭐ Pagination : page courante + total + totalPages
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pagination, setPagination] = useState<{ total: number; page: number; limit: number; totalPages: number }>({
+    total: 0, page: 1, limit: 50, totalPages: 1,
+  });
+  const PAGE_SIZE = 50;
+
+  // ⭐ Stats globales (vrai chiffre) : chargées séparément SANS pagination
+  // (limit=200 pour récupérer tous les élèves et calculer les vraies stats)
+  const [globalStats, setGlobalStats] = useState({
+    total: 0, active: 0, withdrawn: 0, archived: 0, transferred: 0,
+  });
+
   const [actionStudent, setActionStudent] = useState<Student | null>(null);
   const [actionType, setActionType] = useState<'archive' | 'withdraw' | 'reactivate' | 'transfer' | null>(null);
   const [actionReason, setActionReason] = useState('');
@@ -142,24 +245,87 @@ export default function StudentMovementsContent() {
   }, []);
 
   useEffect(() => {
-    if (effectiveYearId) loadData();
+    if (effectiveYearId) {
+      setCurrentPage(1); // reset page quand l'année change
+      loadData();
+      loadGlobalStats();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveYearId]);
 
+  // Recharger les données quand la page ou les filtres backend changent
+  useEffect(() => {
+    if (effectiveYearId) loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage, filterStatus]);
+
+  /**
+   * Charge la page courante des élèves (paginé, limit=50).
+   */
   const loadData = async () => {
     if (!effectiveYearId) return;
     setIsLoading(true);
     try {
+      const params: Record<string, string> = {
+        academicYearId: effectiveYearId,
+        page: String(currentPage),
+        limit: String(PAGE_SIZE),
+      };
+      if (filterStatus !== 'ALL') params.status = filterStatus;
+
       const [studentsData, enrollmentsData] = await Promise.all([
-        studentsService.getAll({ academicYearId: effectiveYearId }),
+        studentsService.getAll(params),
         studentsService.getEnrollments({ academicYearId: effectiveYearId }),
       ]);
-      setStudents(Array.isArray(studentsData) ? studentsData : []);
+
+      // ⭐ Gérer la réponse paginée { data, total, page, limit, totalPages }
+      // ou l'ancien format array (rétro-compatibilité)
+      if (Array.isArray(studentsData)) {
+        setStudents(studentsData);
+        setPagination({ total: studentsData.length, page: 1, limit: studentsData.length, totalPages: 1 });
+      } else if (studentsData && Array.isArray(studentsData.data)) {
+        setStudents(studentsData.data);
+        setPagination({
+          total: studentsData.total || 0,
+          page: studentsData.page || 1,
+          limit: studentsData.limit || PAGE_SIZE,
+          totalPages: studentsData.totalPages || 1,
+        });
+      } else {
+        setStudents([]);
+        setPagination({ total: 0, page: 1, limit: PAGE_SIZE, totalPages: 1 });
+      }
       setEnrollments(Array.isArray(enrollmentsData) ? enrollmentsData : []);
     } catch (e: any) {
       console.error('Failed to load students:', e);
       toast({ title: 'Erreur', description: e.message, variant: 'error' });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  /**
+   * ⭐ Charge les stats globales (vrai chiffre) en récupérant TOUS les élèves
+   * sans pagination (limit=200). Les stats sont calculées sur l'ensemble des
+   * élèves de l'année, pas seulement sur la page courante.
+   */
+  const loadGlobalStats = async () => {
+    if (!effectiveYearId) return;
+    try {
+      const data = await studentsService.getAll({
+        academicYearId: effectiveYearId,
+        limit: '200', // récupérer tous les élèves (max backend)
+      });
+      const allStudents: Student[] = Array.isArray(data) ? data : (data?.data || []);
+      setGlobalStats({
+        total: allStudents.length,
+        active: allStudents.filter(s => s.status === 'ACTIVE' && s.isActive).length,
+        withdrawn: allStudents.filter(s => s.status === 'WITHDRAWN').length,
+        archived: allStudents.filter(s => s.status === 'ARCHIVED').length,
+        transferred: allStudents.filter(s => s.status === 'TRANSFERRED').length,
+      });
+    } catch (e) {
+      console.warn('Failed to load global stats:', e);
     }
   };
 
@@ -212,14 +378,10 @@ export default function StudentMovementsContent() {
     });
   }, [students, filterStatus, searchQuery, filterLevelId, filterClassId, studentClassMap]);
 
-  // Stats — calculées sur les élèves filtrés (pas sur toute la liste)
-  const stats = useMemo(() => ({
-    total: filteredStudents.length,
-    withdrawn: filteredStudents.filter(s => s.status === 'WITHDRAWN').length,
-    archived: filteredStudents.filter(s => s.status === 'ARCHIVED').length,
-    transferred: filteredStudents.filter(s => s.status === 'TRANSFERRED').length,
-    active: filteredStudents.filter(s => s.status === 'ACTIVE' && s.isActive).length,
-  }), [filteredStudents]);
+  // ⭐ Stats GLOBALES (vrai chiffre) — proviennent de globalStats (tous les élèves)
+  // PAS de filteredStudents.length qui ne reflète que la page courante.
+  // On garde quand même un compteur "affichés sur cette page" pour la transparence.
+  const stats = globalStats;
 
   const handleAction = async () => {
     if (!actionStudent || !actionType || !effectiveYearId) return;
@@ -271,6 +433,7 @@ export default function StudentMovementsContent() {
       setTransferSelectedSchool(null);
       setTransferExternalSchoolName('');
       loadData();
+      loadGlobalStats(); // ⭐ rafraîchir les stats globales après action
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message || 'Action échouée', variant: 'error' });
     } finally {
@@ -424,7 +587,7 @@ export default function StudentMovementsContent() {
             </button>
           )}
           <div className="ml-auto text-xs text-slate-400">
-            {filteredStudents.length} élève(s) affiché(s)
+            {pagination.total} élève(s) au total · page {pagination.page}/{pagination.totalPages}
           </div>
         </div>
       </div>
@@ -533,6 +696,18 @@ export default function StudentMovementsContent() {
           </div>
         )}
       </div>
+
+      {/* ⭐ Composant Pagination */}
+      {pagination.totalPages > 1 && (
+        <Pagination
+          currentPage={pagination.page}
+          totalPages={pagination.totalPages}
+          total={pagination.total}
+          limit={pagination.limit}
+          onPageChange={(page) => setCurrentPage(page)}
+          isLoading={isLoading}
+        />
+      )}
 
       {/* Modal d'action */}
       {actionStudent && actionType && (

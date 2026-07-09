@@ -191,7 +191,12 @@ export class StudentsPrismaService {
     const pageNumber = Math.max(filters?.page || 1, 1);
     const skip = (pageNumber - 1) * pageSize;
 
-    return this.prisma.student.findMany({
+    // ⭐ Compter le TOTAL (pour les stats et la pagination UI)
+    // On utilise count() séparément pour connaître le vrai total d'élèves
+    // correspondant aux filtres (indépendamment de la pagination).
+    const total = await this.prisma.student.count({ where });
+
+    const data = await this.prisma.student.findMany({
       where,
       include: {
         schoolLevel: true,
@@ -216,6 +221,16 @@ export class StudentsPrismaService {
       skip,
       take: pageSize,
     });
+
+    // ⭐ Retourner un objet paginé { data, total, page, limit, totalPages }
+    // Rétro-compatible : si le frontend attend un array, il doit utiliser .data
+    return {
+      data,
+      total,
+      page: pageNumber,
+      limit: pageSize,
+      totalPages: Math.ceil(total / pageSize) || 1,
+    };
   }
 
   /**

@@ -169,6 +169,8 @@ export default function StudentAffectationsMouvementsContent() {
 
 function DashboardSubTab({ academicYear }: { academicYear: any }) {
   const [stats, setStats] = useState({ total: 0, active: 0, withdrawn: 0, archived: 0, transferred: 0, excluded: 0 });
+  const [levelStats, setLevelStats] = useState<Array<{ name: string; count: number; color: string }>>([]);
+  const [historyStats, setHistoryStats] = useState<Array<{ action: string; count: number }>>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -179,8 +181,15 @@ function DashboardSubTab({ academicYear }: { academicYear: any }) {
   const loadStats = async () => {
     setIsLoading(true);
     try {
-      const data = await studentsService.getAll({ academicYearId: academicYear.id, limit: '200' });
-      const all: Student[] = Array.isArray(data) ? data : (data?.data || []);
+      const [studentsData, classesRes, historyData] = await Promise.all([
+        studentsService.getAll({ academicYearId: academicYear.id, limit: '200' }),
+        fetch('/api/all-classes', { credentials: 'include', cache: 'no-store' }).then(r => r.ok ? r.json() : []).catch(() => []),
+        apiFetch('/students/movement-history?limit=200').catch(() => []),
+      ]);
+      const all: Student[] = Array.isArray(studentsData) ? studentsData : (studentsData?.data || []);
+      const classes: any[] = Array.isArray(classesRes) ? classesRes : [];
+      const history: any[] = Array.isArray(historyData) ? historyData : [];
+
       setStats({
         total: all.length,
         active: all.filter(s => s.status === 'ACTIVE' && s.isActive).length,
@@ -189,6 +198,23 @@ function DashboardSubTab({ academicYear }: { academicYear: any }) {
         transferred: all.filter(s => s.status === 'TRANSFERRED').length,
         excluded: all.filter(s => s.status === 'EXCLUDED').length,
       });
+
+      // Répartition par niveau
+      const levelMap = new Map<string, number>();
+      const levelColors: Record<string, string> = { Maternelle: '#8B5CF6', Primaire: '#3B82F6', Secondaire: '#F59E0B' };
+      all.forEach(s => {
+        const cls = classes.find((c: any) => c.schoolLevelId === s.schoolLevelId);
+        const levelName = cls?.schoolLevel?.name || 'Autre';
+        levelMap.set(levelName, (levelMap.get(levelName) || 0) + 1);
+      });
+      setLevelStats(Array.from(levelMap.entries()).map(([name, count]) => ({
+        name, count, color: levelColors[name] || '#6B7280',
+      })));
+
+      // Répartition des mouvements par type
+      const actionMap = new Map<string, number>();
+      history.forEach((h: any) => actionMap.set(h.action, (actionMap.get(h.action) || 0) + 1));
+      setHistoryStats(Array.from(actionMap.entries()).map(([action, count]) => ({ action, count })).sort((a, b) => b.count - a.count));
     } catch { } finally { setIsLoading(false); }
   };
 
@@ -203,17 +229,123 @@ function DashboardSubTab({ academicYear }: { academicYear: any }) {
     { label: 'Archivés', value: stats.archived, icon: Archive, color: 'bg-amber-50 text-amber-600' },
   ];
 
+  // Graphique en barres : répartition par statut
+  const statusBars = [
+    { label: 'Actifs', value: stats.active, color: 'bg-emerald-500' },
+    { label: 'Retirés', value: stats.withdrawn, color: 'bg-rose-500' },
+    { label: 'Exclus', value: stats.excluded, color: 'bg-red-500' },
+    { label: 'Transférés', value: stats.transferred, color: 'bg-blue-500' },
+    { label: 'Archivés', value: stats.archived, color: 'bg-amber-500' },
+  ];
+  const maxStatus = Math.max(...statusBars.map(b => b.value), 1);
+
+  // Graphique en donut : répartition par niveau
+  const totalLevel = levelStats.reduce((s, l) => s + l.count, 0) || 1;
+  let donutOffset = 0;
+  const donutSegments = levelStats.map(l => {
+    const percentage = (l.count / totalLevel) * 100;
+    const segment = { ...l, percentage, offset: donutOffset };
+    donutOffset += percentage;
+    return segment;
+  });
+
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-      {cards.map((card, i) => (
-        <div key={i} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex items-center gap-2.5">
-          <div className={cn('p-2 rounded-lg', card.color)}><card.icon className="w-4 h-4" /></div>
-          <div>
-            <p className="text-[10px] font-medium text-slate-500 uppercase">{card.label}</p>
-            <p className="text-base font-bold text-slate-900">{card.value}</p>
+    <div className="space-y-4">
+      {/* Stats cards */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        {cards.map((card, i) => (
+          <div key={i} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex items-center gap-2.5">
+            <div className={cn('p-2 rounded-lg', card.color)}><card.icon className="w-4 h-4" /></div>
+            <div>
+              <p className="text-[10px] font-medium text-slate-500 uppercase">{card.label}</p>
+              <p className="text-base font-bold text-slate-900">{card.value}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Graphiques */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Barres : répartition par statut */}
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+          <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+            <History className="w-4 h-4 text-blue-600" /> Répartition par statut
+          </h4>
+          <div className="space-y-2">
+            {statusBars.map((bar, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <span className="text-xs font-medium text-slate-600 w-16 shrink-0">{bar.label}</span>
+                <div className="flex-1 bg-slate-100 rounded-full h-5 overflow-hidden">
+                  <div className={cn('h-full rounded-full transition-all', bar.color)} style={{ width: `${(bar.value / maxStatus) * 100}%` }} />
+                </div>
+                <span className="text-xs font-bold text-slate-700 w-8 text-right">{bar.value}</span>
+              </div>
+            ))}
           </div>
         </div>
-      ))}
+
+        {/* Donut : répartition par niveau */}
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+          <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+            <Layers className="w-4 h-4 text-blue-600" /> Répartition par niveau
+          </h4>
+          {levelStats.length === 0 ? (
+            <p className="text-xs text-slate-400 text-center py-8">Aucune donnée</p>
+          ) : (
+            <div className="flex items-center gap-4">
+              <div className="relative w-32 h-32 shrink-0">
+                <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
+                  {donutSegments.map((seg, i) => {
+                    const circumference = 2 * Math.PI * 15.915;
+                    const dash = (seg.percentage / 100) * circumference;
+                    const gap = circumference - dash;
+                    const rotation = (seg.offset / 100) * 360;
+                    return (
+                      <circle key={i} cx="18" cy="18" r="15.915" fill="none" stroke={seg.color}
+                        strokeWidth="4" strokeDasharray={`${dash} ${gap}`} strokeDashoffset="0"
+                        style={{ transform: `rotate(${rotation}deg)`, transformOrigin: 'center' }} />
+                    );
+                  })}
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center flex-col">
+                  <span className="text-lg font-bold text-slate-800">{totalLevel}</span>
+                  <span className="text-[9px] text-slate-400">élèves</span>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                {levelStats.map((l, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-sm" style={{ background: l.color }} />
+                    <span className="text-xs font-medium text-slate-600">{l.name}</span>
+                    <span className="text-xs font-bold text-slate-800">{l.count}</span>
+                    <span className="text-[10px] text-slate-400">({((l.count / totalLevel) * 100).toFixed(0)}%)</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Mouvements par type */}
+      {historyStats.length > 0 && (
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+          <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+            <History className="w-4 h-4 text-blue-600" /> Mouvements par type (historique)
+          </h4>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {historyStats.map((h, i) => {
+              const info = ACTION_LABELS[h.action] || { label: h.action, color: 'text-slate-600' };
+              return (
+                <div key={i} className="text-center p-2 rounded-lg bg-slate-50 border border-slate-100">
+                  <p className="text-lg font-bold text-slate-800">{h.count}</p>
+                  <p className={cn('text-[9px] font-medium', info.color)}>{info.label}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

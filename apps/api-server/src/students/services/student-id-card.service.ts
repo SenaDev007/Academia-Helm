@@ -256,7 +256,7 @@ export class StudentIdCardService {
 
     const results = await Promise.allSettled(
       studentsWithoutCard.map((student) =>
-        this.generateIdCard(tenantId, academicYearId, schoolLevelId, student.id, generatedBy),
+        this.generateIdCard(tenantId, academicYearId, student.schoolLevelId, student.id, generatedBy),
       ),
     );
 

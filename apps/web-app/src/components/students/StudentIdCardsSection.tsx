@@ -97,6 +97,41 @@ function StudentAvatar({ photoUrl, firstName, lastName, size = 'sm' }: {
   );
 }
 
+function showGenerationToast(data: any, scopeLabel: string) {
+  if (!data) return;
+  const succeeded = data.succeeded ?? 0;
+  const failed = data.failed ?? 0;
+  const total = data.total ?? 0;
+
+  if (total === 0) {
+    toast({
+      title: 'ℹ️ Aucune carte à générer',
+      description: `Tous les élèves de ${scopeLabel} ont déjà une carte active.`,
+      variant: 'success',
+    });
+  } else if (succeeded > 0 && failed === 0) {
+    toast({
+      title: '✅ Génération terminée',
+      description: `${succeeded} carte(s) générée(s) sur ${total} élève(s) — ${scopeLabel}.`,
+      variant: 'success',
+    });
+  } else if (succeeded > 0 && failed > 0) {
+    const firstError = data.results?.find((r: any) => r.status === 'rejected')?.error || 'Erreur inconnue';
+    toast({
+      title: '⚠️ Génération partielle',
+      description: `${succeeded} succès, ${failed} échec(s) sur ${total} — ${scopeLabel}. Premier échec : ${firstError}`,
+      variant: 'warning',
+    });
+  } else {
+    const firstError = data.results?.find((r: any) => r.status === 'rejected')?.error || 'Erreur inconnue';
+    toast({
+      title: '❌ Échec de la génération',
+      description: `Toutes les ${failed} cartes de ${scopeLabel} ont échoué. Erreur : ${firstError}`,
+      variant: 'error',
+    });
+  }
+}
+
 export default function StudentIdCardsSection() {
   const confirmDialog = useConfirmDialog();
   const { academicYear, schoolLevel } = useModuleContext();
@@ -217,19 +252,7 @@ export default function StudentIdCardsSection() {
     setIsGenerating(true);
     try {
       const data = await studentsService.generateBulkIdCards(payload);
-      if (data.total === 0) {
-        toast({
-          title: 'ℹ️ Aucune carte à générer',
-          description: `Tous les élèves de ${scopeLabel} ont déjà une carte active.`,
-          variant: 'success',
-        });
-      } else {
-        toast({
-          title: '✅ Génération terminée',
-          description: `${data.succeeded} carte(s) générée(s) sur ${data.total} élève(s) — ${scopeLabel}.`,
-          variant: 'success',
-        });
-      }
+      showGenerationToast(data, scopeLabel);
       loadAll();
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message || 'Échec génération', variant: 'error' });
@@ -245,11 +268,7 @@ export default function StudentIdCardsSection() {
     setIsGenerating(true);
     try {
       const data = await studentsService.generateBulkIdCards({ academicYearId, schoolLevelId, classId });
-      toast({
-        title: '✅ Génération classe',
-        description: `${data.succeeded} carte(s) générée(s) sur ${data.total} élève(s).`,
-        variant: 'success',
-      });
+      showGenerationToast(data, "la classe");
       loadAll();
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message, variant: 'error' });

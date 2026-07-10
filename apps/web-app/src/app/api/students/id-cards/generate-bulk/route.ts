@@ -7,9 +7,9 @@ const API_URL = getApiBaseUrlForRoutes();
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    if (!body.academicYearId || !body.schoolLevelId) {
+    if (!body.academicYearId) {
       return NextResponse.json(
-        { error: 'academicYearId and schoolLevelId are required' },
+        { error: 'academicYearId is required' },
         { status: 400 }
       );
     }

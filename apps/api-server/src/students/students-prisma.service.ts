@@ -202,7 +202,7 @@ export class StudentsPrismaService {
         schoolLevel: true,
         academicYear: true,
         studentEnrollments: {
-          where: { status: 'ACTIVE' },
+          where: { status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED', 'PRE_REGISTERED', 'RE_ENROLLED'] } },
           include: {
             class: true,
           },

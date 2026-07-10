@@ -1,42 +1,18 @@
 'use client';
 
-/**
- * ============================================================================
- * DOSSIERS ÉLÈVES — Liste + Dashboard plein écran par élève
- * ============================================================================
- *
- * Vue 1 : Liste des élèves par niveau → classe (cartes cliquables)
- *   - Filtres : recherche + niveau scolaire + classe
- *   - Cliquer sur une carte → ouvre le dashboard élève (plein écran, pas un modal)
- *
- * Vue 2 : Dashboard élève (plein écran, bouton Retour)
- *   - Onglet Identité : nom, prénom, naissance, sexe, nationalité, NPI, adresse, photo
- *   - Onglet Parents : guardians avec contacts complets
- *   - Onglet Scolarité : inscriptions + historique mouvements
- *   - Onglet Documents : acte naissance, NPI, certificats (liste + téléchargement)
- *   - Onglet Carte scolaire : aperçu + téléchargement PDF
- *   - Onglet Frais & Paiements : compte financier, paiements, arriérés
- *   - Onglet Médical : informations médicales (placeholder architecture)
- *   - Onglet Bulletins : placeholder (architecture prête pour module Notes)
- *
- * Selon MODULE ELEVES.md — Onglet 4
- * ============================================================================
- */
-
 import { useState, useEffect, useMemo } from 'react';
 import {
   User, Shield, Users, Mail, Phone, FileCheck, AlertCircle,
   Search, Loader2, Download, Eye, X, CreditCard, FileText,
   History, BookOpen, GraduationCap, Calendar, MapPin, Hash,
-  ArrowLeft, HeartPulse, Wallet, Activity,
+  ArrowLeft, HeartPulse, Wallet, Activity, RotateCw,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { studentsService } from '@/services/students.service';
+import { financeService } from '@/services/finance.service';
 import { apiFetch } from '@/lib/api/client';
 import { toast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
-
-// ─── Types ───
 
 interface StudentIdentity {
   id: string;
@@ -58,14 +34,7 @@ interface StudentIdentity {
     id: string;
     relationship: string;
     isPrimary: boolean;
-    guardian: {
-      id: string;
-      firstName: string;
-      lastName: string;
-      phone?: string;
-      email?: string;
-      address?: string;
-    };
+    guardian: { id: string; firstName: string; lastName: string; phone?: string; email?: string; address?: string; };
   }>;
   studentEnrollments?: Array<{
     id: string;
@@ -76,12 +45,7 @@ interface StudentIdentity {
   }>;
 }
 
-interface ClassInfo {
-  id: string;
-  name: string;
-  schoolLevelId: string;
-  schoolLevel?: { id: string; name: string; code?: string };
-}
+interface ClassInfo { id: string; name: string; schoolLevelId: string; schoolLevel?: { id: string; name: string; code?: string }; }
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   ACTIVE: { label: 'Actif', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
@@ -94,15 +58,9 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
 };
 
 const DOC_TYPE_LABELS: Record<string, string> = {
-  BIRTH_CERTIFICATE: 'Acte de naissance',
-  NPI_CARD: 'Carte NPI',
-  SCHOOL_CERTIFICATE: 'Certificat de scolarité',
-  PHOTO: 'Photo d\'identité',
-  PREVIOUS_REPORT_CARD: 'Bulletin précédent',
-  MEDICAL_RECORD: 'Fiche médicale',
-  PARENTAL_AUTHORIZATION: 'Autorisation parentale',
-  TRANSFER_CERTIFICATE: 'Certificat de transfert',
-  OTHER: 'Autre document',
+  BIRTH_CERTIFICATE: 'Acte de naissance', NPI_CARD: 'Carte NPI', SCHOOL_CERTIFICATE: 'Certificat de scolarité',
+  PHOTO: 'Photo d\'identité', PREVIOUS_REPORT_CARD: 'Bulletin précédent', MEDICAL_RECORD: 'Fiche médicale',
+  PARENTAL_AUTHORIZATION: 'Autorisation parentale', TRANSFER_CERTIFICATE: 'Certificat de transfert', OTHER: 'Autre document',
 };
 
 const ACTION_LABELS: Record<string, { label: string; color: string }> = {
@@ -121,30 +79,13 @@ const ACTION_LABELS: Record<string, { label: string; color: string }> = {
 
 type DetailTab = 'identite' | 'parents' | 'scolarite' | 'documents' | 'carte' | 'frais' | 'medical' | 'bulletins';
 
+const NAVY = '#0D1F6E';
 const LEVEL_ORDER: Record<string, number> = { MATERNELLE: 1, MAT: 1, PRIMAIRE: 2, PRIMARY: 2, SECONDAIRE: 3, SECONDARY: 3 };
 
-// ─── Helpers ───
-
-function getInitials(s: StudentIdentity) {
-  return `${s.lastName?.[0] || ''}${s.firstName?.[0] || ''}`.toUpperCase();
-}
-
-function getAge(dob?: string) {
-  if (!dob) return null;
-  return Math.floor((Date.now() - new Date(dob).getTime()) / (365.25 * 24 * 3600 * 1000));
-}
-
-function formatDate(d?: string) {
-  if (!d) return 'N/A';
-  return new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
-}
-
-function formatMoney(amount?: number) {
-  if (amount === null || amount === undefined) return '—';
-  return new Intl.NumberFormat('fr-FR').format(amount) + ' FCFA';
-}
-
-// ─── Composant principal ───
+function getInitials(s: StudentIdentity) { return `${s.lastName?.[0] || ''}${s.firstName?.[0] || ''}`.toUpperCase(); }
+function getAge(dob?: string) { if (!dob) return null; return Math.floor((Date.now() - new Date(dob).getTime()) / (365.25 * 24 * 3600 * 1000)); }
+function formatDate(d?: string) { if (!d) return 'N/A'; return new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }); }
+function formatMoney(amount?: number) { if (amount === null || amount === undefined) return '—'; return new Intl.NumberFormat('fr-FR').format(amount) + ' FCFA'; }
 
 export default function StudentIdentityContent() {
   const { academicYear, schoolLevel } = useModuleContext();
@@ -154,13 +95,9 @@ export default function StudentIdentityContent() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterLevelId, setFilterLevelId] = useState<string>('');
   const [filterClassId, setFilterClassId] = useState<string>('');
-
-  // Dashboard élève (plein écran)
   const [selectedStudent, setSelectedStudent] = useState<StudentIdentity | null>(null);
 
-  useEffect(() => {
-    loadData();
-  }, [academicYear, schoolLevel]);
+  useEffect(() => { if (academicYear) loadData(); }, [academicYear, schoolLevel]);
 
   const loadData = async () => {
     if (!academicYear) return;
@@ -173,202 +110,142 @@ export default function StudentIdentityContent() {
       const allStudents = Array.isArray(studentsData) ? studentsData : (studentsData?.data || []);
       setStudents(allStudents);
       setAllClasses(Array.isArray(classesRes) ? classesRes : []);
-    } catch (e: any) {
-      toast({ title: 'Erreur', description: e.message, variant: 'error' });
-    } finally {
-      setIsLoading(false);
-    }
+    } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'error' }); }
+    finally { setIsLoading(false); }
   };
 
-  // Niveaux uniques extraits des classes
   const levels = useMemo(() => {
     const map = new Map<string, { id: string; name: string; code?: string }>();
     allClasses.forEach(c => {
       if (c.schoolLevelId && !map.has(c.schoolLevelId)) {
-        map.set(c.schoolLevelId, {
-          id: c.schoolLevelId,
-          name: c.schoolLevel?.name || 'Niveau',
-          code: c.schoolLevel?.code,
-        });
+        map.set(c.schoolLevelId, { id: c.schoolLevelId, name: c.schoolLevel?.name || 'Niveau', code: c.schoolLevel?.code });
       }
     });
     return Array.from(map.values()).sort((a, b) => (LEVEL_ORDER[a.code?.toUpperCase() || ''] || 99) - (LEVEL_ORDER[b.code?.toUpperCase() || ''] || 99));
   }, [allClasses]);
 
-  // Classes filtrées par niveau sélectionné
   const filteredClasses = useMemo(() => {
     if (!filterLevelId) return allClasses;
     return allClasses.filter(c => c.schoolLevelId === filterLevelId);
   }, [allClasses, filterLevelId]);
 
-  // Map studentId → classId via enrollments
+  // ⭐ Map studentId → { classId, className, levelId } via enrollments
+  // Inclut TOUS les statuts d'enrollment (ADMITTED, ACTIVE, etc.)
   const studentClassMap = useMemo(() => {
     const m = new Map<string, { id: string; name: string; levelId: string }>();
     students.forEach(s => {
-      const enr = s.studentEnrollments?.find(e => e.class);
-      if (enr?.class) {
+      // Prendre le premier enrollment avec une classe (peu importe le statut)
+      const enr = s.studentEnrollments?.find(e => e.class?.id);
+      if (enr?.class?.id) {
         const cls = allClasses.find(c => c.id === enr.class!.id);
-        m.set(s.id, {
-          id: enr.class.id,
-          name: enr.class.name,
-          levelId: cls?.schoolLevelId || '',
-        });
+        m.set(s.id, { id: enr.class.id, name: enr.class.name, levelId: cls?.schoolLevelId || '' });
       }
     });
     return m;
   }, [students, allClasses]);
 
-  // Filtrage des élèves
   const filteredStudents = useMemo(() => {
     return students.filter(s => {
-      // Filtre niveau
       if (filterLevelId) {
-        const studentClassInfo = studentClassMap.get(s.id);
-        if (!studentClassInfo || studentClassInfo.levelId !== filterLevelId) return false;
+        const sci = studentClassMap.get(s.id);
+        if (!sci || sci.levelId !== filterLevelId) return false;
       }
-      // Filtre classe
       if (filterClassId) {
-        const studentClassInfo = studentClassMap.get(s.id);
-        if (!studentClassInfo || studentClassInfo.id !== filterClassId) return false;
+        const sci = studentClassMap.get(s.id);
+        if (!sci || sci.id !== filterClassId) return false;
       }
-      // Recherche
       if (searchTerm.trim()) {
         const q = searchTerm.toLowerCase();
-        return `${s.firstName} ${s.lastName}`.toLowerCase().includes(q) ||
-          (s.matricule || '').toLowerCase().includes(q);
+        return `${s.firstName} ${s.lastName}`.toLowerCase().includes(q) || (s.matricule || '').toLowerCase().includes(q);
       }
       return true;
     });
   }, [students, filterLevelId, filterClassId, searchTerm, studentClassMap]);
 
-  // Groupement par niveau → classe
   const groupedStudents = useMemo(() => {
     const groups = new Map<string, { levelName: string; classes: Map<string, { className: string; students: StudentIdentity[] }> }>();
     filteredStudents.forEach(s => {
-      const studentClassInfo = studentClassMap.get(s.id);
-      const className = studentClassInfo?.name || 'Non affecté';
-      const classId = studentClassInfo?.id || 'none';
-      const levelName = studentClassInfo?.levelId
-        ? levels.find(l => l.id === studentClassInfo.levelId)?.name || 'Autre'
-        : 'Non affecté';
+      const sci = studentClassMap.get(s.id);
+      const className = sci?.name || 'Non affecté';
+      const classId = sci?.id || 'none';
+      const levelName = sci?.levelId ? levels.find(l => l.id === sci.levelId)?.name || 'Autre' : 'Non affecté';
       if (!groups.has(levelName)) groups.set(levelName, { levelName, classes: new Map() });
       const group = groups.get(levelName)!;
       if (!group.classes.has(classId)) group.classes.set(classId, { className, students: [] });
       group.classes.get(classId)!.students.push(s);
     });
-    return Array.from(groups.values()).map(g => ({
-      ...g,
-      classes: Array.from(g.classes.values()).sort((a, b) => a.className.localeCompare(b.className)),
-    }));
+    return Array.from(groups.values()).map(g => ({ ...g, classes: Array.from(g.classes.values()).sort((a, b) => a.className.localeCompare(b.className)) }));
   }, [filteredStudents, studentClassMap, levels]);
 
-  // ─── Si un élève est sélectionné → afficher le dashboard plein écran ───
   if (selectedStudent) {
-    return (
-      <StudentDashboard
-        student={selectedStudent}
-        academicYear={academicYear}
-        onBack={() => setSelectedStudent(null)}
-      />
-    );
+    return <StudentDashboard student={selectedStudent} academicYear={academicYear} onBack={() => setSelectedStudent(null)} />;
   }
 
-  // ─── Vue liste ───
   return (
     <div className="space-y-4 animate-in fade-in duration-500">
-      {/* Toolbar */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-blue-50 rounded-lg"><Shield className="w-5 h-5 text-blue-600" /></div>
-          <div>
-            <h3 className="font-semibold text-slate-900">Dossiers Élèves</h3>
-            <p className="text-xs text-slate-500">{filteredStudents.length} élève(s) · {students.filter(s => s.npi).length} avec NPI</p>
-          </div>
+          <div><h3 className="font-semibold text-slate-900">Dossiers Élèves</h3><p className="text-xs text-slate-500">{filteredStudents.length} élève(s) · {students.filter(s => s.npi).length} avec NPI</p></div>
         </div>
         <div className="relative w-48 sm:w-64">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input type="text" placeholder="Rechercher..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+          <input type="text" placeholder="Rechercher..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
         </div>
       </div>
 
-      {/* Filtres niveau + classe */}
       <div className="flex flex-wrap gap-2">
-        <select value={filterLevelId} onChange={(e) => { setFilterLevelId(e.target.value); setFilterClassId(''); }}
-          className="text-xs border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <select value={filterLevelId} onChange={(e) => { setFilterLevelId(e.target.value); setFilterClassId(''); }} className="text-xs border border-slate-200 rounded-lg px-3 py-2 bg-white">
           <option value="">Tous les niveaux</option>
           {levels.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
         </select>
-        <select value={filterClassId} onChange={(e) => setFilterClassId(e.target.value)} disabled={!filterLevelId && filteredClasses.length === 0}
-          className="text-xs border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <select value={filterClassId} onChange={(e) => setFilterClassId(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-3 py-2 bg-white">
           <option value="">Toutes les classes</option>
           {filteredClasses.sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
         {(filterLevelId || filterClassId || searchTerm) && (
-          <button onClick={() => { setFilterLevelId(''); setFilterClassId(''); setSearchTerm(''); }}
-            className="text-xs font-semibold text-slate-500 hover:text-slate-700 px-2 py-1 rounded-lg hover:bg-slate-100">✕ Réinitialiser</button>
+          <button onClick={() => { setFilterLevelId(''); setFilterClassId(''); setSearchTerm(''); }} className="text-xs font-semibold text-slate-500 hover:text-slate-700 px-2 py-1 rounded-lg hover:bg-slate-100">✕ Réinitialiser</button>
         )}
       </div>
 
-      {/* Liste */}
       {isLoading ? (
         <div className="flex items-center justify-center py-12"><Loader2 className="w-8 h-8 text-blue-500 animate-spin" /></div>
       ) : filteredStudents.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-          <User className="w-12 h-12 mb-3 opacity-20" />
-          <p className="text-sm">Aucun élève trouvé</p>
-        </div>
+        <div className="flex flex-col items-center justify-center py-12 text-slate-400"><User className="w-12 h-12 mb-3 opacity-20" /><p className="text-sm">Aucun élève trouvé</p></div>
       ) : (
         <div className="space-y-6">
-          {groupedStudents.map((levelGroup) => (
-            <div key={levelGroup.levelName}>
+          {groupedStudents.map((lg) => (
+            <div key={lg.levelName}>
               <div className="flex items-center gap-2 mb-3">
-                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">{levelGroup.levelName}</h3>
-                <span className="px-2 py-0.5 bg-slate-100 rounded-full text-[10px] font-bold text-slate-600">
-                  {levelGroup.classes.reduce((acc, c) => acc + c.students.length, 0)} élève(s)
-                </span>
+                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">{lg.levelName}</h3>
+                <span className="px-2 py-0.5 bg-slate-100 rounded-full text-[10px] font-bold text-slate-600">{lg.classes.reduce((a, c) => a + c.students.length, 0)} élève(s)</span>
               </div>
               <div className="space-y-4">
-                {levelGroup.classes.map((classGroup) => (
-                  <div key={classGroup.className}>
-                    <h4 className="text-xs font-semibold text-slate-500 mb-2 flex items-center gap-1.5">
-                      <span className="w-1 h-3 bg-blue-500 rounded-full"></span>
-                      {classGroup.className} · {classGroup.students.length} élève(s)
-                    </h4>
+                {lg.classes.map((cg) => (
+                  <div key={cg.className}>
+                    <h4 className="text-xs font-semibold text-slate-500 mb-2 flex items-center gap-1.5"><span className="w-1 h-3 bg-blue-500 rounded-full"></span>{cg.className} · {cg.students.length} élève(s)</h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {classGroup.students.map((student) => {
-                        const statusInfo = STATUS_LABELS[student.status] || STATUS_LABELS.ACTIVE;
+                      {cg.students.map((student) => {
+                        const si = STATUS_LABELS[student.status] || STATUS_LABELS.ACTIVE;
                         const age = getAge(student.dateOfBirth);
                         return (
-                          <div key={student.id}
-                            onClick={() => setSelectedStudent(student)}
-                            className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-300 transition-all overflow-hidden cursor-pointer group">
+                          <div key={student.id} onClick={() => setSelectedStudent(student)} className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-300 transition-all overflow-hidden cursor-pointer group">
                             <div className="p-3 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
                               <div className="w-11 h-11 rounded-full overflow-hidden bg-gradient-to-br from-blue-100 to-indigo-100 border border-slate-200 flex items-center justify-center text-sm font-bold text-blue-600 shrink-0">
                                 {student.photoUrl ? <img src={student.photoUrl} alt="" className="w-full h-full object-cover" /> : getInitials(student)}
                               </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-bold text-slate-900 truncate group-hover:text-blue-600 transition">{student.lastName.toUpperCase()} {student.firstName}</p>
-                                <p className="text-[10px] font-mono text-slate-400 truncate">{student.matricule || 'Sans matricule'}</p>
-                              </div>
-                              <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-bold border shrink-0', statusInfo.color)}>{statusInfo.label}</span>
+                              <div className="flex-1 min-w-0"><p className="text-sm font-bold text-slate-900 truncate group-hover:text-blue-600 transition">{student.lastName.toUpperCase()} {student.firstName}</p><p className="text-[10px] font-mono text-slate-400 truncate">{student.matricule || 'Sans matricule'}</p></div>
+                              <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-bold border shrink-0', si.color)}>{si.label}</span>
                             </div>
                             <div className="p-3 space-y-2.5">
                               <div className="grid grid-cols-2 gap-2 text-xs">
                                 {student.dateOfBirth && <div><p className="text-slate-400">Naissance</p><p className="font-medium text-slate-700">{new Date(student.dateOfBirth).toLocaleDateString('fr-FR')}{age ? ` (${age} ans)` : ''}</p></div>}
                                 {student.gender && <div><p className="text-slate-400">Sexe</p><p className="font-medium text-slate-700">{student.gender === 'M' ? 'Masculin' : 'Féminin'}</p></div>}
                               </div>
-                              <div className="flex items-center justify-between text-xs">
-                                <span className="text-slate-500 flex items-center gap-1"><FileCheck className="w-3 h-3" /> NPI</span>
-                                {student.npi ? <span className="font-mono font-medium text-emerald-600">{student.npi}</span> : <span className="text-amber-600 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> Non renseigné</span>}
-                              </div>
+                              <div className="flex items-center justify-between text-xs"><span className="text-slate-500 flex items-center gap-1"><FileCheck className="w-3 h-3" /> NPI</span>{student.npi ? <span className="font-mono font-medium text-emerald-600">{student.npi}</span> : <span className="text-amber-600 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> Non renseigné</span>}</div>
                               {studentClassMap.get(student.id) && <div className="flex items-center justify-between text-xs"><span className="text-slate-500">Classe</span><span className="font-medium text-slate-700">{studentClassMap.get(student.id)!.name}</span></div>}
                             </div>
-                            <div className="p-2 bg-slate-50 border-t border-slate-100">
-                              <div className="text-[10px] text-blue-600 font-semibold text-center group-hover:text-blue-700 transition flex items-center justify-center gap-1">
-                                <Eye className="w-3 h-3" /> Voir le dossier complet
-                              </div>
-                            </div>
+                            <div className="p-2 bg-slate-50 border-t border-slate-100"><div className="text-[10px] text-blue-600 font-semibold text-center group-hover:text-blue-700 transition flex items-center justify-center gap-1"><Eye className="w-3 h-3" /> Voir le dossier complet</div></div>
                           </div>
                         );
                       })}
@@ -386,11 +263,7 @@ export default function StudentIdentityContent() {
 
 // ─── Dashboard élève plein écran ───
 
-function StudentDashboard({ student, academicYear, onBack }: {
-  student: StudentIdentity;
-  academicYear: any;
-  onBack: () => void;
-}) {
+function StudentDashboard({ student, academicYear, onBack }: { student: StudentIdentity; academicYear: any; onBack: () => void; }) {
   const [activeTab, setActiveTab] = useState<DetailTab>('identite');
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [documents, setDocuments] = useState<any[]>([]);
@@ -398,36 +271,36 @@ function StudentDashboard({ student, academicYear, onBack }: {
   const [studentCard, setStudentCard] = useState<any>(null);
   const [financeAccount, setFinanceAccount] = useState<any>(null);
   const [payments, setPayments] = useState<any[]>([]);
+  const [cardFace, setCardFace] = useState<'recto' | 'verso'>('recto');
 
-  useEffect(() => {
-    loadDetail(student.id);
-  }, [student.id]);
+  useEffect(() => { loadDetail(student.id); }, [student.id]);
 
   const loadDetail = async (studentId: string) => {
     setIsLoadingDetail(true);
     try {
-      const [docsRes, historyRes, cardRes, accountRes] = await Promise.allSettled([
+      const [docsRes, historyRes, cardRes] = await Promise.allSettled([
         apiFetch(`/students/${studentId}/documents`),
         apiFetch(`/students/movement-history?studentId=${studentId}&limit=50`),
         apiFetch(`/students/id-cards/${studentId}?academicYearId=${academicYear?.id}`),
-        apiFetch(`/finance/student-accounts?studentId=${studentId}&academicYearId=${academicYear?.id}`),
       ]);
       setDocuments(docsRes.status === 'fulfilled' && Array.isArray(docsRes.value) ? docsRes.value : []);
       setMovementHistory(historyRes.status === 'fulfilled' && Array.isArray(historyRes.value) ? historyRes.value : []);
       setStudentCard(cardRes.status === 'fulfilled' ? cardRes.value : null);
-      const accountData = accountRes.status === 'fulfilled' ? accountRes.value : null;
-      setFinanceAccount(Array.isArray(accountData) ? accountData[0] : accountData);
-      if (financeAccount?.id) {
-        try {
-          const pays = await apiFetch(`/finance/payments?studentAccountId=${financeAccount.id}&limit=20`);
-          setPayments(Array.isArray(pays) ? pays : (pays?.data || []));
-        } catch { setPayments([]); }
-      }
-    } catch (e) {
-      console.warn('loadDetail error:', e);
-    } finally {
-      setIsLoadingDetail(false);
-    }
+
+      // ⭐ Utiliser financeService (pas apiFetch direct) pour le compte financier
+      try {
+        const accounts = await financeService.getStudentAccounts({ studentId, academicYearId: academicYear?.id });
+        const account = Array.isArray(accounts) ? accounts[0] : (accounts?.data?.[0] || accounts);
+        setFinanceAccount(account);
+        if (account?.id) {
+          try {
+            const pays = await financeService.getPayments({ studentAccountId: account.id });
+            setPayments(Array.isArray(pays) ? pays : (pays?.data || []));
+          } catch { setPayments([]); }
+        }
+      } catch { setFinanceAccount(null); setPayments([]); }
+    } catch (e) { console.warn('loadDetail error:', e); }
+    finally { setIsLoadingDetail(false); }
   };
 
   const tabs: Array<{ id: DetailTab; label: string; icon: any }> = [
@@ -443,42 +316,30 @@ function StudentDashboard({ student, academicYear, onBack }: {
 
   return (
     <div className="animate-in fade-in duration-300">
-      {/* En-tête avec bouton retour */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-4">
         <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50">
           <div className="flex items-center gap-3">
-            <button onClick={onBack}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 transition">
-              <ArrowLeft className="w-3.5 h-3.5" /> Retour
-            </button>
-            <div className="w-14 h-14 rounded-full overflow-hidden bg-white border-2 border-blue-200 flex items-center justify-center text-lg font-bold text-blue-600 shrink-0">
-              {student.photoUrl ? <img src={student.photoUrl} alt="" className="w-full h-full object-cover" /> : getInitials(student)}
-            </div>
+            <button onClick={onBack} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 transition"><ArrowLeft className="w-3.5 h-3.5" /> Retour</button>
+            <div className="w-14 h-14 rounded-full overflow-hidden bg-white border-2 border-blue-200 flex items-center justify-center text-lg font-bold text-blue-600 shrink-0">{student.photoUrl ? <img src={student.photoUrl} alt="" className="w-full h-full object-cover" /> : getInitials(student)}</div>
             <div>
               <h2 className="text-lg font-bold text-slate-900">{student.lastName.toUpperCase()} {student.firstName}</h2>
               <div className="flex items-center gap-2 mt-0.5">
                 <p className="text-xs font-mono text-slate-400">{student.matricule || 'Sans matricule'}</p>
                 {student.npi && <span className="text-[10px] font-mono text-emerald-600">NPI: {student.npi}</span>}
-                <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-bold border', (STATUS_LABELS[student.status] || STATUS_LABELS.ACTIVE).color)}>
-                  {(STATUS_LABELS[student.status] || STATUS_LABELS.ACTIVE).label}
-                </span>
+                <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-bold border', (STATUS_LABELS[student.status] || STATUS_LABELS.ACTIVE).color)}>{(STATUS_LABELS[student.status] || STATUS_LABELS.ACTIVE).label}</span>
               </div>
             </div>
           </div>
         </div>
-        {/* Onglets */}
         <div className="flex items-center gap-1 px-4 py-2 border-t border-slate-100 overflow-x-auto">
           {tabs.map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-              className={cn('inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap',
-                activeTab === tab.id ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100')}>
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={cn('inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap', activeTab === tab.id ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100')}>
               <tab.icon className="w-3.5 h-3.5" /> {tab.label}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Contenu de l'onglet */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 min-h-[400px]">
         {isLoadingDetail ? (
           <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 text-blue-500 animate-spin" /></div>
@@ -499,19 +360,11 @@ function StudentDashboard({ student, academicYear, onBack }: {
             {student.studentGuardians && student.studentGuardians.length > 0 ? (
               student.studentGuardians.map(sg => (
                 <div key={sg.id} className="flex items-start gap-3 p-4 bg-slate-50 rounded-xl border border-slate-100">
-                  <div className="w-10 h-10 rounded-full bg-white border border-slate-200 flex items-center justify-center text-sm font-bold text-slate-500 shrink-0">
-                    {sg.guardian.firstName?.[0]}{sg.guardian.lastName?.[0]}
-                  </div>
+                  <div className="w-10 h-10 rounded-full bg-white border border-slate-200 flex items-center justify-center text-sm font-bold text-slate-500 shrink-0">{sg.guardian.firstName?.[0]}{sg.guardian.lastName?.[0]}</div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-bold text-slate-800">{sg.guardian.firstName} {sg.guardian.lastName}</p>
-                      {sg.isPrimary && <span className="text-[8px] bg-blue-500 text-white px-1.5 py-0.5 rounded-full font-bold">PRINCIPAL</span>}
-                    </div>
+                    <div className="flex items-center gap-2"><p className="text-sm font-bold text-slate-800">{sg.guardian.firstName} {sg.guardian.lastName}</p>{sg.isPrimary && <span className="text-[8px] bg-blue-500 text-white px-1.5 py-0.5 rounded-full font-bold">PRINCIPAL</span>}</div>
                     <p className="text-[10px] text-slate-400 uppercase">{sg.relationship}</p>
-                    <div className="flex items-center gap-4 mt-2 text-xs text-slate-600">
-                      {sg.guardian.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> {sg.guardian.phone}</span>}
-                      {sg.guardian.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" /> {sg.guardian.email}</span>}
-                    </div>
+                    <div className="flex items-center gap-4 mt-2 text-xs text-slate-600">{sg.guardian.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> {sg.guardian.phone}</span>}{sg.guardian.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" /> {sg.guardian.email}</span>}</div>
                     {sg.guardian.address && <p className="text-xs text-slate-500 mt-1 flex items-center gap-1"><MapPin className="w-3 h-3" /> {sg.guardian.address}</p>}
                   </div>
                 </div>
@@ -527,10 +380,7 @@ function StudentDashboard({ student, academicYear, onBack }: {
                   {student.studentEnrollments.map(enr => (
                     <div key={enr.id} className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
                       <div className="p-2 bg-blue-100 rounded-lg"><GraduationCap className="w-4 h-4 text-blue-600" /></div>
-                      <div className="flex-1">
-                        <p className="text-sm font-bold text-slate-800">{enr.class?.name || 'Non affecté'}</p>
-                        <p className="text-xs text-slate-500">{enr.academicYear?.name || '—'}</p>
-                      </div>
+                      <div className="flex-1"><p className="text-sm font-bold text-slate-800">{enr.class?.name || 'Non affecté'}</p><p className="text-xs text-slate-500">{enr.academicYear?.name || '—'}</p></div>
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white text-slate-600 border border-slate-200">{enr.status}</span>
                     </div>
                   ))}
@@ -546,10 +396,7 @@ function StudentDashboard({ student, academicYear, onBack }: {
                     return (
                       <div key={item.id} className="flex items-start gap-2 p-2 rounded-lg hover:bg-slate-50">
                         <History className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
-                        <div className="flex-1">
-                          <p className={cn('text-xs font-medium', info.color)}>{info.label}</p>
-                          <p className="text-[10px] text-slate-400">{new Date(item.date).toLocaleString('fr-FR')}</p>
-                        </div>
+                        <div className="flex-1"><p className={cn('text-xs font-medium', info.color)}>{info.label}</p><p className="text-[10px] text-slate-400">{new Date(item.date).toLocaleString('fr-FR')}</p></div>
                       </div>
                     );
                   })}
@@ -564,10 +411,7 @@ function StudentDashboard({ student, academicYear, onBack }: {
                 {documents.map(doc => (
                   <div key={doc.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100 hover:bg-slate-100 transition">
                     <div className="p-2 bg-white rounded-lg border border-slate-200"><FileText className="w-4 h-4 text-slate-500" /></div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-800 truncate">{DOC_TYPE_LABELS[doc.documentType] || doc.documentType}</p>
-                      <p className="text-[10px] text-slate-400 truncate">{doc.fileName}</p>
-                    </div>
+                    <div className="flex-1 min-w-0"><p className="text-sm font-medium text-slate-800 truncate">{DOC_TYPE_LABELS[doc.documentType] || doc.documentType}</p><p className="text-[10px] text-slate-400 truncate">{doc.fileName}</p></div>
                     {doc.filePath && <button className="p-1.5 text-blue-600 hover:bg-blue-50 rounded border border-blue-200" title="Télécharger"><Download className="w-3 h-3" /></button>}
                   </div>
                 ))}
@@ -578,14 +422,15 @@ function StudentDashboard({ student, academicYear, onBack }: {
           <div className="flex flex-col items-center gap-4">
             {studentCard ? (
               <>
-                <div className="bg-slate-100 p-4 rounded-xl w-full max-w-md">
-                  <iframe src={`/api/students/id-cards/${studentCard.id}/preview-html`} title="Carte scolaire" className="w-full border-0" style={{ height: '250px' }} sandbox="allow-same-origin" loading="lazy" />
+                {/* ⭐ Rendu React de la carte (pas d'iframe) */}
+                <div className="bg-slate-100 p-4 rounded-xl relative w-full max-w-md">
+                  <CardPreview student={student} card={studentCard} face={cardFace} />
+                  <button onClick={() => setCardFace(cardFace === 'recto' ? 'verso' : 'recto')} className="absolute top-2 right-2 inline-flex items-center gap-1 px-2 py-1 text-[9px] font-bold text-white bg-slate-700 hover:bg-slate-800 rounded-lg shadow-sm">
+                    <RotateCw className="w-2.5 h-2.5" />{cardFace === 'recto' ? 'Verso' : 'Recto'}
+                  </button>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button onClick={async () => { try { const blob = await studentsService.downloadIdCardPdf(studentCard.id); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `carte-${student.lastName}.pdf`; document.body.appendChild(a); a.click(); document.body.removeChild(a); } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'error' }); } }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200">
-                    <Download className="w-3.5 h-3.5" /> Télécharger PDF
-                  </button>
+                  <button onClick={async () => { try { const blob = await studentsService.downloadIdCardPdf(studentCard.id); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `carte-${student.lastName}.pdf`; document.body.appendChild(a); a.click(); document.body.removeChild(a); } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'error' }); } }} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200"><Download className="w-3.5 h-3.5" /> Télécharger PDF</button>
                   <span className="text-xs text-slate-400">N° {studentCard.cardNumber}</span>
                 </div>
               </>
@@ -593,72 +438,51 @@ function StudentDashboard({ student, academicYear, onBack }: {
           </div>
         ) : activeTab === 'frais' ? (
           <div className="space-y-4">
-            {/* Compte financier */}
             {financeAccount ? (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <FinanceCard label="Total dû" value={formatMoney(financeAccount.totalDue)} color="text-slate-800" />
-                <FinanceCard label="Payé" value={formatMoney(financeAccount.totalPaid)} color="text-emerald-600" />
-                <FinanceCard label="Arriérés" value={formatMoney(financeAccount.arrearsAmount)} color="text-rose-600" />
-                <FinanceCard label="Solde" value={formatMoney(financeAccount.balance)} color={financeAccount.balance > 0 ? 'text-rose-600' : 'text-emerald-600'} />
-              </div>
-            ) : <EmptyState icon={Wallet} text="Aucun compte financier trouvé pour cette année" />}
-            {/* Historique paiements */}
-            {payments.length > 0 && (
-              <div>
-                <h4 className="text-xs font-bold text-slate-400 uppercase mb-2">Historique des paiements</h4>
-                <div className="space-y-1.5">
-                  {payments.map(pay => (
-                    <div key={pay.id} className="flex items-center gap-3 p-2 bg-slate-50 rounded-lg">
-                      <div className="p-1.5 bg-emerald-100 rounded"><Wallet className="w-3.5 h-3.5 text-emerald-600" /></div>
-                      <div className="flex-1">
-                        <p className="text-xs font-medium text-slate-700">{formatMoney(pay.amount)}</p>
-                        <p className="text-[10px] text-slate-400">{new Date(pay.paymentDate || pay.createdAt).toLocaleDateString('fr-FR')} · {pay.paymentMethod}</p>
-                      </div>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">{pay.status}</span>
-                    </div>
-                  ))}
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <FinanceCard label="Total dû" value={formatMoney(financeAccount.totalDue)} color="text-slate-800" />
+                  <FinanceCard label="Payé" value={formatMoney(financeAccount.totalPaid)} color="text-emerald-600" />
+                  <FinanceCard label="Arriérés" value={formatMoney(financeAccount.arrearsAmount)} color="text-rose-600" />
+                  <FinanceCard label="Solde" value={formatMoney(financeAccount.balance)} color={financeAccount.balance > 0 ? 'text-rose-600' : 'text-emerald-600'} />
                 </div>
-              </div>
-            )}
+                {payments.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-400 uppercase mb-2">Historique des paiements</h4>
+                    <div className="space-y-1.5">
+                      {payments.map(pay => (
+                        <div key={pay.id} className="flex items-center gap-3 p-2 bg-slate-50 rounded-lg">
+                          <div className="p-1.5 bg-emerald-100 rounded"><Wallet className="w-3.5 h-3.5 text-emerald-600" /></div>
+                          <div className="flex-1"><p className="text-xs font-medium text-slate-700">{formatMoney(pay.amount)}</p><p className="text-[10px] text-slate-400">{new Date(pay.paymentDate || pay.createdAt).toLocaleDateString('fr-FR')} · {pay.paymentMethod}</p></div>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">{pay.status}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : <EmptyState icon={Wallet} text="Aucun compte financier trouvé pour cette année" />}
           </div>
         ) : activeTab === 'medical' ? (
           <div className="space-y-4">
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
               <HeartPulse className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-bold text-amber-800">Dossier médical — En cours d'implémentation</p>
-                <p className="text-xs text-amber-700 mt-1">Cette section affichera les informations médicales de l'élève : allergies, vaccinations, contact médecin traitant, traitement en cours, régime alimentaire, etc.</p>
-              </div>
+              <div><p className="text-sm font-bold text-amber-800">Dossier médical — En cours d'implémentation</p><p className="text-xs text-amber-700 mt-1">Cette section affichera les informations médicales : allergies, vaccinations, contact médecin, traitement en cours, régime alimentaire.</p></div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center">
-                <HeartPulse className="w-6 h-6 text-slate-300 mx-auto mb-2" />
-                <p className="text-xs font-semibold text-slate-500">Allergies</p>
-                <p className="text-[10px] text-slate-400 mt-1">Bientôt disponible</p>
-              </div>
-              <div className="p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center">
-                <Activity className="w-6 h-6 text-slate-300 mx-auto mb-2" />
-                <p className="text-xs font-semibold text-slate-500">Vaccinations</p>
-                <p className="text-[10px] text-slate-400 mt-1">Bientôt disponible</p>
-              </div>
+              <div className="p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center"><HeartPulse className="w-6 h-6 text-slate-300 mx-auto mb-2" /><p className="text-xs font-semibold text-slate-500">Allergies</p><p className="text-[10px] text-slate-400 mt-1">Bientôt disponible</p></div>
+              <div className="p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center"><Activity className="w-6 h-6 text-slate-300 mx-auto mb-2" /><p className="text-xs font-semibold text-slate-500">Vaccinations</p><p className="text-[10px] text-slate-400 mt-1">Bientôt disponible</p></div>
             </div>
           </div>
         ) : activeTab === 'bulletins' ? (
           <div className="space-y-4">
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
               <BookOpen className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-bold text-amber-800">Module Bulletins & Notes — En cours d'implémentation</p>
-                <p className="text-xs text-amber-700 mt-1">Cette section affichera les bulletins de notes par année scolaire et par trimestre.</p>
-              </div>
+              <div><p className="text-sm font-bold text-amber-800">Module Bulletins & Notes — En cours d'implémentation</p><p className="text-xs text-amber-700 mt-1">Cette section affichera les bulletins par année et trimestre.</p></div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {['Trimestre 1', 'Trimestre 2', 'Trimestre 3'].map(trimestre => (
-                <div key={trimestre} className="p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center">
-                  <BookOpen className="w-6 h-6 text-slate-300 mx-auto mb-2" />
-                  <p className="text-xs font-semibold text-slate-500">{trimestre} {academicYear?.name || ''}</p>
-                  <p className="text-[10px] text-slate-400 mt-1">Bientôt disponible</p>
-                </div>
+              {['Trimestre 1', 'Trimestre 2', 'Trimestre 3'].map(t => (
+                <div key={t} className="p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center"><BookOpen className="w-6 h-6 text-slate-300 mx-auto mb-2" /><p className="text-xs font-semibold text-slate-500">{t} {academicYear?.name || ''}</p><p className="text-[10px] text-slate-400 mt-1">Bientôt disponible</p></div>
               ))}
             </div>
           </div>
@@ -668,15 +492,81 @@ function StudentDashboard({ student, academicYear, onBack }: {
   );
 }
 
-// ─── Composants helpers ───
+// ─── Carte scolaire (rendu React, pas iframe) ───
+
+function CardPreview({ student, card, face }: { student: StudentIdentity; card: any; face: 'recto' | 'verso'; }) {
+  const s = student;
+  const formatDate = (d?: string) => d ? new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : 'N/A';
+
+  if (face === 'recto') {
+    return (
+      <div className="w-full bg-white rounded-lg overflow-hidden shadow-md border border-slate-200 flex flex-col" style={{ aspectRatio: '85.6 / 53.98' }}>
+        <div className="flex items-center px-2 py-1.5 shrink-0" style={{ background: NAVY, color: '#fff' }}>
+          <div className="w-8 h-8 rounded bg-white flex items-center justify-center font-bold" style={{ color: NAVY, fontSize: '10px' }}>AH</div>
+          <div className="flex-1 text-center px-2 min-w-0">
+            <div className="font-bold text-[7px] uppercase tracking-wide leading-tight break-words" style={{ wordBreak: 'break-word' }}>Établissement Scolaire</div>
+            <div className="text-[5px] italic opacity-80 leading-tight">Excellence • Discipline • Travail</div>
+          </div>
+          <div className="w-8 shrink-0" />
+        </div>
+        <div className="flex flex-1 p-2 gap-2 min-h-0">
+          <div className="flex flex-col items-center justify-center gap-1 shrink-0">
+            <div className="w-16 h-16 rounded border-2 overflow-hidden flex items-center justify-center" style={{ borderColor: NAVY, background: '#f3f4f6' }}>
+              {s.photoUrl ? <img src={s.photoUrl} alt="" className="w-full h-full object-cover" /> : <span className="text-[7px] text-slate-400">PHOTO</span>}
+            </div>
+          </div>
+          <div className="flex-1 flex flex-col justify-center gap-0.5 min-w-0">
+            <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>Matricule</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{s.matricule || card.cardNumber}</span></div>
+            <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>N° Carte</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{card.cardNumber}</span></div>
+            <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>Nom</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{s.lastName}</span></div>
+            <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>Prénom</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{s.firstName}</span></div>
+            <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>Parent</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{s.studentGuardians?.[0]?.guardian ? `${s.studentGuardians[0].guardian.firstName} ${s.studentGuardians[0].guardian.lastName}` : '—'}</span></div>
+            <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>Classe</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{s.studentEnrollments?.[0]?.class?.name || '—'}</span></div>
+            <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>Urgence</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{s.studentGuardians?.[0]?.guardian?.phone || '—'}</span></div>
+          </div>
+        </div>
+        <div className="flex items-center justify-between px-2 py-1 shrink-0" style={{ background: NAVY, color: '#fff' }}>
+          <span className="text-[5px] opacity-90 truncate">Academia Helm</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full bg-white rounded-lg overflow-hidden shadow-md border border-slate-200 flex flex-col" style={{ aspectRatio: '85.6 / 53.98' }}>
+      <div className="flex items-center justify-between px-2 py-1.5 shrink-0" style={{ background: NAVY, color: '#fff' }}>
+        <span className="text-[7px] font-bold uppercase tracking-wide">Conditions</span>
+        <div className="text-right text-[5px] leading-tight"><div>Émise le : {formatDate(card.generatedAt)}</div><div>Expire le : {formatDate(card.validUntil)}</div></div>
+      </div>
+      <div className="flex flex-1 p-2 gap-2 min-h-0">
+        <div className="flex-1 flex flex-col min-w-0">
+          <ul className="text-[4px] text-slate-500 space-y-0.5 list-disc pl-2 mb-1">
+            <li>Cette carte est strictement personnelle et incessible.</li>
+            <li>À présenter à toute demande du personnel autorisé.</li>
+            <li>Signaler toute perte ou vol à l'administration.</li>
+          </ul>
+        </div>
+        <div className="flex flex-col items-center justify-between gap-1 shrink-0" style={{ width: '52px' }}>
+          <div className="w-10 h-10 border border-slate-300 rounded bg-white flex items-center justify-center p-0.5">
+            <div className="grid grid-cols-6 grid-rows-6 gap-px w-full h-full">{Array.from({ length: 36 }).map((_, i) => <div key={i} className={cn(((i * 7 + 3) % 5 < 3) ? 'bg-black' : 'bg-white')} />)}</div>
+          </div>
+          <div className="text-center"><div className="text-[6px] italic" style={{ color: NAVY, fontFamily: 'Brush Script MT, cursive' }}>Le Directeur</div><div className="text-[3px] text-slate-400">Signature</div></div>
+        </div>
+      </div>
+      <div className="flex items-center justify-between px-2 py-1 shrink-0" style={{ background: NAVY, color: '#fff' }}>
+        <span className="text-[5px] font-bold truncate">Établissement Scolaire</span>
+        <span className="text-[5px] opacity-90 shrink-0">Academia Helm</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Helpers ───
 
 function InfoCard({ icon: Icon, label, value, mono, color }: { icon: any; label: string; value: string; mono?: boolean; color?: string }) {
   return (
     <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
-      <div className="flex items-center gap-1.5 mb-1">
-        <Icon className="w-3 h-3 text-slate-400" />
-        <p className="text-[10px] font-bold text-slate-400 uppercase">{label}</p>
-      </div>
+      <div className="flex items-center gap-1.5 mb-1"><Icon className="w-3 h-3 text-slate-400" /><p className="text-[10px] font-bold text-slate-400 uppercase">{label}</p></div>
       <p className={cn('text-sm font-medium', mono && 'font-mono', color || 'text-slate-700')}>{value}</p>
     </div>
   );

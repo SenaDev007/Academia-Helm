@@ -56,8 +56,7 @@ import StudentHistoryContent from '@/components/students/StudentHistoryContent';
 import StudentDossierSection from '@/components/students/StudentDossierSection';
 import StudentInteropContent from '@/components/students/StudentInteropContent';
 import StudentFamiliesContent from '@/components/students/StudentFamiliesContent';
-import StudentAssignmentsContent from '@/components/students/StudentAssignmentsContent';
-import StudentMovementsContent from '@/components/students/StudentMovementsContent';
+import StudentAffectationsMouvementsContent from '@/components/students/StudentAffectationsMouvementsContent';
 import StudentComplianceContent from '@/components/students/StudentComplianceContent';
 import StudentAnalyticsContent from '@/components/students/StudentAnalyticsContent';
 import StudentSettingsContent from '@/components/students/StudentSettingsContent';
@@ -423,8 +422,7 @@ export default function StudentsModulePage() {
             { id: 'dashboard', label: 'Tableau de Bord', icon: <LayoutDashboard className="w-4 h-4" /> },
             { id: 'admissions', label: 'Admissions', icon: <UserPlus className="w-4 h-4" /> },
             { id: 'enrollments', label: 'Inscriptions', icon: <GraduationCap className="w-4 h-4" /> },
-            { id: 'assignments', label: 'Affectations', icon: <Share2 className="w-4 h-4" /> },
-            { id: 'movements', label: 'Mouvements', icon: <History className="w-4 h-4" /> },
+            { id: 'affectations-mouvements', label: 'Affectations & Mouvements', icon: <Share2 className="w-4 h-4" /> },
             { id: 'cards', label: 'Cartes Scolaires', icon: <IdCard className="w-4 h-4" /> },
             { id: 'dossiers', label: 'Dossiers Élèves', icon: <FileText className="w-4 h-4" /> },
             { id: 'families', label: 'Familles', icon: <User className="w-4 h-4" /> },
@@ -470,15 +468,10 @@ export default function StudentsModulePage() {
                 layout: 'default',
                 children: <StudentFamiliesContent />,
               }
-            : activeSubModuleId === 'assignments'
+            : activeSubModuleId === 'affectations-mouvements'
             ? {
                 layout: 'default',
-                children: <StudentAssignmentsContent />,
-              }
-            : activeSubModuleId === 'movements'
-            ? {
-                layout: 'default',
-                children: <StudentMovementsContent />,
+                children: <StudentAffectationsMouvementsContent />,
               }
             : activeSubModuleId === 'history'
             ? {

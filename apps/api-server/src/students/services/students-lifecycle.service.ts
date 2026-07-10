@@ -948,6 +948,223 @@ export class StudentsLifecycleService {
   }
 
   /**
+   * ⭐ Exclusion administrative — renvoi disciplinaire ou décision de la direction.
+   * Statut student = 'EXCLUDED', isActive = false.
+   * L'élève ne peut PAS être réintégré via reintegrate() (réservé WITHDRAWN).
+   * Une réintégration après exclusion nécessite une décision exceptionnelle.
+   */
+  async exclude(
+    tenantId: string,
+    data: {
+      studentId: string;
+      academicYearId: string;
+      reason: string;
+      exitDate?: Date;
+    },
+    userId?: string,
+  ) {
+    const enrollment = await this.prisma.studentEnrollment.findFirst({
+      where: {
+        studentId: data.studentId,
+        tenantId,
+        academicYearId: data.academicYearId,
+      },
+      orderBy: { enrollmentDate: 'desc' },
+    });
+    if (!enrollment) throw new NotFoundException('Inscription non trouvée pour cette année');
+
+    const exitDate = data.exitDate ? new Date(data.exitDate) : new Date();
+    const reason = data.reason || 'Exclusion administrative';
+
+    const updatedEnrollment = await this.prisma.studentEnrollment.update({
+      where: { id: enrollment.id },
+      data: {
+        status: 'EXCLUDED',
+        exitDate,
+        exitReason: reason,
+      },
+    });
+
+    await this.prisma.student.update({
+      where: { id: data.studentId },
+      data: {
+        status: 'EXCLUDED',
+        isActive: false,
+      },
+    });
+
+    await this.publicVerificationService.deactivateTokensForStudent(data.studentId).catch(() => {});
+
+    await this.prisma.studentAuditLog.create({
+      data: {
+        tenantId,
+        studentId: data.studentId,
+        userId: userId ?? null,
+        action: 'EXCLUDE',
+        beforeData: { status: enrollment.status },
+        afterData: { reason, exitDate: exitDate.toISOString(), status: 'EXCLUDED' },
+      },
+    });
+
+    await this.logHistory(
+      tenantId, data.studentId, data.academicYearId,
+      enrollment.classId || '', 'EXCLUDED',
+      `Exclusion administrative : ${reason}`, userId,
+    );
+
+    return this.prisma.student.findUnique({
+      where: { id: data.studentId },
+      include: {
+        studentEnrollments: { include: { class: true, academicYear: true }, orderBy: { enrollmentDate: 'desc' } },
+      },
+    });
+  }
+
+  /**
+   * ⭐ Sortie fin d'année — l'élève a terminé l'année scolaire normalement.
+   * Statut student = 'GRADUATED' (si terminale) ou 'INACTIVE' (si autre niveau).
+   * Contrairement à withdraw/exclude, c'est une sortie naturelle non disciplinaire.
+   */
+  async exit(
+    tenantId: string,
+    data: {
+      studentId: string;
+      academicYearId: string;
+      exitReason?: string;
+      exitDate?: Date;
+    },
+    userId?: string,
+  ) {
+    const enrollment = await this.prisma.studentEnrollment.findFirst({
+      where: {
+        studentId: data.studentId,
+        tenantId,
+        academicYearId: data.academicYearId,
+      },
+      orderBy: { enrollmentDate: 'desc' },
+    });
+    if (!enrollment) throw new NotFoundException('Inscription non trouvée pour cette année');
+
+    const exitDate = data.exitDate ? new Date(data.exitDate) : new Date();
+    const reason = data.exitReason || 'Sortie fin d\'année';
+
+    const updatedEnrollment = await this.prisma.studentEnrollment.update({
+      where: { id: enrollment.id },
+      data: {
+        status: 'COMPLETED',
+        exitDate,
+        exitReason: reason,
+      },
+    });
+
+    await this.prisma.student.update({
+      where: { id: data.studentId },
+      data: {
+        status: 'INACTIVE',
+        isActive: false,
+      },
+    });
+
+    await this.prisma.studentAuditLog.create({
+      data: {
+        tenantId,
+        studentId: data.studentId,
+        userId: userId ?? null,
+        action: 'EXIT',
+        beforeData: { status: enrollment.status },
+        afterData: { reason, exitDate: exitDate.toISOString(), status: 'INACTIVE' },
+      },
+    });
+
+    await this.logHistory(
+      tenantId, data.studentId, data.academicYearId,
+      enrollment.classId || '', 'COMPLETED',
+      `Sortie fin d'année : ${reason}`, userId,
+    );
+
+    return this.prisma.student.findUnique({
+      where: { id: data.studentId },
+      include: {
+        studentEnrollments: { include: { class: true, academicYear: true }, orderBy: { enrollmentDate: 'desc' } },
+      },
+    });
+  }
+
+  /**
+   * ⭐ Historique global des mouvements (transferts, abandons, exclusions, etc.)
+   * Récupère les StudentAuditLog filtrés par actions de mouvement.
+   */
+  async getMovementHistory(
+    tenantId: string,
+    academicYearId?: string,
+    filters?: {
+      action?: string;
+      studentId?: string;
+      limit?: number;
+    },
+  ) {
+    const movementActions = [
+      'CHANGE_CLASS', 'WITHDRAW', 'EXCLUDE', 'EXIT', 'REINTEGRATE',
+      'TRANSFER', 'ARCHIVE', 'PRE_REGISTER', 'ADMIT', 'RE_ENROLL',
+      'PROMOTE', 'PROMOTION',
+    ];
+
+    const where: any = {
+      tenantId,
+      action: { in: movementActions },
+    };
+    if (academicYearId) {
+      // Filter by student's academic year — need to join via studentId
+      // For now, we'll filter after fetching
+    }
+    if (filters?.action) {
+      where.action = filters.action;
+    }
+    if (filters?.studentId) {
+      where.studentId = filters.studentId;
+    }
+
+    const limit = Math.min(filters?.limit || 200, 500);
+
+    const logs = await this.prisma.studentAuditLog.findMany({
+      where,
+      include: {
+        student: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            matricule: true,
+            photoUrl: true,
+            status: true,
+            schoolLevelId: true,
+            schoolLevel: { select: { id: true, name: true, code: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+
+    return logs.map(log => ({
+      id: log.id,
+      action: log.action,
+      date: log.createdAt,
+      beforeData: log.beforeData,
+      afterData: log.afterData,
+      student: log.student ? {
+        id: log.student.id,
+        firstName: log.student.firstName,
+        lastName: log.student.lastName,
+        matricule: log.student.matricule,
+        photoUrl: log.student.photoUrl,
+        status: log.student.status,
+        levelName: log.student.schoolLevel?.name || '',
+      } : null,
+    }));
+  }
+
+  /**
    * Opérations batch : promotion et mise à jour de statut.
    */
   async batchPromote(

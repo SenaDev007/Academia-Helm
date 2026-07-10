@@ -614,6 +614,51 @@ class StudentsService {
   }
 
   /**
+   * ⭐ Exclusion administrative (renvoi disciplinaire)
+   */
+  async excludeStudent(data: {
+    studentId: string;
+    academicYearId: string;
+    reason: string;
+    exitDate?: string;
+  }): Promise<any> {
+    return apiFetch(`${BASE_URL}/exclude`, {
+      method: "POST",
+      body: data,
+    });
+  }
+
+  /**
+   * ⭐ Sortie fin d'année (sortie naturelle)
+   */
+  async exitStudent(data: {
+    studentId: string;
+    academicYearId: string;
+    exitReason?: string;
+    exitDate?: string;
+  }): Promise<any> {
+    return apiFetch(`${BASE_URL}/exit`, {
+      method: "POST",
+      body: data,
+    });
+  }
+
+  /**
+   * ⭐ Historique global des mouvements
+   */
+  async getMovementHistory(params?: {
+    academicYearId?: string;
+    action?: string;
+    studentId?: string;
+    limit?: number;
+  }): Promise<any> {
+    const qs = params ? new URLSearchParams(
+      Object.entries(params).filter(([_, v]) => v !== undefined).map(([k, v]) => [k, String(v)])
+    ).toString() : '';
+    return apiFetch(`${BASE_URL}/movement-history${qs ? `?${qs}` : ''}`);
+  }
+
+  /**
    * Export des inscriptions en CSV.
    */
   async exportEnrollmentsCSV(params: {

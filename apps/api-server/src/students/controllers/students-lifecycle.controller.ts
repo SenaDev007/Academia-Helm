@@ -80,6 +80,49 @@ export class StudentsLifecycleController {
   }
 
   /**
+   * ⭐ POST /students/exclude
+   * Exclusion administrative (renvoi disciplinaire).
+   * Body: { studentId, academicYearId, reason, exitDate? }
+   */
+  @Post('exclude')
+  async exclude(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() body: any) {
+    if (!body.reason?.trim()) {
+      throw new BadRequestException('Un motif d\'exclusion est obligatoire');
+    }
+    return this.lifecycle.exclude(tenantId, body, user?.id);
+  }
+
+  /**
+   * ⭐ POST /students/exit
+   * Sortie fin d'année (sortie naturelle, non disciplinaire).
+   * Body: { studentId, academicYearId, exitReason?, exitDate? }
+   */
+  @Post('exit')
+  async exit(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() body: any) {
+    return this.lifecycle.exit(tenantId, body, user?.id);
+  }
+
+  /**
+   * ⭐ GET /students/movement-history
+   * Historique global des mouvements (transferts, abandons, exclusions, etc.)
+   * Query: academicYearId?, action?, studentId?, limit?
+   */
+  @Get('movement-history')
+  async getMovementHistory(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId?: string,
+    @Query('action') action?: string,
+    @Query('studentId') studentId?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.lifecycle.getMovementHistory(tenantId, academicYearId, {
+      action,
+      studentId,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
+  }
+
+  /**
    * Promotion annuelle manuelle d'un élève (hors clôture globale).
    */
   @Post('promote')

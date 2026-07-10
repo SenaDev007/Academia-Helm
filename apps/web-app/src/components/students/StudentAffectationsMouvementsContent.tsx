@@ -363,19 +363,24 @@ function AffectationsSubTab({ academicYear, schoolLevel }: { academicYear: any; 
   const [searchQuery, setSearchQuery] = useState('');
   // ⭐ Mode : 'class' (changement de classe) ou 'series' (changement de série/track)
   const [mode, setMode] = useState<'class' | 'series'>('class');
-  const [fromTrackId, setFromTrackId] = useState('');
-  const [toTrackId, setToTrackId] = useState('');
-  const [tracks, setTracks] = useState<Array<{ id: string; name: string; code: string }>>([]);
+  const [fromSeriesId, setFromSeriesId] = useState('');
+  const [toSeriesId, setToSeriesId] = useState('');
+  const [seriesList, setSeriesList] = useState<Array<{ id: string; name: string; code: string }>>([]);
 
   useEffect(() => {
     fetch('/api/all-classes', { credentials: 'include', cache: 'no-store' })
       .then(r => r.ok ? r.json() : [])
       .then(data => setClasses(Array.isArray(data) ? data : []))
       .catch(() => setClasses([]));
-    fetch('/api/academic-tracks', { credentials: 'include', cache: 'no-store' })
+    // ⭐ Récupérer les VRAIES séries (EducationSeries) depuis /settings/education/series
+    // (PAS les AcademicTrack qui sont des pistes linguistiques comme Francophone/Anglophone)
+    fetch('/api/settings/education/series', { credentials: 'include', cache: 'no-store' })
       .then(r => r.ok ? r.json() : [])
-      .then(data => setTracks(Array.isArray(data) ? data : []))
-      .catch(() => setTracks([]));
+      .then(data => {
+        const list = Array.isArray(data) ? data : [];
+        setSeriesList(list.map((s: any) => ({ id: s.id, name: s.name || s.code, code: s.code })));
+      })
+      .catch(() => setSeriesList([]));
   }, []);
 
   useEffect(() => {
@@ -399,15 +404,24 @@ function AffectationsSubTab({ academicYear, schoolLevel }: { academicYear: any; 
   }), [classes]);
 
   // Classes filtrées par track (pour le mode série)
+  // ⭐ En mode série : ne lister QUE les classes du niveau Secondaire
+  // (les séries ne s'appliquent qu'au secondaire, pas à la maternelle ou le primaire)
+  const secondaryClasses = useMemo(() => {
+    return sortedClasses.filter(c => {
+      const code = (c.schoolLevel?.code || '').toUpperCase();
+      return code === 'SECONDAIRE' || code === 'SECONDARY' || code === 'SECOND';
+    });
+  }, [sortedClasses]);
+
   const fromClasses = useMemo(() => {
-    if (mode === 'series' && fromTrackId) return sortedClasses.filter(c => c.academicTrackId === fromTrackId);
+    if (mode === 'series') return secondaryClasses;
     return sortedClasses;
-  }, [sortedClasses, mode, fromTrackId]);
+  }, [sortedClasses, secondaryClasses, mode]);
 
   const toClasses = useMemo(() => {
-    if (mode === 'series' && toTrackId) return sortedClasses.filter(c => c.academicTrackId === toTrackId);
+    if (mode === 'series') return secondaryClasses;
     return sortedClasses;
-  }, [sortedClasses, mode, toTrackId]);
+  }, [sortedClasses, secondaryClasses, mode]);
 
   const studentsByClass = useMemo(() => {
     const m = new Map<string, Enrollment[]>();
@@ -477,14 +491,14 @@ function AffectationsSubTab({ academicYear, schoolLevel }: { academicYear: any; 
       {/* Sélection mode : classe ou série */}
       <div className="flex items-center gap-2">
         <button
-          onClick={() => { setMode('class'); setFromTrackId(''); setToTrackId(''); }}
+          onClick={() => { setMode('class'); setFromSeriesId(''); setToSeriesId(''); }}
           className={cn('inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition',
             mode === 'class' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50')}
         >
           <BookOpen className="w-3.5 h-3.5" /> Changement de classe
         </button>
         <button
-          onClick={() => setMode('series')}
+          onClick={() => { setMode('series'); setFromSeriesId(''); setToSeriesId(''); }}
           className={cn('inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition',
             mode === 'series' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50')}
         >
@@ -497,19 +511,19 @@ function AffectationsSubTab({ academicYear, schoolLevel }: { academicYear: any; 
         <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm grid grid-cols-2 gap-3">
           <div>
             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Série de départ</label>
-            <select value={fromTrackId} onChange={(e) => { setFromTrackId(e.target.value); setFromClassId(''); }}
+            <select value={fromSeriesId} onChange={(e) => { setFromSeriesId(e.target.value); setFromClassId(''); }}
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500">
               <option value="">— Sélectionner —</option>
-              {tracks.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              {seriesList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Série d'arrivée</label>
-            <select value={toTrackId} onChange={(e) => { setToTrackId(e.target.value); setToClassId(''); }}
+            <select value={toSeriesId} onChange={(e) => { setToSeriesId(e.target.value); setToClassId(''); }}
               className={cn('w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2',
-                fromTrackId === toTrackId && toTrackId ? 'ring-2 ring-red-400 border-red-300' : 'focus:ring-indigo-500')}>
+                fromSeriesId === toSeriesId && toSeriesId ? 'ring-2 ring-red-400 border-red-300' : 'focus:ring-indigo-500')}>
               <option value="">— Sélectionner —</option>
-              {tracks.map(t => <option key={t.id} value={t.id} disabled={t.id === fromTrackId}>{t.name}{t.id === fromTrackId ? ' (départ)' : ''}</option>)}
+              {seriesList.map(s => <option key={s.id} value={s.id} disabled={s.id === fromSeriesId}>{s.name}{s.id === fromSeriesId ? ' (départ)' : ''}</option>)}
             </select>
           </div>
         </div>

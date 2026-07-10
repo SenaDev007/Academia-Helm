@@ -23,7 +23,7 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   CreditCard, CheckCircle, XCircle, AlertCircle, Users, RefreshCw,
   FileDown, Loader2, ChevronDown, ChevronRight, Search, Ban, Download,
-  Layers, BookOpen, RotateCw, Calendar, Phone, MapPin, Hash, User,
+  Layers, BookOpen, RotateCw, Settings, Clock, Palette, Eye, Save,
 } from 'lucide-react';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { studentsService } from '@/services/students.service';
@@ -283,12 +283,58 @@ export default function StudentIdCardsSection() {
   const [stats, setStats] = useState<IdCardStats | null>(null);
   const [grouped, setGrouped] = useState<GroupedResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  // ⭐ Charger les paramètres de carte depuis l'identity
+  useEffect(() => {
+    if (identity) {
+      setCardSettings(prev => ({
+        ...prev,
+        maternellePickupMorning: identity.maternellePickupMorning || prev.maternellePickupMorning,
+        maternellePickupAfternoon: identity.maternellePickupAfternoon || prev.maternellePickupAfternoon,
+      }));
+    }
+  }, [identity]);
+
+  // ⭐ Sauvegarder les paramètres de carte
+  const handleSaveSettings = async () => {
+    setIsSavingSettings(true);
+    try {
+      const res = await fetch('/api/settings/identity', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(cardSettings),
+      });
+      if (!res.ok) throw new Error('Erreur sauvegarde');
+      toast({ title: '✅ Paramètres enregistrés', variant: 'success' });
+      setIsSettingsModalOpen(false);
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'error' });
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
   const [isGenerating, setIsGenerating] = useState(false);
   const [downloadingCardId, setDownloadingCardId] = useState<string | null>(null);
   const [downloadingClassId, setDownloadingClassId] = useState<string | null>(null);
   const [selectedCard, setSelectedCard] = useState<GroupedCard | null>(null);
   const [revokeReason, setRevokeReason] = useState('');
   const [isRevokeModalOpen, setIsRevokeModalOpen] = useState(false);
+  // ⭐ Paramétrage cartes (design + heures maternelle)
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [cardSettings, setCardSettings] = useState({
+    maternellePickupMorning: '12:00',
+    maternellePickupAfternoon: '16:30',
+    cardPrimaryColor: '#0D1F6E',
+    cardShowQRCode: true,
+    cardShowPhoto: true,
+    cardShowGuardian: true,
+    cardShowEmergencyCall: true,
+    cardShowSchoolAddress: true,
+    cardFooterText: 'Academia Helm',
+    cardConditionsText: 'Cette carte est strictement personnelle et incessible. À présenter à toute demande du personnel autorisé. Signaler toute perte ou vol à l\'administration.',
+  });
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
   const [genScope, setGenScope] = useState<'all' | 'level' | 'class'>('all');
   const [genLevelId, setGenLevelId] = useState('');
@@ -408,14 +454,20 @@ export default function StudentIdCardsSection() {
     <>
       {confirmDialog.dialog}
       <div className="space-y-4">
-        {/* En-tête + bouton générer compact */}
+        {/* En-tête + boutons */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><CreditCard className="w-5 h-5 text-blue-600" /> Cartes Scolaires</h2>
-          <button onClick={handleGenerateBulk} disabled={isGenerating || isLoading}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-sm transition">
-            {isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Users className="w-3.5 h-3.5" />}
-            {isGenerating ? 'Génération...' : 'Générer les cartes'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setIsSettingsModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold border border-slate-200 transition">
+              <Settings className="w-3.5 h-3.5" /> Paramétrage
+            </button>
+            <button onClick={handleGenerateBulk} disabled={isGenerating || isLoading}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-sm transition">
+              {isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Users className="w-3.5 h-3.5" />}
+              {isGenerating ? 'Génération...' : 'Générer les cartes'}
+            </button>
+          </div>
         </div>
 
         {/* Stats compactes */}
@@ -546,6 +598,114 @@ export default function StudentIdCardsSection() {
               <button onClick={() => setIsGenerateModalOpen(false)} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 rounded-lg">Annuler</button>
               <button onClick={handleConfirmGenerate} disabled={isGenerating || (genScope === 'level' && !genLevelId) || (genScope === 'class' && (!genLevelId || !genClassId))} className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded-lg">
                 {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Users className="w-4 h-4" />} {isGenerating ? 'Génération...' : 'Générer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ⭐ Modal de paramétrage des cartes (design + heures maternelle) */}
+      {isSettingsModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setIsSettingsModalOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                <Settings className="w-4 h-4 text-slate-600" /> Paramétrage des cartes scolaires
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">Personnalisez le design et les informations affichées sur les cartes.</p>
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
+              {/* Section : Heures de sortie maternelle */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-amber-600" /> Heures de sortie (Maternelle uniquement)
+                </h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sortie du matin</label>
+                    <input type="time" value={cardSettings.maternellePickupMorning}
+                      onChange={(e) => setCardSettings(prev => ({ ...prev, maternellePickupMorning: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sortie de l'après-midi</label>
+                    <input type="time" value={cardSettings.maternellePickupAfternoon}
+                      onChange={(e) => setCardSettings(prev => ({ ...prev, maternellePickupAfternoon: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500" />
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 italic">Ces heures s'affichent uniquement sur les cartes des élèves de maternelle.</p>
+              </div>
+
+              {/* Section : Design */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1.5">
+                  <Palette className="w-3.5 h-3.5 text-blue-600" /> Design
+                </h4>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Couleur principale (bandeaux)</label>
+                  <div className="flex items-center gap-2">
+                    <input type="color" value={cardSettings.cardPrimaryColor}
+                      onChange={(e) => setCardSettings(prev => ({ ...prev, cardPrimaryColor: e.target.value }))}
+                      className="w-12 h-8 rounded border border-slate-200 cursor-pointer" />
+                    <input type="text" value={cardSettings.cardPrimaryColor}
+                      onChange={(e) => setCardSettings(prev => ({ ...prev, cardPrimaryColor: e.target.value }))}
+                      className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Section : Éléments affichés */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1.5">
+                  <Eye className="w-3.5 h-3.5 text-indigo-600" /> Éléments affichés
+                </h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { key: 'cardShowPhoto', label: 'Photo de l\'élève' },
+                    { key: 'cardShowQRCode', label: 'QR code' },
+                    { key: 'cardShowGuardian', label: 'Parent/Tuteur' },
+                    { key: 'cardShowEmergencyCall', label: 'Téléphone urgence' },
+                    { key: 'cardShowSchoolAddress', label: 'Adresse école' },
+                  ].map(item => (
+                    <label key={item.key} className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 cursor-pointer">
+                      <input type="checkbox"
+                        checked={(cardSettings as any)[item.key]}
+                        onChange={(e) => setCardSettings(prev => ({ ...prev, [item.key]: e.target.checked }))}
+                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                      <span className="text-xs text-slate-700">{item.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Section : Textes personnalisables */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1.5">
+                  <FileDown className="w-3.5 h-3.5 text-emerald-600" /> Textes personnalisables
+                </h4>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Texte du pied de carte</label>
+                  <input type="text" value={cardSettings.cardFooterText}
+                    onChange={(e) => setCardSettings(prev => ({ ...prev, cardFooterText: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Conditions d'utilisation</label>
+                  <textarea value={cardSettings.cardConditionsText}
+                    onChange={(e) => setCardSettings(prev => ({ ...prev, cardConditionsText: e.target.value }))}
+                    rows={3}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white resize-none" />
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-4 bg-slate-50 flex justify-end gap-2 border-t border-slate-100">
+              <button onClick={() => setIsSettingsModalOpen(false)}
+                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 rounded-lg">Annuler</button>
+              <button onClick={handleSaveSettings} disabled={isSavingSettings}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg">
+                {isSavingSettings ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                {isSavingSettings ? 'Sauvegarde...' : 'Enregistrer'}
               </button>
             </div>
           </div>

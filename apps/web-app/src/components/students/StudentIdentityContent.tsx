@@ -2,21 +2,32 @@
 
 /**
  * ============================================================================
- * DOSSIERS ÉLÈVES — Fiche complète (identité, statut, guardian, documents)
+ * DOSSIERS ÉLÈVES — Fiche complète (dashboard élève multi-onglets)
  * ============================================================================
+ *
+ * Liste des élèves par niveau → classe (cartes avec photo, statut, infos).
+ * Au clic sur "Détails" : ouverture d'un dashboard élève complet avec :
+ *   - Onglet 1 : Identité (infos personnelles + photo)
+ *   - Onglet 2 : Parents/Tuteurs (guardians avec contacts)
+ *   - Onglet 3 : Scolarité (inscriptions, historique des années)
+ *   - Onglet 4 : Documents (acte de naissance, NPI, certificats, etc.)
+ *   - Onglet 5 : Carte scolaire (aperçu recto/verso)
+ *   - Onglet 6 : Bulletins & Notes (architecture placeholder prête)
+ *
  * Selon MODULE ELEVES.md — Onglet 4
- * Enrichissements : avatar avec initiales, statut, NPI, guardians, 
- * bouton dossier PDF, recherche, grille de cartes responsive.
  * ============================================================================
  */
 
 import { useState, useEffect, useMemo } from 'react';
 import {
   User, Shield, Users, Mail, Phone, FileCheck, AlertCircle,
-  Search, Loader2, Download, Eye, X,
+  Search, Loader2, Download, Eye, X, CreditCard, FileText,
+  History, BookOpen, GraduationCap, Image as ImageIcon, Calendar,
+  MapPin, Hash, UserCheck, Archive,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { studentsService } from '@/services/students.service';
+import { apiFetch } from '@/lib/api/client';
 import { toast } from '@/components/ui/toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -36,6 +47,7 @@ interface StudentIdentity {
   status: string;
   isActive: boolean;
   photoUrl?: string;
+  schoolLevelId?: string;
   studentGuardians?: Array<{
     id: string;
     relationship: string;
@@ -52,9 +64,27 @@ interface StudentIdentity {
   studentEnrollments?: Array<{
     id: string;
     status: string;
+    enrollmentDate?: string;
     class?: { id: string; name: string };
     academicYear?: { id: string; name: string };
   }>;
+}
+
+interface StudentDocument {
+  id: string;
+  documentType: string;
+  fileName: string;
+  filePath?: string;
+  mimeType?: string;
+  createdAt?: string;
+}
+
+interface MovementHistoryItem {
+  id: string;
+  action: string;
+  date: string;
+  beforeData: any;
+  afterData: any;
 }
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -63,7 +93,23 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   ADMITTED: { label: 'Admis', color: 'bg-amber-50 text-amber-700 border-amber-200' },
   ARCHIVED: { label: 'Archivé', color: 'bg-slate-50 text-slate-600 border-slate-200' },
   WITHDRAWN: { label: 'Retiré', color: 'bg-rose-50 text-rose-700 border-rose-200' },
+  EXCLUDED: { label: 'Exclu', color: 'bg-red-50 text-red-700 border-red-200' },
+  INACTIVE: { label: 'Inactif', color: 'bg-slate-50 text-slate-600 border-slate-200' },
 };
+
+const DOC_TYPE_LABELS: Record<string, string> = {
+  BIRTH_CERTIFICATE: 'Acte de naissance',
+  NPI_CARD: 'Carte NPI',
+  SCHOOL_CERTIFICATE: 'Certificat de scolarité',
+  PHOTO: 'Photo d\'identité',
+  PREVIOUS_REPORT_CARD: 'Bulletin précédent',
+  MEDICAL_RECORD: 'Fiche médicale',
+  PARENTAL_AUTHORIZATION: 'Autorisation parentale',
+  TRANSFER_CERTIFICATE: 'Certificat de transfert',
+  OTHER: 'Autre document',
+};
+
+type DetailTab = 'identite' | 'parents' | 'scolarite' | 'documents' | 'carte' | 'bulletins';
 
 export default function StudentIdentityContent() {
   const { academicYear, schoolLevel } = useModuleContext();
@@ -75,23 +121,28 @@ export default function StudentIdentityContent() {
   const [filterLevel, setFilterLevel] = useState<string>('ALL');
   const [filterClass, setFilterClass] = useState<string>('ALL');
 
+  // ⭐ Données enrichies pour le dashboard élève
+  const [detailTab, setDetailTab] = useState<DetailTab>('identite');
+  const [studentDocuments, setStudentDocuments] = useState<StudentDocument[]>([]);
+  const [movementHistory, setMovementHistory] = useState<MovementHistoryItem[]>([]);
+  const [studentCard, setStudentCard] = useState<any>(null);
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+
   useEffect(() => {
     if (academicYear && schoolLevel) loadData();
   }, [academicYear, schoolLevel]);
 
   const loadData = async () => {
+    if (!academicYear) return;
     setIsLoading(true);
     try {
-      const [studentsData, classesData] = await Promise.all([
-        studentsService.getAll({
-          academicYearId: academicYear?.id || '',
-          schoolLevelId: schoolLevel?.id || '',
-          includeGuardians: 'true',
-        }),
-        fetch('/api/all-classes', { credentials: 'include' }).then(r => r.ok ? r.json() : []).catch(() => []),
+      const [studentsData, classesRes] = await Promise.all([
+        studentsService.getAll({ academicYearId: academicYear.id, limit: '200' }),
+        fetch('/api/all-classes', { credentials: 'include', cache: 'no-store' }).then(r => r.ok ? r.json() : []).catch(() => []),
       ]);
-      setStudents(Array.isArray(studentsData) ? studentsData : []);
-      setAllClasses(Array.isArray(classesData) ? classesData : []);
+      const allStudents = Array.isArray(studentsData) ? studentsData : (studentsData?.data || []);
+      setStudents(allStudents);
+      setAllClasses(Array.isArray(classesRes) ? classesRes : []);
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message, variant: 'error' });
     } finally {
@@ -99,120 +150,111 @@ export default function StudentIdentityContent() {
     }
   };
 
-  // Construire un map classId → { name, schoolLevelId, schoolLevelName }
-  const classMap = useMemo(() => {
-    const m = new Map<string, { name: string; schoolLevelId: string; schoolLevelName: string }>();
-    for (const c of allClasses) {
-      m.set(c.id, {
-        name: c.name,
-        schoolLevelId: c.schoolLevelId || '',
-        schoolLevelName: c.schoolLevel?.name || '',
-      });
+  // ⭐ Charger les données détaillées quand un élève est sélectionné
+  useEffect(() => {
+    if (selectedStudent && academicYear?.id) {
+      loadStudentDetail(selectedStudent.id);
     }
+  }, [selectedStudent, academicYear?.id]);
+
+  const loadStudentDetail = async (studentId: string) => {
+    setIsLoadingDetail(true);
+    setDetailTab('identite');
+    try {
+      // Charger en parallèle : documents, historique mouvements, carte scolaire
+      const [docsRes, historyRes, cardRes] = await Promise.allSettled([
+        apiFetch(`/students/${studentId}/documents`),
+        apiFetch(`/students/movement-history?studentId=${studentId}&limit=50`),
+        apiFetch(`/students/id-cards/${studentId}?academicYearId=${academicYear?.id}`),
+      ]);
+      if (docsRes.status === 'fulfilled') setStudentDocuments(Array.isArray(docsRes.value) ? docsRes.value : []);
+      else setStudentDocuments([]);
+      if (historyRes.status === 'fulfilled') setMovementHistory(Array.isArray(historyRes.value) ? historyRes.value : []);
+      else setMovementHistory([]);
+      if (cardRes.status === 'fulfilled') setStudentCard(cardRes.value);
+      else setStudentCard(null);
+    } catch (e) {
+      console.warn('loadStudentDetail error:', e);
+    } finally {
+      setIsLoadingDetail(false);
+    }
+  };
+
+  // Filtrage
+  const classMap = useMemo(() => {
+    const m = new Map<string, string>();
+    allClasses.forEach(c => m.set(c.id, c.schoolLevel?.name || 'Autre'));
     return m;
   }, [allClasses]);
 
-  // Récupérer le niveau scolaire d'un élève depuis son enrollment
-  const getStudentLevel = (s: StudentIdentity): string => {
-    const enr = s.studentEnrollments?.find(e => e.class?.id);
-    if (enr?.class?.id) {
-      return classMap.get(enr.class.id)?.schoolLevelName || '';
-    }
-    return '';
-  };
+  const filteredStudents = useMemo(() => {
+    return students.filter(s => {
+      if (searchTerm) {
+        const q = searchTerm.toLowerCase();
+        const match = `${s.firstName} ${s.lastName}`.toLowerCase().includes(q) ||
+          (s.matricule || '').toLowerCase().includes(q);
+        if (!match) return false;
+      }
+      if (filterLevel !== 'ALL') {
+        const className = s.studentEnrollments?.find(e => e.class)?.class?.name || '';
+        const levelName = s.studentEnrollments?.find(e => e.class)?.class?.id
+          ? classMap.get(s.studentEnrollments.find(e => e.class!.id)!.class!.id) || ''
+          : '';
+        if (!levelName.toUpperCase().includes(filterLevel)) return false;
+      }
+      if (filterClass !== 'ALL') {
+        const studentClassId = s.studentEnrollments?.find(e => e.class)?.class?.id;
+        if (studentClassId !== filterClass) return false;
+      }
+      return true;
+    });
+  }, [students, searchTerm, filterLevel, filterClass, classMap]);
 
-  // Récupérer le nom de la classe d'un élève
-  const getStudentClassName = (s: StudentIdentity): string => {
-    const enr = s.studentEnrollments?.find(e => e.class?.id);
-    return enr?.class?.name || '';
-  };
-
-  // Récupérer le classId d'un élève
-  const getStudentClassId = (s: StudentIdentity): string => {
-    const enr = s.studentEnrollments?.find(e => e.class?.id);
-    return enr?.class?.id || '';
-  };
-
-  // Filtrer par recherche + niveau + classe, puis trier par ordre alphabétique
-  const filteredStudents = students.filter(s => {
-    // Filtre recherche
-    if (searchTerm.trim()) {
-      const q = searchTerm.toLowerCase();
-      if (!`${s.lastName} ${s.firstName}`.toLowerCase().includes(q) &&
-          !(s.matricule || '').toLowerCase().includes(q) &&
-          !(s.npi || '').toLowerCase().includes(q)) return false;
-    }
-    // Filtre niveau
-    if (filterLevel !== 'ALL') {
-      const level = getStudentLevel(s);
-      if (!level.toUpperCase().includes(filterLevel)) return false;
-    }
-    // Filtre classe
-    if (filterClass !== 'ALL') {
-      if (getStudentClassId(s) !== filterClass) return false;
-    }
-    return true;
-  }).sort((a, b) => {
-    // Tri alphabétique par lastName puis firstName
-    const nameA = `${a.lastName} ${a.firstName}`.toLowerCase();
-    const nameB = `${b.lastName} ${b.firstName}`.toLowerCase();
-    return nameA.localeCompare(nameB, 'fr');
-  });
-
-  // Grouper par niveau puis par classe
+  // Groupement par niveau → classe
   const groupedStudents = useMemo(() => {
-    const levelOrder = (name: string) => {
-      const n = (name || '').toUpperCase();
-      if (n.includes('MATERNELLE')) return 0;
-      if (n.includes('PRIMAIRE')) return 1;
-      if (n.includes('SECONDAIRE')) return 2;
-      return 3;
-    };
-    const classOrder = (name: string): number => {
-      const n = (name || '').trim().toUpperCase();
-      if (n === 'MATERNELLE 1' || n === 'M1') return 0;
-      if (n === 'MATERNELLE 2' || n === 'M2') return 1;
-      if (n === 'CI') return 10;
-      if (n === 'CP') return 11;
-      if (n === 'CE1') return 12;
-      if (n === 'CE2') return 13;
-      if (n === 'CM1') return 14;
-      if (n === 'CM2') return 15;
-      if (n.startsWith('6')) return 20;
-      if (n.startsWith('5')) return 21;
-      if (n.startsWith('4')) return 22;
-      if (n.startsWith('3')) return 23;
-      if (n.startsWith('2NDE')) return 24;
-      if (n.startsWith('1ER')) return 25;
-      if (n.startsWith('TERM')) return 26;
-      return 100 + (name || '').charCodeAt(0);
-    };
-
     const groups = new Map<string, { levelName: string; classes: Map<string, { className: string; students: StudentIdentity[] }> }>();
-    for (const s of filteredStudents) {
-      const levelName = getStudentLevel(s) || 'Non affecté';
-      const className = getStudentClassName(s) || 'Sans classe';
-      const levelKey = levelName;
-      if (!groups.has(levelKey)) groups.set(levelKey, { levelName, classes: new Map() });
-      const levelGroup = groups.get(levelKey)!;
-      if (!levelGroup.classes.has(className)) levelGroup.classes.set(className, { className, students: [] });
-      levelGroup.classes.get(className)!.students.push(s);
-    }
+    filteredStudents.forEach(s => {
+      const enr = s.studentEnrollments?.find(e => e.class);
+      const className = enr?.class?.name || 'Non affecté';
+      const classId = enr?.class?.id || 'none';
+      const levelName = classId !== 'none' ? classMap.get(classId) || 'Autre' : 'Non affecté';
+      if (!groups.has(levelName)) groups.set(levelName, { levelName, classes: new Map() });
+      const group = groups.get(levelName)!;
+      if (!group.classes.has(classId)) group.classes.set(classId, { className, students: [] });
+      group.classes.get(classId)!.students.push(s);
+    });
+
+    const levelOrder = (name: string) => {
+      const n = name.toUpperCase();
+      if (n.includes('MATERNELLE')) return 1;
+      if (n.includes('PRIMAIRE')) return 2;
+      if (n.includes('SECONDAIRE')) return 3;
+      return 99;
+    };
+    const classOrder = (name: string) => {
+      const orders: Record<string, number> = { 'MATERNELLE 1': 1, 'MATERNELLE 2': 2, CI: 3, CP: 4, 'CE1': 5, 'CE2': 6, 'CM1': 7, 'CM2': 8, '6ÈME': 9, '5ÈME': 10, '4ÈME': 11, '2NDE': 12 };
+      return orders[name.toUpperCase()] || 99;
+    };
 
     return Array.from(groups.values())
       .sort((a, b) => levelOrder(a.levelName) - levelOrder(b.levelName))
-      .map(g => ({
-        ...g,
-        classes: Array.from(g.classes.values()).sort((a, b) => classOrder(a.className) - classOrder(b.className)),
-      }));
+      .map(g => ({ ...g, classes: Array.from(g.classes.values()).sort((a, b) => classOrder(a.className) - classOrder(b.className)) }));
   }, [filteredStudents, classMap]);
 
   const getInitials = (s: StudentIdentity) => `${s.lastName?.[0] || ''}${s.firstName?.[0] || ''}`.toUpperCase();
-  const getAge = (dob?: string) => {
-    if (!dob) return null;
-    const diff = Date.now() - new Date(dob).getTime();
-    return Math.floor(diff / (365.25 * 24 * 3600 * 1000));
-  };
+  const getAge = (dob?: string) => { if (!dob) return null; return Math.floor((Date.now() - new Date(dob).getTime()) / (365.25 * 24 * 3600 * 1000)); };
+
+  const formatDate = (d?: string) => d ? new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }) : 'N/A';
+
+  // Onglets du dashboard élève
+  const detailTabs: Array<{ id: DetailTab; label: string; icon: any }> = [
+    { id: 'identite', label: 'Identité', icon: User },
+    { id: 'parents', label: 'Parents', icon: Users },
+    { id: 'scolarite', label: 'Scolarité', icon: GraduationCap },
+    { id: 'documents', label: 'Documents', icon: FileText },
+    { id: 'carte', label: 'Carte scolaire', icon: CreditCard },
+    { id: 'bulletins', label: 'Bulletins', icon: BookOpen },
+  ];
 
   return (
     <div className="space-y-4 animate-in fade-in duration-500">
@@ -227,177 +269,80 @@ export default function StudentIdentityContent() {
         </div>
         <div className="relative w-48 sm:w-64">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Rechercher..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-          />
+          <input type="text" placeholder="Rechercher..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
         </div>
       </div>
 
-      {/* Filtres par niveau et classe */}
+      {/* Filtres */}
       <div className="flex flex-wrap gap-2">
-        <select
-          value={filterLevel}
-          onChange={(e) => { setFilterLevel(e.target.value); setFilterClass('ALL'); }}
-          className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
+        <select value={filterLevel} onChange={(e) => { setFilterLevel(e.target.value); setFilterClass('ALL'); }}
+          className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
           <option value="ALL">Tous les niveaux</option>
           <option value="MATERNELLE">Maternelle</option>
           <option value="PRIMAIRE">Primaire</option>
           <option value="SECONDAIRE">Secondaire</option>
         </select>
         {filterLevel !== 'ALL' && (
-          <select
-            value={filterClass}
-            onChange={(e) => setFilterClass(e.target.value)}
-            className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
+          <select value={filterClass} onChange={(e) => setFilterClass(e.target.value)}
+            className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
             <option value="ALL">Toutes les classes</option>
-            {allClasses
-              .filter(c => {
-                const levelName = (c.schoolLevel?.name || '').toUpperCase();
-                return levelName.includes(filterLevel);
-              })
-              .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-              .map(c => <option key={c.id} value={c.id}>{c.name}</option>)
-            }
+            {allClasses.filter(c => (c.schoolLevel?.name || '').toUpperCase().includes(filterLevel)).sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         )}
       </div>
 
+      {/* Liste des élèves */}
       {isLoading ? (
         <div className="flex items-center justify-center py-12"><Loader2 className="w-8 h-8 text-blue-500 animate-spin" /></div>
       ) : filteredStudents.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-          <User className="w-12 h-12 mb-3 opacity-20" />
-          <p className="text-sm">Aucun élève trouvé</p>
-        </div>
+        <div className="flex flex-col items-center justify-center py-12 text-slate-400"><User className="w-12 h-12 mb-3 opacity-20" /><p className="text-sm">Aucun élève trouvé</p></div>
       ) : (
         <div className="space-y-6">
           {groupedStudents.map((levelGroup) => (
             <div key={levelGroup.levelName}>
-              {/* En-tête niveau */}
               <div className="flex items-center gap-2 mb-3">
                 <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">{levelGroup.levelName}</h3>
-                <span className="px-2 py-0.5 bg-slate-100 rounded-full text-[10px] font-bold text-slate-600">
-                  {levelGroup.classes.reduce((acc, c) => acc + c.students.length, 0)} élève(s)
-                </span>
+                <span className="px-2 py-0.5 bg-slate-100 rounded-full text-[10px] font-bold text-slate-600">{levelGroup.classes.reduce((acc, c) => acc + c.students.length, 0)} élève(s)</span>
               </div>
-              {/* Classes dans ce niveau */}
               <div className="space-y-4">
                 {levelGroup.classes.map((classGroup) => (
                   <div key={classGroup.className}>
-                    <h4 className="text-xs font-semibold text-slate-500 mb-2 flex items-center gap-1.5">
-                      <span className="w-1 h-3 bg-blue-500 rounded-full"></span>
-                      {classGroup.className} · {classGroup.students.length} élève(s)
-                    </h4>
+                    <h4 className="text-xs font-semibold text-slate-500 mb-2 flex items-center gap-1.5"><span className="w-1 h-3 bg-blue-500 rounded-full"></span>{classGroup.className} · {classGroup.students.length} élève(s)</h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {classGroup.students.map((student) => {
-            const statusInfo = STATUS_LABELS[student.status] || STATUS_LABELS.ACTIVE;
-            const age = getAge(student.dateOfBirth);
-            return (
-              <div key={student.id} className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all overflow-hidden group">
-                {/* Header carte */}
-                <div className="p-3 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 border border-slate-200 flex items-center justify-center text-sm font-bold text-blue-600 shrink-0">
-                    {getInitials(student)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-slate-900 truncate">{student.lastName.toUpperCase()} {student.firstName}</p>
-                    <p className="text-[10px] font-mono text-slate-400 truncate">{student.matricule || student.globalMatricule || 'Sans matricule'}</p>
-                  </div>
-                  <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-bold border shrink-0', statusInfo.color)}>
-                    {statusInfo.label}
-                  </span>
-                </div>
-
-                {/* Body carte */}
-                <div className="p-3 space-y-2.5">
-                  {/* Infos identité */}
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    {student.dateOfBirth && (
-                      <div>
-                        <p className="text-slate-400">Naissance</p>
-                        <p className="font-medium text-slate-700">{new Date(student.dateOfBirth).toLocaleDateString('fr-FR')}{age ? ` (${age} ans)` : ''}</p>
-                      </div>
-                    )}
-                    {student.gender && (
-                      <div>
-                        <p className="text-slate-400">Sexe</p>
-                        <p className="font-medium text-slate-700">{student.gender === 'M' ? 'Masculin' : 'Féminin'}</p>
-                      </div>
-                    )}
-                    {student.nationality && (
-                      <div>
-                        <p className="text-slate-400">Nationalité</p>
-                        <p className="font-medium text-slate-700">{student.nationality}</p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* NPI */}
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-500 flex items-center gap-1"><FileCheck className="w-3 h-3" /> NPI</span>
-                    {student.npi ? (
-                      <span className="font-mono font-medium text-emerald-600">{student.npi}</span>
-                    ) : (
-                      <span className="text-amber-600 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> Non renseigné</span>
-                    )}
-                  </div>
-
-                  {/* Classe actuelle */}
-                  {student.studentEnrollments?.[0]?.class && (
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-500">Classe</span>
-                      <span className="font-medium text-slate-700">{student.studentEnrollments[0].class.name}</span>
-                    </div>
-                  )}
-
-                  {/* Guardians */}
-                  {student.studentGuardians && student.studentGuardians.length > 0 && (
-                    <div className="pt-1 border-t border-slate-100">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">Responsable(s)</p>
-                      <div className="space-y-1">
-                        {student.studentGuardians.slice(0, 2).map(sg => (
-                          <div key={sg.id} className="flex items-center gap-2 text-xs">
-                            <div className={cn('w-1.5 h-1.5 rounded-full', sg.isPrimary ? 'bg-blue-500' : 'bg-slate-300')} />
-                            <span className="font-medium text-slate-700 truncate">{sg.guardian.firstName} {sg.guardian.lastName}</span>
-                            {sg.guardian.phone && <span className="text-slate-400 text-[10px]">{sg.guardian.phone}</span>}
+                        const statusInfo = STATUS_LABELS[student.status] || STATUS_LABELS.ACTIVE;
+                        const age = getAge(student.dateOfBirth);
+                        return (
+                          <div key={student.id} className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all overflow-hidden group">
+                            <div className="p-3 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
+                              <div className="w-11 h-11 rounded-full overflow-hidden bg-gradient-to-br from-blue-100 to-indigo-100 border border-slate-200 flex items-center justify-center text-sm font-bold text-blue-600 shrink-0">
+                                {student.photoUrl ? <img src={student.photoUrl} alt="" className="w-full h-full object-cover" /> : getInitials(student)}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-bold text-slate-900 truncate">{student.lastName.toUpperCase()} {student.firstName}</p>
+                                <p className="text-[10px] font-mono text-slate-400 truncate">{student.matricule || 'Sans matricule'}</p>
+                              </div>
+                              <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-bold border shrink-0', statusInfo.color)}>{statusInfo.label}</span>
+                            </div>
+                            <div className="p-3 space-y-2.5">
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                {student.dateOfBirth && <div><p className="text-slate-400">Naissance</p><p className="font-medium text-slate-700">{new Date(student.dateOfBirth).toLocaleDateString('fr-FR')}{age ? ` (${age} ans)` : ''}</p></div>}
+                                {student.gender && <div><p className="text-slate-400">Sexe</p><p className="font-medium text-slate-700">{student.gender === 'M' ? 'Masculin' : 'Féminin'}</p></div>}
+                              </div>
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-slate-500 flex items-center gap-1"><FileCheck className="w-3 h-3" /> NPI</span>
+                                {student.npi ? <span className="font-mono font-medium text-emerald-600">{student.npi}</span> : <span className="text-amber-600 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> Non renseigné</span>}
+                              </div>
+                              {student.studentEnrollments?.[0]?.class && <div className="flex items-center justify-between text-xs"><span className="text-slate-500">Classe</span><span className="font-medium text-slate-700">{student.studentEnrollments[0].class.name}</span></div>}
+                            </div>
+                            <div className="p-2 bg-slate-50 border-t border-slate-100 flex justify-end gap-1.5">
+                              <button onClick={() => setSelectedStudent(student)} className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 transition"><Eye className="w-3.5 h-3.5" /> Détails</button>
+                              <button onClick={async () => { try { if (!academicYear?.id) return; await studentsService.downloadAcademicDossier(student.id, academicYear.id); } catch { toast({ title: 'Erreur', description: 'Téléchargement échoué', variant: 'error' }); } }} className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition"><Download className="w-3.5 h-3.5" /> Dossier PDF</button>
+                            </div>
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Actions footer */}
-                <div className="p-2 bg-slate-50 border-t border-slate-100 flex justify-end gap-1.5">
-                  <button
-                    onClick={() => setSelectedStudent(student)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 transition"
-                  >
-                    <Eye className="w-3.5 h-3.5" /> Détails
-                  </button>
-                  <button
-                    onClick={async () => {
-                      try {
-                        if (!academicYear?.id) return;
-                        await studentsService.downloadAcademicDossier(student.id, academicYear.id);
-                      } catch {
-                        toast({ title: 'Erreur', description: 'Téléchargement échoué', variant: 'error' });
-                      }
-                    }}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition"
-                  >
-                    <Download className="w-3.5 h-3.5" /> Dossier PDF
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+                        );
+                      })}
                     </div>
                   </div>
                 ))}
@@ -407,85 +352,70 @@ export default function StudentIdentityContent() {
         </div>
       )}
 
-      {/* Modal détail élève */}
+      {/* ⭐ MODAL DASHBOARD ÉLÈVE — multi-onglets */}
       <AnimatePresence>
         {selectedStudent && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
-            onClick={() => setSelectedStudent(null)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto"
-              onClick={e => e.stopPropagation()}
-            >
-              {/* Header */}
-              <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+            onClick={() => setSelectedStudent(null)}>
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col"
+              onClick={e => e.stopPropagation()}>
+              {/* Header avec photo + nom + statut */}
+              <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50">
                 <div className="flex items-center gap-3">
-                  <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 border border-slate-200 flex items-center justify-center text-lg font-bold text-blue-600">
-                    {getInitials(selectedStudent)}
+                  <div className="w-14 h-14 rounded-full overflow-hidden bg-white border-2 border-blue-200 flex items-center justify-center text-lg font-bold text-blue-600 shrink-0">
+                    {selectedStudent.photoUrl ? <img src={selectedStudent.photoUrl} alt="" className="w-full h-full object-cover" /> : getInitials(selectedStudent)}
                   </div>
                   <div>
                     <h3 className="text-lg font-bold text-slate-900">{selectedStudent.lastName.toUpperCase()} {selectedStudent.firstName}</h3>
-                    <p className="text-xs font-mono text-slate-400">{selectedStudent.matricule || selectedStudent.globalMatricule || 'Sans matricule'}</p>
-                  </div>
-                </div>
-                <button onClick={() => setSelectedStudent(null)} className="p-2 hover:bg-slate-200 rounded-lg text-slate-500 transition">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Body */}
-              <div className="p-5 space-y-4">
-                {/* Identité */}
-                <div>
-                  <h4 className="text-xs font-bold text-slate-400 uppercase mb-2">Identité</h4>
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    {selectedStudent.dateOfBirth && (
-                      <div><p className="text-slate-400 text-xs">Date de naissance</p><p className="font-medium text-slate-700">{new Date(selectedStudent.dateOfBirth).toLocaleDateString('fr-FR')}</p></div>
-                    )}
-                    {selectedStudent.placeOfBirth && (
-                      <div><p className="text-slate-400 text-xs">Lieu de naissance</p><p className="font-medium text-slate-700">{selectedStudent.placeOfBirth}</p></div>
-                    )}
-                    {selectedStudent.gender && (
-                      <div><p className="text-slate-400 text-xs">Sexe</p><p className="font-medium text-slate-700">{selectedStudent.gender === 'M' ? 'Masculin' : 'Féminin'}</p></div>
-                    )}
-                    {selectedStudent.nationality && (
-                      <div><p className="text-slate-400 text-xs">Nationalité</p><p className="font-medium text-slate-700">{selectedStudent.nationality}</p></div>
-                    )}
-                    {selectedStudent.address && (
-                      <div className="col-span-2"><p className="text-slate-400 text-xs">Adresse</p><p className="font-medium text-slate-700">{selectedStudent.address}</p></div>
-                    )}
-                    {selectedStudent.npi && (
-                      <div><p className="text-slate-400 text-xs">NPI</p><p className="font-mono font-medium text-emerald-600">{selectedStudent.npi}</p></div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Classe */}
-                {selectedStudent.studentEnrollments?.[0]?.class && (
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-400 uppercase mb-2">Scolarité</h4>
-                    <div className="bg-blue-50 rounded-lg p-3 text-sm">
-                      <p className="font-semibold text-blue-900">{selectedStudent.studentEnrollments[0].class.name}</p>
-                      <p className="text-xs text-blue-600">{selectedStudent.studentEnrollments[0].academicYear?.name || academicYear?.name}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <p className="text-xs font-mono text-slate-400">{selectedStudent.matricule || 'Sans matricule'}</p>
+                      {selectedStudent.npi && <span className="text-[10px] font-mono text-emerald-600">NPI: {selectedStudent.npi}</span>}
+                      <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-bold border', (STATUS_LABELS[selectedStudent.status] || STATUS_LABELS.ACTIVE).color)}>
+                        {(STATUS_LABELS[selectedStudent.status] || STATUS_LABELS.ACTIVE).label}
+                      </span>
                     </div>
                   </div>
-                )}
+                </div>
+                <button onClick={() => setSelectedStudent(null)} className="p-2 hover:bg-slate-200 rounded-lg text-slate-500 transition"><X className="w-5 h-5" /></button>
+              </div>
 
-                {/* Responsables */}
-                {selectedStudent.studentGuardians && selectedStudent.studentGuardians.length > 0 && (
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-400 uppercase mb-2">Responsables légaux</h4>
-                    <div className="space-y-2">
-                      {selectedStudent.studentGuardians.map(sg => (
-                        <div key={sg.id} className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100">
-                          <div className="w-9 h-9 rounded-full bg-white border border-slate-200 flex items-center justify-center text-xs font-bold text-slate-500 shrink-0">
+              {/* Onglets du dashboard */}
+              <div className="flex items-center gap-1 px-4 py-2 border-b border-slate-100 bg-slate-50/50 overflow-x-auto">
+                {detailTabs.map(tab => (
+                  <button key={tab.id} onClick={() => setDetailTab(tab.id)}
+                    className={cn('inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap',
+                      detailTab === tab.id ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100')}>
+                    <tab.icon className="w-3.5 h-3.5" /> {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Contenu de l'onglet */}
+              <div className="flex-1 overflow-y-auto p-5">
+                {isLoadingDetail ? (
+                  <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 text-blue-500 animate-spin" /></div>
+                ) : detailTab === 'identite' ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <InfoCard icon={User} label="Nom" value={selectedStudent.lastName} />
+                      <InfoCard icon={User} label="Prénom" value={selectedStudent.firstName} />
+                      <InfoCard icon={Calendar} label="Date de naissance" value={formatDate(selectedStudent.dateOfBirth)} />
+                      <InfoCard icon={MapPin} label="Lieu de naissance" value={selectedStudent.placeOfBirth || '—'} />
+                      <InfoCard icon={User} label="Sexe" value={selectedStudent.gender === 'M' ? 'Masculin' : selectedStudent.gender === 'F' ? 'Féminin' : '—'} />
+                      <InfoCard icon={MapPin} label="Nationalité" value={selectedStudent.nationality || '—'} />
+                      <InfoCard icon={Hash} label="Matricule" value={selectedStudent.matricule || '—'} mono />
+                      <InfoCard icon={FileCheck} label="NPI" value={selectedStudent.npi || 'Non renseigné'} mono color={selectedStudent.npi ? 'text-emerald-600' : 'text-amber-600'} />
+                      <InfoCard icon={MapPin} label="Adresse" value={selectedStudent.address || '—'} fullWidth />
+                    </div>
+                  </div>
+                ) : detailTab === 'parents' ? (
+                  <div className="space-y-3">
+                    {selectedStudent.studentGuardians && selectedStudent.studentGuardians.length > 0 ? (
+                      selectedStudent.studentGuardians.map(sg => (
+                        <div key={sg.id} className="flex items-start gap-3 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                          <div className="w-10 h-10 rounded-full bg-white border border-slate-200 flex items-center justify-center text-sm font-bold text-slate-500 shrink-0">
                             {sg.guardian.firstName?.[0]}{sg.guardian.lastName?.[0]}
                           </div>
                           <div className="flex-1 min-w-0">
@@ -494,16 +424,115 @@ export default function StudentIdentityContent() {
                               {sg.isPrimary && <span className="text-[8px] bg-blue-500 text-white px-1.5 py-0.5 rounded-full font-bold">PRINCIPAL</span>}
                             </div>
                             <p className="text-[10px] text-slate-400 uppercase">{sg.relationship}</p>
-                            <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
+                            <div className="flex items-center gap-4 mt-2 text-xs text-slate-600">
                               {sg.guardian.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> {sg.guardian.phone}</span>}
                               {sg.guardian.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" /> {sg.guardian.email}</span>}
                             </div>
+                            {sg.guardian.address && <p className="text-xs text-slate-500 mt-1 flex items-center gap-1"><MapPin className="w-3 h-3" /> {sg.guardian.address}</p>}
                           </div>
+                        </div>
+                      ))
+                    ) : (
+                      <EmptyState icon={Users} text="Aucun responsable légal renseigné" />
+                    )}
+                  </div>
+                ) : detailTab === 'scolarite' ? (
+                  <div className="space-y-4">
+                    {/* Inscriptions */}
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-400 uppercase mb-2">Historique des inscriptions</h4>
+                      {selectedStudent.studentEnrollments && selectedStudent.studentEnrollments.length > 0 ? (
+                        <div className="space-y-2">
+                          {selectedStudent.studentEnrollments.map(enr => (
+                            <div key={enr.id} className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                              <div className="p-2 bg-blue-100 rounded-lg"><GraduationCap className="w-4 h-4 text-blue-600" /></div>
+                              <div className="flex-1">
+                                <p className="text-sm font-bold text-slate-800">{enr.class?.name || 'Non affecté'}</p>
+                                <p className="text-xs text-slate-500">{enr.academicYear?.name || '—'}</p>
+                              </div>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white text-slate-600 border border-slate-200">{enr.status}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : <EmptyState icon={GraduationCap} text="Aucune inscription" />}
+                    </div>
+                    {/* Historique des mouvements */}
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-400 uppercase mb-2">Historique des mouvements</h4>
+                      {movementHistory.length > 0 ? (
+                        <div className="space-y-1.5">
+                          {movementHistory.map(item => (
+                            <div key={item.id} className="flex items-start gap-2 p-2 rounded-lg hover:bg-slate-50">
+                              <History className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
+                              <div className="flex-1">
+                                <p className="text-xs font-medium text-slate-700">{item.action.replace(/_/g, ' ')}</p>
+                                <p className="text-[10px] text-slate-400">{new Date(item.date).toLocaleString('fr-FR')}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : <EmptyState icon={History} text="Aucun mouvement enregistré" />}
+                    </div>
+                  </div>
+                ) : detailTab === 'documents' ? (
+                  <div className="space-y-3">
+                    {studentDocuments.length > 0 ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {studentDocuments.map(doc => (
+                          <div key={doc.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100 hover:bg-slate-100 transition">
+                            <div className="p-2 bg-white rounded-lg border border-slate-200"><FileText className="w-4 h-4 text-slate-500" /></div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-slate-800 truncate">{DOC_TYPE_LABELS[doc.documentType] || doc.documentType}</p>
+                              <p className="text-[10px] text-slate-400 truncate">{doc.fileName}</p>
+                            </div>
+                            {doc.filePath && <button className="p-1.5 text-blue-600 hover:bg-blue-50 rounded border border-blue-200" title="Télécharger"><Download className="w-3 h-3" /></button>}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <EmptyState icon={FileText} text="Aucun document dans le dossier. Les documents (acte de naissance, carte NPI, etc.) apparaîtront ici une fois téléversés." />
+                    )}
+                  </div>
+                ) : detailTab === 'carte' ? (
+                  <div className="space-y-4">
+                    {studentCard ? (
+                      <div className="flex flex-col items-center gap-4">
+                        <div className="bg-slate-100 p-4 rounded-xl">
+                          <iframe src={`/api/students/id-cards/${studentCard.id}/preview-html`} title="Carte scolaire" className="w-full border-0" style={{ height: '250px' }} sandbox="allow-same-origin" loading="lazy" />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button onClick={async () => { try { const blob = await studentsService.downloadIdCardPdf(studentCard.id); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `carte-${selectedStudent.lastName}.pdf`; document.body.appendChild(a); a.click(); document.body.removeChild(a); } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'error' }); } }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200">
+                            <Download className="w-3.5 h-3.5" /> Télécharger PDF
+                          </button>
+                          <span className="text-xs text-slate-400">N° {studentCard.cardNumber}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <EmptyState icon={CreditCard} text="Aucune carte scolaire générée pour cette année. Générez-la depuis l'onglet Cartes Scolaires." />
+                    )}
+                  </div>
+                ) : detailTab === 'bulletins' ? (
+                  <div className="space-y-4">
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+                      <BookOpen className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-bold text-amber-800">Module Bulletins & Notes — En cours d'implémentation</p>
+                        <p className="text-xs text-amber-700 mt-1">Cette section affichera les bulletins de notes de l'élève par année scolaire et par trimestre, ainsi que les résultats scolaires détaillés. L'architecture est prête pour accueillir ces données une fois le module Notes & Bulletins implémenté.</p>
+                      </div>
+                    </div>
+                    {/* Placeholder pour les bulletins futurs */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {['Trimestre 1', 'Trimestre 2', 'Trimestre 3'].map(trimestre => (
+                        <div key={trimestre} className="p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center">
+                          <BookOpen className="w-6 h-6 text-slate-300 mx-auto mb-2" />
+                          <p className="text-xs font-semibold text-slate-500">{trimestre} {academicYear?.name || ''}</p>
+                          <p className="text-[10px] text-slate-400 mt-1">Bientôt disponible</p>
                         </div>
                       ))}
                     </div>
                   </div>
-                )}
+                ) : null}
               </div>
             </motion.div>
           </motion.div>
@@ -512,3 +541,27 @@ export default function StudentIdentityContent() {
     </div>
   );
 }
+
+// ─── Composants helpers ───
+
+function InfoCard({ icon: Icon, label, value, mono, color, fullWidth }: { icon: any; label: string; value: string; mono?: boolean; color?: string; fullWidth?: boolean }) {
+  return (
+    <div className={cn('p-3 bg-slate-50 rounded-lg border border-slate-100', fullWidth && 'col-span-2')}>
+      <div className="flex items-center gap-1.5 mb-1">
+        <Icon className="w-3 h-3 text-slate-400" />
+        <p className="text-[10px] font-bold text-slate-400 uppercase">{label}</p>
+      </div>
+      <p className={cn('text-sm font-medium', mono && 'font-mono', color || 'text-slate-700')}>{value}</p>
+    </div>
+  );
+}
+
+function EmptyState({ icon: Icon, text }: { icon: any; text: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-8 text-center">
+      <Icon className="w-10 h-10 text-slate-300 mb-2" />
+      <p className="text-sm text-slate-500">{text}</p>
+    </div>
+  );
+}
+

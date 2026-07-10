@@ -50,7 +50,9 @@ export class StudentIdCardService {
         studentEnrollments: {
           where: {
             academicYearId,
-            status: 'ACTIVE',
+            // ⚠️ Inclure plusieurs statuts possibles (ACTIVE, ADMITTED, ENROLLED)
+            // car selon le workflow d'admission, le statut peut varier.
+            status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED', 'PRE_REGISTERED'] },
           },
           include: {
             class: {
@@ -135,9 +137,15 @@ export class StudentIdCardService {
       this.logger.warn('PDF generation failed, skipping: ' + (error as Error).message);
     }
 
-    // Date de validité (fin de l'année scolaire)
-    const validUntil = student.academicYear.endDate || new Date(student.academicYear.startDate);
-    validUntil.setFullYear(validUntil.getFullYear() + 1);
+    // Date de validité : fin de l'année scolaire si définie, sinon +1 an à partir du début
+    // ⚠️ Fix bug : avant, on ajoutait 1 an même si endDate existait (double extension)
+    let validUntil: Date;
+    if (student.academicYear.endDate) {
+      validUntil = new Date(student.academicYear.endDate);
+    } else {
+      validUntil = new Date(student.academicYear.startDate);
+      validUntil.setFullYear(validUntil.getFullYear() + 1);
+    }
 
     // Créer la carte dans la base
     const idCard = await this.prisma.studentIdCard.create({

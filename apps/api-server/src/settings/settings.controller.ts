@@ -41,6 +41,7 @@ import { RolesPermissionsBootstrapService } from './services/roles-permissions-b
 import { BillingSettingsService } from './services/billing-settings.service';
 import { IdentityProfileService } from './services/identity-profile.service';
 import { StampsSignaturesService } from './services/stamps-signatures.service';
+import { PrismaService } from '../database/prisma.service';
 import { createReadStream } from 'fs';
 import { existsSync } from 'fs';
 
@@ -75,6 +76,7 @@ export class SettingsController {
     private readonly billingSettingsService: BillingSettingsService,
     private readonly identityProfileService: IdentityProfileService,
     private readonly stampsSignaturesService: StampsSignaturesService,
+    private readonly prisma: PrismaService,
   ) {}
 
   // ============================================================================
@@ -279,6 +281,51 @@ export class SettingsController {
       ipAddress,
       userAgent,
     );
+  }
+
+  /**
+   * ⭐ PUT /settings/identity/card-settings
+   * Met à jour les paramètres de carte scolaire (heures maternelle, design, etc.)
+   * Effectue un UPDATE direct sur la version active (pas de nouvelle version).
+   */
+  @Put('identity/card-settings')
+  async updateCardSettings(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Body() data: {
+      maternellePickupMorning?: string;
+      maternellePickupAfternoon?: string;
+      maternelleSingleExit?: boolean;
+      maternelleSingleExitTime?: string;
+      cardPrimaryColor?: string;
+      cardShowQRCode?: boolean;
+      cardShowPhoto?: boolean;
+      cardShowGuardian?: boolean;
+      cardShowEmergencyCall?: boolean;
+      cardShowSchoolAddress?: boolean;
+      cardConditionsText?: string;
+    },
+  ) {
+    const tid = this.resolveTid(tenantId, user, req);
+    // Update direct sur la version active
+    const updated = await this.prisma.tenantIdentityProfile.updateMany({
+      where: { tenantId: tid, isActive: true },
+      data: {
+        ...(data.maternellePickupMorning !== undefined && { maternellePickupMorning: data.maternellePickupMorning }),
+        ...(data.maternellePickupAfternoon !== undefined && { maternellePickupAfternoon: data.maternellePickupAfternoon }),
+        ...(data.maternelleSingleExit !== undefined && { maternelleSingleExit: data.maternelleSingleExit }),
+        ...(data.maternelleSingleExitTime !== undefined && { maternelleSingleExitTime: data.maternelleSingleExitTime }),
+        ...(data.cardPrimaryColor !== undefined && { cardPrimaryColor: data.cardPrimaryColor }),
+        ...(data.cardShowQRCode !== undefined && { cardShowQRCode: data.cardShowQRCode }),
+        ...(data.cardShowPhoto !== undefined && { cardShowPhoto: data.cardShowPhoto }),
+        ...(data.cardShowGuardian !== undefined && { cardShowGuardian: data.cardShowGuardian }),
+        ...(data.cardShowEmergencyCall !== undefined && { cardShowEmergencyCall: data.cardShowEmergencyCall }),
+        ...(data.cardShowSchoolAddress !== undefined && { cardShowSchoolAddress: data.cardShowSchoolAddress }),
+        ...(data.cardConditionsText !== undefined && { cardConditionsText: data.cardConditionsText }),
+      },
+    });
+    return { success: true, updated: updated.count };
   }
 
   // ============================================================================

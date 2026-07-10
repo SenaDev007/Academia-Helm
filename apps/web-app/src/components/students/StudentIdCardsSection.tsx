@@ -299,13 +299,16 @@ export default function StudentIdCardsSection() {
   const handleSaveSettings = async () => {
     setIsSavingSettings(true);
     try {
-      const res = await fetch('/api/settings/identity', {
+      const res = await fetch('/api/settings/identity/card-settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify(cardSettings),
       });
-      if (!res.ok) throw new Error('Erreur sauvegarde');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Erreur sauvegarde');
+      }
       toast({ title: '✅ Paramètres enregistrés', variant: 'success' });
       setIsSettingsModalOpen(false);
     } catch (e: any) {
@@ -325,13 +328,14 @@ export default function StudentIdCardsSection() {
   const [cardSettings, setCardSettings] = useState({
     maternellePickupMorning: '12:00',
     maternellePickupAfternoon: '16:30',
+    maternelleSingleExit: false,
+    maternelleSingleExitTime: '15:30',
     cardPrimaryColor: '#0D1F6E',
     cardShowQRCode: true,
     cardShowPhoto: true,
     cardShowGuardian: true,
     cardShowEmergencyCall: true,
     cardShowSchoolAddress: true,
-    cardFooterText: 'Academia Helm',
     cardConditionsText: 'Cette carte est strictement personnelle et incessible. À présenter à toute demande du personnel autorisé. Signaler toute perte ou vol à l\'administration.',
   });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
@@ -620,20 +624,37 @@ export default function StudentIdCardsSection() {
                 <h4 className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5 text-amber-600" /> Heures de sortie (Maternelle uniquement)
                 </h4>
-                <div className="grid grid-cols-2 gap-3">
+                {/* Toggle : sortie unique (école bilingue) ou double (matin + après-midi) */}
+                <label className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 cursor-pointer">
+                  <input type="checkbox"
+                    checked={cardSettings.maternelleSingleExit}
+                    onChange={(e) => setCardSettings(prev => ({ ...prev, maternelleSingleExit: e.target.checked }))}
+                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                  <span className="text-xs text-slate-700">Sortie unique (école bilingue — cours jusqu'à 15h30)</span>
+                </label>
+                {cardSettings.maternelleSingleExit ? (
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sortie du matin</label>
-                    <input type="time" value={cardSettings.maternellePickupMorning}
-                      onChange={(e) => setCardSettings(prev => ({ ...prev, maternellePickupMorning: e.target.value }))}
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Heure de sortie unique</label>
+                    <input type="time" value={cardSettings.maternelleSingleExitTime}
+                      onChange={(e) => setCardSettings(prev => ({ ...prev, maternelleSingleExitTime: e.target.value }))}
                       className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500" />
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sortie de l'après-midi</label>
-                    <input type="time" value={cardSettings.maternellePickupAfternoon}
-                      onChange={(e) => setCardSettings(prev => ({ ...prev, maternellePickupAfternoon: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500" />
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sortie du matin</label>
+                      <input type="time" value={cardSettings.maternellePickupMorning}
+                        onChange={(e) => setCardSettings(prev => ({ ...prev, maternellePickupMorning: e.target.value }))}
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sortie de l'après-midi</label>
+                      <input type="time" value={cardSettings.maternellePickupAfternoon}
+                        onChange={(e) => setCardSettings(prev => ({ ...prev, maternellePickupAfternoon: e.target.value }))}
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500" />
+                    </div>
                   </div>
-                </div>
+                )}
                 <p className="text-[10px] text-slate-400 italic">Ces heures s'affichent uniquement sur les cartes des élèves de maternelle.</p>
               </div>
 
@@ -684,12 +705,6 @@ export default function StudentIdCardsSection() {
                 <h4 className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1.5">
                   <FileDown className="w-3.5 h-3.5 text-emerald-600" /> Textes personnalisables
                 </h4>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Texte du pied de carte</label>
-                  <input type="text" value={cardSettings.cardFooterText}
-                    onChange={(e) => setCardSettings(prev => ({ ...prev, cardFooterText: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white" />
-                </div>
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Conditions d'utilisation</label>
                   <textarea value={cardSettings.cardConditionsText}

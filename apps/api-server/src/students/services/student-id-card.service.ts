@@ -313,13 +313,14 @@ export class StudentIdCardService {
             firstName: true,
             lastName: true,
             matricule: true,
+            studentCode: true,
             photoUrl: true,
             dateOfBirth: true,
             gender: true,
             studentGuardians: {
               where: { isPrimary: true },
               take: 1,
-              include: { guardian: { select: { firstName: true, lastName: true, phone: true } } },
+              include: { guardian: { select: { firstName: true, lastName: true, phone: true, email: true, address: true } } },
             },
           },
         },
@@ -370,12 +371,23 @@ export class StudentIdCardService {
           firstName: card.student.firstName,
           lastName: card.student.lastName,
           matricule: card.student.matricule,
+          studentCode: (card.student as any).studentCode,
           photoUrl: card.student.photoUrl,
           dateOfBirth: card.student.dateOfBirth,
           gender: card.student.gender,
         },
+        // ⭐ Infos du parent/tuteur principal (pour affichage sur la carte)
+        guardian: card.student.studentGuardians?.[0]?.guardian
+          ? {
+              firstName: card.student.studentGuardians[0].guardian.firstName || '',
+              lastName: card.student.studentGuardians[0].guardian.lastName || '',
+              phone: card.student.studentGuardians[0].guardian.phone || '',
+              address: (card.student.studentGuardians[0].guardian as any).address || '',
+            }
+          : null,
         className: cls.name,
         levelName: level.label || level.name || level.code,
+        levelCode: level.code || '',
       });
     });
 
@@ -1224,6 +1236,7 @@ export class StudentIdCardService {
     }
 
     const year = new Date(academicYear.startDate).getFullYear();
+    const yearShort = String(year).slice(-2); // 2 derniers chiffres (ex: 26 pour 2026)
 
     // Compter les cartes générées cette année
     const count = await this.prisma.studentIdCard.count({
@@ -1233,8 +1246,9 @@ export class StudentIdCardService {
       },
     });
 
-    const sequence = String(count + 1).padStart(6, '0');
-    return `CARD-${year}-${sequence}`;
+    // ⭐ Format compact : CARD-26-0001 (année 2 chiffres, séquence 4 chiffres)
+    const sequence = String(count + 1).padStart(4, '0');
+    return `CARD-${yearShort}-${sequence}`;
   }
 
   /**

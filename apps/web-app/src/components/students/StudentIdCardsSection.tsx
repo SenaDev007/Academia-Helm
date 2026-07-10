@@ -40,9 +40,12 @@ interface GroupedCard {
   generatedAt: string; validUntil?: string; pdfPath?: string;
   student: {
     id: string; firstName: string; lastName: string; matricule?: string;
-    photoUrl?: string; dateOfBirth?: string; gender?: string;
+    studentCode?: string; photoUrl?: string; dateOfBirth?: string; gender?: string;
   };
-  className: string; levelName: string;
+  guardian?: {
+    firstName: string; lastName: string; phone: string; address: string;
+  } | null;
+  className: string; levelName: string; levelCode?: string;
 }
 
 interface GroupedClass { class: { id: string; name: string }; cardsCount: number; activeCount: number; cards: GroupedCard[]; }
@@ -61,6 +64,8 @@ interface TenantIdentity {
   email?: string;
   website?: string;
   logoUrl?: string;
+  maternellePickupMorning?: string;
+  maternellePickupAfternoon?: string;
 }
 
 function useTenantIdentity() {
@@ -70,7 +75,6 @@ function useTenantIdentity() {
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data && typeof data === 'object') {
-          // L'API peut retourner directement l'objet ou un tableau
           const profile = Array.isArray(data) ? data[0] : data;
           setIdentity({
             schoolName: profile?.schoolName || profile?.name || 'Établissement Scolaire',
@@ -81,6 +85,8 @@ function useTenantIdentity() {
             email: profile?.email || '',
             website: profile?.website || '',
             logoUrl: profile?.logoUrl || '',
+            maternellePickupMorning: profile?.maternellePickupMorning || '12:00',
+            maternellePickupAfternoon: profile?.maternellePickupAfternoon || '16:30',
           });
         }
       })
@@ -95,15 +101,25 @@ function CardVisual({ card, face, academicYearName, identity }: {
   card: GroupedCard; face: 'recto' | 'verso'; academicYearName?: string; identity: TenantIdentity | null;
 }) {
   const s = card.student;
+  const g = card.guardian;
   const formatDate = (d?: string) => d ? new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : 'N/A';
 
   const schoolName = identity?.schoolName || 'Établissement Scolaire';
   const slogan = identity?.slogan || 'Excellence • Discipline • Travail';
-  const schoolAddress = [identity?.address, identity?.city].filter(Boolean).join(', ') || 'Cotonou, Bénin';
-  const schoolPhone = identity?.phonePrimary || '+229 01 00 00 00 00';
-  const schoolEmail = identity?.email || 'contact@ecole.bj';
+  const schoolPhone = identity?.phonePrimary || '';
+  const schoolEmail = identity?.email || '';
   const schoolWebsite = identity?.website || '';
   const logoUrl = identity?.logoUrl || '';
+
+  // Infos parent/tuteur
+  const guardianName = g ? `${g.firstName} ${g.lastName}`.trim() : '—';
+  const guardianPhone = g?.phone || '—';
+  const guardianAddress = g?.address || '—';
+
+  // Heures de sortie maternelle
+  const isMaternelle = (card.levelCode || '').toUpperCase() === 'MATERNELLE' || (card.levelCode || '').toUpperCase() === 'MAT';
+  const pickupMorning = identity?.maternellePickupMorning || '12:00';
+  const pickupAfternoon = identity?.maternellePickupAfternoon || '16:30';
 
   const LogoBox = ({ size = 'normal' }: { size?: 'normal' | 'small' }) => {
     const cls = size === 'small' ? 'w-6 h-6' : 'w-8 h-8';
@@ -114,6 +130,7 @@ function CardVisual({ card, face, academicYearName, identity }: {
   if (face === 'recto') {
     return (
       <div className="w-full bg-white rounded-lg overflow-hidden shadow-md border border-slate-200 flex flex-col" style={{ aspectRatio: '85.6 / 53.98' }}>
+        {/* En-tête bleu : LOGO + NOM ÉCOLE + SLOGAN */}
         <div className="flex items-center px-2 py-1.5 shrink-0" style={{ background: NAVY, color: '#fff' }}>
           <div className="flex flex-col items-start gap-0.5 shrink-0"><LogoBox size="normal" /></div>
           <div className="flex-1 text-center px-2 min-w-0">
@@ -122,6 +139,8 @@ function CardVisual({ card, face, academicYearName, identity }: {
           </div>
           <div className="w-8 shrink-0" />
         </div>
+
+        {/* Corps : photo (gauche) + champs (droite) */}
         <div className="flex flex-1 p-2 gap-2 min-h-0">
           <div className="flex flex-col items-center justify-center gap-1 shrink-0">
             <div className="w-16 h-16 rounded border-2 overflow-hidden flex items-center justify-center" style={{ borderColor: NAVY, background: '#f3f4f6' }}>
@@ -129,44 +148,59 @@ function CardVisual({ card, face, academicYearName, identity }: {
             </div>
           </div>
           <div className="flex-1 flex flex-col justify-center gap-0.5 min-w-0">
-            <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>Reg No</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{s.matricule || card.cardNumber}</span></div>
-            <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>Student ID</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{card.cardNumber}</span></div>
-            <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>Student Name</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{s.firstName} {s.lastName}</span></div>
-            <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>Father/Guardian</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">—</span></div>
-            <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>Class</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{card.className}</span></div>
-            <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>Emergency Call</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{schoolPhone}</span></div>
+            {/* Labels en français */}
+            <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>Matricule</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{s.matricule || s.studentCode || '—'}</span></div>
+            <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>N° Carte</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{card.cardNumber}</span></div>
+            <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>Nom Élève</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{s.firstName} {s.lastName}</span></div>
+            <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>Parent/Tuteur</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{guardianName}</span></div>
+            <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>Classe</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{card.className}</span></div>
+            <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>Urgence</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{guardianPhone}</span></div>
           </div>
         </div>
+
+        {/* Pied bleu : adresse parent (pas école) */}
         <div className="flex items-center justify-between px-2 py-1 shrink-0" style={{ background: NAVY, color: '#fff' }}>
-          <span className="text-[5px] opacity-90 truncate">{schoolAddress}</span>
-          <span className="text-[5px] font-bold opacity-90 shrink-0 ml-1">Tél : {schoolPhone}</span>
+          <span className="text-[5px] opacity-90 truncate">Adresse : {guardianAddress}</span>
         </div>
       </div>
     );
   }
 
+  // VERSO
   return (
     <div className="w-full bg-white rounded-lg overflow-hidden shadow-md border border-slate-200 flex flex-col" style={{ aspectRatio: '85.6 / 53.98' }}>
+      {/* En-tête bleu : "Conditions" + dates */}
       <div className="flex items-center justify-between px-2 py-1.5 shrink-0" style={{ background: NAVY, color: '#fff' }}>
-        <span className="text-[7px] font-bold uppercase tracking-wide">Terms & Conditions</span>
+        <span className="text-[7px] font-bold uppercase tracking-wide">Conditions</span>
         <div className="text-right text-[5px] leading-tight">
-          <div>Joined Date : {formatDate(card.generatedAt)}</div>
-          <div>Expire Date : {formatDate(card.validUntil)}</div>
+          <div>Émise le : {formatDate(card.generatedAt)}</div>
+          <div>Expire le : {formatDate(card.validUntil)}</div>
         </div>
       </div>
+
       <div className="flex flex-1 p-2 gap-2 min-h-0">
+        {/* Gauche : conditions + contact école */}
         <div className="flex-1 flex flex-col min-w-0">
           <ul className="text-[4px] text-slate-500 space-y-0.5 list-disc pl-2 mb-1">
             <li>Cette carte est strictement personnelle et incessible.</li>
             <li>À présenter à toute demande du personnel autorisé.</li>
             <li>Signaler toute perte ou vol à l'administration.</li>
           </ul>
+          {/* ⭐ Heures de sortie maternelle */}
+          {isMaternelle && (
+            <div className="my-1 px-1.5 py-1 rounded bg-amber-50 border border-amber-200">
+              <div className="text-[4px] font-bold text-amber-700 uppercase mb-0.5">🕐 Heures de sortie</div>
+              <div className="text-[4px] text-amber-800">Matin : {pickupMorning}</div>
+              <div className="text-[4px] text-amber-800">Après-midi : {pickupAfternoon}</div>
+            </div>
+          )}
           <div className="mt-auto pt-1 border-t border-dashed border-slate-200 text-[4px] space-y-0.5">
-            <div><span className="font-bold" style={{ color: NAVY }}>Phone : </span>{schoolPhone}</div>
-            <div><span className="font-bold" style={{ color: NAVY }}>Mail : </span>{schoolEmail}</div>
-            {schoolWebsite && <div><span className="font-bold" style={{ color: NAVY }}>Website : </span>{schoolWebsite}</div>}
+            <div><span className="font-bold" style={{ color: NAVY }}>Tél : </span>{schoolPhone || '—'}</div>
+            <div><span className="font-bold" style={{ color: NAVY }}>Email : </span>{schoolEmail || '—'}</div>
+            {schoolWebsite && <div><span className="font-bold" style={{ color: NAVY }}>Site : </span>{schoolWebsite}</div>}
           </div>
         </div>
+        {/* Droite : QR code + signature */}
         <div className="flex flex-col items-center justify-between gap-1 shrink-0" style={{ width: '52px' }}>
           <div className="w-10 h-10 border border-slate-300 rounded bg-white flex items-center justify-center p-0.5">
             <div className="grid grid-cols-6 grid-rows-6 gap-px w-full h-full">
@@ -179,6 +213,8 @@ function CardVisual({ card, face, academicYearName, identity }: {
           </div>
         </div>
       </div>
+
+      {/* Pied bleu : logo + nom école */}
       <div className="flex items-center justify-between px-2 py-1 shrink-0" style={{ background: NAVY, color: '#fff' }}>
         <div className="flex items-center gap-1"><LogoBox size="small" /><span className="text-[5px] font-bold truncate">{schoolName}</span></div>
         <span className="text-[5px] opacity-90 shrink-0">Academia Helm</span>

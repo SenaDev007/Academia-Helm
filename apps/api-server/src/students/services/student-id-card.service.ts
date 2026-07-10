@@ -700,20 +700,44 @@ export class StudentIdCardService {
   /**
    * Télécharge le PDF d'une carte
    */
-  async downloadIdCardPdf(cardId: string, tenantId: string): Promise<Buffer | null> {
+  /**
+   * Télécharge le PDF d'une carte.
+   * ⭐ Si le fichier PDF n'existe pas sur disque (Fly.io éphémère sans stockage
+   * persistant), on le RÉGÉNÈRE à la volée via getCardPreviewHtml + Puppeteer.
+   */
+  async downloadIdCardPdf(cardId: string, tenantId: string): Promise<Buffer> {
     const card = await this.prisma.studentIdCard.findFirst({
       where: { id: cardId, tenantId },
     });
 
-    if (!card?.pdfPath) {
-      throw new NotFoundException(`PDF file not found for card ${cardId}`);
+    if (!card) {
+      throw new NotFoundException(`Carte ${cardId} introuvable`);
     }
 
-    if (!fs.existsSync(card.pdfPath)) {
-      throw new NotFoundException(`PDF file not found on filesystem: ${card.pdfPath}`);
+    // Tentative 1 : lire le fichier existant sur disque
+    if (card.pdfPath && fs.existsSync(card.pdfPath)) {
+      return fs.readFileSync(card.pdfPath);
     }
 
-    return fs.readFileSync(card.pdfPath);
+    // Tentative 2 : régénérer le PDF à la volée (Fly.io éphémère)
+    this.logger.log(`PDF file not found for card ${card.cardNumber}, regenerating on-the-fly...`);
+    const html = await this.getCardPreviewHtml(cardId, tenantId);
+    const pdfBuffer = await this.renderPdfFromHtml(html);
+
+    // Sauvegarder pour les prochains téléchargements (best-effort)
+    try {
+      const newPath = await this.savePdf(tenantId, card.academicYearId, card.cardNumber, pdfBuffer);
+      // Mettre à jour le pdfPath en base
+      await this.prisma.studentIdCard.update({
+        where: { id: cardId },
+        data: { pdfPath: newPath },
+      });
+      this.logger.log(`PDF regenerated and saved: ${newPath}`);
+    } catch (e) {
+      this.logger.warn(`Could not save regenerated PDF: ${e.message}`);
+    }
+
+    return Buffer.from(pdfBuffer);
   }
 
   /**

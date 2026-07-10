@@ -13,6 +13,7 @@ import { financeService } from '@/services/finance.service';
 import { apiFetch } from '@/lib/api/client';
 import { toast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
+import DocumentPreviewModal from './DocumentPreviewModal';
 
 interface StudentIdentity {
   id: string;
@@ -272,6 +273,7 @@ function StudentDashboard({ student, academicYear, onBack }: { student: StudentI
   const [financeAccount, setFinanceAccount] = useState<any>(null);
   const [payments, setPayments] = useState<any[]>([]);
   const [cardFace, setCardFace] = useState<'recto' | 'verso'>('recto');
+  const [previewDoc, setPreviewDoc] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
 
   useEffect(() => { loadDetail(student.id); }, [student.id]);
 
@@ -412,7 +414,17 @@ function StudentDashboard({ student, academicYear, onBack }: { student: StudentI
                   <div key={doc.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100 hover:bg-slate-100 transition">
                     <div className="p-2 bg-white rounded-lg border border-slate-200"><FileText className="w-4 h-4 text-slate-500" /></div>
                     <div className="flex-1 min-w-0"><p className="text-sm font-medium text-slate-800 truncate">{DOC_TYPE_LABELS[doc.documentType] || doc.documentType}</p><p className="text-[10px] text-slate-400 truncate">{doc.fileName}</p></div>
-                    {doc.filePath && <button className="p-1.5 text-blue-600 hover:bg-blue-50 rounded border border-blue-200" title="Télécharger"><Download className="w-3 h-3" /></button>}
+                    {doc.filePath && (
+                      <>
+                        <button onClick={() => setPreviewDoc({ filePath: doc.filePath, fileName: doc.fileName, mimeType: doc.mimeType || 'application/pdf' })}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded border border-indigo-200 transition" title="Visualiser">
+                          <Eye className="w-3 h-3" /> Visualiser
+                        </button>
+                        <a href={doc.filePath} download={doc.fileName} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded border border-blue-200 transition" title="Télécharger">
+                          <Download className="w-3 h-3" />
+                        </a>
+                      </>
+                    )}
                   </div>
                 ))}
               </div>
@@ -488,6 +500,14 @@ function StudentDashboard({ student, academicYear, onBack }: { student: StudentI
           </div>
         ) : null}
       </div>
+
+      {/* ⭐ Modal de visualisation de document */}
+      {previewDoc && (
+        <DocumentPreviewModal
+          doc={previewDoc}
+          onClose={() => setPreviewDoc(null)}
+        />
+      )}
     </div>
   );
 }

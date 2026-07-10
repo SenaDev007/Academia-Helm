@@ -194,6 +194,25 @@ export class StudentIdCardController {
   }
 
   /**
+   * ⭐ Prévisualisation HTML d'une carte (recto + verso) pour affichage dans l'UI.
+   * GET /students/id-cards/:cardId/preview-html
+   * Retourne le HTML complet de la carte (utilisable dans un iframe).
+   *
+   * ⚠️ DOIT être avant @Get(':studentId') sinon 'preview-html' est intercepté.
+   */
+  @Get(':cardId/preview-html')
+  async previewCardHtml(
+    @GetTenant() tenant: any,
+    @Param('cardId') cardId: string,
+    @Res() res: Response,
+  ) {
+    const html = await this.idCardService.getCardPreviewHtml(cardId, tenant.id);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'private, max-age=300'); // cache 5 min
+    return res.send(html);
+  }
+
+  /**
    * Télécharge le PDF d'une carte
    */
   @Get(':cardId/download')

@@ -262,11 +262,22 @@ export class StudentIdCardService {
       return !studentsWithCardIds.has(student.id) && student.identifier && !student.identifier.isOfflineGenerated;
     });
 
-    const results = await Promise.allSettled(
-      studentsWithoutCard.map((student) =>
-        this.generateIdCard(tenantId, academicYearId, student.schoolLevelId, student.id, generatedBy),
-      ),
-    );
+    // ⚠️ TRAITEMENT SÉQUENTIEL (pas Promise.allSettled) :
+    // Le pool Puppeteer limite à MAX_CONCURRENT_PAGES = 3 pages simultanées.
+    // Avec Promise.allSettled, toutes les générations étaient lancées en parallèle,
+    // saturant le pool → les autres génération timeout/échouaient silencieusement
+    // → résultat : 1 carte générée sur N élèves.
+    // On traite maintenant une carte à la fois (plus lent mais fiable).
+    const results: Array<{ status: 'fulfilled' | 'rejected'; value?: any; reason?: any }> = [];
+    for (const student of studentsWithoutCard) {
+      try {
+        const card = await this.generateIdCard(tenantId, academicYearId, student.schoolLevelId, student.id, generatedBy);
+        results.push({ status: 'fulfilled', value: card });
+      } catch (e: any) {
+        this.logger.error(`Generate card for ${student.firstName} ${student.lastName} (${student.id}): ${e.message}`);
+        results.push({ status: 'rejected', reason: e });
+      }
+    }
 
     const succeeded = results.filter((r) => r.status === 'fulfilled').length;
     const failed = results.filter((r) => r.status === 'rejected').length;
@@ -278,8 +289,8 @@ export class StudentIdCardService {
       results: results.map((r, index) => ({
         student: studentsWithoutCard[index],
         status: r.status,
-        ...(r.status === 'rejected' && { error: (r as PromiseRejectedResult).reason.message }),
-        ...(r.status === 'fulfilled' && { card: (r as PromiseFulfilledResult<any>).value }),
+        ...(r.status === 'rejected' && { error: r.reason?.message || String(r.reason) }),
+        ...(r.status === 'fulfilled' && { card: r.value }),
       })),
     };
   }
@@ -616,6 +627,62 @@ export class StudentIdCardService {
         revocationReason: reason,
       },
     });
+  }
+
+  /**
+   * ⭐ Génère le HTML de prévisualisation d'une carte existante (recto + verso).
+   * Utilisé pour afficher la carte visuellement dans l'UI (iframe).
+   */
+  async getCardPreviewHtml(cardId: string, tenantId: string): Promise<string> {
+    const card = await this.prisma.studentIdCard.findFirst({
+      where: { id: cardId, tenantId },
+      include: {
+        student: {
+          include: {
+            tenant: true,
+            academicYear: { select: { id: true, name: true, startDate: true, endDate: true } },
+            schoolLevel: { select: { id: true, name: true, code: true, label: true } },
+            identifier: { where: { isOfflineGenerated: false } },
+            studentGuardians: {
+              where: { isPrimary: true },
+              take: 1,
+              include: { guardian: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!card) {
+      throw new NotFoundException(`Carte ${cardId} introuvable`);
+    }
+
+    // Récupérer la classe actuelle de l'élève (multi-statut pour couvrir tous les workflows)
+    const enrollment = await this.prisma.studentEnrollment.findFirst({
+      where: {
+        tenantId,
+        academicYearId: card.academicYearId,
+        studentId: card.studentId,
+        status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED', 'PRE_REGISTERED'] },
+      },
+      include: { class: { select: { id: true, name: true } } },
+    });
+
+    const student = card.student as any;
+    student.academicYear = student.academicYear || card.academicYear;
+    student.schoolLevel = student.schoolLevel || card.schoolLevel;
+    // Si l'élève n'a pas d'enrollment chargé, on l'ajoute manuellement
+    if (!student.studentEnrollments) {
+      student.studentEnrollments = enrollment ? [{ class: enrollment.class }] : [];
+    }
+    // S'assurer que l'identifier est présent
+    if (!student.identifier && (student as any).StudentIdentifier) {
+      student.identifier = (student as any).StudentIdentifier;
+    }
+
+    const matricule = student.identifier?.globalMatricule || card.qrPayload.split(':')[1] || card.cardNumber;
+    const currentClass = enrollment?.class;
+    return await this.generateCardHtml(student, currentClass, matricule, card.qrPayload);
   }
 
   /**

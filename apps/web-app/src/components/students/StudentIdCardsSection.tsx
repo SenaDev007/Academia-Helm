@@ -463,7 +463,6 @@ export default function StudentIdCardsSection() {
                     >
                       {isLevelExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
                       <span className="text-sm font-bold text-slate-800">{level.level.name}</span>
-                      <span className="text-[10px] font-mono text-slate-400 uppercase">{level.level.code}</span>
                       <span className="ml-auto flex items-center gap-1.5">
                         <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded">
                           {totalCardsInLevel} carte(s)
@@ -508,67 +507,87 @@ export default function StudentIdCardsSection() {
                                   PDF classe
                                 </button>
                               </div>
-                              {/* Cartes de la classe */}
+                              {/* Cartes de la classe — affichage visuel recto + verso */}
                               {isClassExpanded && (
-                                <div className="bg-white">
-                                  {cls.cards.map(card => (
-                                    <div
-                                      key={card.id}
-                                      className="flex items-center gap-2 p-2 border-t border-slate-100 hover:bg-slate-50/80 transition"
-                                    >
-                                      <StudentAvatar
-                                        photoUrl={card.student.photoUrl}
-                                        firstName={card.student.firstName}
-                                        lastName={card.student.lastName}
-                                        size="sm"
-                                      />
-                                      <div className="flex-1 min-w-0">
-                                        <p className="text-xs font-semibold text-slate-800 truncate">
-                                          {card.student.lastName.toUpperCase()} {card.student.firstName}
-                                        </p>
-                                        <p className="text-[10px] text-slate-400 font-mono">
-                                          {card.cardNumber} · {card.student.matricule || '—'}
-                                        </p>
-                                      </div>
-                                      {/* Statut */}
-                                      <span className={cn(
-                                        'px-1.5 py-0.5 text-[9px] font-bold rounded border',
-                                        card.isRevoked
-                                          ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                          : card.isActive
-                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                            : 'bg-slate-50 text-slate-600 border-slate-200'
-                                      )}>
-                                        {card.isRevoked ? 'Révoquée' : card.isActive ? 'Active' : 'Inactive'}
-                                      </span>
-                                      {/* ⭐ Bouton PDF individuel */}
-                                      <button
-                                        onClick={() => handleDownloadCardPdf(card)}
-                                        disabled={downloadingCardId === card.id}
-                                        className="p-1.5 text-blue-600 hover:bg-blue-50 rounded border border-blue-200 transition disabled:opacity-50"
-                                        title="Télécharger le PDF de cette carte"
+                                <div className="bg-slate-50/50 p-3">
+                                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                                    {cls.cards.map(card => (
+                                      <div
+                                        key={card.id}
+                                        className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition"
                                       >
-                                        {downloadingCardId === card.id ? (
-                                          <Loader2 className="w-3 h-3 animate-spin" />
-                                        ) : (
-                                          <Download className="w-3 h-3" />
-                                        )}
-                                      </button>
-                                      {/* Bouton Révoquer (si active) */}
-                                      {card.isActive && !card.isRevoked && (
-                                        <button
-                                          onClick={() => {
-                                            setSelectedCard(card);
-                                            setIsRevokeModalOpen(true);
-                                          }}
-                                          className="p-1.5 text-rose-600 hover:bg-rose-50 rounded border border-rose-200 transition"
-                                          title="Révoquer cette carte"
-                                        >
-                                          <Ban className="w-3 h-3" />
-                                        </button>
-                                      )}
-                                    </div>
-                                  ))}
+                                        {/* En-tête carte : avatar + nom + statut */}
+                                        <div className="p-2.5 flex items-center gap-2 border-b border-slate-100">
+                                          <StudentAvatar
+                                            photoUrl={card.student.photoUrl}
+                                            firstName={card.student.firstName}
+                                            lastName={card.student.lastName}
+                                            size="sm"
+                                          />
+                                          <div className="flex-1 min-w-0">
+                                            <p className="text-xs font-semibold text-slate-800 truncate">
+                                              {card.student.lastName.toUpperCase()} {card.student.firstName}
+                                            </p>
+                                            <p className="text-[9px] text-slate-400 font-mono truncate">
+                                              {card.cardNumber}
+                                            </p>
+                                          </div>
+                                          <span className={cn(
+                                            'px-1.5 py-0.5 text-[8px] font-bold rounded border shrink-0',
+                                            card.isRevoked
+                                              ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                              : card.isActive
+                                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                : 'bg-slate-50 text-slate-600 border-slate-200'
+                                          )}>
+                                            {card.isRevoked ? 'Révoquée' : card.isActive ? 'Active' : 'Inactive'}
+                                          </span>
+                                        </div>
+
+                                        {/* ⭐ Prévisualisation recto + verso via iframe */}
+                                        <div className="bg-slate-100 p-2">
+                                          <iframe
+                                            src={studentsService.getCardPreviewUrl(card.id)}
+                                            title={`Carte ${card.cardNumber}`}
+                                            className="w-full border-0"
+                                            style={{ height: '180px', pointerEvents: 'none' }}
+                                            sandbox="allow-same-origin"
+                                            loading="lazy"
+                                          />
+                                        </div>
+
+                                        {/* Actions */}
+                                        <div className="p-2 flex items-center justify-end gap-1.5 border-t border-slate-100 bg-white">
+                                          <button
+                                            onClick={() => handleDownloadCardPdf(card)}
+                                            disabled={downloadingCardId === card.id}
+                                            className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 transition disabled:opacity-50"
+                                            title="Télécharger le PDF"
+                                          >
+                                            {downloadingCardId === card.id ? (
+                                              <Loader2 className="w-3 h-3 animate-spin" />
+                                            ) : (
+                                              <Download className="w-3 h-3" />
+                                            )}
+                                            PDF
+                                          </button>
+                                          {card.isActive && !card.isRevoked && (
+                                            <button
+                                              onClick={() => {
+                                                setSelectedCard(card);
+                                                setIsRevokeModalOpen(true);
+                                              }}
+                                              className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded border border-rose-200 transition"
+                                              title="Révoquer"
+                                            >
+                                              <Ban className="w-3 h-3" />
+                                              Révoquer
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
                               )}
                             </div>

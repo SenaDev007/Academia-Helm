@@ -825,6 +825,14 @@ class StudentsService {
   }
 
   /**
+   * ⭐ Récupère l'URL de prévisualisation HTML d'une carte (pour iframe).
+   * Retourne l'URL BFF qui proxie vers le backend.
+   */
+  getCardPreviewUrl(cardId: string): string {
+    return `/api/students/id-cards/${encodeURIComponent(cardId)}/preview-html`;
+  }
+
+  /**
    * Statistiques des matricules
    */
   async getMatriculeStats(): Promise<any> {

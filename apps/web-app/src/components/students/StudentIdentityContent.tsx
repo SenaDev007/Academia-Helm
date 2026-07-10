@@ -2,17 +2,22 @@
 
 /**
  * ============================================================================
- * DOSSIERS ÉLÈVES — Fiche complète (dashboard élève multi-onglets)
+ * DOSSIERS ÉLÈVES — Liste + Dashboard plein écran par élève
  * ============================================================================
  *
- * Liste des élèves par niveau → classe (cartes avec photo, statut, infos).
- * Au clic sur "Détails" : ouverture d'un dashboard élève complet avec :
- *   - Onglet 1 : Identité (infos personnelles + photo)
- *   - Onglet 2 : Parents/Tuteurs (guardians avec contacts)
- *   - Onglet 3 : Scolarité (inscriptions, historique des années)
- *   - Onglet 4 : Documents (acte de naissance, NPI, certificats, etc.)
- *   - Onglet 5 : Carte scolaire (aperçu recto/verso)
- *   - Onglet 6 : Bulletins & Notes (architecture placeholder prête)
+ * Vue 1 : Liste des élèves par niveau → classe (cartes cliquables)
+ *   - Filtres : recherche + niveau scolaire + classe
+ *   - Cliquer sur une carte → ouvre le dashboard élève (plein écran, pas un modal)
+ *
+ * Vue 2 : Dashboard élève (plein écran, bouton Retour)
+ *   - Onglet Identité : nom, prénom, naissance, sexe, nationalité, NPI, adresse, photo
+ *   - Onglet Parents : guardians avec contacts complets
+ *   - Onglet Scolarité : inscriptions + historique mouvements
+ *   - Onglet Documents : acte naissance, NPI, certificats (liste + téléchargement)
+ *   - Onglet Carte scolaire : aperçu + téléchargement PDF
+ *   - Onglet Frais & Paiements : compte financier, paiements, arriérés
+ *   - Onglet Médical : informations médicales (placeholder architecture)
+ *   - Onglet Bulletins : placeholder (architecture prête pour module Notes)
  *
  * Selon MODULE ELEVES.md — Onglet 4
  * ============================================================================
@@ -22,15 +27,16 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   User, Shield, Users, Mail, Phone, FileCheck, AlertCircle,
   Search, Loader2, Download, Eye, X, CreditCard, FileText,
-  History, BookOpen, GraduationCap, Image as ImageIcon, Calendar,
-  MapPin, Hash, UserCheck, Archive,
+  History, BookOpen, GraduationCap, Calendar, MapPin, Hash,
+  ArrowLeft, HeartPulse, Wallet, Activity,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { studentsService } from '@/services/students.service';
 import { apiFetch } from '@/lib/api/client';
 import { toast } from '@/components/ui/toast';
-import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
+
+// ─── Types ───
 
 interface StudentIdentity {
   id: string;
@@ -70,21 +76,11 @@ interface StudentIdentity {
   }>;
 }
 
-interface StudentDocument {
+interface ClassInfo {
   id: string;
-  documentType: string;
-  fileName: string;
-  filePath?: string;
-  mimeType?: string;
-  createdAt?: string;
-}
-
-interface MovementHistoryItem {
-  id: string;
-  action: string;
-  date: string;
-  beforeData: any;
-  afterData: any;
+  name: string;
+  schoolLevelId: string;
+  schoolLevel?: { id: string; name: string; code?: string };
 }
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -109,27 +105,61 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   OTHER: 'Autre document',
 };
 
-type DetailTab = 'identite' | 'parents' | 'scolarite' | 'documents' | 'carte' | 'bulletins';
+const ACTION_LABELS: Record<string, { label: string; color: string }> = {
+  CHANGE_CLASS: { label: 'Changement de classe', color: 'text-blue-600' },
+  WITHDRAW: { label: 'Abandon / Départ', color: 'text-rose-600' },
+  EXCLUDE: { label: 'Exclusion administrative', color: 'text-red-600' },
+  EXIT: { label: 'Sortie fin d\'année', color: 'text-amber-600' },
+  REINTEGRATE: { label: 'Réintégration', color: 'text-emerald-600' },
+  TRANSFER: { label: 'Transfert', color: 'text-indigo-600' },
+  ARCHIVE: { label: 'Archivage', color: 'text-slate-600' },
+  PRE_REGISTER: { label: 'Pré-inscription', color: 'text-cyan-600' },
+  ADMIT: { label: 'Admission', color: 'text-teal-600' },
+  RE_ENROLL: { label: 'Réinscription', color: 'text-purple-600' },
+  PROMOTE: { label: 'Promotion', color: 'text-green-600' },
+};
+
+type DetailTab = 'identite' | 'parents' | 'scolarite' | 'documents' | 'carte' | 'frais' | 'medical' | 'bulletins';
+
+const LEVEL_ORDER: Record<string, number> = { MATERNELLE: 1, MAT: 1, PRIMAIRE: 2, PRIMARY: 2, SECONDAIRE: 3, SECONDARY: 3 };
+
+// ─── Helpers ───
+
+function getInitials(s: StudentIdentity) {
+  return `${s.lastName?.[0] || ''}${s.firstName?.[0] || ''}`.toUpperCase();
+}
+
+function getAge(dob?: string) {
+  if (!dob) return null;
+  return Math.floor((Date.now() - new Date(dob).getTime()) / (365.25 * 24 * 3600 * 1000));
+}
+
+function formatDate(d?: string) {
+  if (!d) return 'N/A';
+  return new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+}
+
+function formatMoney(amount?: number) {
+  if (amount === null || amount === undefined) return '—';
+  return new Intl.NumberFormat('fr-FR').format(amount) + ' FCFA';
+}
+
+// ─── Composant principal ───
 
 export default function StudentIdentityContent() {
   const { academicYear, schoolLevel } = useModuleContext();
   const [students, setStudents] = useState<StudentIdentity[]>([]);
-  const [allClasses, setAllClasses] = useState<any[]>([]);
+  const [allClasses, setAllClasses] = useState<ClassInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedStudent, setSelectedStudent] = useState<StudentIdentity | null>(null);
-  const [filterLevel, setFilterLevel] = useState<string>('ALL');
-  const [filterClass, setFilterClass] = useState<string>('ALL');
+  const [filterLevelId, setFilterLevelId] = useState<string>('');
+  const [filterClassId, setFilterClassId] = useState<string>('');
 
-  // ⭐ Données enrichies pour le dashboard élève
-  const [detailTab, setDetailTab] = useState<DetailTab>('identite');
-  const [studentDocuments, setStudentDocuments] = useState<StudentDocument[]>([]);
-  const [movementHistory, setMovementHistory] = useState<MovementHistoryItem[]>([]);
-  const [studentCard, setStudentCard] = useState<any>(null);
-  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  // Dashboard élève (plein écran)
+  const [selectedStudent, setSelectedStudent] = useState<StudentIdentity | null>(null);
 
   useEffect(() => {
-    if (academicYear && schoolLevel) loadData();
+    loadData();
   }, [academicYear, schoolLevel]);
 
   const loadData = async () => {
@@ -150,112 +180,100 @@ export default function StudentIdentityContent() {
     }
   };
 
-  // ⭐ Charger les données détaillées quand un élève est sélectionné
-  useEffect(() => {
-    if (selectedStudent && academicYear?.id) {
-      loadStudentDetail(selectedStudent.id);
-    }
-  }, [selectedStudent, academicYear?.id]);
-
-  const loadStudentDetail = async (studentId: string) => {
-    setIsLoadingDetail(true);
-    setDetailTab('identite');
-    try {
-      // Charger en parallèle : documents, historique mouvements, carte scolaire
-      const [docsRes, historyRes, cardRes] = await Promise.allSettled([
-        apiFetch(`/students/${studentId}/documents`),
-        apiFetch(`/students/movement-history?studentId=${studentId}&limit=50`),
-        apiFetch(`/students/id-cards/${studentId}?academicYearId=${academicYear?.id}`),
-      ]);
-      if (docsRes.status === 'fulfilled') setStudentDocuments(Array.isArray(docsRes.value) ? docsRes.value : []);
-      else setStudentDocuments([]);
-      if (historyRes.status === 'fulfilled') setMovementHistory(Array.isArray(historyRes.value) ? historyRes.value : []);
-      else setMovementHistory([]);
-      if (cardRes.status === 'fulfilled') setStudentCard(cardRes.value);
-      else setStudentCard(null);
-    } catch (e) {
-      console.warn('loadStudentDetail error:', e);
-    } finally {
-      setIsLoadingDetail(false);
-    }
-  };
-
-  // Filtrage
-  const classMap = useMemo(() => {
-    const m = new Map<string, string>();
-    allClasses.forEach(c => m.set(c.id, c.schoolLevel?.name || 'Autre'));
-    return m;
+  // Niveaux uniques extraits des classes
+  const levels = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; code?: string }>();
+    allClasses.forEach(c => {
+      if (c.schoolLevelId && !map.has(c.schoolLevelId)) {
+        map.set(c.schoolLevelId, {
+          id: c.schoolLevelId,
+          name: c.schoolLevel?.name || 'Niveau',
+          code: c.schoolLevel?.code,
+        });
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => (LEVEL_ORDER[a.code?.toUpperCase() || ''] || 99) - (LEVEL_ORDER[b.code?.toUpperCase() || ''] || 99));
   }, [allClasses]);
 
+  // Classes filtrées par niveau sélectionné
+  const filteredClasses = useMemo(() => {
+    if (!filterLevelId) return allClasses;
+    return allClasses.filter(c => c.schoolLevelId === filterLevelId);
+  }, [allClasses, filterLevelId]);
+
+  // Map studentId → classId via enrollments
+  const studentClassMap = useMemo(() => {
+    const m = new Map<string, { id: string; name: string; levelId: string }>();
+    students.forEach(s => {
+      const enr = s.studentEnrollments?.find(e => e.class);
+      if (enr?.class) {
+        const cls = allClasses.find(c => c.id === enr.class!.id);
+        m.set(s.id, {
+          id: enr.class.id,
+          name: enr.class.name,
+          levelId: cls?.schoolLevelId || '',
+        });
+      }
+    });
+    return m;
+  }, [students, allClasses]);
+
+  // Filtrage des élèves
   const filteredStudents = useMemo(() => {
     return students.filter(s => {
-      if (searchTerm) {
+      // Filtre niveau
+      if (filterLevelId) {
+        const studentClassInfo = studentClassMap.get(s.id);
+        if (!studentClassInfo || studentClassInfo.levelId !== filterLevelId) return false;
+      }
+      // Filtre classe
+      if (filterClassId) {
+        const studentClassInfo = studentClassMap.get(s.id);
+        if (!studentClassInfo || studentClassInfo.id !== filterClassId) return false;
+      }
+      // Recherche
+      if (searchTerm.trim()) {
         const q = searchTerm.toLowerCase();
-        const match = `${s.firstName} ${s.lastName}`.toLowerCase().includes(q) ||
+        return `${s.firstName} ${s.lastName}`.toLowerCase().includes(q) ||
           (s.matricule || '').toLowerCase().includes(q);
-        if (!match) return false;
-      }
-      if (filterLevel !== 'ALL') {
-        const className = s.studentEnrollments?.find(e => e.class)?.class?.name || '';
-        const levelName = s.studentEnrollments?.find(e => e.class)?.class?.id
-          ? classMap.get(s.studentEnrollments.find(e => e.class!.id)!.class!.id) || ''
-          : '';
-        if (!levelName.toUpperCase().includes(filterLevel)) return false;
-      }
-      if (filterClass !== 'ALL') {
-        const studentClassId = s.studentEnrollments?.find(e => e.class)?.class?.id;
-        if (studentClassId !== filterClass) return false;
       }
       return true;
     });
-  }, [students, searchTerm, filterLevel, filterClass, classMap]);
+  }, [students, filterLevelId, filterClassId, searchTerm, studentClassMap]);
 
   // Groupement par niveau → classe
   const groupedStudents = useMemo(() => {
     const groups = new Map<string, { levelName: string; classes: Map<string, { className: string; students: StudentIdentity[] }> }>();
     filteredStudents.forEach(s => {
-      const enr = s.studentEnrollments?.find(e => e.class);
-      const className = enr?.class?.name || 'Non affecté';
-      const classId = enr?.class?.id || 'none';
-      const levelName = classId !== 'none' ? classMap.get(classId) || 'Autre' : 'Non affecté';
+      const studentClassInfo = studentClassMap.get(s.id);
+      const className = studentClassInfo?.name || 'Non affecté';
+      const classId = studentClassInfo?.id || 'none';
+      const levelName = studentClassInfo?.levelId
+        ? levels.find(l => l.id === studentClassInfo.levelId)?.name || 'Autre'
+        : 'Non affecté';
       if (!groups.has(levelName)) groups.set(levelName, { levelName, classes: new Map() });
       const group = groups.get(levelName)!;
       if (!group.classes.has(classId)) group.classes.set(classId, { className, students: [] });
       group.classes.get(classId)!.students.push(s);
     });
+    return Array.from(groups.values()).map(g => ({
+      ...g,
+      classes: Array.from(g.classes.values()).sort((a, b) => a.className.localeCompare(b.className)),
+    }));
+  }, [filteredStudents, studentClassMap, levels]);
 
-    const levelOrder = (name: string) => {
-      const n = name.toUpperCase();
-      if (n.includes('MATERNELLE')) return 1;
-      if (n.includes('PRIMAIRE')) return 2;
-      if (n.includes('SECONDAIRE')) return 3;
-      return 99;
-    };
-    const classOrder = (name: string) => {
-      const orders: Record<string, number> = { 'MATERNELLE 1': 1, 'MATERNELLE 2': 2, CI: 3, CP: 4, 'CE1': 5, 'CE2': 6, 'CM1': 7, 'CM2': 8, '6ÈME': 9, '5ÈME': 10, '4ÈME': 11, '2NDE': 12 };
-      return orders[name.toUpperCase()] || 99;
-    };
+  // ─── Si un élève est sélectionné → afficher le dashboard plein écran ───
+  if (selectedStudent) {
+    return (
+      <StudentDashboard
+        student={selectedStudent}
+        academicYear={academicYear}
+        onBack={() => setSelectedStudent(null)}
+      />
+    );
+  }
 
-    return Array.from(groups.values())
-      .sort((a, b) => levelOrder(a.levelName) - levelOrder(b.levelName))
-      .map(g => ({ ...g, classes: Array.from(g.classes.values()).sort((a, b) => classOrder(a.className) - classOrder(b.className)) }));
-  }, [filteredStudents, classMap]);
-
-  const getInitials = (s: StudentIdentity) => `${s.lastName?.[0] || ''}${s.firstName?.[0] || ''}`.toUpperCase();
-  const getAge = (dob?: string) => { if (!dob) return null; return Math.floor((Date.now() - new Date(dob).getTime()) / (365.25 * 24 * 3600 * 1000)); };
-
-  const formatDate = (d?: string) => d ? new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }) : 'N/A';
-
-  // Onglets du dashboard élève
-  const detailTabs: Array<{ id: DetailTab; label: string; icon: any }> = [
-    { id: 'identite', label: 'Identité', icon: User },
-    { id: 'parents', label: 'Parents', icon: Users },
-    { id: 'scolarite', label: 'Scolarité', icon: GraduationCap },
-    { id: 'documents', label: 'Documents', icon: FileText },
-    { id: 'carte', label: 'Carte scolaire', icon: CreditCard },
-    { id: 'bulletins', label: 'Bulletins', icon: BookOpen },
-  ];
-
+  // ─── Vue liste ───
   return (
     <div className="space-y-4 animate-in fade-in duration-500">
       {/* Toolbar */}
@@ -274,53 +292,63 @@ export default function StudentIdentityContent() {
         </div>
       </div>
 
-      {/* Filtres */}
+      {/* Filtres niveau + classe */}
       <div className="flex flex-wrap gap-2">
-        <select value={filterLevel} onChange={(e) => { setFilterLevel(e.target.value); setFilterClass('ALL'); }}
-          className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
-          <option value="ALL">Tous les niveaux</option>
-          <option value="MATERNELLE">Maternelle</option>
-          <option value="PRIMAIRE">Primaire</option>
-          <option value="SECONDAIRE">Secondaire</option>
+        <select value={filterLevelId} onChange={(e) => { setFilterLevelId(e.target.value); setFilterClassId(''); }}
+          className="text-xs border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="">Tous les niveaux</option>
+          {levels.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
         </select>
-        {filterLevel !== 'ALL' && (
-          <select value={filterClass} onChange={(e) => setFilterClass(e.target.value)}
-            className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
-            <option value="ALL">Toutes les classes</option>
-            {allClasses.filter(c => (c.schoolLevel?.name || '').toUpperCase().includes(filterLevel)).sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+        <select value={filterClassId} onChange={(e) => setFilterClassId(e.target.value)} disabled={!filterLevelId && filteredClasses.length === 0}
+          className="text-xs border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="">Toutes les classes</option>
+          {filteredClasses.sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        {(filterLevelId || filterClassId || searchTerm) && (
+          <button onClick={() => { setFilterLevelId(''); setFilterClassId(''); setSearchTerm(''); }}
+            className="text-xs font-semibold text-slate-500 hover:text-slate-700 px-2 py-1 rounded-lg hover:bg-slate-100">✕ Réinitialiser</button>
         )}
       </div>
 
-      {/* Liste des élèves */}
+      {/* Liste */}
       {isLoading ? (
         <div className="flex items-center justify-center py-12"><Loader2 className="w-8 h-8 text-blue-500 animate-spin" /></div>
       ) : filteredStudents.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 text-slate-400"><User className="w-12 h-12 mb-3 opacity-20" /><p className="text-sm">Aucun élève trouvé</p></div>
+        <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+          <User className="w-12 h-12 mb-3 opacity-20" />
+          <p className="text-sm">Aucun élève trouvé</p>
+        </div>
       ) : (
         <div className="space-y-6">
           {groupedStudents.map((levelGroup) => (
             <div key={levelGroup.levelName}>
               <div className="flex items-center gap-2 mb-3">
                 <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">{levelGroup.levelName}</h3>
-                <span className="px-2 py-0.5 bg-slate-100 rounded-full text-[10px] font-bold text-slate-600">{levelGroup.classes.reduce((acc, c) => acc + c.students.length, 0)} élève(s)</span>
+                <span className="px-2 py-0.5 bg-slate-100 rounded-full text-[10px] font-bold text-slate-600">
+                  {levelGroup.classes.reduce((acc, c) => acc + c.students.length, 0)} élève(s)
+                </span>
               </div>
               <div className="space-y-4">
                 {levelGroup.classes.map((classGroup) => (
                   <div key={classGroup.className}>
-                    <h4 className="text-xs font-semibold text-slate-500 mb-2 flex items-center gap-1.5"><span className="w-1 h-3 bg-blue-500 rounded-full"></span>{classGroup.className} · {classGroup.students.length} élève(s)</h4>
+                    <h4 className="text-xs font-semibold text-slate-500 mb-2 flex items-center gap-1.5">
+                      <span className="w-1 h-3 bg-blue-500 rounded-full"></span>
+                      {classGroup.className} · {classGroup.students.length} élève(s)
+                    </h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {classGroup.students.map((student) => {
                         const statusInfo = STATUS_LABELS[student.status] || STATUS_LABELS.ACTIVE;
                         const age = getAge(student.dateOfBirth);
                         return (
-                          <div key={student.id} className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all overflow-hidden group">
+                          <div key={student.id}
+                            onClick={() => setSelectedStudent(student)}
+                            className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-300 transition-all overflow-hidden cursor-pointer group">
                             <div className="p-3 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
                               <div className="w-11 h-11 rounded-full overflow-hidden bg-gradient-to-br from-blue-100 to-indigo-100 border border-slate-200 flex items-center justify-center text-sm font-bold text-blue-600 shrink-0">
                                 {student.photoUrl ? <img src={student.photoUrl} alt="" className="w-full h-full object-cover" /> : getInitials(student)}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <p className="text-sm font-bold text-slate-900 truncate">{student.lastName.toUpperCase()} {student.firstName}</p>
+                                <p className="text-sm font-bold text-slate-900 truncate group-hover:text-blue-600 transition">{student.lastName.toUpperCase()} {student.firstName}</p>
                                 <p className="text-[10px] font-mono text-slate-400 truncate">{student.matricule || 'Sans matricule'}</p>
                               </div>
                               <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-bold border shrink-0', statusInfo.color)}>{statusInfo.label}</span>
@@ -334,11 +362,12 @@ export default function StudentIdentityContent() {
                                 <span className="text-slate-500 flex items-center gap-1"><FileCheck className="w-3 h-3" /> NPI</span>
                                 {student.npi ? <span className="font-mono font-medium text-emerald-600">{student.npi}</span> : <span className="text-amber-600 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> Non renseigné</span>}
                               </div>
-                              {student.studentEnrollments?.[0]?.class && <div className="flex items-center justify-between text-xs"><span className="text-slate-500">Classe</span><span className="font-medium text-slate-700">{student.studentEnrollments[0].class.name}</span></div>}
+                              {studentClassMap.get(student.id) && <div className="flex items-center justify-between text-xs"><span className="text-slate-500">Classe</span><span className="font-medium text-slate-700">{studentClassMap.get(student.id)!.name}</span></div>}
                             </div>
-                            <div className="p-2 bg-slate-50 border-t border-slate-100 flex justify-end gap-1.5">
-                              <button onClick={() => setSelectedStudent(student)} className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 transition"><Eye className="w-3.5 h-3.5" /> Détails</button>
-                              <button onClick={async () => { try { if (!academicYear?.id) return; await studentsService.downloadAcademicDossier(student.id, academicYear.id); } catch { toast({ title: 'Erreur', description: 'Téléchargement échoué', variant: 'error' }); } }} className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition"><Download className="w-3.5 h-3.5" /> Dossier PDF</button>
+                            <div className="p-2 bg-slate-50 border-t border-slate-100">
+                              <div className="text-[10px] text-blue-600 font-semibold text-center group-hover:text-blue-700 transition flex items-center justify-center gap-1">
+                                <Eye className="w-3 h-3" /> Voir le dossier complet
+                              </div>
                             </div>
                           </div>
                         );
@@ -351,207 +380,313 @@ export default function StudentIdentityContent() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
 
-      {/* ⭐ MODAL DASHBOARD ÉLÈVE — multi-onglets */}
-      <AnimatePresence>
-        {selectedStudent && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
-            onClick={() => setSelectedStudent(null)}>
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col"
-              onClick={e => e.stopPropagation()}>
-              {/* Header avec photo + nom + statut */}
-              <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50">
-                <div className="flex items-center gap-3">
-                  <div className="w-14 h-14 rounded-full overflow-hidden bg-white border-2 border-blue-200 flex items-center justify-center text-lg font-bold text-blue-600 shrink-0">
-                    {selectedStudent.photoUrl ? <img src={selectedStudent.photoUrl} alt="" className="w-full h-full object-cover" /> : getInitials(selectedStudent)}
+// ─── Dashboard élève plein écran ───
+
+function StudentDashboard({ student, academicYear, onBack }: {
+  student: StudentIdentity;
+  academicYear: any;
+  onBack: () => void;
+}) {
+  const [activeTab, setActiveTab] = useState<DetailTab>('identite');
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [movementHistory, setMovementHistory] = useState<any[]>([]);
+  const [studentCard, setStudentCard] = useState<any>(null);
+  const [financeAccount, setFinanceAccount] = useState<any>(null);
+  const [payments, setPayments] = useState<any[]>([]);
+
+  useEffect(() => {
+    loadDetail(student.id);
+  }, [student.id]);
+
+  const loadDetail = async (studentId: string) => {
+    setIsLoadingDetail(true);
+    try {
+      const [docsRes, historyRes, cardRes, accountRes] = await Promise.allSettled([
+        apiFetch(`/students/${studentId}/documents`),
+        apiFetch(`/students/movement-history?studentId=${studentId}&limit=50`),
+        apiFetch(`/students/id-cards/${studentId}?academicYearId=${academicYear?.id}`),
+        apiFetch(`/finance/student-accounts?studentId=${studentId}&academicYearId=${academicYear?.id}`),
+      ]);
+      setDocuments(docsRes.status === 'fulfilled' && Array.isArray(docsRes.value) ? docsRes.value : []);
+      setMovementHistory(historyRes.status === 'fulfilled' && Array.isArray(historyRes.value) ? historyRes.value : []);
+      setStudentCard(cardRes.status === 'fulfilled' ? cardRes.value : null);
+      const accountData = accountRes.status === 'fulfilled' ? accountRes.value : null;
+      setFinanceAccount(Array.isArray(accountData) ? accountData[0] : accountData);
+      if (financeAccount?.id) {
+        try {
+          const pays = await apiFetch(`/finance/payments?studentAccountId=${financeAccount.id}&limit=20`);
+          setPayments(Array.isArray(pays) ? pays : (pays?.data || []));
+        } catch { setPayments([]); }
+      }
+    } catch (e) {
+      console.warn('loadDetail error:', e);
+    } finally {
+      setIsLoadingDetail(false);
+    }
+  };
+
+  const tabs: Array<{ id: DetailTab; label: string; icon: any }> = [
+    { id: 'identite', label: 'Identité', icon: User },
+    { id: 'parents', label: 'Parents', icon: Users },
+    { id: 'scolarite', label: 'Scolarité', icon: GraduationCap },
+    { id: 'documents', label: 'Documents', icon: FileText },
+    { id: 'carte', label: 'Carte scolaire', icon: CreditCard },
+    { id: 'frais', label: 'Frais & Paiements', icon: Wallet },
+    { id: 'medical', label: 'Médical', icon: HeartPulse },
+    { id: 'bulletins', label: 'Bulletins', icon: BookOpen },
+  ];
+
+  return (
+    <div className="animate-in fade-in duration-300">
+      {/* En-tête avec bouton retour */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-4">
+        <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50">
+          <div className="flex items-center gap-3">
+            <button onClick={onBack}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 transition">
+              <ArrowLeft className="w-3.5 h-3.5" /> Retour
+            </button>
+            <div className="w-14 h-14 rounded-full overflow-hidden bg-white border-2 border-blue-200 flex items-center justify-center text-lg font-bold text-blue-600 shrink-0">
+              {student.photoUrl ? <img src={student.photoUrl} alt="" className="w-full h-full object-cover" /> : getInitials(student)}
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">{student.lastName.toUpperCase()} {student.firstName}</h2>
+              <div className="flex items-center gap-2 mt-0.5">
+                <p className="text-xs font-mono text-slate-400">{student.matricule || 'Sans matricule'}</p>
+                {student.npi && <span className="text-[10px] font-mono text-emerald-600">NPI: {student.npi}</span>}
+                <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-bold border', (STATUS_LABELS[student.status] || STATUS_LABELS.ACTIVE).color)}>
+                  {(STATUS_LABELS[student.status] || STATUS_LABELS.ACTIVE).label}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+        {/* Onglets */}
+        <div className="flex items-center gap-1 px-4 py-2 border-t border-slate-100 overflow-x-auto">
+          {tabs.map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+              className={cn('inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap',
+                activeTab === tab.id ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100')}>
+              <tab.icon className="w-3.5 h-3.5" /> {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Contenu de l'onglet */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 min-h-[400px]">
+        {isLoadingDetail ? (
+          <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 text-blue-500 animate-spin" /></div>
+        ) : activeTab === 'identite' ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <InfoCard icon={User} label="Nom" value={student.lastName} />
+            <InfoCard icon={User} label="Prénom" value={student.firstName} />
+            <InfoCard icon={Calendar} label="Date de naissance" value={formatDate(student.dateOfBirth)} />
+            <InfoCard icon={MapPin} label="Lieu de naissance" value={student.placeOfBirth || '—'} />
+            <InfoCard icon={User} label="Sexe" value={student.gender === 'M' ? 'Masculin' : student.gender === 'F' ? 'Féminin' : '—'} />
+            <InfoCard icon={MapPin} label="Nationalité" value={student.nationality || '—'} />
+            <InfoCard icon={Hash} label="Matricule" value={student.matricule || '—'} mono />
+            <InfoCard icon={FileCheck} label="NPI" value={student.npi || 'Non renseigné'} mono color={student.npi ? 'text-emerald-600' : 'text-amber-600'} />
+            <InfoCard icon={MapPin} label="Adresse" value={student.address || '—'} />
+          </div>
+        ) : activeTab === 'parents' ? (
+          <div className="space-y-3">
+            {student.studentGuardians && student.studentGuardians.length > 0 ? (
+              student.studentGuardians.map(sg => (
+                <div key={sg.id} className="flex items-start gap-3 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                  <div className="w-10 h-10 rounded-full bg-white border border-slate-200 flex items-center justify-center text-sm font-bold text-slate-500 shrink-0">
+                    {sg.guardian.firstName?.[0]}{sg.guardian.lastName?.[0]}
                   </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-slate-900">{selectedStudent.lastName.toUpperCase()} {selectedStudent.firstName}</h3>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <p className="text-xs font-mono text-slate-400">{selectedStudent.matricule || 'Sans matricule'}</p>
-                      {selectedStudent.npi && <span className="text-[10px] font-mono text-emerald-600">NPI: {selectedStudent.npi}</span>}
-                      <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-bold border', (STATUS_LABELS[selectedStudent.status] || STATUS_LABELS.ACTIVE).color)}>
-                        {(STATUS_LABELS[selectedStudent.status] || STATUS_LABELS.ACTIVE).label}
-                      </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-bold text-slate-800">{sg.guardian.firstName} {sg.guardian.lastName}</p>
+                      {sg.isPrimary && <span className="text-[8px] bg-blue-500 text-white px-1.5 py-0.5 rounded-full font-bold">PRINCIPAL</span>}
                     </div>
+                    <p className="text-[10px] text-slate-400 uppercase">{sg.relationship}</p>
+                    <div className="flex items-center gap-4 mt-2 text-xs text-slate-600">
+                      {sg.guardian.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> {sg.guardian.phone}</span>}
+                      {sg.guardian.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" /> {sg.guardian.email}</span>}
+                    </div>
+                    {sg.guardian.address && <p className="text-xs text-slate-500 mt-1 flex items-center gap-1"><MapPin className="w-3 h-3" /> {sg.guardian.address}</p>}
                   </div>
                 </div>
-                <button onClick={() => setSelectedStudent(null)} className="p-2 hover:bg-slate-200 rounded-lg text-slate-500 transition"><X className="w-5 h-5" /></button>
-              </div>
-
-              {/* Onglets du dashboard */}
-              <div className="flex items-center gap-1 px-4 py-2 border-b border-slate-100 bg-slate-50/50 overflow-x-auto">
-                {detailTabs.map(tab => (
-                  <button key={tab.id} onClick={() => setDetailTab(tab.id)}
-                    className={cn('inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap',
-                      detailTab === tab.id ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100')}>
-                    <tab.icon className="w-3.5 h-3.5" /> {tab.label}
-                  </button>
+              ))
+            ) : <EmptyState icon={Users} text="Aucun responsable légal renseigné" />}
+          </div>
+        ) : activeTab === 'scolarite' ? (
+          <div className="space-y-5">
+            <div>
+              <h4 className="text-xs font-bold text-slate-400 uppercase mb-2">Historique des inscriptions</h4>
+              {student.studentEnrollments && student.studentEnrollments.length > 0 ? (
+                <div className="space-y-2">
+                  {student.studentEnrollments.map(enr => (
+                    <div key={enr.id} className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                      <div className="p-2 bg-blue-100 rounded-lg"><GraduationCap className="w-4 h-4 text-blue-600" /></div>
+                      <div className="flex-1">
+                        <p className="text-sm font-bold text-slate-800">{enr.class?.name || 'Non affecté'}</p>
+                        <p className="text-xs text-slate-500">{enr.academicYear?.name || '—'}</p>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white text-slate-600 border border-slate-200">{enr.status}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : <EmptyState icon={GraduationCap} text="Aucune inscription" />}
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-slate-400 uppercase mb-2">Historique des mouvements</h4>
+              {movementHistory.length > 0 ? (
+                <div className="space-y-1.5">
+                  {movementHistory.map(item => {
+                    const info = ACTION_LABELS[item.action] || { label: item.action, color: 'text-slate-600' };
+                    return (
+                      <div key={item.id} className="flex items-start gap-2 p-2 rounded-lg hover:bg-slate-50">
+                        <History className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
+                        <div className="flex-1">
+                          <p className={cn('text-xs font-medium', info.color)}>{info.label}</p>
+                          <p className="text-[10px] text-slate-400">{new Date(item.date).toLocaleString('fr-FR')}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : <EmptyState icon={History} text="Aucun mouvement enregistré" />}
+            </div>
+          </div>
+        ) : activeTab === 'documents' ? (
+          <div className="space-y-3">
+            {documents.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {documents.map(doc => (
+                  <div key={doc.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100 hover:bg-slate-100 transition">
+                    <div className="p-2 bg-white rounded-lg border border-slate-200"><FileText className="w-4 h-4 text-slate-500" /></div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-800 truncate">{DOC_TYPE_LABELS[doc.documentType] || doc.documentType}</p>
+                      <p className="text-[10px] text-slate-400 truncate">{doc.fileName}</p>
+                    </div>
+                    {doc.filePath && <button className="p-1.5 text-blue-600 hover:bg-blue-50 rounded border border-blue-200" title="Télécharger"><Download className="w-3 h-3" /></button>}
+                  </div>
                 ))}
               </div>
-
-              {/* Contenu de l'onglet */}
-              <div className="flex-1 overflow-y-auto p-5">
-                {isLoadingDetail ? (
-                  <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 text-blue-500 animate-spin" /></div>
-                ) : detailTab === 'identite' ? (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <InfoCard icon={User} label="Nom" value={selectedStudent.lastName} />
-                      <InfoCard icon={User} label="Prénom" value={selectedStudent.firstName} />
-                      <InfoCard icon={Calendar} label="Date de naissance" value={formatDate(selectedStudent.dateOfBirth)} />
-                      <InfoCard icon={MapPin} label="Lieu de naissance" value={selectedStudent.placeOfBirth || '—'} />
-                      <InfoCard icon={User} label="Sexe" value={selectedStudent.gender === 'M' ? 'Masculin' : selectedStudent.gender === 'F' ? 'Féminin' : '—'} />
-                      <InfoCard icon={MapPin} label="Nationalité" value={selectedStudent.nationality || '—'} />
-                      <InfoCard icon={Hash} label="Matricule" value={selectedStudent.matricule || '—'} mono />
-                      <InfoCard icon={FileCheck} label="NPI" value={selectedStudent.npi || 'Non renseigné'} mono color={selectedStudent.npi ? 'text-emerald-600' : 'text-amber-600'} />
-                      <InfoCard icon={MapPin} label="Adresse" value={selectedStudent.address || '—'} fullWidth />
-                    </div>
-                  </div>
-                ) : detailTab === 'parents' ? (
-                  <div className="space-y-3">
-                    {selectedStudent.studentGuardians && selectedStudent.studentGuardians.length > 0 ? (
-                      selectedStudent.studentGuardians.map(sg => (
-                        <div key={sg.id} className="flex items-start gap-3 p-4 bg-slate-50 rounded-xl border border-slate-100">
-                          <div className="w-10 h-10 rounded-full bg-white border border-slate-200 flex items-center justify-center text-sm font-bold text-slate-500 shrink-0">
-                            {sg.guardian.firstName?.[0]}{sg.guardian.lastName?.[0]}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <p className="text-sm font-bold text-slate-800">{sg.guardian.firstName} {sg.guardian.lastName}</p>
-                              {sg.isPrimary && <span className="text-[8px] bg-blue-500 text-white px-1.5 py-0.5 rounded-full font-bold">PRINCIPAL</span>}
-                            </div>
-                            <p className="text-[10px] text-slate-400 uppercase">{sg.relationship}</p>
-                            <div className="flex items-center gap-4 mt-2 text-xs text-slate-600">
-                              {sg.guardian.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> {sg.guardian.phone}</span>}
-                              {sg.guardian.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" /> {sg.guardian.email}</span>}
-                            </div>
-                            {sg.guardian.address && <p className="text-xs text-slate-500 mt-1 flex items-center gap-1"><MapPin className="w-3 h-3" /> {sg.guardian.address}</p>}
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <EmptyState icon={Users} text="Aucun responsable légal renseigné" />
-                    )}
-                  </div>
-                ) : detailTab === 'scolarite' ? (
-                  <div className="space-y-4">
-                    {/* Inscriptions */}
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-400 uppercase mb-2">Historique des inscriptions</h4>
-                      {selectedStudent.studentEnrollments && selectedStudent.studentEnrollments.length > 0 ? (
-                        <div className="space-y-2">
-                          {selectedStudent.studentEnrollments.map(enr => (
-                            <div key={enr.id} className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
-                              <div className="p-2 bg-blue-100 rounded-lg"><GraduationCap className="w-4 h-4 text-blue-600" /></div>
-                              <div className="flex-1">
-                                <p className="text-sm font-bold text-slate-800">{enr.class?.name || 'Non affecté'}</p>
-                                <p className="text-xs text-slate-500">{enr.academicYear?.name || '—'}</p>
-                              </div>
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white text-slate-600 border border-slate-200">{enr.status}</span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : <EmptyState icon={GraduationCap} text="Aucune inscription" />}
-                    </div>
-                    {/* Historique des mouvements */}
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-400 uppercase mb-2">Historique des mouvements</h4>
-                      {movementHistory.length > 0 ? (
-                        <div className="space-y-1.5">
-                          {movementHistory.map(item => (
-                            <div key={item.id} className="flex items-start gap-2 p-2 rounded-lg hover:bg-slate-50">
-                              <History className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
-                              <div className="flex-1">
-                                <p className="text-xs font-medium text-slate-700">{item.action.replace(/_/g, ' ')}</p>
-                                <p className="text-[10px] text-slate-400">{new Date(item.date).toLocaleString('fr-FR')}</p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : <EmptyState icon={History} text="Aucun mouvement enregistré" />}
-                    </div>
-                  </div>
-                ) : detailTab === 'documents' ? (
-                  <div className="space-y-3">
-                    {studentDocuments.length > 0 ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {studentDocuments.map(doc => (
-                          <div key={doc.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100 hover:bg-slate-100 transition">
-                            <div className="p-2 bg-white rounded-lg border border-slate-200"><FileText className="w-4 h-4 text-slate-500" /></div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-slate-800 truncate">{DOC_TYPE_LABELS[doc.documentType] || doc.documentType}</p>
-                              <p className="text-[10px] text-slate-400 truncate">{doc.fileName}</p>
-                            </div>
-                            {doc.filePath && <button className="p-1.5 text-blue-600 hover:bg-blue-50 rounded border border-blue-200" title="Télécharger"><Download className="w-3 h-3" /></button>}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <EmptyState icon={FileText} text="Aucun document dans le dossier. Les documents (acte de naissance, carte NPI, etc.) apparaîtront ici une fois téléversés." />
-                    )}
-                  </div>
-                ) : detailTab === 'carte' ? (
-                  <div className="space-y-4">
-                    {studentCard ? (
-                      <div className="flex flex-col items-center gap-4">
-                        <div className="bg-slate-100 p-4 rounded-xl">
-                          <iframe src={`/api/students/id-cards/${studentCard.id}/preview-html`} title="Carte scolaire" className="w-full border-0" style={{ height: '250px' }} sandbox="allow-same-origin" loading="lazy" />
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button onClick={async () => { try { const blob = await studentsService.downloadIdCardPdf(studentCard.id); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `carte-${selectedStudent.lastName}.pdf`; document.body.appendChild(a); a.click(); document.body.removeChild(a); } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'error' }); } }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200">
-                            <Download className="w-3.5 h-3.5" /> Télécharger PDF
-                          </button>
-                          <span className="text-xs text-slate-400">N° {studentCard.cardNumber}</span>
-                        </div>
-                      </div>
-                    ) : (
-                      <EmptyState icon={CreditCard} text="Aucune carte scolaire générée pour cette année. Générez-la depuis l'onglet Cartes Scolaires." />
-                    )}
-                  </div>
-                ) : detailTab === 'bulletins' ? (
-                  <div className="space-y-4">
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
-                      <BookOpen className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                      <div>
-                        <p className="text-sm font-bold text-amber-800">Module Bulletins & Notes — En cours d'implémentation</p>
-                        <p className="text-xs text-amber-700 mt-1">Cette section affichera les bulletins de notes de l'élève par année scolaire et par trimestre, ainsi que les résultats scolaires détaillés. L'architecture est prête pour accueillir ces données une fois le module Notes & Bulletins implémenté.</p>
-                      </div>
-                    </div>
-                    {/* Placeholder pour les bulletins futurs */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {['Trimestre 1', 'Trimestre 2', 'Trimestre 3'].map(trimestre => (
-                        <div key={trimestre} className="p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center">
-                          <BookOpen className="w-6 h-6 text-slate-300 mx-auto mb-2" />
-                          <p className="text-xs font-semibold text-slate-500">{trimestre} {academicYear?.name || ''}</p>
-                          <p className="text-[10px] text-slate-400 mt-1">Bientôt disponible</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
+            ) : <EmptyState icon={FileText} text="Aucun document dans le dossier" />}
+          </div>
+        ) : activeTab === 'carte' ? (
+          <div className="flex flex-col items-center gap-4">
+            {studentCard ? (
+              <>
+                <div className="bg-slate-100 p-4 rounded-xl w-full max-w-md">
+                  <iframe src={`/api/students/id-cards/${studentCard.id}/preview-html`} title="Carte scolaire" className="w-full border-0" style={{ height: '250px' }} sandbox="allow-same-origin" loading="lazy" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={async () => { try { const blob = await studentsService.downloadIdCardPdf(studentCard.id); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `carte-${student.lastName}.pdf`; document.body.appendChild(a); a.click(); document.body.removeChild(a); } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'error' }); } }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200">
+                    <Download className="w-3.5 h-3.5" /> Télécharger PDF
+                  </button>
+                  <span className="text-xs text-slate-400">N° {studentCard.cardNumber}</span>
+                </div>
+              </>
+            ) : <EmptyState icon={CreditCard} text="Aucune carte scolaire générée pour cette année" />}
+          </div>
+        ) : activeTab === 'frais' ? (
+          <div className="space-y-4">
+            {/* Compte financier */}
+            {financeAccount ? (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <FinanceCard label="Total dû" value={formatMoney(financeAccount.totalDue)} color="text-slate-800" />
+                <FinanceCard label="Payé" value={formatMoney(financeAccount.totalPaid)} color="text-emerald-600" />
+                <FinanceCard label="Arriérés" value={formatMoney(financeAccount.arrearsAmount)} color="text-rose-600" />
+                <FinanceCard label="Solde" value={formatMoney(financeAccount.balance)} color={financeAccount.balance > 0 ? 'text-rose-600' : 'text-emerald-600'} />
               </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            ) : <EmptyState icon={Wallet} text="Aucun compte financier trouvé pour cette année" />}
+            {/* Historique paiements */}
+            {payments.length > 0 && (
+              <div>
+                <h4 className="text-xs font-bold text-slate-400 uppercase mb-2">Historique des paiements</h4>
+                <div className="space-y-1.5">
+                  {payments.map(pay => (
+                    <div key={pay.id} className="flex items-center gap-3 p-2 bg-slate-50 rounded-lg">
+                      <div className="p-1.5 bg-emerald-100 rounded"><Wallet className="w-3.5 h-3.5 text-emerald-600" /></div>
+                      <div className="flex-1">
+                        <p className="text-xs font-medium text-slate-700">{formatMoney(pay.amount)}</p>
+                        <p className="text-[10px] text-slate-400">{new Date(pay.paymentDate || pay.createdAt).toLocaleDateString('fr-FR')} · {pay.paymentMethod}</p>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">{pay.status}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : activeTab === 'medical' ? (
+          <div className="space-y-4">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+              <HeartPulse className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-bold text-amber-800">Dossier médical — En cours d'implémentation</p>
+                <p className="text-xs text-amber-700 mt-1">Cette section affichera les informations médicales de l'élève : allergies, vaccinations, contact médecin traitant, traitement en cours, régime alimentaire, etc.</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center">
+                <HeartPulse className="w-6 h-6 text-slate-300 mx-auto mb-2" />
+                <p className="text-xs font-semibold text-slate-500">Allergies</p>
+                <p className="text-[10px] text-slate-400 mt-1">Bientôt disponible</p>
+              </div>
+              <div className="p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center">
+                <Activity className="w-6 h-6 text-slate-300 mx-auto mb-2" />
+                <p className="text-xs font-semibold text-slate-500">Vaccinations</p>
+                <p className="text-[10px] text-slate-400 mt-1">Bientôt disponible</p>
+              </div>
+            </div>
+          </div>
+        ) : activeTab === 'bulletins' ? (
+          <div className="space-y-4">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+              <BookOpen className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-bold text-amber-800">Module Bulletins & Notes — En cours d'implémentation</p>
+                <p className="text-xs text-amber-700 mt-1">Cette section affichera les bulletins de notes par année scolaire et par trimestre.</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {['Trimestre 1', 'Trimestre 2', 'Trimestre 3'].map(trimestre => (
+                <div key={trimestre} className="p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center">
+                  <BookOpen className="w-6 h-6 text-slate-300 mx-auto mb-2" />
+                  <p className="text-xs font-semibold text-slate-500">{trimestre} {academicYear?.name || ''}</p>
+                  <p className="text-[10px] text-slate-400 mt-1">Bientôt disponible</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
 
 // ─── Composants helpers ───
 
-function InfoCard({ icon: Icon, label, value, mono, color, fullWidth }: { icon: any; label: string; value: string; mono?: boolean; color?: string; fullWidth?: boolean }) {
+function InfoCard({ icon: Icon, label, value, mono, color }: { icon: any; label: string; value: string; mono?: boolean; color?: string }) {
   return (
-    <div className={cn('p-3 bg-slate-50 rounded-lg border border-slate-100', fullWidth && 'col-span-2')}>
+    <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
       <div className="flex items-center gap-1.5 mb-1">
         <Icon className="w-3 h-3 text-slate-400" />
         <p className="text-[10px] font-bold text-slate-400 uppercase">{label}</p>
       </div>
       <p className={cn('text-sm font-medium', mono && 'font-mono', color || 'text-slate-700')}>{value}</p>
+    </div>
+  );
+}
+
+function FinanceCard({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div className="p-3 bg-slate-50 rounded-lg border border-slate-100 text-center">
+      <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">{label}</p>
+      <p className={cn('text-sm font-bold', color)}>{value}</p>
     </div>
   );
 }
@@ -564,4 +699,3 @@ function EmptyState({ icon: Icon, text }: { icon: any; text: string }) {
     </div>
   );
 }
-

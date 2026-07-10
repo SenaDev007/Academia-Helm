@@ -920,11 +920,13 @@ export class StudentIdCardService {
       padding: 0 4px;
     }
     .header-school-name {
-      font-size: 9pt;
+      font-size: 8pt;
       font-weight: bold;
-      line-height: 1.1;
+      line-height: 1.15;
       text-transform: uppercase;
       letter-spacing: 0.3px;
+      word-break: break-word;
+      hyphens: auto;
     }
     .header-school-slogan {
       font-size: 6pt;
@@ -988,6 +990,7 @@ export class StudentIdCardService {
       flex: 1;
       font-size: 7.5pt;
       font-weight: 500;
+      word-break: break-word;
     }
     .matricule-box {
       margin-top: 3px;

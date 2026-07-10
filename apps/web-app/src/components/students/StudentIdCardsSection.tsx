@@ -134,8 +134,8 @@ function CardVisual({ card, face, academicYearName, identity }: {
         <div className="flex items-center px-2 py-1.5 shrink-0" style={{ background: NAVY, color: '#fff' }}>
           <div className="flex flex-col items-start gap-0.5 shrink-0"><LogoBox size="normal" /></div>
           <div className="flex-1 text-center px-2 min-w-0">
-            <div className="font-bold text-[8px] uppercase tracking-wide leading-tight truncate">{schoolName}</div>
-            <div className="text-[5px] italic opacity-80 leading-tight truncate">{slogan}</div>
+            <div className="font-bold text-[7px] uppercase tracking-wide leading-tight text-center break-words" style={{ wordBreak: 'break-word', hyphens: 'auto' }}>{schoolName}</div>
+            <div className="text-[5px] italic opacity-80 leading-tight text-center break-words" style={{ wordBreak: 'break-word' }}>{slogan}</div>
           </div>
           <div className="w-8 shrink-0" />
         </div>
@@ -151,7 +151,8 @@ function CardVisual({ card, face, academicYearName, identity }: {
             {/* Labels en français */}
             <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>Matricule</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{s.matricule || s.studentCode || '—'}</span></div>
             <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>N° Carte</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{card.cardNumber}</span></div>
-            <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>Nom Élève</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{s.firstName} {s.lastName}</span></div>
+            <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>Nom</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{s.lastName}</span></div>
+            <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>Prénom</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{s.firstName}</span></div>
             <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>Parent/Tuteur</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{guardianName}</span></div>
             <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>Classe</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{card.className}</span></div>
             <div className="flex items-baseline gap-1"><span className="font-bold text-[5px] uppercase shrink-0" style={{ color: NAVY }}>Urgence</span><span className="text-[5px] text-slate-400">:</span><span className="text-[6px] text-slate-800 truncate">{guardianPhone}</span></div>
@@ -216,7 +217,7 @@ function CardVisual({ card, face, academicYearName, identity }: {
 
       {/* Pied bleu : logo + nom école */}
       <div className="flex items-center justify-between px-2 py-1 shrink-0" style={{ background: NAVY, color: '#fff' }}>
-        <div className="flex items-center gap-1"><LogoBox size="small" /><span className="text-[5px] font-bold truncate">{schoolName}</span></div>
+        <div className="flex items-center gap-1"><LogoBox size="small" /><span className="text-[5px] font-bold truncate" style={{ maxWidth: '60%' }}>{schoolName}</span></div>
         <span className="text-[5px] opacity-90 shrink-0">Academia Helm</span>
       </div>
     </div>

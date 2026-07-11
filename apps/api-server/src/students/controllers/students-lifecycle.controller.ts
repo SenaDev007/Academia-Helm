@@ -123,6 +123,53 @@ export class StudentsLifecycleController {
   }
 
   /**
+   * ⭐ Affectation initiale d'un élève vers une classe PHYSIQUE.
+   * Sous-onglet "Affectation vers classe physique" du module Affectations.
+   * Body: { studentId, academicYearId, physicalClassId, reason? }
+   */
+  @Post('assign-physical-class')
+  async assignPhysicalClass(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() body: any) {
+    return this.lifecycle.assignPhysicalClass(tenantId, body, user?.id);
+  }
+
+  /**
+   * ⭐ Changement de série officielle d'un élève.
+   * Sous-onglet "Changement de série" du module Affectations.
+   * Body: { studentId, academicYearId, newSeriesId, reason? }
+   */
+  @Post('change-series')
+  async changeSeries(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() body: any) {
+    return this.lifecycle.changeSeries(tenantId, body, user?.id);
+  }
+
+  /**
+   * ⭐ Liste les élèves admis/inscrits SANS classe physique (classId NULL).
+   * Query: ?academicYearId=...
+   */
+  @Get('students-without-physical-class')
+  async getStudentsWithoutPhysicalClass(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!academicYearId) {
+      throw new BadRequestException('academicYearId est requis');
+    }
+    return this.lifecycle.getStudentsWithoutPhysicalClass(tenantId, academicYearId);
+  }
+
+  /**
+   * ⭐ Liste l'historique des transferts/affectations (ClassTransfer).
+   * Query: ?academicYearId=...
+   */
+  @Get('class-transfers-history')
+  async getClassTransfersHistory(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId?: string,
+  ) {
+    return this.lifecycle.getClassTransfersHistory(tenantId, academicYearId);
+  }
+
+  /**
    * Promotion annuelle manuelle d'un élève (hors clôture globale).
    */
   @Post('promote')

@@ -388,6 +388,59 @@ class StudentsService {
   }
 
   /**
+   * ⭐ Affecte un élève vers une classe PHYSIQUE (POST /students/assign-physical-class)
+   * Utilisé par le sous-onglet "Affectation vers classe physique".
+   * Body: { studentId, academicYearId, physicalClassId, reason? }
+   */
+  async assignPhysicalClass(data: {
+    studentId: string;
+    academicYearId: string;
+    physicalClassId: string;
+    reason?: string;
+  }): Promise<any> {
+    return apiFetch(`${BASE_URL}/assign-physical-class`, {
+      method: "POST",
+      body: data,
+    });
+  }
+
+  /**
+   * ⭐ Change la série officielle d'un élève (POST /students/change-series)
+   * Utilisé par le sous-onglet "Changement de série".
+   * Body: { studentId, academicYearId, newSeriesId, reason? }
+   */
+  async changeSeries(data: {
+    studentId: string;
+    academicYearId: string;
+    newSeriesId: string;
+    reason?: string;
+  }): Promise<any> {
+    return apiFetch(`${BASE_URL}/change-series`, {
+      method: "POST",
+      body: data,
+    });
+  }
+
+  /**
+   * ⭐ Liste les élèves admis/inscrits SANS classe physique (classId NULL).
+   * Utilisé par le sous-onglet "Affectation vers classe physique".
+   */
+  async getStudentsWithoutPhysicalClass(academicYearId: string): Promise<any> {
+    return apiFetch(
+      `${BASE_URL}/students-without-physical-class?academicYearId=${encodeURIComponent(academicYearId)}`,
+    );
+  }
+
+  /**
+   * ⭐ Liste l'historique des transferts/affectations (ClassTransfer).
+   * Utilisé par le sous-onglet "Historique".
+   */
+  async getClassTransfersHistory(academicYearId?: string): Promise<any> {
+    const qs = academicYearId ? `?academicYearId=${encodeURIComponent(academicYearId)}` : '';
+    return apiFetch(`${BASE_URL}/class-transfers-history${qs}`);
+  }
+
+  /**
    * Upload photo d'élève via data URL (base64) — pattern identique au RH.
    * Backend : POST /students/:id/upload-photo
    * Body: { photoDataUrl: string }

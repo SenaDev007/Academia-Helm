@@ -78,31 +78,30 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
   const loadClasses = async (levelId: string) => {
     setIsLoadingClasses(true);
     try {
-      // ⚠️ On utilise /api/all-classes (route BFF dédiée) pour récupérer TOUTES
-      // les classes du tenant sans filtrage par schoolLevelId du contexte admin.
-      // La route /api/classes?schoolLevelId=ALL ne fonctionne pas car le
-      // PaginationDto du backend a forbidNonWhitelisted: true → rejette le param
-      // schoolLevelId (400 Bad Request silencieux).
-      // /api/all-classes contourne en forçant le header x-school-level-id=ALL.
+      // ⭐ On utilise /api/academic-classes (route BFF) pour récupérer les
+      // classes OFFICIELLES (AcademicClass : CP, CE1, 6ème…).
+      // Le parent exprime un VŒU sur la classe officielle — l'affectation à une
+      // section physique (CE1-A, CE1-B) se fera plus tard par l'école via le
+      // module Affectations.
       const res = await fetch(
-        '/api/all-classes',
+        '/api/academic-classes?isActive=true',
         { credentials: 'include' }
       );
       if (res.ok) {
         const data = await res.json();
-        const allClasses = Array.isArray(data) ? data : [];
-        console.log('[AdmissionForm] Loaded classes:', allClasses.length, allClasses.map(c => ({ id: c.id?.substring(0, 8), name: c.name })));
-        // Filtrer côté client par le schoolLevelId sélectionné.
-        // Les classes retournées ont un champ schoolLevelId (UUID de school_levels).
-        // levelId ici est aussi un UUID de education_levels (le select du formulaire
-        // utilise les education_levels). On doit donc faire un matching par nom.
+        // La réponse peut être soit un tableau direct, soit { data: [...] }
+        const allClasses = Array.isArray(data) ? data : (data?.data || data?.classes || []);
+        console.log('[AdmissionForm] Loaded academic classes:', allClasses.length, allClasses.map((c: any) => ({ id: c.id?.substring(0, 8), name: c.name })));
+        // Filtrer côté client par le niveau sélectionné.
+        // Les AcademicClass ont un champ levelId (UUID de academic_levels) et
+        // une relation `level` avec name/code.
         const selectedLevel = levels.find(l => l.id === levelId);
         const levelCode = selectedLevel?.code?.toUpperCase() || '';
         const levelName = selectedLevel?.name?.toUpperCase() || '';
         const filtered = allClasses.filter((c: any) => {
-          // c.schoolLevel est inclus (relation), avec un champ name
-          const classLevelName = (c.schoolLevel?.name || '').toUpperCase();
-          const classLevelCode = (c.schoolLevel?.code || '').toUpperCase();
+          // c.level est inclus (relation), avec un champ name
+          const classLevelName = (c.level?.name || '').toUpperCase();
+          const classLevelCode = (c.level?.code || '').toUpperCase();
           // Match par nom ou code : MATERNELLE matche MATERNELLE, etc.
           if (!levelCode && !levelName) return true; // pas de filtre si pas de niveau sélectionné
           return classLevelName === levelName ||
@@ -113,7 +112,7 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
         setClasses(filtered);
       }
     } catch (e) {
-      console.error('Failed to load classes:', e);
+      console.error('Failed to load academic classes:', e);
       setClasses([]);
     } finally {
       setIsLoadingClasses(false);
@@ -166,6 +165,8 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
         nationality: formData.nationality || undefined,
         address: formData.address || undefined,
         requestedClassId: formData.requestedClassId || undefined,
+        // ⭐ Nouveau champ : classe OFFICIELLE souhaitée (AcademicClass)
+        requestedAcademicClassId: formData.requestedClassId || undefined,
         requestedSeriesId: formData.requestedSeriesId || undefined,
         wantsBilingual: false, // Supprimé du formulaire — déterminé par la config de l'école
         previousSchool: formData.previousSchool || undefined,

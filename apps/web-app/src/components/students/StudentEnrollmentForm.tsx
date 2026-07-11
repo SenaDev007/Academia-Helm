@@ -161,22 +161,25 @@ export default function StudentEnrollmentForm({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // ─── Chargement des niveaux scolaires depuis /api/all-classes ───
-  // On extrait les niveaux uniques des classes (qui ont toutes un schoolLevelId).
-  // Ce pattern est plus robuste que /api/school-levels qui dépend d'education_levels.
+  // ─── Chargement des niveaux scolaires depuis /api/academic-classes ───
+  // ⭐ On utilise les classes OFFICIELLES (AcademicClass) pour l'inscription.
+  // Le parent choisit une classe officielle (CP, CE1, 6ème…), l'affectation à
+  // une section physique (CE1-A, CE1-B) se fera plus tard via le module Affectations.
+  // On extrait les niveaux uniques des AcademicClass (qui ont levelId + level.name).
   useEffect(() => {
-    fetch('/api/all-classes', { credentials: 'include' })
+    fetch('/api/academic-classes?isActive=true', { credentials: 'include' })
       .then(r => r.ok ? r.json() : [])
       .then(data => {
-        const allClasses = Array.isArray(data) ? data : [];
+        const allClasses = Array.isArray(data) ? data : (data?.data || data?.classes || []);
         // Extraire les niveaux uniques
         const levelMap = new Map<string, { id: string; name: string; code?: string }>();
         allClasses.forEach((c: any) => {
-          if (c.schoolLevelId && !levelMap.has(c.schoolLevelId)) {
-            levelMap.set(c.schoolLevelId, {
-              id: c.schoolLevelId,
-              name: c.schoolLevel?.name || c.schoolLevel?.code || 'Niveau',
-              code: c.schoolLevel?.code,
+          const levelId = c.levelId || c.schoolLevelId;
+          if (levelId && !levelMap.has(levelId)) {
+            levelMap.set(levelId, {
+              id: levelId,
+              name: c.level?.name || c.level?.code || c.schoolLevel?.name || c.schoolLevel?.code || 'Niveau',
+              code: c.level?.code || c.schoolLevel?.code,
             });
           }
         });
@@ -190,17 +193,18 @@ export default function StudentEnrollmentForm({
       .catch(() => setSchoolLevels([]));
   }, []);
 
-  // ─── Chargement des classes (filtrées par niveau sélectionné) ───
+  // ─── Chargement des classes officielles (filtrées par niveau sélectionné) ───
   useEffect(() => {
     if (!yearId) {
       setClassesList([]);
       return;
     }
     setIsLoadingClasses(true);
-    fetch('/api/all-classes', { credentials: 'include' })
+    fetch('/api/academic-classes?isActive=true', { credentials: 'include' })
       .then(r => r.ok ? r.json() : [])
       .then(data => {
-        setClassesList(Array.isArray(data) ? data : []);
+        const allClasses = Array.isArray(data) ? data : (data?.data || data?.classes || []);
+        setClassesList(allClasses);
       })
       .catch(() => setClassesList([]))
       .finally(() => setIsLoadingClasses(false));
@@ -382,7 +386,11 @@ export default function StudentEnrollmentForm({
           justification: formData.justification || undefined,
         },
         guardians,
+        // ⭐ classId = classe OFFICIELLE (AcademicClass) — envoyé aussi bien comme
+        // classId (legacy) que comme academicClassId (nouveau) pour assurer la
+        // compatibilité ascendante côté backend.
         classId: formData.classId || undefined,
+        academicClassId: formData.classId || undefined,
         schoolLevelId: selectedLevelId || undefined,
       });
     } catch (err: any) {
@@ -394,7 +402,7 @@ export default function StudentEnrollmentForm({
 
   // ─── Filtrage des classes par niveau ───
   const filteredClasses = selectedLevelId
-    ? classesList.filter(c => c.schoolLevelId === selectedLevelId)
+    ? classesList.filter(c => (c.levelId || c.schoolLevelId) === selectedLevelId)
     : classesList;
 
   // ─── Render ───
@@ -618,9 +626,11 @@ export default function StudentEnrollmentForm({
             </select>
           </div>
 
-          {/* Classe (filtrée par le niveau sélectionné) */}
+          {/* ⭐ Classe OFFICIELLE (filtrée par le niveau sélectionné) */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Classe</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Classe officielle <span className="text-xs text-gray-400">(CP, CE1, 6ème…)</span>
+            </label>
             {!selectedLevelId ? (
               <p className="text-sm text-gray-400 italic">Sélectionnez d'abord un niveau scolaire</p>
             ) : isLoadingClasses ? (
@@ -630,7 +640,7 @@ export default function StudentEnrollmentForm({
             ) : (
               <select value={formData.classId} onChange={e => handleInputChange('classId', e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">Aucune classe (affectation ultérieure)</option>
+                <option value="">Aucune classe officielle (affectation physique ultérieure)</option>
                 {filteredClasses.map(c => (
                   <option key={c.id} value={c.id}>{c.name || c.code}</option>
                 ))}

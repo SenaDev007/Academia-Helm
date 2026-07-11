@@ -89,27 +89,30 @@ export default function AdmissionsContent() {
       })
       .catch(() => setSchoolLevels([]));
 
-    // Charger TOUTES les classes du tenant
-    fetch('/api/all-classes', { credentials: 'include' })
+    // ⭐ Charger les classes OFFICIELLES (AcademicClass) du tenant.
+    // Le parent exprime un vœu sur la classe officielle (CP, CE1, 6ème…).
+    // L'affectation à une section physique (CE1-A, CE1-B) se fera plus tard.
+    fetch('/api/academic-classes?isActive=true', { credentials: 'include' })
       .then(res => {
         if (!res.ok) {
-          console.warn('[AdmissionsContent] /api/all-classes returned', res.status, res.statusText);
+          console.warn('[AdmissionsContent] /api/academic-classes returned', res.status, res.statusText);
           return [];
         }
         return res.json();
       })
       .then(data => {
-        const classes = Array.isArray(data) ? data : [];
-        console.log('[AdmissionsContent] Classes loaded:', classes.length, classes.slice(0, 3).map(c => ({
+        // La réponse peut être soit un tableau direct, soit { data: [...] }
+        const classes = Array.isArray(data) ? data : (data?.data || data?.classes || []);
+        console.log('[AdmissionsContent] Academic classes loaded:', classes.length, classes.slice(0, 3).map((c: any) => ({
           id: c.id?.substring(0, 8),
           name: c.name,
-          schoolLevelId: c.schoolLevelId?.substring(0, 8),
-          schoolLevel: c.schoolLevel ? { id: c.schoolLevel.id?.substring(0, 8), name: c.schoolLevel.name } : null,
+          levelId: c.levelId?.substring(0, 8),
+          level: c.level ? { id: c.level.id?.substring(0, 8), name: c.level.name } : null,
         })));
         setSchoolClasses(classes);
       })
       .catch((e) => {
-        console.warn('[AdmissionsContent] Failed to load classes:', e?.message);
+        console.warn('[AdmissionsContent] Failed to load academic classes:', e?.message);
         setSchoolClasses([]);
       });
   }, []);
@@ -121,8 +124,11 @@ export default function AdmissionsContent() {
     return level?.label || level?.code || 'Non défini';
   };
 
-  // Helper : retourne le label d'une classe à partir de son UUID (requestedClassId)
-  const getClassLabel = (classId: string | null | undefined): string => {
+  // Helper : retourne le label d'une classe OFFICIELLE à partir de son UUID.
+  // ⭐ Utilise requestedAcademicClassId en priorité (nouveau champ), avec
+  // fallback sur requestedClassId pour les admissions legacy (avant migration 013).
+  const getClassLabel = (admission: any): string => {
+    const classId = admission?.requestedAcademicClassId || admission?.requestedClassId;
     if (!classId) return '—';
     const cls = schoolClasses.find(c => c.id === classId);
     return cls?.name || cls?.code || `Classe ${classId.substring(0, 8)}…`;
@@ -751,7 +757,11 @@ export default function AdmissionsContent() {
       // Vérifier aussi avec schoolLevelId (UUID school_levels) si le filterLevelId
       // est en réalité l'UUID education_levels (cas de /api/school-levels)
       schoolLevels.find(l => l.id === filterLevelId)?.schoolLevelId === a.schoolLevelId;
-    const matchesClass = !filterClassId || a.classId === filterClassId || a.requestedClassId === filterClassId;
+    // ⭐ Filtre par classe OFFICIELLE : utilise requestedAcademicClassId (nouveau)
+    // avec fallback sur requestedClassId (legacy) pour les anciennes admissions.
+    const matchesClass = !filterClassId ||
+      a.requestedAcademicClassId === filterClassId ||
+      a.requestedClassId === filterClassId;
     return matchesSearch && matchesFilter && matchesLevel && matchesClass;
   }).sort((a, b) => {
     // Tri selon le mode sélectionné
@@ -847,18 +857,22 @@ export default function AdmissionsContent() {
             disabled={!filterLevelId}
             className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all disabled:opacity-50"
           >
-            <option value="">Toutes les classes</option>
+            <option value="">Toutes les classes officielles</option>
             {(() => {
-              // Récupérer le schoolLevelId (UUID school_levels) correspondant au niveau sélectionné
+              // ⭐ Filtrage sur les classes OFFICIELLES (AcademicClass) par niveau.
               const selectedLevel = schoolLevels.find(l => l.id === filterLevelId);
-              const effectiveSchoolLevelId = selectedLevel?.schoolLevelId || filterLevelId;
+              const levelCode = selectedLevel?.code?.toUpperCase() || '';
+              const levelName = selectedLevel?.name?.toUpperCase() || '';
               return schoolClasses
                 .filter(c => {
                   if (!filterLevelId) return true;
-                  // Matcher sur schoolLevelId (UUID school_levels) ou schoolLevel.id
-                  return c.schoolLevelId === effectiveSchoolLevelId ||
-                         c.schoolLevel?.id === effectiveSchoolLevelId ||
-                         c.schoolLevel?.code === selectedLevel?.code;
+                  // Les AcademicClass ont c.level (relation) avec name/code
+                  const classLevelName = (c.level?.name || '').toUpperCase();
+                  const classLevelCode = (c.level?.code || '').toUpperCase();
+                  return classLevelName === levelName ||
+                         classLevelCode === levelCode ||
+                         classLevelName.includes(levelCode) ||
+                         levelCode.includes(classLevelName);
                 })
                 .map(c => (
                   <option key={c.id} value={c.id}>{c.name || c.code}</option>
@@ -1031,7 +1045,7 @@ export default function AdmissionsContent() {
                   </th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Candidat</th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Niveau</th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Classe</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Classe officielle</th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Date</th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Statut</th>
                   <th className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
@@ -1102,7 +1116,7 @@ export default function AdmissionsContent() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm font-medium text-slate-700">
-                            {getClassLabel(admission.requestedClassId)}
+                            {getClassLabel(admission)}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -1374,7 +1388,7 @@ export default function AdmissionsContent() {
               <h4 className="text-xs font-bold text-slate-500 uppercase mb-3">Vœux Académiques</h4>
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div><span className="text-slate-400">Niveau souhaité :</span> <strong>{getLevelLabel(selectedAdmission.schoolLevelId)}</strong></div>
-                <div><span className="text-slate-400">Classe souhaitée :</span> <strong>{getClassLabel(selectedAdmission.requestedClassId)}</strong></div>
+                <div><span className="text-slate-400">Classe souhaitée :</span> <strong>{getClassLabel(selectedAdmission)}</strong></div>
                 <div className="col-span-2"><span className="text-slate-400">Établissement précédent :</span> {selectedAdmission.previousSchool || '—'}</div>
               </div>
             </div>

@@ -80,8 +80,12 @@ interface Enrollment {
 interface ClassInfo {
   id: string;
   name: string;
-  schoolLevelId: string;
+  schoolLevelId?: string;
   schoolLevel?: { id: string; name: string; code?: string };
+  // ⭐ Champs pour AcademicClass (classes officielles)
+  levelId?: string;
+  level?: { id: string; name: string; code?: string };
+  code?: string;
 }
 
 interface AcademicYear {
@@ -237,11 +241,14 @@ export default function EnrollmentsContent() {
     setOrionLoading(true);
     try {
       const [classesRes, enrollmentsData, yearsRes, orionKpisData, orionAlertsData] = await Promise.all([
-        // ⚠️ Utiliser /api/all-classes (route BFF dédiée) au lieu de /api/classes
-        // car /api/classes exige schoolLevelId et échoue en 400 si l'admin est en
-        // "Tous les niveaux" (schoolLevelId=ALL). /api/all-classes force le header
-        // x-school-level-id=ALL et retourne toutes les classes du tenant.
-        fetch(`/api/all-classes`, { cache: 'no-store' }).then(r => r.ok ? r.json() : []).catch(() => []),
+        // ⭐ Charger les classes OFFICIELLES (AcademicClass) pour l'affichage
+        // de la "classe officielle" dans la table inscriptions.
+        // On garde aussi /api/all-classes en parallèle pour le modal "Changer de classe"
+        // qui a besoin des classes physiques (sections CI/A, CE1-B…).
+        fetch(`/api/academic-classes?isActive=true`, { cache: 'no-store' })
+          .then(r => r.ok ? r.json() : [])
+          .then(data => Array.isArray(data) ? data : (data?.data || data?.classes || []))
+          .catch(() => []),
         // ⚠️ getEnrollments doit être résilient : si l'API échoue (403, 404, réseau),
         // on retourne un tableau vide plutôt que de faire crasher tout l'onglet.
         // Le toast "Erreur de connexion" qui apparaissait venait d'ici.
@@ -280,19 +287,24 @@ export default function EnrollmentsContent() {
 
   // ─── Arborescence niveau → classe → élèves ──────────────────────────
   const treeData = useMemo(() => {
+    // ⭐ Détecter si les classes sont des AcademicClass (ont levelId/level) ou Class (ont schoolLevelId/schoolLevel)
+    // const isAcademic = classes.some(c => c.levelId || c.level);
+
     const levelMap = new Map<string, { id: string; name: string }>();
     for (const cls of classes) {
-      const levelId = cls.schoolLevelId;
+      // ⭐ Préférer level (AcademicClass) à schoolLevel (Class physique)
+      const levelId = cls.levelId || cls.schoolLevelId || '';
+      if (!levelId) continue;
       if (!levelMap.has(levelId)) {
-        const levelName = cls.schoolLevel?.name || cls.schoolLevel?.code || '';
+        const levelName = cls.level?.name || cls.level?.code || cls.schoolLevel?.name || cls.schoolLevel?.code || '';
         if (levelName) levelMap.set(levelId, { id: levelId, name: levelName });
       }
     }
     if (levelMap.size === 0) {
       for (const cls of classes) {
-        const levelId = cls.schoolLevelId;
+        const levelId = cls.levelId || cls.schoolLevelId || '';
         if (!levelMap.has(levelId)) {
-          const clsName = cls.name.toLowerCase();
+          const clsName = (cls.name || '').toLowerCase();
           let levelName = 'Autre';
           if (clsName.includes('maternelle') || clsName.includes('m1') || clsName.includes('m2')) levelName = 'Maternelle';
           else if (['ci', 'cp', 'ce1', 'ce2', 'cm1', 'cm2'].includes(clsName)) levelName = 'Primaire';
@@ -304,13 +316,17 @@ export default function EnrollmentsContent() {
 
     const classesByLevel = new Map<string, ClassInfo[]>();
     for (const cls of classes) {
-      if (!classesByLevel.has(cls.schoolLevelId)) classesByLevel.set(cls.schoolLevelId, []);
-      classesByLevel.get(cls.schoolLevelId)!.push(cls);
+      const levelId = cls.levelId || cls.schoolLevelId || '';
+      if (!levelId) continue;
+      if (!classesByLevel.has(levelId)) classesByLevel.set(levelId, []);
+      classesByLevel.get(levelId)!.push(cls);
     }
 
+    // ⭐ Pour les inscriptions : utiliser academicClassId en priorité (classe officielle),
+    // avec fallback sur classId (classe physique) pour les inscriptions legacy.
     const enrollmentsByClass = new Map<string, Enrollment[]>();
     for (const enr of enrollments) {
-      const classId = enr.class?.id || 'unassigned';
+      const classId = (enr as any).academicClass?.id || (enr as any).academicClassId || enr.class?.id || 'unassigned';
       if (!enrollmentsByClass.has(classId)) enrollmentsByClass.set(classId, []);
       enrollmentsByClass.get(classId)!.push(enr);
     }
@@ -356,9 +372,12 @@ export default function EnrollmentsContent() {
           return 100 + name.charCodeAt(0);
         };
         const levelClasses = (classesByLevel.get(level.id) || []).sort((a, b) => classOrder(a.name) - classOrder(b.name));
+        // ⭐ Pour le comptage des élèves du niveau : utiliser academicClassId (officiel)
+        // avec fallback sur classId (physique) pour les inscriptions legacy.
         const levelEnrollments = enrollments.filter(e => {
-          const cls = classes.find(c => c.id === e.class?.id);
-          return cls?.schoolLevelId === level.id;
+          const acid = (e as any).academicClass?.id || (e as any).academicClassId;
+          const cls = acid ? classes.find(c => c.id === acid) : classes.find(c => c.id === e.class?.id);
+          return (cls?.levelId || cls?.schoolLevelId) === level.id;
         });
         return {
           level,
@@ -386,18 +405,18 @@ export default function EnrollmentsContent() {
     }));
   }, [treeData, searchQuery]);
 
-  // ─── Élèves orphelins (sans classe ou classe non chargée) ──────────
+  // ─── Élèves orphelins (sans classe officielle OU classe non chargée) ──
   // Ces élèves ont un enrollment mais :
-  //   - classId est null (admission convertie sans classe, ou preRegister sans classId)
-  //   - OU classId pointe vers une classe qui n'est pas dans `classes` (classe supprimée,
-  //     ou classe d'un autre schoolLevelId non visible par l'utilisateur courant)
+  //   - academicClassId est null ET classId est null (admission convertie sans classe)
+  //   - OU academicClassId/classId pointe vers une classe qui n'est pas dans `classes`
   //
   // Sans cette section, ces élèves sont INVISIBLES dans l'arbre (qui ne groupe que par
   // classe chargée), alors qu'ils sont comptés dans les stats → confusion pour l'admin.
   const unassignedEnrollments = useMemo(() => {
     const loadedClassIds = new Set(classes.map(c => c.id));
     const orphans = enrollments.filter(e => {
-      const classId = e.class?.id;
+      const acid = (e as any).academicClass?.id || (e as any).academicClassId;
+      const classId = acid || e.class?.id;
       return !classId || !loadedClassIds.has(classId);
     });
     if (!searchQuery.trim()) return orphans;

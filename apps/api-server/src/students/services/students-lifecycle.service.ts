@@ -670,6 +670,7 @@ export class StudentsLifecycleService {
     studentId: string;
     academicYearId: string;
     newClassId: string;
+    reason?: string;
   }, userId?: string) {
     const enrollment = await this.prisma.studentEnrollment.findFirst({
       where: {
@@ -680,14 +681,34 @@ export class StudentsLifecycleService {
       orderBy: { enrollmentDate: 'desc' },
     });
     if (!enrollment) throw new NotFoundException('Inscription non trouvée');
+
+    const previousClassId = enrollment.classId;
     const updatedEnrollment = await this.prisma.studentEnrollment.update({
       where: { id: enrollment.id },
       data: { classId: data.newClassId },
     });
 
+    // ⭐ Créer un enregistrement ClassTransfer pour l'historique
+    if (previousClassId !== data.newClassId) {
+      await this.prisma.classTransfer.create({
+        data: {
+          tenantId,
+          academicYearId: data.academicYearId,
+          schoolLevelId: enrollment.schoolLevelId,
+          studentId: data.studentId,
+          fromClassId: previousClassId,
+          toClassId: data.newClassId,
+          transferDate: new Date(),
+          reason: data.reason || 'Changement de classe physique',
+          approvedBy: userId,
+          transferType: previousClassId ? 'CLASS_CHANGE' : 'INITIAL_ASSIGNMENT',
+        },
+      });
+    }
+
     await this.logAudit(tenantId, data.studentId, 'CHANGE_CLASS', userId, {
       enrollmentId: enrollment.id,
-      previousClassId: enrollment.classId,
+      previousClassId,
     }, {
       enrollmentId: updatedEnrollment.id,
       classId: updatedEnrollment.classId,
@@ -697,9 +718,230 @@ export class StudentsLifecycleService {
     return this.prisma.student.findUnique({
       where: { id: data.studentId },
       include: {
-        studentEnrollments: { include: { class: true, academicYear: true }, orderBy: { enrollmentDate: 'desc' } },
+        studentEnrollments: { include: { class: true, academicClass: true, academicYear: true }, orderBy: { enrollmentDate: 'desc' } },
         schoolLevel: true,
       },
+    });
+  }
+
+  /**
+   * ⭐ Affectation initiale d'un élève vers une classe PHYSIQUE.
+   * Utilisé par le sous-onglet "Affectation vers classe physique".
+   * L'élève a été admis/inscrit dans une classe OFFICIELLE (academicClassId),
+   * mais n'a pas encore de classe PHYSIQUE (classId NULL ou vide).
+   * Cette méthode assigne la classe physique et crée un ClassTransfer
+   * de type INITIAL_ASSIGNMENT.
+   */
+  async assignPhysicalClass(tenantId: string, data: {
+    studentId: string;
+    academicYearId: string;
+    physicalClassId: string;
+    reason?: string;
+  }, userId?: string) {
+    const enrollment = await this.prisma.studentEnrollment.findFirst({
+      where: {
+        studentId: data.studentId,
+        tenantId,
+        academicYearId: data.academicYearId,
+      },
+      orderBy: { enrollmentDate: 'desc' },
+    });
+    if (!enrollment) throw new NotFoundException('Inscription non trouvée');
+
+    // Vérifier que la classe physique existe et appartient au tenant
+    const physicalClass = await this.prisma.class.findFirst({
+      where: { id: data.physicalClassId, tenantId },
+    });
+    if (!physicalClass) throw new NotFoundException('Classe physique non trouvée');
+
+    const previousClassId = enrollment.classId;
+    const updatedEnrollment = await this.prisma.studentEnrollment.update({
+      where: { id: enrollment.id },
+      data: { classId: data.physicalClassId },
+    });
+
+    // ⭐ Créer un ClassTransfer de type INITIAL_ASSIGNMENT (ou CLASS_CHANGE si déjà affecté)
+    await this.prisma.classTransfer.create({
+      data: {
+        tenantId,
+        academicYearId: data.academicYearId,
+        schoolLevelId: enrollment.schoolLevelId,
+        studentId: data.studentId,
+        fromClassId: previousClassId,
+        toClassId: data.physicalClassId,
+        transferDate: new Date(),
+        reason: data.reason || (previousClassId ? 'Réaffectation vers classe physique' : 'Affectation initiale vers classe physique'),
+        approvedBy: userId,
+        transferType: previousClassId ? 'CLASS_CHANGE' : 'INITIAL_ASSIGNMENT',
+      },
+    });
+
+    await this.logAudit(tenantId, data.studentId, 'ASSIGN_PHYSICAL_CLASS', userId, {
+      enrollmentId: enrollment.id,
+      previousClassId,
+    }, {
+      enrollmentId: updatedEnrollment.id,
+      classId: updatedEnrollment.classId,
+      physicalClassName: physicalClass.name,
+    });
+
+    return this.prisma.student.findUnique({
+      where: { id: data.studentId },
+      include: {
+        studentEnrollments: { include: { class: true, academicClass: true, academicYear: true }, orderBy: { enrollmentDate: 'desc' } },
+        schoolLevel: true,
+      },
+    });
+  }
+
+  /**
+   * ⭐ Changement de série officielle d'un élève.
+   * Utilisé par le sous-onglet "Changement de série".
+   * Met à jour la série via l'AcademicClass rattachée à l'inscription.
+   * Si l'élève n'a pas d'academicClassId, on ne peut pas changer la série
+   * (il faut d'abord l'inscrire dans une classe officielle).
+   */
+  async changeSeries(tenantId: string, data: {
+    studentId: string;
+    academicYearId: string;
+    newSeriesId: string;
+    reason?: string;
+  }, userId?: string) {
+    const enrollment = await this.prisma.studentEnrollment.findFirst({
+      where: {
+        studentId: data.studentId,
+        tenantId,
+        academicYearId: data.academicYearId,
+      },
+      orderBy: { enrollmentDate: 'desc' },
+      include: { academicClass: true },
+    });
+    if (!enrollment) throw new NotFoundException('Inscription non trouvée');
+
+    if (!enrollment.academicClassId || !enrollment.academicClass) {
+      throw new BadRequestException(
+        "L'élève n'a pas de classe officielle (academicClassId). Impossible de changer la série. " +
+        'Veuillez d\'abord l\'inscrire dans une classe officielle.',
+      );
+    }
+
+    const previousSeriesId = enrollment.academicClass.seriesId || null;
+
+    // ⭐ Trouver une AcademicClass équivalente (même niveau + même cycle) avec la nouvelle série
+    // Si aucune AcademicClass n'existe pour cette combinaison, on lève une erreur
+    const targetAcademicClass = await this.prisma.academicClass.findFirst({
+      where: {
+        tenantId,
+        academicYearId: data.academicYearId,
+        levelId: enrollment.academicClass.levelId,
+        cycleId: enrollment.academicClass.cycleId,
+        seriesId: data.newSeriesId,
+        isActive: true,
+      },
+    });
+
+    if (!targetAcademicClass) {
+      throw new BadRequestException(
+        "Aucune classe officielle trouvée pour cette combinaison niveau/cycle/série. " +
+        "Veuillez d'abord créer la classe officielle correspondante dans le module Pédagogie.",
+      );
+    }
+
+    // Mettre à jour l'inscription avec la nouvelle AcademicClass
+    const updatedEnrollment = await this.prisma.studentEnrollment.update({
+      where: { id: enrollment.id },
+      data: { academicClassId: targetAcademicClass.id },
+    });
+
+    // ⭐ Créer un ClassTransfer de type SERIES_CHANGE
+    await this.prisma.classTransfer.create({
+      data: {
+        tenantId,
+        academicYearId: data.academicYearId,
+        schoolLevelId: enrollment.schoolLevelId,
+        studentId: data.studentId,
+        fromClassId: enrollment.classId || null,
+        toClassId: enrollment.classId || null, // pas de changement de classe physique
+        transferDate: new Date(),
+        reason: data.reason || `Changement de série : ${previousSeriesId || '—'} → ${data.newSeriesId}`,
+        approvedBy: userId,
+        transferType: 'SERIES_CHANGE',
+        fromSeriesId: previousSeriesId,
+        toSeriesId: data.newSeriesId,
+      },
+    });
+
+    await this.logAudit(tenantId, data.studentId, 'CHANGE_SERIES', userId, {
+      enrollmentId: enrollment.id,
+      previousSeriesId,
+      previousAcademicClassId: enrollment.academicClassId,
+    }, {
+      enrollmentId: updatedEnrollment.id,
+      newAcademicClassId: targetAcademicClass.id,
+      newSeriesId: data.newSeriesId,
+    });
+
+    return this.prisma.student.findUnique({
+      where: { id: data.studentId },
+      include: {
+        studentEnrollments: { include: { class: true, academicClass: { include: { series: true } }, academicYear: true }, orderBy: { enrollmentDate: 'desc' } },
+        schoolLevel: true,
+      },
+    });
+  }
+
+  /**
+   * ⭐ Liste les élèves admis/inscrits SANS classe physique (classId NULL).
+   * Utilisé par le sous-onglet "Affectation vers classe physique".
+   * Retourne les élèves avec leur classe officielle (academicClass) pour permettre
+   * à l'administration de les répartir dans les sections physiques.
+   */
+  async getStudentsWithoutPhysicalClass(tenantId: string, academicYearId: string) {
+    return this.prisma.studentEnrollment.findMany({
+      where: {
+        tenantId,
+        academicYearId,
+        classId: null,
+        status: { in: ['ADMITTED', 'PRE_REGISTERED', 'ACTIVE', 'ENROLLED'] },
+      },
+      include: {
+        student: {
+          include: {
+            guardians: { take: 1 },
+          },
+        },
+        academicClass: {
+          include: {
+            level: true,
+            cycle: true,
+            series: true,
+          },
+        },
+        schoolLevel: true,
+      },
+      orderBy: { enrollmentDate: 'desc' },
+    });
+  }
+
+  /**
+   * ⭐ Liste l'historique des transferts/affectations d'un tenant.
+   * Utilisé par le sous-onglet "Historique".
+   */
+  async getClassTransfersHistory(tenantId: string, academicYearId?: string) {
+    return this.prisma.classTransfer.findMany({
+      where: {
+        tenantId,
+        ...(academicYearId ? { academicYearId } : {}),
+      },
+      include: {
+        student: {
+          select: { id: true, firstName: true, lastName: true, matricule: true, studentCode: true },
+        },
+        fromClass: { select: { id: true, name: true, code: true } },
+        toClass: { select: { id: true, name: true, code: true } },
+      },
+      orderBy: { transferDate: 'desc' },
+      take: 500,
     });
   }
 
@@ -1298,6 +1540,14 @@ export class StudentsLifecycleService {
           },
         },
         class: true,
+        // ⭐ Inclure la classe officielle (AcademicClass) pour l'affichage frontend
+        academicClass: {
+          include: {
+            level: true,
+            cycle: true,
+            series: true,
+          },
+        },
       },
       orderBy: { enrollmentDate: 'desc' },
     });

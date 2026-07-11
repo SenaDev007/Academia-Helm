@@ -2,22 +2,21 @@
 
 /**
  * ============================================================================
- * ID CARD VISUAL — Composant partagé de carte scolaire (recto + verso)
+ * ID CARD VISUAL — Carte scolaire premium (recto + verso)
  * ============================================================================
  *
- * Design premium conforme au prompt fourni :
+ * Design institutionnel conforme au cahier des charges :
  *   - CR80 paysage (85.60 × 53.98 mm)
- *   - Gradient bleu #007BFF → #003087
- *   - Coins arrondis 20px (scaled down)
- *   - Formes diagonales (clip-path) en-tête et pied
- *   - 9 champs d'information (Reg No, Student ID, Student Name, Gender,
- *     Date of Birth, Class, Blood Group, Parent/Guardian, Emergency Contact)
- *   - Logo + slogan à gauche de l'en-tête
- *   - QR code sur le verso
+ *   - En-tête : drapeau Bénin (gauche) + République/Ministère/École (centre) + logo (droite)
+ *   - Corps : photo + QR code (gauche) + 10 champs (droite)
+ *   - Pied : contact parent (gauche) + signature Directeur (droite)
+ *   - Gradient bleu, coins arrondis, ombres discrètes
  *
- * Utilisé dans :
- *   - StudentIdCardsSection.tsx (onglet Cartes Scolaires)
- *   - StudentIdentityContent.tsx (onglet Dossier → carte scolaire)
+ * Ministère adapté au niveau :
+ *   Maternel/Primaire → Ministère des Enseignements Maternel et Primaire
+ *   Secondaire → Ministère de l'Enseignement Secondaire, de la Formation
+ *     Technique et Professionnelle, de la Reconversion et de l'Insertion des Jeunes
+ *   Supérieur → Ministère de l'Enseignement Supérieur et de la Recherche Scientifique
  * ============================================================================
  */
 
@@ -68,12 +67,11 @@ interface TenantInfo {
 
 const PRIMARY = '#003087';
 const SECONDARY = '#007BFF';
-const ACCENT = '#00AEEF';
 const TEXT = '#1F2937';
 const LIGHT_GRAY = '#E5E7EB';
 
 function formatDate(d?: string) {
-  if (!d) return 'N/A';
+  if (!d) return '—';
   return new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
@@ -87,7 +85,7 @@ export function IdCardVisual({
   const s = card.student;
   const g = card.guardian;
 
-  const schoolName = identity?.schoolName || 'Academia Helm';
+  const schoolName = identity?.schoolName || 'Établissement Scolaire';
   const slogan = identity?.slogan || 'Excellence • Discipline • Travail';
   const schoolAddress = [identity?.address, identity?.city].filter(Boolean).join(', ') || '';
   const schoolPhone = identity?.phonePrimary || '';
@@ -97,44 +95,55 @@ export function IdCardVisual({
 
   const guardianName = g ? `${g.firstName} ${g.lastName}`.trim() : '—';
   const guardianPhone = g?.phone || '—';
+  const guardianAddress = g?.address || '—';
 
-  const isMaternelle = (card.levelCode || '').toUpperCase() === 'MATERNELLE' || (card.levelCode || '').toUpperCase() === 'MAT';
-  const isSecondaire = (card.levelCode || '').toUpperCase() === 'SECONDAIRE' || (card.levelCode || '').toUpperCase() === 'SECONDARY' || (card.levelCode || '').toUpperCase() === 'SECOND';
+  // Détection du niveau
+  const levelUpper = (card.levelCode || '').toUpperCase();
+  const isMaternelle = levelUpper === 'MATERNELLE' || levelUpper === 'MAT';
+  const isSecondaire = levelUpper === 'SECONDAIRE' || levelUpper === 'SECONDARY' || levelUpper === 'SECOND';
+  const isSuperieur = levelUpper === 'SUPERIEUR' || levelUpper === 'UNIVERSITY' || levelUpper === 'HIGHER';
 
   // Ministère selon le niveau
-  const ministry = isSecondaire
-    ? "Ministère de l'Enseignement Secondaire, de la Formation Technique et Professionnelle"
+  const ministry = isSuperieur
+    ? 'Ministère de l\u2019Enseignement Supérieur et de la Recherche Scientifique'
+    : isSecondaire
+    ? 'Ministère de l\u2019Enseignement Secondaire, de la Formation Technique et Professionnelle, de la Reconversion et de l\u2019Insertion des Jeunes'
     : 'Ministère des Enseignements Maternel et Primaire';
+
+  // Sigle/acronyme de l'école (premières lettres des mots)
+  const acronym = schoolName
+    .split(/\s+/)
+    .filter(w => w.length > 2)
+    .map(w => w[0])
+    .join('')
+    .toUpperCase()
+    .substring(0, 8) || 'ECOLE';
 
   const pickupMorning = identity?.maternellePickupMorning || '12:00';
   const pickupAfternoon = identity?.maternellePickupAfternoon || '16:30';
   const singleExit = identity?.maternelleSingleExit;
   const singleExitTime = identity?.maternelleSingleExitTime || '15:30';
 
-  const LogoBox = ({ size = 'normal' }: { size?: 'normal' | 'small' }) => {
-    const cls = size === 'small' ? 'w-7 h-7' : 'w-8 h-8';
-    if (logoUrl) return <img src={logoUrl} alt="Logo" className={cn(cls, 'rounded-lg object-contain bg-white p-0.5')} />;
+  // Logo école
+  const SchoolLogo = ({ size = 'md' }: { size?: 'sm' | 'md' }) => {
+    const cls = size === 'sm' ? 'w-7 h-7' : 'w-9 h-9';
+    if (logoUrl) return <img src={logoUrl} alt="Logo" className={cn(cls, 'rounded-lg object-contain bg-white p-0.5 shrink-0')} />;
     return (
-      <div className={cn(cls, 'rounded-lg bg-white flex items-center justify-center font-bold')}
-        style={{ color: PRIMARY, fontSize: size === 'small' ? '8px' : '10px' }}>AH</div>
+      <div className={cn(cls, 'rounded-lg bg-white flex items-center justify-center font-bold shrink-0')}
+        style={{ color: PRIMARY, fontSize: size === 'sm' ? '8px' : '10px' }}>AH</div>
     );
   };
 
-  // Drapeau du Bénin (vert, jaune, rouge horizontal)
-  const BeninFlag = ({ size = 'sm' }: { size?: 'sm' | 'xs' }) => {
-    const cls = size === 'xs' ? 'w-4 h-3' : 'w-5 h-4';
-    return (
-      <div className={cn(cls, 'rounded-sm overflow-hidden border border-gray-200 shrink-0')}>
-        <div className="flex h-full">
-          <div className="w-1/2 h-full bg-green-600" />
-          <div className="w-1/2 flex flex-col">
-            <div className="h-1/2 bg-yellow-400" />
-            <div className="h-1/2 bg-red-600" />
-          </div>
-        </div>
+  // Drapeau du Bénin (vert à gauche, jaune/rouge à droite)
+  const BeninFlag = () => (
+    <div className="w-9 h-7 rounded overflow-hidden border border-gray-300 shrink-0 flex">
+      <div className="w-1/2 h-full bg-green-600" />
+      <div className="w-1/2 flex flex-col">
+        <div className="h-1/2 bg-yellow-400" />
+        <div className="h-1/2 bg-red-600" />
       </div>
-    );
-  };
+    </div>
+  );
 
   // ─── RECTO ───
   if (face === 'recto') {
@@ -142,83 +151,74 @@ export function IdCardVisual({
       <div className="w-full bg-white rounded-2xl overflow-hidden shadow-lg border border-gray-200 flex flex-col"
         style={{ aspectRatio: '85.6 / 53.98', fontFamily: 'Inter, Poppins, sans-serif' }}>
 
-        {/* ─── EN-TÊTE (24% hauteur) — République du Bénin + Ministère + logo école ─── */}
-        <div className="relative shrink-0" style={{ height: '24%' }}>
-          {/* Section gauche blanche : drapeau + République du Bénin + Ministère */}
-          <div className="absolute left-0 top-0 h-full flex items-center gap-1 px-1.5 z-10"
-            style={{ width: '55%', background: 'white' }}>
-            <BeninFlag size="xs" />
-            <div className="min-w-0 flex-1">
-              <div className="text-[5px] font-bold text-gray-800 leading-tight">RÉPUBLIQUE DU BÉNIN</div>
-              <div className="text-[3px] text-gray-500 leading-tight truncate">{ministry}</div>
-              <div className="text-[4px] font-semibold text-gray-700 leading-tight truncate" style={{ color: PRIMARY }}>{schoolName}</div>
-            </div>
+        {/* ═══ EN-TÊTE INSTITUTIONNEL (26%) ═══ */}
+        <div className="shrink-0 flex items-center px-2 py-1.5 gap-2 border-b-2"
+          style={{ height: '26%', borderColor: SECONDARY + '40' }}>
+          {/* Drapeau à gauche */}
+          <BeninFlag />
+          {/* Centre : République + Ministère + École + Sigle + Devise */}
+          <div className="flex-1 text-center min-w-0 px-1">
+            <div className="text-[5px] font-bold text-gray-800 leading-tight">RÉPUBLIQUE DU BÉNIN</div>
+            <div className="text-[3px] text-gray-500 leading-tight">{ministry}</div>
+            <div className="text-[4px] font-bold leading-tight truncate" style={{ color: PRIMARY }}>{schoolName}</div>
+            <div className="text-[3px] font-semibold text-gray-400 leading-tight">{acronym}</div>
+            <div className="text-[2.5px] italic text-gray-400 leading-tight truncate">{slogan}</div>
           </div>
-          {/* Section droite gradient avec clip diagonal : logo école + Student ID */}
-          <div className="absolute inset-0"
-            style={{
-              background: `linear-gradient(135deg, ${SECONDARY} 0%, ${PRIMARY} 100%)`,
-              clipPath: 'polygon(52% 0, 100% 0, 100% 100%, 0 100%)',
-            }}>
-            <div className="flex items-center justify-center h-full pl-[55%] pr-2 gap-1.5 text-white">
-              <LogoBox size="normal" />
-              <div className="text-center">
-                <div className="font-bold text-[6px] uppercase tracking-wider leading-tight">Student ID</div>
-                <div className="text-[3px] opacity-80 leading-tight">Carte Scolaire</div>
-              </div>
-            </div>
-          </div>
+          {/* Logo école à droite (même taille que drapeau) */}
+          <SchoolLogo size="md" />
         </div>
 
-        {/* ─── CORPS (60% hauteur) — photo gauche 30% + infos droite 70% ─── */}
+        {/* ═══ CORPS (52%) ═══ */}
         <div className="flex flex-1 min-h-0 px-2 py-1.5 gap-2">
-          {/* Colonne gauche : photo + QR */}
-          <div className="flex flex-col items-center justify-center gap-1 shrink-0" style={{ width: '28%' }}>
+          {/* Colonne gauche : photo + QR code */}
+          <div className="flex flex-col items-center justify-center gap-1 shrink-0" style={{ width: '26%' }}>
             <div className="w-full rounded-lg overflow-hidden border-2"
-              style={{ borderColor: SECONDARY, aspectRatio: '1', background: '#f3f4f6', maxWidth: '50px' }}>
+              style={{ borderColor: SECONDARY, aspectRatio: '0.75', background: '#f3f4f6', maxWidth: '42px' }}>
               {s.photoUrl
                 ? <img src={s.photoUrl} alt={`${s.firstName} ${s.lastName}`} className="w-full h-full object-cover" />
                 : <div className="w-full h-full flex items-center justify-center text-[5px] text-gray-400">PHOTO</div>}
             </div>
-            {/* QR code mini */}
-            <div className="w-6 h-6 border border-gray-200 rounded bg-white p-px">
-              <div className="grid grid-cols-5 grid-rows-5 gap-px w-full h-full">
-                {Array.from({ length: 25 }).map((_, i) => (
-                  <div key={i} className={cn(((i * 7 + 3) % 5 < 3) ? 'bg-black' : 'bg-white')} />
+            {/* QR code de vérification */}
+            <div className="w-7 h-7 border border-gray-200 rounded bg-white p-px">
+              <div className="grid grid-cols-7 grid-rows-7 gap-px w-full h-full">
+                {Array.from({ length: 49 }).map((_, i) => (
+                  <div key={i} className={cn(((i * 11 + 5) % 7 < 4) ? 'bg-black' : 'bg-white')} />
                 ))}
               </div>
             </div>
           </div>
 
-          {/* Colonne droite : 9 champs en 2 colonnes */}
+          {/* Colonne droite : 10 champs en 2 colonnes */}
           <div className="flex-1 grid grid-cols-2 gap-x-2 gap-y-0.5 min-w-0">
-            <InfoField label="Reg No" value={s.matricule || s.studentCode || '—'} />
-            <InfoField label="Student ID" value={card.cardNumber} />
-            <InfoField label="Student Name" value={`${s.firstName} ${s.lastName}`} />
-            <InfoField label="Gender" value={s.gender === 'M' ? 'Male' : s.gender === 'F' ? 'Female' : '—'} />
-            <InfoField label="Date of Birth" value={formatDate(s.dateOfBirth)} />
-            <InfoField label="Class" value={card.className || '—'} />
-            <InfoField label="Blood Group" value="—" />
-            <InfoField label="Parent / Guardian" value={guardianName} />
-            <InfoField label="Emergency Contact" value={guardianPhone} />
+            <InfoField label="N° Inscription" value={s.matricule || s.studentCode || '—'} />
+            <InfoField label="Matricule" value={card.cardNumber} />
+            <InfoField label="Nom et Prénom" value={`${s.lastName} ${s.firstName}`} />
+            <InfoField label="Sexe" value={s.gender === 'M' ? 'Masculin' : s.gender === 'F' ? 'Féminin' : '—'} />
+            <InfoField label="Date de Naissance" value={formatDate(s.dateOfBirth)} />
+            <InfoField label="Classe" value={card.className || '—'} />
+            <InfoField label="Année Scolaire" value={card.levelName || '—'} />
+            <InfoField label="Groupe Sanguin" value="—" />
+            <InfoField label="Parent / Tuteur" value={guardianName} />
+            <InfoField label="Téléphone Urgence" value={guardianPhone} />
           </div>
         </div>
 
-        {/* ─── PIED (18% hauteur) — gradient diagonal ─── */}
-        <div className="relative shrink-0" style={{ height: '18%' }}>
+        {/* ═══ PIED DE PAGE (22%) ═══ */}
+        <div className="shrink-0 relative" style={{ height: '22%' }}>
           <div className="absolute inset-0"
-            style={{
-              background: `linear-gradient(135deg, ${PRIMARY} 0%, ${SECONDARY} 100%)`,
-              clipPath: 'polygon(0 0, 100% 0, 100% 100%, 5% 100%)',
-            }}>
-            <div className="flex items-center justify-between h-full px-3 text-white">
-              <div className="min-w-0">
-                <p className="text-[3px] opacity-90 truncate">{schoolAddress || '—'}</p>
-                <p className="text-[3px] opacity-90 truncate">{schoolPhone}{schoolEmail && ` · ${schoolEmail}`}</p>
+            style={{ background: `linear-gradient(135deg, ${PRIMARY} 0%, ${SECONDARY} 100%)` }}>
+            <div className="flex items-center justify-between h-full px-2.5 text-white">
+              {/* Gauche : contact urgence */}
+              <div className="min-w-0 flex-1">
+                <div className="text-[3px] font-bold uppercase opacity-90 mb-0.5">Contact d'Urgence</div>
+                <div className="text-[3px] opacity-80 truncate">{guardianName}</div>
+                <div className="text-[3px] opacity-80 truncate">{guardianPhone}</div>
+                <div className="text-[3px] opacity-70 truncate">{guardianAddress}</div>
               </div>
+              {/* Droite : signature */}
               <div className="text-right shrink-0 ml-2">
-                <p className="text-[4px] italic opacity-90" style={{ fontFamily: 'Brush Script MT, cursive' }}>Principal</p>
-                <p className="text-[3px] opacity-70">Signature</p>
+                <div className="text-[4px] italic opacity-90 mb-px" style={{ fontFamily: 'Brush Script MT, cursive' }}>Le Directeur</div>
+                <div className="text-[3px] opacity-70 border-t border-white/30 pt-px">Signature & Cachet</div>
               </div>
             </div>
           </div>
@@ -242,11 +242,10 @@ export function IdCardVisual({
         </div>
       </div>
 
-      {/* Corps : rules à gauche + contact + QR à droite */}
+      {/* Corps : rules + contact + QR */}
       <div className="flex flex-1 min-h-0 px-2.5 py-1.5 gap-2">
-        {/* Gauche : rules + contact */}
+        {/* Gauche : rules + heures maternelle + contact */}
         <div className="flex-1 flex flex-col min-w-0">
-          {/* Rules avec puces bleues carrées */}
           <ul className="space-y-0.5 mb-1">
             {[
               'This card remains the property of the school.',
@@ -288,12 +287,12 @@ export function IdCardVisual({
         {/* Droite : logo + QR avec fond géométrique */}
         <div className="flex flex-col items-center justify-center gap-1 shrink-0"
           style={{ width: '24%', background: `linear-gradient(135deg, ${SECONDARY}22 0%, ${PRIMARY}11 100%)`, borderRadius: '8px' }}>
-          <LogoBox size="small" />
-          <div className="text-[3px] text-gray-500 text-center leading-tight">{slogan}</div>
+          <SchoolLogo size="sm" />
+          <div className="text-[3px] text-gray-500 text-center leading-tight">{acronym}</div>
           <div className="w-7 h-7 border border-gray-200 rounded bg-white p-px">
-            <div className="grid grid-cols-6 grid-rows-6 gap-px w-full h-full">
-              {Array.from({ length: 36 }).map((_, i) => (
-                <div key={i} className={cn(((i * 7 + 3) % 5 < 3) ? 'bg-black' : 'bg-white')} />
+            <div className="grid grid-cols-7 grid-rows-7 gap-px w-full h-full">
+              {Array.from({ length: 49 }).map((_, i) => (
+                <div key={i} className={cn(((i * 11 + 5) % 7 < 4) ? 'bg-black' : 'bg-white')} />
               ))}
             </div>
           </div>
@@ -309,7 +308,7 @@ function InfoField({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
       <p className="text-[3px] font-bold text-gray-400 uppercase leading-tight truncate">{label}</p>
-      <p className="text-[4px] text-gray-700 leading-tight truncate" style={{ color: TEXT }}>{value}</p>
+      <p className="text-[4px] leading-tight truncate" style={{ color: TEXT }}>{value}</p>
     </div>
   );
 }

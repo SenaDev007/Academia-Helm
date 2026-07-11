@@ -54,7 +54,7 @@ interface CardData {
   levelCode?: string;
 }
 
-interface TenantInfo {
+export interface TenantInfo {
   schoolName: string;
   slogan?: string;
   address?: string;
@@ -67,6 +67,13 @@ interface TenantInfo {
   maternellePickupAfternoon?: string;
   maternelleSingleExit?: boolean;
   maternelleSingleExitTime?: string;
+  cardPrimaryColor?: string;
+  cardShowQRCode?: boolean;
+  cardShowPhoto?: boolean;
+  cardShowGuardian?: boolean;
+  cardShowEmergencyCall?: boolean;
+  cardShowSchoolAddress?: boolean;
+  cardConditionsText?: string;
 }
 
 const PRIMARY = '#003087';
@@ -134,6 +141,9 @@ export function IdCardVisual({
   const guardianPhone = g?.phone || '—';
   const guardianAddress = g?.address || '—';
 
+  // Paramètres dynamiques de la carte
+  const primaryColor = identity?.cardPrimaryColor || '#003087';
+
   // Détection du niveau
   const levelUpper = (card.levelCode || '').toUpperCase();
   const isMaternelle = levelUpper === 'MATERNELLE' || levelUpper === 'MAT';
@@ -167,7 +177,7 @@ export function IdCardVisual({
     if (logoUrl) return <img src={logoUrl} alt="Logo" className={cn(cls, 'rounded-lg object-contain bg-white p-0.5 shrink-0')} />;
     return (
       <div className={cn(cls, 'rounded-lg bg-white flex items-center justify-center font-bold shrink-0')}
-        style={{ color: PRIMARY, fontSize: size === 'sm' ? '8px' : '10px' }}>AH</div>
+        style={{ color: primaryColor, fontSize: size === 'sm' ? '8px' : '10px' }}>AH</div>
     );
   };
 
@@ -197,7 +207,7 @@ export function IdCardVisual({
           <div className="flex-1 text-center min-w-0 px-1">
             <div className="text-[5px] font-bold text-gray-800 leading-tight">RÉPUBLIQUE DU BÉNIN</div>
             <div className="text-[3px] text-gray-500 leading-tight">{ministry}</div>
-            <div className="text-[4px] font-bold leading-tight truncate" style={{ color: PRIMARY }}>{schoolName}</div>
+            <div className="text-[4px] font-bold leading-tight truncate" style={{ color: primaryColor }}>{schoolName}</div>
             <div className="text-[3px] font-semibold text-gray-400 leading-tight">{acronym}</div>
             <div className="text-[2.5px] italic text-gray-400 leading-tight truncate">{slogan}</div>
           </div>
@@ -209,14 +219,18 @@ export function IdCardVisual({
         <div className="flex flex-1 min-h-0 px-2 py-1.5 gap-2">
           {/* Colonne gauche : photo + QR code */}
           <div className="flex flex-col items-center justify-center gap-1 shrink-0" style={{ width: '26%' }}>
-            <div className="w-full rounded-lg overflow-hidden border-2"
-              style={{ borderColor: SECONDARY, aspectRatio: '0.75', background: '#f3f4f6', maxWidth: '42px' }}>
-              {s.photoUrl
-                ? <img src={s.photoUrl} alt={`${s.firstName} ${s.lastName}`} className="w-full h-full object-cover" />
-                : <div className="w-full h-full flex items-center justify-center text-[5px] text-gray-400">PHOTO</div>}
-            </div>
+            {(identity?.cardShowPhoto !== false) && (
+              <div className="w-full rounded-lg overflow-hidden border-2"
+                style={{ borderColor: SECONDARY, aspectRatio: '0.75', background: '#f3f4f6', maxWidth: '42px' }}>
+                {s.photoUrl
+                  ? <img src={s.photoUrl} alt={`${s.firstName} ${s.lastName}`} className="w-full h-full object-cover" />
+                  : <div className="w-full h-full flex items-center justify-center text-[5px] text-gray-400">PHOTO</div>}
+              </div>
+            )}
             {/* QR code de vérification réel */}
-            <RealQRCode payload={card.qrPayload} size={56} />
+            {(identity?.cardShowQRCode !== false) && (
+              <RealQRCode payload={card.qrPayload} size={56} />
+            )}
           </div>
 
           {/* Colonne droite : 10 champs en 2 colonnes */}
@@ -229,23 +243,31 @@ export function IdCardVisual({
             <InfoField label="Classe" value={card.className || '—'} />
             <InfoField label="Année Scolaire" value={card.levelName || '—'} />
             <InfoField label="Groupe Sanguin" value="—" />
-            <InfoField label="Parent / Tuteur" value={guardianName} />
-            <InfoField label="Téléphone Urgence" value={guardianPhone} />
+            {(identity?.cardShowGuardian !== false) && (
+              <InfoField label="Parent / Tuteur" value={guardianName} />
+            )}
+            {(identity?.cardShowEmergencyCall !== false) && (
+              <InfoField label="Téléphone Urgence" value={guardianPhone} />
+            )}
           </div>
         </div>
 
         {/* ═══ PIED DE PAGE (22%) ═══ */}
         <div className="shrink-0 relative" style={{ height: '22%' }}>
           <div className="absolute inset-0"
-            style={{ background: `linear-gradient(135deg, ${PRIMARY} 0%, ${SECONDARY} 100%)` }}>
+            style={{ background: `linear-gradient(135deg, ${primaryColor} 0%, ${SECONDARY} 100%)` }}>
             <div className="flex items-center justify-between h-full px-2.5 text-white">
               {/* Gauche : contact urgence */}
-              <div className="min-w-0 flex-1">
-                <div className="text-[3px] font-bold uppercase opacity-90 mb-0.5">Contact d'Urgence</div>
-                <div className="text-[3px] opacity-80 truncate">{guardianName}</div>
-                <div className="text-[3px] opacity-80 truncate">{guardianPhone}</div>
-                <div className="text-[3px] opacity-70 truncate">{guardianAddress}</div>
-              </div>
+              {(identity?.cardShowEmergencyCall !== false) ? (
+                <div className="min-w-0 flex-1">
+                  <div className="text-[3px] font-bold uppercase opacity-90 mb-0.5">Contact d'Urgence</div>
+                  <div className="text-[3px] opacity-80 truncate">{guardianName}</div>
+                  <div className="text-[3px] opacity-80 truncate">{guardianPhone}</div>
+                  <div className="text-[3px] opacity-70 truncate">{guardianAddress}</div>
+                </div>
+              ) : (
+                <div className="min-w-0 flex-1" />
+              )}
               {/* Droite : signature */}
               <div className="text-right shrink-0 ml-2">
                 <div className="text-[4px] italic opacity-90 mb-px" style={{ fontFamily: 'Brush Script MT, cursive' }}>Le Directeur</div>
@@ -265,7 +287,7 @@ export function IdCardVisual({
 
       {/* En-tête gradient avec TERMS & dates */}
       <div className="shrink-0 px-3 py-1.5 flex items-center justify-between text-white"
-        style={{ background: `linear-gradient(135deg, ${SECONDARY} 0%, ${PRIMARY} 100%)`, height: '18%' }}>
+        style={{ background: `linear-gradient(135deg, ${SECONDARY} 0%, ${primaryColor} 100%)`, height: '18%' }}>
         <span className="text-[6px] font-bold uppercase tracking-wider">Terms & Conditions</span>
         <div className="text-right text-[3px] leading-tight">
           <div>Issue: {formatDate(card.generatedAt)}</div>
@@ -275,22 +297,28 @@ export function IdCardVisual({
 
       {/* Corps : rules + contact + QR */}
       <div className="flex flex-1 min-h-0 px-2.5 py-1.5 gap-2">
-        {/* Gauche : rules + heures maternelle + contact */}
+        {/* Gauche : conditions + contact école */}
         <div className="flex-1 flex flex-col min-w-0">
-          <ul className="space-y-0.5 mb-1">
-            {[
-              'This card remains the property of the school.',
-              'Students must carry it every school day.',
-              'Loss must be reported immediately.',
-              'This card is non-transferable.',
-              'Return the card upon leaving the institution.',
-            ].map((rule, i) => (
-              <li key={i} className="flex items-start gap-1">
-                <div className="w-1 h-1 rounded-sm mt-0.5 shrink-0" style={{ background: SECONDARY }} />
-                <span className="text-[3px] text-gray-600 leading-tight">{rule}</span>
-              </li>
-            ))}
-          </ul>
+          {identity?.cardConditionsText ? (
+            <div className="text-[3px] text-gray-500 leading-tight whitespace-pre-line mb-1" style={{ maxHeight: '42px', overflow: 'hidden' }}>
+              {identity.cardConditionsText}
+            </div>
+          ) : (
+            <ul className="space-y-0.5 mb-1">
+              {[
+                'This card remains the property of the school.',
+                'Students must carry it every school day.',
+                'Loss must be reported immediately.',
+                'This card is non-transferable.',
+                'Return the card upon leaving the institution.',
+              ].map((rule, i) => (
+                <li key={i} className="flex items-start gap-1">
+                  <div className="w-1 h-1 rounded-sm mt-0.5 shrink-0" style={{ background: SECONDARY }} />
+                  <span className="text-[3px] text-gray-600 leading-tight">{rule}</span>
+                </li>
+              ))}
+            </ul>
+          )}
 
           {/* Heures de sortie maternelle */}
           {isMaternelle && (
@@ -308,19 +336,23 @@ export function IdCardVisual({
 
           {/* Contact area */}
           <div className="mt-auto space-y-0.5">
-            {schoolPhone && <div className="text-[3px] text-gray-500"><span className="font-bold" style={{ color: PRIMARY }}>Tel:</span> {schoolPhone}</div>}
-            {schoolEmail && <div className="text-[3px] text-gray-500"><span className="font-bold" style={{ color: PRIMARY }}>Email:</span> {schoolEmail}</div>}
-            {schoolWebsite && <div className="text-[3px] text-gray-500"><span className="font-bold" style={{ color: PRIMARY }}>Web:</span> {schoolWebsite}</div>}
-            {schoolAddress && <div className="text-[3px] text-gray-500"><span className="font-bold" style={{ color: PRIMARY }}>Addr:</span> {schoolAddress}</div>}
+            {schoolPhone && <div className="text-[3px] text-gray-500"><span className="font-bold" style={{ color: primaryColor }}>Tel:</span> {schoolPhone}</div>}
+            {schoolEmail && <div className="text-[3px] text-gray-500"><span className="font-bold" style={{ color: primaryColor }}>Email:</span> {schoolEmail}</div>}
+            {schoolWebsite && <div className="text-[3px] text-gray-500"><span className="font-bold" style={{ color: primaryColor }}>Web:</span> {schoolWebsite}</div>}
+            {(identity?.cardShowSchoolAddress !== false) && schoolAddress && (
+              <div className="text-[3px] text-gray-500"><span className="font-bold" style={{ color: primaryColor }}>Addr:</span> {schoolAddress}</div>
+            )}
           </div>
         </div>
 
         {/* Droite : logo + QR avec fond géométrique */}
         <div className="flex flex-col items-center justify-center gap-1 shrink-0"
-          style={{ width: '24%', background: `linear-gradient(135deg, ${SECONDARY}22 0%, ${PRIMARY}11 100%)`, borderRadius: '8px' }}>
+          style={{ width: '24%', background: `linear-gradient(135deg, ${SECONDARY}22 0%, ${primaryColor}11 100%)`, borderRadius: '8px' }}>
           <SchoolLogo size="sm" />
           <div className="text-[3px] text-gray-500 text-center leading-tight">{acronym}</div>
-          <RealQRCode payload={card.qrPayload} size={56} />
+          {(identity?.cardShowQRCode !== false) && (
+            <RealQRCode payload={card.qrPayload} size={56} />
+          )}
         </div>
       </div>
     </div>

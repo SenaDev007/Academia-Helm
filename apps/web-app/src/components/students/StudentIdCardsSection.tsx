@@ -117,14 +117,31 @@ export default function StudentIdCardsSection() {
   const [identity, setIdentity] = useState<TenantInfo | null>(null);
   const [cardFaces, setCardFaces] = useState<Record<string, 'recto' | 'verso'>>({});
 
-  // Charger l'identité du tenant
+  // Paramètres de configuration des cartes
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [cardSettings, setCardSettings] = useState({
+    maternellePickupMorning: '12:00',
+    maternellePickupAfternoon: '16:30',
+    maternelleSingleExit: false,
+    maternelleSingleExitTime: '15:30',
+    cardPrimaryColor: '#0D1F6E',
+    cardShowQRCode: true,
+    cardShowPhoto: true,
+    cardShowGuardian: true,
+    cardShowEmergencyCall: true,
+    cardShowSchoolAddress: true,
+    cardConditionsText: 'Cette carte est strictement personnelle et incessible. À présenter à toute demande du personnel autorisé. Signaler toute perte ou vol à l\'administration.',
+  });
+
+  // Charger l'identité du tenant et initialiser les paramètres
   useEffect(() => {
     fetch('/api/settings/identity', { credentials: 'include', cache: 'no-store' })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data) {
           const p = Array.isArray(data) ? data[0] : data;
-          setIdentity({
+          const tenantInfo = {
             schoolName: p?.schoolName || p?.name || 'Academia Helm',
             slogan: p?.slogan || 'Excellence • Discipline • Travail',
             address: p?.address || '',
@@ -133,14 +150,59 @@ export default function StudentIdCardsSection() {
             email: p?.email || '',
             website: p?.website || '',
             logoUrl: p?.logoUrl || '',
-            maternellePickupMorning: p?.maternellePickupMorning,
-            maternellePickupAfternoon: p?.maternellePickupAfternoon,
-            maternelleSingleExit: p?.maternelleSingleExit,
-            maternelleSingleExitTime: p?.maternelleSingleExitTime,
+            maternellePickupMorning: p?.maternellePickupMorning || '12:00',
+            maternellePickupAfternoon: p?.maternellePickupAfternoon || '16:30',
+            maternelleSingleExit: p?.maternelleSingleExit ?? false,
+            maternelleSingleExitTime: p?.maternelleSingleExitTime || '15:30',
+            cardPrimaryColor: p?.cardPrimaryColor || '#0D1F6E',
+            cardShowQRCode: p?.cardShowQRCode ?? true,
+            cardShowPhoto: p?.cardShowPhoto ?? true,
+            cardShowGuardian: p?.cardShowGuardian ?? true,
+            cardShowEmergencyCall: p?.cardShowEmergencyCall ?? true,
+            cardShowSchoolAddress: p?.cardShowSchoolAddress ?? true,
+            cardConditionsText: p?.cardConditionsText || 'Cette carte est strictement personnelle et incessible. À présenter à toute demande du personnel autorisé. Signaler toute perte ou vol à l\'administration.',
+          };
+          setIdentity(tenantInfo);
+          setCardSettings({
+            maternellePickupMorning: tenantInfo.maternellePickupMorning,
+            maternellePickupAfternoon: tenantInfo.maternellePickupAfternoon,
+            maternelleSingleExit: tenantInfo.maternelleSingleExit,
+            maternelleSingleExitTime: tenantInfo.maternelleSingleExitTime,
+            cardPrimaryColor: tenantInfo.cardPrimaryColor,
+            cardShowQRCode: tenantInfo.cardShowQRCode,
+            cardShowPhoto: tenantInfo.cardShowPhoto,
+            cardShowGuardian: tenantInfo.cardShowGuardian,
+            cardShowEmergencyCall: tenantInfo.cardShowEmergencyCall,
+            cardShowSchoolAddress: tenantInfo.cardShowSchoolAddress,
+            cardConditionsText: tenantInfo.cardConditionsText,
           });
         }
       }).catch(() => {});
   }, []);
+
+  // Enregistrer les paramètres
+  const handleSaveSettings = async () => {
+    setIsSavingSettings(true);
+    try {
+      const res = await fetch('/api/settings/identity/card-settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(cardSettings),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Erreur sauvegarde');
+      }
+      toast({ title: '✅ Paramètres enregistrés', variant: 'success' });
+      setIsSettingsModalOpen(false);
+      setIdentity(prev => prev ? { ...prev, ...cardSettings } : null);
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'error' });
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
 
   // ⭐ États pour le modal de génération (sélection niveau + classe)
   const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
@@ -390,22 +452,30 @@ export default function StudentIdCardsSection() {
     <>
       {confirmDialog.dialog}
       <div className="space-y-4">
-        {/* ─── En-tête : Stats + Bouton Générer compact ─── */}
+        {/* ─── En-tête : Stats + Boutons Paramétrage/Générer ─── */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
             <CreditCard className="w-5 h-5 text-blue-600" />
             Cartes Scolaires
           </h2>
-          {/* ⭐ Bouton "Générer" COMPACT (plus petit qu'avant) */}
-          <button
-            onClick={handleGenerateBulk}
-            disabled={isGenerating || isLoading}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-sm transition"
-            title="Générer les cartes pour tous les élèves actifs sans carte"
-          >
-            {isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Users className="w-3.5 h-3.5" />}
-            {isGenerating ? 'Génération...' : 'Générer les cartes'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsSettingsModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold border border-slate-200 transition"
+            >
+              <Settings className="w-3.5 h-3.5" />
+              Paramétrage
+            </button>
+            <button
+              onClick={handleGenerateBulk}
+              disabled={isGenerating || isLoading}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-sm transition"
+              title="Générer les cartes pour tous les élèves actifs sans carte"
+            >
+              {isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Users className="w-3.5 h-3.5" />}
+              {isGenerating ? 'Génération...' : 'Générer les cartes'}
+            </button>
+          </div>
         </div>
 
         {/* Stats compactes */}
@@ -442,166 +512,160 @@ export default function StudentIdCardsSection() {
           </div>
         </div>
 
-        {/* ─── Liste arborescente par niveau → classe ─── */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
-            </div>
-          ) : !grouped || grouped.totalCards === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <CreditCard className="w-12 h-12 text-slate-300 mb-3" />
-              <p className="text-sm text-slate-500 mb-1">Aucune carte scolaire générée</p>
-              <p className="text-xs text-slate-400">Cliquez sur "Générer les cartes" pour commencer.</p>
-            </div>
-          ) : filteredLevels.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <Search className="w-10 h-10 text-slate-300 mb-2" />
-              <p className="text-sm text-slate-500">Aucune carte ne correspond à votre recherche.</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-slate-100">
-              {filteredLevels.map(level => {
-                const isLevelExpanded = expandedLevels.has(level.level.id);
-                const totalCardsInLevel = level.classes.reduce((sum, c) => sum + c.cardsCount, 0);
-                const totalActiveInLevel = level.classes.reduce((sum, c) => sum + c.activeCount, 0);
-                return (
-                  <div key={level.level.id}>
-                    {/* Niveau */}
-                    <button
-                      onClick={() => toggleLevel(level.level.id)}
-                      className="w-full flex items-center gap-2 p-3 hover:bg-slate-50 transition text-left"
-                    >
-                      {isLevelExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
-                      <span className="text-sm font-bold text-slate-800">{level.level.name}</span>
-                      <span className="text-[10px] font-mono text-slate-400 uppercase">{level.level.code}</span>
-                      <span className="ml-auto flex items-center gap-1.5">
-                        <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded">
-                          {totalCardsInLevel} carte(s)
-                        </span>
-                        <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded">
-                          {totalActiveInLevel} active(s)
-                        </span>
-                      </span>
-                    </button>
-                    {/* Classes du niveau */}
-                    {isLevelExpanded && (
-                      <div className="bg-slate-50/50">
-                        {level.classes.map(cls => {
-                          const isClassExpanded = expandedClasses.has(cls.class.id);
-                          return (
-                            <div key={cls.class.id} className="border-l-2 border-blue-200 ml-4">
-                              {/* Classe header */}
-                              <div className="flex items-center gap-2 p-2 hover:bg-blue-50/50 transition">
-                                <button
-                                  onClick={() => toggleClass(cls.class.id)}
-                                  className="flex items-center gap-2 flex-1 text-left"
-                                >
-                                  {isClassExpanded ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}
-                                  <Users className="w-3.5 h-3.5 text-blue-500" />
-                                  <span className="text-xs font-bold text-slate-700">{cls.class.name}</span>
-                                  <span className="text-[10px] text-slate-400">
-                                    {cls.cardsCount} carte(s) · {cls.activeCount} active(s)
-                                  </span>
-                                </button>
-                                {/* ⭐ Bouton PDF groupé par classe */}
-                                <button
-                                  onClick={() => handleDownloadClassBundle(cls.class.id, cls.class.name)}
-                                  disabled={downloadingClassId === cls.class.id}
-                                  className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded border border-indigo-200 transition disabled:opacity-50"
-                                  title="Télécharger un PDF avec toutes les cartes de cette classe"
-                                >
-                                  {downloadingClassId === cls.class.id ? (
-                                    <Loader2 className="w-3 h-3 animate-spin" />
-                                  ) : (
-                                    <FileDown className="w-3 h-3" />
-                                  )}
-                                  PDF classe
-                                </button>
-                              </div>
-                              {/* Cartes de la classe — affichage visuel premium */}
-                              {isClassExpanded && (
-                                <div className="bg-slate-50/50 p-3">
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                                    {cls.cards.map(card => {
-                                      const face = cardFaces[card.id] || 'recto';
-                                      return (
-                                        <div key={card.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition">
-                                          {/* En-tête carte */}
-                                          <div className="p-2.5 flex items-center gap-2 border-b border-slate-100">
-                                            <div className="h-7 w-7 rounded-full overflow-hidden bg-slate-100 flex items-center justify-center text-[9px] font-bold text-slate-500 shrink-0">
-                                              {card.student.photoUrl ? <img src={card.student.photoUrl} alt="" className="w-full h-full object-cover" /> : <>{card.student.lastName?.[0]}{card.student.firstName?.[0]}</>}
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                              <p className="text-xs font-semibold text-slate-800 truncate">{card.student.lastName.toUpperCase()} {card.student.firstName}</p>
-                                              <p className="text-[9px] text-slate-400 font-mono truncate">{card.cardNumber}</p>
-                                            </div>
-                                            <span className={cn('px-1.5 py-0.5 text-[8px] font-bold rounded border shrink-0',
-                                              card.isRevoked ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                              : card.isActive ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                              : 'bg-slate-50 text-slate-600 border-slate-200')}>
-                                              {card.isRevoked ? 'Révoquée' : card.isActive ? 'Active' : 'Inactive'}
-                                            </span>
-                                          </div>
-                                          {/* Carte visuelle + switcher */}
-                                          <div className="p-3 bg-slate-100 relative">
-                                            <IdCardVisual
-                                              card={{
-                                                cardNumber: card.cardNumber,
-                                                qrPayload: (card as any).qrPayload,
-                                                qrHash: (card as any).qrHash,
-                                                generatedAt: card.generatedAt,
-                                                validUntil: card.validUntil,
-                                                student: card.student,
-                                                guardian: (card as any).guardian,
-                                                className: card.className,
-                                                levelName: card.levelName,
-                                                levelCode: (card as any).levelCode,
-                                              }}
-                                              face={face}
-                                              identity={identity}
-                                            />
-                                            <button
-                                              onClick={() => setCardFaces(prev => ({ ...prev, [card.id]: face === 'recto' ? 'verso' : 'recto' }))}
-                                              className="absolute top-1 right-1 inline-flex items-center gap-1 px-2 py-1 text-[9px] font-bold text-white bg-slate-700 hover:bg-slate-800 rounded-lg shadow-sm transition"
-                                            >
-                                              <RotateCw className="w-2.5 h-2.5" />{face === 'recto' ? 'Verso' : 'Recto'}
-                                            </button>
-                                          </div>
-                                          {/* Actions */}
-                                          <div className="p-2 flex items-center justify-end gap-1.5 border-t border-slate-100">
-                                            <button onClick={() => setPreviewCard(card)}
-                                              className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded border border-indigo-200 transition">
-                                              <Eye className="w-3 h-3" /> Visualiser
-                                            </button>
-                                            <button onClick={() => handleDownloadCardPdf(card)} disabled={downloadingCardId === card.id}
-                                              className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 transition disabled:opacity-50">
-                                              {downloadingCardId === card.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />} PDF
-                                            </button>
-                                            {card.isActive && !card.isRevoked && (
-                                              <button onClick={() => { setSelectedCard(card); setIsRevokeModalOpen(true); }}
-                                                className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded border border-rose-200 transition">
-                                                <Ban className="w-3 h-3" /> Révoquer
-                                              </button>
-                                            )}
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              )}
+        {/* ─── Layout aéré : niveau → classe → cartes (sans conteneurs imbriqués) ─── */}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
+          </div>
+        ) : !grouped || grouped.totalCards === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <CreditCard className="w-12 h-12 text-slate-300 mb-3" />
+            <p className="text-sm text-slate-500 mb-1">Aucune carte scolaire générée</p>
+            <p className="text-xs text-slate-400">Cliquez sur "Générer les cartes" pour commencer.</p>
+          </div>
+        ) : filteredLevels.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <Search className="w-10 h-10 text-slate-300 mb-2" />
+            <p className="text-sm text-slate-500">Aucune carte ne correspond à votre recherche.</p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {filteredLevels.map(level => {
+              const isLevelExpanded = expandedLevels.has(level.level.id);
+              const totalCardsInLevel = level.classes.reduce((sum, c) => sum + c.cardsCount, 0);
+              const totalActiveInLevel = level.classes.reduce((sum, c) => sum + c.activeCount, 0);
+              return (
+                <div key={level.level.id}>
+                  {/* Niveau scolaire — titre aéré, pas dans un conteneur */}
+                  <button
+                    onClick={() => toggleLevel(level.level.id)}
+                    className="flex items-center gap-2 mb-3 group text-left"
+                  >
+                    {isLevelExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+                    <h3 className="text-base font-bold text-slate-800">{level.level.name}</h3>
+                    <span className="text-[10px] font-mono text-slate-400 uppercase">{level.level.code}</span>
+                    <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded">
+                      {totalCardsInLevel} carte(s)
+                    </span>
+                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded">
+                      {totalActiveInLevel} active(s)
+                    </span>
+                  </button>
+
+                  {isLevelExpanded && (
+                    <div className="space-y-5 ml-6">
+                      {level.classes.map(cls => {
+                        const isClassExpanded = expandedClasses.has(cls.class.id);
+                        return (
+                          <div key={cls.class.id}>
+                            {/* Classe — titre + bouton PDF groupé */}
+                            <div className="flex items-center gap-2 mb-3">
+                              <button
+                                onClick={() => toggleClass(cls.class.id)}
+                                className="flex items-center gap-2 text-left"
+                              >
+                                {isClassExpanded ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}
+                                <Users className="w-4 h-4 text-blue-500" />
+                                <h4 className="text-sm font-bold text-slate-700">{cls.class.name}</h4>
+                                <span className="text-[10px] text-slate-400">
+                                  {cls.cardsCount} carte(s) · {cls.activeCount} active(s)
+                                </span>
+                              </button>
+                              <button
+                                onClick={() => handleDownloadClassBundle(cls.class.id, cls.class.name)}
+                                disabled={downloadingClassId === cls.class.id}
+                                className="ml-auto inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded border border-indigo-200 transition disabled:opacity-50"
+                                title="Télécharger un PDF avec toutes les cartes de cette classe"
+                              >
+                                {downloadingClassId === cls.class.id ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <FileDown className="w-3 h-3" />
+                                )}
+                                PDF classe
+                              </button>
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+
+                            {/* Cartes de la classe — grille aérée */}
+                            {isClassExpanded && (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 ml-2">
+                                {cls.cards.map(card => {
+                                  const face = cardFaces[card.id] || 'recto';
+                                  return (
+                                    <div key={card.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition">
+                                      {/* En-tête carte */}
+                                      <div className="p-2.5 flex items-center gap-2 border-b border-slate-100">
+                                        <div className="h-7 w-7 rounded-full overflow-hidden bg-slate-100 flex items-center justify-center text-[9px] font-bold text-slate-500 shrink-0">
+                                          {card.student.photoUrl ? <img src={card.student.photoUrl} alt="" className="w-full h-full object-cover" /> : <>{card.student.lastName?.[0]}{card.student.firstName?.[0]}</>}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-xs font-semibold text-slate-800 truncate">{card.student.lastName.toUpperCase()} {card.student.firstName}</p>
+                                          <p className="text-[9px] text-slate-400 font-mono truncate">{card.cardNumber}</p>
+                                        </div>
+                                        <span className={cn('px-1.5 py-0.5 text-[8px] font-bold rounded border shrink-0',
+                                          card.isRevoked ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                          : card.isActive ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                          : 'bg-slate-50 text-slate-600 border-slate-200')}>
+                                          {card.isRevoked ? 'Révoquée' : card.isActive ? 'Active' : 'Inactive'}
+                                        </span>
+                                      </div>
+                                      {/* Carte visuelle + switcher */}
+                                      <div className="p-3 bg-slate-100 relative">
+                                        <IdCardVisual
+                                          card={{
+                                            cardNumber: card.cardNumber,
+                                            qrPayload: (card as any).qrPayload,
+                                            qrHash: (card as any).qrHash,
+                                            generatedAt: card.generatedAt,
+                                            validUntil: card.validUntil,
+                                            student: card.student,
+                                            guardian: (card as any).guardian,
+                                            className: card.className,
+                                            levelName: card.levelName,
+                                            levelCode: (card as any).levelCode,
+                                          }}
+                                          face={face}
+                                          identity={identity}
+                                        />
+                                        <button
+                                          onClick={() => setCardFaces(prev => ({ ...prev, [card.id]: face === 'recto' ? 'verso' : 'recto' }))}
+                                          className="absolute top-1 right-1 inline-flex items-center gap-1 px-2 py-1 text-[9px] font-bold text-white bg-slate-700 hover:bg-slate-800 rounded-lg shadow-sm transition"
+                                        >
+                                          <RotateCw className="w-2.5 h-2.5" />{face === 'recto' ? 'Verso' : 'Recto'}
+                                        </button>
+                                      </div>
+                                      {/* Actions */}
+                                      <div className="p-2 flex items-center justify-end gap-1.5 border-t border-slate-100">
+                                        <button onClick={() => setPreviewCard(card)}
+                                          className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded border border-indigo-200 transition">
+                                          <Eye className="w-3 h-3" /> Visualiser
+                                        </button>
+                                        <button onClick={() => handleDownloadCardPdf(card)} disabled={downloadingCardId === card.id}
+                                          className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 transition disabled:opacity-50">
+                                          {downloadingCardId === card.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />} PDF
+                                        </button>
+                                        {card.isActive && !card.isRevoked && (
+                                          <button onClick={() => { setSelectedCard(card); setIsRevokeModalOpen(true); }}
+                                            className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded border border-rose-200 transition">
+                                            <Ban className="w-3 h-3" /> Révoquer
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {isLoading && (
           <div className="flex justify-center items-center py-4">
@@ -854,6 +918,129 @@ export default function StudentIdCardsSection() {
                 className="px-4 py-2 text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50 rounded-lg transition"
               >
                 Révoquer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ⭐ Modal de paramétrage des cartes (design + heures maternelle) */}
+      {isSettingsModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setIsSettingsModalOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                  <Settings className="w-4 h-4 text-slate-600" /> Paramétrage des cartes scolaires
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">Personnalisez le design et les informations affichées sur les cartes.</p>
+              </div>
+              <button onClick={() => setIsSettingsModalOpen(false)} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 transition">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
+              {/* Section : Heures de sortie maternelle */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-amber-600" /> Heures de sortie (Maternelle uniquement)
+                </h4>
+                {/* Toggle : sortie unique (école bilingue) ou double (matin + après-midi) */}
+                <label className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 cursor-pointer">
+                  <input type="checkbox"
+                    checked={cardSettings.maternelleSingleExit}
+                    onChange={(e) => setCardSettings(prev => ({ ...prev, maternelleSingleExit: e.target.checked }))}
+                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                  <span className="text-xs text-slate-700">Sortie unique (école bilingue — cours jusqu'à 15h30)</span>
+                </label>
+                {cardSettings.maternelleSingleExit ? (
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Heure de sortie unique</label>
+                    <input type="time" value={cardSettings.maternelleSingleExitTime}
+                      onChange={(e) => setCardSettings(prev => ({ ...prev, maternelleSingleExitTime: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500" />
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sortie du matin</label>
+                      <input type="time" value={cardSettings.maternellePickupMorning}
+                        onChange={(e) => setCardSettings(prev => ({ ...prev, maternellePickupMorning: e.target.value }))}
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sortie de l'après-midi</label>
+                      <input type="time" value={cardSettings.maternellePickupAfternoon}
+                        onChange={(e) => setCardSettings(prev => ({ ...prev, maternellePickupAfternoon: e.target.value }))}
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500" />
+                    </div>
+                  </div>
+                )}
+                <p className="text-[10px] text-slate-400 italic">Ces heures s'affichent uniquement sur les cartes des élèves de maternelle.</p>
+              </div>
+
+              {/* Section : Design */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1.5">
+                  <Palette className="w-3.5 h-3.5 text-blue-600" /> Design
+                </h4>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Couleur principale (bandeaux)</label>
+                  <div className="flex items-center gap-2">
+                    <input type="color" value={cardSettings.cardPrimaryColor}
+                      onChange={(e) => setCardSettings(prev => ({ ...prev, cardPrimaryColor: e.target.value }))}
+                      className="w-12 h-8 rounded border border-slate-200 cursor-pointer" />
+                    <input type="text" value={cardSettings.cardPrimaryColor}
+                      onChange={(e) => setCardSettings(prev => ({ ...prev, cardPrimaryColor: e.target.value }))}
+                      className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Section : Éléments affichés */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1.5">
+                  <Eye className="w-3.5 h-3.5 text-indigo-600" /> Éléments affichés
+                </h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { key: 'cardShowPhoto', label: 'Photo de l\'élève' },
+                    { key: 'cardShowQRCode', label: 'QR code de vérification' },
+                    { key: 'cardShowGuardian', label: 'Parent / Tuteur' },
+                    { key: 'cardShowEmergencyCall', label: 'Téléphone urgence' },
+                    { key: 'cardShowSchoolAddress', label: 'Adresse école' },
+                  ].map(item => (
+                    <label key={item.key} className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 cursor-pointer">
+                      <input type="checkbox"
+                        checked={(cardSettings as any)[item.key]}
+                        onChange={(e) => setCardSettings(prev => ({ ...prev, [item.key]: e.target.checked }))}
+                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                      <span className="text-xs text-slate-700">{item.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Section : Textes personnalisables */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1.5">
+                  <FileDown className="w-3.5 h-3.5 text-emerald-600" /> Textes personnalisables
+                </h4>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Conditions d'utilisation</label>
+                  <textarea value={cardSettings.cardConditionsText}
+                    onChange={(e) => setCardSettings(prev => ({ ...prev, cardConditionsText: e.target.value }))}
+                    rows={3}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-4 bg-slate-50 flex justify-end gap-2 border-t border-slate-100">
+              <button onClick={() => setIsSettingsModalOpen(false)}
+                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 rounded-lg transition">Annuler</button>
+              <button onClick={handleSaveSettings} disabled={isSavingSettings}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg transition">
+                {isSavingSettings ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                {isSavingSettings ? 'Sauvegarde...' : 'Enregistrer'}
               </button>
             </div>
           </div>

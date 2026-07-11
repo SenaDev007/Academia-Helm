@@ -548,6 +548,8 @@ export default function StudentIdCardsSection() {
                                             <IdCardVisual
                                               card={{
                                                 cardNumber: card.cardNumber,
+                                                qrPayload: (card as any).qrPayload,
+                                                qrHash: (card as any).qrHash,
                                                 generatedAt: card.generatedAt,
                                                 validUntil: card.validUntil,
                                                 student: card.student,
@@ -770,6 +772,8 @@ export default function StudentIdCardsSection() {
                   <IdCardVisual
                     card={{
                       cardNumber: previewCard.cardNumber,
+                      qrPayload: (previewCard as any).qrPayload,
+                      qrHash: (previewCard as any).qrHash,
                       generatedAt: previewCard.generatedAt,
                       validUntil: previewCard.validUntil,
                       student: previewCard.student,
@@ -790,6 +794,8 @@ export default function StudentIdCardsSection() {
                   <IdCardVisual
                     card={{
                       cardNumber: previewCard.cardNumber,
+                      qrPayload: (previewCard as any).qrPayload,
+                      qrHash: (previewCard as any).qrHash,
                       generatedAt: previewCard.generatedAt,
                       validUntil: previewCard.validUntil,
                       student: previewCard.student,

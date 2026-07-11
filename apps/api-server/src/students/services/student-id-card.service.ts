@@ -361,6 +361,8 @@ export class StudentIdCardService {
       levelEntry.classes.get(classKey)!.cards.push({
         id: card.id,
         cardNumber: card.cardNumber,
+        qrPayload: card.qrPayload,
+        qrHash: card.qrHash,
         isActive: card.isActive,
         isRevoked: card.isRevoked,
         generatedAt: card.generatedAt,

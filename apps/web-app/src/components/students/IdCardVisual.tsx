@@ -20,7 +20,9 @@
  * ============================================================================
  */
 
+import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
+import QRCode from 'qrcode';
 
 interface CardStudent {
   firstName: string;
@@ -41,6 +43,8 @@ interface CardGuardian {
 
 interface CardData {
   cardNumber: string;
+  qrPayload?: string;
+  qrHash?: string;
   generatedAt: string;
   validUntil?: string;
   student: CardStudent;
@@ -73,6 +77,39 @@ const LIGHT_GRAY = '#E5E7EB';
 function formatDate(d?: string) {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+// ⭐ Composant QR code réel — génère une image base64 depuis le qrPayload
+function RealQRCode({ payload, size = 56 }: { payload?: string; size?: number }) {
+  const [dataUrl, setDataUrl] = useState<string>('');
+
+  useEffect(() => {
+    if (payload) {
+      QRCode.toDataURL(payload, {
+        width: size * 2, // 2x for retina
+        margin: 0,
+        color: { dark: '#000000', light: '#ffffff' },
+        errorCorrectionLevel: 'M',
+      }).then(setDataUrl).catch(() => setDataUrl(''));
+    }
+  }, [payload, size]);
+
+  if (!payload || !dataUrl) {
+    // Fallback : grille fictive si pas de payload
+    return (
+      <div className="border border-gray-200 rounded bg-white p-px" style={{ width: size / 2, height: size / 2 }}>
+        <div className="grid grid-cols-7 grid-rows-7 gap-px w-full h-full">
+          {Array.from({ length: 49 }).map((_, i) => (
+            <div key={i} className={cn(((i * 11 + 5) % 7 < 4) ? 'bg-black' : 'bg-white')} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <img src={dataUrl} alt="QR Code" style={{ width: size / 2, height: size / 2 }} className="border border-gray-200 rounded bg-white" />
+  );
 }
 
 export function IdCardVisual({
@@ -178,14 +215,8 @@ export function IdCardVisual({
                 ? <img src={s.photoUrl} alt={`${s.firstName} ${s.lastName}`} className="w-full h-full object-cover" />
                 : <div className="w-full h-full flex items-center justify-center text-[5px] text-gray-400">PHOTO</div>}
             </div>
-            {/* QR code de vérification */}
-            <div className="w-7 h-7 border border-gray-200 rounded bg-white p-px">
-              <div className="grid grid-cols-7 grid-rows-7 gap-px w-full h-full">
-                {Array.from({ length: 49 }).map((_, i) => (
-                  <div key={i} className={cn(((i * 11 + 5) % 7 < 4) ? 'bg-black' : 'bg-white')} />
-                ))}
-              </div>
-            </div>
+            {/* QR code de vérification réel */}
+            <RealQRCode payload={card.qrPayload} size={56} />
           </div>
 
           {/* Colonne droite : 10 champs en 2 colonnes */}
@@ -289,13 +320,7 @@ export function IdCardVisual({
           style={{ width: '24%', background: `linear-gradient(135deg, ${SECONDARY}22 0%, ${PRIMARY}11 100%)`, borderRadius: '8px' }}>
           <SchoolLogo size="sm" />
           <div className="text-[3px] text-gray-500 text-center leading-tight">{acronym}</div>
-          <div className="w-7 h-7 border border-gray-200 rounded bg-white p-px">
-            <div className="grid grid-cols-7 grid-rows-7 gap-px w-full h-full">
-              {Array.from({ length: 49 }).map((_, i) => (
-                <div key={i} className={cn(((i * 11 + 5) % 7 < 4) ? 'bg-black' : 'bg-white')} />
-              ))}
-            </div>
-          </div>
+          <RealQRCode payload={card.qrPayload} size={56} />
         </div>
       </div>
     </div>

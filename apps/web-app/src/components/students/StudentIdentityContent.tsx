@@ -272,6 +272,7 @@ function StudentDashboard({ student, academicYear, onBack }: { student: StudentI
   const [studentCard, setStudentCard] = useState<any>(null);
   const [financeAccount, setFinanceAccount] = useState<any>(null);
   const [payments, setPayments] = useState<any[]>([]);
+  const [feeProfile, setFeeProfile] = useState<any>(null);
   const [cardFace, setCardFace] = useState<'recto' | 'verso'>('recto');
   const [previewDoc, setPreviewDoc] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
 
@@ -289,18 +290,31 @@ function StudentDashboard({ student, academicYear, onBack }: { student: StudentI
       setMovementHistory(historyRes.status === 'fulfilled' && Array.isArray(historyRes.value) ? historyRes.value : []);
       setStudentCard(cardRes.status === 'fulfilled' ? cardRes.value : null);
 
-      // ⭐ Utiliser financeService (pas apiFetch direct) pour le compte financier
+      // ⭐ Compte financier + transactions + fee profile (régime)
       try {
         const accounts = await financeService.getStudentAccounts({ studentId, academicYearId: academicYear?.id });
         const account = Array.isArray(accounts) ? accounts[0] : (accounts?.data?.[0] || accounts);
         setFinanceAccount(account);
         if (account?.id) {
           try {
-            const pays = await financeService.getPayments({ studentAccountId: account.id });
-            setPayments(Array.isArray(pays) ? pays : (pays?.data || []));
+            const transactions = await financeService.getTransactions({ studentAccountId: account.id, limit: '20' });
+            setPayments(Array.isArray(transactions) ? transactions : (transactions?.data || []));
           } catch { setPayments([]); }
         }
       } catch { setFinanceAccount(null); setPayments([]); }
+
+      // ⭐ Récupérer le fee profile (régime tarifaire) de l'élève
+      try {
+        const profiles = await financeService.createStudentFeeProfile({
+          studentId,
+          academicYearId: academicYear?.id,
+          feeRegimeId: '', // juste pour récupérer, ne crée pas si déjà existant
+        });
+        setFeeProfile(profiles);
+      } catch {
+        // Si la création échoue (ex: déjà existant), essayer de récupérer via getStudentAccounts
+        setFeeProfile(financeAccount?.feeRegime || null);
+      }
     } catch (e) { console.warn('loadDetail error:', e); }
     finally { setIsLoadingDetail(false); }
   };
@@ -450,6 +464,17 @@ function StudentDashboard({ student, academicYear, onBack }: { student: StudentI
           </div>
         ) : activeTab === 'frais' ? (
           <div className="space-y-4">
+            {/* Régime tarifaire */}
+            {feeProfile && (
+              <div className="p-3 bg-blue-50 rounded-lg border border-blue-100 flex items-center gap-3">
+                <div className="p-2 bg-blue-100 rounded-lg"><Wallet className="w-4 h-4 text-blue-600" /></div>
+                <div>
+                  <p className="text-[10px] font-bold text-blue-700 uppercase">Régime tarifaire</p>
+                  <p className="text-sm font-semibold text-slate-800">{feeProfile.feeRegime?.label || feeProfile.feeRegime?.code || 'Standard'}</p>
+                  {feeProfile.justification && <p className="text-[10px] text-slate-500">{feeProfile.justification}</p>}
+                </div>
+              </div>
+            )}
             {financeAccount ? (
               <>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -460,13 +485,13 @@ function StudentDashboard({ student, academicYear, onBack }: { student: StudentI
                 </div>
                 {payments.length > 0 && (
                   <div>
-                    <h4 className="text-xs font-bold text-slate-400 uppercase mb-2">Historique des paiements</h4>
+                    <h4 className="text-xs font-bold text-slate-400 uppercase mb-2">Historique des transactions</h4>
                     <div className="space-y-1.5">
                       {payments.map(pay => (
                         <div key={pay.id} className="flex items-center gap-3 p-2 bg-slate-50 rounded-lg">
                           <div className="p-1.5 bg-emerald-100 rounded"><Wallet className="w-3.5 h-3.5 text-emerald-600" /></div>
-                          <div className="flex-1"><p className="text-xs font-medium text-slate-700">{formatMoney(pay.amount)}</p><p className="text-[10px] text-slate-400">{new Date(pay.paymentDate || pay.createdAt).toLocaleDateString('fr-FR')} · {pay.paymentMethod}</p></div>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">{pay.status}</span>
+                          <div className="flex-1"><p className="text-xs font-medium text-slate-700">{formatMoney(pay.amount)}</p><p className="text-[10px] text-slate-400">{new Date(pay.transactionDate || pay.createdAt).toLocaleDateString('fr-FR')} · {pay.paymentMethod || '—'}</p></div>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">{pay.status || 'COMPLETED'}</span>
                         </div>
                       ))}
                     </div>

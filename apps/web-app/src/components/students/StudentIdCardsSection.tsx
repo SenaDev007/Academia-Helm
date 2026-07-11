@@ -27,7 +27,7 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   CreditCard, CheckCircle, XCircle, AlertCircle, Users, RefreshCw,
   FileDown, Loader2, ChevronDown, ChevronRight, Search, Ban, Download,
-  Layers, BookOpen, RotateCw, Settings, Clock, Palette, Eye, Save,
+  Layers, BookOpen, RotateCw, Settings, Clock, Palette, Eye, Save, X,
 } from 'lucide-react';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { studentsService } from '@/services/students.service';
@@ -110,6 +110,7 @@ export default function StudentIdCardsSection() {
 
   // États pour la révocation
   const [selectedCard, setSelectedCard] = useState<GroupedCard | null>(null);
+  const [previewCard, setPreviewCard] = useState<GroupedCard | null>(null);
   const [revokeReason, setRevokeReason] = useState('');
   const [isRevokeModalOpen, setIsRevokeModalOpen] = useState(false);
   // ⭐ Identity + face switcher
@@ -567,6 +568,10 @@ export default function StudentIdCardsSection() {
                                           </div>
                                           {/* Actions */}
                                           <div className="p-2 flex items-center justify-end gap-1.5 border-t border-slate-100">
+                                            <button onClick={() => setPreviewCard(card)}
+                                              className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded border border-indigo-200 transition">
+                                              <Eye className="w-3 h-3" /> Visualiser
+                                            </button>
                                             <button onClick={() => handleDownloadCardPdf(card)} disabled={downloadingCardId === card.id}
                                               className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 transition disabled:opacity-50">
                                               {downloadingCardId === card.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />} PDF
@@ -738,6 +743,72 @@ export default function StudentIdCardsSection() {
               >
                 {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Users className="w-4 h-4" />}
                 {isGenerating ? 'Génération...' : 'Générer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ⭐ Modal de visualisation de carte (plein écran) */}
+      {previewCard && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setPreviewCard(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                <Eye className="w-4 h-4 text-indigo-600" />
+                Carte scolaire — {previewCard.student.lastName.toUpperCase()} {previewCard.student.firstName}
+              </h3>
+              <button onClick={() => setPreviewCard(null)} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 transition">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              {/* Recto */}
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Recto</p>
+                <div className="max-w-md mx-auto">
+                  <IdCardVisual
+                    card={{
+                      cardNumber: previewCard.cardNumber,
+                      generatedAt: previewCard.generatedAt,
+                      validUntil: previewCard.validUntil,
+                      student: previewCard.student,
+                      guardian: (previewCard as any).guardian,
+                      className: previewCard.className,
+                      levelName: previewCard.levelName,
+                      levelCode: (previewCard as any).levelCode,
+                    }}
+                    face="recto"
+                    identity={identity}
+                  />
+                </div>
+              </div>
+              {/* Verso */}
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Verso</p>
+                <div className="max-w-md mx-auto">
+                  <IdCardVisual
+                    card={{
+                      cardNumber: previewCard.cardNumber,
+                      generatedAt: previewCard.generatedAt,
+                      validUntil: previewCard.validUntil,
+                      student: previewCard.student,
+                      guardian: (previewCard as any).guardian,
+                      className: previewCard.className,
+                      levelName: previewCard.levelName,
+                      levelCode: (previewCard as any).levelCode,
+                    }}
+                    face="verso"
+                    identity={identity}
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="px-4 py-3 bg-slate-50 flex justify-end gap-2 border-t border-slate-100">
+              <button onClick={() => setPreviewCard(null)} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 rounded-lg">Fermer</button>
+              <button onClick={() => { setPreviewCard(null); handleDownloadCardPdf(previewCard); }}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200">
+                <Download className="w-4 h-4" /> Télécharger PDF
               </button>
             </div>
           </div>

@@ -99,17 +99,40 @@ export function IdCardVisual({
   const guardianPhone = g?.phone || '—';
 
   const isMaternelle = (card.levelCode || '').toUpperCase() === 'MATERNELLE' || (card.levelCode || '').toUpperCase() === 'MAT';
+  const isSecondaire = (card.levelCode || '').toUpperCase() === 'SECONDAIRE' || (card.levelCode || '').toUpperCase() === 'SECONDARY' || (card.levelCode || '').toUpperCase() === 'SECOND';
+
+  // Ministère selon le niveau
+  const ministry = isSecondaire
+    ? "Ministère de l'Enseignement Secondaire, de la Formation Technique et Professionnelle"
+    : 'Ministère des Enseignements Maternel et Primaire';
+
   const pickupMorning = identity?.maternellePickupMorning || '12:00';
   const pickupAfternoon = identity?.maternellePickupAfternoon || '16:30';
   const singleExit = identity?.maternelleSingleExit;
   const singleExitTime = identity?.maternelleSingleExitTime || '15:30';
 
   const LogoBox = ({ size = 'normal' }: { size?: 'normal' | 'small' }) => {
-    const cls = size === 'small' ? 'w-7 h-7' : 'w-9 h-9';
+    const cls = size === 'small' ? 'w-7 h-7' : 'w-8 h-8';
     if (logoUrl) return <img src={logoUrl} alt="Logo" className={cn(cls, 'rounded-lg object-contain bg-white p-0.5')} />;
     return (
       <div className={cn(cls, 'rounded-lg bg-white flex items-center justify-center font-bold')}
-        style={{ color: PRIMARY, fontSize: size === 'small' ? '8px' : '11px' }}>AH</div>
+        style={{ color: PRIMARY, fontSize: size === 'small' ? '8px' : '10px' }}>AH</div>
+    );
+  };
+
+  // Drapeau du Bénin (vert, jaune, rouge horizontal)
+  const BeninFlag = ({ size = 'sm' }: { size?: 'sm' | 'xs' }) => {
+    const cls = size === 'xs' ? 'w-4 h-3' : 'w-5 h-4';
+    return (
+      <div className={cn(cls, 'rounded-sm overflow-hidden border border-gray-200 shrink-0')}>
+        <div className="flex h-full">
+          <div className="w-1/2 h-full bg-green-600" />
+          <div className="w-1/2 flex flex-col">
+            <div className="h-1/2 bg-yellow-400" />
+            <div className="h-1/2 bg-red-600" />
+          </div>
+        </div>
+      </div>
     );
   };
 
@@ -119,27 +142,30 @@ export function IdCardVisual({
       <div className="w-full bg-white rounded-2xl overflow-hidden shadow-lg border border-gray-200 flex flex-col"
         style={{ aspectRatio: '85.6 / 53.98', fontFamily: 'Inter, Poppins, sans-serif' }}>
 
-        {/* ─── EN-TÊTE (22% hauteur) — gauche blanc + droite gradient diagonal ─── */}
-        <div className="relative shrink-0" style={{ height: '22%' }}>
-          {/* Section gauche blanche */}
-          <div className="absolute left-0 top-0 h-full flex items-center gap-1.5 px-2 z-10"
-            style={{ width: '32%', background: 'white' }}>
-            <LogoBox size="normal" />
-            <div className="min-w-0">
-              <div className="text-[5px] font-bold text-gray-700 truncate">{schoolName}</div>
-              <div className="text-[3px] text-gray-400 truncate">{slogan}</div>
+        {/* ─── EN-TÊTE (24% hauteur) — République du Bénin + Ministère + logo école ─── */}
+        <div className="relative shrink-0" style={{ height: '24%' }}>
+          {/* Section gauche blanche : drapeau + République du Bénin + Ministère */}
+          <div className="absolute left-0 top-0 h-full flex items-center gap-1 px-1.5 z-10"
+            style={{ width: '55%', background: 'white' }}>
+            <BeninFlag size="xs" />
+            <div className="min-w-0 flex-1">
+              <div className="text-[5px] font-bold text-gray-800 leading-tight">RÉPUBLIQUE DU BÉNIN</div>
+              <div className="text-[3px] text-gray-500 leading-tight truncate">{ministry}</div>
+              <div className="text-[4px] font-semibold text-gray-700 leading-tight truncate" style={{ color: PRIMARY }}>{schoolName}</div>
             </div>
           </div>
-          {/* Section droite gradient avec clip diagonal */}
+          {/* Section droite gradient avec clip diagonal : logo école + Student ID */}
           <div className="absolute inset-0"
             style={{
               background: `linear-gradient(135deg, ${SECONDARY} 0%, ${PRIMARY} 100%)`,
-              clipPath: 'polygon(28% 0, 100% 0, 100% 100%, 0 100%)',
+              clipPath: 'polygon(52% 0, 100% 0, 100% 100%, 0 100%)',
             }}>
-            <div className="flex flex-col items-center justify-center h-full pl-[32%] pr-2 text-white">
-              <div className="font-bold text-[8px] uppercase tracking-wider leading-tight text-center break-words"
-                style={{ wordBreak: 'break-word' }}>ACADEMIA HELM</div>
-              <div className="text-[4px] opacity-80 mt-0.5">Student Identification Card</div>
+            <div className="flex items-center justify-center h-full pl-[55%] pr-2 gap-1.5 text-white">
+              <LogoBox size="normal" />
+              <div className="text-center">
+                <div className="font-bold text-[6px] uppercase tracking-wider leading-tight">Student ID</div>
+                <div className="text-[3px] opacity-80 leading-tight">Carte Scolaire</div>
+              </div>
             </div>
           </div>
         </div>

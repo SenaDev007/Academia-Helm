@@ -441,6 +441,20 @@ class StudentsService {
   }
 
   /**
+   * ⭐ Réinitialise toutes les affectations de classes physiques pour l'année.
+   * Passe classId = NULL sur toutes les inscriptions actives, afin que
+   * l'administrateur puisse refaire l'affectation manuellement.
+   *
+   * ⚠️ L'academicClassId (classe officielle) est PRÉSERVÉ.
+   */
+  async resetPhysicalAssignments(academicYearId: string): Promise<{ reset: number; academicYearId: string }> {
+    return apiFetch(`${BASE_URL}/reset-physical-assignments`, {
+      method: "POST",
+      body: { academicYearId },
+    });
+  }
+
+  /**
    * Upload photo d'élève via data URL (base64) — pattern identique au RH.
    * Backend : POST /students/:id/upload-photo
    * Body: { photoDataUrl: string }

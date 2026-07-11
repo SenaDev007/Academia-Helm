@@ -170,6 +170,27 @@ export class StudentsLifecycleController {
   }
 
   /**
+   * ⭐ Réinitialise toutes les affectations de classes physiques pour l'année.
+   * Passe classId = NULL sur toutes les inscriptions actives, afin que
+   * l'administrateur puisse refaire l'affectation manuellement.
+   *
+   * ⚠️ L'academicClassId (classe officielle) est PRÉSERVÉ.
+   *
+   * POST /students/reset-physical-assignments
+   * Body: { academicYearId }
+   */
+  @Post('reset-physical-assignments')
+  async resetPhysicalAssignments(
+    @TenantId() tenantId: string,
+    @Body() body: { academicYearId: string },
+  ) {
+    if (!body?.academicYearId) {
+      throw new BadRequestException('academicYearId est requis');
+    }
+    return this.lifecycle.resetPhysicalClassAssignments(tenantId, body.academicYearId);
+  }
+
+  /**
    * Promotion annuelle manuelle d'un élève (hors clôture globale).
    */
   @Post('promote')

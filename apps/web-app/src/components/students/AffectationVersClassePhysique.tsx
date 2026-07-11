@@ -21,10 +21,11 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import {
-  UserCheck, Search, Loader2, ArrowRight, AlertCircle, CheckCircle2, Users, Building,
+  UserCheck, Search, Loader2, ArrowRight, AlertCircle, CheckCircle2, Users, Building, RotateCcw,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { studentsService } from '@/services/students.service';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { toast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 
@@ -69,10 +70,12 @@ interface StudentWithoutClass {
 
 export default function AffectationVersClassePhysique() {
   const { academicYear, schoolLevel } = useModuleContext();
+  const confirmDialog = useConfirmDialog();
   const [studentsWithoutClass, setStudentsWithoutClass] = useState<StudentWithoutClass[]>([]);
   const [physicalClasses, setPhysicalClasses] = useState<PhysicalClassInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   // Sélection : élève + classe physique cible
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
@@ -214,6 +217,36 @@ export default function AffectationVersClassePhysique() {
     }
   };
 
+  // ⭐ Réinitialiser toutes les affectations de classes physiques pour l'année.
+  // Passe classId = NULL sur toutes les inscriptions actives afin que l'admin
+  // puisse refaire l'affectation manuellement via ce sous-onglet.
+  // L'academicClassId (classe officielle) est PRÉSERVÉ.
+  const handleResetAssignments = async () => {
+    if (!academicYear?.id) return;
+    const ok = await confirmDialog.warning(
+      `⚠️ Cette action va DÉSAFFECTER tous les élèves de leur classe physique actuelle pour l'année ${academicYear.name || ''}.\n\n` +
+      `Les classes officielles (AcademicClass) seront PRÉSERVÉES — seules les affectations aux sections physiques (CE1-A, CE1-B…) seront réinitialisées.\n\n` +
+      `Vous pourrez ensuite réaffecter manuellement les élèves via ce sous-onglet. Voulez-vous continuer ?`,
+      'Réinitialiser les affectations',
+    );
+    if (!ok) return;
+
+    setIsResetting(true);
+    try {
+      const result = await studentsService.resetPhysicalAssignments(academicYear.id);
+      toast({
+        title: '✅ Affectations réinitialisées',
+        description: `${result.reset} élève(s) désaffecté(s) de leur classe physique. Vous pouvez maintenant les réaffecter manuellement.`,
+        variant: 'success',
+      });
+      loadData();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message || 'Échec de la réinitialisation', variant: 'error' });
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
   const canAssign = targetClassId && selectedStudentIds.size > 0 && !isAssigning;
 
   // Stats
@@ -251,9 +284,19 @@ export default function AffectationVersClassePhysique() {
             <UserCheck className="w-4 h-4 text-blue-600" />
             Affectation vers classe physique
           </h3>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-slate-500 flex-1">
             Sélectionnez les élèves (admis en classe officielle), puis choisissez la section physique cible.
           </p>
+          {/* ⭐ Bouton "Réinitialiser les affectations" — pour permettre la réaffectation manuelle */}
+          <button
+            onClick={handleResetAssignments}
+            disabled={isResetting || isLoading || !academicYear?.id}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 disabled:opacity-50 text-amber-700 border border-amber-200 rounded-lg text-xs font-semibold transition"
+            title="Désaffecter tous les élèves de leur classe physique pour permettre une réaffectation manuelle. Les classes officielles sont préservées."
+          >
+            {isResetting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+            {isResetting ? 'Réinitialisation...' : 'Réinitialiser les affectations'}
+          </button>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-3 items-end">
           {/* Filtre classe officielle */}
@@ -388,9 +431,10 @@ export default function AffectationVersClassePhysique() {
           ) : filteredStudents.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <CheckCircle2 className="w-10 h-10 text-emerald-300 mb-2" />
-              <p className="text-sm font-medium text-slate-700">Tous les élèves ont été affectés</p>
+              <p className="text-sm font-medium text-slate-700">Tous les élèves ont été affectés à une classe physique</p>
               <p className="text-xs text-slate-500 mt-1">
-                Aucun élève en attente d'affectation vers une classe physique.
+                Aucun élève en attente d'affectation. Si vous voulez réaffecter les élèves manuellement,
+                cliquez sur le bouton « Réinitialiser les affectations » en haut.
               </p>
             </div>
           ) : (

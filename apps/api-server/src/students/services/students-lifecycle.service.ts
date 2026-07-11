@@ -924,6 +924,42 @@ export class StudentsLifecycleService {
   }
 
   /**
+   * ⭐ Réinitialise toutes les affectations de classes physiques pour une année.
+   * Passe classId = NULL sur toutes les inscriptions actives de l'année,
+   * afin que l'administrateur puisse refaire l'affectation manuellement
+   * via le sous-onglet "Affectation vers classe physique".
+   *
+   * ⚠️ L'academicClassId (classe officielle) est PRÉSERVÉ — seul le classId
+   * (classe physique) est réinitialisé.
+   */
+  async resetPhysicalClassAssignments(tenantId: string, academicYearId: string): Promise<{
+    reset: number;
+    academicYearId: string;
+  }> {
+    const where = {
+      tenantId,
+      academicYearId,
+      classId: { not: null },
+      status: { in: ['ADMITTED', 'PRE_REGISTERED', 'ACTIVE', 'ENROLLED'] },
+    };
+
+    const countBefore = await this.prisma.studentEnrollment.count({ where });
+
+    await this.prisma.studentEnrollment.updateMany({
+      where,
+      data: { classId: null },
+    });
+
+    this.logger.log(
+      `🔄 ${countBefore} affectations de classes physiques réinitialisées ` +
+      `pour tenant ${tenantId} (année ${academicYearId}). ` +
+      `Classes officielles (academicClassId) préservées.`,
+    );
+
+    return { reset: countBefore, academicYearId };
+  }
+
+  /**
    * ⭐ Liste l'historique des transferts/affectations d'un tenant.
    * Utilisé par le sous-onglet "Historique".
    */

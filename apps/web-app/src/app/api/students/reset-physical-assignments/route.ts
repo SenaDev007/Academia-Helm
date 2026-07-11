@@ -1,0 +1,33 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
+
+const API_URL = getApiBaseUrlForRoutes();
+
+/**
+ * ⭐ POST /api/students/reset-physical-assignments
+ * Body: { academicYearId }
+ *
+ * Réinitialise toutes les affectations de classes physiques pour l'année.
+ * Passe classId = NULL sur toutes les inscriptions actives, afin que
+ * l'administrateur puisse refaire l'affectation manuellement via le
+ * sous-onglet "Affectation vers classe physique".
+ *
+ * ⚠️ L'academicClassId (classe officielle) est PRÉSERVÉ.
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const headers = await getProxyAuthHeaders(request);
+    const response = await fetch(normalizeApiUrl(`${API_URL}/students/reset-physical-assignments`), {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json().catch(() => ({}));
+    return NextResponse.json(data, { status: response.status });
+  } catch (error) {
+    console.error('Error resetting physical assignments:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}

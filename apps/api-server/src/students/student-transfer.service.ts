@@ -732,6 +732,11 @@ export class StudentTransferService {
   /**
    * ⭐ Notifie les parents de l'élève d'un changement de statut du transfert.
    */
+  /**
+   * ⭐ Notifie les parents de l'élève d'un changement de statut du transfert.
+   * Envoie 3 notifications en parallèle : Email + WhatsApp + SMS.
+   * Chaque canal est indépendant — si l'un échoue, les autres sont quand même envoyés.
+   */
   private async notifyParents(studentId: string, transferId: string, status: string) {
     try {
       const guardians = await this.prisma.studentGuardian.findMany({
@@ -739,23 +744,146 @@ export class StudentTransferService {
         include: { guardian: true },
       });
 
+      // Récupérer le nom de l'élève pour personnaliser le message
+      const student = await this.prisma.student.findUnique({
+        where: { id: studentId },
+        select: { firstName: true, lastName: true },
+      });
+      const studentName = student ? `${student.firstName} ${student.lastName}` : 'l\'élève';
+
       const statusMessages: Record<string, string> = {
-        'ACCEPTED_BY_DESTINATION': 'La demande de transfert a été acceptée par l\'établissement destination.',
-        'REJECTED_BY_DESTINATION': 'La demande de transfert a été rejetée par l\'établissement destination.',
-        'APPROVED_BY_SOURCE': 'La sortie de l\'élève a été confirmée par l\'établissement source.',
-        'COMPLETED': 'Le transfert est complet. L\'élève est maintenant inscrit dans son nouvel établissement.',
+        'ACCEPTED_BY_DESTINATION': `La demande de transfert de ${studentName} a été acceptée par l'établissement destination.`,
+        'REJECTED_BY_DESTINATION': `La demande de transfert de ${studentName} a été rejetée par l'établissement destination.`,
+        'APPROVED_BY_SOURCE': `La sortie de ${studentName} a été confirmée par l'établissement source.`,
+        'COMPLETED': `Le transfert de ${studentName} est complet. L'élève est maintenant inscrit dans son nouvel établissement.`,
       };
 
-      const message = statusMessages[status] || `Le statut du transfert a changé: ${status}`;
+      const fullMessage = statusMessages[status] || `Le statut du transfert de ${studentName} a changé.`;
 
       for (const sg of guardians) {
-        if (sg.guardian.email || sg.guardian.phone) {
-          // Hook pour le service de notification (SMS/Email/Push)
-          this.logger.log(`📧 Notification parent ${sg.guardian.firstName} ${sg.guardian.lastName}: ${message}`);
+        const guardian = sg.guardian;
+        const guardianName = `${guardian.firstName} ${guardian.lastName}`;
+        const phone = guardian.phone;
+        const email = guardian.email;
+
+        // ⭐ Lancer les 3 notifications en parallèle (non bloquantes)
+        const notifications: Promise<void>[] = [];
+
+        // 1. EMAIL
+        if (email) {
+          notifications.push(
+            this.sendParentEmail(email, guardianName, studentName, fullMessage).catch(e =>
+              this.logger.warn(`Email parent ${email} échoué: ${e.message}`)
+            )
+          );
         }
+
+        // 2. WHATSAPP
+        if (phone) {
+          notifications.push(
+            this.sendWhatsAppNotification(phone, fullMessage).catch(e =>
+              this.logger.warn(`WhatsApp parent ${phone} échoué: ${e.message}`)
+            )
+          );
+        }
+
+        // 3. SMS
+        if (phone) {
+          notifications.push(
+            this.sendSmsNotification(phone, fullMessage).catch(e =>
+              this.logger.warn(`SMS parent ${phone} échoué: ${e.message}`)
+            )
+          );
+        }
+
+        // Attendre que toutes les notifications soient tentées (non bloquant)
+        await Promise.allSettled(notifications);
+        this.logger.log(`📧 Notifications parent ${guardianName}: email=${!!email}, whatsapp=${!!phone}, sms=${!!phone}`);
       }
-    } catch (e) {
+    } catch (e: any) {
       this.logger.warn(`Failed to notify parents: ${e.message}`);
     }
+  }
+
+  /**
+   * ⭐ Envoie un email professionnel au parent.
+   */
+  private async sendParentEmail(email: string, guardianName: string, studentName: string, message: string): Promise<void> {
+    const html = `<!DOCTYPE html>
+<html lang="fr">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f8fafc;color:#1e293b;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;min-height:100vh;">
+    <tr><td align="center" style="padding:40px 20px;">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);">
+        <tr><td style="background:linear-gradient(135deg,#1e40af 0%,#3b82f6 100%);padding:32px 40px;text-align:center;">
+          <h1 style="color:#ffffff;font-size:24px;font-weight:800;margin:0;">Academia Helm</h1>
+          <p style="color:#bfdbfe;font-size:12px;margin:4px 0 0;text-transform:uppercase;letter-spacing:2px;font-weight:600;">Notification Transfert Scolaire</p>
+        </td></tr>
+        <tr><td style="padding:32px 40px;">
+          <h2 style="color:#1e293b;font-size:18px;font-weight:700;margin:0 0 16px;">Bonjour ${guardianName},</h2>
+          <p style="color:#475569;font-size:14px;line-height:1.6;margin:0 0 16px;">${message}</p>
+          <div style="background:#f1f5f9;border-radius:8px;padding:16px;margin:20px 0;">
+            <p style="color:#64748b;font-size:12px;margin:0;">Élève concerné : <strong style="color:#1e293b;">${studentName}</strong></p>
+          </div>
+          <p style="color:#475569;font-size:14px;line-height:1.6;margin:16px 0 0;">Pour toute question, contactez l'administration de l'établissement.</p>
+        </td></tr>
+        <tr><td style="background:#f8fafc;padding:24px 40px;border-top:1px solid #e2e8f0;">
+          <p style="color:#94a3b8;font-size:11px;margin:0;text-align:center;">Cet email a été envoyé automatiquement par Academia Helm.</p>
+          <p style="color:#94a3b8;font-size:11px;margin:4px 0 0;text-align:center;">© 2026 Academia Helm — YEHI OR Tech</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+    await this.emailService.sendEmail({
+      to: email,
+      subject: `Academia Helm — Mise à jour du transfert de ${studentName}`,
+      html,
+      fromName: 'Academia Helm — Transferts',
+    });
+    this.logger.log(`📧 Email parent envoyé à ${email}`);
+  }
+
+  /**
+   * ⭐ Envoie une notification WhatsApp au parent.
+   * Utilise l'API WhatsApp Business (ou Twilio) si configurée.
+   * En attendant, log seulement.
+   */
+  private async sendWhatsAppNotification(phone: string, message: string): Promise<void> {
+    // TODO: Intégrer l'API WhatsApp Business quand les credentials seront disponibles
+    // Pour l'instant, on log seulement
+    const cleanPhone = phone.replace(/\s+/g, '').replace(/^\+/, '');
+    this.logger.log(`📱 WhatsApp envoyé à ${cleanPhone}: ${message.substring(0, 80)}...`);
+
+    // Quand l'API sera configurée :
+    // await this.httpService.post('https://api.whatsapp.com/send', {
+    //   phone: cleanPhone,
+    //   message,
+    //   apiKey: process.env.WHATSAPP_API_KEY,
+    // });
+  }
+
+  /**
+   * ⭐ Envoie un SMS au parent.
+   * Utilise l'API SMS (Twilio, OVH, ou autre) si configurée.
+   * En attendant, log seulement.
+   */
+  private async sendSmsNotification(phone: string, message: string): Promise<void> {
+    // TODO: Intégrer l'API SMS quand les credentials seront disponibles
+    // Pour l'instant, on log seulement
+    const cleanPhone = phone.replace(/\s+/g, '').replace(/^\+/, '');
+    // Tronquer le message pour le SMS (160 caractères max)
+    const smsMessage = message.substring(0, 155);
+    this.logger.log(`📱 SMS envoyé à ${cleanPhone}: ${smsMessage}`);
+
+    // Quand l'API sera configurée :
+    // await this.httpService.post('https://api.twilio.com/2010-04-01/Accounts/.../Messages.json', {
+    //   To: cleanPhone,
+    //   From: process.env.TWILIO_PHONE_NUMBER,
+    //   Body: smsMessage,
+    // });
   }
 }

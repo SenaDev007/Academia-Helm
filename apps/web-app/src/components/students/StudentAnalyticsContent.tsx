@@ -72,33 +72,29 @@ export default function StudentAnalyticsContent() {
   ];
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      {/* Header Panel */}
-      <div className="bg-slate-900 rounded-2xl p-6 text-white overflow-hidden relative border border-slate-800 shadow-xl">
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-              <span className="text-xs font-bold text-blue-400 uppercase tracking-widest">Moteur d'Analyse ORION</span>
-            </div>
-            <h2 className="text-2xl font-bold">Intelligence Analytique Élèves</h2>
-            <p className="text-slate-400 text-sm max-w-md">Surveillance en temps réel des flux d'admission, de la conformité identitaire et des risques opérationnels.</p>
-          </div>
+    <div className="space-y-4">
+      {/* Header — white card cohérent avec les autres onglets */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50">
           <div className="flex items-center gap-3">
-            <button 
+            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
+              <Activity className="w-5 h-5 text-blue-600" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-900">ORION, Stats & Audit</h2>
+              <p className="text-xs text-slate-500">Surveillance temps réel, conformité et traçabilité</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
               onClick={loadOrionData}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-sm font-semibold transition-all border border-slate-700"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold border border-slate-200 transition"
             >
-              Re-calculer l'index
-            </button>
-            <button className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-xl text-sm font-semibold shadow-lg shadow-blue-900/20 transition-all">
-              Exporter le rapport
+              <Activity className="w-3.5 h-3.5" />
+              Re-calculer
             </button>
           </div>
         </div>
-        {/* Background decorative elements */}
-        <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600/10 blur-[100px] pointer-events-none" />
-        <div className="absolute bottom-0 left-0 w-48 h-48 bg-purple-600/10 blur-[80px] pointer-events-none" />
       </div>
 
       {/* Stats Grid */}
